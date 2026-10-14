@@ -89,7 +89,8 @@ struct BotProfileTests {
         #expect(bot.metaRevision == 4)
         #expect(bot.activitySession?.id == "s1")
         #expect(bot.isActive())
-        #expect(bot.preview == "Done with the summary")
+        // The row previews its Bot Chat, which is empty here, not the newer "Notes" session.
+        #expect(bot.preview == nil)
         #expect(bot.meta.created == Date(timeIntervalSince1970: 1_760_000_000))
     }
 
@@ -331,6 +332,19 @@ struct BotChatTranscriptTests {
     @Test func silentRepliesAreNotPreviews() throws {
         let bot = BotProfile(json: JSONValue.parse(#"{"name":"default","last_session":{"id":"s","preview":"[SILENT]"}}"#)!)
         #expect(bot.preview == nil)
+        // The row previews its Bot Chat, even when a routine ran later (Desktop, #88200).
+        let studio = BotProfile(json: JSONValue.parse(#"{"name":"studio","canonical_session":{"id":"c","preview":"Mostly. Both jobs work again.","last_active":100},"last_session":{"id":"cron","preview":"[IMPORTANT: The user has invoked the \"growth\" skill, indicat...","last_active":200}}"#)!)
+        #expect(studio.preview == "Mostly. Both jobs work again.")
+        #expect(studio.lastActive == Date(timeIntervalSince1970: 200))
+        // Hermes' control frames read as what they are, or give way to the role line.
+        func preview(_ text: String) -> String? {
+            BotProfile(json: .object(["name": .string("x"), "description": .string("Helper"),
+                                      "canonical_session": .object(["id": .string("c"), "preview": .string(text)])])).preview
+        }
+        #expect(preview("[IMPORTANT: The user has invoked the \"work\" skill, indicating...") == "Used the work skill")
+        #expect(preview("[IMPORTANT: Background process proc_1 completed normally (exit...") == "Background process finished")
+        #expect(preview("[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once...") == "Steered the reply")
+        #expect(preview("[IMPORTANT: Something internal happened...") == nil)
     }
 
     @Test func routineDeliveries() throws {

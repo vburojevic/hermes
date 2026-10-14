@@ -179,11 +179,18 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
         return false
     }
 
-    /// Latest-message preview with bot-to-bot attribution turned into "Name: text".
+    /// Latest-message preview with bot-to-bot attribution turned into "Name: text". It describes
+    /// what opening the row shows: the Bot Chat when there is one (Desktop, hermes-agent#88200).
+    /// A newer routine run or other session moves the row's activity time, not its preview.
     private var computedPreview: String? {
-        guard let raw = activitySession?.preview?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty,
-              !BotMentions.isSilenceMarker(raw)
+        guard let raw = (canonicalSession ?? lastSession)?.preview?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty, !BotMentions.isSilenceMarker(raw)
         else { return nil }
+        switch Self.controlFrame(raw) {
+        case .named(let text)?: return text
+        case .hidden?: return nil
+        case nil: break
+        }
         if let message = BotMentions.parseAgentMessage(raw) {
             return "\(message.senderName): \(message.body)"
         }
@@ -192,6 +199,29 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
             return quiet ? "⏰ \(routine.name)" : "⏰ \(routine.name): \(BotMentions.stripMarkdown(routine.output))"
         }
         return BotMentions.stripMarkdown(raw)
+    }
+}
+
+extension BotProfile {
+    /// One of Hermes' own control frames, which are stored as `user` rows and can be a chat's newest.
+    enum ControlFrame: Equatable {
+        /// What a person would call it.
+        case named(String)
+        /// Nothing worth a preview: the row shows its role line instead.
+        case hidden
+    }
+
+    /// The control frame `text` starts with, if any.
+    static func controlFrame(_ text: String) -> ControlFrame? {
+        if text.hasPrefix("[OUT-OF-BAND USER MESSAGE") { return .named("Steered the reply") }
+        if text.hasPrefix("[IMPORTANT: Background process") { return .named("Background process finished") }
+        let skillPrefix = "[IMPORTANT: The user has invoked the \""
+        if text.hasPrefix(skillPrefix) {
+            let name = text.dropFirst(skillPrefix.count).prefix { $0 != "\"" }
+            return name.isEmpty ? .hidden : .named("Used the \(name) skill")
+        }
+        let machinePrefixes = ["[IMPORTANT:", "[System:", "[SYSTEM", "[System note:", "[Runtime note:"]
+        return machinePrefixes.contains(where: text.hasPrefix) ? .hidden : nil
     }
 }
 
