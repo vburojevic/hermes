@@ -8,6 +8,12 @@ import SwiftUI
 struct NotificationSettingsView: View {
     @Environment(AppModel.self) private var app
     @Bindable private var push = PushCenter.shared
+    /// Set Up Push, presented here: this page is often inside a sheet already (Settings on iPhone).
+    @State private var setupGateway: SetupGateway?
+
+    struct SetupGateway: Identifiable {
+        let id: UUID
+    }
 
     var body: some View {
         Form {
@@ -89,8 +95,15 @@ struct NotificationSettingsView: View {
 
             Section {
                 ForEach(app.bots) { bot in
-                    GatewayPushRow(bot: bot, state: push.gatewayStates[bot.id] ?? .unknown) {
-                        push.setupGateway = bot.id
+                    let state = push.gatewayStates[bot.id] ?? .unknown
+                    if state.isOn {
+                        NavigationLink {
+                            GatewayPushDetail(bot: bot)
+                        } label: {
+                            GatewayPushRow(bot: bot, state: state) {}
+                        }
+                    } else {
+                        GatewayPushRow(bot: bot, state: state) { setupGateway = SetupGateway(id: bot.id) }
                     }
                 }
             } header: {
@@ -104,6 +117,9 @@ struct NotificationSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $setupGateway) { target in
+            PushSetupSheet(gatewayID: target.id)
+        }
         .navigationTitle("Notifications")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -224,6 +240,93 @@ struct GatewayPushRow: View {
     }
 }
 
+/// One gateway with push on: its status, a test notification, and turning it off for this device.
+struct GatewayPushDetail: View {
+    let bot: BotConfiguration
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var testing: TestState = .idle
+    @State private var confirmingOff = false
+
+    enum TestState: Equatable {
+        case idle, sending, sent, failed(String)
+    }
+
+    private var push: PushCenter { .shared }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Status", value: status)
+                if let installation = push.installationID(for: bot.id) {
+                    LabeledContent("Gateway ID", value: installation)
+                        .textSelection(.enabled)
+                }
+            } footer: {
+                Text("Notices from \(bot.name) are encrypted on the gateway for this device, then passed through our relay to Apple.")
+            }
+            Section {
+                Button {
+                    sendTest()
+                } label: {
+                    HStack {
+                        Text("Send a Test Notification")
+                        Spacer()
+                        switch testing {
+                        case .sending: ProgressView().controlSize(.small)
+                        case .sent: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.success)
+                        case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                        case .idle: EmptyView()
+                        }
+                    }
+                }
+                .disabled(testing == .sending)
+                if case .failed(let message) = testing {
+                    Text(message).font(.footnote).foregroundStyle(Theme.secondaryText)
+                }
+            }
+            Section {
+                Button("Stop Notifications from \(bot.name)", role: .destructive) { confirmingOff = true }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(bot.name)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .confirmationDialog("Stop notifications from \(bot.name)?", isPresented: $confirmingOff, titleVisibility: .visible) {
+            Button("Stop Notifications", role: .destructive) {
+                if let workspace = app.workspaces[bot.id] { push.forget(workspace) }
+                dismiss()
+            }
+        } message: {
+            Text("This device leaves the gateway's list. Turn it back on with Set Up… here.")
+        }
+    }
+
+    private var status: String {
+        switch push.gatewayStates[bot.id] {
+        case .on(let relay?): String(localized: "On · relay problem: \(relay)")
+        case .on: String(localized: "On")
+        default: String(localized: "Not set up")
+        }
+    }
+
+    private func sendTest() {
+        guard let roster = app.workspaces[bot.id]?.roster else { return }
+        testing = .sending
+        let deviceID = push.shared.deviceID
+        Task {
+            do {
+                try await AppPushClient { try await roster.request($0, $1) }.test(deviceID: deviceID)
+                testing = .sent
+            } catch {
+                testing = .failed(error.localizedDescription)
+            }
+        }
+    }
+}
+
 /// The Settings row (`settings` → Notifications): "Approvals, replies, tasks · 2 of 3 gateways".
 struct NotificationsSettingsRow: View {
     @Environment(AppModel.self) private var app
@@ -243,6 +346,7 @@ struct NotificationsSettingsRow: View {
                 }
             } icon: {
                 Image(systemName: "bell")
+                    .foregroundStyle(Theme.primaryText)
             }
         }
     }

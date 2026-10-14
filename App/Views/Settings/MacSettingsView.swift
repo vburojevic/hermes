@@ -22,7 +22,7 @@ struct MacSettingsView: View {
             }
             #if HERMES_PUSH
             Tab("Notifications", systemImage: "bell") {
-                NotificationSettingsView()
+                NavigationStack { NotificationSettingsView() }
             }
             #endif
         }
