@@ -400,16 +400,19 @@ def stream(sid, text, chunk=7, delay=0.025):
 
 
 def tool(sid, stored, name, args, result, seconds, context):
+    check_redirect(sid)
     call = f"call_{uuid.uuid4().hex[:8]}"
     add_message(stored, "assistant", "", tool_calls=[{"id": call, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}],
                 finish_reason="tool_calls")
     emit(sid, "tool.start", {"tool_id": call, "name": name, "context": context, "args": args})
+    RUNTIME[sid]["tool_running"] = True
     waited = 0.0
     while waited < seconds:
         if RUNTIME[sid]["interrupt"]:
             break
         time.sleep(0.1)
         waited += 0.1
+    RUNTIME[sid]["tool_running"] = False
     add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
     emit(sid, "tool.complete", {"tool_id": call, "name": name, "args": args, "duration_s": round(waited, 2),
                                 "result": result, "summary": f"Completed in {waited:.1f}s"})
@@ -420,6 +423,146 @@ def tool(sid, stored, name, args, result, seconds, context):
 STEER_OPEN = ("[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; "
               "not tool output and not a new delivery when replayed from conversation history]")
 STEER_CLOSE = "[/OUT-OF-BAND USER MESSAGE]"
+
+
+BUSY = {"mode": "interrupt"}  # display.busy_input_mode (Hermes' default); config.get/set "busy"
+
+
+class Redirected(Exception):
+    """A redirect landed: the turn drops the rest of its plan and answers the correction."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.text = text
+
+
+def start_turn(sid, text, runner):
+    """Marks the runtime busy and runs one turn (a prompt, or a message drained from the queue)."""
+    with LOCK:
+        runtime = RUNTIME[sid]
+        runtime["running"] = True
+        runtime["interrupt"] = False
+        runtime["turn_started"] = time.time()
+    threading.Thread(target=guarded, args=(sid, text, runner), daemon=True).start()
+
+
+def guarded(sid, text, runner):
+    """Runs a turn; a redirect ends the planned work and answers the correction instead (Hermes keeps
+    the work done, cancels the model request in flight, and appends the correction as a user row)."""
+    try:
+        runner(sid, text)
+    except Redirected as redirect:
+        runtime = RUNTIME[sid]
+        stored = runtime.get("stored")
+        # The cancelled model request leaves a hidden placeholder, then the correction as a user row.
+        store_row(sid, stored, "assistant", "", display_kind="hidden")
+        store_user(sid, stored, redirect.text)
+        emit(sid, "status.update", {"kind": "status", "text": "Changing course…"})
+        time.sleep(0.4)
+        answer = f"Changed course. I stopped and did this instead: **{redirect.text.rstrip('.')}**."
+        stream(sid, answer)
+        finish_any(sid, stored, answer)
+
+
+def store_user(sid, stored, text):
+    store_row(sid, stored, "user", text)
+
+
+def store_row(sid, stored, role, text, **extra):
+    if RUNTIME[sid].get("kind") == "chat":
+        CHATS_HOOKS["add_message"](stored, role, text, **extra)
+    else:
+        add_message(stored, role, text, **extra)
+
+
+def finish_any(sid, stored, text):
+    if RUNTIME[sid].get("kind") == "chat":
+        CHATS_HOOKS["finish"](sid, stored, text)
+    else:
+        finish(sid, stored, text)
+
+
+CHATS_HOOKS = {}  # chats.py fills these for normal (non-Bot) chats
+
+
+def check_redirect(sid):
+    """Between steps: a pending redirect takes over (Hermes never kills a running tool for it)."""
+    with LOCK:
+        text = RUNTIME[sid].pop("redirect", None)
+    if text:
+        raise Redirected(text)
+
+
+def busy_submit(sid, text, queued):
+    """Hermes' _handle_busy_submit: a client queue drain (`queued: true`) and anything with images is held
+    for the next turn; plain text follows display.busy_input_mode (steer, interrupt → redirect, queue)."""
+    with LOCK:
+        runtime = RUNTIME[sid]
+        media = runtime.pop("attached_images", 0)
+        mode = "queue" if queued or media else BUSY["mode"]
+        if mode == "steer":
+            runtime.setdefault("steers", []).append(text)
+            return {"status": "steered"}
+        if mode == "interrupt" and time.time() - runtime.get("turn_started", 0) >= 0.5:
+            redirect_or_steer(runtime, text)
+            return {"status": "redirected"}
+        runtime.setdefault("queue", []).append({"text": text, "media": media})
+        return {"status": "queued"}
+
+
+def after_turn(sid, runner):
+    """Hermes' post-turn chain: a steer the turn never read is requeued first, then one queued prompt runs."""
+    with LOCK:
+        runtime = RUNTIME[sid]
+        leftover = runtime.pop("steers", [])
+        runtime.pop("redirect", None)
+        if runtime.get("interrupt"):
+            leftover = []  # an interrupt drops unread steers
+        if leftover:
+            runtime.setdefault("queue", []).insert(0, {"text": "\n".join(leftover), "media": 0})
+        if not runtime.get("queue") or runtime["running"]:
+            return
+        nxt = runtime["queue"].pop(0)
+        runtime["running"] = True
+    threading.Timer(0.5, start_turn, args=(sid, nxt["text"], runner)).start()
+
+
+def method_session_redirect(params):
+    sid, runtime = runtime_for(params)
+    text = (params.get("text") or "").strip()
+    with LOCK:
+        if not runtime["running"]:
+            return {"status": "rejected", "text": text}
+        if time.time() - runtime.get("turn_started", 0) < 0.5:
+            # The agent is still being built: Hermes queues it for the next turn.
+            runtime.setdefault("queue", []).append({"text": text, "media": 0})
+            return {"status": "queued", "text": text}
+        redirect_or_steer(runtime, text)
+    return {"status": "redirected", "text": text}
+
+
+def redirect_or_steer(runtime, text):
+    """Hermes never kills a running tool for a redirect: during one it goes in with the result, like a steer."""
+    if runtime.get("tool_running"):
+        runtime.setdefault("steers", []).append(text)
+    else:
+        runtime["redirect"] = text
+
+
+def method_session_steer(params):
+    sid, runtime = runtime_for(params)
+    text = (params.get("text") or "").strip()
+    with LOCK:
+        if not runtime["running"]:
+            return {"status": "rejected", "text": text}
+        runtime.setdefault("steers", []).append(text)
+    return {"status": "queued", "text": text}
+
+
+def method_config_get(params):
+    if params.get("key") == "busy":
+        return {"value": BUSY["mode"]}
+    return {"value": None}
 
 
 def deliver_steers(sid, store):
@@ -460,6 +603,7 @@ def finish(sid, stored, text, status="complete", error=None):
     with LOCK:
         RUNTIME[sid]["running"] = False
     emit(sid, "session.info", {"running": False, "model": "claude-sonnet-4-6"})
+    after_turn(sid, run_turn)
 
 
 COMPRESSION_WARNING = (
@@ -814,18 +958,18 @@ def method_session_resume(params):
                 "info": {"model": PROFILES[profile]["model"], "running": runtime["running"]},
                 "inflight": None, "running": runtime["running"], "session_key": stored,
                 "started_at": session["started_at"], "status": "streaming" if runtime["running"] else "idle",
-                "open_requests": open_requests(sid)}
+                "open_requests": open_requests(sid),
+                "queued": {"user": runtime["queue"][0]["text"]} if runtime.get("queue") else None}
 
 
 def method_prompt_submit(params):
     sid, runtime = runtime_for(params)
     text = params.get("text") or ""
     with LOCK:
-        if runtime["running"]:
-            raise RPCError(4009, "session busy")
-        runtime["running"] = True
-        runtime["interrupt"] = False
-    threading.Thread(target=run_turn, args=(sid, text), daemon=True).start()
+        busy = runtime["running"]
+    if busy:
+        return busy_submit(sid, text, bool(params.get("queued")))
+    start_turn(sid, text, run_turn)
     return {"status": "streaming"}
 
 
@@ -867,7 +1011,9 @@ def method_events_since(params):
 
 
 def method_image_attach_bytes(params):
-    runtime_for(params)
+    sid, runtime = runtime_for(params)
+    with LOCK:
+        runtime["attached_images"] = runtime.get("attached_images", 0) + 1
     return {"attached": True, "name": params.get("filename") or "image.png"}
 
 
@@ -929,6 +1075,9 @@ METHODS = {
     "session.events.since": method_events_since,
     "prompt.submit": method_prompt_submit,
     "image.attach_bytes": method_image_attach_bytes,
+    "session.redirect": method_session_redirect,
+    "session.steer": method_session_steer,
+    "config.get": method_config_get,
     "cron.manage": method_cron_manage,
     "gateway.ping": lambda params: {"pong": True},
     "setup.runtime_check": lambda params: {"ok": True},

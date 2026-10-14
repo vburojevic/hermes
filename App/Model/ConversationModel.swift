@@ -112,30 +112,60 @@ final class ConversationModel: Identifiable {
     /// A transient error shown above the composer.
     var banner: HermesError?
 
-    // MARK: Follow-ups (docs/composer.md §2)
+    // MARK: Sending while Hermes works (docs/follow-ups.md)
 
-    /// How a message typed while a turn runs is delivered.
-    enum FollowUp: String, CaseIterable, Identifiable {
-        /// Interrupt and redirect the running turn with it.
-        case steer
-        /// Hold it and send it when the turn ends.
-        case sendAfter
-        /// A side question, answered without disturbing the turn (gateway protocol only).
-        case askAside
+    /// This message's mode, picked on the chip; `nil` uses the default from Settings. It applies
+    /// to one message: sending resets it.
+    var followUpPick: FollowUpMode?
 
-        var id: String { rawValue }
-    }
-
-    /// The chosen follow-up; defaults to Steer Now and is remembered per chat.
-    var followUp: FollowUp = .steer {
+    /// Messages waiting for the turn to end (Send Next), oldest first. Kept on the device per chat.
+    private(set) var queue: [QueuedFollowUp] = [] {
         didSet {
-            guard followUp != oldValue, let key = stableKey else { return }
-            UserDefaults.standard.set(followUp.rawValue, forKey: "followUp.\(key)")
+            guard queue != oldValue, let queueKey else { return }
+            FollowUpQueueStore.save(queue, key: queueKey)
         }
     }
 
-    /// Messages waiting for the running turn to finish (Send After).
-    private(set) var queued: [QueuedMessage] = []
+    /// Messages the gateway holds itself (with images or files, or a fall-back while it compacts):
+    /// shown in the tray, read-only, until it sends them.
+    private(set) var gatewayQueued: [String] = []
+
+    /// Mid-turn messages and what became of them: steers (waiting, read, carried over, missed),
+    /// redirects and background runs.
+    private(set) var followUps: [FollowUpRecord] = []
+
+    /// The work of the running turn before a redirect, the mark where it changed course, and the
+    /// redirect itself; the stored transcript replaces them when the turn ends.
+    private(set) var redirectedParts: [TranscriptItem] = []
+
+    /// The queued message being edited in the field: where it goes back, and how it was.
+    private(set) var editingQueued: EditingQueued?
+
+    struct EditingQueued: Equatable {
+        let original: QueuedFollowUp
+        let index: Int
+    }
+
+    /// What the gateway holds for the next turn, read-only in the tray ("on Studio Mac").
+    var gatewayName: String {
+        workspace?.bot.name ?? "Hermes"
+    }
+
+    /// How stored messages were sent (the queue, a redirect, a steer sent after the reply), by row.
+    @ObservationIgnored private var userCaptions: [String: FollowUpCaption] = [:]
+    /// Captions for messages not stored yet, by their text (matched when the transcript reloads).
+    @ObservationIgnored private var captionsByText: [String: FollowUpCaption] = [:]
+    /// Stop was pressed: the queue waits for a Send instead of draining.
+    private(set) var queuePaused = false
+    /// Steers waiting when a step finished. Hermes has no event for a steer being read: it goes
+    /// in with the result of the step that was running, so the next step after it means they were.
+    @ObservationIgnored private var armedSteers: [String] = []
+    /// What the gateway is about to send as a turn of its own (a steer it carried over, a message
+    /// it queued), so that turn shows the message as it starts.
+    @ObservationIgnored private var expectedFromGateway: [(text: String, caption: FollowUpCaption)] = []
+    @ObservationIgnored private var carryOverTimeout: Task<Void, Never>?
+    /// The draft set aside while a queued message is edited in the field.
+    @ObservationIgnored private var stashedDraft: (text: String, references: [MessageReference])?
 
     /// Side answers (Ask Aside), shown apart from the turn and not part of the history.
     private(set) var asides: [Aside] = []
@@ -159,25 +189,51 @@ final class ConversationModel: Identifiable {
     /// What was allowed in this chat from approval cards, for the permissions sheet.
     private(set) var sessionGrants: [String] = []
 
-    struct QueuedMessage: Identifiable, Equatable {
-        let id = UUID()
-        var text: String
-    }
-
     struct Aside: Identifiable, Equatable {
         let id: String
         var question: String
         var answer: String?
     }
 
-    /// Follow-ups this chat's transport can do.
-    var availableFollowUps: [FollowUp] {
-        usesGateway ? FollowUp.allCases : [.steer, .sendAfter]
+    /// The modes this chat's transport can do: all five over the gateway protocol; the API server
+    /// can steer a run and the app can hold a message.
+    var availableFollowUpModes: [FollowUpMode] {
+        usesGateway ? FollowUpMode.allCases : [.steer, .sendNext]
+    }
+
+    /// What Send does with the text while a turn runs.
+    var followUpMode: FollowUpMode {
+        // A queued message being edited goes back in the queue unless another mode is picked.
+        if editingQueued != nil { return isWorking ? followUpPick ?? .sendNext : .sendNext }
+        let mode = followUpPick ?? FollowUpMode.preferredDefault
+        return availableFollowUpModes.contains(mode) ? mode : .steer
     }
 
     /// Something typed while a turn runs can go out now.
     var canSendFollowUp: Bool {
-        isWorking && hasDraftText && !isStopping && draftCommand == nil
+        isWorking && (hasDraftText || !attachments.isEmpty || !files.isEmpty) && !isStopping && draftCommand == nil
+    }
+
+    /// With the field empty and nothing running, Send sends the first queued message.
+    var canSendQueued: Bool {
+        !queue.isEmpty && !isWorking && !isFinishing && !isBotTurnOpen && !hasDraftText && attachments.isEmpty && files.isEmpty
+            && editingQueued == nil && isReachable
+    }
+
+    /// The caption of a stored message that was sent mid-turn (queue, redirect, carried-over steer).
+    func caption(for entry: UserEntry) -> FollowUpCaption? {
+        userCaptions[entry.id] ?? userCaptions[displayID(for: .user(entry))]
+    }
+
+    /// Where this chat's queue is kept.
+    private var queueKey: String? {
+        if let botName, let roster { return "bot-\(roster.botID.uuidString)-\(botName)" }
+        return stableKey
+    }
+
+    /// The gateway or API server is there to send to.
+    private var isReachable: Bool {
+        isBotChat ? roster?.isConnected == true : (usesGateway ? gatewayRoster?.isConnected == true : workspace?.client != nil)
     }
 
     /// What Send would send: the command and its argument, or skills and the text with its pills.
@@ -236,6 +292,8 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var skipBackoff = false
     /// The turn in flight runs over the gateway socket (decided when it starts).
     @ObservationIgnored private var turnUsesGateway = false
+    /// The turn in flight was a queued message: it goes as `prompt.submit {queued: true}`.
+    @ObservationIgnored private var turnQueued = false
 
     init(workspace: BotWorkspace, session: HermesSession? = nil) {
         self.workspace = workspace
@@ -244,11 +302,9 @@ final class ConversationModel: Identifiable {
         self.stableKey = session?.stableID
         self.model = workspace.preferredModel
         self.reasoningEffort = workspace.preferredEffort
-        if let key = session?.stableID, let saved = UserDefaults.standard.string(forKey: "followUp.\(key)").flatMap(FollowUp.init(rawValue:)) {
-            followUp = saved
-        }
         if let key = session?.stableID {
             goal = UserDefaults.standard.string(forKey: "goal.\(key)")
+            queue = FollowUpQueueStore.load(key: key)
         }
     }
 
@@ -259,6 +315,7 @@ final class ConversationModel: Identifiable {
         self.botName = botName
         self.stableKey = "bot:\(botName)"
         self.goal = UserDefaults.standard.string(forKey: "goal.bot:\(botName)")
+        self.queue = FollowUpQueueStore.load(key: "bot-\(roster.botID.uuidString)-\(botName)")
     }
 
     var isBotChat: Bool { botName != nil }
@@ -309,10 +366,6 @@ final class ConversationModel: Identifiable {
         rowAliases[item.id] ?? item.id
     }
 
-    /// Messages sent with Steer Now during the running turn, shown in it until the stored
-    /// transcript (where Hermes keeps them as `steer` rows) replaces it.
-    private(set) var liveSteers: [String] = []
-
     /// Nothing to show and nothing on its way: a new chat, or a Bot with no Bot Chat yet. A stored
     /// chat whose transcript is still loading isn't empty, so it doesn't get the empty layout
     /// (the centred composer) only to drop it when the messages arrive.
@@ -332,6 +385,7 @@ final class ConversationModel: Identifiable {
         var rows = items
         if let pendingUser { rows.append(.user(pendingUser)) }
         rows += turnReceipts
+        rows += redirectedParts
         if let live { rows.append(.assistant(live.snapshot)) }
         return rows
     }
@@ -447,21 +501,46 @@ final class ConversationModel: Identifiable {
             turnReceipts = []
         }
         items = mergeLocalItems(into: built)
+        matchCaptions()
     }
 
-    /// The stored message and reply that replace the ones shown while the turn ran keep their
-    /// on-screen identities. Only rows after the last earlier message qualify, so an older reply
-    /// never takes a live turn's place (a turn that stored nothing).
-    private func handOverIdentity(user shownUser: String?, turn shownTurn: String) {
-        guard let userIndex = items.lastIndex(where: {
-            if case .user(let entry) = $0 { entry.sender == nil && entry.routineName == nil } else { false }
-        }) else { return }
-        if let shownUser, items[userIndex].id != shownUser {
-            rowAliases[items[userIndex].id] = shownUser
+    /// Captions kept by text find their stored rows: the newest message with that text.
+    private func matchCaptions() {
+        guard !captionsByText.isEmpty else { return }
+        for (text, caption) in captionsByText {
+            let row = items.last { if case .user(let entry) = $0 { entry.text == text && entry.sender == nil } else { false } }
+            if let row {
+                userCaptions[row.id] = caption
+                captionsByText[text] = nil
+            }
         }
-        if let turnIndex = items.lastIndex(where: { if case .assistant = $0 { true } else { false } }),
-           turnIndex > userIndex, items[turnIndex].id != shownTurn {
-            rowAliases[items[turnIndex].id] = shownTurn
+    }
+
+    /// The stored rows that replace the ones shown while the turn ran (your message, the reply, and
+    /// around a redirect the work before it and the redirect) keep their on-screen identities.
+    /// Matched from the end; a reply never matches across the person's message, so an older reply
+    /// never takes a live turn's place (a turn that stored nothing).
+    private func handOverIdentity(shown: [TranscriptItem]) {
+        func isPersonsMessage(_ item: TranscriptItem) -> Bool {
+            if case .user(let entry) = item { entry.sender == nil && entry.routineName == nil && !entry.isSteer } else { false }
+        }
+        var index = items.count - 1
+        for row in shown.reversed() {
+            var match: Int?
+            while index >= 0 {
+                let stored = items[index]
+                if case .assistant = row {
+                    if case .assistant = stored { match = index; break }
+                    if isPersonsMessage(stored) { return }
+                } else if isPersonsMessage(stored) {
+                    match = index
+                    break
+                }
+                index -= 1
+            }
+            guard let match else { return }
+            if items[match].id != row.id { rowAliases[items[match].id] = row.id }
+            index = match - 1
         }
     }
 
@@ -593,8 +672,12 @@ final class ConversationModel: Identifiable {
             branch(at: .before(editing.id), thenSend: text)
             return
         }
-        if canSendFollowUp {
+        if editingQueued != nil || canSendFollowUp {
             sendFollowUp()
+            return
+        }
+        if canSendQueued, let first = queue.first {
+            sendQueued(first)
             return
         }
         guard canSend else { return }
@@ -614,11 +697,7 @@ final class ConversationModel: Identifiable {
             runCommand(command.name, argument: command.argument)
             return
         }
-        // `@handle`s and `@file:` paths typed by hand look the same once sent as picked ones.
-        let typed = referenceVocabulary.references(in: parts.body).filter { found in
-            !parts.references.contains { NSIntersectionRange($0.range, found.range).length > 0 }
-        }
-        if !typed.isEmpty { parts.references = MessageParts.valid(parts.references + typed, in: parts.body) }
+        addTypedReferences(to: &parts)
         let images = attachments
         let documents = files
         draft = ""
@@ -627,6 +706,14 @@ final class ConversationModel: Identifiable {
         files = []
         skills = []
         start(text: parts.body, images: images, files: documents, skills: parts.skills, parts: parts)
+    }
+
+    /// `@handle`s and `@file:` paths typed by hand look the same once sent as picked ones.
+    private func addTypedReferences(to parts: inout MessageParts) {
+        let typed = referenceVocabulary.references(in: parts.body).filter { found in
+            !parts.references.contains { NSIntersectionRange($0.range, found.range).length > 0 }
+        }
+        if !typed.isEmpty { parts.references = MessageParts.valid(parts.references + typed, in: parts.body) }
     }
 
     /// The names typed text can refer to in this chat.
@@ -643,21 +730,6 @@ final class ConversationModel: Identifiable {
             commands: ReferenceVocabulary.knownCommands.union(catalog?.commands.map { $0.name.lowercased() } ?? []),
             skills: catalog?.skillNames ?? []
         )
-    }
-
-    private func sendFollowUp() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        let mode = availableFollowUps.contains(followUp) ? followUp : .steer
-        draft = ""
-        switch mode {
-        case .sendAfter:
-            queued.append(QueuedMessage(text: text))
-        case .steer:
-            steer(text)
-        case .askAside:
-            askAside(text)
-        }
     }
 
     // MARK: Commands (docs/commands-and-references.md)
@@ -707,7 +779,7 @@ final class ConversationModel: Identifiable {
             if isWorking { steer(argument!) } else { start(text: argument!, images: [], files: []) }
             return
         case "queue" where hasArgument:
-            if isWorking || isFinishing || isBotTurnOpen { queued.append(QueuedMessage(text: argument!)) } else { start(text: argument!, images: [], files: []) }
+            if isWorking || isFinishing || isBotTurnOpen { queue.append(QueuedFollowUp(text: argument!)) } else { start(text: argument!, images: [], files: []) }
             return
         case "btw" where hasArgument && isWorking && usesGateway:
             askAside(argument!)
@@ -880,23 +952,6 @@ final class ConversationModel: Identifiable {
         processes.removeAll { $0.id == process.id }
     }
 
-    /// Runs a prompt in the background (`prompt.background`); its answer arrives as a card.
-    private func runInBackground(_ prompt: String) {
-        guard let roster = gatewayRoster else { return }
-        let entry = CommandEntry(name: "bg", argument: prompt, outcome: .running(String(localized: "Starting in the background…")))
-        appendLocal(.command(entry))
-        Task {
-            do {
-                let runtime = try await ensureRuntime()
-                let result = try await roster.request("prompt.background", ["session_id": .string(runtime), "text": .string(prompt)])
-                if let id = result["task_id"]?.stringValue { backgroundPrompts[id] = prompt }
-                updateCommand(entry.id) { $0.outcome = .note(String(localized: "Running in the background · the answer arrives here")) }
-            } catch {
-                updateCommand(entry.id) { $0.outcome = .failed(HermesError.botMode(error).errorDescription ?? "") }
-            }
-        }
-    }
-
     /// Clears the goal bar (and the gateway's goal, quietly).
     func clearGoal() {
         goal = nil
@@ -934,7 +989,7 @@ final class ConversationModel: Identifiable {
     /// Send Again: the same message as a new turn.
     func sendAgain(_ entry: UserEntry) {
         guard !isWorking, !isFinishing, !isBotTurnOpen else {
-            queued.append(QueuedMessage(text: entry.text))
+            queue.append(QueuedFollowUp(text: entry.text, parts: entry.parts, skills: entry.skillNames, images: images(for: entry)))
             return
         }
         start(text: entry.text, images: images(for: entry), files: [], skills: entry.skillNames, parts: entry.parts)
@@ -998,11 +1053,11 @@ final class ConversationModel: Identifiable {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return true }
         if isWorking {
-            if !isStopping { steer(text) } else { queued.append(QueuedMessage(text: text)) }
+            if !isStopping { steer(text) } else { queue.append(QueuedFollowUp(text: text)) }
             return true
         }
         if isFinishing || isBotTurnOpen {
-            queued.append(QueuedMessage(text: text))
+            queue.append(QueuedFollowUp(text: text))
             return true
         }
         let reachable = isBotChat ? roster?.isConnected == true : usesGateway || workspace?.client != nil
@@ -1025,40 +1080,248 @@ final class ConversationModel: Identifiable {
         return nil
     }
 
-    /// Steer Now: the running turn takes the message into account.
+    func dismissAside(_ aside: Aside) {
+        asides.removeAll { $0.id == aside.id }
+    }
+
+    // MARK: Sending while Hermes works (docs/follow-ups.md)
+
+    /// Sends what's in the field while a turn runs, the way `mode` says (the chip's pick, or the
+    /// default). Editing a queued message, Send puts it back in its place.
+    func sendFollowUp(_ mode: FollowUpMode? = nil) {
+        guard editingQueued != nil || canSendFollowUp else { return }
+        var parts = draftParts
+        addTypedReferences(to: &parts)
+        let images = attachments
+        let documents = files
+        guard !parts.body.isEmpty || !images.isEmpty || !documents.isEmpty else { return }
+        var picked = mode.flatMap { availableFollowUpModes.contains($0) ? $0 : nil } ?? followUpMode
+        if !isWorking { picked = .sendNext } // only a queued message being edited gets here idle
+        draft = ""
+        draftReferences = []
+        attachments = []
+        files = []
+        skills = []
+        followUpPick = nil
+        let item = QueuedFollowUp(
+            id: editingQueued?.original.id ?? UUID(), text: parts.body, parts: parts.hasStructure ? parts : nil,
+            skills: parts.skills, images: images, files: documents
+        )
+        if let editing = editingQueued {
+            editingQueued = nil
+            restoreStashedDraft()
+            if picked == .sendNext {
+                queue.insert(item, at: min(editing.index, queue.count))
+                drainQueueIfIdle()
+                return
+            }
+            // Picked another mode while editing: it goes now, that way, instead.
+        }
+        switch picked {
+        case .sendNext:
+            queue.append(item)
+        case .steer, .redirect:
+            if item.hasAttachments || !item.skills.isEmpty {
+                // Hermes can only steer with text: anything else waits for the next turn.
+                holdForNextTurn(item)
+            } else if picked == .steer {
+                steer(item.text)
+            } else {
+                redirect(item.text)
+            }
+        case .askAside:
+            askAside(item.text)
+        case .background:
+            runInBackground(item.text)
+        }
+    }
+
+    /// Steer: Hermes reads the note after the step it's on and keeps going (`session.steer`).
     private func steer(_ text: String) {
+        let record = addSteer(text)
         if turnUsesGateway, let roster = gatewayRoster, let runtime = runtimeSessionID {
             Task {
                 let result = try? await roster.request("session.steer", ["session_id": .string(runtime), "text": .string(text)])
-                if result?["status"]?.stringValue == "rejected" {
-                    // The turn already ended: it's a normal message now.
-                    queued.insert(QueuedMessage(text: text), at: 0)
-                    sendNextQueuedIfIdle()
-                } else {
-                    liveSteers.append(text)
-                    apply(.status(String(localized: "Steering…")))
+                switch FollowUpStatus(result: result) {
+                case .queued?, .steered?:
+                    break // accepted; the next step after this one reads it
+                default:
+                    missSteer(record) // too late, or it never got there: never lost quietly
                 }
             }
         } else if let runID = live?.runID, let client = workspace?.client {
             Task {
                 do {
                     try await client.steerRun(runID: runID, text: text)
-                    liveSteers.append(text)
-                    apply(.status(String(localized: "Steering…")))
                 } catch {
-                    // The run can't take it any more: send it after.
-                    queued.append(QueuedMessage(text: text))
+                    missSteer(record)
                 }
             }
         } else {
-            queued.append(QueuedMessage(text: text))
+            missSteer(record)
         }
+    }
+
+    @discardableResult
+    private func addSteer(_ text: String, wasRedirect: Bool = false) -> String {
+        let record = FollowUpRecord(text: text, state: isWorking ? .steerWaiting : .steerMissed, turnID: live?.turn.id, wasRedirect: wasRedirect)
+        followUps.append(record)
+        return record.id
+    }
+
+    private func missSteer(_ id: String) {
+        guard let index = followUps.firstIndex(where: { $0.id == id }), followUps[index].isPending else { return }
+        followUps[index].state = .steerMissed
+        armedSteers.removeAll { $0 == id }
+    }
+
+    /// Fallback for a steer being read (Hermes has no event for it): a step finishing arms the
+    /// steers waiting then, and whatever Hermes does next shows it has read them.
+    private func trackSteers(_ event: TurnEvent) {
+        guard let live else { return }
+        switch event {
+        case .toolFinished:
+            for record in followUps where record.state == .steerWaiting && record.turnID == live.turn.id && !armedSteers.contains(record.id) {
+                armedSteers.append(record.id)
+            }
+        case .toolStarted, .textDelta, .reasoning, .subagentStarted:
+            readArmedSteers() // the final text isn't a step: a stop ends with it too
+        case .commentary(_, let alreadyStreamed) where !alreadyStreamed:
+            readArmedSteers()
+        default:
+            break
+        }
+    }
+
+    /// The armed steers move into the turn, read after the steps so far (`steerStep`).
+    private func readArmedSteers() {
+        guard !armedSteers.isEmpty, live != nil else { return }
+        let read = armedSteers.compactMap { id in followUps.first { $0.id == id && $0.state == .steerWaiting } }
+        armedSteers = []
+        guard !read.isEmpty else { return }
+        let afterStep = live?.turn.steps.count ?? 0
+        for record in read {
+            live?.turn.steers.append(SteerNote(id: record.id, text: record.text, afterStep: afterStep, timestamp: .now))
+        }
+        let ids = Set(read.map(\.id))
+        followUps.removeAll { ids.contains($0.id) }
+    }
+
+    /// Redirect: stops what Hermes is doing and changes course (`session.redirect`).
+    private func redirect(_ text: String) {
+        guard turnUsesGateway, let roster = gatewayRoster, let runtime = runtimeSessionID else {
+            steer(text)
+            return
+        }
+        Task {
+            let result = try? await roster.request("session.redirect", ["session_id": .string(runtime), "text": .string(text)])
+            switch FollowUpStatus(result: result) {
+            case .redirected?, .steered?:
+                if live?.turn.steps.contains(where: { if case .tool(let tool) = $0 { tool.status == .running } else { false } }) == true {
+                    // Hermes never stops a tool for a redirect: it goes in with the tool's result.
+                    addSteer(text, wasRedirect: true)
+                } else {
+                    changeCourse(text)
+                }
+            case .queued?:
+                // The agent was still starting, or the chat is being compacted: next turn.
+                holdOnGateway(text)
+            case .rejected?, .streaming?:
+                // The reply ended first: it goes as the next message.
+                queue.insert(QueuedFollowUp(text: text), at: 0)
+                drainQueueIfIdle()
+            case nil:
+                if draft.isEmpty { draft = text }
+                banner = HermesError.invalidResponse(String(localized: "Couldn't redirect Hermes. Your message is back in the field."))
+            }
+        }
+    }
+
+    /// What Hermes was doing, for "Stopped while …".
+    private var currentActivity: String? {
+        guard let live else { return nil }
+        if case .tool(let tool)? = live.turn.steps.last, tool.status == .running {
+            return ToolDescriptor.describe(tool.name).activeTitle.lowercased()
+        }
+        return live.pendingText.isEmpty ? String(localized: "thinking") : String(localized: "writing")
+    }
+
+    /// A redirect landed: the work so far stays as it was, a mark says where it changed course,
+    /// then the redirect and the work that follows it (Hermes keeps them as these rows too).
+    private func changeCourse(_ text: String) {
+        guard let current = live, !current.isFinished else {
+            queue.insert(QueuedFollowUp(text: text), at: 0)
+            drainQueueIfIdle()
+            return
+        }
+        let caption = FollowUpCaption.redirect(stoppedWhile: currentActivity)
+        var part = current.snapshot
+        part.state = .complete
+        part.finishedAt = .now
+        let entry = UserEntry(id: "local-\(UUID().uuidString)", text: text, timestamp: .now)
+        userCaptions[entry.id] = caption
+        captionsByText[text] = caption
+        var next = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: current.sessionID)
+        if let runID = current.runID { next.apply(SequencedTurnEvent(seq: nil, event: .runStarted(runID: runID))) }
+        redirectedParts += [.assistant(part), .user(entry)]
+        live = next
+        armedSteers = []
+        for index in followUps.indices where followUps[index].turnID == current.turn.id {
+            followUps[index].turnID = next.turn.id
+        }
+    }
+
+    /// Images, files and skills can't be steered: the gateway holds the message for the next turn
+    /// (`prompt.submit {queued: true}`); over the API server it waits in the app's queue.
+    private func holdForNextTurn(_ item: QueuedFollowUp) {
+        guard turnUsesGateway, item.skills.isEmpty, let roster = gatewayRoster else {
+            queue.append(item)
+            return
+        }
+        holdOnGateway(item.line)
+        Task {
+            do {
+                let runtime = try await ensureRuntime()
+                for (index, image) in item.images.enumerated() {
+                    _ = try await roster.request("image.attach_bytes", [
+                        "session_id": .string(runtime),
+                        "content_base64": .string(image.jpegData.base64EncodedString()),
+                        "filename": .string("image-\(index + 1).jpg"),
+                    ])
+                }
+                if !item.images.isEmpty, let key = stableKey {
+                    workspace?.imageStore.remember(item.images, conversation: key, text: item.text)
+                }
+                var references: [String] = []
+                for file in item.files {
+                    references.append(try await attach(file, runtime: runtime, roster: roster))
+                }
+                let prompt = ([item.text] + references).filter { !$0.isEmpty }.joined(separator: "\n")
+                let result = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt), "queued": .bool(true)])
+                if FollowUpStatus(result: result) == .streaming {
+                    // The reply had ended: it started a turn of its own.
+                    gatewayQueued.removeAll { $0 == item.line }
+                }
+            } catch {
+                // It stays on this device and goes when the reply is done.
+                gatewayQueued.removeAll { $0 == item.line }
+                expectedFromGateway.removeAll { $0.text == item.line }
+                queue.append(item)
+            }
+        }
+    }
+
+    /// A message the gateway holds: shown in the tray until its turn starts.
+    private func holdOnGateway(_ text: String) {
+        gatewayQueued.append(text)
+        captionsByText[text] = .fromQueue
+        expectedFromGateway.append((text, .fromQueue))
     }
 
     /// Ask Aside: a side question answered while the turn keeps going (`prompt.btw`).
     private func askAside(_ text: String) {
         guard let roster = gatewayRoster, let runtime = runtimeSessionID else {
-            queued.append(QueuedMessage(text: text))
+            queue.append(QueuedFollowUp(text: text))
             return
         }
         Task {
@@ -1068,29 +1331,217 @@ final class ConversationModel: Identifiable {
                 asides.append(Aside(id: id, question: text, answer: nil))
             } catch {
                 banner = HermesError.botMode(error)
+                if draft.isEmpty { draft = text }
             }
         }
     }
 
-    func dismissAside(_ aside: Aside) {
-        asides.removeAll { $0.id == aside.id }
+    /// Run in Background: another Hermes works on it (`prompt.background`); the answer lands here.
+    private func runInBackground(_ prompt: String) {
+        guard let roster = gatewayRoster else { return }
+        var record = FollowUpRecord(text: prompt, state: .background(answer: nil), turnID: nil)
+        followUps.append(record)
+        Task {
+            do {
+                let runtime = try await ensureRuntime()
+                let result = try await roster.request("prompt.background", ["session_id": .string(runtime), "text": .string(prompt)])
+                record.taskID = result["task_id"]?.stringValue
+                if let index = followUps.firstIndex(where: { $0.id == record.id }) { followUps[index].taskID = record.taskID }
+                if let id = record.taskID { backgroundPrompts[id] = prompt }
+            } catch {
+                followUps.removeAll { $0.id == record.id }
+                banner = HermesError.botMode(error)
+                if draft.isEmpty { draft = prompt }
+            }
+        }
     }
 
-    func removeQueued(_ message: QueuedMessage) {
-        queued.removeAll { $0.id == message.id }
+    /// `background.complete`: the started line becomes the answer's card.
+    private func finishBackground(taskID: String, answer: String) -> Bool {
+        guard let index = followUps.firstIndex(where: { $0.taskID == taskID }) else { return false }
+        followUps[index].state = .background(answer: answer)
+        backgroundResults["background-\(taskID)"] = (followUps[index].text, answer)
+        return true
     }
 
-    /// Tapping the queued strip puts the message back in the field for editing.
-    func editQueued(_ message: QueuedMessage) {
-        removeQueued(message)
-        draft = draft.isEmpty ? message.text : draft + "\n" + message.text
+    /// Finished background runs settle into the transcript before the next turn, so they stay
+    /// where they happened.
+    private func settleBackgroundRuns() {
+        for record in followUps {
+            guard case .background(let answer?) = record.state, let taskID = record.taskID else { continue }
+            appendLocal(.notice(Notice(id: "background-sent-\(taskID)", kind: "background-sent", text: record.text)))
+            appendLocal(.notice(Notice(id: "background-\(taskID)", kind: "background", text: answer)))
+        }
+        followUps.removeAll { if case .background(_?) = $0.state { true } else { false } }
     }
 
-    /// Sends the next held message once nothing is running.
-    private func sendNextQueuedIfIdle() {
-        guard !isWorking, !isFinishing, !isBotTurnOpen, !queued.isEmpty else { return }
-        let next = queued.removeFirst()
-        start(text: next.text, images: [], files: [])
+    // Missed steers (`steerMissed`)
+
+    /// Send as Message: a missed steer goes as a message of its own.
+    func sendMissed(_ record: FollowUpRecord) {
+        followUps.removeAll { $0.id == record.id }
+        if isWorking || isFinishing || isBotTurnOpen {
+            queue.insert(QueuedFollowUp(text: record.text), at: 0)
+        } else {
+            start(text: record.text, images: [], files: [])
+        }
+    }
+
+    func discardMissed(_ record: FollowUpRecord) {
+        followUps.removeAll { $0.id == record.id }
+    }
+
+    /// Unread steers when the turn ends. Hermes sends one it never read as the next turn by
+    /// itself, right away, as it does what it holds in its queue; if that turn doesn't come, or
+    /// the turn was stopped (Stop drops unread steers), the steer is missed.
+    private func settleSteers(stopped: Bool, readLive: [SteerNote]) {
+        armedSteers = []
+        // The steers the stored reply has (the last few rows: a redirect splits it).
+        let storedSteers = Set(items.suffix(8).flatMap { item -> [String] in
+            if case .assistant(let turn) = item { turn.steers.map(\.text) } else { [] }
+        })
+        // Shown as read but not in what Hermes stored: it never got there. Never lose one quietly.
+        for note in readLive where !storedSteers.contains(note.text) {
+            followUps.append(FollowUpRecord(text: note.text, state: .steerWaiting, turnID: nil))
+        }
+        // Read after all, by the stored transcript: the reply shows it in place.
+        followUps.removeAll { $0.isPending && storedSteers.contains($0.text) }
+        for index in followUps.indices where followUps[index].isPending {
+            if stopped || !turnUsesGateway {
+                followUps[index].state = .steerMissed
+            } else {
+                followUps[index].state = .steerCarriedOver
+                captionsByText[followUps[index].text] = .steerAfterReply
+                expectedFromGateway.append((followUps[index].text, .steerAfterReply))
+            }
+        }
+        guard !expectedFromGateway.isEmpty else { return }
+        carryOverTimeout?.cancel()
+        carryOverTimeout = Task {
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled, !isWorking else { return }
+            // Nothing came: the steer is missed, and what the gateway held has gone some other way.
+            for index in followUps.indices where followUps[index].state == .steerCarriedOver {
+                followUps[index].state = .steerMissed
+            }
+            expectedFromGateway = []
+            gatewayQueued = []
+            drainQueueIfIdle()
+        }
+    }
+
+    /// A turn the gateway started by itself: the carried-over steer or held message it sends.
+    private func takeExpectedFromGateway() {
+        guard !expectedFromGateway.isEmpty else { return }
+        carryOverTimeout?.cancel()
+        // Hermes runs its held messages as one turn.
+        let texts = expectedFromGateway.map(\.text)
+        let caption = expectedFromGateway[0].caption
+        expectedFromGateway = []
+        followUps.removeAll { $0.state == .steerCarriedOver }
+        gatewayQueued = []
+        let text = texts.joined(separator: "\n\n")
+        let lastUser = items.last { if case .user = $0 { true } else { false } }
+        if case .user(let entry)? = lastUser, texts.contains(entry.text) { return } // already stored (Hermes keeps it at once)
+        let entry = UserEntry(id: "local-\(UUID().uuidString)", text: text, timestamp: .now)
+        userCaptions[entry.id] = caption
+        captionsByText[text] = caption
+        pendingUser = entry
+    }
+
+    // The queue (Send Next)
+
+    /// When a turn ends: the first queued message goes next, one per turn, unless Stop paused the
+    /// queue, a queued message is being edited into the first place, or the gateway is away.
+    private func drainQueueIfIdle() {
+        guard !queuePaused, expectedFromGateway.isEmpty, let first = queue.first, !isWorking, !isFinishing, !isBotTurnOpen,
+              isReachable, sendOnLoad == nil
+        else { return }
+        sendQueued(first)
+    }
+
+    /// Sends a queued message now, as the next turn (`prompt.submit {queued: true}`: the gateway
+    /// never makes it a steer).
+    func sendQueued(_ item: QueuedFollowUp) {
+        guard !isWorking, !isFinishing, !isBotTurnOpen else { return }
+        queue.removeAll { $0.id == item.id }
+        captionsByText[item.text] = .fromQueue
+        start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts, queued: true)
+        if let pendingUser { userCaptions[pendingUser.id] = .fromQueue }
+    }
+
+    func moveQueued(fromOffsets source: IndexSet, toOffset destination: Int) {
+        queue.move(fromOffsets: source, toOffset: destination)
+    }
+
+    /// VoiceOver's "Move up" / "Move down".
+    func moveQueued(_ item: QueuedFollowUp, by offset: Int) {
+        guard let index = queue.firstIndex(where: { $0.id == item.id }) else { return }
+        let target = index + offset
+        guard queue.indices.contains(target) else { return }
+        queue.swapAt(index, target)
+    }
+
+    func moveQueuedToTop(_ item: QueuedFollowUp) {
+        guard let index = queue.firstIndex(where: { $0.id == item.id }), index > 0 else { return }
+        queue.insert(queue.remove(at: index), at: 0)
+    }
+
+    func removeQueued(_ item: QueuedFollowUp) {
+        queue.removeAll { $0.id == item.id }
+    }
+
+    func clearQueue() {
+        queue = []
+    }
+
+    /// Steer Now: a queued message goes into the running turn as a steer.
+    func steerNow(_ item: QueuedFollowUp) {
+        guard isWorking else {
+            sendQueued(item)
+            return
+        }
+        queue.removeAll { $0.id == item.id }
+        if item.hasAttachments || !item.skills.isEmpty {
+            holdForNextTurn(item)
+        } else {
+            steer(item.text)
+        }
+    }
+
+    /// Tapping a queued message puts it in the field; it leaves the queue until Send puts it back.
+    func editQueued(_ item: QueuedFollowUp) {
+        if editingQueued != nil { cancelEditingQueued() }
+        guard let index = queue.firstIndex(where: { $0.id == item.id }) else { return }
+        if hasDraftText { stashedDraft = (draft, draftReferences) }
+        queue.remove(at: index)
+        editingQueued = EditingQueued(original: item, index: index)
+        draftCommand = nil
+        draft = item.text
+        draftReferences = MessageParts.valid(item.parts?.references ?? [], in: item.text)
+        attachments = item.images
+        files = item.files
+        skills = item.skills
+    }
+
+    /// The strip's close button: the message goes back as it was.
+    func cancelEditingQueued() {
+        guard let editing = editingQueued else { return }
+        editingQueued = nil
+        queue.insert(editing.original, at: min(editing.index, queue.count))
+        draft = ""
+        draftReferences = []
+        attachments = []
+        files = []
+        skills = []
+        restoreStashedDraft()
+    }
+
+    private func restoreStashedDraft() {
+        guard let stashed = stashedDraft else { return }
+        stashedDraft = nil
+        draft = stashed.text
+        draftReferences = MessageParts.valid(stashed.references, in: stashed.text)
     }
 
     /// Sends the last user message again after a failed turn, images included.
@@ -1103,7 +1554,8 @@ final class ConversationModel: Identifiable {
         turnError = nil
     }
 
-    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil) {
+    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, queued: Bool = false) {
+        settleBackgroundRuns()
         banner = nil
         turnError = nil
         lastUserText = text
@@ -1117,7 +1569,10 @@ final class ConversationModel: Identifiable {
         if let parts, parts.hasStructure, parts.command == nil { entry.parts = parts }
         userImages[entry.id] = images
         pendingUser = entry
-        liveSteers = []
+        redirectedParts = []
+        armedSteers = []
+        queuePaused = false
+        turnQueued = queued
         live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
         sentTurns += 1
         promptSent = false
@@ -1325,10 +1780,12 @@ final class ConversationModel: Identifiable {
     }
 
     private func apply(_ event: TurnEvent, seq: Int? = nil) {
+        trackSteers(event)
         live?.apply(SequencedTurnEvent(seq: seq, event: event))
     }
 
     private func finishTurn(fetch: @escaping (String) async throws -> SessionTranscript) async {
+        let wasStopping = isStopping
         isStopping = false
         connectionNote = nil
         settleFallback?.cancel()
@@ -1341,6 +1798,9 @@ final class ConversationModel: Identifiable {
         if case .failed(let message) = finished.turn.state {
             turnError = TurnFailure(message: message, canRetry: failureIsRetryable)
         }
+        let stoppedByUser = wasStopping || finished.turn.state == .stopped
+        // What was on screen, in order, to hand its identities to the stored rows.
+        let shownRows = (pendingUser.map { [TranscriptItem.user($0)] } ?? []) + redirectedParts + [.assistant(finished.turn)]
         // Fetch in an unstructured task: a turn that ended by cancellation must still reconcile.
         var transcript: SessionTranscript?
         if let sessionID {
@@ -1348,9 +1808,8 @@ final class ConversationModel: Identifiable {
         }
         guard live?.turn.id == finished.turn.id else { return }
         if let transcript {
-            let shownUser = pendingUser?.id
             apply(transcript)
-            handOverIdentity(user: shownUser, turn: finished.turn.id)
+            handOverIdentity(shown: shownRows)
             needsReconcile = false
             carryOverExtras(from: finished.turn)
             if finished.turn.state == .stopped {
@@ -1358,13 +1817,15 @@ final class ConversationModel: Identifiable {
             }
         } else {
             // Couldn't reach the server: keep what streamed in, and reload when we can.
-            if let pendingUser { items.append(.user(pendingUser)) }
-            items.append(.assistant(finished.turn))
+            items += shownRows
             needsReconcile = true
         }
         pendingUser = nil
+        redirectedParts = []
         live = nil
-        if transcript != nil { liveSteers = [] } // stored as steer rows now; offline, they stay in the turn
+        settleSteers(stopped: stoppedByUser, readLive: transcript == nil ? [] : (shownRows.flatMap { row -> [SteerNote] in
+            if case .assistant(let turn) = row { turn.steers } else { [] }
+        }))
         loadState = .loaded
         completedTurns += 1
         if let botName {
@@ -1374,11 +1835,12 @@ final class ConversationModel: Identifiable {
         } else {
             workspace?.turnFinished(in: self)
         }
-        if !queued.isEmpty {
+        if !queue.isEmpty {
+            if stoppedByUser { queuePaused = true } // Stop leaves the queue for a Send
             Task { @MainActor in
                 // After the gateway has settled the turn.
                 try? await Task.sleep(for: .milliseconds(300))
-                self.sendNextQueuedIfIdle()
+                self.drainQueueIfIdle()
             }
         }
     }
@@ -1456,6 +1918,7 @@ final class ConversationModel: Identifiable {
     func stop() {
         guard let live, !live.isFinished, !isStopping else { return }
         isStopping = true
+        queuePaused = true
         if turnUsesGateway || isBotChat {
             stopBotTurn()
             return
@@ -1611,6 +2074,17 @@ extension ConversationModel {
             if running, live == nil {
                 beginRemoteTurn()
             }
+            // What Hermes holds for the next turn (`queued`): in the tray, read-only.
+            if let held = GatewayQueue.queuedPrompt(in: snapshot) {
+                if !gatewayQueued.contains(held) {
+                    gatewayQueued = [held]
+                    captionsByText[held] = .fromQueue
+                    expectedFromGateway = [(held, .fromQueue)]
+                }
+            } else if !gatewayQueued.isEmpty {
+                gatewayQueued = []
+                expectedFromGateway.removeAll { $0.caption == .fromQueue }
+            }
             if let pending = snapshot["pending_connection"], let connection = HermesRequest.connection(from: pending) {
                 receive(connection)
             }
@@ -1713,13 +2187,16 @@ extension ConversationModel {
                 rememberParts(prompt: prompt, text: text, skills: [])
             }
             promptSent = true
+            var submit: [String: JSONValue] = ["session_id": .string(runtime), "text": .string(prompt)]
+            if turnQueued { submit["queued"] = .bool(true) } // a queued message never becomes a steer
             do {
-                _ = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt)])
+                _ = try await roster.request("prompt.submit", submit)
             } catch let error as GatewayRPCError where error.isSessionNotFound {
                 // The backend forgot this runtime id (a restart); resume and send again.
                 runtimeSessionID = nil
                 runtime = try await ensureRuntime()
-                _ = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt)])
+                submit["session_id"] = .string(runtime)
+                _ = try await roster.request("prompt.submit", submit)
             }
             if live?.runID == nil { apply(.runStarted(runID: runtime)) }
         } catch {
@@ -1889,6 +2366,7 @@ extension ConversationModel {
         case "background.complete":
             let id = event.payload["task_id"]?.stringValue ?? UUID().uuidString
             let answer = event.payload["text"]?.stringValue ?? ""
+            if finishBackground(taskID: id, answer: answer) { return }
             let noticeID = "background-\(id)"
             backgroundResults[noticeID] = (backgroundPrompts[id] ?? "", answer)
             appendLocal(.notice(Notice(id: noticeID, kind: "background", text: answer)))
@@ -1954,6 +2432,7 @@ extension ConversationModel {
             case .titleChanged:
                 if !isBotChat { workspace?.titleChanged(in: self) }
             default:
+                trackSteers(item.event)
                 live?.apply(item)
             }
         }
@@ -2165,9 +2644,11 @@ extension ConversationModel {
         // A turn running on the gateway answers "how did it end?": an uncertain-outcome card is moot.
         if turnError?.canRetry == false { turnError = nil }
         live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
+        redirectedParts = []
         isRemoteTurn = true
         isBotTurnOpen = true
         promptSent = true
+        takeExpectedFromGateway()
     }
 
     /// The turn is over on the backend.
@@ -2276,6 +2757,8 @@ extension ConversationModel {
                 settle()
             } else if running == false, isWorking {
                 settle()
+            } else if running == false {
+                drainQueueIfIdle() // what waited while offline goes now
             }
         }
     }

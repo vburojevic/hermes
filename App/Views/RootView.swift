@@ -210,20 +210,25 @@ struct RootView: View {
         conversation.draft = text
         conversation.send()
         // `-HERMES_FOLLOWUP <text>` types a follow-up while the turn runs (`-HERMES_FOLLOWUP_MODE
-        // steer|sendAfter|askAside` picks the choice, `-HERMES_FOLLOWUP_SEND YES` sends it).
+        // steer|redirect|sendNext|askAside|background` picks the mode, `-HERMES_FOLLOWUP_SEND YES`
+        // sends it). Several follow-ups go one after another, separated by `|`.
         await sendDebugFollowUp(in: conversation)
     }
 
     private func sendDebugFollowUp(in conversation: ConversationModel) async {
-        guard let followUp = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP"), !followUp.isEmpty else { return }
-        try? await Task.sleep(for: .seconds(2))
-        if let mode = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_MODE").flatMap(ConversationModel.FollowUp.init(rawValue:)) {
-            conversation.followUp = mode
-        }
-        conversation.draft = followUp
-        if UserDefaults.standard.bool(forKey: "HERMES_FOLLOWUP_SEND") {
-            try? await Task.sleep(for: .milliseconds(600))
-            conversation.send()
+        guard let followUps = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP"), !followUps.isEmpty else { return }
+        let delay = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_AFTER").flatMap(Double.init) ?? 2
+        try? await Task.sleep(for: .seconds(delay))
+        let modes = (UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_MODE") ?? "").split(separator: "|").map(String.init)
+        for (index, followUp) in followUps.split(separator: "|").map(String.init).enumerated() {
+            if index > 0 { try? await Task.sleep(for: .seconds(1.2)) }
+            let mode = modes.indices.contains(index) ? FollowUpMode(rawValue: modes[index]) : modes.last.flatMap(FollowUpMode.init(rawValue:))
+            conversation.followUpPick = mode
+            conversation.draft = followUp
+            if UserDefaults.standard.bool(forKey: "HERMES_FOLLOWUP_SEND") {
+                try? await Task.sleep(for: .milliseconds(600))
+                conversation.send()
+            }
         }
     }
 

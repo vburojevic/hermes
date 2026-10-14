@@ -17,6 +17,7 @@
 		24302566B9AD1E8A39D913A1 /* PairingCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF762D074CAEA5B49F439C4 /* PairingCode.swift */; };
 		2781B9569789A85414C563C4 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDCAA78C61AB4467E72E5E0F /* Motion.swift */; };
 		2D17C956E128D49C1EB89CCD /* HermesMarkPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58216F3283638D4CA643E82E /* HermesMarkPath.swift */; };
+		2E56D21615803B8B726D385C /* FollowUpTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F5504ABF1AFEDBCC0CA7B /* FollowUpTranscript.swift */; };
 		2F59B36716D07F568EC101EF /* BotRosterSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF2AD4B883A16048295A1357 /* BotRosterSections.swift */; };
 		311AB6F4A50E56160025D86F /* HermesMacSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 0CCEEDE69065A76C92D5F1E8 /* HermesMacSupport */; };
 		311D242525B41371CA130E1B /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE480A0097C12F38535C11E8 /* TasksView.swift */; };
@@ -48,6 +49,7 @@
 		9131A7B712B67C3F76474607 /* PairingConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137EDA73B896BDE9D8EDB6A1 /* PairingConnectView.swift */; };
 		9790C1B520CFAEA47DF74211 /* PillTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE63B9B4552E01494E93B76 /* PillTextView.swift */; };
 		9C45CFA885A169FE64F15011 /* BotFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73327689C0F7522EE0092197 /* BotFace.swift */; };
+		9FF54BE0CE75AF82E99371BE /* FollowUpComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4058AA35167E5C90F3C57FE2 /* FollowUpComposer.swift */; };
 		A2E45B8871B2B604A01CCCDF /* VoiceSpeaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C12D79274B1AE563BD6090A /* VoiceSpeaker.swift */; };
 		A37442CB11F0646DFDE70BE0 /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC4B53D1793821CF9E229CD /* ModelPicker.swift */; };
 		A56E932D8818CAC807BFD085 /* SlashMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBCBF43CB09E699F6C87358 /* SlashMenu.swift */; };
@@ -75,6 +77,7 @@
 		E6F685CDCB30D7E5DAFBA413 /* RequestParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE42FFF7E9631F1D3604263E /* RequestParts.swift */; };
 		E9BCC14B6F50E69A0C26043A /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8784642FF3F7763D4A1B0D46 /* SidebarView.swift */; };
 		E9DA6571561C7E24A2597A2C /* RequestCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE25E1F87A1791DDE36972A9 /* RequestCard.swift */; };
+		EC61D9545174614E2E27CB99 /* FollowUps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704C5D19D6138DE82884D59C /* FollowUps.swift */; };
 		EE00BBB832C5017665D4C1B5 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E1BF571A6BF9AFEE131A53 /* ComposerView.swift */; };
 		EEBB26CBEA825B506837FF01 /* TurnExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C5334C16DEA85C688B84F4 /* TurnExtras.swift */; };
 		F62D0A56E57E187470CCC1A2 /* BotChatViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194CF757A863916B13EA8DC4 /* BotChatViews.swift */; };
@@ -109,6 +112,7 @@
 		330FBC1003F4899C51BE0895 /* HermesMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMark.swift; sourceTree = "<group>"; };
 		3C3CC94EB12ABAA772C0C9A5 /* UserBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserBubble.swift; sourceTree = "<group>"; };
 		3C8303AA6ACBA04683326E9F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		4058AA35167E5C90F3C57FE2 /* FollowUpComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpComposer.swift; sourceTree = "<group>"; };
 		41C4BC40424C8FF3014D408C /* GroupParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupParts.swift; sourceTree = "<group>"; };
 		49D00A93727ACE5AB8AE4B10 /* ReferenceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceContext.swift; sourceTree = "<group>"; };
 		4CBFB5247AC1A974A5ADD87C /* ConversationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationModel.swift; sourceTree = "<group>"; };
@@ -122,6 +126,7 @@
 		66E1BF571A6BF9AFEE131A53 /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerView.swift; sourceTree = "<group>"; };
 		6CDAD721460ADCBB56CBF826 /* Hermes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Hermes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6CFB0BAE70770C4EBE4E8D13 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		704C5D19D6138DE82884D59C /* FollowUps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUps.swift; sourceTree = "<group>"; };
 		73327689C0F7522EE0092197 /* BotFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotFace.swift; sourceTree = "<group>"; };
 		7670C4D879B1C88014035EE0 /* BotWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotWorkspace.swift; sourceTree = "<group>"; };
 		79A52C42AC82C9A11ADC7358 /* SpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechController.swift; sourceTree = "<group>"; };
@@ -148,6 +153,7 @@
 		C525BD3D40E9B9708B9886AA /* QuickOpenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenView.swift; sourceTree = "<group>"; };
 		C83E87D6FB065DBE46D0E67A /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
 		CE42FFF7E9631F1D3604263E /* RequestParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestParts.swift; sourceTree = "<group>"; };
+		CF8F5504ABF1AFEDBCC0CA7B /* FollowUpTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpTranscript.swift; sourceTree = "<group>"; };
 		D74EEB0ED0273E1FA9E00934 /* FileAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAttachment.swift; sourceTree = "<group>"; };
 		DDCAA78C61AB4467E72E5E0F /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
 		DE480A0097C12F38535C11E8 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
@@ -185,6 +191,7 @@
 				7670C4D879B1C88014035EE0 /* BotWorkspace.swift */,
 				4CBFB5247AC1A974A5ADD87C /* ConversationModel.swift */,
 				D74EEB0ED0273E1FA9E00934 /* FileAttachment.swift */,
+				704C5D19D6138DE82884D59C /* FollowUps.swift */,
 				824EEF0292B194C418188B32 /* GroupChats.swift */,
 				001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */,
 				BCE8194331DB2E9630C792EE /* Preferences.swift */,
@@ -289,6 +296,7 @@
 			isa = PBXGroup;
 			children = (
 				66E1BF571A6BF9AFEE131A53 /* ComposerView.swift */,
+				4058AA35167E5C90F3C57FE2 /* FollowUpComposer.swift */,
 				FDE63B9B4552E01494E93B76 /* PillTextView.swift */,
 				8EBCBF43CB09E699F6C87358 /* SlashMenu.swift */,
 			);
@@ -313,6 +321,7 @@
 				0363790D1D1BBE404C2C5C0F /* ChatScreen.swift */,
 				2BA130514841F895F341DD77 /* CommandViews.swift */,
 				0A20A7F4B520874AB71118EA /* EmptyChatView.swift */,
+				CF8F5504ABF1AFEDBCC0CA7B /* FollowUpTranscript.swift */,
 				0DC4B53D1793821CF9E229CD /* ModelPicker.swift */,
 				C83E87D6FB065DBE46D0E67A /* TranscriptView.swift */,
 				61C5334C16DEA85C688B84F4 /* TurnExtras.swift */,
@@ -552,6 +561,9 @@
 				7F168A710171B04B1FD3277A /* Effects.swift in Sources */,
 				51029ED14B31AD7FFAEA5EBF /* EmptyChatView.swift in Sources */,
 				C52709BE09D9BC4B4A84C2EA /* FileAttachment.swift in Sources */,
+				9FF54BE0CE75AF82E99371BE /* FollowUpComposer.swift in Sources */,
+				2E56D21615803B8B726D385C /* FollowUpTranscript.swift in Sources */,
+				EC61D9545174614E2E27CB99 /* FollowUps.swift in Sources */,
 				F75384FF7ACBD0911C2B5251 /* Formatting.swift in Sources */,
 				C4566B14C59C1CDAED1B73D1 /* GroupChats.swift in Sources */,
 				E50AC1AB7CA2A6CEB2BB00DD /* GroupParts.swift in Sources */,

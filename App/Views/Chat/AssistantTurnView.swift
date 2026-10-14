@@ -5,8 +5,8 @@ import SwiftUI
 /// with their attachments, the answer, its sources, the actions, then quiet notes.
 struct AssistantTurnView: View {
     let turn: AssistantTurn
-    /// Steer Now messages sent while this turn runs: shown where the answer will follow them.
-    var steers: [String] = []
+    /// Steers sent into this turn that Hermes hasn't read yet (dashed until it does).
+    var pendingSteers: [FollowUpRecord] = []
     var status: String?
     var isStopping = false
     var onBranch: BranchAction?
@@ -49,9 +49,11 @@ struct AssistantTurnView: View {
             if let models = turn.models {
                 ModelsCard(progress: models, isWorking: turn.isWorking)
             }
-            ForEach(Array(steers.enumerated()), id: \.offset) { _, text in
-                SteerBubble(text: text)
-                    .transition(.asymmetric(insertion: .offset(y: 16).combined(with: .opacity), removal: .opacity))
+            // Steers stay in send order: one keeps its place as it goes from waiting to read.
+            ForEach(steerBubbles) { bubble in
+                // One leaves only to show after the transcript (carried over, missed): no fade over the reply.
+                FollowUpBubble(text: bubble.text, caption: bubble.caption, isPending: bubble.isPending)
+                    .transition(.asymmetric(insertion: .offset(y: 16).combined(with: .opacity), removal: .identity))
             }
             if !turn.answer.isEmpty {
                 MarkdownView(text: turn.answer)
@@ -64,8 +66,26 @@ struct AssistantTurnView: View {
             footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.smooth(duration: 0.32), value: steers)
+        .animation(.smooth(duration: 0.32), value: steerBubbles)
         .animation(.smooth(duration: 0.32), value: turn.warning)
+    }
+
+    struct SteerBubbleItem: Identifiable, Equatable {
+        let id: String
+        let text: String
+        let caption: FollowUpBubbleCaption
+        let isPending: Bool
+    }
+
+    /// Steers Hermes read (with the step they came after), then those still waiting.
+    private var steerBubbles: [SteerBubbleItem] {
+        let read = turn.steers.enumerated().map { index, note in
+            SteerBubbleItem(id: "steer-\(index)", text: note.text, caption: .steerRead(after: turn.stepTitle(before: note.afterStep)), isPending: false)
+        }
+        let waiting = pendingSteers.enumerated().compactMap { index, record in
+            record.caption.map { SteerBubbleItem(id: "steer-\(read.count + index)", text: record.text, caption: $0, isPending: true) }
+        }
+        return read + waiting
     }
 
     /// `Overlays.replyMenu`.
@@ -266,7 +286,7 @@ struct WorkSummaryView: View {
                         PlanCard(plan: turn.plan)
                     }
                     if !turn.steps.isEmpty {
-                        StepTimeline(steps: turn.steps)
+                        StepTimeline(steps: turn.steps, steers: turn.steers)
                     }
                 }
                 .transition(Disclosure.transition(reduceMotion: reduceMotion))
@@ -483,19 +503,38 @@ private struct DisclosureChevron: View {
 /// turn reads as a handful of lines. Consecutive subagents share one row.
 private struct StepTimeline: View {
     let steps: [AssistantStep]
+    /// Where Hermes read the person's steers (`steerStep`).
+    var steers: [SteerNote] = []
 
     enum Entry: Identifiable {
         case step(AssistantStep)
         case run([ToolActivity])
         case subagents([SubagentActivity])
+        case steer(SteerNote, index: Int)
 
         var id: String {
             switch self {
             case .step(let step): step.id
             case .run(let tools): "run-" + (tools.first?.id ?? "")
             case .subagents(let agents): "agents-" + (agents.first?.id ?? "")
+            case .steer(_, let index): "steer-\(index)"
             }
         }
+    }
+
+    /// The steps with each steer where it was read; runs don't fold across a steer.
+    static func entries(_ steps: [AssistantStep], steers: [SteerNote]) -> [Entry] {
+        guard !steers.isEmpty else { return entries(steps) }
+        var result: [Entry] = []
+        var start = 0
+        for (index, steer) in steers.enumerated() {
+            let end = min(max(steer.afterStep, start), steps.count)
+            result += entries(Array(steps[start..<end]))
+            result.append(.steer(steer, index: index))
+            start = end
+        }
+        result += entries(Array(steps[start...]))
+        return result
     }
 
     static let runThreshold = 3
@@ -536,7 +575,7 @@ private struct StepTimeline: View {
     }
 
     var body: some View {
-        let entries = Self.entries(steps)
+        let entries = Self.entries(steps, steers: steers)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 let isLast = index == entries.count - 1
@@ -553,9 +592,65 @@ private struct StepTimeline: View {
                     ToolRunLine(tools: tools, isLast: isLast)
                 case .subagents(let agents):
                     SubagentsRow(agents: agents, isLast: isLast)
+                case .steer(let note, _):
+                    SteerStepLine(text: note.text, isLast: isLast)
                 }
             }
         }
+    }
+}
+
+/// Where Hermes picked up a steer (`steerStep`): an ink node, "Read your note" and the note.
+private struct SteerStepLine: View {
+    let text: String
+    let isLast: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Rail(isLast: isLast) {
+                Image(systemName: FollowUpMode.steer.symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.inkForeground)
+                    .frame(width: 26, height: 26)
+                    .background(Theme.ink, in: Circle())
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Read your note")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.primaryText)
+                Text("“\(text)”")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(3)
+            }
+            .padding(.top, 3)
+            .padding(.bottom, isLast ? 0 : 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension AssistantTurn {
+    /// The step before position `index`, as its row names it: what a steer was read after.
+    func stepTitle(before index: Int) -> String? {
+        guard index > 0, index <= steps.count else { return nil }
+        for step in steps[..<index].reversed() {
+            switch step {
+            case .tool(let tool):
+                if tool.status == .failed, tool.name == "terminal" { return String(localized: "Command failed") }
+                return ToolDescriptor.describe(tool.name).doneTitle
+            case .subagent:
+                return String(localized: "Worked with subagents")
+            case .reasoning:
+                return String(localized: "Thought")
+            case .narration:
+                continue
+            }
+        }
+        return nil
     }
 }
 

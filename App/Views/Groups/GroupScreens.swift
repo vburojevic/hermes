@@ -293,8 +293,12 @@ private struct GroupComposer: View {
             guard sendWithReturn else { return false }
             if hasText { chat.send() }
             return true
-        case .newline:
+        case .newline, .sendNext:
             return false
+        case .redirect:
+            // ⌘Return sends.
+            if hasText { chat.send() }
+            return true
         case .up, .down:
             guard !choices.isEmpty else { return false }
             selection = choices[min(max(0, current + (key == .up ? -1 : 1)), choices.count - 1)].id

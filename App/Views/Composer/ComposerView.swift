@@ -4,9 +4,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The composer (`blocks/composer.elyx`, `docs/composer.md`): one floating Liquid Glass panel.
-/// Top to bottom, each row only when it has content: the queued message, images, the text,
-/// the follow-up choice while a turn runs, then + · Think · Dictate and one tinted button
-/// (Voice mode when empty, Send with content, Stop while a turn runs).
+/// Top to bottom, each row only when it has content: the queue, images, the text, then + · Think
+/// (the send mode while a turn runs and there's something to send) · Dictate and one tinted
+/// button (Voice mode when empty, Send with content, Stop while a turn runs).
 struct ComposerView: View {
     @Bindable var conversation: ConversationModel
     let workspace: BotWorkspace
@@ -135,9 +135,11 @@ struct ComposerView: View {
         }
         .animation(Theme.spring, value: conversation.attachments)
         .animation(Theme.spring, value: conversation.files)
-        .animation(Theme.spring, value: conversation.queued)
+        .animation(Theme.spring, value: conversation.queue)
+        .animation(Theme.spring, value: conversation.gatewayQueued)
+        .animation(Theme.spring, value: conversation.editingQueued)
         .animation(Theme.spring, value: conversation.editing)
-        .animation(Theme.spring, value: conversation.canSendFollowUp)
+        .animation(Theme.snappy, value: showsModeChip)
         .animation(reduceMotion ? nil : Theme.snappy, value: dictation.isActive)
         .animation(Theme.snappy, value: slashSections.isEmpty)
         .animation(Theme.snappy, value: conversation.draftCommand)
@@ -153,6 +155,9 @@ struct ComposerView: View {
             pathItems = await conversation.completePath(token)
         }
         .onChange(of: conversation.editing?.id) { _, id in
+            if id != nil { focused.wrappedValue = true }
+        }
+        .onChange(of: conversation.editingQueued?.original.id) { _, id in
             if id != nil { focused.wrappedValue = true }
         }
         .onChange(of: conversation.draft) { peek = nil }
@@ -177,15 +182,29 @@ struct ComposerView: View {
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if conversation.editing != nil {
-                EditingStrip { conversation.cancelEditing() }
-                    .padding(.horizontal, 12)
+            if !conversation.queue.isEmpty || !conversation.gatewayQueued.isEmpty {
+                QueueTray(conversation: conversation)
+                    .padding(.horizontal, 10)
                     .padding(.top, 10)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            if !conversation.queued.isEmpty {
-                QueuedStrip(conversation: conversation)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
+            if let editing = conversation.editingQueued {
+                ComposerStrip(
+                    symbol: "pencil",
+                    text: String(localized: "Editing queued message \(conversation.gatewayQueued.count + editing.index + 1) · Send puts it back"),
+                    closeLabel: "Stop editing",
+                    onClose: { withAnimation(Theme.spring) { conversation.cancelEditingQueued() } }
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .transition(.opacity)
+            }
+            if conversation.editing != nil {
+                ComposerStrip(symbol: "pencil", text: String(localized: "Editing · sends as a new branch"), closeLabel: "Stop editing") {
+                    conversation.cancelEditing()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
             }
             if !conversation.attachments.isEmpty {
                 AttachmentStrip(attachments: $conversation.attachments)
@@ -244,13 +263,6 @@ struct ComposerView: View {
                     .transition(.opacity)
             }
 
-            if conversation.canSendFollowUp, !dictation.isActive {
-                FollowUpPicker(conversation: conversation)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-
             Group {
                 if dictation.isActive {
                     DictationRow(dictation: dictation, onCancel: cancelDictation, onDone: finishDictation)
@@ -268,11 +280,21 @@ struct ComposerView: View {
         .onTapGesture { focused.wrappedValue = true }
     }
 
+    /// While a turn runs and there's something to send, the send mode takes Think's place: Think
+    /// applies to the next turn anyway.
+    private var showsModeChip: Bool {
+        (conversation.canSendFollowUp || conversation.editingQueued != nil) && !dictation.isActive
+    }
+
     private var controls: some View {
         HStack(spacing: 6) {
             attachMenu
-            if !conversation.isBotChat {
+            if showsModeChip {
+                FollowUpModeChip(conversation: conversation, focused: focused)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
+            } else if !conversation.isBotChat {
                 EffortMenu(conversation: conversation, workspace: workspace)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
             }
             Spacer(minLength: 4)
             if let status = hint {
@@ -573,6 +595,19 @@ struct ComposerView: View {
             return true
         case .newline:
             return false
+        case .sendNext:
+            // ⌥Return: Send Next while a turn runs; otherwise a new line.
+            guard conversation.canSendFollowUp, conversation.availableFollowUpModes.contains(.sendNext) else { return false }
+            conversation.sendFollowUp(.sendNext)
+            return true
+        case .redirect:
+            // ⌘Return: Redirect while a turn runs (where the gateway can); otherwise Send.
+            if conversation.canSendFollowUp, sendWithReturn, conversation.availableFollowUpModes.contains(.redirect) {
+                conversation.sendFollowUp(.redirect)
+            } else if conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
+                conversation.send()
+            }
+            return true
         case .up:
             return moveSlashSelection(-1) == .handled
         case .down:
@@ -664,8 +699,13 @@ private struct TrailingButton: View {
     private enum Mode { case voice, send, stop }
 
     private var mode: Mode {
-        if conversation.isWorking { return conversation.hasDraftText || conversation.draftCommand != nil ? .send : .stop }
+        if conversation.isWorking {
+            let hasContent = conversation.hasDraftText || !conversation.attachments.isEmpty || !conversation.files.isEmpty
+            return hasContent || conversation.draftCommand != nil || conversation.editingQueued != nil ? .send : .stop
+        }
         if conversation.hasDraftText || !conversation.attachments.isEmpty || !conversation.skills.isEmpty || conversation.draftCommand != nil || onVoiceMode == nil { return .send }
+        // Stopped with messages waiting: Send sends the first.
+        if conversation.canSendQueued || conversation.editingQueued != nil { return .send }
         return .voice
     }
 
@@ -676,9 +716,15 @@ private struct TrailingButton: View {
         case .send:
             // A command waits for its argument before Send turns on (`composerCommand`).
             if conversation.draftCommand != nil { return conversation.canSendCommand }
-            return conversation.isWorking ? conversation.canSendFollowUp : conversation.canSend
+            if conversation.editingQueued != nil { return true }
+            return conversation.isWorking ? conversation.canSendFollowUp : conversation.canSend || conversation.canSendQueued
         case .voice: return true
         }
+    }
+
+    /// What Send does while a turn runs: "Send, Steer".
+    private var sendLabel: LocalizedStringKey {
+        "Send, \(conversation.followUpMode.title)"
     }
 
     var body: some View {
@@ -705,10 +751,11 @@ private struct TrailingButton: View {
         }
         .buttonStyle(PressableStyle())
         .disabled(!isEnabled)
-        .keyboardShortcut(mode == .send ? KeyboardShortcut(.return, modifiers: .command) : nil)
+        // While a turn runs ⌘Return redirects; the field handles it.
+        .keyboardShortcut(mode == .send && !conversation.isWorking ? KeyboardShortcut(.return, modifiers: .command) : nil)
         .animation(Theme.snappy, value: mode)
         .animation(Theme.snappy, value: isEnabled)
-        .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? "Send" : "Voice mode")
+        .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? (conversation.isWorking ? sendLabel : "Send") : "Voice mode")
         .help(mode == .stop ? "Stop (⌘.)" : mode == .send ? "Send (⌘↩)" : "Voice mode")
     }
 }
@@ -777,106 +824,6 @@ private struct LevelMeter: View {
             }
         }
         .animation(.linear(duration: 0.05), value: levels)
-    }
-}
-
-// MARK: - Follow-ups
-
-/// While a turn runs and there's text: Steer Now, Send After or Ask Aside.
-private struct FollowUpPicker: View {
-    @Bindable var conversation: ConversationModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(conversation.availableFollowUps) { mode in
-                let isSelected = conversation.followUp == mode
-                Button {
-                    conversation.followUp = mode
-                } label: {
-                    ChipLabel(title: Self.title(mode), symbol: Self.symbol(mode), isActive: isSelected)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .sensoryFeedback(.selection, trigger: conversation.followUp)
-    }
-
-    static func title(_ mode: ConversationModel.FollowUp) -> String {
-        switch mode {
-        case .steer: String(localized: "Steer Now")
-        case .sendAfter: String(localized: "Send After")
-        case .askAside: String(localized: "Ask Aside")
-        }
-    }
-
-    static func symbol(_ mode: ConversationModel.FollowUp) -> String {
-        switch mode {
-        case .steer: "arrow.turn.up.right"
-        case .sendAfter: "clock"
-        case .askAside: "questionmark.bubble"
-        }
-    }
-}
-
-/// Editing an earlier message (`composerEditing`): what sending will do, and ✕ to stop editing.
-private struct EditingStrip: View {
-    let onCancel: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "pencil")
-                .font(.caption)
-                .foregroundStyle(Theme.tertiaryText)
-            Text("Editing · sends as a new branch")
-                .font(.footnote)
-                .foregroundStyle(Theme.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: onCancel) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Theme.tertiaryText)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop editing")
-        }
-        .padding(.horizontal, 6)
-    }
-}
-
-/// A message waiting for the running turn: tap to edit it, ✕ to drop it.
-private struct QueuedStrip: View {
-    let conversation: ConversationModel
-
-    var body: some View {
-        VStack(spacing: 6) {
-            ForEach(conversation.queued) { message in
-                HStack(spacing: 8) {
-                    Image(systemName: "clock")
-                        .font(.caption)
-                        .foregroundStyle(Theme.tertiaryText)
-                    Button {
-                        conversation.editQueued(message)
-                    } label: {
-                        Text("Sends next · \(message.text)")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondaryText)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Puts it back in the field")
-                    Button {
-                        conversation.removeQueued(message)
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Theme.tertiaryText)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Don't send")
-                }
-            }
-        }
-        .padding(.horizontal, 6)
     }
 }
 

@@ -45,8 +45,9 @@ def install(backend_globals, gateway_module):
         runtime = B["RUNTIME"].get(sid)
         if runtime is None or runtime.get("kind") != "chat":
             return original["prompt.submit"](params)
-        return submit_chat(sid, runtime, params.get("text") or "")
+        return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")))
 
+    B["CHATS_HOOKS"].update({"add_message": G.add_message, "finish": finish})
     methods["session.create"] = create
     methods["session.resume"] = resume
     methods["prompt.submit"] = submit
@@ -99,21 +100,23 @@ def resume_chat(params):
     return {"session_id": sid, "resumed": stored, "message_count": count, "messages": [], "messages_omitted": True,
             "info": {"model": "anthropic/claude-sonnet-4.6", "running": runtime["running"]},
             "inflight": None, "running": runtime["running"], "session_key": stored,
-            "status": "streaming" if runtime["running"] else "idle", "open_requests": B["open_requests"](sid)}
+            "status": "streaming" if runtime["running"] else "idle", "open_requests": B["open_requests"](sid),
+            "queued": {"user": runtime["queue"][0]["text"]} if runtime.get("queue") else None}
 
 
-def submit_chat(sid, runtime, text):
+def submit_chat(sid, runtime, text, queued=False):
     with B["LOCK"]:
-        if runtime["running"]:
-            raise B["RPCError"](4009, "session busy")
-        runtime["running"] = True
-        runtime["interrupt"] = False
-    threading.Thread(target=run_chat_turn, args=(sid, text), daemon=True).start()
+        busy = runtime["running"]
+    if busy:
+        return B["busy_submit"](sid, text, queued)
+    B["start_turn"](sid, text, run_chat_turn)
     return {"status": "streaming"}
 
 
 def config_set(params):
     key, value = params.get("key", ""), params.get("value", "")
+    if key == "busy" and value in ("queue", "steer", "interrupt"):
+        B["BUSY"]["mode"] = value  # display.busy_input_mode, for every client
     return {"key": key, "value": value, "scope": "session" if params.get("session_id") else "global"}
 
 
@@ -654,8 +657,13 @@ def take_steers(sid):
 
     def store(row):
         G.add_message(stored, "user", row["content"], display_kind="steer", display_content=row["display_content"])
-        emit(sid, "reasoning.delta", {"text": f" The person added: {row['display_content']}. I'll take that into account."})
+        B["RUNTIME"][sid].setdefault("read_steers", []).append(row["display_content"])
+
     B["deliver_steers"](sid, store)
+    if B["RUNTIME"][sid].get("read_steers"):
+        time.sleep(0.5)  # the next model request
+        for text in B["RUNTIME"][sid]["read_steers"][-1:]:
+            emit(sid, "reasoning.delta", {"text": f"The person added: {text}. I'll take that into account."})
 
 
 # ── Scripted turns ───────────────────────────────────────────────────────────
@@ -672,21 +680,24 @@ def stream(sid, text, chunk=7, delay=0.022):
     for i in range(0, len(text), chunk):
         if interrupted(sid):
             return False
+        B["check_redirect"](sid)  # a redirect cancels the model request that's writing
         emit(sid, "message.delta", {"text": text[i:i + chunk]})
         time.sleep(delay)
     return True
 
 
 def tool(sid, stored, name, args, seconds, *, context, result, result_text=None, extra=None):
-    take_steers(sid)
+    B["check_redirect"](sid)
     call = f"call_{uuid.uuid4().hex[:8]}"
     G.add_message(stored, "assistant", "", finish_reason="tool_calls",
                   tool_calls=[{"id": call, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}])
     emit(sid, "tool.start", {"tool_id": call, "name": name, "context": context, "args": args})
+    B["RUNTIME"][sid]["tool_running"] = True
     waited = 0.0
     while waited < seconds and not interrupted(sid):
         time.sleep(0.1)
         waited += 0.1
+    B["RUNTIME"][sid]["tool_running"] = False
     G.add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
     payload = {"tool_id": call, "name": name, "args": args, "duration_s": round(waited, 2), "result": result,
                "summary": None}
@@ -694,7 +705,12 @@ def tool(sid, stored, name, args, seconds, *, context, result, result_text=None,
         payload["result_text"] = result_text
     payload.update(extra or {})
     emit(sid, "tool.complete", payload)
-    return not interrupted(sid)
+    if interrupted(sid):
+        B["RUNTIME"][sid].pop("steers", None)  # Stop drops steers Hermes hasn't read
+        return False
+    # Hermes delivers a steer with the tool result; the model reads it on its next step.
+    take_steers(sid)
+    return True
 
 
 USAGE = {"model": "anthropic/claude-sonnet-4.6", "input": 18310, "output": 912, "reasoning": 240, "total": 19222,
@@ -716,6 +732,7 @@ def finish(sid, stored, text, *, status="complete", error=None, recoverable=None
     with B["LOCK"]:
         B["RUNTIME"][sid]["running"] = False
     emit(sid, "session.info", {"running": False, "model": "anthropic/claude-sonnet-4.6"})
+    B["after_turn"](sid, run_chat_turn)
 
 
 def title_later(sid, stored, text):
@@ -729,6 +746,46 @@ def title_later(sid, stored, text):
             title = session["title"]
         emit(sid, "session.title", {"title": title})
     threading.Timer(1.2, apply).start()
+
+
+def think(sid, pieces, seconds):
+    """A model request: reasoning streams in; a redirect cancels it (Hermes' active-turn redirect)."""
+    for piece in pieces:
+        B["check_redirect"](sid)
+        emit(sid, "reasoning.delta", {"text": piece})
+        time.sleep(seconds / len(pieces))
+    B["check_redirect"](sid)
+
+
+def run_snapshots_turn(sid, stored, lower):
+    """The follow-ups scenario (screens/iphone/follow-ups.elyx): list, then a long delete, so there's time
+    to steer, redirect, queue, ask aside or run something in the background."""
+    B["RUNTIME"][sid]["read_steers"] = []
+    for piece in ["Old snapshots are using the space. ", "I'll count them first."]:
+        emit(sid, "reasoning.delta", {"text": piece})
+        time.sleep(0.1)
+    listing = "ls -1 /volume1/@snapshots | wc -l"
+    if not tool(sid, stored, "terminal", {"command": listing}, 3.0, context=listing,
+                result=json.dumps({"output": "41 snapshots, 212 GB", "exit_code": 0})):
+        return finish(sid, stored, "", status="interrupted")
+    think(sid, ["41 snapshots, 212 GB. ", "Most are older than a month, ", "so those can go."], 2.4)
+    narration = "I'll delete everything older than 30 days."
+    stream(sid, narration)
+    emit(sid, "message.interim", {"text": narration, "already_streamed": True})
+    read = B["RUNTIME"][sid].get("read_steers") or []
+    week = any("week" in r.lower() for r in read)
+    delete = "find /volume1/@snapshots -mtime +30 ! -newer week-start -delete" if week else "find /volume1/@snapshots -mtime +30 -delete"
+    if not tool(sid, stored, "terminal", {"command": delete}, 9.0, context=delete,
+                result=json.dumps({"output": "removed 11 snapshots", "exit_code": 0})):
+        return finish(sid, stored, "", status="interrupted")
+    think(sid, ["Removed 11. ", "Let me sum up ", "what was freed."], 2.4)
+    read = B["RUNTIME"][sid].get("read_steers") or []
+    answer = "Done. Freed **42 GB**: removed 11 snapshots older than 30 days."
+    if read:
+        answer += " As you asked, I " + ("kept this week's snapshots." if any("week" in r.lower() for r in read) else f"took your note into account: {read[-1]}")
+    time.sleep(0.4)
+    stream(sid, answer)
+    return finish(sid, stored, answer)
 
 
 def run_chat_turn(sid, text):
@@ -751,6 +808,9 @@ def run_chat_turn(sid, text):
         time.sleep(0.4)
         return finish(sid, stored, "", status="error", recoverable=True,
                       error="The model provider returned 529: overloaded. Try again in a moment.")
+
+    if "snapshot" in lower:
+        return run_snapshots_turn(sid, stored, lower)
 
     for piece in ["They want a straight answer. ", "I'll check the facts ", "before replying."]:
         emit(sid, "reasoning.delta", {"text": piece})

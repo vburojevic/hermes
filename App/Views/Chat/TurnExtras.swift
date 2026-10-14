@@ -454,33 +454,6 @@ struct TurnNote: View {
     }
 }
 
-/// A message sent with Steer Now: the person's words, on their side, marked as steering the
-/// reply that was running (it continues below them).
-struct SteerBubble: View {
-    let text: String
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            Label("Steered", systemImage: "arrow.turn.down.right")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(Theme.tertiaryText)
-                .labelStyle(TightLabel())
-            Text(text)
-                .font(Theme.Typography.compactMessage)
-                .foregroundStyle(Theme.primaryText)
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline))
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.leading, 56)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("You steered: \(text)"))
-    }
-}
-
 /// What Hermes warned about during a turn, under the reply: each warning's first line, with any
 /// how-to-fix lines (Hermes' config instructions) behind a disclosure.
 struct TurnWarnings: View {

@@ -45,6 +45,12 @@ struct TranscriptView: View {
                     AsideCard(aside: aside) { conversation.dismissAside(aside) }
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
+                // Mid-turn messages not settled into the transcript yet: a steer carried to the
+                // next turn, a missed one, a background run.
+                ForEach(settlingFollowUps) { record in
+                    FollowUpRecordRow(record: record, conversation: conversation)
+                        .transition(.asymmetric(insertion: .opacity, removal: .opacity))
+                }
                 // While a turn runs the card is about an earlier one, and its Try Again can't act yet.
                 if let failure = conversation.turnError, !conversation.isWorking {
                     TurnErrorRow(
@@ -58,6 +64,7 @@ struct TranscriptView: View {
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: conversation.sentTurns)
             .animation(Theme.spring, value: conversation.asides)
+            .animation(.smooth(duration: 0.32), value: conversation.followUps)
             .animation(.smooth(duration: 0.3), value: conversation.turnError)
             .frame(maxWidth: Theme.readableWidth)
             .padding(.horizontal, 20)
@@ -128,6 +135,12 @@ struct TranscriptView: View {
         .opacity(settled ? 1 : 0)
     }
 
+    /// Steers still waiting in the running turn show inside it; the rest after the transcript.
+    private var settlingFollowUps: [FollowUpRecord] {
+        let liveID = conversation.live.map { $0.isFinished ? nil : $0.turn.id } ?? nil
+        return conversation.followUps.filter { !($0.state == .steerWaiting && $0.turnID == liveID && liveID != nil) }
+    }
+
     /// A row and the identity it's drawn under (`ConversationModel.displayID(for:)`).
     private struct DisplayRow {
         let key: String
@@ -181,7 +194,8 @@ struct TranscriptView: View {
 
     /// Changes whenever streamed content grows; cheap counters, no transcript rebuild.
     private var followToken: Int {
-        let base = conversation.items.count &* 31 &+ (conversation.pendingUser == nil ? 0 : 1) &+ conversation.liveSteers.count &* 131
+        let base = conversation.items.count &* 31 &+ (conversation.pendingUser == nil ? 0 : 1) &+ conversation.followUps.count &* 131
+            &+ conversation.redirectedParts.count &* 17 &+ (conversation.live?.turn.steers.count ?? 0) &* 257
         guard let live = conversation.live else { return base }
         return base &+ live.pendingText.count &+ live.turn.answer.count &+ live.turn.steps.count &* 7919
     }
@@ -191,7 +205,11 @@ struct TranscriptView: View {
         switch item {
         case .user(let entry):
             if entry.isSteer {
-                SteerBubble(text: entry.text)
+                FollowUpBubble(text: entry.text, caption: .steerRead(after: nil))
+            } else if let caption = conversation.caption(for: entry) {
+                CaptionedUserRow(caption: caption) {
+                    UserBubble(entry: entry, images: conversation.images(for: entry), conversation: conversation.isBotChat ? nil : conversation, reactions: conversation.reactions[entry.id] ?? [])
+                }
             } else if let sender = entry.sender {
                 AgentMessageRow(entry: entry, sender: sender, roster: workspace.roster)
             } else if let routine = entry.routineName {
@@ -204,11 +222,15 @@ struct TranscriptView: View {
         case .assistant(let turn):
             AssistantTurnView(
                 turn: turn,
-                steers: turn.id == conversation.live?.turn.id ? conversation.liveSteers : [],
+                pendingSteers: turn.id == conversation.live?.turn.id ? conversation.followUps.filter { $0.state == .steerWaiting && $0.turnID == turn.id } : [],
                 status: turn.isWorking ? conversation.liveStatus : nil,
                 isStopping: turn.isWorking && conversation.isStopping,
                 onBranch: branchAction(for: turn.id)
             )
+        case .notice(let notice) where notice.kind == "background-sent":
+            if let caption = FollowUpRecord(text: notice.text, state: .background(answer: ""), turnID: nil).caption {
+                FollowUpBubble(text: notice.text, caption: caption)
+            }
         case .notice(let notice) where notice.kind == "background":
             BackgroundCard(prompt: conversation.backgroundResults[notice.id]?.prompt ?? "", answer: conversation.backgroundResults[notice.id]?.answer ?? notice.text)
         case .notice(let notice) where notice.kind.hasPrefix("receipt:"):

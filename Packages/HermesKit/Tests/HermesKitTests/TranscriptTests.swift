@@ -114,29 +114,54 @@ struct TranscriptTests {
         #expect(turn.answer == "@news confirmed the change.")
     }
 
-    /// Steer Now: a `steer` row splits the reply where it landed and shows the person's words.
-    @Test func steerRowsSplitTheTurn() throws {
+    /// Steer: a `steer` row stays in the reply it landed in, read after the steps before it, and
+    /// shows the person's words.
+    @Test func steerRowsStayInTheirTurn() throws {
         let messages = try decode("""
         {"data":[
          {"id":1,"role":"user","content":"Check the disks"},
          {"id":2,"role":"assistant","content":"","tool_calls":[{"id":"c1","function":{"name":"terminal","arguments":"{}"}}]},
          {"id":3,"role":"tool","content":"ok","tool_call_id":"c1","tool_name":"terminal"},
          {"id":4,"role":"user","content":"[OUT-OF-BAND USER MESSAGE — a direct message]\\nOnly the NAS, please\\n[/OUT-OF-BAND USER MESSAGE]","display_kind":"steer","display_content":"Only the NAS, please"},
-         {"id":5,"role":"assistant","content":"The NAS is fine."},
-         {"id":6,"role":"user","content":"[OUT-OF-BAND USER MESSAGE — x]\\nAnd the router\\n[/OUT-OF-BAND USER MESSAGE]","display_kind":"steer"}
+         {"id":5,"role":"assistant","content":"","tool_calls":[{"id":"c2","function":{"name":"terminal","arguments":"{}"}}]},
+         {"id":6,"role":"tool","content":"ok","tool_call_id":"c2","tool_name":"terminal"},
+         {"id":7,"role":"user","content":"[OUT-OF-BAND USER MESSAGE — x]\\nAnd the router\\n[/OUT-OF-BAND USER MESSAGE]","display_kind":"steer"},
+         {"id":8,"role":"assistant","content":"The NAS is fine."}
         ]}
         """)
         let items = TranscriptBuilder.build(messages)
-        #expect(items.count == 5)
-        guard case .assistant(let first) = items[1], case .user(let steer) = items[2], case .assistant(let second) = items[3],
-              case .user(let bare) = items[4] else {
+        #expect(items.count == 2)
+        guard case .assistant(let turn) = items[1] else {
             Issue.record("unexpected \(items)")
             return
         }
-        #expect(first.steps.count == 1)
-        #expect(steer.isSteer && steer.text == "Only the NAS, please")
-        #expect(second.answer == "The NAS is fine.")
-        #expect(bare.isSteer && bare.text == "And the router")
+        #expect(turn.steps.count == 2)
+        #expect(turn.answer == "The NAS is fine.")
+        #expect(turn.steers.map(\.text) == ["Only the NAS, please", "And the router"])
+        #expect(turn.steers.map(\.afterStep) == [1, 2])
+        // A steer with no reply open (another client's history) is still the person's message.
+        let bare = TranscriptBuilder.build(try decode("""
+        {"data":[{"id":1,"role":"user","content":"[OUT-OF-BAND USER MESSAGE — x]\\nHi\\n[/OUT-OF-BAND USER MESSAGE]","display_kind":"steer"}]}
+        """))
+        guard case .user(let entry)? = bare.first else {
+            Issue.record("unexpected \(bare)")
+            return
+        }
+        #expect(entry.isSteer && entry.text == "Hi")
+    }
+
+    /// What the gateway did with a mid-turn message, and the message it holds for the next turn.
+    @Test func followUpStatuses() {
+        #expect(FollowUpStatus(result: JSONValue.parse(#"{"status":"queued","text":"x"}"#)) == .queued)
+        #expect(FollowUpStatus(result: JSONValue.parse(#"{"status":"redirected"}"#)) == .redirected)
+        #expect(FollowUpStatus(result: JSONValue.parse(#"{"status":"steered"}"#)) == .steered)
+        #expect(FollowUpStatus(result: JSONValue.parse(#"{"status":"rejected"}"#)) == .rejected)
+        #expect(FollowUpStatus(result: JSONValue.parse(#"{"status":"streaming"}"#)) == .streaming)
+        #expect(FollowUpStatus(result: JSONValue.parse(#"{"status":"weird"}"#)) == nil)
+        #expect(FollowUpStatus(result: nil) == nil)
+        #expect(GatewayQueue.queuedPrompt(in: JSONValue.parse(#"{"running":true,"queued":{"user":"Then check the NAS"}}"#)!) == "Then check the NAS")
+        #expect(GatewayQueue.queuedPrompt(in: JSONValue.parse(#"{"running":true}"#)!) == nil)
+        #expect(GatewayQueue.busyMode(in: JSONValue.parse(#"{"value":"steer"}"#)!) == "steer")
     }
 
     @Test func pairsByNameWhenIdsMissing() throws {

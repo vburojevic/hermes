@@ -128,6 +128,8 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
     public var warning: String?
     /// Several models answering at once (`moa.*`), then one combining them.
     public var models: ModelsProgress?
+    /// Notes the person steered this turn with, each where Hermes read it (`steerStep`).
+    public var steers: [SteerNote] = []
 
     public init(id: String, steps: [AssistantStep] = [], answer: String = "", state: State = .complete, startedAt: Date? = nil, finishedAt: Date? = nil) {
         self.id = id
@@ -160,6 +162,22 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
         return steps.compactMap { step in
             if case .narration(_, let text) = step { text } else { nil }
         }.joined(separator: "\n\n")
+    }
+}
+
+/// A message sent with Steer while the turn ran, and the step Hermes read it after.
+public struct SteerNote: Identifiable, Hashable, Sendable {
+    public var id: String
+    public var text: String
+    /// How many of the turn's steps came before it was read.
+    public var afterStep: Int
+    public var timestamp: Date?
+
+    public init(id: String, text: String, afterStep: Int, timestamp: Date? = nil) {
+        self.id = id
+        self.text = text
+        self.afterStep = afterStep
+        self.timestamp = timestamp
     }
 }
 
@@ -325,9 +343,16 @@ public enum TranscriptBuilder {
             case "user":
                 if kind == "hidden" { continue }
                 if kind == "steer" {
-                    // Steer Now lands mid-turn, after a tool result: the reply continues below it.
-                    closeTurn()
-                    items.append(.user(steerEntry(id: rowID, message: message)))
+                    // A steer lands mid-turn, after a tool result, and the same reply goes on: it
+                    // stays in that turn, read after the steps so far, as it showed live.
+                    let entry = steerEntry(id: rowID, message: message)
+                    flushText(asAnswer: false)
+                    if var current = turn {
+                        current.steers.append(SteerNote(id: rowID, text: entry.text, afterStep: current.steps.count, timestamp: message.timestamp))
+                        turn = current
+                    } else {
+                        items.append(.user(entry))
+                    }
                     continue
                 }
                 if let kind = kind ?? untaggedNoticeKind(message.content.text), noticeKinds.contains(kind) {

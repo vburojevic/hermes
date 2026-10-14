@@ -32,7 +32,9 @@ struct ComposerQuery: Equatable {
 
 /// A key the composer handles before the text does.
 enum ComposerKey {
-    case send, newline, up, down, tab, escape
+    /// Return. ⌥Return is `sendNext` and ⌘Return `redirect` (docs/follow-ups.md §1); the composer
+    /// treats them as a new line and Send when no turn runs.
+    case send, newline, sendNext, redirect, up, down, tab, escape
 }
 
 /// A pill the person long-pressed (hovered on the Mac): what it is and where, in the field's
@@ -177,7 +179,8 @@ final class PillUITextView: UITextView {
         var commands = [
             UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(returnKey)),
             UIKeyCommand(input: "\r", modifierFlags: .shift, action: #selector(newlineKey)),
-            UIKeyCommand(input: "\r", modifierFlags: .alternate, action: #selector(newlineKey)),
+            UIKeyCommand(input: "\r", modifierFlags: .alternate, action: #selector(sendNextKey)),
+            UIKeyCommand(input: "\r", modifierFlags: .command, action: #selector(redirectKey)),
         ]
         if menuOpen {
             commands += [
@@ -197,6 +200,14 @@ final class PillUITextView: UITextView {
 
     @objc private func newlineKey() {
         if onKey?(.newline) != true { insertText("\n") }
+    }
+
+    @objc private func sendNextKey() {
+        if onKey?(.sendNext) != true { insertText("\n") }
+    }
+
+    @objc private func redirectKey() {
+        _ = onKey?(.redirect)
     }
 
     @objc private func upKey() { _ = onKey?(.up) }
@@ -283,6 +294,16 @@ final class PillNSTextView: NSTextView {
     override func layout() {
         super.layout()
         onLayout?()
+    }
+
+    /// ⌘Return while a turn runs redirects it (docs/follow-ups.md §1).
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self, event.charactersIgnoringModifiers == "\r",
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           onKey?(.redirect) == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func becomeFirstResponder() -> Bool {
@@ -1103,7 +1124,8 @@ extension PillTextView.Coordinator: NSTextViewDelegate {
         case #selector(NSResponder.insertNewline(_:)):
             return parent.onKey(shift ? .newline : .send)
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-            return parent.onKey(.newline)
+            return parent.onKey(.sendNext) // ⌥Return
+
         case #selector(NSResponder.moveUp(_:)):
             return parent.menuOpen && parent.onKey(.up)
         case #selector(NSResponder.moveDown(_:)):

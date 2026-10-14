@@ -65,6 +65,7 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Show agent steps while working", isOn: $expandAgentActivity)
+                    FollowUpDefaultPicker()
                     Toggle("Show usage under replies", isOn: $showUsage)
                     Toggle("Send with Return", isOn: $sendWithReturn)
                     #if os(iOS)

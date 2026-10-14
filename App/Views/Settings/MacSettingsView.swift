@@ -243,6 +243,7 @@ private struct ChatPane: View {
                     Text("Show agent steps while working")
                     Text("Tool calls and thinking appear in the transcript as they happen.")
                 }
+                FollowUpDefaultPicker()
             }
             Section {
                 Toggle(isOn: $sendWithReturn) {
