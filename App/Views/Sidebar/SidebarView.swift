@@ -294,7 +294,9 @@ struct SidebarView: View {
             ) {
                 router?.sheet = .editGateway(workspace.bot)
             }
-        case .failed:
+        case .failed where !roster.hasLoaded:
+            // With Bots already listed the footer says "offline" and the chat a banner; drawing
+            // this over the rows only hid them.
             SidebarState(
                 symbol: "wifi.slash",
                 title: String(localized: "Bots are offline"),
@@ -303,6 +305,8 @@ struct SidebarView: View {
             ) {
                 Task { await roster.reconnectNow() }
             }
+        case .failed:
+            EmptyView()
         case .online:
             if roster.hasLoaded, roster.profiles.isEmpty {
                 SidebarState(
@@ -607,7 +611,7 @@ struct ConnectionStatusLabel: View {
             Text(version.map { String(localized: "Connected · Hermes \($0)") } ?? String(localized: "Connected"))
         case .connecting, .idle:
             StatusDot(color: Theme.warning)
-            Text("Connecting…")
+            Text(roster.hasLoaded ? "Reconnecting…" : "Connecting…")
         case .signInRequired:
             StatusDot(color: Theme.warning)
             Text("Sign-in needed")

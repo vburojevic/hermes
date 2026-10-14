@@ -31,7 +31,8 @@ struct TranscriptView: View {
                     AsideCard(aside: aside) { conversation.dismissAside(aside) }
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                if let failure = conversation.turnError {
+                // While a turn runs the card is about an earlier one, and its Try Again can't act yet.
+                if let failure = conversation.turnError, !conversation.isWorking {
                     TurnErrorRow(
                         failure: failure,
                         retry: conversation.retryLastMessage,

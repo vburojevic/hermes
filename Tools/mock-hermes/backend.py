@@ -24,6 +24,7 @@ import hashlib
 import json
 import re
 import secrets
+import socket
 import struct
 import threading
 import time
@@ -50,6 +51,7 @@ RUNTIME = {}       # runtime sid -> {stored, profile, running, interrupt, seq, r
 CRON = {}          # profile -> {job_id: job}
 PENDING = {}       # srq id -> {"event": Event, "result": dict | None, "sid": str}
 CLIENTS = set()    # connected WebSocket peers
+DROP = {"settle": 0, "refuse_until": 0.0}  # /api/mock/drop-sockets: resumes answered 4009, sockets refused
 TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
 
@@ -288,6 +290,14 @@ class Peer:
             except OSError:
                 pass
             self.alive = False
+
+    def cut(self):
+        """Drops the TCP connection without a close frame, like a network that went away."""
+        self.alive = False
+        try:
+            self.handler.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
 
     def recv(self):
         """One complete message as text, or None when the peer closed."""
@@ -731,6 +741,9 @@ def method_session_resume(params):
             raise RPCError(4007, "session not found")
         sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored), None) or new_runtime(stored, profile)
         runtime = RUNTIME[sid]
+        if DROP["settle"] > 0 and runtime["running"]:
+            DROP["settle"] -= 1
+            raise RPCError(4009, "session disconnect interrupt settling")
         omit = bool(params.get("omit_messages"))
         return {"session_id": sid, "resumed": stored, "message_count": len(session["messages"]),
                 "messages": [] if omit else session["messages"], "messages_omitted": omit,
@@ -959,6 +972,17 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 TICKETS[ticket] = time.time() + 30
             return self.send_json(200, {"ticket": ticket, "ttl_seconds": 30})
+        if url.path == "/api/mock/drop-sockets":
+            # Mock-only: the network blips. Every socket drops mid-whatever (turns keep running), the next
+            # `settle` resumes of a running chat answer 4009 like Hermes' client-gone settling window, and
+            # new sockets are cut for `outage` seconds.
+            with LOCK:
+                peers = list(CLIENTS)
+                DROP["settle"] = int(body.get("settle") or 0)
+                DROP["refuse_until"] = time.time() + float(body.get("outage") or 0)
+            for peer in peers:
+                peer.cut()
+            return self.send_json(200, {"ok": True, "dropped": len(peers)})
         if url.path == "/api/mock/message-agent":
             # Mock-only: another Bot's `message_agent`, delivered off-socket like Hermes' one-shot CLI.
             if body.get("from") not in PROFILES or body.get("to") not in PROFILES:
@@ -991,6 +1015,8 @@ class Handler(BaseHTTPRequestHandler):
         peer = Peer(self)
         if not authorized:
             return peer.close(4401, "unauthorized")
+        if time.time() < DROP["refuse_until"]:
+            return peer.cut()
         with LOCK:
             CLIENTS.add(peer)
         peer.send({"jsonrpc": "2.0", "method": "event", "params": {

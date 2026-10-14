@@ -140,6 +140,8 @@ public actor GatewaySocket {
     private var isReady = false
     private var nextID = 0
     private var lastInbound = Date()
+    /// The backend answers `gateway.ping` (it said `heartbeat` in `gateway.ready`).
+    private var serverHeartbeat = false
     public private(set) var isOpen = false
     /// Identifies the backend process; a change means event watermarks are void.
     public private(set) var replayEpoch: String?
@@ -316,9 +318,8 @@ public actor GatewaySocket {
         case .event(let event):
             if event.type == "gateway.ready" {
                 replayEpoch = event.payload["replay_epoch"]?.stringValue
-                if event.payload["heartbeat"]?.boolValue == true {
-                    startHeartbeat()
-                }
+                serverHeartbeat = event.payload["heartbeat"]?.boolValue == true
+                startHeartbeat()
                 isReady = true
                 readyContinuation?.resume()
                 readyContinuation = nil
@@ -341,12 +342,16 @@ public actor GatewaySocket {
         }
     }
 
+    /// Keeps the link proven: a quiet socket is pinged every 10 s, and one that has heard nothing
+    /// for 30 s is closed so the roster reconnects, instead of waiting on a connection a network
+    /// change or a sleep already killed. Uses `gateway.ping` when the backend offers it (it also
+    /// keeps the backend's side of the session alive), else a WebSocket ping.
     private func startHeartbeat() {
         heartbeatTask?.cancel()
         heartbeatTask = Task { [weak self] in
             var beat = 0
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(for: .seconds(Self.heartbeatInterval))
                 guard let self, !Task.isCancelled else { return }
                 beat += 1
                 if await self.isStale() {
@@ -355,20 +360,60 @@ public actor GatewaySocket {
                 }
                 // Recent traffic (a roster poll, a streaming turn) already proves the link.
                 guard await self.isQuiet() else { continue }
-                await self.sendRaw(.object([
-                    "jsonrpc": .string("2.0"), "id": .string("heartbeat-\(beat)"),
-                    "method": .string("gateway.ping"), "params": .object([:]),
-                ]))
+                await self.ping(beat: beat)
             }
         }
     }
 
+    static let heartbeatInterval: Double = 10
+    static let staleAfter: Double = 30
+
+    private func ping(beat: Int) async {
+        if serverHeartbeat {
+            await sendRaw(.object([
+                "jsonrpc": .string("2.0"), "id": .string("heartbeat-\(beat)"),
+                "method": .string("gateway.ping"), "params": .object([:]),
+            ]))
+        } else if let task {
+            task.sendPing { [weak self] error in
+                guard error == nil else { return }
+                Task { await self?.heard() }
+            }
+        }
+    }
+
+    private func heard() {
+        lastInbound = .now
+    }
+
+    /// Whether the link answers right now: a WebSocket ping that must come back within `timeout`.
+    /// After a wake or a network change a socket can look open long after its connection died;
+    /// a failed probe closes it, so whoever reads `messages()` sees the close and reconnects.
+    public func probe(timeout: Duration = .seconds(4)) async -> Bool {
+        guard let task, isOpen else { return false }
+        let answered = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let once = ResumeOnce(continuation)
+            task.sendPing { error in once.resume(error == nil) }
+            Task {
+                try? await Task.sleep(for: timeout)
+                once.resume(false)
+            }
+        }
+        guard self.task === task else { return false }
+        if answered {
+            lastInbound = .now
+        } else {
+            shutdown(error: Failure.closed("Lost the connection to the Hermes backend."))
+        }
+        return answered
+    }
+
     private func isQuiet() -> Bool {
-        Date().timeIntervalSince(lastInbound) >= 14
+        Date().timeIntervalSince(lastInbound) >= Self.heartbeatInterval - 1
     }
 
     private func isStale() -> Bool {
-        Date().timeIntervalSince(lastInbound) > 45
+        Date().timeIntervalSince(lastInbound) > Self.staleAfter
     }
 
     private func shutdown(error: (any Error)?) {
@@ -392,5 +437,23 @@ public actor GatewaySocket {
             subscriber.finish()
         }
         subscribers.removeAll()
+    }
+}
+
+/// Resumes a continuation once, whichever of a ping's answer and its deadline comes first.
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ value: Bool) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: value)
     }
 }

@@ -143,7 +143,13 @@ final class ConversationModel: Identifiable {
     // Requests (docs/quick-actions.md)
 
     /// What Hermes is waiting on besides approvals, oldest first; one card shows at a time.
-    private(set) var requests: [HermesRequest] = []
+    private(set) var requests: [HermesRequest] = [] {
+        didSet {
+            #if HERMES_PUSH
+            PushCenter.shared.conversation(self, requests: requests, old: oldValue)
+            #endif
+        }
+    }
     /// Approvals behind the one on the card (several commands at once).
     private(set) var waitingApprovals: [ApprovalRequest] = []
     /// Live states from `connection.update`, by op id then target name.
@@ -209,6 +215,9 @@ final class ConversationModel: Identifiable {
     private(set) var isBotTurnOpen = false
     /// Events that arrive while catching up after a reconnect wait here.
     @ObservationIgnored private var catchUpBuffer: [GatewayEvent]?
+    /// The re-attach after a reconnect, and the runtime id it can replay missed events from.
+    @ObservationIgnored private var reattachTask: Task<Void, Never>?
+    @ObservationIgnored private var replayRuntime: String?
     /// The newest event applied for the current runtime id (event seqs only grow).
     @ObservationIgnored private var lastAppliedSeq: Int?
     @ObservationIgnored private var turnTask: Task<Void, Never>?
@@ -309,9 +318,19 @@ final class ConversationModel: Identifiable {
         let empty = items.isEmpty && pendingUser == nil && live == nil
         if empty != isEmpty { isEmpty = empty }
         let working = live.map { !$0.isFinished } ?? false
-        if working != isWorking { isWorking = working }
+        if working != isWorking {
+            isWorking = working
+            #if HERMES_PUSH
+            PushCenter.shared.conversation(self, working: working)
+            #endif
+        }
         let approval = live?.approval
-        if approval != pendingApproval { pendingApproval = approval }
+        if approval != pendingApproval {
+            #if HERMES_PUSH
+            PushCenter.shared.conversation(self, approval: approval, replacing: pendingApproval)
+            #endif
+            pendingApproval = approval
+        }
         let status = connectionNote ?? live?.status
         if status != liveStatus { liveStatus = status }
     }
@@ -1439,6 +1458,7 @@ final class ConversationModel: Identifiable {
     func cancelAll() {
         turnTask?.cancel()
         loadTask?.cancel()
+        reattachTask?.cancel()
         subscription?.cancel()
         backoff?.cancel()
         settleFallback?.cancel()
@@ -1471,7 +1491,10 @@ extension ConversationModel {
         guard let roster, let botName else { return }
         loadTask?.cancel()
         if items.isEmpty { loadState = .loading }
-        guard roster.isConnected else { return } // the roster calls back once it's online
+        guard roster.isConnected else {
+            roster.retryNow() // Reload means now, not after the backoff; the roster calls back once online
+            return
+        }
         loadTask = Task {
             do {
                 let stored = try await roster.resolveBotChat(botName)
@@ -2073,6 +2096,8 @@ extension ConversationModel {
     }
 
     private func beginRemoteTurn() {
+        // A turn running on the gateway answers "how did it end?": an uncertain-outcome card is moot.
+        if turnError?.canRetry == false { turnError = nil }
         live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
         isRemoteTurn = true
         isBotTurnOpen = true
@@ -2143,13 +2168,18 @@ extension ConversationModel {
             break
         }
         guard sessionID != nil else { return }
-        let previous = runtimeSessionID
+        // A second drop mid re-attach keeps the first runtime id: that's the one with our events.
+        let previous = runtimeSessionID ?? replayRuntime
+        replayRuntime = previous
         let lastSeq = lastAppliedSeq
         runtimeSessionID = nil
         // Hold live events until the missed ones have been replayed, then apply both in order.
         catchUpBuffer = []
-        Task {
-            let running = await attachGatewayChat()
+        reattachTask?.cancel()
+        reattachTask = Task {
+            let running = await attachRetrying()
+            guard !Task.isCancelled else { return }
+            replayRuntime = nil
             var frames: [GatewayEvent] = []
             if live != nil, let roster = gatewayRoster, let runtime = runtimeSessionID, runtime == previous,
                let result = try? await roster.request("session.events.since", [
@@ -2173,13 +2203,33 @@ extension ConversationModel {
                 receive(event)
             }
             if running == nil, isWorking {
-                // Couldn't re-attach: this turn's outcome is on the server; show what we have.
-                live?.markFailed(String(localized: "Lost the connection to this chat. Reload to see how it ended."))
+                // Half a minute of refusals: the turn's outcome is on the gateway. Sending the
+                // message again could run it twice, so the card offers a reload, not a retry.
+                failureIsRetryable = false
+                live?.markFailed(String(localized: "Couldn't reconnect to this chat. Reload to see how it ended."))
                 settle()
             } else if running == false, isWorking {
                 settle()
             }
         }
+    }
+
+    /// `session.resume`, retried while a turn is open. Right after a drop Hermes is often still
+    /// settling the old connection ("session disconnect interrupt settling", "retry resume") while
+    /// the turn keeps running, so one refusal says nothing about the turn. Idle chats attach again
+    /// with their next message.
+    private func attachRetrying() async -> Bool? {
+        var delay = 0.5
+        for attempt in 0..<8 {
+            if attempt > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+                delay = min(delay * 2, 8)
+            }
+            guard !Task.isCancelled, gatewayRoster?.isConnected == true else { return nil }
+            if let running = await attachGatewayChat() { return running }
+            guard live != nil else { return nil }
+        }
+        return nil
     }
 
     /// The roster changed: pick up messages that arrived while nothing streamed here

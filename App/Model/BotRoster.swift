@@ -1,5 +1,6 @@
 import Foundation
 import HermesKit
+import Network
 import Observation
 
 /// Bot Mode for one gateway: the roster of Bots on its Hermes backend (`hermes serve`),
@@ -85,10 +86,15 @@ final class BotRoster {
     @ObservationIgnored private var reconnectAttempts = 0
     @ObservationIgnored private var connectGeneration = 0
     @ObservationIgnored private var connectedAt: Date?
+    /// When a working connection dropped: the first moments after that are "Reconnecting…", not "offline".
+    @ObservationIgnored private var droppedAt: Date?
     @ObservationIgnored private var version: String?
     @ObservationIgnored private var isTornDown = false
     /// The app is in the background: no polling, no reconnect loop.
     @ObservationIgnored private var isInBackground = false
+    /// Watches the device's network so a new or returning route reconnects at once.
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
+    @ObservationIgnored private var pathSignature: String?
     @ObservationIgnored weak var workspace: BotWorkspace?
 
     /// The gateway's hosted group chats.
@@ -183,7 +189,51 @@ final class BotRoster {
 
     func connectIfNeeded() {
         guard !isTornDown, socket == nil, connectTask == nil else { return }
+        watchNetwork()
         startConnect()
+    }
+
+    /// Connect now, skipping any backoff wait: the person asked (Retry, Reload), or the
+    /// network just came back.
+    func retryNow() {
+        guard !isTornDown, !isInBackground, socket == nil else { return }
+        reconnectAttempts = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        if connectTask == nil { startConnect() }
+    }
+
+    private func watchNetwork() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            // Wi-Fi ↔ cellular, a VPN or Tailscale coming up: each is a different route.
+            let signature = path.status == .satisfied
+                ? "up:" + path.availableInterfaces.map { "\($0.type)-\($0.name)" }.joined(separator: ",")
+                : "down"
+            Task { @MainActor in self?.networkChanged(signature) }
+        }
+        monitor.start(queue: DispatchQueue(label: "hermes.roster.network", qos: .utility))
+        pathMonitor = monitor
+    }
+
+    /// The route changed. Without a socket, connect at once; with one, prove it still works:
+    /// a socket opened over the old route usually dies without a close and would otherwise
+    /// look healthy until the heartbeat gives up on it.
+    private func networkChanged(_ signature: String) {
+        defer { pathSignature = signature }
+        guard let previous = pathSignature, previous != signature, signature != "down" else { return }
+        guard !isTornDown, !isInBackground else { return }
+        if let socket {
+            reconnectAttempts = 0
+            Task { _ = await socket.probe(timeout: .seconds(3)) }
+        } else {
+            reconnectAttempts = 0
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            // An attempt started on the dead route can hang until it times out; start over.
+            startConnect()
+        }
     }
 
     /// One tracked connect at a time; a superseded attempt discards what it opened.
@@ -222,6 +272,7 @@ final class BotRoster {
             self.socket = socket
             version = status.version
             connectedAt = .now
+            droppedAt = nil
             state = .online(version: status.version)
             startPump(socket)
             await refresh()
@@ -279,15 +330,28 @@ final class BotRoster {
             state = .signInRequired(reason)
             return
         }
-        state = .failed(Self.describe(error))
+        // A blip (a tunnel, a Wi-Fi handover, a backend restart) usually heals in seconds: keep
+        // saying "Reconnecting…" for a while before calling the Bots offline.
+        if hasLoaded, let droppedAt, Date.now.timeIntervalSince(droppedAt) < Self.reconnectGrace {
+            state = .connecting
+        } else {
+            state = .failed(Self.describe(error))
+        }
         scheduleReconnect()
     }
+
+    static let reconnectGrace: TimeInterval = 20
 
     nonisolated static func describe(_ error: any Error) -> String {
         if let error = error as? HermesError { return error.errorDescription ?? "" }
         if let error = error as? any LocalizedError, let description = error.errorDescription { return description }
         if let error = error as? URLError {
             return HermesError.from(urlError: error, host: "the Hermes backend").errorDescription ?? error.localizedDescription
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain || nsError.domain == "kNWErrorDomainPOSIX" {
+            // "Socket is not connected", "Connection reset by peer": the network, not Hermes.
+            return String(localized: "Can't reach the Hermes backend right now.")
         }
         return error.localizedDescription
     }
@@ -296,7 +360,9 @@ final class BotRoster {
         guard !isTornDown, !isInBackground else { return }
         reconnectTask?.cancel()
         reconnectAttempts += 1
-        let delay = min(30, pow(2, Double(min(reconnectAttempts, 5))))
+        // 0.5, 1, 2, 4, 8, then every 15 s, with jitter so devices don't reconnect in lockstep.
+        let base = min(15, 0.5 * pow(2, Double(min(reconnectAttempts - 1, 5))))
+        let delay = base * Double.random(in: 0.8...1.2)
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
@@ -347,6 +413,8 @@ final class BotRoster {
 
     func tearDown() {
         isTornDown = true
+        pathMonitor?.cancel()
+        pathMonitor = nil
         disconnect()
         conversations.values.forEach { $0.cancelAll() }
         for chat in gatewayChats.values.compactMap(\.value) { chat.botChatConnectionLost() }
@@ -373,17 +441,18 @@ final class BotRoster {
     func didBecomeActive() {
         guard !isTornDown else { return }
         isInBackground = false
+        reconnectAttempts = 0
         if let socket {
             Task {
-                if await socket.isOpen {
+                // A ping, not the socket's own idea of being open: after a suspension it often isn't.
+                if await socket.probe(timeout: .seconds(3)) {
                     await refresh()
                     if self.pollTask == nil, self.socket === socket { self.startPolling() }
-                } else {
-                    self.socketClosed(nil, socket: socket)
                 }
+                // A failed probe closes the socket; the pump sees it and reconnects.
             }
         } else {
-            connectIfNeeded()
+            retryNow()
         }
     }
 
@@ -446,6 +515,7 @@ final class BotRoster {
     private func socketClosed(_ error: (any Error)?, socket closed: GatewaySocket) {
         guard socket === closed else { return }
         socket = nil
+        droppedAt = .now
         pumpTask?.cancel()
         pollTask?.cancel()
         photoTasks.values.forEach { $0.cancel() }
