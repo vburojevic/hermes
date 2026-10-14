@@ -11,7 +11,7 @@ REPO="vburojevic/hermes-app-push"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 gh repo clone "$REPO" "$WORK/repo" -- --quiet
-rsync -a --delete --exclude .git --exclude __pycache__ --exclude '*.pyc' Tools/hermes-app-push/ "$WORK/repo/"
+rsync -a --delete --exclude .git --exclude .claude --exclude .pytest_cache --exclude __pycache__ --exclude '*.pyc' Tools/hermes-app-push/ "$WORK/repo/"
 cd "$WORK/repo"
 git add -A
 if git diff --cached --quiet; then

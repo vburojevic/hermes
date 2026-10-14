@@ -36,8 +36,15 @@ done
 TEAM_ID="29ZNGBT83H"
 BUNDLE_ID="co.caffeinatedcode.hermes"
 ASC_APP_ID="6822000332"
-IOS_PROFILE_ID="XLZJR6NKAK"            # "Hermes App Store", on Distribution P6CMUV82AA
-IOS_PROFILE_NAME="Hermes App Store"
+APP_GROUP="group.co.caffeinatedcode.hermes"
+# App Store profiles on Distribution P6CMUV82AA, by bundle id: the app and its push extensions
+# (docs/notifications.md). The iOS archive signs with them by hand (project.yml, Release).
+IOS_PROFILES=(
+  "$BUNDLE_ID|Hermes App Store"
+  "$BUNDLE_ID.NotificationService|Hermes Notifications App Store"
+  "$BUNDLE_ID.NotificationContent|Hermes Requests App Store"
+  "$BUNDLE_ID.Widgets|Hermes Widgets App Store"
+)
 INFISICAL_PROJECT="2afda67b-d54c-4256-808e-a6027fc22c15"
 ESCROW="/shared/apple/signing-caf73-20261005-e4rd77v8r4"
 ASC_KEY_ID="8BNZ87QD3D"
@@ -141,9 +148,13 @@ echo "Apple Distribution $DIST_SHA · Developer ID $DEVID_SHA (team $TEAM_ID)"
 
 archive() { # <iOS|macOS>
   log "archive $1"
+  # iOS keeps project.yml's manual App Store signing (push needs the production aps-environment);
+  # the Mac archive signs automatically and is re-signed for Developer ID below.
+  local style=()
+  [ "$1" = macOS ] && style=(CODE_SIGN_STYLE=Automatic)
   xcodebuild archive -project Hermes.xcodeproj -scheme Hermes -configuration Release \
     -destination "generic/platform=$1" -archivePath "$OUT/Hermes-$1.xcarchive" \
-    -allowProvisioningUpdates "${AUTH[@]}" DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
+    -allowProvisioningUpdates "${AUTH[@]}" DEVELOPMENT_TEAM="$TEAM_ID" ${style[@]+"${style[@]}"} \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" > "$OUT/archive-$1.log" 2>&1 \
     || { grep -E "error:" "$OUT/archive-$1.log" | head -20; exit 1; }
 }
@@ -156,15 +167,25 @@ assert_release_app() { # <Info.plist> <binary> — the real app, never the demo 
 
 # --- iOS → TestFlight ----------------------------------------------------------------------------
 if [ $IOS = 1 ]; then
+  log "App Store profiles"
+  mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+  PROFILE_MAP=""
+  for entry in "${IOS_PROFILES[@]}"; do
+    bundle="${entry%%|*}" name="${entry#*|}"
+    id="$("${ASC[@]}" profiles list --name "$name" --profile-state ACTIVE --fields name --output json \
+      | jq -r --arg name "$name" '[.data[] | select(.attributes.name == $name)] | if length == 1 then .[0].id else empty end')"
+    [ -n "$id" ] || { echo "no single active profile named \"$name\""; exit 1; }
+    profile="$WORK/$id.mobileprovision"
+    "${ASC[@]}" profiles download --id "$id" --output "$profile" >/dev/null
+    uuid="$(security cms -D -i "$profile" | plutil -extract UUID raw -o - -)"
+    cp "$profile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
+    PROFILE_MAP+="<key>$bundle</key><string>$name</string>"
+    echo "$name ($id) → $bundle"
+  done
+
   archive iOS
   APP="$OUT/Hermes-iOS.xcarchive/Products/Applications/Hermes.app"
   assert_release_app "$APP/Info.plist" "$APP/Hermes"
-
-  PROFILE="$WORK/hermes-app-store.mobileprovision"
-  "${ASC[@]}" profiles download --id "$IOS_PROFILE_ID" --output "$PROFILE" >/dev/null
-  PROFILE_UUID="$(security cms -D -i "$PROFILE" | plutil -extract UUID raw -o - -)"
-  mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
-  cp "$PROFILE" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
   ios_options() { # <export|upload>
     cat > "$OUT/ExportOptions-iOS-$1.plist" <<EOF
@@ -176,7 +197,7 @@ if [ $IOS = 1 ]; then
   <key>teamID</key><string>$TEAM_ID</string>
   <key>signingStyle</key><string>manual</string>
   <key>signingCertificate</key><string>$DIST_SHA</string>
-  <key>provisioningProfiles</key><dict><key>$BUNDLE_ID</key><string>$IOS_PROFILE_NAME</string></dict>
+  <key>provisioningProfiles</key><dict>$PROFILE_MAP</dict>
   <key>uploadSymbols</key><true/>
   <key>manageAppVersionAndBuildNumber</key><false/>
 </dict></plist>
@@ -188,6 +209,26 @@ EOF
     -exportOptionsPlist "$OUT/ExportOptions-iOS-export.plist" "${AUTH[@]}" > "$OUT/export-iOS.log" 2>&1 \
     || { grep -E "error" "$OUT/export-iOS.log" | head -20; exit 1; }
   IPA="$(ls "$OUT"/ios/*.ipa)"
+  # Push only works if the signed entitlements say so: production APNs, Time Sensitive and
+  # communication notifications, and the App Group the extensions share with the app.
+  unzip -q "$IPA" -d "$WORK/ipa"
+  entitlement() { # <bundle> <key path>
+    codesign -d --entitlements - --xml "$1" 2>/dev/null > "$WORK/entitlements.plist"
+    /usr/libexec/PlistBuddy -c "Print :$2" "$WORK/entitlements.plist" 2>/dev/null || true
+  }
+  expect() { # <bundle> <key path> <value>
+    [ "$(entitlement "$1" "$2")" = "$3" ] || { echo "$(basename "$1"): $2 isn't $3"; exit 1; }
+  }
+  PAYLOAD="$WORK/ipa/Payload/Hermes.app"
+  expect "$PAYLOAD" aps-environment production
+  expect "$PAYLOAD" com.apple.developer.usernotifications.time-sensitive true
+  expect "$PAYLOAD" com.apple.developer.usernotifications.communication true
+  for bundle in "$PAYLOAD" "$PAYLOAD"/PlugIns/*.appex; do
+    expect "$bundle" com.apple.security.application-groups:0 "$APP_GROUP"
+    expect "$bundle" keychain-access-groups:0 "$TEAM_ID.$BUNDLE_ID.push"
+  done
+  [ "$(ls -d "$PAYLOAD"/PlugIns/*.appex | wc -l | tr -d ' ')" = 3 ] || { echo "expected 3 extensions"; exit 1; }
+  echo "push entitlements ok (app + 3 extensions)"
   # altool finds the key only under ./private_keys.
   mkdir -p "$WORK/private_keys" && cp "$ASC_KEY_PATH" "$WORK/private_keys/"
   (cd "$WORK" && xcrun altool --validate-app -f "$IPA" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format json > "$OUT/validate-iOS.json" 2>&1) \

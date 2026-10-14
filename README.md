@@ -61,7 +61,7 @@ sign-in; cookies never do, and a password-gated backend asks for its password on
 device. Loopback addresses (`127.0.0.1`) can't pair: use the machine's Tailscale or network
 address, e.g. Tailscale Serve's `https://<mac>.<tailnet>.ts.net:8642`.
 
-## Push notifications (in review)
+## Push notifications
 
 Approvals, questions, password prompts, finished replies, scheduled tasks, Kanban cards and Bot messages
 reach the iPhone and iPad when Hermes isn't on screen, plus a Live Activity for long turns. Hermes Agent
@@ -74,9 +74,10 @@ gateway plugin (Tools/hermes-app-push, public: vburojevic/hermes-app-push)
 ```
 
 - App side: `Push/` (app layer, extensions, widget) and `Packages/HermesKit/Sources/HermesPush` (crypto,
-  notices, categories, Live Activity state). Until review it builds only from `project-push.yml`
-  (`xcodegen generate --spec project-push.yml` → `HermesPush.xcodeproj`); existing app files carry
-  `HERMES_PUSH`-guarded hooks, so the shipping `project.yml` build is unchanged.
+  notices, categories, Live Activity state). The iPhone and iPad app embeds three extensions (service,
+  content, widget) sharing the App Group `group.co.caffeinatedcode.hermes` (`.dev` for Hermes Dev); iOS
+  releases sign them by hand with four App Store profiles (`Scripts/release.sh`). The Mac uses local
+  notifications only.
 - Set up a gateway: `hermes plugins install vburojevic/hermes-app-push --enable`, then restart it; or
   Settings → Notifications → Set Up… → Ask Hermes to Set It Up.
 - Try it with the mock: `python3 Tools/mock-hermes/backend.py --port 19119 --gateway-port 18642

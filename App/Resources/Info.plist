@@ -34,5 +34,22 @@
 	<string>$(HERMES_SPARKLE_PUBLIC_KEY)</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<!-- Push notifications (docs/notifications.md): wake for withdrawals, Bot messages as
+	     communication notifications, Live Activities, and the group and Keychain group the
+	     extensions share (values from build settings in project.yml). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>HermesAppGroup</key>
+	<string>$(HERMES_APP_GROUP)</string>
+	<key>HermesKeychainGroup</key>
+	<string>$(HERMES_KEYCHAIN_PREFIX)$(HERMES_KEYCHAIN_GROUP)</string>
 </dict>
 </plist>

@@ -125,7 +125,7 @@ enum PushResponder {
         if notice.isExpired() { throw Failure.expired }
         let (workspace, _) = try gateway(for: notice, center: center)
         let session = notice.answer?.sessionID ?? notice.chatID ?? ""
-        try await withSocket(workspace) { request in
+        _ = try await withSocket(workspace) { request in
             var resume: [String: JSONValue] = ["session_id": .string(session), "omit_messages": .bool(true)]
             if let profile = notice.profile { resume["profile"] = .string(profile) }
             let snapshot = try await request("session.resume", resume)
