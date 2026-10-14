@@ -135,8 +135,35 @@ class Push:
             raise PushError("state must be foreground, running or away")
         live = args.get("live")
         live = [str(s)[:120] for s in live if s][:200] if isinstance(live, list) else None
-        self.store.set_presence(device_id, state, str(args.get("session_id") or "") or None, live)
+        session = str(args.get("session_id") or "") or None
+        self.store.set_presence(device_id, state, session, live)
+        self._release_held(device_id, state, session, live)
         return {"ok": True, "open": len(self.store.open_requests())}
+
+    def _release_held(self, device_id: str, state: str, session: str | None, live: list | None) -> None:
+        """Requests held back because their chat was on screen go out once it isn't (the person left)."""
+        released = []
+
+        def change(data: dict) -> None:
+            held = data.setdefault("held", {}).get(device_id) or {}
+            keep = {}
+            for rid, entry in held.items():
+                if rid not in data["requests"]:
+                    continue  # answered or expired meanwhile
+                chats = set(entry.get("chats") or [])
+                still_shown = (state == "foreground" and session in chats) or bool(live and chats & set(live))
+                if still_shown:
+                    keep[rid] = entry
+                else:
+                    released.append(entry["request"])
+            if keep:
+                data["held"][device_id] = keep
+            else:
+                data["held"].pop(device_id, None)
+
+        self.store.update(change)
+        for request in released:
+            self.relay.enqueue(Delivery(device_id, request, on_done=self._done(device_id)))
 
     def activity(self, args: dict) -> dict:
         """The app started (``token``) or ended (no token) a Live Activity for a chat."""
@@ -178,7 +205,8 @@ class Push:
 
     # -- delivery ---------------------------------------------------------------------------------------
 
-    def _wants(self, device_id: str, device: dict, notice: notices.Notice, walked_away: set | None = None) -> bool:
+    def _wants(self, device_id: str, device: dict, notice: notices.Notice, walked_away: set | None = None,
+               ignore_presence: bool = False) -> bool:
         prefs = {**DEFAULT_PREFERENCES, **(device.get("preferences") or {})}
         kind = notice.kind
         if kind in ("approval", "question") and not prefs["approvals"]:
@@ -199,7 +227,7 @@ class Push:
             return False
         if kind == "background" and not prefs["background"]:
             return False
-        presence = self.store.presence(device_id)
+        presence = None if ignore_presence else self.store.presence(device_id)
         if presence:
             chats = {c for c in (notice.thread, notice.session_id) if c}
             live = presence.get("live")
@@ -216,12 +244,21 @@ class Push:
         resolved = [rid for rid, _ in state["resolved"]]
         sent = 0
         for device_id, device in state["devices"].items():
-            if not self._wants(device_id, device, notice, walked_away):
+            wanted = self._wants(device_id, device, notice, walked_away)
+            # Hermes waits on this one: if only the screen held it back, keep it for when the person leaves.
+            hold = (not wanted and notice.kind in ("approval", "question", "password") and notice.request_id
+                    and self._wants(device_id, device, notice, walked_away, ignore_presence=True))
+            if not wanted and not hold:
                 continue
             try:
                 request = notices.apns_request(device, notice, self.gateway(), len(state["requests"]), resolved)
             except Exception:
                 logger.warning("app push: couldn't build a notice for %s", device_id, exc_info=True)
+                continue
+            if hold:
+                chats = [c for c in (notice.thread, notice.session_id) if c]
+                self.store.update(lambda data, d=device_id, r=request, c=chats: data.setdefault("held", {})
+                                  .setdefault(d, {}).__setitem__(notice.request_id, {"request": r, "chats": c}))
                 continue
             self.relay.enqueue(Delivery(device_id, request, on_done=self._done(device_id)))
             sent += 1

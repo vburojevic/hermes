@@ -35,7 +35,7 @@ DEFAULT_PREFERENCES = {"approvals": True, "passwords": True, "replies": True, "r
 
 B: dict = {}          # backend.py's globals
 G = None              # server.py (the API server mock), when it runs too
-STATE = {"devices": {}, "presence": {}, "requests": {}, "resolved": [], "activities": {}, "turns": {}}
+STATE = {"devices": {}, "presence": {}, "requests": {}, "resolved": [], "activities": {}, "turns": {}, "held": {}}
 LOCK = threading.RLock()
 RELAY = {"mode": "simctl", "installation": None, "secret": None}
 GATEWAY = {"id": "inst_mock" + uuid.uuid4().hex[:6], "name": "Mock Gateway"}
@@ -114,10 +114,27 @@ def cmd_preferences(args):
 
 
 def cmd_presence(args):
+    device_id = args["device_id"]
     with LOCK:
-        STATE["presence"][args["device_id"]] = {"state": args["state"], "session": args.get("session_id"),
-                                                "live": args.get("live"), "at": time.time()}
-        return {"ok": True, "open": len(STATE["requests"])}
+        STATE["presence"][device_id] = {"state": args["state"], "session": args.get("session_id"),
+                                        "live": args.get("live"), "at": time.time()}
+        # Requests held back while their chat was on screen go out once it isn't.
+        released, keep = [], {}
+        for rid, (request, chats) in (STATE["held"].pop(device_id, None) or {}).items():
+            if rid not in STATE["requests"]:
+                continue
+            if args["state"] == "foreground" and args.get("session_id") in chats:
+                keep[rid] = (request, chats)
+            else:
+                released.append(request)
+        if keep:
+            STATE["held"][device_id] = keep
+        device = STATE["devices"].get(device_id)
+        open_count = len(STATE["requests"])
+    for request in released:
+        log(f"→ held request to {device.get('name') if device else device_id} (left the chat)")
+        threading.Thread(target=relay, args=(device, request), daemon=True).start()
+    return {"ok": True, "open": open_count}
 
 
 def cmd_activity(args):
@@ -163,7 +180,7 @@ def presence(device_id):
     return entry
 
 
-def wants(device_id, device, notice, walked_away=()):
+def wants(device_id, device, notice, walked_away=(), ignore_presence=False):
     prefs = device["preferences"]
     kind = notice.kind
     if kind in ("approval", "question") and not prefs["approvals"]:
@@ -179,7 +196,7 @@ def wants(device_id, device, notice, walked_away=()):
         return False
     if kind == "message" and (prefs["bots"] == "off" or (prefs["bots"] == "mentions" and not notice.extra.get("mention"))):
         return False
-    here = presence(device_id)
+    here = None if ignore_presence else presence(device_id)
     if here:
         chats = {c for c in (notice.thread, notice.session_id) if c}
         if here.get("live") and chats & set(here["live"]):
@@ -195,7 +212,15 @@ def deliver(notice, walked_away=()):
         open_count = len(STATE["requests"])
         resolved = list(STATE["resolved"])
     for device_id, device in devices.items():
-        if not wants(device_id, device, notice, walked_away):
+        wanted = wants(device_id, device, notice, walked_away)
+        if not wanted:
+            if notice.kind in ("approval", "question", "password") and notice.request_id \
+                    and wants(device_id, device, notice, walked_away, ignore_presence=True):
+                request = notices.apns_request(device, notice, GATEWAY, open_count, resolved)
+                with LOCK:
+                    STATE["held"].setdefault(device_id, {})[notice.request_id] = (
+                        request, [c for c in (notice.thread, notice.session_id) if c])
+                log(f"held {notice.kind} for {device.get('name') or device_id} (chat on screen)")
             continue
         request = notices.apns_request(device, notice, GATEWAY, open_count, resolved)
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
@@ -253,6 +278,14 @@ def simctl(device, request):
     return {"status": 200}
 
 
+def _tls():
+    """python.org builds ship without CA certificates; use the system's."""
+    import os
+    import ssl
+    cafile = "/etc/ssl/cert.pem" if os.path.exists("/etc/ssl/cert.pem") else None
+    return ssl.create_default_context(cafile=cafile)
+
+
 def https_relay(request):
     base = RELAY["mode"].rstrip("/")
 
@@ -261,14 +294,13 @@ def https_relay(request):
         req = urllib.request.Request(f"{base}{path}", data=data, method="POST",
                                      headers={"Content-Type": "application/json", "User-Agent": "hermes-mock-push",
                                               **(headers or {})})
-        with urllib.request.urlopen(req, timeout=15) as response:
+        with urllib.request.urlopen(req, timeout=15, context=_tls()) as response:
             return json.loads(response.read() or b"{}")
 
     try:
         if not RELAY["installation"]:
             answer = post("/v1/installations", {"client": "hermes-mock-push", "name": GATEWAY["name"]})
             RELAY["installation"], RELAY["secret"] = answer["installation_id"], answer["secret"]
-            GATEWAY["id"] = RELAY["installation"]
         result = post("/v1/push", request, {"Authorization": f"Bearer {RELAY['secret']}",
                                             "X-Hermes-Installation": RELAY["installation"]})
         log(f"relay: {result}")
@@ -349,8 +381,17 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
     original_request = backend_globals["server_request"]
 
     def server_request(sid, method, params, timeout=300):
+        try:
+            return _server_request(sid, method, params, timeout)
+        except Exception as error:  # noqa: BLE001 — a mock should say what broke
+            import traceback
+            log(f"server_request hook failed: {error}\n{traceback.format_exc()}")
+            raise
+
+    def _server_request(sid, method, params, timeout=300):
         runtime = backend_globals["RUNTIME"].get(sid) or {}
         stored = runtime.get("stored", "")
+        log(f"{method} requested in {stored or sid}")
         notice = None
         expires = time.time() + timeout
         if method == "approval":

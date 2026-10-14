@@ -68,6 +68,7 @@ final class PushCenter {
     @ObservationIgnored weak var model: AppModel?
     @ObservationIgnored private var registeredAt: [UUID: Date] = [:]
     @ObservationIgnored private var registering: Set<UUID> = []
+    @ObservationIgnored private var wasOnline: [UUID: Bool] = [:]
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var preferenceSync: Task<Void, Never>?
     @ObservationIgnored private var lastPresence: (chat: String?, at: Date)?
@@ -139,6 +140,10 @@ final class PushCenter {
     private func tick() async {
         guard let model else { return }
         for workspace in model.workspaces.values {
+            // A gateway that just came back (restarted, or the network returned) hears from us again.
+            let online = workspace.roster?.state.isOnline ?? false
+            if online, wasOnline[workspace.id] == false { registeredAt[workspace.id] = nil }
+            wasOnline[workspace.id] = online
             let stale = registeredAt[workspace.id].map { Date.now.timeIntervalSince($0) > 3600 } ?? true
             if stale, !registering.contains(workspace.id) {
                 await check(workspace)
@@ -464,11 +469,13 @@ final class PushCenter {
         #endif
     }
 
-    /// Foreground rule: nothing for the chat on screen (its card docks), banners for the rest.
+    /// Foreground rule: no banner for the chat on screen (its card docks), banners for the rest. A
+    /// request the chat on screen is waiting on still goes quietly into Notification Center, so it's
+    /// on the Lock Screen if the person walks away without answering (answering withdraws it).
     func presentation(for notice: PushNotice?) -> UNNotificationPresentationOptions {
         guard let notice else { return [.banner, .list, .sound] }
         if notice.kind == .withdraw { return [] }
-        if isShowing(notice) { return [] }
+        if isShowing(notice) { return notice.kind.needsYou ? [.list] : [] }
         return notice.kind == .task || notice.kind == .background ? [.list] : [.banner, .list, .sound]
     }
 

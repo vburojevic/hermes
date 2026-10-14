@@ -37,12 +37,14 @@ struct PushPresentation: ViewModifier {
     }
 
     #if DEBUG
-    /// `-HERMES_PUSH_OPEN prime|setup|settings` (screenshots and UI tests).
+    /// `-HERMES_PUSH_OPEN prime|setup|settings|ask` (screenshots and UI tests; `ask` requests
+    /// permission straight away).
     private func openDebugSheet() {
         switch UserDefaults.standard.string(forKey: "HERMES_PUSH_OPEN") {
         case "prime": push.prime = .approval
         case "setup": push.setupGateway = push.model?.selectedBotID
         case "settings": push.showSettings = true
+        case "ask": Task { await push.requestAuthorization() }
         default: break
         }
     }

@@ -23,6 +23,7 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
     }
 
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
+        Self.log.info("notice \(request.identifier, privacy: .public) arrived")
         lock.withLock {
             handler = contentHandler
             fallback = request.content

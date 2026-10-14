@@ -393,3 +393,30 @@ def test_reply_after_walking_away_and_kanban_jobs(hermes):
     assert done["kind"] == "task" and done["body"] == "Rotated the keys." and done["subtitle"] == "Done · ada"
     assert blocked["kind"] == "task_failed" and blocked["subtitle"] == "Blocked · ada"
     assert pushes_for(token, "alert")[-1]["payload"]["aps"]["interruption-level"] == "active"
+
+
+def test_held_while_on_screen_then_sent_on_leaving(hermes):
+    _, handler = hermes
+    key, token = make_device(handler, "holder")
+    from tools import approval
+    from tools.approval_gateway_wait import _await_gateway_decision
+    session = "20261014_held"
+    handler("presence " + json.dumps({"device_id": "dev-holder", "state": "foreground", "session_id": session}))
+    worker = threading.Thread(target=lambda: _await_gateway_decision(
+        session, lambda data: None, {"command": "rm -rf ./tmp", "description": "recursive delete",
+                                     "pattern_key": "rm_rf", "pattern_keys": ["rm_rf"]}))
+    worker.start()
+    wait_for(lambda: approval.list_gateway_approvals(session))
+    time.sleep(0.5)
+    assert not pushes_for(token, "alert"), "the chat on screen got a push"
+    handler("presence " + json.dumps({"device_id": "dev-holder", "state": "away"}))
+    push = wait_for(lambda: next(iter(pushes_for(token, "alert")), None))
+    pending = approval.list_gateway_approvals(session)
+    assert opened(key, push)["request_id"] == pending[0]["request_id"]
+    approval.resolve_gateway_approval(session, "deny", request_id=pending[0]["request_id"])
+    worker.join(5)
+    # Leaving again sends nothing more: it was answered.
+    handler("presence " + json.dumps({"device_id": "dev-holder", "state": "foreground", "session_id": "x"}))
+    handler("presence " + json.dumps({"device_id": "dev-holder", "state": "away"}))
+    time.sleep(0.5)
+    assert len(pushes_for(token, "alert")) == 1

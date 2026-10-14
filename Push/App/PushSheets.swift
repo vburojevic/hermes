@@ -35,18 +35,22 @@ struct PermissionPrimeSheet: View {
             .padding(.horizontal, 6)
             VStack(spacing: 6) {
                 Button {
+                    guard !asking else { return }
                     asking = true
                     Task {
                         await PushCenter.shared.requestAuthorization()
                         dismiss()
                     }
                 } label: {
-                    Text("Turn On Notifications")
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 50)
+                    ZStack {
+                        Text("Turn On Notifications")
+                            .font(.body.weight(.semibold))
+                            .opacity(asking ? 0 : 1)
+                        if asking { ProgressView().tint(Theme.inkForeground) }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .inkFilledButton()
-                .disabled(asking)
                 Button("Not Now") {
                     PushCenter.shared.notNow()
                     dismiss()
