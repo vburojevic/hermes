@@ -456,6 +456,31 @@ COMPRESSION_WARNING = (
 )
 
 
+AUX_UNAVAILABLE_WARNING = (
+    "⚠ Configured auxiliary compression provider 'openai-codex' is unavailable, so older messages in long chats "
+    "will be cut without a summary. Sign in to that provider again, or change auxiliary.compression in your config."
+)
+
+
+def lifecycle(sid, text):
+    """A lifecycle status the way Hermes' gateway sends it (tui_gateway/server.py `_status_update`): text that
+    mentions compaction or compression is re-tagged `compacting`, warnings included."""
+    lowered = text.lower()
+    compacting = ("compact" in lowered or "compress" in lowered or "context reduced to" in lowered) \
+        and "compaction complete" not in lowered and "compression is currently blocked" not in lowered
+    emit(sid, "status.update", {"kind": "compacting" if compacting else "lifecycle", "text": text})
+
+
+def mock_warnings(sid, visible):
+    """Hermes' compression diagnostics, sent as the agent starts: "compression" (the helper model is
+    unavailable) and "threshold" (the helper's window is smaller than the threshold)."""
+    lowered = visible.lower()
+    if "compression" in lowered:
+        lifecycle(sid, AUX_UNAVAILABLE_WARNING)
+    if "threshold" in lowered:
+        lifecycle(sid, COMPRESSION_WARNING)
+
+
 def run_turn(sid, text):
     runtime = RUNTIME[sid]
     stored = ensure_row(sid)
@@ -467,9 +492,7 @@ def run_turn(sid, text):
     time.sleep(0.3)
     lower = text.lower()
     visible = text.split("\n\n[@mentions resolved", 1)[0]
-    if "compression" in visible.lower():
-        # Hermes' compression-feasibility diagnostic: plain lifecycle status text, sent as the agent starts.
-        emit(sid, "status.update", {"kind": "lifecycle", "text": COMPRESSION_WARNING})
+    mock_warnings(sid, visible)
 
     if lower.startswith("hey, tell me about yourself"):
         intro = (f"Hi! I'm **{me}**. This is our Bot Chat, one continuous conversation that never resets. "

@@ -115,8 +115,11 @@ public enum GatewayTurnDecoder {
     /// "⚠" diagnostics it sends as plain lifecycle text (a safety refusal, a guardrail halt, the
     /// compression model's window). Without the "⚠", which the note draws itself.
     static func warning(kind: String, text: String) -> String? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let flagged = text.unicodeScalars.first == "\u{26A0}" // "⚠" or "⚠️"
-        guard kind == "warn" || (flagged && ["status", "lifecycle"].contains(kind) && providerWait(text) == nil) else { return nil }
+        // Any kind: the gateway re-tags lifecycle text that mentions compression as `compacting`
+        // (tui_gateway/server.py `_status_update`), and the compression warnings all do.
+        guard kind == "warn" || (flagged && providerWait(text) == nil) else { return nil }
         guard flagged else { return text }
         let body = String(String.UnicodeScalarView(text.unicodeScalars.drop {
             $0 == "\u{26A0}" || $0 == "\u{FE0F}" || $0.properties.isWhitespace

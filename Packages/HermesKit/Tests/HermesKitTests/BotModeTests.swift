@@ -254,6 +254,10 @@ struct GatewayTurnDecoderTests {
             == [.warning("Compression model gpt-6-sol context is 272,000 tokens.\n  To make this permanent, edit config.yaml")])
         #expect(decode("status.update", #"{"kind":"lifecycle","text":"⚠️ Tool guardrail halted terminal: loop"}"#) == [.warning("Tool guardrail halted terminal: loop")])
         #expect(decode("status.update", #"{"kind":"warn","text":"Memory provider unavailable"}"#) == [.warning("Memory provider unavailable")])
+        // The gateway re-tags lifecycle text that mentions compression as `compacting`.
+        #expect(decode("status.update", #"{"kind":"compacting","text":"⚠ Configured auxiliary compression provider 'openai-codex' is unavailable, so older messages in long chats will be cut without a summary."}"#)
+            == [.warning("Configured auxiliary compression provider 'openai-codex' is unavailable, so older messages in long chats will be cut without a summary.")])
+        #expect(decode("status.update", #"{"kind":"compacting","text":"Compacting context…"}"#) == [.status("Compacting context…")])
         #expect(decode("status.update", #"{"kind":"lifecycle","text":"⚠ Rate limited — waiting 5s"}"#) == [.status("⚠ Rate limited — waiting 5s")])
         #expect(decode("status.update", #"{"kind":"lifecycle","text":"↻ Stream interrupted — using delivered content as final response"}"#)
             == [.status("↻ Stream interrupted — using delivered content as final response")])

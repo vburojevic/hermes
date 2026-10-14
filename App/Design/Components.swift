@@ -81,7 +81,8 @@ struct ShimmerText: View {
     @Environment(\.pausesDecorativeMotion) private var motionPaused
 
     var body: some View {
-        let label = Text(text).font(font)
+        // One line, always: a long status is a headline here, not a paragraph.
+        let label = Text(text).font(font).lineLimit(1).truncationMode(.tail)
         if reduceMotion {
             label.foregroundStyle(Theme.secondaryText)
         } else {

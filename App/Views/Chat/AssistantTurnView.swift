@@ -112,7 +112,8 @@ struct AssistantTurnView: View {
         case .streaming, .waitingForApproval:
             EmptyView()
         }
-        if let warning = turn.warning, !turn.isWorking {
+        // Shown as soon as Hermes warns, not only once the turn ends: a quiet note, not the status line.
+        if let warning = turn.warning {
             TurnWarnings(text: warning)
         }
         if !turn.isWorking {
@@ -263,7 +264,17 @@ struct WorkSummaryView: View {
                     ProgressView()
                         .controlSize(.mini)
                         .frame(width: 14, height: 14)
-                    ShimmerText(text: workingTitle)
+                    // A ticker: the new status rolls up as the old one leaves, never both at once.
+                    ZStack(alignment: .leading) {
+                        ShimmerText(text: workingTitle)
+                            .id(workingTitle)
+                            .transition(reduceMotion ? .opacity : .asymmetric(
+                                insertion: .offset(y: 10).combined(with: .opacity),
+                                removal: .offset(y: -10).combined(with: .opacity)
+                            ))
+                    }
+                    .clipped()
+                    .animation(.smooth(duration: 0.28), value: workingTitle)
                 } else {
                     Image(systemName: "sparkle")
                         .font(.system(size: 12, weight: .medium))

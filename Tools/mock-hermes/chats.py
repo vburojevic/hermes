@@ -736,8 +736,7 @@ def run_chat_turn(sid, text):
     emit(sid, "session.info", {"running": True})
     emit(sid, "message.start", {})
     lower = text.lower()
-    if "compression" in lower:
-        emit(sid, "status.update", {"kind": "lifecycle", "text": B["COMPRESSION_WARNING"]})
+    B["mock_warnings"](sid, text)
     time.sleep(0.3)
 
     if text.startswith("[The person invoked skills"):

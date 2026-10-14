@@ -472,6 +472,7 @@ private struct TurnWarning: View {
     let headline: String
     let details: String
     @State private var isExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(text: String) {
         let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
@@ -482,37 +483,52 @@ private struct TurnWarning: View {
         details = lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) }.joined(separator: "\n")
     }
 
+    /// Two lines hold about this much on an iPhone; past it (or with a how-to) the note opens.
+    private var opens: Bool { !details.isEmpty || headline.count > 90 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if details.isEmpty {
-                TurnNote(symbol: "exclamationmark.triangle", text: headline)
-            } else {
-                Button {
-                    isExpanded.toggle()
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        TurnNote(symbol: "exclamationmark.triangle", text: headline)
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(Disclosure.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.warning)
+                        .accessibilityHidden(true)
+                    Text(headline)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(isExpanded ? nil : 2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if opens {
+                        Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Theme.tertiaryText)
-                            .contentTransition(.symbolEffect(.replace))
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .accessibilityHidden(true)
                     }
-                    .multilineTextAlignment(.leading)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint(isExpanded ? "Hides how to fix it" : "Shows how to fix it")
-                if isExpanded {
-                    Text(details)
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(Theme.secondaryText)
-                        .textSelection(.enabled)
-                        .padding(.leading, 22)
-                        .transition(.opacity)
-                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!opens)
+            .accessibilityLabel(Text("Warning: \(headline)"))
+            .accessibilityHint(opens ? (isExpanded ? "Shows less" : "Shows all of it") : "")
+            if isExpanded, !details.isEmpty {
+                Text(details)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.secondaryText)
+                    .textSelection(.enabled)
+                    .padding(.leading, 22)
+                    .transition(Disclosure.transition(reduceMotion: reduceMotion))
             }
         }
-        .animation(Theme.spring, value: isExpanded)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
     }
 }
 
