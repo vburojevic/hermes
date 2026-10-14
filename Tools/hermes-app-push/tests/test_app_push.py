@@ -2,7 +2,7 @@
 
 Run with the Hermes venv from this folder's parent:
 
-    HERMES_SOURCE=~/.hermes/hermes-agent ~/.hermes/hermes-agent/.venv/bin/python -m pytest Tools/hermes-app-push/tests
+    HERMES_SOURCE=~/.hermes/hermes-agent ~/.hermes/hermes-agent/.venv/bin/python -m pytest Tools/hermes-app-push/tests --import-mode=importlib
 
 Each test session gets a throwaway HERMES_HOME with only this plugin enabled, a fake relay on
 localhost, and a device key pair; nothing touches ~/.hermes.
