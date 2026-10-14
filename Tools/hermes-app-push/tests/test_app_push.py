@@ -158,7 +158,7 @@ def test_register_status_and_bad_input(hermes):
     key, token = make_device(handler, "status")
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
-    assert status["preferences"]["tasks"] == "failures" and status["preferences"]["bots"] == "mentions"
+    assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
     assert json.loads(handler("nope {}"))["ok"] is False
@@ -359,3 +359,37 @@ def test_answer_routes_and_live_presence(hermes, monkeypatch):
     wait_for(lambda: pushes_for(token, "alert"))
     time.sleep(0.5)
     assert [opened(key, p)["session_id"] for p in pushes_for(token, "alert")] == ["chat-other"]
+
+
+def test_reply_after_walking_away_and_kanban_jobs(hermes):
+    plugins, handler = hermes
+    key, token = make_device(handler, "walker")  # default 30 s threshold
+    session = "20261014_walk_away"
+    # Watching the chat when the turn starts, then gone: the reply notifies even though it was quick.
+    handler("presence " + json.dumps({"device_id": "dev-walker", "state": "foreground", "session_id": session}))
+    plugins.invoke_hook("pre_llm_call", session_id=session, turn_id="walk-1", platform="api_server")
+    handler("presence " + json.dumps({"device_id": "dev-walker", "state": "away"}))
+    plugins.invoke_hook("post_llm_call", session_id=session, turn_id="walk-1",
+                        assistant_response="Freed 42 GB.\nKept the last 7 days.\nNothing else touched.\nMore.")
+    plugins.invoke_hook("on_session_end", session_id=session, turn_id="walk-1", completed=True)
+    push = wait_for(lambda: next(iter(pushes_for(token, "alert")), None))
+    body = opened(key, push)["body"]
+    assert body == "Freed 42 GB. Kept the last 7 days. Nothing else touched."
+    # A subagent's turn and a Telegram chat's turn never notify here.
+    before = len(pushes_for(token, "alert"))
+    for turn, extra in (("sub-1", {"parent_session_id": session}), ("tg-1", {"platform": "telegram"})):
+        handler("presence " + json.dumps({"device_id": "dev-walker", "state": "foreground", "session_id": session}))
+        plugins.invoke_hook("pre_llm_call", session_id=session, turn_id=turn, **extra)
+        handler("presence " + json.dumps({"device_id": "dev-walker", "state": "away"}))
+        plugins.invoke_hook("post_llm_call", session_id=session, turn_id=turn, assistant_response="Done.")
+        plugins.invoke_hook("on_session_end", session_id=session, turn_id=turn, completed=True)
+    time.sleep(0.5)
+    assert len(pushes_for(token, "alert")) == before
+    # A Kanban card done (passive) and one blocked (active), on by default.
+    plugins.invoke_hook("kanban_task_completed", task_id="t_1", board="ops", assignee="ada", summary="Rotated the keys.")
+    plugins.invoke_hook("kanban_task_blocked", task_id="t_2", board="ops", assignee="ada", reason="Needs the VPN password.")
+    wait_for(lambda: len(pushes_for(token, "alert")) >= before + 2)
+    done, blocked = [opened(key, p) for p in pushes_for(token, "alert")[-2:]]
+    assert done["kind"] == "task" and done["body"] == "Rotated the keys." and done["subtitle"] == "Done · ada"
+    assert blocked["kind"] == "task_failed" and blocked["subtitle"] == "Blocked · ada"
+    assert pushes_for(token, "alert")[-1]["payload"]["aps"]["interruption-level"] == "active"

@@ -131,7 +131,7 @@ import Testing
         let json = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(prefs))
         #expect(json["reply_after"]?.doubleValue == 45)
         #expect(json["show_details"]?.stringValue == "never")
-        #expect(json["tasks"]?.stringValue == "failures" && json["bots"]?.stringValue == "mentions")
+        #expect(json["tasks"]?.stringValue == "all" && json["bots"]?.stringValue == "mentions")
         #expect(json["live_activity"]?.boolValue == true)
     }
 
@@ -140,9 +140,9 @@ import Testing
         let client = AppPushClient { method, params in
             await calls.add(method, params)
             if params["arg"]?.stringValue?.hasPrefix("status") == true {
-                return .object(["type": "plugin", "output": .string(#"{"ok": true, "version": "1.0.0", "registered": true, "open": 3, "gateway": {"id": "inst_x", "name": "mac"}}"#)])
+                return .object(["type": .string("plugin"), "output": .string(#"{"ok": true, "version": "1.0.0", "registered": true, "open": 3, "gateway": {"id": "inst_x", "name": "mac"}}"#)])
             }
-            return .object(["type": "plugin", "output": .string(#"{"ok": true, "gateway": {"id": "inst_x", "name": "mac"}, "relay": "ok", "version": "1.0.0"}"#)])
+            return .object(["type": .string("plugin"), "output": .string(#"{"ok": true, "gateway": {"id": "inst_x", "name": "mac"}, "relay": "ok", "version": "1.0.0"}"#)])
         }
         let device = AppPushClient.Device(id: "dev-1", token: "ab12", topic: "co.caffeinatedcode.hermes.dev", environment: "development",
                                           publicKey: "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", platform: "ios", name: "iPhone", appVersion: "1.0")
@@ -155,11 +155,11 @@ import Testing
         let arg = try #require(sent.first?.1["arg"]?.stringValue)
         #expect(arg.hasPrefix("register {"))
         let json = try JSONDecoder().decode(JSONValue.self, from: Data(arg.dropFirst("register ".count).utf8))
-        #expect(json["device_id"]?.stringValue == "dev-1" && json["preferences"]?["tasks"]?.stringValue == "failures")
+        #expect(json["device_id"]?.stringValue == "dev-1" && json["preferences"]?["tasks"]?.stringValue == "all")
 
         let missing = AppPushClient { _, _ in throw GatewayRPCError(code: 4018, message: "not a quick/plugin/bundle/skill command: app-push") }
         await #expect(throws: AppPushClient.Failure.notInstalled) { try await missing.status(deviceID: "dev-1") }
-        let refusing = AppPushClient { _, _ in .object(["type": "plugin", "output": .string(#"{"ok": false, "error": "device not registered"}"#)]) }
+        let refusing = AppPushClient { _, _ in .object(["type": .string("plugin"), "output": .string(#"{"ok": false, "error": "device not registered"}"#)]) }
         await #expect(throws: AppPushClient.Failure.refused("device not registered")) { try await refusing.test(deviceID: "dev-1") }
     }
 }

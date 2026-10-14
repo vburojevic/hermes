@@ -27,7 +27,7 @@ DEFAULT_PREFERENCES = {
     "passwords": True,          # sudo, secrets, sign-ins
     "replies": True,
     "reply_after": 30,          # seconds a turn must run before its reply notifies
-    "tasks": "failures",        # all | failures | off
+    "tasks": "all",             # all | failures | off (scheduled tasks and Kanban cards)
     "bots": "mentions",         # all | mentions | off
     "background": True,
     "live_activity": True,
@@ -41,6 +41,9 @@ _TOPIC = re.compile(r"^[A-Za-z0-9.-]{3,200}$")
 _DEVICE = re.compile(r"^[A-Za-z0-9._:-]{4,80}$")
 ACTIVITY_MIN_INTERVAL = 12.0   # seconds between "working" Live Activity updates
 ROOM_MESSAGE_SETTLE = 5.0      # a Bot's streamed message counts as finished after this quiet time
+# Surfaces whose replies the app reports. A messaging platform's own app already notifies, and cron
+# results come through the delivery platform.
+NOTIFY_PLATFORMS = {"", "api_server", "api", "tui", "desktop", "dashboard", "webui", "cli", "local", "acp"}
 
 
 class PushError(ValueError):
@@ -175,14 +178,17 @@ class Push:
 
     # -- delivery ---------------------------------------------------------------------------------------
 
-    def _wants(self, device_id: str, device: dict, notice: notices.Notice) -> bool:
+    def _wants(self, device_id: str, device: dict, notice: notices.Notice, walked_away: set | None = None) -> bool:
         prefs = {**DEFAULT_PREFERENCES, **(device.get("preferences") or {})}
         kind = notice.kind
         if kind in ("approval", "question") and not prefs["approvals"]:
             return False
         if kind == "password" and not prefs["passwords"]:
             return False
-        if kind == "reply" and (not prefs["replies"] or notice.extra.get("seconds", 0) < prefs["reply_after"]):
+        # A reply: when the turn ran past the threshold, or this device was watching the chat when the
+        # turn started and has left since (asked, then put the phone away).
+        if kind == "reply" and (not prefs["replies"] or (notice.extra.get("seconds", 0) < prefs["reply_after"]
+                                                         and device_id not in (walked_away or set()))):
             return False
         if kind == "task" and prefs["tasks"] != "all":
             return False
@@ -205,12 +211,12 @@ class Push:
                 return False  # the chat on screen docks its card instead
         return True
 
-    def deliver(self, notice: notices.Notice) -> int:
+    def deliver(self, notice: notices.Notice, walked_away: set | None = None) -> int:
         state = self.store.read()
         resolved = [rid for rid, _ in state["resolved"]]
         sent = 0
         for device_id, device in state["devices"].items():
-            if not self._wants(device_id, device, notice):
+            if not self._wants(device_id, device, notice, walked_away):
                 continue
             try:
                 request = notices.apns_request(device, notice, self.gateway(), len(state["requests"]), resolved)
@@ -265,14 +271,21 @@ class Push:
 
     # -- hooks ---------------------------------------------------------------------------------------
 
-    def on_pre_llm_call(self, session_id: str = "", turn_id: str = "", **_: Any) -> None:
+    def on_pre_llm_call(self, session_id: str = "", turn_id: str = "", platform: str = "",
+                        parent_session_id: str = "", **_: Any) -> None:
         if not turn_id:
             return
+        # A subagent's turn is part of its parent's; a messaging platform's chat notifies in that app.
+        reports = not parent_session_id and str(platform or "").lower() in NOTIFY_PLATFORMS
+        watching = {device_id for device_id, entry in self.store.read()["presence"].items()
+                    if entry.get("state") == "foreground" and entry.get("session") == session_id}
         with self._lock:
-            self._turns[turn_id] = {"session": session_id, "start": time.time(), "text": ""}
+            self._turns[turn_id] = {"session": session_id, "start": time.time(), "text": "", "reports": reports,
+                                    "watching": watching}
             self._active_sessions[session_id] = self._active_sessions.get(session_id, 0) + 1
-        self._activity(session_id, {"phase": "working", "step": "Thinking", "started_at": time.time(),
-                                    "title": self.chat_title(session_id)})
+        if reports:
+            self._activity(session_id, {"phase": "working", "step": "Thinking", "started_at": time.time(),
+                                        "title": self.chat_title(session_id)})
 
     def on_post_llm_call(self, turn_id: str = "", assistant_response: Any = "", **_: Any) -> None:
         with self._lock:
@@ -289,7 +302,7 @@ class Push:
                     self._active_sessions[turn["session"]] = count
                 else:
                     self._active_sessions.pop(turn["session"], None)
-        if not turn:
+        if not turn or not turn.get("reports", True):
             return
         seconds = time.time() - turn["start"]
         session = turn["session"] or session_id
@@ -297,10 +310,11 @@ class Push:
         result = notices.first_lines(turn["text"], 1, 120) if completed else ("Stopped." if interrupted else
                                                                               "Didn't finish.")
         self._activity(session, {"phase": "done", "result": result, "title": chat, "started_at": turn["start"],
-                                 "ok": bool(completed)}, event="end", force=True)
+                                 "ended_at": time.time(), "ok": bool(completed)}, event="end", force=True)
         if completed and turn["text"].strip():
             self.deliver(notices.reply(session_id=session, turn_id=turn_id, chat=chat,
-                                       gateway_name=self.gateway_name(), text=turn["text"], seconds=seconds))
+                                       gateway_name=self.gateway_name(), text=turn["text"], seconds=seconds),
+                         walked_away=turn.get("watching"))
 
     def on_pre_tool_call(self, tool_name: str = "", args: Any = None, session_id: str = "", **_: Any) -> None:
         args = args if isinstance(args, dict) else {}
@@ -347,7 +361,8 @@ class Push:
         self.deliver(notice)
         self._activity(chat_session, {**(self._activity_state.get(chat_session) or {}), "phase": "needsYou",
                                       "command": notice.extra["command"], "request_id": request_id,
-                                      "expires_at": expires_at, "title": chat}, alert=True, force=True)
+                                      "expires_at": expires_at, "title": chat, "answer": answer},
+                       alert=True, force=True)
 
     def on_post_approval_response(self, session_key: str = "", session_id: str = "", **_: Any) -> None:
         tracked = [rid for rid, r in self.store.open_requests().items()
@@ -361,8 +376,8 @@ class Push:
         chat_session = session_id or session_key
         if chat_session in self._active_sessions:
             state = {**(self._activity_state.get(chat_session) or {}), "phase": "working", "step": "Continuing"}
-            state.pop("command", None)
-            state.pop("request_id", None)
+            for key in ("command", "request_id", "answer"):
+                state.pop(key, None)
             self._activity(chat_session, state, force=True)
 
     def on_human_input_request(self, kind: str = "", request_id: str = "", session_id: str = "",
@@ -445,6 +460,18 @@ class Push:
         mention = any(f"@{n}" in lowered for n in names | {"all", "everyone"})
         self.deliver(notices.message(room_id=room_id, room=room_name, member_id=member_id, bot=bot,
                                      gateway_name=self.gateway_name(), text=buffer["text"], mention=mention))
+
+    def on_kanban_task_completed(self, task_id: str = "", board: str = "", assignee: str = "",
+                                 summary: str = "", **_: Any) -> None:
+        self.deliver(notices.kanban(task_id=task_id, board=board, title=_kanban_title(task_id, board),
+                                    assignee=assignee or "", gateway_name=self.gateway_name(), text=summary or "",
+                                    blocked=False))
+
+    def on_kanban_task_blocked(self, task_id: str = "", board: str = "", assignee: str = "", reason: str = "",
+                               **_: Any) -> None:
+        self.deliver(notices.kanban(task_id=task_id, board=board, title=_kanban_title(task_id, board),
+                                    assignee=assignee or "", gateway_name=self.gateway_name(), text=reason or "",
+                                    blocked=True))
 
     # -- cron delivery -------------------------------------------------------------------------------------
 
@@ -581,6 +608,17 @@ def _parse_cron(message: str) -> tuple[str, str, str]:
     if match:
         return match["name"].strip(), match["id"].strip(), match["body"].strip()
     return "", "", str(message or "")
+
+
+def _kanban_title(task_id: str, board: str) -> str:
+    with contextlib.suppress(Exception):
+        from hermes_cli import kanban_db
+        from hermes_cli.kanban_db_connect import connect_closing
+        with connect_closing(board=board or None) as conn:
+            task = kanban_db.get_task(conn, task_id)
+            if task is not None and task.title:
+                return str(task.title)
+    return ""
 
 
 def _room_names(room_id: str, member_id: str) -> tuple[str, str]:

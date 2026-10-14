@@ -149,19 +149,32 @@ def password(*, request_id: str, session_id: str, chat: str, gateway_name: str, 
 
 
 def reply(*, session_id: str, turn_id: str, chat: str, gateway_name: str, text: str, seconds: float) -> Notice:
+    # The gist of the answer, not just "Hermes replied": the first lines, enough to act on.
     return Notice(
         kind="reply", id=f"reply-{short_hash(session_id)}", session_id=session_id, thread=session_id, summary=chat,
-        title=chat or "Hermes", body=first_lines(text) or "Hermes finished.", hidden=f"Reply ready on {gateway_name}",
-        extra={"turn_id": turn_id, "seconds": round(seconds)})
+        title=chat or "Hermes", body=first_lines(text, 3, 360) or "Hermes finished.",
+        hidden=f"Reply ready on {gateway_name}", extra={"turn_id": turn_id, "seconds": round(seconds)})
 
 
 def task(*, job_id: str, name: str, gateway_name: str, text: str, failed: bool) -> Notice:
     return Notice(
         kind="task_failed" if failed else "task", id=f"task-{short_hash(job_id or name)}",
         thread=f"task:{job_id or name}", summary=name, title=name or "Scheduled task",
-        subtitle="Failed" if failed else "", body=first_lines(text, 3, 300) or ("Failed." if failed else "Done."),
+        subtitle="Failed" if failed else "", body=first_lines(text, 4, 400) or ("Failed." if failed else "Done."),
         hidden=(f"A task failed on {gateway_name}" if failed else f"A task finished on {gateway_name}"),
         extra={"job_id": job_id, "failed": failed})
+
+
+def kanban(*, task_id: str, board: str, title: str, assignee: str, gateway_name: str, text: str,
+           blocked: bool) -> Notice:
+    """A Kanban card finished (or is stuck and needs someone)."""
+    name = clip(redact(title), 80) or "Task"
+    return Notice(
+        kind="task_failed" if blocked else "task", id=f"kanban-{short_hash(task_id)}", thread=f"kanban:{board or 'default'}",
+        summary=name, title=name, subtitle=("Blocked" if blocked else "Done") + (f" · {assignee}" if assignee else ""),
+        body=first_lines(redact(text), 4, 400) or ("Needs a look." if blocked else "Done."),
+        hidden=(f"A task is blocked on {gateway_name}" if blocked else f"A task finished on {gateway_name}"),
+        extra={"job_id": task_id, "failed": blocked, "kanban": True})
 
 
 def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: str, text: str,

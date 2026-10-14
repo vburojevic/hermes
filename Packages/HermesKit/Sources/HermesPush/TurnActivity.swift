@@ -30,7 +30,10 @@ public struct TurnActivityState: Codable, Sendable, Hashable {
     /// Done: the result line, and whether it succeeded.
     public var result: String?
     public var ok: Bool?
+    public var endedAt: Date?
     public var gateway: String?
+    /// How the app answers the approval it's waiting on.
+    public var answer: PushNotice.Answer?
 
     public init(
         phase: Phase, step: String? = nil, startedAt: Date? = nil, title: String? = nil, progress: Progress? = nil,
@@ -53,7 +56,9 @@ public struct TurnActivityState: Codable, Sendable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case phase, step, title, progress, command, question, result, ok, gateway
+        case answer
         case startedAt = "started_at"
+        case endedAt = "ended_at"
         case requestID = "request_id"
         case expiresAt = "expires_at"
     }
@@ -74,7 +79,9 @@ public struct TurnActivityState: Codable, Sendable, Hashable {
         expiresAt = try date(.expiresAt)
         result = try c.decodeIfPresent(String.self, forKey: .result)
         ok = try c.decodeIfPresent(Bool.self, forKey: .ok)
+        endedAt = try date(.endedAt)
         gateway = try c.decodeIfPresent(String.self, forKey: .gateway)
+        answer = try? c.decodeIfPresent(PushNotice.Answer.self, forKey: .answer)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -90,7 +97,9 @@ public struct TurnActivityState: Codable, Sendable, Hashable {
         try c.encodeIfPresent(expiresAt?.timeIntervalSince1970, forKey: .expiresAt)
         try c.encodeIfPresent(result, forKey: .result)
         try c.encodeIfPresent(ok, forKey: .ok)
+        try c.encodeIfPresent(endedAt?.timeIntervalSince1970, forKey: .endedAt)
         try c.encodeIfPresent(gateway, forKey: .gateway)
+        try c.encodeIfPresent(answer, forKey: .answer)
     }
 }
 

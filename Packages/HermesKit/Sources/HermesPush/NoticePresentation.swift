@@ -14,6 +14,8 @@ public struct NoticePresentation: Sendable, Equatable {
     public var interruptionLevel: UNNotificationInterruptionLevel
     public var relevanceScore: Double
     public var plays: Bool
+    /// Only the kind and the gateway are showing.
+    public var hidesDetails = false
 
     /// - Parameters:
     ///   - gatewayName: the app's name for the gateway, else the gateway's own.
@@ -84,6 +86,7 @@ public struct NoticePresentation: Sendable, Equatable {
         plays = interruptionLevel != .passive
         // Never, or When Unlocked while locked: only the kind and the gateway, no content.
         if showDetails == .never || (showDetails == .unlocked && !unlocked) {
+            hidesDetails = true
             title = "Hermes"
             subtitle = ""
             body = NotificationCatalog.hiddenText(category, gateway: gateway, failed: notice.kind == .taskFailed)

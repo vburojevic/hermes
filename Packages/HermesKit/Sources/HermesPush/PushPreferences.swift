@@ -23,7 +23,7 @@ public struct PushPreferences: Codable, Sendable, Hashable {
     public var replies = true
     /// Seconds a turn must run before its reply notifies.
     public var replyAfter = 30
-    public var tasks = Tasks.failures
+    public var tasks = Tasks.all
     public var bots = Bots.mentions
     public var background = true
     public var liveActivity = true
