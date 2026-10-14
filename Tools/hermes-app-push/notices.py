@@ -118,7 +118,7 @@ def approval(*, request_id: str, session_id: str, chat: str, gateway_name: str, 
         summary=chat, title=f"{bot} needs your OK" if bot else "Hermes needs your OK", subtitle=chat,
         body=f"Run {shown} on {gateway_name}?", hidden=f"Needs your OK on {gateway_name}", expires_at=expires_at,
         extra={"command": command, "description": description, "choices": choices, "smart_denied": smart_denied,
-               "surface": surface})
+               "surface": surface, **({"bot": bot} if bot else {})})
 
 
 def question(*, request_id: str, session_id: str, chat: str, gateway_name: str, questions: list[dict],
@@ -134,7 +134,7 @@ def question(*, request_id: str, session_id: str, chat: str, gateway_name: str, 
         summary=chat, title=f"{bot} has a question" if bot else "Hermes has a question", subtitle=chat,
         body=text or "Open Hermes to answer.", hidden=f"Has a question on {gateway_name}", expires_at=expires_at,
         extra={"choices": choices if len(questions) <= 1 and not first.get("multi_select") else [],
-               "questions": cleaned})
+               "questions": cleaned, **({"bot": bot} if bot else {})})
 
 
 def password(*, request_id: str, session_id: str, chat: str, gateway_name: str, what: str,

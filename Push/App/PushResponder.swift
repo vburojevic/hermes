@@ -81,6 +81,8 @@ enum PushResponder {
         do {
             try await work()
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+            if let request = notice.requestID { await center.removeDelivered(requests: [request]) }
+            await center.refreshBadge()
         } catch {
             await reportFailure(notice, error: error, center: center)
         }
@@ -124,7 +126,9 @@ enum PushResponder {
         let (workspace, _) = try gateway(for: notice, center: center)
         let session = notice.answer?.sessionID ?? notice.chatID ?? ""
         try await withSocket(workspace) { request in
-            let snapshot = try await request("session.resume", ["session_id": .string(session), "omit_messages": .bool(true)])
+            var resume: [String: JSONValue] = ["session_id": .string(session), "omit_messages": .bool(true)]
+            if let profile = notice.profile { resume["profile"] = .string(profile) }
+            let snapshot = try await request("session.resume", resume)
             guard case .array(let open)? = snapshot["open_requests"] else { throw Failure.expired }
             let questions = open.compactMap { row -> HermesRequest? in
                 guard let id = row["id"]?.stringValue, row["method"]?.stringValue == "clarify" else { return nil }
@@ -161,7 +165,19 @@ enum PushResponder {
             }
             return
         }
-        guard let chat = notice.chatID, let apiKey else { throw Failure.unknownGateway }
+        guard let chat = notice.chatID else { throw Failure.unknownGateway }
+        if let profile = notice.profile {
+            // A Bot Chat: its session lives in the Bot's profile, on the backend.
+            _ = try await withSocket(workspace) { request in
+                let resumed = try await request("session.resume", [
+                    "session_id": .string(chat), "profile": .string(profile), "omit_messages": .bool(true),
+                ])
+                guard let runtime = resumed["session_id"]?.stringValue else { throw Failure.expired }
+                return try await request("prompt.submit", ["session_id": .string(runtime), "text": .string(text)])
+            }
+            return
+        }
+        guard let apiKey else { throw Failure.unknownGateway }
         let client = HermesClient(baseURL: workspace.bot.baseURL, apiKey: apiKey)
         _ = try await client.startRun(
             sessionID: chat, input: text, model: nil, reasoningEffort: nil, idempotencyKey: UUID().uuidString
@@ -253,6 +269,8 @@ enum ActivityAnswering {
         )
         do {
             try await PushResponder.approve(notice, choice: allow ? .once : .deny, center: center)
+            await center.removeDelivered(requests: [requestID])
+            await center.refreshBadge()
             #if os(iOS)
             (center.activities as? TurnActivityController)?.requestsResolved([requestID])
             #endif

@@ -318,7 +318,7 @@ class Push:
                     if entry.get("state") == "foreground" and entry.get("session") == session_id}
         with self._lock:
             self._turns[turn_id] = {"session": session_id, "start": time.time(), "text": "", "reports": reports,
-                                    "watching": watching}
+                                    "watching": watching, "profile": _profile()}
             self._active_sessions[session_id] = self._active_sessions.get(session_id, 0) + 1
         if reports:
             self._activity(session_id, {"phase": "working", "step": "Thinking", "started_at": time.time(),
@@ -349,9 +349,11 @@ class Push:
         self._activity(session, {"phase": "done", "result": result, "title": chat, "started_at": turn["start"],
                                  "ended_at": time.time(), "ok": bool(completed)}, event="end", force=True)
         if completed and turn["text"].strip():
-            self.deliver(notices.reply(session_id=session, turn_id=turn_id, chat=chat,
-                                       gateway_name=self.gateway_name(), text=turn["text"], seconds=seconds),
-                         walked_away=turn.get("watching"))
+            notice = notices.reply(session_id=session, turn_id=turn_id, chat=chat, gateway_name=self.gateway_name(),
+                                   text=turn["text"], seconds=seconds)
+            if turn.get("profile"):
+                notice.extra["profile"] = turn["profile"]
+            self.deliver(notice, walked_away=turn.get("watching"))
 
     def on_pre_tool_call(self, tool_name: str = "", args: Any = None, session_id: str = "", **_: Any) -> None:
         args = args if isinstance(args, dict) else {}
@@ -392,6 +394,7 @@ class Push:
         answer = _answer_route(session_key)
         if answer:
             notice.extra["answer"] = answer
+        _tag_profile(notice)
         notice.extra["answerable"] = answer is not None
         self.store.open_request(request_id, {"kind": "approval", "session": chat_session, "key": session_key,
                                              "expires_at": expires_at})
@@ -434,6 +437,7 @@ class Push:
             if _answerable_here():
                 # The app answers through the session's open requests (``session.resume`` → ``request.answer``).
                 notice.extra["answer"] = {"via": "socket", "session_id": session}
+            _tag_profile(notice)
             step = notice.body
         else:  # a password or other value prompt: never the value, only what it's for
             expires_at = time.time() + (120 if kind == "sudo" else 300)
@@ -580,6 +584,23 @@ def _gateway_approvals(session_key: str) -> list[dict]:
         from tools.approval import list_gateway_approvals
         return list_gateway_approvals(session_key) or []
     return []
+
+
+def _profile() -> str:
+    """The Bot (profile) this hook runs for, or "" for the gateway's own."""
+    with contextlib.suppress(Exception):
+        from hermes_cli.profiles import get_active_profile_name
+        name = get_active_profile_name()
+        if name not in ("default", "custom"):
+            return name
+    return ""
+
+
+def _tag_profile(notice: notices.Notice) -> None:
+    """Bot Chats live in their profile: the app resumes the session there to answer or reply."""
+    profile = _profile()
+    if profile:
+        notice.extra["profile"] = profile
 
 
 def _answerable_here() -> bool:

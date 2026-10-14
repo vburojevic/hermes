@@ -69,6 +69,7 @@ final class PushCenter {
     @ObservationIgnored private var registeredAt: [UUID: Date] = [:]
     @ObservationIgnored private var registering: Set<UUID> = []
     @ObservationIgnored private var wasOnline: [UUID: Bool] = [:]
+    @ObservationIgnored private var facesRenderedAt: [UUID: Date] = [:]
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var preferenceSync: Task<Void, Never>?
     @ObservationIgnored private var lastPresence: (chat: String?, at: Date)?
@@ -115,6 +116,12 @@ final class PushCenter {
         #endif
     }
 
+    func sceneWillResignActive() {
+        #if os(iOS)
+        (activities as? TurnActivityController)?.appWillResignActive()
+        #endif
+    }
+
     func sceneDidEnterBackground() {
         isActive = false
         loop?.cancel()
@@ -144,6 +151,10 @@ final class PushCenter {
             let online = workspace.roster?.state.isOnline ?? false
             if online, wasOnline[workspace.id] == false { registeredAt[workspace.id] = nil }
             wasOnline[workspace.id] = online
+            if online, gatewayStates[workspace.id]?.isOn == true,
+               facesRenderedAt[workspace.id].map({ Date.now.timeIntervalSince($0) > 600 }) ?? true {
+                renderFaces(for: workspace)
+            }
             let stale = registeredAt[workspace.id].map { Date.now.timeIntervalSince($0) > 3600 } ?? true
             if stale, !registering.contains(workspace.id) {
                 await check(workspace)
@@ -450,16 +461,22 @@ final class PushCenter {
 
     // MARK: - Notices
 
-    /// A withdrawal (background push): the request was answered, timed out or was cancelled.
-    func withdraw(_ notice: PushNotice) async {
+    /// Removes every delivered notice about these requests (answered here, or anywhere).
+    func removeDelivered(requests ids: Set<String>) async {
+        guard !ids.isEmpty else { return }
         let center = UNUserNotificationCenter.current()
-        let ids = Set(notice.ids)
         let delivered = await center.deliveredNotifications()
         let gone = delivered.filter { notification in
             let info = notification.request.content.userInfo
             return (info[PushUserInfo.request] as? String).map(ids.contains) ?? ids.contains(notification.request.identifier)
         }.map(\.request.identifier)
         center.removeDeliveredNotifications(withIdentifiers: gone + Array(ids))
+    }
+
+    /// A withdrawal (background push): the request was answered, timed out or was cancelled.
+    func withdraw(_ notice: PushNotice) async {
+        let ids = Set(notice.ids)
+        await removeDelivered(requests: ids)
         if let gateway = notice.gateway?.id, let open = notice.open {
             shared.recordOpen(open, gateway: gateway, at: notice.sentAt ?? .now)
         }
@@ -498,6 +515,9 @@ final class PushCenter {
         if let room = notice.roomID {
             workspace.sidebarMode = .bots
             workspace.selection = .group(room)
+        } else if let profile = notice.profile {
+            workspace.sidebarMode = .bots
+            workspace.selection = .bot(profile)
         } else if notice.kind == .task || notice.kind == .taskFailed {
             workspace.selection = .tasks
         } else if let chat = notice.chatID {
@@ -527,7 +547,10 @@ final class PushCenter {
     /// Saves each Bot's face where the service extension finds it (communication notifications).
     func renderFaces(for workspace: BotWorkspace) {
         #if os(iOS)
-        guard let roster = workspace.roster else { return }
+        guard let roster = workspace.roster, !roster.profiles.isEmpty else { return }
+        facesRenderedAt[workspace.id] = .now
+        shared.setBotNames(Dictionary(roster.profiles.map { ($0.name, $0.title) }, uniquingKeysWith: { first, _ in first }),
+                           gateway: workspace.id)
         for bot in roster.profiles {
             guard let url = shared.faceURL(gateway: workspace.id, bot: bot.name) else { continue }
             let appearance = roster.appearance(for: bot)

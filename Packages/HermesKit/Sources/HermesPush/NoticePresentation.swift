@@ -30,7 +30,8 @@ public struct NoticePresentation: Sendable, Equatable {
         self.category = category
         categoryIdentifier = category.identifier(slot: slot)
         threadIdentifier = notice.thread.isEmpty ? (notice.chatID ?? "") : notice.thread
-        let chat = notice.summary.isEmpty ? notice.subtitle : notice.summary
+        var chat = notice.summary.isEmpty ? notice.subtitle : notice.summary
+        if let bot = notice.bot, chat == bot || chat == "Bot Chat" { chat = "" }
         switch notice.kind {
         case .approval:
             title = notice.bot.map { String(localized: "\($0) needs your OK", bundle: .module) } ?? String(localized: "Hermes needs your OK", bundle: .module)

@@ -22,15 +22,15 @@ RESOLVED_MEMORY = 30
 PRESENCE_TTL = 75
 
 
+# The gateway process's own home, read once at load. Hooks can fire inside a Bot's profile scope, where
+# Hermes resolves "the home" to that profile; devices register against the process, so every profile's
+# notices must read the same state.
+_PROCESS_HOME = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+
+
 def data_dir() -> Path:
-    """``<HERMES_HOME>/plugin-data/hermes-app-push`` (the core helper when present)."""
-    with contextlib.suppress(Exception):
-        from plugins.plugin_storage import plugin_data_dir
-        path = Path(plugin_data_dir("hermes-app-push"))
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-    home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
-    path = Path(home) / "plugin-data" / "hermes-app-push"
+    """``<HERMES_HOME of the gateway process>/plugin-data/hermes-app-push``."""
+    path = Path(_PROCESS_HOME) / "plugin-data" / "hermes-app-push"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

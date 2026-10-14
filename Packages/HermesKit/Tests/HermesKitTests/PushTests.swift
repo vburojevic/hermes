@@ -112,6 +112,8 @@ import Testing
         #expect(shared.gateways["inst_a"] == nil)
         shared.recordOpen(2, gateway: "inst_c")
         #expect(shared.recordOpen(1, gateway: "inst_b") == 3)
+        // A gateway the app no longer knows never counts.
+        #expect(shared.recordOpen(4, gateway: "inst_gone") == 3)
         // An older count never overwrites a newer one.
         #expect(shared.recordOpen(5, gateway: "inst_b", at: .now.addingTimeInterval(-60)) == 3)
         #expect(shared.recordOpen(0, gateway: "inst_c") == 1)

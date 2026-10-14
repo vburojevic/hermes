@@ -149,6 +149,7 @@ def cmd_activity(args):
 
 
 def cmd_status(args):
+    expire()
     with LOCK:
         device = STATE["devices"].get(args.get("device_id") or "")
         return {"ok": True, "version": "mock", "gateway": GATEWAY, "relay_url": RELAY["mode"], "relay_registered": True,
@@ -206,7 +207,16 @@ def wants(device_id, device, notice, walked_away=(), ignore_presence=False):
     return True
 
 
+def expire():
+    """Forget requests past their deadline, like the plugin: they must not pin the badge."""
+    now = time.time()
+    with LOCK:
+        for rid in [rid for rid, r in STATE["requests"].items() if r.get("expires_at") and r["expires_at"] < now - 30]:
+            STATE["requests"].pop(rid, None)
+
+
 def deliver(notice, walked_away=()):
+    expire()
     with LOCK:
         devices = dict(STATE["devices"])
         open_count = len(STATE["requests"])
@@ -320,6 +330,12 @@ def chat_title(stored):
     return title
 
 
+def profile_of(stored):
+    session = B["STORED"].get(stored) or {}
+    profile = session.get("profile", "default")
+    return "" if profile == "default" else profile
+
+
 def bot_of(stored):
     session = B["STORED"].get(stored) or {}
     profile = session.get("profile", "default")
@@ -404,6 +420,7 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
                                       bot=bot_of(stored))
             notice.extra["answer"] = {"via": "socket", "session_id": stored}
             state = {"phase": "needsYou", "command": notice.extra["command"], "request_id": request_id,
+                     "started_at": (STATE["turns"].get(sid) or {}).get("start"),
                      "expires_at": expires, "title": chat_title(stored), "answer": notice.extra["answer"]}
         elif method == "clarify":
             request_id = f"hi_{uuid.uuid4().hex[:8]}"
@@ -419,6 +436,8 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
                                       expires_at=expires)
             state = {"phase": "needsYou", "question": "Needs a password", "request_id": request_id, "title": chat_title(stored)}
         if notice is not None:
+            if profile_of(stored):
+                notice.extra["profile"] = profile_of(stored)
             with LOCK:
                 STATE["requests"][notice.request_id] = {"kind": notice.kind, "session": stored, "expires_at": expires}
             deliver(notice)
@@ -428,7 +447,9 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         finally:
             if notice is not None:
                 withdraw([notice.request_id])
-                activity(stored, {"phase": "working", "step": "Continuing", "title": chat_title(stored)})
+                started = (STATE["turns"].get(sid) or {}).get("start")
+                activity(stored, {"phase": "working", "step": "Continuing", "title": chat_title(stored),
+                                  **({"started_at": started} if started else {})})
 
     backend_globals["server_request"] = server_request
 
@@ -442,6 +463,32 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
             STATE["turns"][sid] = turn
         activity(stored, {"phase": "working", "step": "Thinking", "started_at": turn["start"], "title": chat_title(stored)})
         words = set(text.lower().replace("?", " ").replace(".", " ").split())
+        if "long" in words:
+            # A long planned turn: the Live Activity's steps and progress, like the plugin's
+            # pre_tool_call updates (every 6 s here).
+            stored = backend_globals["ensure_row"](sid)
+            backend_globals["add_message"](stored, "user", text)
+            backend_globals["emit"](sid, "session.info", {"running": True})
+            backend_globals["emit"](sid, "message.start", {})
+            steps = ["Listing snapshots older than 30 days", "Checking which snapshots are in use",
+                     "Measuring the space each one takes", "Planning what to keep",
+                     "Deleting 14 old snapshots", "Compacting the volume", "Verifying the backup chain",
+                     "Writing the summary"]
+            for index, label in enumerate(steps):
+                if backend_globals["RUNTIME"][sid]["interrupt"]:
+                    break
+                if index == 4 and "approve" in words:
+                    # Needs you, mid-turn: the activity turns to Deny / Allow Once.
+                    server_request(sid, "approval", {
+                        "request_id": f"ap_{uuid.uuid4().hex[:6]}", "command": "rm -rf ~/snapshots/2026-0[1-8]-*",
+                        "description": "deletes files recursively", "choices": ["once", "session", "always", "deny"]})
+                activity(stored, {"phase": "working", "step": label, "started_at": turn["start"],
+                                  "progress": {"done": index, "total": len(steps)}, "title": chat_title(stored)})
+                backend_globals["tool"](sid, stored, "terminal", {"command": label.lower()},
+                                        json.dumps({"output": "ok", "exit_code": 0}), 6.0, label)
+            reply = "Done. Freed **42 GB** and kept the last 7 days of snapshots."
+            backend_globals["stream"](sid, reply)
+            return backend_globals["finish"](sid, stored, reply)
         if words & {"ask", "sudo"}:
             # A question or a password, then the reply: the turn's opening is the mock's own.
             stored = backend_globals["ensure_row"](sid)
@@ -481,6 +528,9 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
                 bot = bot_of(stored)
                 if bot:
                     notice.title = bot
+                    notice.extra["bot"] = bot
+                if profile_of(stored):
+                    notice.extra["profile"] = profile_of(stored)
                 deliver(notice, walked_away=turn["watching"])
         return result
 

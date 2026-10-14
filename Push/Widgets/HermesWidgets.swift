@@ -160,7 +160,9 @@ struct TurnActivityView: View {
     private var doneLine: String {
         let result = state.result?.trimmingCharacters(in: .whitespaces) ?? ""
         if state.ok == false { return result.isEmpty ? String(localized: "Didn't finish") : result }
-        return result.isEmpty ? String(localized: "Done") : String(localized: "Done · \(result)")
+        if result.isEmpty { return String(localized: "Done") }
+        // Replies often open with "Done." already: don't say it twice.
+        return result.lowercased().hasPrefix("done") ? result : String(localized: "Done · \(result)")
     }
 }
 

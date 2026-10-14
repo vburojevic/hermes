@@ -113,6 +113,8 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
     public var roomID: String?
     public var memberID: String?
     public var bot: String?
+    /// The Bot's profile, for a Bot Chat: its session lives there.
+    public var profile: String?
     public var mention: Bool
 
     // Withdrawals
@@ -135,7 +137,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         case failed
         case roomID = "room_id"
         case memberID = "member_id"
-        case bot, mention, ids
+        case bot, profile, mention, ids
     }
 
     public init(
@@ -209,6 +211,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         roomID = try c.decodeIfPresent(String.self, forKey: .roomID)
         memberID = try c.decodeIfPresent(String.self, forKey: .memberID)
         bot = try c.decodeIfPresent(String.self, forKey: .bot)
+        profile = try c.decodeIfPresent(String.self, forKey: .profile)
         mention = try c.decodeIfPresent(Bool.self, forKey: .mention) ?? false
         ids = try c.decodeIfPresent([String].self, forKey: .ids) ?? []
     }
@@ -242,6 +245,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(roomID, forKey: .roomID)
         try c.encodeIfPresent(memberID, forKey: .memberID)
         try c.encodeIfPresent(bot, forKey: .bot)
+        try c.encodeIfPresent(profile, forKey: .profile)
         if mention { try c.encode(true, forKey: .mention) }
         if !ids.isEmpty { try c.encode(ids, forKey: .ids) }
     }

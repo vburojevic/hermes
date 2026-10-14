@@ -55,7 +55,7 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
         guard let content = original.mutableCopy() as? UNMutableNotificationContent,
               let envelope = PushEnvelope(payload: original.userInfo[PushUserInfo.envelope])
         else { return original }
-        let notice: PushNotice
+        var notice: PushNotice
         do {
             guard let key = try shared.deviceKey() else { return original }
             notice = try key.open(PushNotice.self, from: envelope)
@@ -64,6 +64,10 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
             return original
         }
         let gateway = shared.gateway(notice.gateway?.id)
+        // A Bot Chat's notice knows the profile; the app keeps the Bots' names for us.
+        if notice.bot == nil, let profile = notice.profile, let gateway {
+            notice.bot = shared.botNames(gateway: gateway.appID)[profile]
+        }
         let presentation = NoticePresentation(
             notice, gatewayName: gateway?.name, slot: gateway?.slot,
             showDetails: shared.preferences.showDetails, unlocked: shared.isUnlocked
@@ -103,7 +107,7 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
     /// A Bot's message as a communication notification: its face and name, in its group.
     static func communicate(_ notice: PushNotice, content: UNMutableNotificationContent, gateway: PushShared.Gateway?, shared: PushShared) async throws -> UNNotificationContent {
         let name = notice.bot ?? notice.title
-        let handle = notice.memberID ?? name
+        let handle = notice.memberID ?? notice.profile ?? name
         var image: INImage?
         if let gateway, let url = shared.faceURL(gateway: gateway.appID, bot: handle), let data = try? Data(contentsOf: url) {
             image = INImage(imageData: data)

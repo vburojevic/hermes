@@ -86,6 +86,7 @@ public final class PushShared: @unchecked Sendable {
         let record = Gateway(appID: appID, name: name, slot: slot)
         all[installationID] = record
         gateways = all
+        openCounts = openCounts.filter { all[$0.key] != nil }
         return record
     }
 
@@ -116,7 +117,8 @@ public final class PushShared: @unchecked Sendable {
     /// The badge: open requests across gateways, nothing else (`docs/notifications.md` §2).
     public var badge: Int {
         let cutoff = Date.now.addingTimeInterval(-6 * 3600)
-        return openCounts.values.filter { $0.at > cutoff }.reduce(0) { $0 + $1.count }
+        let known = gateways
+        return openCounts.filter { known[$0.key] != nil && $0.value.at > cutoff }.reduce(0) { $0 + $1.value.count }
     }
 
     // MARK: Faces
@@ -126,6 +128,15 @@ public final class PushShared: @unchecked Sendable {
         let safe = bot.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         guard !safe.isEmpty else { return nil }
         return container?.appending(path: "Faces/\(appID.uuidString)/\(safe).png")
+    }
+
+    /// The Bots' names by profile, so a notice that only knows the profile can say who's asking.
+    public func botNames(gateway appID: UUID) -> [String: String] {
+        decode([String: String].self, "push.bots.\(appID.uuidString)") ?? [:]
+    }
+
+    public func setBotNames(_ names: [String: String], gateway appID: UUID) {
+        encode(names, "push.bots.\(appID.uuidString)")
     }
 
     // MARK: Lock state

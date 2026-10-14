@@ -43,6 +43,7 @@ struct HermesApp: App {
             if phase == .background { model.didEnterBackground() }
             #if HERMES_PUSH
             if phase == .active { PushCenter.shared.sceneDidBecomeActive() }
+            if phase == .inactive { PushCenter.shared.sceneWillResignActive() }
             if phase == .background { PushCenter.shared.sceneDidEnterBackground() }
             #endif
         }

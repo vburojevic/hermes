@@ -43,9 +43,14 @@ extension PushCenter {
     }
 
     func conversation(_ conversation: ConversationModel, approval: ApprovalRequest?, replacing old: ApprovalRequest?) {
-        #if os(macOS)
-        if let old, old.id != approval?.id { MacNotifier.shared.resolved(old.id) }
-        #endif
+        if let old, old.id != approval?.id {
+            #if os(macOS)
+            MacNotifier.shared.resolved(old.id)
+            #else
+            // Answered (here or elsewhere): its notification goes now, not when the withdraw push lands.
+            Task { await removeDelivered(requests: [old.id]) }
+            #endif
+        }
         guard let approval, approval.id != old?.id else { return }
         considerAsking(.approval)
         #if os(macOS)
@@ -57,6 +62,10 @@ extension PushCenter {
 
     func conversation(_ conversation: ConversationModel, requests: [HermesRequest], old: [HermesRequest]) {
         let before = Set(old.map(\.id)), now = Set(requests.map(\.id))
+        #if os(iOS)
+        let gone = before.subtracting(now)
+        if !gone.isEmpty { Task { await removeDelivered(requests: gone) } }
+        #endif
         #if os(macOS)
         for id in before.subtracting(now) { MacNotifier.shared.resolved(id) }
         if let workspace = workspace(of: conversation) {

@@ -4,10 +4,12 @@ import HermesKit
 import HermesPush
 import UIKit
 
-/// The Live Activity for a long turn (`docs/notifications.md` §4): started when a turn has run 15 s
-/// and the app goes to the background, one per gateway (the newest running turn wins). Its push
-/// token goes to the gateway's plugin, which sends the updates; the app ends it with the result,
-/// dismissed after 4 minutes.
+/// The Live Activity for a long turn (`docs/notifications.md` §4): one per gateway (the newest
+/// running turn wins) once a turn has run 15 s. ActivityKit only starts activities for an app in
+/// front ("Requester is not foreground"), so it starts while the app is still showing — when the
+/// turn passes 15 s, or as the person leaves — not after it's gone. Its push token goes to the
+/// gateway's plugin, which sends the updates; the app ends it with the result, dismissed after
+/// 4 minutes.
 @MainActor
 final class TurnActivityController {
     struct Running {
@@ -37,7 +39,7 @@ final class TurnActivityController {
 
     func turnStarted(in conversation: ConversationModel, gatewayID: UUID, at date: Date) {
         running[ObjectIdentifier(conversation)] = Running(conversation: conversation, gatewayID: gatewayID, startedAt: date)
-        if isBackground { scheduleStart() }
+        scheduleStart()
     }
 
     func turnFinished(in conversation: ConversationModel, ok: Bool, result: String?) {
@@ -81,28 +83,31 @@ final class TurnActivityController {
 
     // MARK: App state
 
-    func appDidEnterBackground() {
-        isBackground = true
-        scheduleStart()
+    /// Leaving: still in front for a moment, the last chance to start an activity.
+    func appWillResignActive() {
+        if enabled { _ = startDue() }
     }
 
-    func appDidBecomeActive() {
-        isBackground = false
+    func appDidEnterBackground() {
+        isBackground = true
         pendingStart?.cancel()
         pendingStart = nil
     }
 
-    /// Starts each gateway's activity once its newest turn has run 15 s (now, or a little later
-    /// while the app still has background time).
+    func appDidBecomeActive() {
+        isBackground = false
+        scheduleStart()
+    }
+
+    /// Starts each gateway's activity as its newest turn passes 15 s, while the app is in front.
     private func scheduleStart() {
-        guard enabled else { return }
-        pendingStart?.cancel()
+        guard enabled, pendingStart == nil, !isBackground else { return }
         pendingStart = Task { [weak self] in
-            while let self, !Task.isCancelled, self.isBackground {
-                let waiting = self.startDue()
-                guard let wait = waiting, wait > 0 else { return }
-                try? await Task.sleep(for: .seconds(wait))
+            while let self, !Task.isCancelled, !self.isBackground {
+                guard let wait = self.startDue() else { break }
+                try? await Task.sleep(for: .seconds(max(wait, 0.5)))
             }
+            self?.pendingStart = nil
         }
     }
 
