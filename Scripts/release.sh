@@ -148,10 +148,11 @@ echo "Apple Distribution $DIST_SHA · Developer ID $DEVID_SHA (team $TEAM_ID)"
 
 archive() { # <iOS|macOS>
   log "archive $1"
-  # iOS keeps project.yml's manual App Store signing (push needs the production aps-environment);
-  # the Mac archive signs automatically and is re-signed for Developer ID below.
+  # Both sign by hand with the escrowed identities, so no development certificate is ever minted:
+  # iOS with project.yml's App Store profiles (push needs the production aps-environment), the Mac
+  # with Developer ID (it has no entitlements, so no profile), re-signed after export below.
   local style=()
-  [ "$1" = macOS ] && style=(CODE_SIGN_STYLE=Automatic)
+  [ "$1" = macOS ] && style=(CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$DEVID_SHA" PROVISIONING_PROFILE_SPECIFIER=)
   xcodebuild archive -project Hermes.xcodeproj -scheme Hermes -configuration Release \
     -destination "generic/platform=$1" -archivePath "$OUT/Hermes-$1.xcarchive" \
     -allowProvisioningUpdates "${AUTH[@]}" DEVELOPMENT_TEAM="$TEAM_ID" ${style[@]+"${style[@]}"} \
