@@ -95,6 +95,8 @@ final class BotRoster {
     /// Watches the device's network so a new or returning route reconnects at once.
     @ObservationIgnored private var pathMonitor: NWPathMonitor?
     @ObservationIgnored private var pathSignature: String?
+    @ObservationIgnored private var networkSettleTask: Task<Void, Never>?
+    @ObservationIgnored private var connectStartedAt: Date?
     @ObservationIgnored weak var workspace: BotWorkspace?
 
     /// The gateway's hosted group chats.
@@ -207,38 +209,56 @@ final class BotRoster {
         guard pathMonitor == nil else { return }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
-            // Wi-Fi ↔ cellular, a VPN or Tailscale coming up: each is a different route.
-            let signature = path.status == .satisfied
-                ? "up:" + path.availableInterfaces.map { "\($0.type)-\($0.name)" }.joined(separator: ",")
-                : "down"
+            // Only what changes the route: up or down, and which kinds of link carry it. iOS
+            // reports VPN tunnels (Tailscale, iCloud Private Relay) and interface reshuffles all
+            // the time; counting those as changes restarted the connect until it never finished.
+            let kinds = [NWInterface.InterfaceType.wifi, .cellular, .wiredEthernet].filter { path.usesInterfaceType($0) }
+            let signature = path.status == .satisfied ? "up:" + kinds.map { "\($0)" }.joined(separator: ",") : "down"
             Task { @MainActor in self?.networkChanged(signature) }
         }
         monitor.start(queue: DispatchQueue(label: "hermes.roster.network", qos: .utility))
         pathMonitor = monitor
     }
 
-    /// The route changed. Without a socket, connect at once; with one, prove it still works:
-    /// a socket opened over the old route usually dies without a close and would otherwise
-    /// look healthy until the heartbeat gives up on it.
+    /// The route changed. A handover reports several states in a row, so wait for it to settle,
+    /// then act once.
     private func networkChanged(_ signature: String) {
-        defer { pathSignature = signature }
-        guard let previous = pathSignature, previous != signature, signature != "down" else { return }
-        guard !isTornDown, !isInBackground else { return }
-        if let socket {
-            reconnectAttempts = 0
-            Task { _ = await socket.probe(timeout: .seconds(3)) }
-        } else {
-            reconnectAttempts = 0
-            reconnectTask?.cancel()
-            reconnectTask = nil
-            // An attempt started on the dead route can hang until it times out; start over.
-            startConnect()
+        guard signature != pathSignature else { return }
+        let previous = pathSignature
+        pathSignature = signature
+        guard let previous, signature != "down" else { return }
+        networkSettleTask?.cancel()
+        networkSettleTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.routeChanged(cameBack: previous == "down")
         }
+    }
+
+    /// Without a socket, connect now rather than after the backoff; with one, prove it still
+    /// works: a socket opened over the old route usually dies without a close and would look
+    /// healthy until the heartbeat gives up on it.
+    private func routeChanged(cameBack: Bool) {
+        guard !isTornDown, !isInBackground else { return }
+        reconnectAttempts = 0
+        if let socket {
+            Task { _ = await socket.probe(timeout: .seconds(8)) }
+            return
+        }
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        if let connectStartedAt, connectTask != nil {
+            // An attempt in flight keeps going. Only one that started while the network was gone
+            // and is still hanging gets replaced.
+            guard cameBack, Date.now.timeIntervalSince(connectStartedAt) > 5 else { return }
+        }
+        startConnect()
     }
 
     /// One tracked connect at a time; a superseded attempt discards what it opened.
     private func startConnect() {
         connectTask?.cancel()
+        connectStartedAt = .now
         connectGeneration += 1
         let generation = connectGeneration
         connectTask = Task { [weak self] in
@@ -415,6 +435,7 @@ final class BotRoster {
         isTornDown = true
         pathMonitor?.cancel()
         pathMonitor = nil
+        networkSettleTask?.cancel()
         disconnect()
         conversations.values.forEach { $0.cancelAll() }
         for chat in gatewayChats.values.compactMap(\.value) { chat.botChatConnectionLost() }
@@ -445,7 +466,8 @@ final class BotRoster {
         if let socket {
             Task {
                 // A ping, not the socket's own idea of being open: after a suspension it often isn't.
-                if await socket.probe(timeout: .seconds(3)) {
+                // Generous: waking the cellular radio can take seconds, and a false "dead" costs a reconnect.
+                if await socket.probe(timeout: .seconds(8)) {
                     await refresh()
                     if self.pollTask == nil, self.socket === socket { self.startPolling() }
                 }

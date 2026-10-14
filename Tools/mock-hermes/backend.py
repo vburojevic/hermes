@@ -187,6 +187,14 @@ def seed():
     chat = add_session("ops", BOT_CHAT, hidden=True, started=NOW - 20 * DAY)
     add_message(chat, "user", "Hey, tell me about yourself!", NOW - 20 * DAY)
     add_message(chat, "assistant", "I'm **Ops**. I watch your servers and backups and tell you before things break.", NOW - 20 * DAY + 5)
+    if CONFIG.get("seed_bot_chat"):
+        # A local export of a real Bot Chat (rows as Hermes stores them), to reproduce layout bugs
+        # with real turns. The file stays on the machine; nothing in it is part of the mock.
+        with open(CONFIG["seed_bot_chat"]) as handle:
+            for row in json.load(handle):
+                extra = {k: row.get(k) for k in ("tool_calls", "tool_call_id", "tool_name", "reasoning",
+                                                  "display_kind", "finish_reason") if row.get(k) is not None}
+                add_message(chat, row["role"], row.get("content") or "", row.get("timestamp"), **extra)
     if CONFIG.get("long_bot_chats"):
         # Real Bot Chats run to hundreds of messages, with code and tables: long enough for lazy rows.
         start = NOW - 4 * DAY
@@ -1083,6 +1091,7 @@ def main():
     parser.add_argument("--token", help="fixed session token for the ungated mode")
     parser.add_argument("--quiet-world", action="store_true", help="no background activity")
     parser.add_argument("--long-bot-chats", action="store_true", help="give Ops a long Bot Chat (180 messages)")
+    parser.add_argument("--seed-bot-chat", metavar="JSON", help="load Ops's Bot Chat from a local export of message rows")
     parser.add_argument("--gateway-port", type=int,
                         help="also serve the API-server mock (server.py) on this port, sharing its sessions with "
                              "the socket, like the real gateway and backend share one database (chats.py)")
@@ -1092,6 +1101,7 @@ def main():
     args = parser.parse_args()
     CONFIG["password"] = args.password
     CONFIG["long_bot_chats"] = args.long_bot_chats
+    CONFIG["seed_bot_chat"] = args.seed_bot_chat
     if args.token:
         CONFIG["token"] = args.token
     seed()

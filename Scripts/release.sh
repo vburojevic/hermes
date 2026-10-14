@@ -68,6 +68,10 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+# A killed release (an ended session, Ctrl-C) must still delete the signing keychain: bash skips
+# the EXIT trap on a fatal signal unless the signal is turned into an exit.
+trap 'exit 130' INT HUP
+trap 'exit 143' TERM
 
 log "signing keychain"
 curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o "$WORK/AppleWWDRCAG3.cer"
