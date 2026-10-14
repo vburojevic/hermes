@@ -76,6 +76,12 @@ struct SettingsView: View {
                     Text("With Send with Return on, Shift-Return starts a new line on a hardware keyboard.")
                 }
 
+                #if HERMES_PUSH && os(iOS)
+                Section("Notifications") {
+                    NotificationsSettingsRow()
+                }
+                #endif
+
                 Section("About") {
                     LabeledContent("Version", value: Self.versionString)
                     Link(destination: URL(string: "https://hermes-agent.nousresearch.com/docs/")!) {

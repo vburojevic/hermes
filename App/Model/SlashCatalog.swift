@@ -55,6 +55,9 @@ final class SlashCatalog {
             .map { Entry(name: $0.name, kind: .command, summary: $0.summary, info: $0) }
     }
 
+    /// Commands only the app runs: the push plugin's `/app-push` (through `command.dispatch`).
+    static let hiddenCommands: Set<String> = ["app-push"]
+
     /// Loads the profile's commands and skills over the gateway protocol, once.
     func load(roster: BotRoster, profile: String?) {
         guard loading == nil, !isLoaded else { return }
@@ -93,7 +96,8 @@ final class SlashCatalog {
                 guard case .array(let parts) = pair, let raw = parts.first?.stringValue else { continue }
                 let name = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
                 let canonical = SlashCommands.canonical(name)
-                guard !seen.contains(canonical), !skillEntries.contains(where: { $0.name == name }) else { continue }
+                guard !seen.contains(canonical), !skillEntries.contains(where: { $0.name == name }),
+                      !Self.hiddenCommands.contains(canonical) else { continue }
                 seen.insert(canonical)
                 let info = SlashCommands.known(name)
                 let summary = info?.summary ?? parts.dropFirst().first?.stringValue ?? descriptions[name] ?? ""

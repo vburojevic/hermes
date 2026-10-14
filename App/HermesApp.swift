@@ -13,6 +13,13 @@ struct HermesApp: App {
     #if os(macOS)
     @State private var updater = Updater()
     #endif
+    #if HERMES_PUSH
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
+    #else
+    @NSApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
+    #endif
+    #endif
 
     var body: some Scene {
         WindowGroup(id: Self.mainWindow) {
@@ -34,6 +41,10 @@ struct HermesApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { model.didEnterBackground() }
+            #if HERMES_PUSH
+            if phase == .active { PushCenter.shared.sceneDidBecomeActive() }
+            if phase == .background { PushCenter.shared.sceneDidEnterBackground() }
+            #endif
         }
         #if os(macOS)
         .defaultSize(width: 1180, height: 800)

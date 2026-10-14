@@ -46,9 +46,8 @@ final class TurnActivityController {
             let current = activity.content.state.state(key: try? center.shared.deviceKey())
             var state = TurnActivityState(phase: .done, startedAt: current.startedAt, title: current.title, result: result, ok: ok)
             state.endedAt = .now
-            Task {
-                await activity.end(.init(state: .init(state), staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(240)))
-            }
+            let id = activity.id
+            Task { await Self.end(id, with: state, dismissal: .after(.now.addingTimeInterval(240))) }
             forget(activity)
         }
     }
@@ -69,7 +68,8 @@ final class TurnActivityController {
             next.question = nil
             next.requestID = nil
             next.step = String(localized: "Continuing")
-            Task { await activity.update(.init(state: .init(next), staleDate: nil)) }
+            let id = activity.id
+            Task { await Self.update(id, to: next) }
         }
     }
 
@@ -121,7 +121,8 @@ final class TurnActivityController {
             let existing = Activity<TurnActivityAttributes>.activities.filter { $0.attributes.gatewayID == gatewayID }
             if existing.contains(where: { $0.attributes.sessionID == session && $0.activityState == .active }) { continue }
             for old in existing {
-                Task { await old.end(nil, dismissalPolicy: .immediate) }
+                let id = old.id
+                Task { await Self.end(id, with: nil, dismissal: .immediate) }
                 forget(old)
             }
             start(conversation, session: session, gatewayID: gatewayID, startedAt: turn.startedAt)
@@ -131,7 +132,7 @@ final class TurnActivityController {
 
     private func start(_ conversation: ConversationModel, session: String, gatewayID: UUID, startedAt: Date) {
         guard let workspace = center.model?.workspaces[gatewayID] else { return }
-        let title = conversation.title ?? String(localized: "Hermes")
+        let title = center.chatTitle(of: conversation, in: workspace)
         let attributes = TurnActivityAttributes(
             gatewayID: gatewayID, gatewayName: workspace.bot.name, sessionID: session, chatTitle: title, bot: conversation.botName
         )
@@ -182,6 +183,19 @@ final class TurnActivityController {
                 ])
             }
         }
+    }
+
+    // Activities aren't Sendable: tasks look them up by id instead of carrying them.
+    nonisolated private static func activity(_ id: String) -> Activity<TurnActivityAttributes>? {
+        Activity<TurnActivityAttributes>.activities.first { $0.id == id }
+    }
+
+    nonisolated private static func end(_ id: String, with state: TurnActivityState?, dismissal: ActivityUIDismissalPolicy) async {
+        await activity(id)?.end(state.map { .init(state: .init($0), staleDate: nil) }, dismissalPolicy: dismissal)
+    }
+
+    nonisolated private static func update(_ id: String, to state: TurnActivityState) async {
+        await activity(id)?.update(.init(state: .init(state), staleDate: nil))
     }
 
     private static func json(_ values: [String: String]) -> String {

@@ -57,6 +57,10 @@ final class PushCenter {
     var prime: PrimeReason?
     /// The Set Up Push sheet's gateway (`pushSetup`).
     var setupGateway: UUID?
+    /// Settings → Notifications, from the system's "Hermes Notification Settings" link.
+    var showSettings = false
+    /// Why the last Live Activity couldn't start (Settings shows it).
+    private(set) var activityError: String?
     /// Chats the app is showing, by gateway: no banner for these (their card docks instead).
     private(set) var isActive = false
 
@@ -88,7 +92,7 @@ final class PushCenter {
         Task {
             await refreshAuthorization()
             #if os(iOS)
-            if authorization == .authorized || authorization == .provisional || authorization == .ephemeral {
+            if canNotify {
                 UIApplication.shared.registerForRemoteNotifications()
             }
             #endif
@@ -194,7 +198,11 @@ final class PushCenter {
     var isDenied: Bool { authorization == .denied }
 
     var canNotify: Bool {
+        #if os(iOS)
         authorization == .authorized || authorization == .provisional || authorization == .ephemeral
+        #else
+        authorization == .authorized || authorization == .provisional
+        #endif
     }
 
     /// Settings → Hermes → Notifications.
@@ -421,7 +429,7 @@ final class PushCenter {
         let deviceID = shared.deviceID
         for workspace in model.workspaces.values where gatewayStates[workspace.id]?.isOn == true {
             guard let roster = workspace.roster, roster.state.isOnline,
-                  let status = try? await AppPushClient({ try await roster.request($0, $1) }).status(deviceID: deviceID),
+                  let status = try? await AppPushClient(transport: { try await roster.request($0, $1) }).status(deviceID: deviceID),
                   let installation = status.installationID
             else { continue }
             shared.recordOpen(status.open, gateway: installation)
@@ -490,6 +498,21 @@ final class PushCenter {
             workspace.sidebarMode = .chats
             workspace.selection = .session(key)
         }
+    }
+
+    // MARK: - Chats
+
+    /// A chat's title as the sidebar shows it.
+    func chatTitle(of conversation: ConversationModel, in workspace: BotWorkspace) -> String {
+        if conversation.isBotChat { return conversation.askerName }
+        if let key = conversation.stableKey, let title = workspace.session(forKey: key)?.title, !title.isEmpty {
+            return title
+        }
+        return String(localized: "New Chat")
+    }
+
+    func recordActivityError(_ error: any Error) {
+        activityError = error.localizedDescription
     }
 
     // MARK: - Faces

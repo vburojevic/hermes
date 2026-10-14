@@ -12,20 +12,26 @@ import UserNotifications
 /// If anything fails, the notification keeps the relay's kind-only text ("Hermes needs your OK ·
 /// Open Hermes to see it."), never content.
 nonisolated final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
-    private let lock = OSAllocatedUnfairLock<Pending?>(initialState: nil)
     private static let log = Logger(subsystem: "co.caffeinatedcode.hermes", category: "push")
+    private let lock = NSLock()
+    private var handler: ((UNNotificationContent) -> Void)?
+    private var fallback: UNNotificationContent?
 
-    private struct Pending {
-        var handler: (UNNotificationContent) -> Void
-        var fallback: UNNotificationContent
+    /// UserNotifications types aren't Sendable; the extension hands each one to exactly one task.
+    private struct Box<Value>: @unchecked Sendable {
+        let value: Value
     }
 
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
-        lock.withLock { $0 = Pending(handler: contentHandler, fallback: request.content) }
-        let content = request.content
+        lock.withLock {
+            handler = contentHandler
+            fallback = request.content
+        }
+        let content = Box(value: request.content)
+        let identifier = request.identifier
         Task {
-            let filled = await Self.fill(content, identifier: request.identifier)
-            self.deliver(filled)
+            let filled = await Self.fill(content.value, identifier: identifier)
+            self.deliver(Box(value: filled))
         }
     }
 
@@ -33,9 +39,14 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
         deliver(nil)
     }
 
-    private func deliver(_ content: UNNotificationContent?) {
-        guard let pending = lock.withLock({ state -> Pending? in defer { state = nil }; return state }) else { return }
-        pending.handler(content ?? pending.fallback)
+    /// Hands over the filled content once: whichever of the fill and the deadline comes first.
+    private func deliver(_ content: Box<UNNotificationContent>?) {
+        let (handler, fallback) = lock.withLock { () -> (((UNNotificationContent) -> Void)?, UNNotificationContent?) in
+            defer { self.handler = nil }
+            return (self.handler, self.fallback)
+        }
+        guard let handler, let fallback else { return }
+        handler(content?.value ?? fallback)
     }
 
     static func fill(_ original: UNNotificationContent, identifier: String) async -> UNNotificationContent {

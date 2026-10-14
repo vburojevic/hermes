@@ -188,9 +188,27 @@ enum PushResponder {
         if roster.state.isOnline {
             return try await body { method, params in try await roster.request(method, params, timeout: .seconds(20)) }
         }
-        let socket = try await roster.makeSocket()
+        let socket = try await makeSocket(workspace)
         defer { Task { await socket.close() } }
         return try await body { method, params in try await socket.request(method, params, timeout: .seconds(20)) }
+    }
+
+    /// A one-off connection to the gateway's backend with the saved sign-in (a local backend's
+    /// token changes on restart, so an automatic sign-in reads it again once).
+    @MainActor
+    private static func makeSocket(_ workspace: BotWorkspace) async throws -> GatewaySocket {
+        guard let link = workspace.bot.backend else { throw Failure.noBackend }
+        let client = BackendClient(baseURL: link.url, credential: PushCenter.shared.model?.backendCredential(for: workspace.id))
+        do {
+            let socket = GatewaySocket(url: try await client.gatewaySocketURL())
+            try await socket.connect()
+            return socket
+        } catch where link.signIn == .automatic {
+            _ = try await client.discoverSessionToken()
+            let socket = GatewaySocket(url: try await client.gatewaySocketURL())
+            try await socket.connect()
+            return socket
+        }
     }
 
     // MARK: - Failure
@@ -221,7 +239,8 @@ enum ActivityAnswering {
     @MainActor
     static func answer(gatewayID: UUID?, sessionID: String, requestID: String, allow: Bool) async {
         let center = PushCenter.shared
-        guard let gatewayID, let installation = center.installationID(for: gatewayID) ?? Optional("") else { return }
+        guard let gatewayID else { return }
+        let installation = center.installationID(for: gatewayID) ?? ""
         #if os(iOS)
         let route = (center.activities as? TurnActivityController)?.answerRoute(gatewayID: gatewayID)
         #else

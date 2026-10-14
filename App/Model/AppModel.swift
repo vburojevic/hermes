@@ -30,6 +30,9 @@ final class AppModel {
         #if DEBUG
         bootstrapFromEnvironment()
         #endif
+        #if HERMES_PUSH
+        PushCenter.shared.attach(self)
+        #endif
     }
 
     var currentWorkspace: BotWorkspace? {
@@ -110,6 +113,9 @@ final class AppModel {
         try store.save(updated)
         try? store.removeAPIKey(for: botID)
         try? store.setBackendCredential(nil, for: botID)
+        #if HERMES_PUSH
+        if let workspace = workspaces[botID] { PushCenter.shared.forget(workspace) }
+        #endif
         workspaces[botID]?.tearDown()
         workspaces[botID]?.imageStore.removeAll()
         workspaces[botID] = nil

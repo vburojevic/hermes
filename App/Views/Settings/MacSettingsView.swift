@@ -20,6 +20,11 @@ struct MacSettingsView: View {
             Tab("Chat", systemImage: "bubble.left") {
                 ChatPane()
             }
+            #if HERMES_PUSH
+            Tab("Notifications", systemImage: "bell") {
+                NotificationSettingsView()
+            }
+            #endif
         }
         .frame(width: 480)
         .preferredColorScheme(appearance.colorScheme)

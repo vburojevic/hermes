@@ -33,8 +33,9 @@ Scheduled tasks: `deliver: apppush`, and `failure_deliver: apppush:fail` to hear
 | `pre_approval_request` (gateway surface) | approval, with the queue's `request_id` | `APPROVAL` | time-sensitive |
 | `on_human_input_request` `clarify` | question, choices from the `clarify` tool call | `QUESTION` | time-sensitive |
 | `on_human_input_request` `sudo` | "needs a password" (what for, never the value) | `OPEN` | time-sensitive |
-| `pre_llm_call` → `on_session_end` | reply, when the turn ran ≥ the device's threshold | `REPLY` | active |
+| `pre_llm_call` → `on_session_end` | reply (its first three lines), when the turn ran ≥ the device's threshold or the device was watching the chat when the turn started and has left since | `REPLY` | active |
 | cron delivery (`apppush`) | task result or failure | `TASK` | passive / active |
+| `kanban_task_completed` / `kanban_task_blocked` | a Kanban card done, or stuck | `TASK` | passive / active |
 | `on_room_member_activity` | a Bot's group message (settled after 5 s) | `MESSAGE` | active |
 | `subagent_stop` (≥ 60 s, after its turn) | background work finished | `OPEN` | passive |
 | `post_approval_response`, `on_human_input_resolved` | background "withdraw" push | — | — |
@@ -57,12 +58,19 @@ Plugins can't add gateway RPC methods, so the app calls
 | `register` | `device_id`, `token` (hex), `topic` (bundle id), `environment` (`development`/`production`), `public_key` (base64 X25519), `platform`, `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}`, `relay`, `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` + `session_id`, `running`, `away`) | `open` |
+| `presence` | `device_id`, `state` (`foreground` + `session_id`, `running`, `away`), `live` (chats the app notifies about itself, the Mac) | `open` |
 | `activity` | `device_id`, `token` (or none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` (optional) | version, relay, devices, registered, preferences, open |
 | `test` | `device_id` | sends a test notice now |
 
-Preferences: `approvals`, `passwords`, `replies`, `reply_after` (seconds), `tasks` (`all`/`failures`/`off`),
+Approvals carry `answer`: `{"via": "socket", "session_id"}` (`approval.respond` on the backend socket) or
+`{"via": "run", "run_id"}` (an API server run: `POST /v1/runs/{run_id}/approval`); a messaging platform's own
+approvals carry none and only open the app. Questions answered in the TUI gateway carry `{"via": "socket"}`:
+the app reads the session's open requests (`session.resume`) and answers with `request.answer`.
+
+Replies skip subagent turns and messaging-platform chats (their own app already notifies).
+
+Preferences: `approvals`, `passwords`, `replies`, `reply_after` (seconds), `tasks` (`all`/`failures`/`off`, default `all`),
 `bots` (`all`/`mentions`/`off`), `background`, `live_activity`, `show_details`, `mention_names`.
 
 ## Encryption

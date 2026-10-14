@@ -1087,6 +1087,8 @@ def main():
                         help="also serve the API-server mock (server.py) on this port, sharing its sessions with "
                              "the socket, like the real gateway and backend share one database (chats.py)")
     parser.add_argument("--gateway-key", default="dev-key-0123456789abcdef")
+    parser.add_argument("--push-relay", default="simctl",
+                        help="where push notices go (push.py): simctl (the simulator that registered) or a relay URL")
     args = parser.parse_args()
     CONFIG["password"] = args.password
     CONFIG["long_bot_chats"] = args.long_bot_chats
@@ -1110,6 +1112,13 @@ def main():
         spec.loader.exec_module(chats)
         chats.install(globals(), gateway)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
+    import importlib.util as _util
+    import pathlib as _pathlib
+    _spec = _util.spec_from_file_location("mock_push", _pathlib.Path(__file__).resolve().parent / "push.py")
+    _push = _util.module_from_spec(_spec)
+    _spec.loader.exec_module(_push)
+    _push.install(globals(), gateway if args.gateway_port else None, relay_mode=args.push_relay,
+                  chats_module=chats if args.gateway_port else None)
     if not args.quiet_world:
         threading.Thread(target=ambient, daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), Handler)

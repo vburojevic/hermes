@@ -78,6 +78,9 @@ struct RootView: View {
         // Outermost, so sheets inherit them too.
         .environment(router)
         .environment(\.pausesDecorativeMotion, scenePhase != .active || PowerState.shared.isLowPower)
+        #if HERMES_PUSH
+        .pushPresentation()
+        #endif
     }
 
     @ViewBuilder

@@ -29,8 +29,8 @@ final class MacNotifier {
     func approval(_ approval: ApprovalRequest, in conversation: ConversationModel, workspace: BotWorkspace) {
         guard center.preferences.approvals else { return }
         let command = approval.command?.trimmingCharacters(in: .whitespacesAndNewlines)
-        var notice = baseNotice(.approval, id: approval.requestID, conversation: conversation, workspace: workspace)
-        notice.requestID = approval.requestID
+        var notice = baseNotice(.approval, id: approval.id, conversation: conversation, workspace: workspace)
+        notice.requestID = approval.id
         notice.command = command
         notice.detail = approval.description
         notice.bot = conversation.isBotChat ? conversation.askerName : nil
