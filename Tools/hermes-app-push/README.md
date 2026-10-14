@@ -8,10 +8,12 @@ to APNs. The relay sees only routing fields and an encrypted envelope.
 ## Install
 
 ```sh
-cp -R hermes-app-push ~/.hermes/plugins/      # or: hermes plugins install <repo>
-hermes plugins enable hermes-app-push
+hermes plugins install vburojevic/hermes-app-push --enable
 hermes gateway restart                          # and restart `hermes serve` / Hermes Desktop
 ```
+
+Or ask Hermes from the app: Settings → Notifications → your gateway → Set Up… → Ask Hermes to Set It Up.
+The app reaches the plugin through the gateway's Hermes backend (`hermes serve`, Bot Mode in the app).
 
 Optional settings (`config.yaml`):
 

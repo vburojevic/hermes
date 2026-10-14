@@ -24,7 +24,7 @@ VERSION = "1.0.0"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
-    "passwords": True,          # sudo, secrets, sign-ins
+    "passwords": True,          # password, secret and sign-in prompts
     "replies": True,
     "reply_after": 30,          # seconds a turn must run before its reply notifies
     "tasks": "all",             # all | failures | off (scheduled tasks and Kanban cards)
@@ -435,7 +435,7 @@ class Push:
                 # The app answers through the session's open requests (``session.resume`` → ``request.answer``).
                 notice.extra["answer"] = {"via": "socket", "session_id": session}
             step = notice.body
-        else:  # sudo and any other value prompt: never the value, only what it's for
+        else:  # a password or other value prompt: never the value, only what it's for
             expires_at = time.time() + (120 if kind == "sudo" else 300)
             notice = notices.password(request_id=request_id, session_id=session, chat=chat,
                                       gateway_name=self.gateway_name(), what=prompt if kind == "sudo" else "",
