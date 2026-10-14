@@ -198,8 +198,8 @@ private struct MessageActions<More: View>: View {
 
 // MARK: - Work summary
 
-/// The turn header and, unfolded, the plan and the step timeline. Folded, the steps' attachments
-/// (diffs, output, results) stay in view: they're what the turn produced.
+/// The turn header and, unfolded, the plan and the steps. Folded, only what the turn changed or
+/// warned about stays in view (diffs, risk notes); everything else is a tap away in its step.
 struct WorkSummaryView: View {
     let turn: AssistantTurn
     var status: String?
@@ -207,7 +207,9 @@ struct WorkSummaryView: View {
     var onHeaderTap: () -> Void = {}
 
     @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
-    @State private var userExpanded: Bool?
+    @State private var userExpanded: Bool? = Disclosure.debugOpens("turns") ? true : nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.disclosureWillToggle) private var willToggle
 
     private var isExpanded: Bool {
         userExpanded ?? (turn.isWorking && expandWhileWorking)
@@ -219,31 +221,33 @@ struct WorkSummaryView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             if isExpanded {
-                if !turn.plan.isEmpty {
-                    PlanCard(plan: turn.plan)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                VStack(alignment: .leading, spacing: 14) {
+                    if !turn.plan.isEmpty {
+                        PlanCard(plan: turn.plan)
+                    }
+                    if !turn.steps.isEmpty {
+                        StepTimeline(steps: turn.steps)
+                    }
                 }
-                if !turn.steps.isEmpty {
-                    StepTimeline(steps: turn.steps)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+                .transition(Disclosure.transition(reduceMotion: reduceMotion))
             } else if !turn.isWorking {
-                // Only steps with something to show: an empty one would still take the stack's
-                // spacing, and a turn of a hundred tool calls left a screen of blank space.
+                // Only steps with something to keep in view: an empty one would still take the
+                // stack's spacing, and a turn of a hundred tool calls left a screen of blank space.
                 ForEach(turn.steps) { step in
-                    if case .tool(let tool) = step, tool.hasAttachments {
+                    if case .tool(let tool) = step, tool.hasFoldedAttachments {
                         ToolAttachments(tool: tool)
                     }
                 }
             }
         }
-        .animation(Theme.spring, value: isExpanded)
-        .animation(Theme.spring, value: turn.steps.count)
-        .animation(Theme.spring, value: turn.plan)
+        .animation(Disclosure.animation(reduceMotion: reduceMotion), value: isExpanded)
+        .animation(.smooth(duration: 0.3), value: turn.steps.count)
+        .animation(.smooth(duration: 0.3), value: turn.plan)
     }
 
     private var header: some View {
         Button {
+            willToggle()
             userExpanded = !isExpanded
             onHeaderTap()
         } label: {
@@ -270,10 +274,7 @@ struct WorkSummaryView: View {
                         .foregroundStyle(Theme.tertiaryText)
                 }
                 if hasSteps, turn.state != .waitingForApproval {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Theme.tertiaryText)
-                        .contentTransition(.symbolEffect(.replace))
+                    DisclosureChevron(isOpen: isExpanded)
                 }
                 if turn.isWorking, let started = turn.startedAt {
                     Spacer(minLength: 8)
@@ -325,51 +326,137 @@ struct WorkSummaryView: View {
     }
 }
 
-/// The steps in order, joined by a rail; consecutive subagents share one step.
+/// How every fold in a turn opens and closes: the height eases, the content fades in just behind
+/// it and drops a few points into place; closing fades out quickly so nothing hangs over the
+/// rows below. Reduce Motion: a plain fade.
+enum Disclosure {
+    static func animation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.18) : .smooth(duration: 0.34)
+    }
+
+    /// `-HERMES_EXPAND_STEPS turns|all` (Debug) opens every turn, or every turn and row, for screenshots.
+    static func debugOpens(_ level: String) -> Bool {
+        #if DEBUG
+        switch UserDefaults.standard.string(forKey: "HERMES_EXPAND_STEPS") {
+        case "all": return true
+        case let value?: return value == level
+        case nil: return false
+        }
+        #else
+        return false
+        #endif
+    }
+
+    static func transition(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: -6)).animation(.smooth(duration: 0.3).delay(0.05)),
+            removal: .opacity.animation(.easeOut(duration: 0.12))
+        )
+    }
+}
+
+/// Called just before a fold in the transcript opens or closes, so the transcript keeps what was
+/// tapped in place instead of anchoring the change to the bottom. Always equal: swapping it in
+/// must not redraw every row that reads it.
+struct DisclosureAction: Equatable {
+    var action: @MainActor () -> Void = {}
+
+    @MainActor func callAsFunction() { action() }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
+extension EnvironmentValues {
+    @Entry var disclosureWillToggle = DisclosureAction()
+}
+
+/// A chevron that turns rather than swaps: right when closed, down when open.
+private struct DisclosureChevron: View {
+    let isOpen: Bool
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(Theme.tertiaryText)
+            .rotationEffect(.degrees(isOpen ? 90 : 0))
+            .accessibilityHidden(true)
+    }
+}
+
+/// The steps on a rail, one compact row each; a row opens to its details. Three or more of the
+/// same tool in a row fold into one row ("Ran 6 commands") that opens to those steps, so a long
+/// turn reads as a handful of lines. Consecutive subagents share one row.
 private struct StepTimeline: View {
     let steps: [AssistantStep]
 
-    private enum Entry: Identifiable {
+    enum Entry: Identifiable {
         case step(AssistantStep)
+        case run([ToolActivity])
         case subagents([SubagentActivity])
 
         var id: String {
             switch self {
             case .step(let step): step.id
+            case .run(let tools): "run-" + (tools.first?.id ?? "")
             case .subagents(let agents): "agents-" + (agents.first?.id ?? "")
             }
         }
     }
 
-    private var entries: [Entry] {
+    static let runThreshold = 3
+
+    static func entries(_ steps: [AssistantStep]) -> [Entry] {
         var entries: [Entry] = []
+        var pending: [ToolActivity] = []
+        func flush() {
+            if pending.count >= runThreshold {
+                entries.append(.run(pending))
+            } else {
+                entries += pending.map { .step(.tool($0)) }
+            }
+            pending = []
+        }
         for step in steps {
-            if case .subagent(let agent) = step {
+            switch step {
+            case .tool(let tool):
+                if let last = pending.last, ToolRunLine.kind(of: last.name) != ToolRunLine.kind(of: tool.name) {
+                    flush()
+                }
+                pending.append(tool)
+            case .subagent(let agent):
+                flush()
                 if case .subagents(var agents)? = entries.last {
                     agents.append(agent)
                     entries[entries.count - 1] = .subagents(agents)
                 } else {
                     entries.append(.subagents([agent]))
                 }
-            } else {
+            default:
+                flush()
                 entries.append(.step(step))
             }
         }
+        flush()
         return entries
     }
 
     var body: some View {
-        let entries = entries
+        let entries = Self.entries(steps)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 let isLast = index == entries.count - 1
                 switch entry {
-                case .step(let step):
-                    StepRow(step: step, isLast: isLast)
-                    if case .tool(let tool) = step, tool.hasAttachments {
-                        ToolAttachments(tool: tool)
-                            .padding(.bottom, isLast ? 0 : 14)
-                    }
+                case .step(.tool(let tool)):
+                    ToolStepLine(tool: tool, isLast: isLast)
+                case .step(.reasoning(_, let text)):
+                    ReasoningLine(text: text, isLast: isLast)
+                case .step(.narration(_, let text)):
+                    NarrationLine(text: text, isLast: isLast)
+                case .step(.subagent):
+                    EmptyView()
+                case .run(let tools):
+                    ToolRunLine(tools: tools, isLast: isLast)
                 case .subagents(let agents):
                     SubagentsRow(agents: agents, isLast: isLast)
                 }
@@ -378,9 +465,10 @@ private struct StepTimeline: View {
     }
 }
 
-/// One rail position: a 26 pt node (or a small dot for narration) with the line to the next step.
+/// One rail position: the node (or a small dot for narration) with the line to the next step.
 private struct Rail<Node: View>: View {
     let isLast: Bool
+    var width: CGFloat = 26
     var topPadding: CGFloat = 0
     @ViewBuilder let node: Node
 
@@ -395,13 +483,14 @@ private struct Rail<Node: View>: View {
                     .frame(minHeight: 8, maxHeight: .infinity)
             }
         }
-        .frame(width: 26)
+        .frame(width: width)
     }
 }
 
 private struct StepNode: View {
     let symbol: String
     var status: ToolActivity.Status = .succeeded
+    var size: CGFloat = 26
 
     var body: some View {
         ZStack {
@@ -415,40 +504,139 @@ private struct StepNode: View {
                     .controlSize(.mini)
             } else {
                 Image(systemName: status == .failed ? "xmark" : symbol)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: size * 0.46, weight: .medium))
                     .foregroundStyle(status == .failed ? Theme.danger : Theme.secondaryText)
             }
         }
-        .frame(width: 26, height: 26)
+        .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
 }
 
-private struct StepRow: View {
-    let step: AssistantStep
+/// One step on the rail: its node, a title line (with the time and a chevron) and a one-line
+/// preview. Tapping opens what's behind it; `accessory` (a risk note, a failure line) stays in
+/// view either way.
+private struct StepLine<Accessory: View, Details: View>: View {
+    let symbol: String
+    var status: ToolActivity.Status = .succeeded
+    let title: String
+    var preview: String?
+    var monospacedPreview = false
+    var trailing: String?
+    var trailingIsAlert = false
     let isLast: Bool
+    var compact = false
+    let hasDetails: Bool
+    @ViewBuilder let accessory: () -> Accessory
+    @ViewBuilder let details: () -> Details
+
+    @State private var isOpen = Disclosure.debugOpens("all")
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.disclosureWillToggle) private var willToggle
+
+    private var nodeSize: CGFloat { compact ? 20 : 26 }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            rail
-            content
-                .padding(.top, isNarration ? 0 : 3)
-                .padding(.bottom, isLast ? 0 : 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .top, spacing: compact ? 8 : 10) {
+            Rail(isLast: isLast, width: nodeSize) { StepNode(symbol: symbol, status: status, size: nodeSize) }
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    willToggle()
+                    withAnimation(Disclosure.animation(reduceMotion: reduceMotion)) { isOpen.toggle() }
+                } label: {
+                    summary
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasDetails)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(hasDetails ? (isOpen ? "Hides the details" : "Shows the details") : "")
+                accessory()
+                if isOpen {
+                    details()
+                        .transition(Disclosure.transition(reduceMotion: reduceMotion))
+                }
+            }
+            .padding(.top, compact ? 1 : 3)
+            .padding(.bottom, isLast ? 0 : (compact ? 10 : 12))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var isNarration: Bool {
-        if case .narration = step { true } else { false }
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title)
+                    .font(compact ? .footnote.weight(.medium) : .subheadline.weight(.medium))
+                    .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if let trailing {
+                    Text(trailing)
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(trailingIsAlert ? Theme.danger : Theme.tertiaryText)
+                }
+                if hasDetails {
+                    DisclosureChevron(isOpen: isOpen)
+                }
+            }
+            if let preview, !preview.isEmpty {
+                Text(preview)
+                    .font(monospacedPreview ? .caption.monospaced() : .footnote)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
+}
 
-    @ViewBuilder
-    private var rail: some View {
-        switch step {
-        case .reasoning:
-            Rail(isLast: isLast) { StepNode(symbol: "brain") }
-        case .narration:
+extension StepLine where Accessory == EmptyView {
+    init(
+        symbol: String, status: ToolActivity.Status = .succeeded, title: String, preview: String? = nil,
+        monospacedPreview: Bool = false, trailing: String? = nil, isLast: Bool, compact: Bool = false,
+        hasDetails: Bool, @ViewBuilder details: @escaping () -> Details
+    ) {
+        self.init(
+            symbol: symbol, status: status, title: title, preview: preview, monospacedPreview: monospacedPreview,
+            trailing: trailing, isLast: isLast, compact: compact, hasDetails: hasDetails,
+            accessory: { EmptyView() }, details: details
+        )
+    }
+}
+
+/// Collapses whitespace and newlines for a one-line preview.
+private func oneLine(_ text: String?) -> String? {
+    guard let text else { return nil }
+    let line = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }.joined(separator: " ")
+    return line.isEmpty ? nil : line
+}
+
+private struct ReasoningLine: View {
+    let text: String
+    let isLast: Bool
+
+    var body: some View {
+        StepLine(symbol: "brain", title: String(localized: "Thought"), preview: oneLine(text), isLast: isLast, hasDetails: true) {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Theme.secondaryText)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// What the agent said between tool calls: its own words, so they stay readable on the rail.
+private struct NarrationLine: View {
+    let text: String
+    let isLast: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
             Rail(isLast: isLast, topPadding: 8) {
                 Circle()
                     .fill(Theme.placeholderText)
@@ -456,51 +644,162 @@ private struct StepRow: View {
                     .frame(width: 26)
                     .padding(.bottom, 4)
             }
-        case .tool(let tool):
-            Rail(isLast: isLast) { StepNode(symbol: ToolDescriptor.describe(tool.name).symbol, status: tool.status) }
-        case .subagent:
-            Rail(isLast: isLast) { StepNode(symbol: "person.2") }
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch step {
-        case .reasoning(_, let text):
-            ReasoningText(text: text)
-        case .narration(_, let text):
             MarkdownView(text: text, tone: .secondary)
                 .equatable()
                 .environment(\.markdownBodyFont, Theme.Typography.compactMessage)
-        case .tool(let tool):
-            ToolStepView(tool: tool)
-        case .subagent:
-            EmptyView()
+                .padding(.bottom, isLast ? 0 : 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A tool call as one row: its title (present tense while it runs), the time, and what it worked
+/// on. A failure line and a risk note stay in view; the command, output, diff and results open
+/// with a tap.
+private struct ToolStepLine: View {
+    let tool: ToolActivity
+    let isLast: Bool
+    var compact = false
+
+    private var descriptor: ToolDescriptor { ToolDescriptor.describe(tool.name) }
+    private var isSearch: Bool { !tool.searchResults.isEmpty || tool.name == "web_search" }
+
+    private var title: String {
+        switch tool.status {
+        case .running: descriptor.activeTitle
+        case .succeeded: descriptor.doneTitle
+        case .failed: tool.name == "terminal" ? String(localized: "Command failed") : descriptor.doneTitle
+        }
+    }
+
+    var body: some View {
+        StepLine(
+            symbol: descriptor.symbol, status: tool.status, title: title,
+            preview: oneLine(tool.preview), monospacedPreview: !isSearch,
+            trailing: tool.status == .running ? nil : durationText, trailingIsAlert: tool.status == .failed,
+            isLast: isLast, compact: compact, hasDetails: tool.hasDetails
+        ) {
+            if tool.status == .failed, let line = failureLine {
+                Text(line)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.danger)
+                    .lineLimit(2)
+            }
+            if let risk = tool.risk {
+                RiskNote(risk: risk)
+            }
+        } details: {
+            ToolDetails(tool: tool)
+        }
+    }
+
+    private var durationText: String? {
+        let time = tool.duration.map { Formatting.duration($0) }
+        if tool.status == .failed, let code = tool.commandOutput?.exitCode, code != 0 {
+            return [String(localized: "exit \(code)"), time].compactMap { $0 }.joined(separator: " · ")
+        }
+        return time
+    }
+
+    private var failureLine: String? {
+        let text = tool.commandOutput?.lines.last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? tool.result
+        return text.map { String($0.prefix(200)) }
+    }
+}
+
+/// Three or more calls of one tool in a row, as one row that opens to them.
+private struct ToolRunLine: View {
+    let tools: [ToolActivity]
+    let isLast: Bool
+
+    /// Tools that read as the same kind of step share a run (a command and reading its terminal).
+    static func kind(of name: String) -> String {
+        ToolDescriptor.describe(name).symbol
+    }
+
+    private var descriptor: ToolDescriptor { ToolDescriptor.describe(tools.first?.name ?? "") }
+    private var isRunning: Bool { tools.contains { $0.status == .running } }
+    private var failures: Int { tools.filter { $0.status == .failed }.count }
+
+    private var title: String {
+        let count = tools.count
+        let name = tools.first?.name ?? ""
+        switch Self.kind(of: name) {
+        case "terminal": return isRunning ? String(localized: "Running commands · \(count)") : String(localized: "Ran \(count) commands")
+        case "doc.text": return isRunning ? String(localized: "Reading files · \(count)") : String(localized: "Read \(count) files")
+        case "pencil.line": return isRunning ? String(localized: "Editing files · \(count)") : String(localized: "Edited \(count) files")
+        case "square.and.pencil": return isRunning ? String(localized: "Writing files · \(count)") : String(localized: "Wrote \(count) files")
+        case "globe": return isRunning ? String(localized: "Searching the web · \(count)") : String(localized: "Searched the web \(count) times")
+        case "doc.richtext": return isRunning ? String(localized: "Reading pages · \(count)") : String(localized: "Read \(count) pages")
+        case "doc.text.magnifyingglass": return isRunning ? String(localized: "Searching files · \(count)") : String(localized: "Searched files \(count) times")
+        default:
+            return isRunning ? "\(descriptor.activeTitle) · \(count)" : "\(descriptor.doneTitle) · \(count)×"
+        }
+    }
+
+    private var duration: String? {
+        let total = tools.compactMap(\.duration).reduce(0, +)
+        return total > 0 ? Formatting.duration(total) : nil
+    }
+
+    var body: some View {
+        StepLine(
+            symbol: descriptor.symbol, status: isRunning ? .running : .succeeded, title: title,
+            preview: oneLine((tools.last(where: { $0.status == .running }) ?? tools.last)?.preview),
+            monospacedPreview: Self.kind(of: tools.first?.name ?? "") != "globe",
+            trailing: isRunning ? nil : duration, isLast: isLast, hasDetails: true
+        ) {
+            if failures > 0 {
+                Text(failures == 1 ? String(localized: "1 failed") : String(localized: "\(failures) failed"))
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.danger)
+            }
+        } details: {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(tools.enumerated()), id: \.element.id) { index, tool in
+                    ToolStepLine(tool: tool, isLast: index == tools.count - 1, compact: true)
+                }
+            }
+            .padding(.top, 2)
         }
     }
 }
 
-private struct ReasoningText: View {
-    let text: String
-    @State private var expanded = false
+/// Behind a tool row: the whole command or arguments, then whatever the call produced.
+private struct ToolDetails: View {
+    let tool: ToolActivity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Reasoning")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Theme.primaryText)
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(Theme.tertiaryText)
-                .lineLimit(expanded ? nil : 4)
-                .textSelection(.enabled)
-            if text.count > 280 {
-                Button(expanded ? "Show less" : "Show more") {
-                    withAnimation(Theme.spring) { expanded.toggle() }
-                }
-                .font(.footnote.weight(.medium))
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.secondaryText)
+        VStack(alignment: .leading, spacing: 10) {
+            let output = tool.commandOutput
+            // The output block opens with the command itself; without one, show it here in full.
+            if output == nil || output?.lines.isEmpty == true, let preview = tool.preview, !preview.isEmpty {
+                Text(preview)
+                    .font(Theme.Typography.code)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(12)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            if let diff = tool.displayDiff {
+                DiffCard(path: tool.filePath ?? tool.preview ?? "file", diff: diff)
+            }
+            if let output, !output.lines.isEmpty {
+                OutputBlock(output: output, command: tool.preview)
+            }
+            let results = tool.searchResults
+            if !results.isEmpty {
+                SearchResultsCard(results: results)
+            } else if output == nil, tool.displayDiff == nil, let result = tool.result?.trimmingCharacters(in: .whitespacesAndNewlines), !result.isEmpty {
+                Text(String(result.prefix(600)))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .lineLimit(8)
+                    .textSelection(.enabled)
             }
         }
     }
@@ -561,81 +860,8 @@ private struct SubagentsRow: View {
     }
 }
 
-/// A tool call: its title (present tense while it runs), the duration, what it worked on, and
-/// a one-line result. Diffs, output and results follow it as attachments.
-private struct ToolStepView: View {
-    let tool: ToolActivity
-
-    private var descriptor: ToolDescriptor { ToolDescriptor.describe(tool.name) }
-    private var isSearch: Bool { !tool.searchResults.isEmpty || tool.name == "web_search" }
-
-    private var title: String {
-        switch tool.status {
-        case .running: descriptor.activeTitle
-        case .succeeded: descriptor.doneTitle
-        case .failed: tool.name == "terminal" ? String(localized: "Command failed") : descriptor.doneTitle
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.primaryText)
-                Spacer(minLength: 6)
-                if tool.status != .running, let duration = durationText {
-                    Text(duration)
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(tool.status == .failed ? Theme.danger : Theme.tertiaryText)
-                }
-            }
-            if let preview = tool.preview, !preview.isEmpty {
-                Text(preview)
-                    .font(isSearch ? .footnote : Theme.Typography.code)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(3)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            if isSearch, tool.status != .running {
-                let sites = tool.searchResults.compactMap(\.site)
-                if !sites.isEmpty {
-                    Text(Array(NSOrderedSet(array: sites)).compactMap { $0 as? String }.prefix(3).joined(separator: " · "))
-                        .font(.footnote)
-                        .foregroundStyle(Theme.tertiaryText)
-                        .lineLimit(1)
-                }
-            }
-            if tool.status == .failed, let line = failureLine {
-                Text(line)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.danger)
-                    .lineLimit(3)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var durationText: String? {
-        let time = tool.duration.map { Formatting.duration($0) }
-        if tool.status == .failed, let code = tool.commandOutput?.exitCode, code != 0 {
-            return [String(localized: "exit \(code)"), time].compactMap { $0 }.joined(separator: " · ")
-        }
-        return time
-    }
-
-    private var failureLine: String? {
-        let text = tool.commandOutput?.lines.last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? tool.result
-        return text.map { String($0.prefix(200)) }
-    }
-}
-
-/// What a finished tool call produced: a diff, its output, web results, a risk note.
+/// What a folded turn keeps in view: the files it changed and any risk note. The rest (commands,
+/// output, results) is in the steps.
 struct ToolAttachments: View {
     let tool: ToolActivity
 
@@ -648,25 +874,23 @@ struct ToolAttachments: View {
                 if let diff = tool.displayDiff {
                     DiffCard(path: tool.filePath ?? tool.preview ?? "file", diff: diff)
                 }
-                if let output = tool.commandOutput, output.lines.count > 1 || output.failed {
-                    OutputBlock(output: output, command: tool.preview)
-                }
-                let results = tool.searchResults
-                if results.count > 1 {
-                    SearchResultsCard(results: results)
-                }
             }
         }
     }
 }
 
 extension ToolActivity {
-    /// Whether the step has a diff, output, results or a risk note to show.
-    var hasAttachments: Bool {
+    /// Whether a folded turn keeps something of this step in view (a diff, a risk note).
+    var hasFoldedAttachments: Bool {
+        status != .running && (risk != nil || displayDiff != nil)
+    }
+
+    /// Whether the step's row opens to anything: the full command, output, a diff, results.
+    var hasDetails: Bool {
         guard status != .running else { return false }
-        if risk != nil || displayDiff != nil || searchResults.count > 1 { return true }
-        if let output = commandOutput { return output.lines.count > 1 || output.failed }
-        return false
+        if displayDiff != nil || !searchResults.isEmpty || commandOutput != nil { return true }
+        if preview?.isEmpty == false { return true }
+        return result?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 }
 

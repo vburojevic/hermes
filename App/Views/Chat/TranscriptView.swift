@@ -8,6 +8,10 @@ struct TranscriptView: View {
 
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var isAtBottom = true
+    /// A fold was just tapped: size changes keep the top in place, so what was tapped stays put and
+    /// opens downward, instead of the bottom anchor pushing it up the screen.
+    @State private var keepsTop = false
+    @State private var keepsTopReset: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -50,10 +54,20 @@ struct TranscriptView: View {
             .frame(maxWidth: .infinity)
         }
         .environment(\.references, references)
+        .environment(\.disclosureWillToggle, DisclosureAction {
+            keepsTop = true
+            keepsTopReset?.cancel()
+            keepsTopReset = Task {
+                try? await Task.sleep(for: .milliseconds(700))
+                guard !Task.isCancelled else { return }
+                keepsTop = false
+            }
+        })
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
-        // An approval card, banner or the keyboard shrinking the view keeps the latest step in sight.
-        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        // An approval card, banner or the keyboard shrinking the view keeps the latest step in sight;
+        // a fold the person opens grows downward from where they tapped.
+        .defaultScrollAnchor(keepsTop ? .top : .bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
         .onScrollGeometryChange(for: Bool.self) { geometry in
