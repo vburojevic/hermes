@@ -61,6 +61,30 @@ sign-in; cookies never do, and a password-gated backend asks for its password on
 device. Loopback addresses (`127.0.0.1`) can't pair: use the machine's Tailscale or network
 address, e.g. Tailscale Serve's `https://<mac>.<tailnet>.ts.net:8642`.
 
+## Push notifications (in review)
+
+Approvals, questions, password prompts, finished replies, scheduled tasks, Kanban cards and Bot messages
+reach the iPhone and iPad when Hermes isn't on screen, plus a Live Activity for long turns. Hermes Agent
+can't push to Apple, so a gateway plugin seals each notice for each device and sends it through a relay:
+
+```
+gateway plugin (Tools/hermes-app-push, public: vburojevic/hermes-app-push)
+  ──HTTPS──▶ push.hermesapp.dev (Relay/, Convex; holds the APNs key, sees no content)
+  ──APNs──▶ Notification Service Extension (decrypts) ▶ notification / Live Activity
+```
+
+- App side: `Push/` (app layer, extensions, widget) and `Packages/HermesKit/Sources/HermesPush` (crypto,
+  notices, categories, Live Activity state). Until review it builds only from `project-push.yml`
+  (`xcodegen generate --spec project-push.yml` → `HermesPush.xcodeproj`); existing app files carry
+  `HERMES_PUSH`-guarded hooks, so the shipping `project.yml` build is unchanged.
+- Set up a gateway: `hermes plugins install vburojevic/hermes-app-push --enable`, then restart it; or
+  Settings → Notifications → Set Up… → Ask Hermes to Set It Up.
+- Try it with the mock: `python3 Tools/mock-hermes/backend.py --port 19119 --gateway-port 18642
+  --push-relay https://push.hermesapp.dev` (real APNs sandbox to an Apple-silicon simulator; `simctl` is the
+  default but never runs the service extension, and `none` plays a gateway without the plugin). In a Bot
+  Chat: "approve", "ask", "sudo" and "long" (a Live Activity turn, "long … approve" asks mid-way).
+- Simulator: use iOS 26.5. The iOS 27.0 simulator never shows the notification permission prompt.
+
 ## Requirements
 
 - Xcode 27 (iOS 27 / macOS 27 SDKs). Deploys to iOS, iPadOS and macOS 26 or later.

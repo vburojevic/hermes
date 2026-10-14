@@ -29,10 +29,8 @@ _PROCESS_HOME = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
 
 
 def data_dir() -> Path:
-    """``<HERMES_HOME of the gateway process>/plugin-data/hermes-app-push``."""
-    path = Path(_PROCESS_HOME) / "plugin-data" / "hermes-app-push"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    """``<HERMES_HOME of the gateway process>/plugin-data/hermes-app-push`` (created on first use)."""
+    return Path(_PROCESS_HOME) / "plugin-data" / "hermes-app-push"
 
 
 def _empty() -> dict:
@@ -43,13 +41,13 @@ def _empty() -> dict:
 class Store:
     def __init__(self, directory: Path | None = None):
         self.dir = Path(directory) if directory else data_dir()
-        self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / "state.json"
         self.secret_path = self.dir / "relay-secret"
         self.lock_path = self.dir / ".lock"
 
     @contextlib.contextmanager
     def _locked(self) -> Iterator[None]:
+        self.dir.mkdir(parents=True, exist_ok=True)
         with open(self.lock_path, "a+") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             try:

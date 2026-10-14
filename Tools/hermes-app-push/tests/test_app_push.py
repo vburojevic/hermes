@@ -336,8 +336,12 @@ def test_relay_never_sees_content():
 
 
 def _core_module():
+    """The plugin as Hermes loaded it from the throwaway home (never the source tree's copy, which was
+    imported before HERMES_HOME pointed at the throwaway home)."""
+    home = os.path.realpath(HOME)
     return next(m for m in list(sys.modules.values())
-                if str(getattr(m, "__file__", "") or "").endswith(os.path.join("hermes-app-push", "core.py")))
+                if os.path.realpath(str(getattr(m, "__file__", "") or "")).startswith(home)
+                and str(m.__file__).endswith(os.path.join("hermes-app-push", "core.py")))
 
 
 def test_answer_routes_and_live_presence(hermes, monkeypatch):
@@ -420,3 +424,26 @@ def test_held_while_on_screen_then_sent_on_leaving(hermes):
     handler("presence " + json.dumps({"device_id": "dev-holder", "state": "away"}))
     time.sleep(0.5)
     assert len(pushes_for(token, "alert")) == 1
+
+
+def test_bot_chat_notices_carry_the_profile(hermes, monkeypatch):
+    plugins, handler = hermes
+    key, token = make_device(handler, "profiles")
+    from hermes_cli import profiles
+    monkeypatch.setattr(profiles, "get_active_profile_name", lambda: "writer")
+    from tools.human_input_hooks import human_input_request
+    session = "20261014_bot_chat"
+    plugins.invoke_hook("pre_tool_call", tool_name="clarify", session_id=session,
+                        args={"questions": [{"question": "Which tone?", "choices": ["Warm", "Dry"]}]})
+    with human_input_request("clarify", prompt="Which tone?", session_key=session) as human:
+        push = wait_for(lambda: next((p for p in pushes_for(token, "alert")), None))
+        human.outcome = "submitted"
+    assert opened(key, push)["profile"] == "writer"
+    # The store is the gateway process's, whatever profile a hook runs in.
+    core = _core_module()
+    assert str(core.Store().dir).startswith(os.environ["HERMES_HOME"])
+
+
+def test_never_touches_the_real_hermes_home():
+    real = Path.home() / ".hermes" / "plugin-data" / "hermes-app-push"
+    assert not real.exists(), f"tests wrote to {real}"
