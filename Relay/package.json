@@ -1,0 +1,23 @@
+{
+  "name": "hermes-push-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hermes push relay (Convex): forwards sealed notifications from gateways to APNs; stores no content",
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy:dev": "convex dev --once",
+    "typecheck": "tsc -p convex",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "convex": "^1.46.0"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "@types/node": "^26.6.3",
+    "convex-test": "^0.0.60",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,0 +1,15 @@
+.build/
+Packages/HermesKit/.build/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+.DS_Store
+__pycache__/
+
+# Build output and local state
+/build/
+DerivedData/
+/0
+.claude/
+.env
+.env.*
+!.env.example

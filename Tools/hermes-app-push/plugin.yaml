@@ -1,0 +1,30 @@
+name: hermes-app-push
+label: Hermes app push
+version: 1.0.0
+manifest_version: 2
+kind: standalone
+description: >
+  Push notifications for the Hermes iPhone, iPad and Mac app: approvals, questions, password
+  prompts, finished replies, scheduled tasks, background work and group chats. Each notice is
+  encrypted for the device and sent through the Caffeinated Code push relay to Apple; the relay
+  never sees the content. Answers go back over the normal gateway protocol.
+author: Caffeinated Code
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call
+  - on_session_end
+  - pre_tool_call
+  - pre_approval_request
+  - post_approval_response
+  - on_human_input_request
+  - on_human_input_resolved
+  - subagent_stop
+  - on_room_member_activity
+config_schema:
+  relay_url:
+    type: string
+    description: Push relay URL (defaults to the Caffeinated Code relay).
+  gateway_name:
+    type: string
+    description: Name shown in notifications (defaults to this computer's name).
+tags: [notifications, ios, macos]

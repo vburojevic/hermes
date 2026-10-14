@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "https://acrobatic-goat-299.eu-west-1.convex.site/$1" }
+  ]
+}

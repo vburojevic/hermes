@@ -1,0 +1,128 @@
+import Foundation
+import HermesKit
+import ImageIO
+import SwiftUI
+import UniformTypeIdentifiers
+
+/// An image ready to send: downscaled, re-encoded as JPEG, with a decoded preview.
+struct ImageAttachment: Identifiable, Hashable {
+    let id: UUID
+    let jpegData: Data
+    let preview: PlatformImage
+
+    init?(jpegData: Data, id: UUID = UUID()) {
+        guard let preview = PlatformImage(data: jpegData) else { return nil }
+        self.id = id
+        self.jpegData = jpegData
+        self.preview = preview
+    }
+
+    static func == (lhs: ImageAttachment, rhs: ImageAttachment) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    var dataURL: String {
+        "data:image/jpeg;base64," + jpegData.base64EncodedString()
+    }
+
+    /// Longest edge sent to Hermes. Vision models gain little beyond this and the
+    /// request body is capped at 10 MB.
+    nonisolated static let maxPixelSize = 1600
+
+    /// Downscales and re-encodes any image data off the main thread.
+    static func make(from data: Data) async -> ImageAttachment? {
+        let jpeg = await Task.detached(priority: .userInitiated) {
+            Self.normalizedJPEG(from: data)
+        }.value
+        return jpeg.flatMap { ImageAttachment(jpegData: $0) }
+    }
+
+    nonisolated static func normalizedJPEG(from data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.82] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
+}
+
+/// Hermes stores sent images only as `[screenshot]` placeholders, so the app keeps
+/// its own copy to show them again when the conversation is reopened.
+@MainActor
+final class SentImageStore {
+    private let directory: URL
+    private var index: [String: [[String]]] = [:]
+    private var loaded = false
+
+    init(botID: UUID) {
+        directory = HermesStorage.applicationSupport
+            .appending(path: "SentImages/\(botID.uuidString)", directoryHint: .isDirectory)
+    }
+
+    private var indexURL: URL { directory.appending(path: "index.json") }
+
+    private static func key(conversation: String, text: String) -> String {
+        conversation + "\u{1F}" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func remember(_ images: [ImageAttachment], conversation: String, text: String) {
+        guard !images.isEmpty else { return }
+        loadIfNeeded()
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var names: [String] = []
+            for image in images {
+                let name = image.id.uuidString + ".jpg"
+                try image.jpegData.write(to: directory.appending(path: name), options: .atomic)
+                names.append(name)
+            }
+            index[Self.key(conversation: conversation, text: text), default: []].append(names)
+            try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
+        } catch {
+            // Losing a local preview is harmless; the message itself was sent.
+        }
+    }
+
+    /// Images for the `occurrence`-th user message with this text in the conversation.
+    func images(conversation: String, text: String, occurrence: Int) -> [ImageAttachment] {
+        loadIfNeeded()
+        guard let sets = index[Self.key(conversation: conversation, text: text)], occurrence < sets.count else { return [] }
+        return sets[occurrence].compactMap { name in
+            guard let data = try? Data(contentsOf: directory.appending(path: name)) else { return nil }
+            return ImageAttachment(jpegData: data, id: UUID(uuidString: String(name.dropLast(4))) ?? UUID())
+        }
+    }
+
+    /// Re-keys a conversation's images after the session id it was stored under changes.
+    func move(from old: String, to new: String) {
+        loadIfNeeded()
+        let prefix = old + "\u{1F}"
+        let moved = index.filter { $0.key.hasPrefix(prefix) }
+        guard !moved.isEmpty else { return }
+        for (key, value) in moved {
+            index[key] = nil
+            index[new + "\u{1F}" + key.dropFirst(prefix.count)] = value
+        }
+        try? JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
+    }
+
+    func removeAll() {
+        try? FileManager.default.removeItem(at: directory)
+        index = [:]
+    }
+
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        if let data = try? Data(contentsOf: indexURL), let stored = try? JSONDecoder().decode([String: [[String]]].self, from: data) {
+            index = stored
+        }
+    }
+}
