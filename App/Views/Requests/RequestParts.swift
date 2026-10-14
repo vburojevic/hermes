@@ -326,15 +326,45 @@ struct CodeBox: View {
     let text: String
     var risk: String?
 
+    @State private var textHeight: CGFloat = 0
+    #if os(iOS)
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
+
+    /// A long script scrolls inside the box, so the card's answers stay on screen.
+    private var maxHeight: CGFloat {
+        #if os(iOS)
+        verticalSizeClass == .compact ? 96 : 190
+        #else
+        220
+        #endif
+    }
+
+    private var overflows: Bool { textHeight > maxHeight + 1 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Lines wrap: on a phone a sideways scroll hides most of a command and is easy to miss.
+            ScrollView(.vertical) {
                 Text(text)
                     .font(Theme.Typography.code)
                     .foregroundStyle(Theme.primaryText)
                     .textSelection(.enabled)
-                    .fixedSize()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
             }
+            .frame(height: textHeight > 0 ? min(textHeight, maxHeight) : nil)
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicatorsFlash(onAppear: true)
+            // More below: the last lines fade out instead of stopping at a hard edge.
+            .mask {
+                LinearGradient(
+                    stops: [.init(color: .black, location: 0), .init(color: .black, location: overflows ? 0.82 : 1), .init(color: overflows ? .clear : .black, location: 1)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            }
+            .accessibilityLabel(Text(text))
             if let risk, !risk.isEmpty {
                 TagLabel(title: risk, symbol: "exclamationmark.triangle.fill", style: .danger)
             }

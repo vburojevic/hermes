@@ -268,13 +268,15 @@ struct WorkSummaryView: View {
                     ZStack(alignment: .leading) {
                         ShimmerText(text: workingTitle)
                             .id(workingTitle)
+                            // A full line's travel: the old status is out of the clip before the
+                            // new one is in, so the two never sit on top of each other.
                             .transition(reduceMotion ? .opacity : .asymmetric(
-                                insertion: .offset(y: 10).combined(with: .opacity),
-                                removal: .offset(y: -10).combined(with: .opacity)
+                                insertion: .offset(y: 18).combined(with: .opacity),
+                                removal: .offset(y: -18).combined(with: .opacity.animation(.easeOut(duration: 0.12)))
                             ))
                     }
                     .clipped()
-                    .animation(.smooth(duration: 0.28), value: workingTitle)
+                    .animation(.smooth(duration: 0.32), value: workingTitle)
                 } else {
                     Image(systemName: "sparkle")
                         .font(.system(size: 12, weight: .medium))

@@ -519,6 +519,23 @@ def run_turn(sid, text):
             tool(sid, stored, "terminal", {"command": "docker system df"},
                  json.dumps({"output": "TYPE         SIZE     RECLAIMABLE\nImages       18.2GB   14.1GB (77%)\nBuild Cache  2.3GB    2.3GB", "exit_code": 0}),
                  1.2, "docker system df")
+        elif "script" in visible.lower():
+            # A long heredoc, like Hermes' real "script execution via heredoc" approvals.
+            command = ("python3 - <<'PY'\nimport json,shutil,os\nfrom pathlib import Path\n"
+                       "h=Path.home()/'.hermes';p=h/'profiles/fitness';d=json.loads((h/'honcho.json').read_text())\n"
+                       "src=next(iter(d['hosts'].values()));x=dict(src);x['workspace']='hermes_fitness'\n"
+                       "print('Honcho host: hermes_fitness / aiPeer fitness')\n"
+                       "s=h/'skills';dest=h/'profiles/fitness/skills';restored=[];missing=[]\n"
+                       "for name in ['argus-cli-usage','reading-readiness','logging-meals','tracking-metrics']:\n"
+                       " hits=[q for q in dest.rglob(name) if q.is_dir()]\n if not hits:\n"
+                       "  cand=[q for q in s.rglob(name) if q.is_dir()]\n  q=dest/name\n"
+                       "  if q.is_symlink() and not q.exists():q.unlink()\n"
+                       "  if cand and not q.exists():shutil.copytree(cand[0],q);restored.append(name)\n"
+                       "  else:missing.append(name)\n"
+                       "print('restored',restored,'missing',missing)\n"
+                       "w=[q for q in dest.rglob('SKILL.md') if 'workspace' in q.read_text()]\nPY\n"
+                       "hermes -p fitness config set command_allowlist '[]'")
+            description, size = "script execution via heredoc", "the script"
         else:
             command, description, size = "rm -rf ~/Library/Caches/com.example.build", "Delete the build cache (1.2 GB)", "1.2 GB"
         result = server_request(sid, "approval", {

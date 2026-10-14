@@ -18,14 +18,14 @@ struct TranscriptView: View {
             LazyVStack(alignment: .leading, spacing: 30) {
                 let rows = conversation.rows
                 let separators = Self.separators(in: rows)
-                ForEach(rows) { item in
+                ForEach(rows.map { DisplayRow(key: conversation.displayID(for: $0), item: $0) }, id: \.key) { shown in
+                    let item = shown.item
                     VStack(alignment: .leading, spacing: 30) {
                         if let date = separators[item.id] {
                             DateSeparator(date: date)
                         }
                         row(for: item)
                     }
-                    .id(item.id)
                     .transition(Self.insertion(for: item))
                 }
                 ForEach(conversation.processes) { process in
@@ -110,6 +110,12 @@ struct TranscriptView: View {
                 position.scrollTo(edge: .bottom)
             }
         }
+    }
+
+    /// A row and the identity it's drawn under (`ConversationModel.displayID(for:)`).
+    private struct DisplayRow {
+        let key: String
+        let item: TranscriptItem
     }
 
     /// Your message rises from the composer; replies and Bot messages fade up into place.

@@ -298,6 +298,17 @@ final class ConversationModel: Identifiable {
 
     // MARK: - Derived state
 
+    /// Stored rows that took over from what was on screen while their turn ran (the message you
+    /// sent, the live reply), mapped to the identity they keep. The swap then redraws those rows
+    /// in place; as new rows they were laid out from scratch, which on long chats with heavy
+    /// replies showed blank frames before the content came back.
+    @ObservationIgnored private var rowAliases: [String: String] = [:]
+
+    /// The identity a row is drawn under (see `rowAliases`).
+    func displayID(for item: TranscriptItem) -> String {
+        rowAliases[item.id] ?? item.id
+    }
+
     /// Everything to render, in order.
     var rows: [TranscriptItem] {
         var rows = items
@@ -418,6 +429,22 @@ final class ConversationModel: Identifiable {
             turnReceipts = []
         }
         items = mergeLocalItems(into: built)
+    }
+
+    /// The stored message and reply that replace the ones shown while the turn ran keep their
+    /// on-screen identities. Only rows after the last earlier message qualify, so an older reply
+    /// never takes a live turn's place (a turn that stored nothing).
+    private func handOverIdentity(user shownUser: String?, turn shownTurn: String) {
+        guard let userIndex = items.lastIndex(where: {
+            if case .user(let entry) = $0 { entry.sender == nil && entry.routineName == nil } else { false }
+        }) else { return }
+        if let shownUser, items[userIndex].id != shownUser {
+            rowAliases[items[userIndex].id] = shownUser
+        }
+        if let turnIndex = items.lastIndex(where: { if case .assistant = $0 { true } else { false } }),
+           turnIndex > userIndex, items[turnIndex].id != shownTurn {
+            rowAliases[items[turnIndex].id] = shownTurn
+        }
     }
 
     /// Puts command cards and notes back after the items they followed.
@@ -1300,7 +1327,9 @@ final class ConversationModel: Identifiable {
         }
         guard live?.turn.id == finished.turn.id else { return }
         if let transcript {
+            let shownUser = pendingUser?.id
             apply(transcript)
+            handOverIdentity(user: shownUser, turn: finished.turn.id)
             needsReconcile = false
             carryOverExtras(from: finished.turn)
             if finished.turn.state == .stopped {

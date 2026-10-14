@@ -1,5 +1,8 @@
 import HermesKit
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Onboarding until a gateway exists, then the main interface.
 struct RootView: View {
@@ -250,6 +253,8 @@ struct MainView: View {
     var body: some View {
         layout
             .modifier(BotSheets(workspace: workspace))
+            // Another chat, Bot or page: the composer it typed into is gone.
+            .onChange(of: workspace.selection) { Keyboard.dismiss() }
     }
 
     @ViewBuilder
@@ -299,6 +304,9 @@ private struct BotSheets: ViewModifier {
     func body(content: Content) -> some View {
         if let roster = workspace.roster {
             content
+                .onChange(of: roster.isCreatingBot || roster.isCreatingGroup || roster.editingBot != nil || roster.routinesBot != nil) { _, presenting in
+                    if presenting { Keyboard.dismiss() }
+                }
                 .sheet(isPresented: Binding(get: { roster.isCreatingBot }, set: { roster.isCreatingBot = $0 })) {
                     BotSheet(roster: roster, mode: .create) { name in
                         roster.isCreatingBot = false
@@ -442,6 +450,9 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
             }
             .simultaneousGesture(dragGesture(width: width))
             .animation(Theme.spring, value: isOpen)
+            .onChange(of: isOpen) { _, open in
+                if open { Keyboard.dismiss() }
+            }
             .onChange(of: isDragging) { _, dragging in
                 guard !dragging, dragOffset != 0 || dragIsDrawerSwipe != nil else { return }
                 dragIsDrawerSwipe = nil
@@ -465,7 +476,11 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
         DragGesture(minimumDistance: 18, coordinateSpace: .global)
             .updating($isDragging) { _, state, _ in state = true }
             .onChanged { value in
-                if dragIsDrawerSwipe == nil { dragIsDrawerSwipe = isDrawerSwipe(value) }
+                if dragIsDrawerSwipe == nil {
+                    dragIsDrawerSwipe = isDrawerSwipe(value)
+                    // The drawer starts sliding in: the keyboard leaves with the chat, not after it.
+                    if dragIsDrawerSwipe == true, !isOpen { Keyboard.dismiss() }
+                }
                 guard dragIsDrawerSwipe == true else { return }
                 dragOffset = isOpen ? min(0, value.translation.width) : max(0, value.translation.width)
             }
@@ -482,5 +497,15 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                     dragOffset = 0
                 }
             }
+    }
+}
+
+/// The software keyboard, put away when what it was typing into leaves the screen (another chat,
+/// the drawer, a sheet). macOS has none to put away.
+enum Keyboard {
+    @MainActor static func dismiss() {
+        #if os(iOS)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
     }
 }
