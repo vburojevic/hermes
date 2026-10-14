@@ -15,6 +15,8 @@ struct FollowUpModeChip: View {
 
     @State private var showsMenu = false
     @State private var refocus = false
+    /// Picks from the menu, for the tick (not the reset after each send).
+    @State private var picks = 0
 
     private var mode: FollowUpMode { conversation.followUpMode }
     /// With nothing running, a queued message being edited can only go back in the queue.
@@ -30,8 +32,6 @@ struct FollowUpModeChip: View {
             showsMenu = true
         } label: {
             ChipLabel(title: mode.title, symbol: mode.symbol, isActive: true, showsChevron: !isLocked)
-                .contentTransition(.interpolate)
-                .animation(Theme.snappy, value: mode)
         }
         .buttonStyle(.plain)
         .allowsHitTesting(!isLocked)
@@ -47,13 +47,14 @@ struct FollowUpModeChip: View {
                     conversation.followUpPick = picked == FollowUpMode.preferredDefault ? nil : picked
                 }
                 showsMenu = false
+                picks += 1
             }
             .presentationCompactAdaptation(.popover)
         }
         .onChange(of: showsMenu) { _, open in
             if !open, refocus { focused.wrappedValue = true }
         }
-        .sensoryFeedback(.selection, trigger: conversation.followUpPick)
+        .sensoryFeedback(.selection, trigger: picks)
     }
 }
 
@@ -183,11 +184,11 @@ struct QueueTray: View {
                     isLast: index == items.count - 1,
                     conversation: conversation
                 )
-                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity.combined(with: .scale(scale: 0.96))))
+                .transition(ComposerView.rowAppears)
             }
             if hiddenCount > 0 {
                 Button {
-                    withAnimation(Theme.spring) { showsAll = true }
+                    showsAll = true
                 } label: {
                     Text("+\(hiddenCount) more")
                         .font(.footnote.weight(.medium))
@@ -199,8 +200,6 @@ struct QueueTray: View {
                 .buttonStyle(.plain)
             }
         }
-        .animation(Theme.spring, value: items)
-        .animation(Theme.spring, value: held)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Up next")
     }
@@ -223,7 +222,7 @@ struct QueueTray: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if !items.isEmpty, !isEditing {
                 Button("Clear") {
-                    withAnimation(Theme.spring) { conversation.clearQueue() }
+                    conversation.clearQueue()
                 }
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.secondaryText)
@@ -276,7 +275,7 @@ private struct QueueRow: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .onTapGesture { withAnimation(Theme.spring) { conversation.editQueued(item) } }
+        .onTapGesture { conversation.editQueued(item) }
         .contextMenu { menu }
         .draggable(item.id.uuidString) {
             Text(item.line)
@@ -328,7 +327,7 @@ private struct QueueRow: View {
             Button("Move to Top", systemImage: "arrow.up.to.line") { withAnimation(Theme.spring) { conversation.moveQueuedToTop(item) } }
         }
         Divider()
-        Button("Remove", systemImage: "trash", role: .destructive) { withAnimation(Theme.spring) { conversation.removeQueued(item) } }
+        Button("Remove", systemImage: "trash", role: .destructive) { conversation.removeQueued(item) }
     }
 }
 

@@ -271,25 +271,27 @@ struct ChatScreen: View {
     private var bottomBar: some View {
         GlassEffectContainer(spacing: 10) {
             VStack(spacing: 10) {
+                // The bar's height changes in one step and what comes into it fades in, so the
+                // transcript, which follows that step, never lags behind an eased height.
                 if conversation.pendingApproval != nil || !conversation.requests.isEmpty {
                     requestDock
                         .glassEffectID("approval", in: bottomGlass)
-                        .transition(.opacity)
+                        .transition(ComposerView.rowAppears)
                 }
                 if let banner = conversation.banner {
                     ErrorBanner(error: banner) { conversation.banner = nil }
                         .glassEffectID("banner", in: bottomGlass)
-                        .transition(.opacity)
+                        .transition(ComposerView.rowAppears)
                 }
                 if let goal = conversation.goal {
                     GoalBar(goal: goal, onClear: conversation.clearGoal)
                         .glassEffectID("goal", in: bottomGlass)
-                        .transition(.opacity)
+                        .transition(ComposerView.rowAppears)
                 }
                 if let voice, voice.isMinimised {
                     VoiceMiniBar(session: voice, onEnd: endVoice)
                         .glassEffectID("voice", in: bottomGlass)
-                        .transition(.opacity)
+                        .transition(ComposerView.rowAppears)
                 }
                 ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
                     .glassEffectID("composer", in: bottomGlass)
@@ -298,19 +300,13 @@ struct ChatScreen: View {
                     centredChips
                         .padding(.top, 6)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height + 16 } action: { chipsHeight = $0 }
-                        .transition(.opacity)
+                        .transition(ComposerView.rowAppears)
                 }
             }
         }
         .frame(maxWidth: Theme.readableWidth + 40)
         .padding(.horizontal, isWide ? 20 : 10)
         .padding(.bottom, (isWide ? 14 : 6) + lift)
-        .animation(Theme.spring, value: conversation.pendingApproval)
-        .animation(Theme.spring, value: conversation.requests)
-        .animation(Theme.snappy, value: docksRequest)
-        .animation(Theme.spring, value: conversation.banner)
-        .animation(Theme.spring, value: voice?.isMinimised)
-        .animation(Theme.spring, value: conversation.goal)
     }
 
     // MARK: Toolbar

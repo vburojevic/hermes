@@ -1,6 +1,7 @@
 import Foundation
 import HermesKit
 import Observation
+import SwiftUI
 
 /// One conversation: its transcript, the turn in flight and the composer draft.
 @MainActor
@@ -361,6 +362,13 @@ final class ConversationModel: Identifiable {
     /// replies showed blank frames before the content came back.
     @ObservationIgnored private var rowAliases: [String: String] = [:]
 
+    /// Changes to the transcript's rows (a message sent, a reply settling into the stored one, a
+    /// steer read, a redirect) go out as one animated transaction, so the scroll view keeps its
+    /// bottom anchored along with the rows instead of jumping ahead of them.
+    private func animateRows(_ change: () -> Void) {
+        withAnimation(.smooth(duration: 0.36), change)
+    }
+
     /// The identity a row is drawn under (see `rowAliases`).
     func displayID(for item: TranscriptItem) -> String {
         rowAliases[item.id] ?? item.id
@@ -389,6 +397,10 @@ final class ConversationModel: Identifiable {
         if let live { rows.append(.assistant(live.snapshot)) }
         return rows
     }
+
+    /// The chat had messages when it was opened (not started here): its first message gets a
+    /// date line from the start, rather than one appearing above it later.
+    private(set) var openedWithHistory = false
 
     // Mirrors of `live` that change only when their value does, so the sidebar, composer and
     // chat chrome don't re-render for every streamed token.
@@ -492,6 +504,7 @@ final class ConversationModel: Identifiable {
         }
         rawMessages = transcript.messages
         var built = TranscriptBuilder.build(transcript.messages, hidesSilence: botName != nil)
+        if sentTurns == 0, completedTurns == 0, !built.isEmpty { openedWithHistory = true }
         resolveImages(in: built)
         restoreParts(in: &built)
         if !turnReceipts.isEmpty, live?.isFinished ?? true {
@@ -1165,13 +1178,13 @@ final class ConversationModel: Identifiable {
     @discardableResult
     private func addSteer(_ text: String, wasRedirect: Bool = false) -> String {
         let record = FollowUpRecord(text: text, state: isWorking ? .steerWaiting : .steerMissed, turnID: live?.turn.id, wasRedirect: wasRedirect)
-        followUps.append(record)
+        animateRows { followUps.append(record) }
         return record.id
     }
 
     private func missSteer(_ id: String) {
         guard let index = followUps.firstIndex(where: { $0.id == id }), followUps[index].isPending else { return }
-        followUps[index].state = .steerMissed
+        animateRows { followUps[index].state = .steerMissed }
         armedSteers.removeAll { $0 == id }
     }
 
@@ -1200,11 +1213,13 @@ final class ConversationModel: Identifiable {
         armedSteers = []
         guard !read.isEmpty else { return }
         let afterStep = live?.turn.steps.count ?? 0
-        for record in read {
-            live?.turn.steers.append(SteerNote(id: record.id, text: record.text, afterStep: afterStep, timestamp: .now))
-        }
         let ids = Set(read.map(\.id))
-        followUps.removeAll { ids.contains($0.id) }
+        animateRows {
+            for record in read {
+                live?.turn.steers.append(SteerNote(id: record.id, text: record.text, afterStep: afterStep, timestamp: .now))
+            }
+            followUps.removeAll { ids.contains($0.id) }
+        }
     }
 
     /// Redirect: stops what Hermes is doing and changes course (`session.redirect`).
@@ -1225,10 +1240,10 @@ final class ConversationModel: Identifiable {
                 }
             case .queued?:
                 // The agent was still starting, or the chat is being compacted: next turn.
-                holdOnGateway(text)
+                animateRows { holdOnGateway(text) }
             case .rejected?, .streaming?:
                 // The reply ended first: it goes as the next message.
-                queue.insert(QueuedFollowUp(text: text), at: 0)
+                animateRows { queue.insert(QueuedFollowUp(text: text), at: 0) }
                 drainQueueIfIdle()
             case nil:
                 if draft.isEmpty { draft = text }
@@ -1263,11 +1278,13 @@ final class ConversationModel: Identifiable {
         captionsByText[text] = caption
         var next = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: current.sessionID)
         if let runID = current.runID { next.apply(SequencedTurnEvent(seq: nil, event: .runStarted(runID: runID))) }
-        redirectedParts += [.assistant(part), .user(entry)]
-        live = next
         armedSteers = []
-        for index in followUps.indices where followUps[index].turnID == current.turn.id {
-            followUps[index].turnID = next.turn.id
+        animateRows {
+            redirectedParts += [.assistant(part), .user(entry)]
+            live = next
+            for index in followUps.indices where followUps[index].turnID == current.turn.id {
+                followUps[index].turnID = next.turn.id
+            }
         }
     }
 
@@ -1300,13 +1317,15 @@ final class ConversationModel: Identifiable {
                 let result = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt), "queued": .bool(true)])
                 if FollowUpStatus(result: result) == .streaming {
                     // The reply had ended: it started a turn of its own.
-                    gatewayQueued.removeAll { $0 == item.line }
+                    animateRows { gatewayQueued.removeAll { $0 == item.line } }
                 }
             } catch {
                 // It stays on this device and goes when the reply is done.
-                gatewayQueued.removeAll { $0 == item.line }
                 expectedFromGateway.removeAll { $0.text == item.line }
-                queue.append(item)
+                animateRows {
+                    gatewayQueued.removeAll { $0 == item.line }
+                    queue.append(item)
+                }
             }
         }
     }
@@ -1421,11 +1440,13 @@ final class ConversationModel: Identifiable {
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled, !isWorking else { return }
             // Nothing came: the steer is missed, and what the gateway held has gone some other way.
-            for index in followUps.indices where followUps[index].state == .steerCarriedOver {
-                followUps[index].state = .steerMissed
+            animateRows {
+                for index in followUps.indices where followUps[index].state == .steerCarriedOver {
+                    followUps[index].state = .steerMissed
+                }
             }
             expectedFromGateway = []
-            gatewayQueued = []
+            animateRows { gatewayQueued = [] }
             drainQueueIfIdle()
         }
     }
@@ -1464,10 +1485,13 @@ final class ConversationModel: Identifiable {
     /// never makes it a steer).
     func sendQueued(_ item: QueuedFollowUp) {
         guard !isWorking, !isFinishing, !isBotTurnOpen else { return }
-        queue.removeAll { $0.id == item.id }
         captionsByText[item.text] = .fromQueue
-        start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts, queued: true)
-        if let pendingUser { userCaptions[pendingUser.id] = .fromQueue }
+        // The tray gives up the message as it appears in the chat, in one movement.
+        animateRows {
+            queue.removeAll { $0.id == item.id }
+            start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts, queued: true)
+            if let pendingUser { userCaptions[pendingUser.id] = .fromQueue }
+        }
     }
 
     func moveQueued(fromOffsets source: IndexSet, toOffset destination: Int) {
@@ -1568,13 +1592,15 @@ final class ConversationModel: Identifiable {
         var entry = UserEntry(id: "local-\(UUID().uuidString)", text: text, timestamp: .now, fileNames: files.map(\.name), skillNames: skills)
         if let parts, parts.hasStructure, parts.command == nil { entry.parts = parts }
         userImages[entry.id] = images
-        pendingUser = entry
-        redirectedParts = []
         armedSteers = []
         queuePaused = false
         turnQueued = queued
-        live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
-        sentTurns += 1
+        animateRows {
+            pendingUser = entry
+            redirectedParts = []
+            live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
+            sentTurns += 1
+        }
         promptSent = false
         isRemoteTurn = false
         if !isBotChat {
@@ -1807,25 +1833,29 @@ final class ConversationModel: Identifiable {
             transcript = try? await Task { try await fetch(sessionID) }.value
         }
         guard live?.turn.id == finished.turn.id else { return }
-        if let transcript {
-            apply(transcript)
-            handOverIdentity(shown: shownRows)
-            needsReconcile = false
-            carryOverExtras(from: finished.turn)
-            if finished.turn.state == .stopped {
-                markLastTurnStopped()
+        // The stored rows take over from the live ones in place (same identities), in one
+        // animated step: the reply's actions fade in where it ends instead of shoving it up.
+        animateRows {
+            if let transcript {
+                apply(transcript)
+                handOverIdentity(shown: shownRows)
+                needsReconcile = false
+                carryOverExtras(from: finished.turn)
+                if finished.turn.state == .stopped {
+                    markLastTurnStopped()
+                }
+            } else {
+                // Couldn't reach the server: keep what streamed in, and reload when we can.
+                items += shownRows
+                needsReconcile = true
             }
-        } else {
-            // Couldn't reach the server: keep what streamed in, and reload when we can.
-            items += shownRows
-            needsReconcile = true
+            pendingUser = nil
+            redirectedParts = []
+            live = nil
+            settleSteers(stopped: stoppedByUser, readLive: transcript == nil ? [] : (shownRows.flatMap { row -> [SteerNote] in
+                if case .assistant(let turn) = row { turn.steers } else { [] }
+            }))
         }
-        pendingUser = nil
-        redirectedParts = []
-        live = nil
-        settleSteers(stopped: stoppedByUser, readLive: transcript == nil ? [] : (shownRows.flatMap { row -> [SteerNote] in
-            if case .assistant(let turn) = row { turn.steers } else { [] }
-        }))
         loadState = .loaded
         completedTurns += 1
         if let botName {
@@ -2643,12 +2673,14 @@ extension ConversationModel {
     private func beginRemoteTurn() {
         // A turn running on the gateway answers "how did it end?": an uncertain-outcome card is moot.
         if turnError?.canRetry == false { turnError = nil }
-        live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
-        redirectedParts = []
+        animateRows {
+            live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
+            redirectedParts = []
+            takeExpectedFromGateway()
+        }
         isRemoteTurn = true
         isBotTurnOpen = true
         promptSent = true
-        takeExpectedFromGateway()
     }
 
     /// The turn is over on the backend.

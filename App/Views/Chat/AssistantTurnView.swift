@@ -12,7 +12,27 @@ struct AssistantTurnView: View {
     var onBranch: BranchAction?
 
     @AppStorage(PreferenceKey.showUsage) private var alwaysShowsUsage = false
+    @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
     @State private var showsUsage = false
+    /// The person opened or closed the steps; `nil` follows the preference.
+    @State private var userExpanded: Bool? = Disclosure.debugOpens("turns") ? true : nil
+    @Namespace private var steerSpace
+
+    private var isExpanded: Bool {
+        userExpanded ?? (turn.isWorking && expandWhileWorking)
+    }
+
+    /// What the reply reads as right now. While Hermes works with its steps folded, what it last
+    /// said between steps stays in this place, muted, until it says more: it no longer streams in
+    /// and then vanishes into the fold when the next tool starts, pulling the chat up and down.
+    private var shownText: (text: String, isInterim: Bool)? {
+        if !turn.answer.isEmpty { return (turn.answer, false) }
+        guard turn.isWorking, !isExpanded else { return nil }
+        for step in turn.steps.reversed() {
+            if case .narration(_, let text) = step, !text.isEmpty { return (text, true) }
+        }
+        return nil
+    }
 
     private var showsWork: Bool {
         !turn.steps.isEmpty || !turn.plan.isEmpty || (turn.isWorking && turn.answer.isEmpty)
@@ -42,23 +62,28 @@ struct AssistantTurnView: View {
                     .transition(.opacity.combined(with: .offset(y: -6)))
             }
             if showsWork {
-                WorkSummaryView(turn: turn, status: status, isStopping: isStopping) {
+                WorkSummaryView(turn: turn, status: status, isStopping: isStopping, isExpanded: isExpanded) {
+                    userExpanded = !isExpanded
                     if turn.usage != nil { withAnimation(Theme.spring) { showsUsage.toggle() } }
                 }
             }
             if let models = turn.models {
                 ModelsCard(progress: models, isWorking: turn.isWorking)
             }
-            // Steers stay in send order: one keeps its place as it goes from waiting to read.
-            ForEach(steerBubbles) { bubble in
-                // One leaves only to show after the transcript (carried over, missed): no fade over the reply.
-                FollowUpBubble(text: bubble.text, caption: bubble.caption, isPending: bubble.isPending)
-                    .transition(.asymmetric(insertion: .offset(y: 16).combined(with: .opacity), removal: .identity))
+            // Steers Hermes read come before what it went on to say.
+            ForEach(steerBubbles.filter { !$0.isPending }) { bubble in
+                steerBubble(bubble)
             }
-            if !turn.answer.isEmpty {
-                MarkdownView(text: turn.answer)
+            if let shown = shownText {
+                MarkdownView(text: turn.isWorking ? StreamingMarkdown.displayed(shown.text) : shown.text)
                     .equatable()
+                    // Only the tone eases; the words switch at once, never drawn over each other.
+                    .animation(.smooth(duration: 0.3)) { $0.opacity(shown.isInterim ? 0.55 : 1) }
                     .contextMenu { replyMenu }
+            }
+            // One still waiting sits at the end, where it was sent; read, it glides into place.
+            ForEach(steerBubbles.filter(\.isPending)) { bubble in
+                steerBubble(bubble)
             }
             if !turn.isWorking, !turn.answer.isEmpty, !sources.isEmpty {
                 SourcesRow(results: sources)
@@ -68,6 +93,13 @@ struct AssistantTurnView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.smooth(duration: 0.32), value: steerBubbles)
         .animation(.smooth(duration: 0.32), value: turn.warning)
+    }
+
+    private func steerBubble(_ bubble: SteerBubbleItem) -> some View {
+        FollowUpBubble(text: bubble.text, caption: bubble.caption, isPending: bubble.isPending)
+            .matchedGeometryEffect(id: bubble.id, in: steerSpace)
+            // One leaves only to show after the transcript (carried over, missed): no fade over the reply.
+            .transition(.asymmetric(insertion: .offset(y: 14).combined(with: .opacity), removal: .identity))
     }
 
     struct SteerBubbleItem: Identifiable, Equatable {
@@ -234,10 +266,10 @@ struct WorkSummaryView: View {
     let turn: AssistantTurn
     var status: String?
     var isStopping = false
-    var onHeaderTap: () -> Void = {}
-
-    @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
-    @State private var userExpanded: Bool? = Disclosure.debugOpens("turns") ? true : nil
+    /// Whether the steps show; the reply owns it, as what it shows below depends on it.
+    let isExpanded: Bool
+    /// The header was tapped: open or close the steps.
+    var onToggle: () -> Void = {}
     /// The title on screen: each status stays at least `titleHold` so rapid updates don't flicker.
     @State private var shownTitle: String?
     @State private var titleShownAt = Date.distantPast
@@ -269,10 +301,6 @@ struct WorkSummaryView: View {
             shownTitle = title
             titleShownAt = .now
         }
-    }
-
-    private var isExpanded: Bool {
-        userExpanded ?? (turn.isWorking && expandWhileWorking)
     }
 
     private var hasSteps: Bool { !turn.steps.isEmpty || !turn.plan.isEmpty }
@@ -308,8 +336,7 @@ struct WorkSummaryView: View {
     private var header: some View {
         Button {
             willToggle()
-            userExpanded = !isExpanded
-            onHeaderTap()
+            onToggle()
         } label: {
             HStack(spacing: 6) {
                 TurnGlyph(phase: isWaiting ? .waiting : (turn.isWorking ? .working : .done))
@@ -1115,5 +1142,40 @@ struct BranchAction {
         }
         .prefix(8)
         .map { $0 }
+    }
+}
+
+/// While a reply streams, a bold or code span that has opened but not closed yet would show its
+/// raw markers (`**`, a backtick) until the rest arrives; shown closed, it reads as it will.
+enum StreamingMarkdown {
+    static func displayed(_ text: String) -> String {
+        // Inside an open code block the text is code already.
+        guard text.components(separatedBy: "```").count % 2 == 1 else { return text }
+        let start = text.range(of: "\n\n", options: .backwards)?.upperBound ?? text.startIndex
+        let head = String(text[..<start])
+        var paragraph = String(text[start...])
+        // Half of a "**" that has just arrived.
+        if paragraph.hasSuffix("*"), !paragraph.hasSuffix("**"), !paragraph.hasSuffix(" *"), paragraph.count > 1 {
+            paragraph.removeLast()
+        }
+        let spans = paragraph.replacingOccurrences(of: "```", with: "")
+        let opensCode = spans.filter { $0 == "`" }.count % 2 == 1
+        let opensBold = !opensCode && spans.components(separatedBy: "**").count % 2 == 0
+        if opensCode {
+            if paragraph.hasSuffix("`") {
+                paragraph.removeLast() // only just opened: nothing to show in it yet
+            } else {
+                paragraph += "`"
+            }
+        } else if opensBold {
+            if paragraph.hasSuffix("**") {
+                paragraph.removeLast(2)
+            } else {
+                // A closer must touch the text before it to close anything.
+                while paragraph.last?.isWhitespace == true { paragraph.removeLast() }
+                paragraph += "**"
+            }
+        }
+        return head + paragraph
     }
 }

@@ -7,7 +7,15 @@ struct TranscriptView: View {
     let workspace: BotWorkspace
 
     @State private var position = ScrollPosition(edge: .bottom)
-    @State private var isAtBottom = true
+    /// The view keeps to the latest. Only the person scrolling away turns this off: a big block
+    /// arriving at once (a table, code) can put the bottom out of reach for a moment, and that
+    /// mustn't stop the chat following the reply.
+    @State private var isFollowing = true
+    /// The person is dragging or flicking the transcript.
+    @State private var isScrolledByHand = false
+    @State private var bottomGap: CGFloat = 0
+    /// The composer's height over the end of the chat.
+    @State private var bottomInset: CGFloat = 0
     /// An opened chat stays out of sight until it has settled at the bottom, then fades in, rather
     /// than visibly jumping as lazy rows get measured. A chat that appears because you just sent
     /// (or a reply is running) shows at once.
@@ -27,7 +35,7 @@ struct TranscriptView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 30) {
                 let rows = conversation.rows
-                let separators = Self.separators(in: rows)
+                let separators = Self.separators(in: rows, datesOpening: conversation.openedWithHistory)
                 ForEach(rows.map { DisplayRow(key: conversation.displayID(for: $0), item: $0) }, id: \.key) { shown in
                     let item = shown.item
                     VStack(alignment: .leading, spacing: 30) {
@@ -61,15 +69,24 @@ struct TranscriptView: View {
                     )
                     .transition(.opacity.combined(with: .offset(y: 8)))
                 }
+                // The end of the chat, to scroll to. Inside the lazy stack, which always places
+                // the row it is asked for exactly; "the bottom edge" (or anything after the stack)
+                // goes by its estimated height, which can run past the end into an empty screen.
+                // It reaches the composer's height below the end, taking no room: scrolled to the
+                // bottom of the view, the end of the chat sits on the composer, not under it.
+                Color.clear
+                    .frame(height: bottomInset)
+                    .id(Self.bottomID)
+                    .padding(.bottom, -bottomInset)
             }
-            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: conversation.sentTurns)
+            // What `scrollTo(id:)` can find: without it, scrolling to the end did nothing.
+            .scrollTargetLayout()
             .animation(Theme.spring, value: conversation.asides)
             .animation(.smooth(duration: 0.32), value: conversation.followUps)
             .animation(.smooth(duration: 0.3), value: conversation.turnError)
             .frame(maxWidth: Theme.readableWidth)
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 28)
             .frame(maxWidth: .infinity)
         }
         .environment(\.references, references)
@@ -89,25 +106,60 @@ struct TranscriptView: View {
         .defaultScrollAnchor(keepsTop ? .top : .bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.visibleRect.maxY >= geometry.contentSize.height - 72
-        } action: { _, atBottom in
-            isAtBottom = atBottom
+        .onScrollGeometryChange(for: BottomEdge.self) { geometry in
+            // The visible rect runs under the composer: at the end, its bottom is the composer's
+            // height past the content.
+            BottomEdge(
+                distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY,
+                inset: geometry.contentInsets.bottom,
+                height: geometry.contentSize.height
+            )
+        } action: { old, new in
+            bottomGap = new.distance
+            if new.inset != bottomInset { bottomInset = new.inset }
+            if isScrolledByHand { isFollowing = new.distance <= 72 }
+            // The content grew while following: text streaming in, a reply settling into its
+            // stored form, an image or code laid out late. Glide to the end of it.
+            if new.height > old.height + 0.5, isFollowing, !isScrolledByHand, new.distance > 0.5 {
+                withAnimation(.easeOut(duration: 0.2)) { scrollToLatest() }
+            }
+            // The composer grew (the queue, a strip, a second line, a card): the latest moves up
+            // with it instead of slipping under it until the next word scrolls it back.
+            if new.inset > old.inset + 0.5, isFollowing {
+                scrollToLatest()
+            }
         }
-        .onChange(of: followToken) {
-            if isAtBottom {
-                position.scrollTo(edge: .bottom)
+        .onScrollPhaseChange { _, phase in
+            switch phase {
+            case .tracking, .interacting, .decelerating:
+                isScrolledByHand = true
+            case .idle:
+                if isScrolledByHand { isFollowing = bottomGap <= 72 }
+                isScrolledByHand = false
+            case .animating:
+                break
+            @unknown default:
+                break
+            }
+        }
+        // New rows and steps follow with the same animation they arrive with, so the view never
+        // runs ahead of them into empty space; other growth follows above.
+        .onChange(of: rowsToken) {
+            if isFollowing {
+                withAnimation(Self.rowsAnimation) { scrollToLatest() }
             }
         }
         .onChange(of: conversation.sentTurns) {
-            withAnimation(Theme.spring) {
-                position.scrollTo(edge: .bottom)
+            isFollowing = true // sending brings the chat to its end
+            withAnimation(Self.rowsAnimation) {
+                scrollToLatest()
             }
         }
         .overlay(alignment: .bottom) {
-            if !isAtBottom {
+            if !isFollowing {
                 Button {
-                    withAnimation(Theme.spring) { position.scrollTo(edge: .bottom) }
+                    isFollowing = true
+                    withAnimation(Theme.spring) { scrollToLatest() }
                 } label: {
                     Image(systemName: "arrow.down")
                         .font(.system(size: 14, weight: .semibold))
@@ -120,13 +172,13 @@ struct TranscriptView: View {
                 .accessibilityLabel("Scroll to latest")
             }
         }
-        .animation(Theme.snappy, value: isAtBottom)
+        .animation(Theme.snappy, value: isFollowing)
         .task {
             // Lazy rows estimate their heights, so the initial bottom anchor can fall short
             // on long transcripts; settle on the real bottom once they've been measured.
             for delay in [50, 250] {
                 try? await Task.sleep(for: .milliseconds(delay))
-                position.scrollTo(edge: .bottom)
+                scrollToLatest()
             }
             if !settled {
                 withAnimation(.easeOut(duration: 0.22)) { settled = true }
@@ -141,6 +193,14 @@ struct TranscriptView: View {
         return conversation.followUps.filter { !($0.state == .steerWaiting && $0.turnID == liveID && liveID != nil) }
     }
 
+    /// Where the end of the chat is, the composer's share of the bottom, and the content height.
+    private struct BottomEdge: Equatable {
+        /// How far the end of the chat is below the composer's top edge.
+        var distance: CGFloat
+        var inset: CGFloat
+        var height: CGFloat
+    }
+
     /// A row and the identity it's drawn under (`ConversationModel.displayID(for:)`).
     private struct DisplayRow {
         let key: String
@@ -151,8 +211,10 @@ struct TranscriptView: View {
     private static func insertion(for item: TranscriptItem) -> AnyTransition {
         switch item {
         case .user(let entry) where entry.sender == nil && entry.routineName == nil:
+            // It shows at once and settles into place, so there's never a gap where it's going.
             .asymmetric(
-                insertion: .offset(y: 24).combined(with: .scale(scale: 0.94, anchor: .bottomTrailing)).combined(with: .opacity),
+                insertion: .offset(y: 24).combined(with: .scale(scale: 0.94, anchor: .bottomTrailing))
+                    .combined(with: .opacity.animation(.easeOut(duration: 0.16))),
                 removal: .identity
             )
         default:
@@ -162,7 +224,9 @@ struct TranscriptView: View {
 
     /// Time separators (`dateSeparator`): before the first message of each day and after a gap
     /// of more than an hour.
-    static func separators(in rows: [TranscriptItem]) -> [String: Date] {
+    /// - Parameter datesOpening: the first message of today gets one too (a chat opened with its
+    ///   history). A chat started here gets none until a gap, so none appears above it later.
+    static func separators(in rows: [TranscriptItem], datesOpening: Bool) -> [String: Date] {
         var result: [String: Date] = [:]
         var previous: Date?
         let calendar = Calendar.current
@@ -178,7 +242,7 @@ struct TranscriptView: View {
                 if !calendar.isDate(date, inSameDayAs: previous) || date.timeIntervalSince(previous) > 3600 {
                     result[row.id] = date
                 }
-            } else if !calendar.isDateInToday(date) || rows.count > 2 {
+            } else if !calendar.isDateInToday(date) || datesOpening {
                 result[row.id] = date
             }
             previous = date
@@ -192,12 +256,21 @@ struct TranscriptView: View {
         ReferenceContext(workspace: workspace, catalog: conversation.slashCatalog)
     }
 
-    /// Changes whenever streamed content grows; cheap counters, no transcript rebuild.
-    private var followToken: Int {
-        let base = conversation.items.count &* 31 &+ (conversation.pendingUser == nil ? 0 : 1) &+ conversation.followUps.count &* 131
-            &+ conversation.redirectedParts.count &* 17 &+ (conversation.live?.turn.steers.count ?? 0) &* 257
-        guard let live = conversation.live else { return base }
-        return base &+ live.pendingText.count &+ live.turn.answer.count &+ live.turn.steps.count &* 7919
+    private static let bottomID = "transcript-end"
+
+    private func scrollToLatest() {
+        position.scrollTo(id: Self.bottomID, anchor: .bottom)
+    }
+
+    /// How rows come and go (`ConversationModel.animateRows` uses the same).
+    static let rowsAnimation = Animation.smooth(duration: 0.36)
+
+    /// Changes when a row, step or card comes or goes.
+    private var rowsToken: Int {
+        var token = conversation.items.count &* 31 &+ (conversation.pendingUser == nil ? 0 : 1)
+        token = token &+ conversation.followUps.count &* 131 &+ conversation.redirectedParts.count &* 17 &+ conversation.asides.count &* 7
+        guard let live = conversation.live else { return token }
+        return token &+ 3 &+ live.turn.steers.count &* 257 &+ live.turn.steps.count &* 7919
     }
 
     @ViewBuilder

@@ -78,7 +78,7 @@ struct ComposerView: View {
                     onChoose: choose,
                     onShowAllSkills: { showsAllSkills = true }
                 )
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)).animation(Theme.snappy))
             }
             panel
         }
@@ -133,17 +133,10 @@ struct ComposerView: View {
         } message: {
             Text("Turn on the microphone and speech recognition for Hermes in Settings to dictate. You can keep typing.")
         }
-        .animation(Theme.spring, value: conversation.attachments)
-        .animation(Theme.spring, value: conversation.files)
-        .animation(Theme.spring, value: conversation.queue)
-        .animation(Theme.spring, value: conversation.gatewayQueued)
-        .animation(Theme.spring, value: conversation.editingQueued)
-        .animation(Theme.spring, value: conversation.editing)
-        .animation(Theme.snappy, value: showsModeChip)
-        .animation(reduceMotion ? nil : Theme.snappy, value: dictation.isActive)
-        .animation(Theme.snappy, value: slashSections.isEmpty)
-        .animation(Theme.snappy, value: conversation.draftCommand)
-        .animation(Theme.spring, value: conversation.skills)
+        // The composer's height changes in one step, and what comes into it fades in: the chat
+        // above follows that step exactly, where an eased height would leave it a frame behind
+        // all the way (`Self.rowAppears`). Each swap below carries its own animation, so none
+        // of them eases the rest of the composer along with it.
         .task(id: conversation.usesGateway) { conversation.loadSlashCatalog() }
         .task(id: pathToken) {
             guard let token = pathToken else {
@@ -186,18 +179,18 @@ struct ComposerView: View {
                 QueueTray(conversation: conversation)
                     .padding(.horizontal, 10)
                     .padding(.top, 10)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(Self.rowAppears)
             }
             if let editing = conversation.editingQueued {
                 ComposerStrip(
                     symbol: "pencil",
                     text: String(localized: "Editing queued message \(conversation.gatewayQueued.count + editing.index + 1) · Send puts it back"),
                     closeLabel: "Stop editing",
-                    onClose: { withAnimation(Theme.spring) { conversation.cancelEditingQueued() } }
+                    onClose: { conversation.cancelEditingQueued() }
                 )
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
-                .transition(.opacity)
+                .transition(Self.rowAppears)
             }
             if conversation.editing != nil {
                 ComposerStrip(symbol: "pencil", text: String(localized: "Editing · sends as a new branch"), closeLabel: "Stop editing") {
@@ -205,11 +198,13 @@ struct ComposerView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
+                .transition(Self.rowAppears)
             }
             if !conversation.attachments.isEmpty {
                 AttachmentStrip(attachments: $conversation.attachments)
                     .padding(.horizontal, 12)
                     .padding(.top, 12)
+                    .transition(Self.rowAppears)
             }
             if !conversation.skills.isEmpty {
                 // The tray (`composerSkills`): skills apply to the whole message, up to five.
@@ -220,11 +215,13 @@ struct ComposerView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
+                .transition(Self.rowAppears)
             }
             if !conversation.files.isEmpty {
                 FileChips(files: $conversation.files)
                     .padding(.horizontal, 14)
                     .padding(.top, 12)
+                    .transition(Self.rowAppears)
             }
             PillTextView(
                 text: $conversation.draft,
@@ -266,10 +263,10 @@ struct ComposerView: View {
             Group {
                 if dictation.isActive {
                     DictationRow(dictation: dictation, onCancel: cancelDictation, onDone: finishDictation)
-                        .transition(.opacity)
+                        .transition(.opacity.animation(reduceMotion ? nil : Theme.snappy))
                 } else {
                     controls
-                        .transition(.opacity)
+                        .transition(.opacity.animation(reduceMotion ? nil : Theme.snappy))
                 }
             }
             .padding(.horizontal, 10)
@@ -286,15 +283,23 @@ struct ComposerView: View {
         (conversation.canSendFollowUp || conversation.editingQueued != nil) && !dictation.isActive
     }
 
+    /// A row coming into the composer (the queue, a strip, attachments): the height is there at
+    /// once, the content fades in.
+    static let rowAppears = AnyTransition.opacity.animation(.easeOut(duration: 0.2))
+
+
     private var controls: some View {
         HStack(spacing: 6) {
             attachMenu
-            if showsModeChip {
+            // Think and the send mode share one place and cross-fade. Neither comes or goes, so
+            // no leaving copy can linger where the chip was while the composer changes height.
+            ZStack(alignment: .leading) {
+                if !conversation.isBotChat {
+                    EffortMenu(conversation: conversation, workspace: workspace)
+                        .modifier(ChipSlot(isShown: !showsModeChip))
+                }
                 FollowUpModeChip(conversation: conversation, focused: focused)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
-            } else if !conversation.isBotChat {
-                EffortMenu(conversation: conversation, workspace: workspace)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
+                    .modifier(ChipSlot(isShown: showsModeChip))
             }
             Spacer(minLength: 4)
             if let status = hint {
@@ -589,7 +594,7 @@ struct ComposerView: View {
                 return true
             }
             guard sendWithReturn else { return false }
-            if conversation.canSend || conversation.canSendFollowUp {
+            if conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
                 conversation.send()
             }
             return true
@@ -687,6 +692,20 @@ struct ComposerView: View {
     }
 }
 
+/// One of the chips that share a place: shown, or faded out and out of reach.
+private struct ChipSlot: ViewModifier {
+    let isShown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .animation(.smooth(duration: 0.2)) {
+                $0.opacity(isShown ? 1 : 0).scaleEffect(isShown ? 1 : 0.94, anchor: .leading)
+            }
+            .allowsHitTesting(isShown)
+            .accessibilityHidden(!isShown)
+    }
+}
+
 // MARK: - Trailing button
 
 /// The one tinted control: Voice mode when there's nothing to send, Send with content (or a
@@ -707,6 +726,22 @@ private struct TrailingButton: View {
         // Stopped with messages waiting: Send sends the first.
         if conversation.canSendQueued || conversation.editingQueued != nil { return .send }
         return .voice
+    }
+
+    private var symbol: String {
+        switch mode {
+        case .stop: "stop.fill"
+        case .send: "arrow.up"
+        case .voice: "waveform"
+        }
+    }
+
+    private var symbolSize: CGFloat {
+        switch mode {
+        case .stop: 12
+        case .send: 16
+        case .voice: 15
+        }
     }
 
     private var isEnabled: Bool {
@@ -735,26 +770,22 @@ private struct TrailingButton: View {
             case .voice: onVoiceMode?()
             }
         } label: {
-            Group {
-                switch mode {
-                case .stop: Image(systemName: "stop.fill").font(.system(size: 12, weight: .bold))
-                case .send: Image(systemName: "arrow.up").font(.system(size: 16, weight: .bold))
-                case .voice: Image(systemName: "waveform").font(.system(size: 15, weight: .bold))
-                }
-            }
-            .foregroundStyle(Theme.inkForeground)
-            .frame(width: 36, height: 36)
-            .background(Circle().fill(Theme.ink))
-            .opacity(isEnabled || isOffline ? 1 : 0.35)
-            .contentTransition(.symbolEffect(.replace))
-            .contentShape(Circle())
+            // Only the glyph and its tone animate: the button itself never eases from where it
+            // was, which inside a composer that just grew would float it out of place.
+            Image(systemName: symbol)
+                .font(.system(size: symbolSize, weight: .bold))
+                .contentTransition(.symbolEffect(.replace))
+                .animation(Theme.snappy, value: mode)
+                .foregroundStyle(Theme.inkForeground)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(Theme.ink))
+                .animation(Theme.snappy) { $0.opacity(isEnabled || isOffline ? 1 : 0.35) }
+                .contentShape(Circle())
         }
         .buttonStyle(PressableStyle())
         .disabled(!isEnabled)
         // While a turn runs ⌘Return redirects; the field handles it.
         .keyboardShortcut(mode == .send && !conversation.isWorking ? KeyboardShortcut(.return, modifiers: .command) : nil)
-        .animation(Theme.snappy, value: mode)
-        .animation(Theme.snappy, value: isEnabled)
         .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? (conversation.isWorking ? sendLabel : "Send") : "Voice mode")
         .help(mode == .stop ? "Stop (⌘.)" : mode == .send ? "Send (⌘↩)" : "Voice mode")
     }
