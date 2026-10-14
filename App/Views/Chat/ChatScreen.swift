@@ -42,7 +42,7 @@ struct ChatScreen: View {
 
     /// Wide layouts centre the composer on an empty chat, like Grok on the web and Mac.
     private var centersComposer: Bool {
-        isWide && conversation.isEmpty && conversation.sessionID == nil
+        isWide && conversation.isKnownEmpty
     }
 
     var body: some View {
@@ -197,10 +197,11 @@ struct ChatScreen: View {
     @ViewBuilder
     private var content: some View {
         switch conversation.loadState {
-        case .loading where conversation.isEmpty:
-            ProgressView()
-                .controlSize(.regular)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .idle where conversation.isEmpty && !conversation.isKnownEmpty,
+             .loading where conversation.isEmpty:
+            // An existing chat on its way: no greeting, no centred composer, and no spinner
+            // unless it takes a moment.
+            DelayedProgress()
         case .failed(let error) where conversation.isEmpty:
             StateMessage(
                 symbol: "exclamationmark.bubble",
@@ -378,6 +379,22 @@ struct ChatScreen: View {
             .help("New chat (⌘N)")
             .disabled(conversation.isEmpty && conversation.sessionID == nil)
         }
+    }
+}
+
+/// A spinner that waits a beat before showing, so a fast load doesn't flash one.
+private struct DelayedProgress: View {
+    @State private var shows = false
+
+    var body: some View {
+        ProgressView()
+            .controlSize(.regular)
+            .opacity(shows ? 1 : 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task {
+                try? await Task.sleep(for: .milliseconds(300))
+                withAnimation(.easeOut(duration: 0.2)) { shows = true }
+            }
     }
 }
 

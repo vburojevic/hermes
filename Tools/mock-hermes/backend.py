@@ -413,6 +413,22 @@ def tool(sid, stored, name, args, result, seconds, context):
     add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
     emit(sid, "tool.complete", {"tool_id": call, "name": name, "args": args, "duration_s": round(waited, 2),
                                 "result": result, "summary": f"Completed in {waited:.1f}s"})
+    deliver_steers(sid, lambda row: add_message(stored, "user", row["content"], display_kind="steer",
+                                                display_content=row["display_content"]))
+
+
+STEER_OPEN = ("[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; "
+              "not tool output and not a new delivery when replayed from conversation history]")
+STEER_CLOSE = "[/OUT-OF-BAND USER MESSAGE]"
+
+
+def deliver_steers(sid, store):
+    """Steer Now, the way Hermes delivers it: after the newest tool result, as its own `user` row typed
+    `steer`, wrapped in the out-of-band marker; the REST projection adds `display_content` (the words)."""
+    with LOCK:
+        steers = RUNTIME[sid].pop("steers", []) if sid in RUNTIME else []
+    for text in steers:
+        store({"content": f"{STEER_OPEN}\n{text}\n{STEER_CLOSE}", "display_content": text})
 
 
 def bot_title(profile):
@@ -1137,7 +1153,8 @@ def main():
                              "the socket, like the real gateway and backend share one database (chats.py)")
     parser.add_argument("--gateway-key", default="dev-key-0123456789abcdef")
     parser.add_argument("--push-relay", default="simctl",
-                        help="where push notices go (push.py): simctl (the simulator that registered) or a relay URL")
+                        help="where push notices go (push.py): simctl (the simulator that registered), a relay URL, "
+                             "or none (no plugin)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
     CONFIG["long_bot_chats"] = args.long_bot_chats
@@ -1167,8 +1184,9 @@ def main():
     _spec = _util.spec_from_file_location("mock_push", _pathlib.Path(__file__).resolve().parent / "push.py")
     _push = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_push)
-    _push.install(globals(), gateway if args.gateway_port else None, relay_mode=args.push_relay,
-                  chats_module=chats if args.gateway_port else None)
+    if args.push_relay != "none":  # `none`: a gateway without the plugin (Set Up Push)
+        _push.install(globals(), gateway if args.gateway_port else None, relay_mode=args.push_relay,
+                      chats_module=chats if args.gateway_port else None)
     if not args.quiet_world:
         threading.Thread(target=ambient, daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), Handler)

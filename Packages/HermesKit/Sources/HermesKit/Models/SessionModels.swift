@@ -145,6 +145,8 @@ public struct SessionMessage: Decodable, Sendable, Hashable {
     public var reasoning: String?
     /// `nil` for a normal bubble; `hidden` must not render; others are timeline notices.
     public var displayKind: String?
+    /// What to show instead of `content` (a steer's own words without Hermes' marker).
+    public var displayContent: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, timestamp, reasoning
@@ -154,6 +156,7 @@ public struct SessionMessage: Decodable, Sendable, Hashable {
         case finishReason = "finish_reason"
         case reasoningContent = "reasoning_content"
         case displayKind = "display_kind"
+        case displayContent = "display_content"
     }
 
     public init(
@@ -185,6 +188,7 @@ public struct SessionMessage: Decodable, Sendable, Hashable {
             ?? (try? c.decodeIfPresent(String.self, forKey: .reasoningContent))
         reasoning = thinking?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? thinking : nil
         displayKind = try? c.decodeIfPresent(String.self, forKey: .displayKind)
+        displayContent = try? c.decodeIfPresent(String.self, forKey: .displayContent)
     }
 }
 

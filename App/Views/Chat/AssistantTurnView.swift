@@ -5,6 +5,8 @@ import SwiftUI
 /// with their attachments, the answer, its sources, the actions, then quiet notes.
 struct AssistantTurnView: View {
     let turn: AssistantTurn
+    /// Steer Now messages sent while this turn runs: shown where the answer will follow them.
+    var steers: [String] = []
     var status: String?
     var isStopping = false
     var onBranch: BranchAction?
@@ -34,6 +36,11 @@ struct AssistantTurnView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Hermes warns as the agent starts (a compression setting, a refusal): above the work.
+            if let warning = turn.warning {
+                TurnWarnings(text: warning)
+                    .transition(.opacity.combined(with: .offset(y: -6)))
+            }
             if showsWork {
                 WorkSummaryView(turn: turn, status: status, isStopping: isStopping) {
                     if turn.usage != nil { withAnimation(Theme.spring) { showsUsage.toggle() } }
@@ -41,6 +48,10 @@ struct AssistantTurnView: View {
             }
             if let models = turn.models {
                 ModelsCard(progress: models, isWorking: turn.isWorking)
+            }
+            ForEach(Array(steers.enumerated()), id: \.offset) { _, text in
+                SteerBubble(text: text)
+                    .transition(.asymmetric(insertion: .offset(y: 16).combined(with: .opacity), removal: .opacity))
             }
             if !turn.answer.isEmpty {
                 MarkdownView(text: turn.answer)
@@ -53,6 +64,8 @@ struct AssistantTurnView: View {
             footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.smooth(duration: 0.32), value: steers)
+        .animation(.smooth(duration: 0.32), value: turn.warning)
     }
 
     /// `Overlays.replyMenu`.
@@ -111,10 +124,6 @@ struct AssistantTurnView: View {
             }
         case .streaming, .waitingForApproval:
             EmptyView()
-        }
-        // Shown as soon as Hermes warns, not only once the turn ends: a quiet note, not the status line.
-        if let warning = turn.warning {
-            TurnWarnings(text: warning)
         }
         if !turn.isWorking {
             ForEach(remembered, id: \.self) { text in
@@ -209,8 +218,38 @@ struct WorkSummaryView: View {
 
     @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
     @State private var userExpanded: Bool? = Disclosure.debugOpens("turns") ? true : nil
+    /// The title on screen: each status stays at least `titleHold` so rapid updates don't flicker.
+    @State private var shownTitle: String?
+    @State private var titleShownAt = Date.distantPast
+    @State private var pendingTitle: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.disclosureWillToggle) private var willToggle
+
+    private static let titleHold: TimeInterval = 0.6
+
+    private var isWaiting: Bool { turn.state == .waitingForApproval }
+
+    private var title: String {
+        if isWaiting { return String(localized: "Waiting for your approval") }
+        return turn.isWorking ? workingTitle : doneTitle
+    }
+
+    private func show(_ new: String) {
+        pendingTitle?.cancel()
+        let wait = Self.titleHold - Date.now.timeIntervalSince(titleShownAt)
+        // The first title, the end of the turn and an approval show at once.
+        guard shownTitle != nil, wait > 0, turn.isWorking, !isWaiting else {
+            shownTitle = new
+            titleShownAt = .now
+            return
+        }
+        pendingTitle = Task {
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
+            shownTitle = title
+            titleShownAt = .now
+        }
+    }
 
     private var isExpanded: Bool {
         userExpanded ?? (turn.isWorking && expandWhileWorking)
@@ -253,53 +292,33 @@ struct WorkSummaryView: View {
             onHeaderTap()
         } label: {
             HStack(spacing: 6) {
-                if turn.state == .waitingForApproval {
-                    Image(systemName: "hand.raised.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.warning)
-                    Text("Waiting for your approval")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Theme.warning)
-                } else if turn.isWorking {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .frame(width: 14, height: 14)
-                    // A ticker: the new status rolls up as the old one leaves, never both at once.
-                    ZStack(alignment: .leading) {
-                        ShimmerText(text: workingTitle)
-                            .id(workingTitle)
-                            // A full line's travel: the old status is out of the clip before the
-                            // new one is in, so the two never sit on top of each other.
-                            .transition(reduceMotion ? .opacity : .asymmetric(
-                                insertion: .offset(y: 18).combined(with: .opacity),
-                                removal: .offset(y: -18).combined(with: .opacity.animation(.easeOut(duration: 0.12)))
-                            ))
-                    }
-                    .clipped()
-                    .animation(.smooth(duration: 0.32), value: workingTitle)
-                } else {
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.tertiaryText)
-                        .frame(width: 14, height: 14)
-                    Text(doneTitle)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Theme.tertiaryText)
-                }
-                if hasSteps, turn.state != .waitingForApproval {
+                TurnGlyph(phase: isWaiting ? .waiting : (turn.isWorking ? .working : .done))
+                TickerTitle(
+                    text: shownTitle ?? title,
+                    shimmers: turn.isWorking && !isWaiting,
+                    tint: isWaiting ? Theme.warning : Theme.tertiaryText
+                )
+                if hasSteps, !isWaiting {
                     DisclosureChevron(isOpen: isExpanded)
+                        .transition(.opacity)
                 }
+                Spacer(minLength: 8)
                 if turn.isWorking, let started = turn.startedAt {
-                    Spacer(minLength: 8)
                     TimelineView(.periodic(from: started, by: 1)) { context in
                         Text(Formatting.duration(context.date.timeIntervalSince(started)))
                             .font(.footnote.monospacedDigit())
                             .foregroundStyle(Theme.tertiaryText)
+                            .contentTransition(.numericText())
                     }
+                    .transition(.opacity)
                 }
             }
             .padding(.vertical, 4)
             .contentShape(Rectangle())
+            .animation(.smooth(duration: 0.32), value: turn.isWorking)
+            .animation(.smooth(duration: 0.32), value: isWaiting)
+            .animation(.smooth(duration: 0.25), value: hasSteps)
+            .onChange(of: title, initial: true) { _, new in show(new) }
         }
         .buttonStyle(.plain)
         .disabled(!hasSteps && turn.usage == nil)
@@ -336,6 +355,68 @@ struct WorkSummaryView: View {
             : String(localized: "Worked for \(time) · \(count) tools")
         case (let count, nil): return count == 1 ? String(localized: "Used 1 tool") : String(localized: "Used \(count) tools")
         }
+    }
+}
+
+/// The header's leading mark: a spinner while working, a raised hand while waiting for you, a
+/// sparkle when done. They cross-fade (and the spinner settles into the sparkle) as the state moves.
+private struct TurnGlyph: View {
+    enum Phase: Equatable { case working, waiting, done }
+    let phase: Phase
+
+    var body: some View {
+        ZStack {
+            switch phase {
+            case .working:
+                ProgressView()
+                    .controlSize(.mini)
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            case .waiting:
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.warning)
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            case .done:
+                Image(systemName: "sparkle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.tertiaryText)
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .frame(width: 14, height: 14)
+        .animation(.smooth(duration: 0.32), value: phase)
+        .accessibilityHidden(true)
+    }
+}
+
+/// One line of status that rolls to the next: the old line leaves upward as the new one comes in
+/// from below, a full line apart so they never overlap. Shimmers while the turn works.
+private struct TickerTitle: View {
+    let text: String
+    let shimmers: Bool
+    let tint: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Group {
+                if shimmers {
+                    ShimmerText(text: text)
+                } else {
+                    Text(text)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(tint)
+                        .lineLimit(1)
+                }
+            }
+            .id(text)
+            .transition(reduceMotion ? .opacity : .asymmetric(
+                insertion: .offset(y: 18).combined(with: .opacity),
+                removal: .offset(y: -18).combined(with: .opacity.animation(.easeOut(duration: 0.14)))
+            ))
+        }
+        .clipped()
+        .animation(.smooth(duration: 0.34), value: text)
     }
 }
 

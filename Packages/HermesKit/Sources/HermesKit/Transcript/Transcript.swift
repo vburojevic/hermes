@@ -37,6 +37,8 @@ public struct UserEntry: Identifiable, Hashable, Sendable {
     /// What the message was made of when this app sent it (command, skills, Bots and files
     /// inline); `nil` for text from elsewhere.
     public var parts: MessageParts?
+    /// Sent with Steer Now while a reply was running (Hermes' `steer` rows).
+    public var isSteer = false
 
     public init(id: String, text: String, imagePlaceholderCount: Int = 0, inlineImageURLs: [String] = [], timestamp: Date? = nil, sender: AgentSender? = nil, fileNames: [String] = [], skillNames: [String] = []) {
         self.id = id
@@ -322,6 +324,12 @@ public enum TranscriptBuilder {
             switch message.role {
             case "user":
                 if kind == "hidden" { continue }
+                if kind == "steer" {
+                    // Steer Now lands mid-turn, after a tool result: the reply continues below it.
+                    closeTurn()
+                    items.append(.user(steerEntry(id: rowID, message: message)))
+                    continue
+                }
                 if let kind = kind ?? untaggedNoticeKind(message.content.text), noticeKinds.contains(kind) {
                     closeTurn()
                     items.append(.notice(Notice(id: rowID, kind: kind, text: noticeText(kind: kind, content: message.content.text))))
@@ -458,6 +466,21 @@ public enum TranscriptBuilder {
     }
 
     // MARK: Text cleanup
+
+    /// A steer's words: Hermes' `display_content`, else the text inside its out-of-band marker.
+    static func steerEntry(id: String, message: SessionMessage) -> UserEntry {
+        var text = message.displayContent ?? message.content.text
+        if message.displayContent == nil {
+            let lines = text.components(separatedBy: "\n").filter { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return !trimmed.hasPrefix("[OUT-OF-BAND USER MESSAGE") && !trimmed.hasPrefix("[/OUT-OF-BAND USER MESSAGE")
+            }
+            text = lines.joined(separator: "\n")
+        }
+        var entry = UserEntry(id: id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), timestamp: message.timestamp)
+        entry.isSteer = true
+        return entry
+    }
 
     static func userEntry(id: String, message: SessionMessage) -> UserEntry {
         var text = message.content.text

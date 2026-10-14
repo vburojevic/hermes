@@ -8,6 +8,16 @@ struct TranscriptView: View {
 
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var isAtBottom = true
+    /// An opened chat stays out of sight until it has settled at the bottom, then fades in, rather
+    /// than visibly jumping as lazy rows get measured. A chat that appears because you just sent
+    /// (or a reply is running) shows at once.
+    @State private var settled: Bool
+
+    init(conversation: ConversationModel, workspace: BotWorkspace) {
+        self.conversation = conversation
+        self.workspace = workspace
+        _settled = State(initialValue: conversation.pendingUser != nil || conversation.isWorking)
+    }
     /// A fold was just tapped: size changes keep the top in place, so what was tapped stays put and
     /// opens downward, instead of the bottom anchor pushing it up the screen.
     @State private var keepsTop = false
@@ -43,10 +53,12 @@ struct TranscriptView: View {
                         reload: conversation.reload,
                         dismiss: conversation.dismissTurnError
                     )
+                    .transition(.opacity.combined(with: .offset(y: 8)))
                 }
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: conversation.sentTurns)
             .animation(Theme.spring, value: conversation.asides)
+            .animation(.smooth(duration: 0.3), value: conversation.turnError)
             .frame(maxWidth: Theme.readableWidth)
             .padding(.horizontal, 20)
             .padding(.top, 20)
@@ -109,7 +121,11 @@ struct TranscriptView: View {
                 try? await Task.sleep(for: .milliseconds(delay))
                 position.scrollTo(edge: .bottom)
             }
+            if !settled {
+                withAnimation(.easeOut(duration: 0.22)) { settled = true }
+            }
         }
+        .opacity(settled ? 1 : 0)
     }
 
     /// A row and the identity it's drawn under (`ConversationModel.displayID(for:)`).
@@ -165,7 +181,7 @@ struct TranscriptView: View {
 
     /// Changes whenever streamed content grows; cheap counters, no transcript rebuild.
     private var followToken: Int {
-        let base = conversation.items.count &* 31 &+ (conversation.pendingUser == nil ? 0 : 1)
+        let base = conversation.items.count &* 31 &+ (conversation.pendingUser == nil ? 0 : 1) &+ conversation.liveSteers.count &* 131
         guard let live = conversation.live else { return base }
         return base &+ live.pendingText.count &+ live.turn.answer.count &+ live.turn.steps.count &* 7919
     }
@@ -174,7 +190,9 @@ struct TranscriptView: View {
     private func row(for item: TranscriptItem) -> some View {
         switch item {
         case .user(let entry):
-            if let sender = entry.sender {
+            if entry.isSteer {
+                SteerBubble(text: entry.text)
+            } else if let sender = entry.sender {
                 AgentMessageRow(entry: entry, sender: sender, roster: workspace.roster)
             } else if let routine = entry.routineName {
                 RoutineDeliveryRow(entry: entry, name: routine)
@@ -186,6 +204,7 @@ struct TranscriptView: View {
         case .assistant(let turn):
             AssistantTurnView(
                 turn: turn,
+                steers: turn.id == conversation.live?.turn.id ? conversation.liveSteers : [],
                 status: turn.isWorking ? conversation.liveStatus : nil,
                 isStopping: turn.isWorking && conversation.isStopping,
                 onBranch: branchAction(for: turn.id)

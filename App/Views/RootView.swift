@@ -196,6 +196,7 @@ struct RootView: View {
             let conversation = workspace.currentConversation
             conversation.draft = text
             conversation.send()
+            await sendDebugFollowUp(in: conversation)
             return
         }
         workspace.sidebarMode = .chats
@@ -210,6 +211,10 @@ struct RootView: View {
         conversation.send()
         // `-HERMES_FOLLOWUP <text>` types a follow-up while the turn runs (`-HERMES_FOLLOWUP_MODE
         // steer|sendAfter|askAside` picks the choice, `-HERMES_FOLLOWUP_SEND YES` sends it).
+        await sendDebugFollowUp(in: conversation)
+    }
+
+    private func sendDebugFollowUp(in conversation: ConversationModel) async {
         guard let followUp = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP"), !followUp.isEmpty else { return }
         try? await Task.sleep(for: .seconds(2))
         if let mode = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_MODE").flatMap(ConversationModel.FollowUp.init(rawValue:)) {

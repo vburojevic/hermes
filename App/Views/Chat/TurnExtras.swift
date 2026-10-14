@@ -454,6 +454,33 @@ struct TurnNote: View {
     }
 }
 
+/// A message sent with Steer Now: the person's words, on their side, marked as steering the
+/// reply that was running (it continues below them).
+struct SteerBubble: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Label("Steered", systemImage: "arrow.turn.down.right")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Theme.tertiaryText)
+                .labelStyle(TightLabel())
+            Text(text)
+                .font(Theme.Typography.compactMessage)
+                .foregroundStyle(Theme.primaryText)
+                .textSelection(.enabled)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.leading, 56)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("You steered: \(text)"))
+    }
+}
+
 /// What Hermes warned about during a turn, under the reply: each warning's first line, with any
 /// how-to-fix lines (Hermes' config instructions) behind a disclosure.
 struct TurnWarnings: View {
@@ -483,8 +510,11 @@ private struct TurnWarning: View {
         details = lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) }.joined(separator: "\n")
     }
 
-    /// Two lines hold about this much on an iPhone; past it (or with a how-to) the note opens.
-    private var opens: Bool { !details.isEmpty || headline.count > 90 }
+    /// The headline's height in two lines and in full: it opens only if two lines cut it off,
+    /// or there's a how-to behind it.
+    @State private var clampedHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+    private var opens: Bool { !details.isEmpty || fullHeight > clampedHeight + 1 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -502,6 +532,17 @@ private struct TurnWarning: View {
                         .lineLimit(isExpanded ? nil : 2)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                            if !isExpanded { clampedHeight = height }
+                        }
+                        .background(alignment: .topLeading) {
+                            // The same text uncut, unseen, at the same width: is anything hidden?
+                            Text(headline)
+                                .font(.footnote)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .hidden()
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                        }
                     if opens {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .bold))

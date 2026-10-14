@@ -649,11 +649,13 @@ GROUP_METHODS = {
 
 
 def take_steers(sid):
-    """Steer Now messages arrive at the next step, as the gateway does."""
-    with B["LOCK"]:
-        steers = B["RUNTIME"][sid].pop("steers", [])
-    for text in steers:
-        emit(sid, "reasoning.delta", {"text": f" The person added: {text}. I'll take that into account."})
+    """Steer Now messages arrive at the next step, as the gateway does: stored as a `steer` row."""
+    stored = B["RUNTIME"][sid]["stored"]
+
+    def store(row):
+        G.add_message(stored, "user", row["content"], display_kind="steer", display_content=row["display_content"])
+        emit(sid, "reasoning.delta", {"text": f" The person added: {row['display_content']}. I'll take that into account."})
+    B["deliver_steers"](sid, store)
 
 
 # ── Scripted turns ───────────────────────────────────────────────────────────

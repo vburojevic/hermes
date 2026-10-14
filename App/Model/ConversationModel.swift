@@ -309,6 +309,24 @@ final class ConversationModel: Identifiable {
         rowAliases[item.id] ?? item.id
     }
 
+    /// Messages sent with Steer Now during the running turn, shown in it until the stored
+    /// transcript (where Hermes keeps them as `steer` rows) replaces it.
+    private(set) var liveSteers: [String] = []
+
+    /// Nothing to show and nothing on its way: a new chat, or a Bot with no Bot Chat yet. A stored
+    /// chat whose transcript is still loading isn't empty, so it doesn't get the empty layout
+    /// (the centred composer) only to drop it when the messages arrive.
+    var isKnownEmpty: Bool {
+        guard isEmpty, sessionID == nil else { return false }
+        switch loadState {
+        case .loaded, .failed:
+            return true
+        case .idle, .loading:
+            guard let botName else { return true } // a new chat has nothing to load
+            return roster?.hasLoaded == true && roster?.bot(named: botName)?.canonicalSession == nil
+        }
+    }
+
     /// Everything to render, in order.
     var rows: [TranscriptItem] {
         var rows = items
@@ -1017,6 +1035,7 @@ final class ConversationModel: Identifiable {
                     queued.insert(QueuedMessage(text: text), at: 0)
                     sendNextQueuedIfIdle()
                 } else {
+                    liveSteers.append(text)
                     apply(.status(String(localized: "Steering…")))
                 }
             }
@@ -1024,6 +1043,7 @@ final class ConversationModel: Identifiable {
             Task {
                 do {
                     try await client.steerRun(runID: runID, text: text)
+                    liveSteers.append(text)
                     apply(.status(String(localized: "Steering…")))
                 } catch {
                     // The run can't take it any more: send it after.
@@ -1097,6 +1117,7 @@ final class ConversationModel: Identifiable {
         if let parts, parts.hasStructure, parts.command == nil { entry.parts = parts }
         userImages[entry.id] = images
         pendingUser = entry
+        liveSteers = []
         live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
         sentTurns += 1
         promptSent = false
@@ -1343,6 +1364,7 @@ final class ConversationModel: Identifiable {
         }
         pendingUser = nil
         live = nil
+        if transcript != nil { liveSteers = [] } // stored as steer rows now; offline, they stay in the turn
         loadState = .loaded
         completedTurns += 1
         if let botName {
@@ -1363,14 +1385,29 @@ final class ConversationModel: Identifiable {
 
     /// The stored transcript keeps no inline diffs, full outputs, plan updates, usage or
     /// warnings; carry them over from the live turn that just finished.
+    /// The first reply after your last message (steers don't count): where a split turn starts.
+    private func firstPartOfLastTurn() -> Int? {
+        guard let sent = items.lastIndex(where: {
+            if case .user(let entry) = $0 { !entry.isSteer && entry.sender == nil && entry.routineName == nil } else { false }
+        }) else { return nil }
+        return items[(sent + 1)...].firstIndex { if case .assistant = $0 { true } else { false } }
+    }
+
     private func carryOverExtras(from live: AssistantTurn) {
         guard let index = items.lastIndex(where: { if case .assistant = $0 { true } else { false } }),
               case .assistant(var turn) = items[index]
         else { return }
         if turn.plan.isEmpty { turn.plan = live.plan }
         turn.usage = turn.usage ?? live.usage
-        turn.warning = turn.warning ?? live.warning
         turn.models = turn.models ?? live.models
+        // A warning comes as the agent starts: it goes on the turn's first part when a steer split it.
+        if let warning = live.warning, let first = firstPartOfLastTurn(), first != index,
+           case .assistant(var opening) = items[first] {
+            opening.warning = opening.warning ?? warning
+            items[first] = .assistant(opening)
+        } else {
+            turn.warning = turn.warning ?? live.warning
+        }
         var liveTools: [String: ToolActivity] = [:]
         for step in live.steps {
             if case .tool(let tool) = step, let id = tool.callID { liveTools[id] = tool }

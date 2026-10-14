@@ -114,6 +114,31 @@ struct TranscriptTests {
         #expect(turn.answer == "@news confirmed the change.")
     }
 
+    /// Steer Now: a `steer` row splits the reply where it landed and shows the person's words.
+    @Test func steerRowsSplitTheTurn() throws {
+        let messages = try decode("""
+        {"data":[
+         {"id":1,"role":"user","content":"Check the disks"},
+         {"id":2,"role":"assistant","content":"","tool_calls":[{"id":"c1","function":{"name":"terminal","arguments":"{}"}}]},
+         {"id":3,"role":"tool","content":"ok","tool_call_id":"c1","tool_name":"terminal"},
+         {"id":4,"role":"user","content":"[OUT-OF-BAND USER MESSAGE — a direct message]\\nOnly the NAS, please\\n[/OUT-OF-BAND USER MESSAGE]","display_kind":"steer","display_content":"Only the NAS, please"},
+         {"id":5,"role":"assistant","content":"The NAS is fine."},
+         {"id":6,"role":"user","content":"[OUT-OF-BAND USER MESSAGE — x]\\nAnd the router\\n[/OUT-OF-BAND USER MESSAGE]","display_kind":"steer"}
+        ]}
+        """)
+        let items = TranscriptBuilder.build(messages)
+        #expect(items.count == 5)
+        guard case .assistant(let first) = items[1], case .user(let steer) = items[2], case .assistant(let second) = items[3],
+              case .user(let bare) = items[4] else {
+            Issue.record("unexpected \(items)")
+            return
+        }
+        #expect(first.steps.count == 1)
+        #expect(steer.isSteer && steer.text == "Only the NAS, please")
+        #expect(second.answer == "The NAS is fine.")
+        #expect(bare.isSteer && bare.text == "And the router")
+    }
+
     @Test func pairsByNameWhenIdsMissing() throws {
         let messages = try decode("""
         {"data":[
