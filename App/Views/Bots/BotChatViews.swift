@@ -307,33 +307,43 @@ struct AgentMessageRow: View {
     }
 }
 
-/// A routine's output, delivered into the Bot Chat on schedule.
+/// A routine's output, delivered into the Bot Chat on schedule. With a reply after it (the Bot
+/// passing the output on, often word for word) it folds to its header and a line, and opens on
+/// a tap; on its own it shows in full.
 struct RoutineDeliveryRow: View {
     let entry: UserEntry
     let name: String
+    var isAnswered = false
+
+    @State private var isOpen = false
+    @Environment(\.disclosureWillToggle) private var willToggle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var folds: Bool { isAnswered && !entry.text.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: "alarm.fill")
-                    .font(.caption)
-                    .foregroundStyle(Theme.warning)
-                Text("Routine")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.secondaryText)
-                Text(name)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                if let date = entry.timestamp {
-                    Spacer(minLength: 4)
-                    Text(date, format: .dateTime.hour().minute())
-                        .font(.caption2)
-                        .foregroundStyle(Theme.tertiaryText)
+            if folds {
+                Button {
+                    willToggle()
+                    withAnimation(Disclosure.animation(reduceMotion: reduceMotion)) { isOpen.toggle() }
+                } label: {
+                    header
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint(isOpen ? "Hides the routine's output" : "Shows the routine's output")
+            } else {
+                header
             }
             if !entry.text.isEmpty {
-                MarkdownView(text: entry.text, tone: .secondary)
+                if folds, !isOpen {
+                    Text(preview)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(1)
+                } else {
+                    MarkdownView(text: entry.text, tone: .secondary)
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -348,8 +358,45 @@ struct RoutineDeliveryRow: View {
         .contextMenu {
             Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.text) }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Routine \(name): \(BotMentions.stripMarkdown(entry.text))"))
+        .accessibilityElement(children: folds ? .combine : .ignore)
+        .accessibilityLabel(Text("Routine \(name): \(folds && !isOpen ? preview : BotMentions.stripMarkdown(entry.text))"))
+    }
+
+    private var header: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "alarm.fill")
+                .font(.caption)
+                .foregroundStyle(Theme.warning)
+            Text("Routine")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.secondaryText)
+            Text(name)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if let date = entry.timestamp {
+                Text(date, format: .dateTime.hour().minute())
+                    .font(.caption2)
+                    .foregroundStyle(Theme.tertiaryText)
+            }
+            if folds {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.tertiaryText)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// The output's first line of text, without its Markdown.
+    private var preview: String {
+        BotMentions.stripMarkdown(entry.text)
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
     }
 }
 

@@ -62,6 +62,7 @@ struct TranscriptView: View {
         let all = conversation.rows
         let first = firstShownIndex(in: all)
         let separators = Self.separators(in: all, from: first, datesOpening: conversation.openedWithHistory)
+        let answeredRoutines = Self.answeredRoutines(in: all, from: first)
         let rows = all[first...].map { DisplayRow(key: conversation.displayID(for: $0), item: $0) }
         let unclaimed = Self.unclaimedTeams(in: all, store: conversation.helpers)
         ScrollView {
@@ -73,7 +74,7 @@ struct TranscriptView: View {
                         .frame(maxWidth: .infinity)
                 }
                 ForEach(rows, id: \.key) { shown in
-                    rowView(shown.item, date: separators[shown.item.id], extraTeams: shown.item.id == unclaimed.turnID ? unclaimed.teams : [])
+                    rowView(shown.item, date: separators[shown.item.id], extraTeams: shown.item.id == unclaimed.turnID ? unclaimed.teams : [], answered: answeredRoutines.contains(shown.item.id))
                         .transition(Self.insertion(for: shown.item))
                 }
                 ForEach(conversation.processes) { process in
@@ -323,13 +324,24 @@ struct TranscriptView: View {
         }
     }
 
-    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String]) -> some View {
+    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String], answered: Bool) -> some View {
         VStack(alignment: .leading, spacing: 30) {
             if let date {
                 DateSeparator(date: date)
             }
-            row(for: item, extraTeams: extraTeams)
+            row(for: item, extraTeams: extraTeams, answered: answered)
         }
+    }
+
+    /// Routine deliveries a reply follows (among the rows shown): the reply carries what the
+    /// routine brought, so the delivery folds (`RoutineDeliveryRow`).
+    static func answeredRoutines(in rows: [TranscriptItem], from first: Int) -> Set<String> {
+        var answered: Set<String> = []
+        for index in rows.indices.dropFirst(first).dropLast() {
+            guard case .user(let entry) = rows[index], entry.routineName != nil else { continue }
+            if case .assistant = rows[index + 1] { answered.insert(entry.id) }
+        }
+        return answered
     }
 
     /// Helper teams no `delegate_task` in the chat claims (seen before the call returned, or a chat
@@ -476,7 +488,7 @@ struct TranscriptView: View {
     static let rowsAnimation = Animation.smooth(duration: 0.36)
 
     @ViewBuilder
-    private func row(for item: TranscriptItem, extraTeams: [String] = []) -> some View {
+    private func row(for item: TranscriptItem, extraTeams: [String] = [], answered: Bool = false) -> some View {
         switch item {
         case .user(let entry):
             if entry.isSteer {
@@ -488,7 +500,7 @@ struct TranscriptView: View {
             } else if let sender = entry.sender {
                 AgentMessageRow(entry: entry, sender: sender, roster: workspace.roster)
             } else if let routine = entry.routineName {
-                RoutineDeliveryRow(entry: entry, name: routine)
+                RoutineDeliveryRow(entry: entry, name: routine, isAnswered: answered)
             } else if let command = command(in: entry) {
                 CommandBubble(name: command.name, argument: command.argument, isBotChat: conversation.isBotChat)
             } else {
