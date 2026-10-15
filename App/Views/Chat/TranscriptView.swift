@@ -523,6 +523,8 @@ struct TranscriptView: View {
             BackgroundCard(prompt: conversation.backgroundResults[notice.id]?.prompt ?? "", answer: conversation.backgroundResults[notice.id]?.answer ?? notice.text)
         case .notice(let notice) where notice.kind.hasPrefix("receipt:"):
             ReceiptRow(notice: notice, conversation: conversation)
+        case .notice(let notice) where notice.kind == "failed_turn":
+            FailedTurnRow(notice: notice)
         case .notice(let notice):
             NoticeRow(notice: notice)
         case .command(let command):
@@ -592,6 +594,27 @@ private struct NoticeRow: View {
                 .fixedSize(horizontal: false, vertical: true)
             Rectangle().fill(Theme.hairline).frame(height: 1)
         }
+        .padding(.vertical, 4)
+    }
+}
+
+/// A stored turn that didn't finish (`failed_turn`). Its sentence says what to check before
+/// sending again, so it shows whole, not cut to a notice's two lines.
+private struct FailedTurnRow: View {
+    let notice: Notice
+
+    var body: some View {
+        Label {
+            Text(notice.text)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.warning)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
     }
 }

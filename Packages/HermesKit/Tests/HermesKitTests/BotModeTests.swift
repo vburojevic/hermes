@@ -359,6 +359,27 @@ struct BotChatTranscriptTests {
         #expect(bot.preview == "⏰ Backups")
         #expect(BotMentions.parseRoutineDelivery("Hello") == nil)
     }
+
+    /// Hermes tags a routine's delivery `internal_notification`; it still reads as the routine's
+    /// message, and a turn that failed on it stays a notice with its whole sentence.
+    @Test func taggedRoutineDeliveriesAreMessages() throws {
+        let rows = try JSONDecoder().decode([SessionMessage].self, from: Data(#"""
+        [{"id":1,"role":"user","content":"[Cronjob \"cc-social-feed\" output — scheduled job, not the user. Review it, act on anything that needs action, and summarize for the chat.]\n\n**X** · 2 replies","display_kind":"internal_notification","timestamp":1760000000},
+         {"id":2,"role":"assistant","content":"This turn did not complete. Some actions may already have run; verify their effects before resending.","display_kind":"failed_turn","timestamp":1760000001},
+         {"id":3,"role":"user","content":"Your run finished.","display_kind":"internal_notification","timestamp":1760000002}]
+        """#.utf8))
+        let items = TranscriptBuilder.build(rows, hidesSilence: true)
+        #expect(items.count == 3)
+        guard case .user(let delivery) = items.first, case .notice(let failed) = items[1], case .notice(let other) = items.last else {
+            Issue.record("unexpected items \(items)")
+            return
+        }
+        #expect(delivery.routineName == "cc-social-feed")
+        #expect(delivery.text == "**X** · 2 replies")
+        #expect(failed.kind == "failed_turn")
+        #expect(failed.text.hasSuffix("before resending."))
+        #expect(other.kind == "internal_notification")
+    }
 }
 
 @Suite("Live turns from the backend")

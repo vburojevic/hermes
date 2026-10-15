@@ -355,7 +355,8 @@ public enum TranscriptBuilder {
                     }
                     continue
                 }
-                if let kind = kind ?? untaggedNoticeKind(message.content.text), noticeKinds.contains(kind) {
+                if let kind = kind ?? untaggedNoticeKind(message.content.text), noticeKinds.contains(kind),
+                   !isRoutineDelivery(kind: kind, text: message.content.text) {
                     closeTurn()
                     items.append(.notice(Notice(id: rowID, kind: kind, text: noticeText(kind: kind, content: message.content.text))))
                     continue
@@ -448,6 +449,12 @@ public enum TranscriptBuilder {
         }
         closeTurn()
         return items
+    }
+
+    /// A routine's output delivered into the chat: Hermes tags it `internal_notification`, but it
+    /// reads as the routine's message (`UserEntry.routineName`), not a one-line notice.
+    static func isRoutineDelivery(kind: String, text: String) -> Bool {
+        kind == "internal_notification" && BotMentions.parseRoutineDelivery(String(text.drop { $0.isWhitespace })) != nil
     }
 
     /// Notices stored without a `display_kind`: Hermes' one-shot `hermes chat` injects a finished

@@ -148,10 +148,18 @@ def seed():
     add_message(chat, "user", "Hey, tell me about yourself!", NOW - 9 * DAY)
     add_message(chat, "assistant", "I'm **Research Buddy**. I read papers, compare sources, and send you tidy digests.", NOW - 9 * DAY + 6)
     digest_at = (NOW - 5 * 60) // 1800 * 1800  # the last half hour, so the schedule reads "at 20:00"
+    # A delivery whose turn failed, as Hermes stores one: the routine's output, then a failed_turn row.
+    watched_at = time.mktime(time.strptime("2026-10-10 12:00:05", "%Y-%m-%d %H:%M:%S"))
+    add_message(chat, "user", '[Cronjob "[bot:researcher] Watch MLX releases" output — scheduled job, not the user. Review it, act on '
+                "anything that needs action, and summarize for the chat.]\n\n**MLX 0.31** · faster 4-bit matmul, new `mx.fast.sdpa` kernels.",
+                watched_at, display_kind="internal_notification")
+    add_message(chat, "assistant", "This turn did not complete. Some actions may already have run; verify their effects before resending.",
+                watched_at + 3, display_kind="failed_turn")
     add_message(chat, "user", "Message from 🤖 Hermes (@hermes): Can you find the latest on on-device LLM quantisation for Apple silicon?", digest_at - 14 * 60)
     add_message(chat, "assistant", "On it: **4-bit group-wise quantisation** is the sweet spot on M-series chips.", digest_at - 13 * 60)
     add_message(chat, "user", '[Cronjob "[bot:researcher] Daily digest" output — scheduled job, not the user. Review it, act on '
-                "anything that needs action, and summarize for the chat.]\n\n3 new papers on on-device inference, 1 on agent memory.", digest_at + 3)
+                "anything that needs action, and summarize for the chat.]\n\n3 new papers on on-device inference, 1 on agent memory.", digest_at + 3,
+                display_kind="internal_notification")
     add_message(chat, "assistant", "Your **daily digest** is in:\n\n- **Speculative decoding**, 2.1× faster\n"
                 "- **4-bit KV caches**, no quality loss\n- **Episodic memory** beats RAG\n\nWant summaries?", digest_at + 40)
     # The digest's schedule matches its delivery above, so the routines sheet and the chat agree.
@@ -799,7 +807,8 @@ def deliver_routine(profile, title, output, reply):
         if chat is None:
             return
         add_message(chat["id"], "user", f'[Cronjob "[bot:{profile}] {title}" output — scheduled job, not the user. '
-                    f"Review it, act on anything that needs action, and summarize for the chat.]\n\n{output}")
+                    f"Review it, act on anything that needs action, and summarize for the chat.]\n\n{output}",
+                    display_kind="internal_notification")
         add_message(chat["id"], "assistant", reply, ts=time.time() + 2)
 
 
