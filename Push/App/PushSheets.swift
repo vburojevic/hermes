@@ -7,8 +7,9 @@ import UIKit
 import AppKit
 #endif
 
-/// Asking in context (`permissionPrime`): after the first approval or a turn over 30 s, never at
-/// launch. Shows what a notification will look like before the system asks.
+/// Asking in context (`permissionPrime`): after the first approval, a turn over 30 s, or leaving
+/// while one runs (then on the way back), never at launch. Shows what a notification will look
+/// like before the system asks.
 struct PermissionPrimeSheet: View {
     let reason: PushCenter.PrimeReason
     @Environment(\.dismiss) private var dismiss

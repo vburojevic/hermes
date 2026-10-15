@@ -12,6 +12,11 @@ extension PushCenter {
     }
 
     func conversation(_ conversation: ConversationModel, working: Bool) {
+        if working {
+            workingChats.insert(ObjectIdentifier(conversation))
+        } else {
+            workingChats.remove(ObjectIdentifier(conversation))
+        }
         guard let workspace = workspace(of: conversation) else { return }
         if working {
             let started = conversation.liveTurn?.startedAt ?? .now

@@ -63,6 +63,12 @@ final class PushCenter {
     private(set) var activityError: String?
     /// Chats the app is showing, by gateway: no banner for these (their card docks instead).
     private(set) var isActive = false
+    /// A moment to ask came while the app wasn't in front: on iPhone a long reply or an
+    /// approval usually lands after the person has left, which is when notifications matter.
+    /// Asked when they're back.
+    @ObservationIgnored private var pendingPrime: PrimeReason?
+    /// Chats running a turn now (`conversation(_:working:)`).
+    @ObservationIgnored var workingChats: Set<ObjectIdentifier> = []
 
     @ObservationIgnored let shared = PushShared.current
     @ObservationIgnored weak var model: AppModel?
@@ -109,6 +115,7 @@ final class PushCenter {
         Task {
             await refreshAuthorization()
             await refreshBadge()
+            askIfPending()
         }
         startLoop()
         #if os(iOS)
@@ -124,6 +131,8 @@ final class PushCenter {
 
     func sceneDidEnterBackground() {
         isActive = false
+        // Leaving while Hermes works is the moment a notification helps: ask on the way back.
+        if !workingChats.isEmpty { considerAsking(.longTurn) }
         loop?.cancel()
         loop = nil
         #if os(iOS)
@@ -193,15 +202,40 @@ final class PushCenter {
         prime = nil
     }
 
-    /// A moment worth asking in: the first approval, or a turn that ran over 30 s. Never at launch;
-    /// after Not Now, once more a week later, then only from Settings.
+    /// A moment worth asking in: the first approval, a turn that ran over 30 s, or leaving while
+    /// one runs. Never at launch; away from the app, on the way back. After Not Now, once more a
+    /// week later, then only from Settings.
     func considerAsking(_ reason: PrimeReason) {
-        guard authorization == .notDetermined, prime == nil, isActive else { return }
+        guard authorization == .notDetermined, prime == nil else { return }
         let defaults = shared.defaults
         let declines = defaults.integer(forKey: "push.primeDeclines")
         guard declines < 2 else { return }
         if let snoozed = defaults.object(forKey: "push.primeSnoozedUntil") as? Date, snoozed > .now { return }
+        guard isInFront else {
+            pendingPrime = pendingPrime ?? reason
+            return
+        }
         prime = reason
+    }
+
+    /// Back in front with a moment saved: ask, once the app has settled.
+    private func askIfPending() {
+        guard let reason = pendingPrime else { return }
+        pendingPrime = nil
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            considerAsking(reason)
+        }
+    }
+
+    /// The scene's phase, or on iPhone the app's own state: a launch straight into the
+    /// foreground may not report a phase change.
+    private var isInFront: Bool {
+        #if os(iOS)
+        isActive || UIApplication.shared.applicationState == .active
+        #else
+        isActive
+        #endif
     }
 
     func notNow() {
