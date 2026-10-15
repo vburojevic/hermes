@@ -87,6 +87,8 @@ final class CheckpointsModel {
     var isEnabled: Bool? { list?.enabled }
     var checkpoints: [Checkpoint] { list?.checkpoints ?? [] }
     var gatewayName: String { conversation?.workspace?.bot.name ?? String(localized: "the gateway") }
+    /// The gateway, for its avatar by the folder.
+    var gateway: BotConfiguration? { conversation?.workspace?.bot }
 
     var matcher: CheckpointMatcher { CheckpointMatcher(items: conversation?.rows ?? []) }
 

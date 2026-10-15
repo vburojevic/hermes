@@ -492,10 +492,10 @@ struct CheckpointsTimelineList: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let folder = model.folder, !isSidebar {
                     HStack(spacing: 8) {
-                        Image(systemName: "folder")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondaryText)
-                            .accessibilityHidden(true)
+                        if let gateway = model.gateway {
+                            BotAvatar(bot: gateway, size: 18)
+                                .accessibilityHidden(true)
+                        }
                         Text("Folder \(folder) on \(model.gatewayName)")
                             .font(.footnote)
                             .foregroundStyle(Theme.secondaryText)
