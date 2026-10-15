@@ -204,6 +204,17 @@ final class BotRoster {
         conversations[name]?.isWorking == true || workingNames.contains(name)
     }
 
+    /// The face a Bot shows on the grid and in rosters (`docs/bot-faces.md` §3): its chat's turn
+    /// (thinking, working), working while a background worker runs, asleep when Bot Mode is
+    /// offline or the Bot is hidden.
+    func faceMood(for name: String) -> BotMood {
+        guard isConnected else { return .sleeping }
+        if let mood = conversations[name]?.turnMood, mood != .idle { return mood }
+        if workingNames.contains(name) { return .working }
+        if bot(named: name)?.meta.isHidden == true { return .sleeping }
+        return .idle
+    }
+
     // MARK: - Connection
 
     /// Swaps in a new address or sign-in method.

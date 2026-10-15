@@ -22,6 +22,8 @@ struct VoiceModeView: View {
                 speakerName: session.speakerName,
                 botAppearance: session.botAppearance,
                 level: session.listener.levels.last ?? 0,
+                turnMood: session.conversation.turnMood,
+                voiceLevel: { [speaker = session.speaker] date in speaker.level(at: date) },
                 isMuted: session.isMuted,
                 prefersSpeaker: session.prefersSpeaker,
                 showsCaptions: session.showsCaptions,
@@ -61,6 +63,10 @@ struct VoiceScreen: View {
         var speakerName = "Hermes"
         var botAppearance: BotAppearance?
         var level: Float = 0
+        /// What the turn is doing while it thinks: thinking, or working with a tool.
+        var turnMood: BotMood = .thinking
+        /// The Bot's own voice level at a moment, while it speaks (0…1).
+        var voiceLevel: (Date) -> Double = { _ in 0 }
         var isMuted = false
         var prefersSpeaker = true
         var showsCaptions = true
@@ -169,6 +175,37 @@ struct VoiceScreen: View {
     private var figureSize: CGFloat { isApproval ? 150 : 300 }
 
     private var figure: some View {
+        Group {
+            if let appearance = state.botAppearance {
+                botFigure(appearance)
+            } else {
+                hermesFigure
+            }
+        }
+        .frame(width: figureSize, height: figureSize)
+        .accessibilityHidden(true)
+    }
+
+    /// A Bot is the voice (`docs/bot-faces.md` §5.3): rings in its colour follow the microphone
+    /// while it listens, its body squashes with its own voice while it talks, and its eyes stay on
+    /// the person.
+    private func botFigure(_ appearance: BotAppearance) -> some View {
+        let faceSize: CGFloat = isApproval ? 60 : 160
+        return ZStack {
+            VoiceRings(color: appearance.color, level: state.phase == .listening ? state.level : 0, faceSize: faceSize, enabled: !reduceMotion)
+                .opacity(state.phase == .listening ? 1 : 0)
+                .animation(.easeOut(duration: 0.3), value: state.phase == .listening)
+            TimelineView(.animation(minimumInterval: 1 / 60, paused: state.phase != .speaking || reduceMotion)) { context in
+                BotFace(
+                    appearance: appearance, size: faceSize, mood: mood, needsYou: isApproval,
+                    look: state.phase == .thinking ? nil : CGVector(dx: 0, dy: 0.3),
+                    voiceLevel: state.phase == .speaking && !reduceMotion ? state.voiceLevel(context.date) : nil
+                )
+            }
+        }
+    }
+
+    private var hermesFigure: some View {
         ZStack {
             Circle()
                 .fill(RadialGradient(
@@ -183,21 +220,16 @@ struct VoiceScreen: View {
                 ))
                 .frame(width: figureSize, height: figureSize)
                 .modifier(AuraPulse(phase: state.phase, level: state.level, enabled: !reduceMotion))
-            if let appearance = state.botAppearance {
-                BotFace(appearance: appearance, size: figureSize * 0.4, mood: mood, needsYou: isApproval)
-            } else {
-                HermesMarkView(isAnimating: state.phase == .thinking)
-                    .frame(width: figureSize * 0.4, height: figureSize * 0.4)
-            }
+            HermesMarkView(isAnimating: state.phase == .thinking)
+                .frame(width: figureSize * 0.4, height: figureSize * 0.4)
         }
-        .frame(width: figureSize, height: figureSize)
-        .accessibilityHidden(true)
     }
 
     private var mood: BotMood {
         switch state.phase {
         case .listening: .listening
-        case .thinking: .thinking
+        case .thinking: state.turnMood == .working ? .working : .thinking
+        case .offline: .sleeping
         default: .idle
         }
     }
@@ -338,6 +370,26 @@ private struct VoiceControl: View {
         .tint(isOn ? Theme.ink : nil)
         .accessibilityLabel(label)
         .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
+/// Three rings in the Bot's colour (40%, 28% and 18%) that grow with the microphone level.
+private struct VoiceRings: View {
+    let color: Color
+    let level: Float
+    let faceSize: CGFloat
+    let enabled: Bool
+
+    var body: some View {
+        ZStack {
+            ForEach(Array([(1.32, 0.4), (1.62, 0.28), (1.92, 0.18)].enumerated()), id: \.offset) { index, ring in
+                Circle()
+                    .fill(color.opacity(ring.1))
+                    .frame(width: faceSize * ring.0, height: faceSize * ring.0)
+                    .scaleEffect(enabled ? 1 + CGFloat(level) * (0.12 + 0.06 * CGFloat(index)) : 1)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: level)
     }
 }
 

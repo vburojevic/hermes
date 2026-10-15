@@ -11,7 +11,8 @@ enum SidebarMetrics {
     static let rowPadding: CGFloat = 8
     static let glyphSize: CGFloat = 15
     static let avatarSize: CGFloat = 22
-    static let faceSize: CGFloat = 26
+    /// Roster rows (`docs/bot-faces.md` §4).
+    static let faceSize: CGFloat = 28
     static let navFont = Font.system(size: 13)
     static let titleFont = Font.system(size: 13)
     static let selectedTitleFont = Font.system(size: 13, weight: .medium)

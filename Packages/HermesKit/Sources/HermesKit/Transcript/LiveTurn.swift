@@ -22,6 +22,13 @@ public struct LiveTurn: Sendable, Equatable {
         self.sessionID = sessionID
     }
 
+    /// A tool call is running (the Bot is working, not thinking).
+    public var isUsingTool: Bool {
+        turn.steps.contains { step in
+            if case .tool(let tool) = step { tool.status == .running } else { false }
+        }
+    }
+
     public var isFinished: Bool {
         switch turn.state {
         case .streaming, .waitingForApproval: false

@@ -132,6 +132,12 @@ final class GroupChatModel {
     }
 
     var memberStates: [String: RoomTranscript.MemberState] { RoomTranscript.memberStates(events) }
+    /// The member whose turn is running (`turn.started` in the room's log).
+    var activeMemberID: String? { RoomTranscript.activeMember(events) }
+    /// The latest member message that hands work to another member by `@handle`.
+    var lastHandOff: (from: String, to: String, seq: Int)? {
+        RoomTranscript.lastHandOff(events, handles: Dictionary(room.members.map { ($0.memberID, $0.handle) }, uniquingKeysWith: { a, _ in a }))
+    }
     var currentRound: Int { RoomTranscript.currentRound(events) }
 
     var preview: String? {

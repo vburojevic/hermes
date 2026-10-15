@@ -384,6 +384,16 @@ struct BotChatTranscriptTests {
 
 @Suite("Live turns from the backend")
 struct BackendLiveTurnTests {
+    /// A Bot's face works while a tool runs and thinks otherwise (`docs/bot-faces.md` §5.1).
+    @Test func knowsWhenAToolIsRunning() {
+        var live = LiveTurn(id: "t", sessionID: "s")
+        #expect(!live.isUsingTool)
+        live.apply(SequencedTurnEvent(seq: 1, event: .toolStarted(id: "a", name: "terminal", preview: "ls", at: nil)))
+        #expect(live.isUsingTool)
+        live.apply(SequencedTurnEvent(seq: 2, event: .toolFinished(id: "a", name: "terminal", failed: false, duration: 1, resultPreview: "ok", at: nil)))
+        #expect(!live.isUsingTool)
+    }
+
     @Test func pairsParallelToolsByID() {
         var live = LiveTurn(id: "t", sessionID: "s")
         live.apply(SequencedTurnEvent(seq: 1, event: .toolStarted(id: "a", name: "web_search", preview: "one", at: nil)))

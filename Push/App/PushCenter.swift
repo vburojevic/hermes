@@ -584,17 +584,32 @@ final class PushCenter {
         facesRenderedAt[workspace.id] = .now
         shared.setBotNames(Dictionary(roster.profiles.map { ($0.name, $0.title) }, uniquingKeysWith: { first, _ in first }),
                            gateway: workspace.id)
+        // Faces drawn before the current style (`docs/bot-faces.md`) are drawn again once.
+        let styleKey = "faces.style", style = 2
+        let restyle = shared.defaults.integer(forKey: styleKey) != style
         for bot in roster.profiles {
             guard let url = shared.faceURL(gateway: workspace.id, bot: bot.name) else { continue }
             let appearance = roster.appearance(for: bot)
-            if let fresh = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+            if !restyle, let fresh = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
                Date.now.timeIntervalSince(fresh) < 86_400 { continue }
-            let renderer = ImageRenderer(content: BotFace(appearance: appearance, size: 96).frame(width: 96, height: 96))
-            renderer.scale = 2
+            // The notification avatar (36 pt): the body's 40 × 40 box, at 3×.
+            let size: CGFloat = 36
+            let renderer = ImageRenderer(content: Group {
+                if let photo = appearance.imageURL.flatMap(FaceImageCache.image(for:)) {
+                    Image(platformImage: photo).resizable().scaledToFill()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                } else {
+                    StillFace(look: appearance.look, size: size)
+                }
+            }
+            .frame(width: size, height: size, alignment: .top))
+            renderer.scale = 3
             guard let data = renderer.uiImage?.pngData() else { continue }
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
         }
+        if restyle { shared.defaults.set(style, forKey: styleKey) }
         #endif
     }
 }

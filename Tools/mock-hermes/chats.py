@@ -27,6 +27,17 @@ def install(backend_globals, gateway_module):
     global B, G
     B, G = backend_globals, gateway_module
     methods = B["METHODS"]
+
+    def say_in_room(query, body):
+        # Mock-only: the person says something in a group chat (`{"room", "text"}`), as if typed,
+        # so the room's discussion runs (turn.started, replies, hand-offs) without driving the UI.
+        room = ROOMS.get(body.get("room") or "") or next(iter(ROOMS.values()), None)
+        if room is None:
+            return 404, {"detail": "No room"}
+        threading.Thread(target=run_discussion, args=(room, body.get("text") or "What do we still need?"), daemon=True).start()
+        return 200, {"ok": True, "room": room["room_id"]}
+
+    B["HTTP_ROUTES"][("POST", "/api/mock/room-say")] = say_in_room
     original = {name: methods[name] for name in ("session.create", "session.resume", "prompt.submit")}
 
     def create(params):
@@ -543,10 +554,13 @@ def run_discussion(room, text, wait=True, approve=False):
         for profile in speakers:
             if profile not in order or room["stop"]:
                 continue
-            time.sleep(delay)
             turn += 1
             fields = {"discussion_event_id": "d1", "member_id": profile, "member_index": order.index(profile),
                       "round_index": round_index, "task_id": f"task{turn}", "thread_id": "main", "turn_id": f"turn{turn}"}
+            # Hermes logs the start of each member's turn (`turn.started`); the app's faces watch it.
+            if wait:
+                room_event(room, "turn.started", {"kind": "gateway", "id": "mock"}, fields)
+            time.sleep(delay * 2)
             if approve and profile == "ops":
                 room["pending"] = [{"kind": "approval", "task_id": f"task{turn}", "execution_generation": 1, "run_id": "r",
                                     "session_id": "s", "request_id": f"req{turn}", "member_id": "ops",

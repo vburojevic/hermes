@@ -215,9 +215,13 @@ private struct GroupTitle: View {
     }
 
     var body: some View {
-        let faces = chat.room.members.prefix(2).compactMap { member in roster?.bot(named: member.profile).map { roster!.appearance(for: $0) } }
+        let faces = chat.room.members.prefix(4).compactMap { member in
+            roster?.bot(named: member.profile).map { GroupFaceStack.Face(id: member.memberID, appearance: roster!.appearance(for: $0)) }
+        }
+        let passed = Set(chat.memberStates.filter { $0.value == .passed }.map(\.key))
         HStack(spacing: 8) {
-            GroupAvatar(front: faces.last, back: faces.count > 1 ? faces.first : nil, size: 28, cutout: Theme.canvas)
+            // Everyone looks at who's talking (`docs/bot-faces.md` §5.2).
+            GroupFaceStack(faces: faces, active: chat.activeMemberID, passed: passed, handOff: chat.lastHandOff, size: 22)
             VStack(alignment: .leading, spacing: 0) {
                 Text(chat.room.name)
                     .font(.subheadline.weight(.semibold))
@@ -390,13 +394,16 @@ private struct GroupActivityView: View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(chat.room.members) { member in
+                    let active = chat.room.members.firstIndex { $0.memberID == chat.activeMemberID }
+                    ForEach(Array(chat.room.members.enumerated()), id: \.element.id) { index, member in
                         let bot = workspace.roster?.bot(named: member.profile)
                         MemberStatusRow(
                             appearance: bot.flatMap { workspace.roster?.appearance(for: $0) },
                             name: bot?.title ?? member.displayName ?? member.handle,
                             subtitle: (chat.room.members.first == member ? String(localized: "Lead · ") : "") + "@\(member.handle)",
-                            status: status(for: member)
+                            status: status(for: member),
+                            // Everyone looks at the member that's replying.
+                            look: active.flatMap { $0 == index || chat.memberStates[member.memberID] == .passed ? nil : CGVector(dx: 0.2, dy: $0 > index ? 1 : -1) }
                         )
                     }
                 } header: {
@@ -433,7 +440,9 @@ private struct GroupActivityView: View {
         case .replied?: .replied
         case .passed?: .passed
         case .failed?: .paused
-        case .waiting?, nil: chat.isWorking ? .replying : .waiting
+        case .waiting?, nil:
+            // The log names whose turn is running; older gateways don't, so all waiting ones reply.
+            if let active = chat.activeMemberID { active == member.memberID ? .replying : .waiting } else { chat.isWorking ? .replying : .waiting }
         }
     }
 }

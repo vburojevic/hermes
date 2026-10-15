@@ -138,8 +138,14 @@ final class TurnActivityController {
     private func start(_ conversation: ConversationModel, session: String, gatewayID: UUID, startedAt: Date) {
         guard let workspace = center.model?.workspaces[gatewayID] else { return }
         let title = center.chatTitle(of: conversation, in: workspace)
+        // A Bot's own face works in the Island (a photo Bot keeps the wing).
+        var face: FaceLook?
+        if let roster = workspace.roster, let name = conversation.botName, let bot = roster.bot(named: name) {
+            let appearance = roster.appearance(for: bot)
+            if appearance.imageURL == nil { face = appearance.look }
+        }
         let attributes = TurnActivityAttributes(
-            gatewayID: gatewayID, gatewayName: workspace.bot.name, sessionID: session, chatTitle: title, bot: conversation.botName
+            gatewayID: gatewayID, gatewayName: workspace.bot.name, sessionID: session, chatTitle: title, bot: conversation.botName, face: face
         )
         let state = TurnActivityState(
             phase: conversation.pendingApproval == nil ? .working : .needsYou,

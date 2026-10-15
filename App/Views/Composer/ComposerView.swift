@@ -124,6 +124,8 @@ struct ComposerView: View {
         .onChange(of: dictation.state) { _, state in
             if state == .denied { showsMicrophoneDenied = true }
         }
+        // The Bot's face listens while the person dictates (`docs/bot-faces.md` §5.1).
+        .onChange(of: dictation.isActive) { _, active in conversation.isDictating = active }
         .alert("Can't Attach", isPresented: Binding(get: { attachError != nil }, set: { if !$0 { attachError = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {

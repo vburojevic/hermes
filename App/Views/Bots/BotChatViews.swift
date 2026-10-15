@@ -12,12 +12,11 @@ struct BotChatTitle: View {
 
     private var bot: BotProfile? { roster.bot(named: botName) }
 
-    /// Thinking during a turn, a happy squint when a reply lands, eyes on the composer
-    /// while the person types.
+    /// What the Bot is doing (`docs/bot-faces.md` §5.1): thinking and working with the turn, a happy
+    /// squint when a reply lands, listening while the person types or dictates, asleep offline.
     private var mood: BotMood {
-        if conversation.isWorking { return .thinking }
-        if isDelighted { return .happy }
-        return conversation.hasDraftText ? .listening : .idle
+        if isDelighted, !conversation.isWorking { return .happy }
+        return conversation.faceMood(isOnline: roster.isConnected)
     }
 
     private func subtitle(for bot: BotProfile?) -> String {
@@ -36,7 +35,7 @@ struct BotChatTitle: View {
         } label: {
             HStack(spacing: 9) {
                 if let bot {
-                    BotFace(appearance: roster.appearance(for: bot), size: 28, mood: mood)
+                    BotFace(appearance: roster.appearance(for: bot), size: 32, mood: mood, boopable: true)
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     Text(bot?.title ?? botName)
@@ -86,17 +85,14 @@ struct BotHelloView: View {
     var composerFocused: Binding<Bool>
 
     @State private var appeared = false
-    @State private var pokes = 0
-    @State private var isPoked = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var bot: BotProfile? { roster.bot(named: botName) }
 
-    private var faceSize: CGFloat { centersComposer ? 84 : 76 }
+    private var faceSize: CGFloat { 120 }
 
     private var mood: BotMood {
-        if isPoked { return .happy }
-        return conversation.hasDraftText ? .listening : .idle
+        conversation.faceMood(isOnline: roster.isConnected)
     }
 
     var body: some View {
@@ -126,26 +122,10 @@ struct BotHelloView: View {
             Spacer(minLength: 24)
             VStack(spacing: 14) {
                 if let bot {
-                    let appearance = roster.appearance(for: bot)
-                    Button {
-                        poke()
-                    } label: {
-                        BotFace(appearance: appearance, size: faceSize, mood: mood)
-                            .ripple(at: CGPoint(x: faceSize / 2, y: faceSize * 0.55), trigger: pokes)
-                            .padding(30)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PokeStyle())
-                    .background {
-                        BotAura(color: appearance.color)
-                            .frame(width: faceSize * 3.4, height: faceSize * 3.4)
-                            .opacity(appeared ? 1 : 0)
-                    }
-                    .padding(-30)
-                    .scaleEffect(appeared || reduceMotion ? 1 : 0.6)
-                    .opacity(appeared ? 1 : 0)
-                    .sensoryFeedback(.impact(weight: .light, intensity: 0.7), trigger: pokes)
-                    .accessibilityLabel(Text("Poke \(bot.title)"))
+                    // Tap to boop: it squashes, smiles and sparkles (the face does it all).
+                    BotFace(appearance: roster.appearance(for: bot), size: faceSize, mood: mood, boopable: true)
+                        .scaleEffect(appeared || reduceMotion ? 1 : 0.6)
+                        .opacity(appeared ? 1 : 0)
                 }
                 VStack(spacing: 6) {
                     Text(bot?.title ?? botName)
@@ -177,14 +157,6 @@ struct BotHelloView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func poke() {
-        pokes += 1
-        isPoked = true
-        Task {
-            try? await Task.sleep(for: .seconds(1.1))
-            isPoked = false
-        }
-    }
 }
 
 /// Things to try in a Bot's first chat, plus its routines, as chips.
@@ -229,42 +201,28 @@ struct BotSuggestionChips: View {
     }
 }
 
-/// Squashes a little when pressed, like poking something soft.
-struct PokeStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        PokeBody(configuration: configuration)
-    }
-
-    /// A squash on press; with Reduce Motion, a gentle dim instead.
-    private struct PokeBody: View {
-        let configuration: Configuration
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            let pressed = configuration.isPressed
-            configuration.label
-                .scaleEffect(
-                    x: pressed && !reduceMotion ? 1.06 : 1, y: pressed && !reduceMotion ? 0.92 : 1,
-                    anchor: .bottom
-                )
-                .opacity(pressed && reduceMotion ? 0.7 : 1)
-                .animation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.25, dampingFraction: 0.45), value: pressed)
-        }
-    }
-}
-
 /// A message another Bot sent this one (`message_agent`), shown as theirs, not the person's.
 struct AgentMessageRow: View {
     let entry: UserEntry
     let sender: AgentSender
     let roster: BotRoster?
 
+    /// A hand-off just arrived: the sender looks up at the Bot it's handing work to (in the
+    /// header) for 0.6 s (`docs/bot-faces.md` §5.8); that Bot then starts thinking.
+    @State private var handingOff = false
+
     var body: some View {
         let senderBot = roster?.bot(handle: sender.handle)
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if let roster, let bot = senderBot {
-                    BotFace(appearance: roster.appearance(for: bot), size: 20)
+                    BotFace(appearance: roster.appearance(for: bot), size: 28, look: handingOff ? CGVector(dx: 0.5, dy: -1) : nil)
+                        .task {
+                            guard let date = entry.timestamp, Date.now.timeIntervalSince(date) < 8 else { return }
+                            handingOff = true
+                            try? await Task.sleep(for: .seconds(0.6))
+                            handingOff = false
+                        }
                 } else {
                     Image(systemName: "bubble.left.and.text.bubble.right")
                         .font(.caption)
@@ -552,8 +510,8 @@ private struct BotTile: View {
     private var isUnread: Bool { roster.unread.contains(bot.name) }
 
     private var mood: BotMood {
-        if roster.isBusy(bot.name) { return .thinking }
-        return isHovered ? .listening : .idle
+        let mood = roster.faceMood(for: bot.name)
+        return mood == .idle && isHovered ? .listening : mood
     }
 
     /// Working, new, active or quiet: the dot's colour and the line beside it.
@@ -578,7 +536,7 @@ private struct BotTile: View {
         let status = status
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                BotFace(appearance: roster.appearance(for: bot), size: 56, mood: mood)
+                BotFace(appearance: roster.appearance(for: bot), size: 56, mood: mood, boopable: true)
                 Spacer(minLength: 4)
                 HStack(spacing: 6) {
                     if bot.meta.isPinned {
@@ -674,5 +632,16 @@ enum MentionSuggestions {
         }
         .prefix(6)
         .map { $0 }
+    }
+}
+
+extension ConversationModel {
+    /// The Bot face for this chat (`docs/bot-faces.md` §5.1): asleep offline or once the gateway
+    /// rests the chat, thinking and working with the turn, listening while the person types or
+    /// dictates.
+    func faceMood(isOnline: Bool) -> BotMood {
+        if !isOnline || isResting && !isWorking { return .sleeping }
+        if turnMood != .idle { return turnMood }
+        return hasDraftText || isDictating ? .listening : .idle
     }
 }

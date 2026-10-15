@@ -41,6 +41,11 @@ struct UserBubble: View {
         max(0, entry.imagePlaceholderCount - images.count)
     }
 
+    /// Just sent (pending, or stamped in the last few seconds): its mention pills blink once.
+    private var isFresh: Bool {
+        entry.timestamp.map { Date.now.timeIntervalSince($0) < 8 } ?? true
+    }
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             if !images.isEmpty {
@@ -100,6 +105,7 @@ struct UserBubble: View {
                                     .lineSpacing(Theme.Typography.messageLineSpacing)
                             } else {
                                 InlineFlow(parts: parts)
+                                    .environment(\.mentionsBlinkOnAppear, isFresh)
                             }
                         }
                         .foregroundStyle(Theme.primaryText)

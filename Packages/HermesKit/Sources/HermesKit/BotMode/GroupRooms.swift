@@ -196,6 +196,41 @@ public enum RoomTranscript {
         return states
     }
 
+    /// The member whose turn is running (`turn.started`, not yet settled, failed or cancelled), in
+    /// the current discussion.
+    public static func activeMember(_ events: [RoomEvent]) -> String? {
+        var active: String?
+        for event in events.sorted(by: { $0.seq < $1.seq }) {
+            let member = event.payload["member_id"]?.stringValue
+            switch event.kind {
+            case "message.user": active = nil
+            case "turn.started": active = member
+            case "turn.settled", "turn.failed", "turn.cancelled", "turn.deferred", "turn.reassigned":
+                if member == active { active = nil }
+            case "room.activity":
+                if let status = event.payload["status"]?.stringValue, ["settled", "bounded", "stopped"].contains(status) { active = nil }
+            default: break
+            }
+        }
+        return active
+    }
+
+    /// The latest hand-off: a member's message that mentions another member (`@handle`), as
+    /// (from, to, seq).
+    public static func lastHandOff(_ events: [RoomEvent], handles: [String: String]) -> (from: String, to: String, seq: Int)? {
+        for event in events.sorted(by: { $0.seq > $1.seq }) where event.kind == "message.member" {
+            let from = event.payload["member_id"]?.stringValue ?? event.actorID ?? ""
+            let text = event.payload["text"]?.stringValue ?? ""
+            let mentioned = handles.compactMap { member, handle -> (String, String.Index)? in
+                guard member != from, let range = text.range(of: "@\(handle)", options: .caseInsensitive) else { return nil }
+                return (member, range.lowerBound)
+            }.min { $0.1 < $1.1 }
+            if let mentioned { return (from, mentioned.0, event.seq) }
+            return nil
+        }
+        return nil
+    }
+
     /// The round the current discussion is in, counting from 1.
     public static func currentRound(_ events: [RoomEvent]) -> Int {
         var round = 0

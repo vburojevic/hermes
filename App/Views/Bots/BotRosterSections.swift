@@ -144,7 +144,7 @@ struct BotRowLabel: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            BotFace(appearance: roster.appearance(for: bot), size: SidebarMetrics.faceSize, isWorking: roster.isBusy(bot.name))
+            BotFace(appearance: roster.appearance(for: bot), size: SidebarMetrics.faceSize, mood: roster.faceMood(for: bot.name))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(bot.title)

@@ -55,6 +55,13 @@ final class ConversationModel: Identifiable {
     var draftCommand: String?
     /// Changes only when the draft goes from empty to not, so views can react cheaply.
     private(set) var hasDraftText = false
+    /// The person is dictating into the composer (its face listens).
+    var isDictating = false
+    /// What the running turn is doing, for its Bot's face: thinking (`message.start`, reasoning),
+    /// working while a tool runs, idle once it's done. Changes only when the mood does.
+    private(set) var turnMood: BotMood = .idle
+    /// The gateway put this chat to sleep (`session.reclaimed`); the next message wakes it.
+    private(set) var isResting = false
     var attachments: [ImageAttachment] = []
     /// Documents going with the next message.
     var files: [FileAttachment] = []
@@ -534,6 +541,9 @@ final class ConversationModel: Identifiable {
         let empty = items.isEmpty && pendingUser == nil && live == nil
         if empty != isEmpty { isEmpty = empty }
         let working = live.map { !$0.isFinished } ?? false
+        let mood: BotMood = working ? (live?.isUsingTool == true ? .working : .thinking) : .idle
+        if mood != turnMood { turnMood = mood }
+        if working, isResting { isResting = false }
         if working != isWorking {
             isWorking = working
             #if HERMES_PUSH
@@ -2856,6 +2866,7 @@ extension ConversationModel {
         }
         if event.type == "session.reclaimed" {
             // The gateway put this idle chat to sleep; the next message resumes it.
+            isResting = true
             runtimeSessionID = nil
             lastAppliedSeq = nil
             appliedRunSettings = nil

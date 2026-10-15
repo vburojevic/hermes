@@ -24,6 +24,11 @@ enum PillSize: Hashable {
     var face: CGFloat { self == .regular ? 18 : 15 }
 }
 
+extension EnvironmentValues {
+    /// Mention pills in a message just sent blink once (`docs/bot-faces.md` §5.7).
+    @Entry var mentionsBlinkOnAppear = false
+}
+
 /// A Bot in the text (`mentionChip`, `mentionInline`): face and @handle.
 struct BotPill: View {
     let handle: String
@@ -31,12 +36,19 @@ struct BotPill: View {
     var size: PillSize = .message
 
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+    @Environment(\.mentionsBlinkOnAppear) private var blinksOnAppear
+    @State private var blinks = 0
 
     var body: some View {
         HStack(spacing: size == .regular ? 5 : 4) {
             if let appearance {
-                BotFace(appearance: appearance, size: size.face * scale)
-                    .environment(\.pausesDecorativeMotion, true)
+                // Still at this size, apart from one blink when the message is sent (§5.7).
+                BotFace(appearance: appearance, size: size.face * scale, blinks: blinks)
+                    .task {
+                        guard blinksOnAppear else { return }
+                        try? await Task.sleep(for: .seconds(0.35))
+                        blinks += 1
+                    }
             } else {
                 Image(systemName: "at")
                     .font(.system(size: 11 * scale, weight: .semibold))

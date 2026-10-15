@@ -1,161 +1,140 @@
+import HermesPush
 import ImageIO
 import SwiftUI
 
-/// How a Bot looks: Hermes Desktop's avatar model (`ui_meta['hermes-bots']`
-/// shape + colour + image), drawn natively so a Bot looks the same everywhere.
+/// How a Bot looks: Hermes Bot Mode's avatar model (`ui_meta['hermes-bots']` shape + colour + image),
+/// drawn natively so a Bot looks the same in the Hermes desktop app and here (`docs/bot-faces.md`).
 struct BotAppearance: Hashable, Sendable {
-    enum Shape: String, CaseIterable, Sendable {
-        case circle, squircle, pill, triangle, hexagon, cloud, drop
+    typealias Shape = FaceShape
 
-        var label: String {
-            switch self {
-            case .circle: String(localized: "Circle")
-            case .squircle: String(localized: "Rounded square")
-            case .pill: String(localized: "Pill")
-            case .triangle: String(localized: "Triangle")
-            case .hexagon: String(localized: "Hexagon")
-            case .cloud: String(localized: "Cloud")
-            case .drop: String(localized: "Drop")
-            }
-        }
-    }
-
-    var shape: Shape
-    var color: Color
-    var isDark: Bool
+    /// The drawn face: shape and colour.
+    var look: FaceLook
     /// `data:` or `http(s):` image that replaces the drawn face.
     var imageURL: String?
-    /// Staggers blinks so a roster of faces doesn't blink in unison.
-    var blinkOffset: Double
 
-    /// Desktop's rules (`botAppearance`): a stored pick wins; otherwise shape and hue
-    /// come from the profile name. The primary profile wears a fixed violet squircle.
+    var shape: FaceShape { look.shape }
+    /// The Bot's colour, for the things around its face (rings, sparkles, auras).
+    var color: Color { Color(look.color) }
+    /// Cream eyes: the body's luminance is under 110.
+    var isDark: Bool { look.color.isDark }
+
+    /// Hermes's rules (`botAppearance`): a stored pick wins; otherwise shape and hue come from the
+    /// profile name. The primary profile wears a fixed violet squircle.
     init(profile: String, shape storedShape: String? = nil, color storedColor: String? = nil, image: String? = nil, customized: Bool = false) {
-        let name = profile.trimmingCharacters(in: .whitespaces)
-        let hash = Self.stringHash(name)
+        look = FaceLook(profile: profile, shape: storedShape, color: storedColor, customized: customized)
         imageURL = (image?.isEmpty ?? true) ? nil : image
-        blinkOffset = Double(hash % 97) / 97 * Self.blinkPeriod
-        if name.lowercased() == "default" && !customized {
-            shape = .squircle
-            (color, isDark) = Self.parseColor("#8b5cf6") ?? (.purple, false)
-            return
-        }
-        shape = storedShape.flatMap { Shape(rawValue: $0) } ?? Shape.allCases[Int(hash % UInt32(Shape.allCases.count))]
-        if let parsed = storedColor.flatMap(Self.parseColor) {
-            (color, isDark) = parsed
-        } else {
-            let hue = Double(hash % 360) / 360
-            (color, isDark) = (Color(hue: hue, saturation: 0.68, lightness: 0.58), false)
-        }
     }
 
-    static let blinkPeriod: TimeInterval = 4.2
-    static let blinkLength: TimeInterval = 0.14
-
-    /// Java-style `hash * 31 + code unit`, wrapping at 32 bits — Desktop's `hashString`.
+    /// Hermes's `hashString`: `hash * 31 + code unit`, wrapping at 32 bits.
     static func stringHash(_ text: String) -> UInt32 {
-        text.utf16.reduce(UInt32(0)) { $0 &* 31 &+ UInt32($1) }
+        FaceColor.nameHash(text)
     }
+}
 
-    /// Accepts `#rrggbb` and `hsl(h s% l%)`, the two forms Desktop stores.
-    static func parseColor(_ text: String) -> (Color, Bool)? {
-        let value = text.trimmingCharacters(in: .whitespaces).lowercased()
-        if value.hasPrefix("#"), value.count == 7, let rgb = UInt32(value.dropFirst(), radix: 16) {
-            let r = Double((rgb >> 16) & 0xFF), g = Double((rgb >> 8) & 0xFF), b = Double(rgb & 0xFF)
-            let dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 110
-            return (Color(red: r / 255, green: g / 255, blue: b / 255), dark)
+extension FaceShape {
+    var label: String {
+        switch self {
+        case .circle: String(localized: "Circle")
+        case .squircle: String(localized: "Rounded square")
+        case .pill: String(localized: "Pill")
+        case .triangle: String(localized: "Triangle")
+        case .hexagon: String(localized: "Hexagon")
+        case .cloud: String(localized: "Cloud")
+        case .drop: String(localized: "Drop")
         }
-        if value.hasPrefix("hsl(") {
-            let numbers = value.dropFirst(4).split(whereSeparator: { " ,%)".contains($0) }).compactMap { Double($0) }
-            guard numbers.count >= 3 else { return nil }
-            return (Color(hue: numbers[0] / 360, saturation: numbers[1] / 100, lightness: numbers[2] / 100), numbers[2] < 35)
-        }
-        return nil
     }
 }
 
 extension Color {
     /// HSL, as CSS writes it.
     init(hue: Double, saturation: Double, lightness: Double) {
-        let brightness = lightness + saturation * min(lightness, 1 - lightness)
-        let hsbSaturation = brightness == 0 ? 0 : 2 * (1 - lightness / brightness)
-        self.init(hue: hue, saturation: hsbSaturation, brightness: brightness)
+        self.init(FaceColor(hue: hue * 360, saturation: saturation, lightness: lightness))
     }
 }
 
-/// What a Bot's face is doing.
-enum BotMood: Equatable {
-    case idle
-    /// Eyes on the composer while the person types.
-    case listening
-    /// Eyes up and three pulsing dots while a turn runs.
-    case thinking
-    /// A happy squint: a reply landed, or it was poked.
-    case happy
+/// What a Bot's face is doing (`docs/bot-faces.md` §3): Hermes's idle, thinking and working, plus
+/// listening, happy and sleeping.
+typealias BotMood = FaceMood
+
+/// The shared face clock: seconds since launch, the `t` of Hermes's pose functions.
+enum FaceClock {
+    static let origin = Date.now
+
+    static func time(_ date: Date = .now) -> Double {
+        date.timeIntervalSince(origin)
+    }
 }
 
-/// A Bot's face: a coloured body with depth (a soft top light, a bottom shade and a gloss
-/// spot), two eyes that blink, glance and squint, and three dots that pulse while it works.
-/// The native twin of Hermes Desktop's `BotFace`, drawn to the Elyx spec (docs/bot-faces.md).
+/// A Bot's face, exactly as Hermes Bot Mode draws it: a flat body in the Bot's colour, two small
+/// eyes with a catchlight, and three dots in the body colour while it thinks or works. No gradient,
+/// gloss, glow or shadow; the life is in the motion (`docs/bot-faces.md`).
+///
+/// One clock drives every face: 15 fps in lists and grids, 60 fps for the face in focus, 10 in
+/// Low Power Mode, and nothing while the face is off screen. Reduce Motion keeps the blink and
+/// the dots.
 struct BotFace: View {
     let appearance: BotAppearance
     var size: CGFloat = 36
     var mood: BotMood = .idle
     /// An approval or question waits on the person: a short wiggle every few seconds.
     var needsYou = false
+    /// Look toward something on screen (each axis −1…1), instead of the mood's own gaze.
+    var look: CGVector?
+    /// The Bot's voice level (0…1) while it talks: the body squashes with it.
+    var voiceLevel: Double?
+    /// Each change blinks once (a mention pill sent, a pause in typing).
+    var blinks = 0
+    /// Tapping the face boops it: squash, stretch, happy eyes, sparkles and a light haptic.
+    var boopable = false
+    /// Each change boops it, as a tap would.
+    var boopTrigger = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pausesDecorativeMotion) private var motionPaused
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
-    @State private var openness: CGFloat = 1
-    @State private var pointer: CGPoint = .zero
-    @State private var bounces = 0
+
+    @State private var transition = FaceTransition(target: FaceTarget(mood: .idle))
+    @State private var happySince: Double?
+    @State private var boopSince: Double?
+    @State private var boops = 0
+    @State private var blinkSince: Double?
+    @State private var morph: (from: FaceShape, since: Double)?
+    @State private var isVisible = true
     @State private var wiggles = 0
 
-    init(appearance: BotAppearance, size: CGFloat = 36, isWorking: Bool = false, mood: BotMood? = nil, needsYou: Bool = false) {
+    init(
+        appearance: BotAppearance, size: CGFloat = 36, isWorking: Bool = false, mood: BotMood? = nil,
+        needsYou: Bool = false, look: CGVector? = nil, voiceLevel: Double? = nil, blinks: Int = 0, boopable: Bool = false,
+        boopTrigger: Int = 0
+    ) {
         self.appearance = appearance
         self.size = size
         self.mood = mood ?? (isWorking ? .thinking : .idle)
         self.needsYou = needsYou
+        self.look = look
+        self.voiceLevel = voiceLevel
+        self.blinks = blinks
+        self.boopable = boopable
+        self.boopTrigger = boopTrigger
+        _transition = State(initialValue: FaceTransition(target: FaceTarget(mood: self.mood, look: look)))
     }
 
-    /// Tiles, headers and the hello screen move; small list faces stay still apart from the blink.
-    private var isLarge: Bool { size >= 40 }
-    /// Only the hello screen's face breathes: a never-ending animation on every tile kept the
-    /// main thread redrawing a screen of faces, shadows and the text around them all day.
-    private var breathes: Bool { size >= 72 }
-    private var moves: Bool { !reduceMotion && !motionPaused }
-    private var increasedContrast: Bool { contrast == .increased }
+    /// Faces under 24 pt (mention pills) hold still apart from their one-off blinks.
+    private var holdsStill: Bool { size < 24 }
+    private var moves: Bool { !reduceMotion && !holdsStill }
+    /// The one face in focus runs at 60 fps: Voice mode, the hello screen, the New Bot preview,
+    /// a face being tapped or changing shape.
+    private func isFocused(at t: Double) -> Bool {
+        size >= 88 || voiceLevel != nil || (boopSince.map { t - $0 < 1.2 } ?? false) || (morph.map { t - $0.since < 0.35 } ?? false)
+    }
 
-    private var gaze: CGPoint {
-        guard !reduceMotion else { return .zero }
-        return switch mood {
-        case .idle: pointer
-        case .happy: .zero
-        case .listening: CGPoint(x: 0.6, y: 1.3)
-        case .thinking: CGPoint(x: -0.3, y: -1.4)
-        }
+    private var target: FaceTarget {
+        FaceTarget(mood: mood, look: reduceMotion ? nil : look)
     }
 
     var body: some View {
-        face
-            .modifier(Breathing(active: breathes && moves && mood == .idle))
-            .rotationEffect(.degrees(mood == .listening && moves ? 2 : 0), anchor: .bottom)
-            .keyframeAnimator(initialValue: Squash(), trigger: bounces) { content, value in
-                content.scaleEffect(x: value.x, y: value.y, anchor: .bottom)
-            } keyframes: { _ in
-                KeyframeTrack(\.y) {
-                    SpringKeyframe(0.94, duration: 0.12)
-                    SpringKeyframe(1.08, duration: 0.15)
-                    SpringKeyframe(1, duration: 0.18)
-                }
-                KeyframeTrack(\.x) {
-                    SpringKeyframe(1.05, duration: 0.12)
-                    SpringKeyframe(0.95, duration: 0.15)
-                    SpringKeyframe(1, duration: 0.18)
-                }
-            }
+        content
             .keyframeAnimator(initialValue: 0.0, trigger: wiggles) { content, angle in
                 content.rotationEffect(.degrees(angle))
             } keyframes: { _ in
@@ -166,316 +145,209 @@ struct BotFace: View {
                     CubicKeyframe(0, duration: 0.1)
                 }
             }
-            .onChange(of: mood) { _, new in
-                if new == .happy, moves, size >= 24 { bounces += 1 }
+            .onChange(of: target) { _, new in
+                transition.change(to: new, at: FaceClock.time())
             }
-            .task(id: needsYou && moves && size >= 24) {
-                guard needsYou, moves, size >= 24 else { return }
+            .onChange(of: mood) { _, new in
+                if new == .happy { happySince = FaceClock.time() }
+            }
+            .onChange(of: blinks) { blinkSince = FaceClock.time() }
+            .onChange(of: boopTrigger) { boop() }
+            .onChange(of: appearance.shape) { old, _ in
+                guard moves else { return }
+                morph = (old, FaceClock.time())
+            }
+            .task(id: OneOffs(blink: blinkSince, boop: boopSince, happy: happySince, morph: morph?.since)) {
+                // A finished blink, boop or hop hands the face back to its usual pace (or to rest).
+                guard blinkSince != nil || boopSince != nil || happySince != nil || morph != nil else { return }
+                try? await Task.sleep(for: .seconds(1.4))
+                guard !Task.isCancelled else { return }
+                let now = FaceClock.time()
+                if let since = blinkSince, now - since > 0.3 { blinkSince = nil }
+                if let since = boopSince, now - since > 1.3 { boopSince = nil }
+                if let since = happySince, now - since > 1.3, mood != .happy { happySince = nil }
+                if let since = morph?.since, now - since > 0.4 { morph = nil }
+            }
+            .task(id: needsYou && moves) {
+                guard needsYou, moves else { return }
                 while !Task.isCancelled {
                     wiggles += 1
                     try? await Task.sleep(for: .seconds(6))
                 }
             }
-            #if os(macOS) || os(iOS)
-            .onContinuousHover { phase in
-                guard isLarge, moves else { return }
-                switch phase {
-                case .active(let location):
-                    let dx = (location.x / size - 0.5) * 2.4
-                    let dy = (location.y / size - 0.5) * 2.4
-                    pointer = CGPoint(x: max(-1.2, min(1.2, dx)), y: max(-1.2, min(1.2, dy)))
-                case .ended:
-                    pointer = .zero
-                }
-            }
-            #endif
-            .animation(.spring(response: 0.45, dampingFraction: 0.8), value: pointer)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
             .accessibilityHidden(true)
     }
 
     @ViewBuilder
-    private var face: some View {
+    private var content: some View {
         if let image = appearance.imageURL {
-            imageFace(image)
+            photoFace(image)
+        } else if boopable {
+            drawnFace
+                .contentShape(Rectangle())
+                .onTapGesture { boop() }
+                .sensoryFeedback(.impact(weight: .light), trigger: boops)
         } else {
-            FaceCanvas(
-                appearance: appearance,
-                gazeX: gaze.x,
-                gazeY: gaze.y,
-                openness: openness,
-                smile: mood == .happy ? 1 : 0,
-                detail: FaceDetail(size: size, isDark: colorScheme == .dark, increasedContrast: increasedContrast)
-            )
-            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: mood)
-            .overlay(alignment: .bottom) {
-                if mood == .thinking {
-                    ThinkingDots(animated: moves)
-                        .frame(width: size, height: size * 8 / 40)
-                        .transition(.opacity)
+            drawnFace
+        }
+    }
+
+    private func boop() {
+        let now = FaceClock.time()
+        boops += 1
+        guard !reduceMotion else {
+            happySince = now
+            return
+        }
+        boopSince = now
+        happySince = now
+    }
+
+    // MARK: The drawn face
+
+    private var drawnFace: some View {
+        let now = FaceClock.time()
+        let interval = PowerState.shared.isLowPower ? 1.0 / 10 : (isFocused(at: now) ? 1.0 / 60 : 1.0 / 15)
+        // Still faces need the clock only for a one-off: a blink, a boop or a hop.
+        let oneOff = [blinkSince, boopSince, happySince].compactMap { $0 }.contains { now - $0 < 1.3 } || (morph.map { now - $0.since < 0.35 } ?? false)
+        let ticks = mood != .sleeping && (!holdsStill || oneOff)
+        let paused = !isVisible || motionPaused || !ticks
+        return TimelineView(.animation(minimumInterval: interval, paused: paused)) { context in
+            let t = FaceClock.time(context.date)
+            Canvas { canvas, canvasSize in
+                FacePainter.draw(appearance.look, frame: frame(at: t), in: &canvas, size: canvasSize)
+            }
+            .overlay {
+                if let boopSince, t - boopSince < 0.7, moves {
+                    Sparkles(color: appearance.color, progress: (t - boopSince) / 0.6, size: size)
                 }
             }
-            .frame(width: size, height: size * 44 / 40)
-            .shadow(color: liftColor, radius: liftRadius, y: liftRadius / 2)
-            .task(id: moves) { await blink() }
+        }
+        .frame(width: size, height: FacePainter.height(forWidth: size))
+    }
+
+    /// One frame: the blended pose, the eyes for the mood, and the one-offs on top.
+    private func frame(at t: Double) -> FaceFrame {
+        var pose = transition.pose(at: t)
+        if !moves { pose = pose.stilled }
+        if holdsStill { pose.dots = FacePose.of(mood, at: 0.6).dots } // a still frame of the wave
+        if let blinkSince, t - blinkSince >= 0, t - blinkSince < 0.18 { pose.blink = true }
+        let happyNow = mood == .happy || (happySince.map { t - $0 < 1.2 && t >= $0 } ?? false)
+        var frame = FaceFrame(mood: happyNow ? .happy : mood, pose: pose)
+        if mood == .sleeping { frame.bodyOpacity = 0.45 }
+        if contrast == .increased {
+            frame.outline = FacePainter.contrastOutline(
+                for: appearance.look.color, on: FacePainter.background(dark: colorScheme == .dark), separator: FacePainter.separator
+            )
+        }
+        guard moves else { return frame }
+        // The happy hop: up 6% of the size, then back on a spring (response 0.35, damping 0.6).
+        if let happySince { frame.hop = Self.hop(t - happySince) * 44 * 0.06 }
+        if let boopSince { frame.squash = Self.boopSquash(t - boopSince) }
+        if let voiceLevel {
+            let sy = 0.94 + 0.16 * max(0, min(1, voiceLevel))
+            frame.squash = CGSize(width: frame.squash.width * (2 - sy), height: frame.squash.height * sy)
+        }
+        if let morph {
+            let p = (t - morph.since) / 0.3
+            if p < 1 { frame.morph = (morph.from, 1 - (1 - p) * (1 - p)) }
+        }
+        return frame
+    }
+
+    /// 0…1 of the hop's height: up in 0.12 s, then a spring back (response 0.35, damping 0.6).
+    static func hop(_ elapsed: Double) -> Double {
+        guard elapsed >= 0 else { return 0 }
+        let rise = 0.12
+        if elapsed < rise { return 1 - pow(1 - elapsed / rise, 2) }
+        let omega = 2 * Double.pi / 0.35, damping = 0.6
+        let tau = elapsed - rise
+        guard tau < 1.2 else { return 0 }
+        return exp(-damping * omega * tau) * cos(omega * (1 - damping * damping).squareRoot() * tau)
+    }
+
+    /// Boop: squash (1.12 × 0.86), stretch (0.92 × 1.1), settle.
+    static func boopSquash(_ elapsed: Double) -> CGSize {
+        func ease(_ p: Double) -> Double { 1 - (1 - p) * (1 - p) }
+        func lerp(_ a: CGSize, _ b: CGSize, _ p: Double) -> CGSize {
+            CGSize(width: a.width + (b.width - a.width) * p, height: a.height + (b.height - a.height) * p)
+        }
+        let rest = CGSize(width: 1, height: 1), squash = CGSize(width: 1.12, height: 0.86), stretch = CGSize(width: 0.92, height: 1.1)
+        switch elapsed {
+        case ..<0: return rest
+        case ..<0.09: return lerp(rest, squash, ease(elapsed / 0.09))
+        case ..<0.22: return lerp(squash, stretch, ease((elapsed - 0.09) / 0.13))
+        case ..<0.6:
+            // Settle with a small overshoot.
+            let p = (elapsed - 0.22) / 0.38
+            let wobble = exp(-5 * p) * cos(p * .pi * 2.5)
+            return lerp(rest, stretch, wobble)
+        default: return rest
         }
     }
 
-    /// A hue-tinted lift that follows the shape (photo faces get a neutral one), skipped on
-    /// small faces and with Increase Contrast.
-    private var liftColor: Color {
-        guard size >= 24, !increasedContrast else { return .clear }
-        if appearance.imageURL != nil { return .black.opacity(0.25) }
-        return appearance.color.opacity(colorScheme == .dark ? 0.45 : 0.35)
-    }
+    // MARK: Photo faces
 
-    private var liftRadius: CGFloat { size >= 24 && !increasedContrast ? size * 0.12 : 0 }
-
-    /// Blinks every few seconds, staggered per Bot. A sleeping task rather than a
-    /// timeline, so an idle face costs nothing between blinks.
-    private func blink() async {
-        openness = 1
-        // Tiny faces (mention chips) don't blink; a 0.14 s blink isn't visible at that size.
-        guard moves, size >= 24 else { return }
-        let period = BotAppearance.blinkPeriod
-        let phase = (Date.now.timeIntervalSinceReferenceDate - appearance.blinkOffset).truncatingRemainder(dividingBy: period)
-        try? await Task.sleep(for: .seconds(period - phase))
-        while !Task.isCancelled {
-            withAnimation(.easeIn(duration: 0.06)) { openness = 0 }
-            try? await Task.sleep(for: .seconds(BotAppearance.blinkLength))
-            withAnimation(.easeOut(duration: 0.09)) { openness = 1 }
-            try? await Task.sleep(for: .seconds(period - BotAppearance.blinkLength))
+    /// A picture avatar: a rounded square with a 22% radius. Its only motion is a slow breath.
+    @ViewBuilder
+    private func photoFace(_ source: String) -> some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 15, paused: !isVisible || motionPaused || !moves)) { context in
+            let breath = moves ? 1 + 0.01 * (1 - cos(FaceClock.time(context.date) * .pi / 2)) : 1
+            photo(source)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                .scaleEffect(breath, anchor: .bottom)
         }
+        // Same footprint as a drawn face (40 × 44), so rows and cards line up.
+        .frame(width: size, height: FacePainter.height(forWidth: size), alignment: .top)
     }
 
     @ViewBuilder
-    private func imageFace(_ source: String) -> some View {
-        Group {
-            if source.hasPrefix("data:") || source.hasPrefix("face://"), let image = FaceImageCache.image(for: source) {
-                Image(platformImage: image).resizable().scaledToFill()
-            } else if let url = URL(string: source) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    appearance.color.opacity(0.4)
-                }
+    private func photo(_ source: String) -> some View {
+        if source.hasPrefix("data:") || source.hasPrefix("face://"), let image = FaceImageCache.image(for: source) {
+            Image(platformImage: image).resizable().scaledToFill()
+        } else if let url = URL(string: source) {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                appearance.color.opacity(0.4)
             }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
-        .shadow(color: liftColor, radius: liftRadius, y: liftRadius / 2)
-        // Same footprint as a drawn face (40 × 44), so rows and cards line up.
-        .frame(width: size, height: size * 44 / 40, alignment: .top)
-        .scaleEffect(mood == .happy && moves ? 1.06 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: mood)
-    }
-}
-
-private struct Squash {
-    var x: CGFloat = 1
-    var y: CGFloat = 1
-}
-
-/// A slow 1.00 → 1.02 breath while a large face is idle.
-private struct Breathing: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        if active {
-            content.phaseAnimator([false, true]) { content, inhale in
-                content.scaleEffect(inhale ? 1.02 : 1, anchor: .bottom)
-            } animation: { _ in
-                .easeInOut(duration: 2)
-            }
-        } else {
-            content
         }
     }
 }
 
-/// What the renderer needs to know beyond the face itself.
-private struct FaceDetail: Equatable {
+private struct OneOffs: Equatable {
+    var blink: Double?
+    var boop: Double?
+    var happy: Double?
+    var morph: Double?
+}
+
+/// The boop's sparkles: 3–4 SF Symbol sparkles in the Bot's colour that pop and fade (0.6 s).
+private struct Sparkles: View {
+    let color: Color
+    /// 0…1.
+    let progress: Double
     let size: CGFloat
-    let isDark: Bool
-    let increasedContrast: Bool
 
-    /// Below 24 pt the gloss and rim only muddy the face; the light-to-shade body stays.
-    var showsGloss: Bool { size >= 24 && !increasedContrast }
-}
-
-/// The drawn face, interpolated frame by frame while its gaze, lids and smile animate.
-private struct FaceCanvas: View, Animatable {
-    let appearance: BotAppearance
-    var gazeX: CGFloat
-    var gazeY: CGFloat
-    var openness: CGFloat
-    var smile: CGFloat
-    let detail: FaceDetail
-
-    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
-        get { AnimatablePair(AnimatablePair(gazeX, gazeY), AnimatablePair(openness, smile)) }
-        set {
-            gazeX = newValue.first.first
-            gazeY = newValue.first.second
-            openness = newValue.second.first
-            smile = newValue.second.second
-        }
-    }
+    private static let spots: [(x: CGFloat, y: CGFloat, scale: CGFloat, delay: Double)] = [
+        (-0.62, -0.42, 1, 0), (0.6, -0.52, 0.8, 0.06), (0.7, 0.22, 0.65, 0.12), (-0.5, 0.42, 0.7, 0.09),
+    ]
 
     var body: some View {
-        Canvas { canvas, size in
-            draw(in: &canvas, size: size)
-        }
-    }
-
-    // MARK: Drawing (a 40 × 40 face box, like the Desktop SVG and the Elyx parts)
-
-    private func draw(in canvas: inout GraphicsContext, size: CGSize) {
-        let scale = size.width / 40
-        canvas.scaleBy(x: scale, y: scale)
-        let body = Self.body(appearance.shape)
-        drawBody(body, in: canvas, unit: 1 / scale)
-
-        let eyeFill: Color = appearance.isDark ? Palette.Faces.eyeOnDark : Palette.Faces.eyeOnLight
-        let sparkle: Color = appearance.isDark ? Palette.Faces.sparkleOnDark : Palette.Faces.sparkleOnLight
-        let eyeY: CGFloat = (appearance.shape == .cloud ? 22 : 17.2) + gazeY
-        let open = max(0, min(1, openness)) * (1 - smile)
-
-        for baseX in [15.4, 24.6] as [CGFloat] {
-            let x = baseX + gazeX
-            // Open eyes: tall ovals whose lids close as `open` falls.
-            if open > 0.08 {
-                let height = 6.6 * open
-                canvas.fill(Path(ellipseIn: CGRect(x: x - 2.6, y: eyeY - height / 2, width: 5.2, height: height)), with: .color(eyeFill))
-                if open > 0.6 {
-                    canvas.fill(
-                        Path(ellipseIn: CGRect(x: x - 0.85 - 1, y: eyeY - 1.45 - 1, width: 2, height: 2)),
-                        with: .color(sparkle.opacity(Double((open - 0.6) / 0.4)))
-                    )
-                }
-            } else if smile < 0.5 {
-                // Closed lids: a short line.
-                var lid = Path()
-                lid.move(to: CGPoint(x: x - 2.6, y: eyeY))
-                lid.addLine(to: CGPoint(x: x + 2.6, y: eyeY))
-                canvas.stroke(lid, with: .color(eyeFill), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-            }
-            // Happy: upturned arcs, ^ ^.
-            if smile > 0.05 {
-                var arc = Path()
-                arc.move(to: CGPoint(x: x - 2.6, y: eyeY + 1.1))
-                arc.addQuadCurve(to: CGPoint(x: x + 2.6, y: eyeY + 1.1), control: CGPoint(x: x, y: eyeY + 1.1 - 5 * smile))
-                canvas.stroke(arc, with: .color(eyeFill.opacity(Double(smile))), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+        ZStack {
+            ForEach(Array(Self.spots.prefix(size >= 40 ? 4 : 3).enumerated()), id: \.offset) { _, spot in
+                let p = max(0, min(1, (progress - spot.delay) / (1 - spot.delay)))
+                Image(systemName: "sparkle")
+                    .font(.system(size: max(7, size * 0.2) * spot.scale, weight: .semibold))
+                    .foregroundStyle(color)
+                    .scaleEffect(p < 0.35 ? 0.4 + p / 0.35 * 0.8 : 1.2 - (p - 0.35) * 0.6)
+                    .opacity(p <= 0 ? 0 : (p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4))
+                    .offset(x: spot.x * size * (0.9 + p * 0.25), y: spot.y * size * (0.9 + p * 0.25))
             }
         }
-    }
-
-    /// The Bot's hue, a light-to-shade gradient at 160°, a gloss spot, and (on larger faces)
-    /// an inner rim: lit along the top, shaded along the bottom.
-    private func drawBody(_ body: Path, in canvas: GraphicsContext, unit: CGFloat) {
-        canvas.fill(body, with: .color(appearance.color))
-        // CSS 160°: from the top-left toward the bottom-right of the 40-unit box.
-        canvas.fill(body, with: .linearGradient(
-            Gradient(stops: [
-                .init(color: Palette.Faces.bodyLight, location: 0),
-                .init(color: Palette.Faces.bodyClear, location: 0.45),
-                .init(color: Palette.Faces.bodyShade, location: 1),
-            ]),
-            startPoint: CGPoint(x: 11.2, y: -4.1),
-            endPoint: CGPoint(x: 28.8, y: 44.1)
-        ))
-        guard detail.showsGloss else {
-            if detail.increasedContrast {
-                let outline = appearance.color.mix(with: detail.isDark ? .white : .black, by: 0.3)
-                canvas.stroke(body, with: .color(outline), lineWidth: unit * 2)
-            }
-            return
-        }
-        var gloss = canvas
-        gloss.clip(to: body)
-        gloss.translateBy(x: 12, y: 8.8)
-        gloss.scaleBy(x: 1, y: 18 / 22)
-        gloss.fill(
-            Path(ellipseIn: CGRect(x: -22, y: -22, width: 44, height: 44)),
-            with: .radialGradient(
-                Gradient(colors: [Palette.Faces.bodyGloss, Palette.Faces.bodyClear]),
-                center: .zero, startRadius: 0, endRadius: 22
-            )
-        )
-        // Inner shadows: the shape's inverse casts them, clipped back to the shape.
-        var rim = canvas
-        rim.clip(to: body)
-        rim.addFilter(.shadow(color: .white.opacity(0.45), radius: unit * 0.5, x: 0, y: unit, options: [.invertsAlpha, .shadowOnly]))
-        rim.fill(body, with: .color(.black))
-        var shade = canvas
-        shade.clip(to: body)
-        shade.addFilter(.shadow(color: .black.opacity(0.18), radius: unit * 3, x: 0, y: -unit * 2, options: [.invertsAlpha, .shadowOnly]))
-        shade.fill(body, with: .color(.black))
-    }
-
-    private static func body(_ shape: BotAppearance.Shape) -> Path {
-        switch shape {
-        case .circle:
-            return Path(ellipseIn: CGRect(x: 2.5, y: 2.5, width: 35, height: 35))
-        case .squircle:
-            return Path(roundedRect: CGRect(x: 3, y: 3, width: 34, height: 34), cornerRadius: 11, style: .continuous)
-        case .pill:
-            return Path(roundedRect: CGRect(x: 2, y: 7, width: 36, height: 26), cornerRadius: 13, style: .continuous)
-        case .triangle:
-            return Path { p in
-                p.move(to: CGPoint(x: 20, y: 5.5))
-                p.addLine(to: CGPoint(x: 36, y: 33.5))
-                p.addLine(to: CGPoint(x: 4, y: 33.5))
-                p.closeSubpath()
-            }
-        case .hexagon:
-            return Path { p in
-                p.move(to: CGPoint(x: 20, y: 3.5))
-                for point in [(34.5, 11.75), (34.5, 28.25), (20, 36.5), (5.5, 28.25), (5.5, 11.75)] {
-                    p.addLine(to: CGPoint(x: point.0, y: point.1))
-                }
-                p.closeSubpath()
-            }
-        case .cloud:
-            // Desktop: M11 32 a7.5 7.5 0 0 1 -1 -14.9 A9.5 9.5 0 0 1 29 12.5 A7 7 0 0 1 30 32 Z
-            return Path { p in
-                p.move(to: CGPoint(x: 11, y: 32))
-                p.addArc(center: CGPoint(x: 10.5, y: 24.55), radius: 7.5, startAngle: .degrees(86), endAngle: .degrees(-94), clockwise: false)
-                p.addArc(center: CGPoint(x: 19.5, y: 16.5), radius: 9.5, startAngle: .degrees(196), endAngle: .degrees(-25), clockwise: false)
-                p.addArc(center: CGPoint(x: 30, y: 25), radius: 7, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false)
-                p.closeSubpath()
-            }
-        case .drop:
-            return Path { p in
-                p.move(to: CGPoint(x: 20, y: 3))
-                p.addCurve(to: CGPoint(x: 6, y: 27), control1: CGPoint(x: 20, y: 3), control2: CGPoint(x: 6, y: 20))
-                p.addArc(center: CGPoint(x: 20, y: 27), radius: 14, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: true)
-                p.addCurve(to: CGPoint(x: 20, y: 3), control1: CGPoint(x: 34, y: 20), control2: CGPoint(x: 20, y: 3))
-                p.closeSubpath()
-            }
-        }
-    }
-}
-
-/// Three dots under the face that pulse in turn while the Bot works (steady when
-/// Reduce Motion is on): tertiary text, 2.2-unit dots 7 apart, like the design.
-private struct ThinkingDots: View {
-    var animated = true
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 20, paused: !animated)) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            Canvas { canvas, size in
-                let scale = size.width / 40
-                canvas.scaleBy(x: scale, y: scale)
-                for (index, x) in ([13, 20, 27] as [CGFloat]).enumerated() {
-                    let wave = animated ? 0.35 + 0.65 * max(0, sin((time * 4) - Double(index) * 0.9)) : [0.45, 1, 0.7][index]
-                    canvas.fill(
-                        Path(ellipseIn: CGRect(x: x - 2.2, y: 4 - 2.2, width: 4.4, height: 4.4)),
-                        with: .color(Theme.tertiaryText.opacity(wave))
-                    )
-                }
-            }
-        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -523,9 +395,16 @@ enum FaceImageCache {
 }
 
 #Preview {
-    HStack(spacing: 16) {
-        ForEach(BotAppearance.Shape.allCases, id: \.self) { shape in
-            BotFace(appearance: BotAppearance(profile: "researcher-\(shape.rawValue)", shape: shape.rawValue), size: 44, isWorking: shape == .cloud)
+    VStack(spacing: 16) {
+        HStack(spacing: 16) {
+            ForEach(FaceShape.allCases, id: \.self) { shape in
+                BotFace(appearance: BotAppearance(profile: "researcher-\(shape.rawValue)", shape: shape.rawValue), size: 56, isWorking: shape == .cloud)
+            }
+        }
+        HStack(spacing: 16) {
+            ForEach(FaceMood.allCases, id: \.self) { mood in
+                BotFace(appearance: BotAppearance(profile: "default"), size: 56, mood: mood, boopable: true)
+            }
         }
     }
     .padding()

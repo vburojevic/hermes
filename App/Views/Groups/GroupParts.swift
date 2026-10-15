@@ -42,6 +42,80 @@ struct GroupAvatar: View {
     }
 }
 
+/// Everyone in a group chat, side by side (`docs/bot-faces.md` §5.2): the member whose turn is
+/// running lifts with a 4° tilt and thinks, and the others look at it. One that passed blinks and
+/// looks back to centre. When a member's message hands work to another (`@handle`), the two look
+/// at each other for 0.6 s, then the one receiving it starts thinking (§5.8).
+struct GroupFaceStack: View {
+    struct Face: Identifiable {
+        let id: String
+        let appearance: BotAppearance
+    }
+
+    let faces: [Face]
+    var active: String?
+    var passed: Set<String> = []
+    var handOff: (from: String, to: String, seq: Int)?
+    var size: CGFloat = 22
+
+    @State private var lookingAtEachOther: (from: String, to: String)?
+    @State private var receiving: String?
+    @State private var blinks: [String: Int] = [:]
+    @State private var seenHandOff: Int?
+
+    var body: some View {
+        HStack(spacing: size * 0.12) {
+            ForEach(Array(faces.enumerated()), id: \.element.id) { index, face in
+                let isActive = face.id == (active ?? receiving)
+                BotFace(
+                    appearance: face.appearance, size: size, mood: isActive ? .thinking : .idle,
+                    look: look(for: index), blinks: blinks[face.id] ?? 0
+                )
+                .rotationEffect(.degrees(isActive ? 4 : 0), anchor: .bottom)
+                .offset(y: isActive ? -size * 0.12 : 0)
+                .animation(.spring(response: 0.4, dampingFraction: 0.75), value: isActive)
+            }
+        }
+        .onChange(of: passed) { old, new in
+            for member in new.subtracting(old) { blinks[member, default: 0] += 1 }
+        }
+        .task(id: handOff?.seq) {
+            // Only hand-offs that happen while the room is open, not the one it opened on.
+            guard let seenHandOff else {
+                seenHandOff = handOff?.seq ?? -1
+                return
+            }
+            guard let handOff, handOff.seq > seenHandOff else { return }
+            self.seenHandOff = handOff.seq
+            lookingAtEachOther = (handOff.from, handOff.to)
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled else { return }
+            lookingAtEachOther = nil
+            receiving = handOff.to
+            try? await Task.sleep(for: .seconds(3))
+            if receiving == handOff.to { receiving = nil }
+        }
+        .onChange(of: active) { if active != nil { receiving = nil } }
+        .accessibilityHidden(true)
+    }
+
+    private func index(of id: String?) -> Int? {
+        id.flatMap { id in faces.firstIndex { $0.id == id } }
+    }
+
+    /// Toward the face that has the floor, or at each other during a hand-off.
+    private func look(for index: Int) -> CGVector? {
+        let id = faces[index].id
+        if let pair = lookingAtEachOther, let from = self.index(of: pair.from), let to = self.index(of: pair.to) {
+            if id == pair.from { return CGVector(dx: to > from ? 1 : -1, dy: 0) }
+            if id == pair.to { return CGVector(dx: from > to ? 1 : -1, dy: 0) }
+        }
+        if passed.contains(id) { return nil }
+        guard let target = self.index(of: active ?? receiving), target != index else { return nil }
+        return CGVector(dx: target > index ? 1 : -1, dy: -0.3)
+    }
+}
+
 /// A group chat in the roster (`groupRow`): avatar, name, member count, the latest line, time,
 /// and "Needs you" when the room waits on the person.
 struct GroupRowLabel: View {
@@ -188,11 +262,16 @@ struct MemberStatusRow: View {
     let name: String
     var subtitle: String?
     let status: Status
+    /// Toward the member that's replying (`docs/bot-faces.md` §5.2).
+    var look: CGVector?
+
+    @State private var blinks = 0
 
     var body: some View {
         HStack(spacing: 10) {
             if let appearance {
-                BotFace(appearance: appearance, size: 30, mood: status == .replying ? .thinking : .idle)
+                BotFace(appearance: appearance, size: 30, mood: status == .replying ? .thinking : .idle, look: look, blinks: blinks)
+                    .onChange(of: status) { _, new in if new == .passed { blinks += 1 } }
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)

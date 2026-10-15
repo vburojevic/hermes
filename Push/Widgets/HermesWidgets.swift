@@ -22,11 +22,17 @@ struct TurnActivityWidget: Widget {
             let attributes = context.attributes
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    HermesWing()
-                        .fill(.white)
-                        .frame(width: 22, height: 22)
-                        .padding(.leading, 6)
-                        .accessibilityHidden(true)
+                    Group {
+                        if let face = attributes.face {
+                            IslandFace(look: face, state: state, size: 24)
+                        } else {
+                            HermesWing()
+                                .fill(.white)
+                                .frame(width: 22, height: 22)
+                        }
+                    }
+                    .padding(.leading, 6)
+                    .accessibilityHidden(true)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(state.title ?? attributes.chatTitle)
@@ -42,17 +48,27 @@ struct TurnActivityWidget: Widget {
                     IslandDetail(attributes: attributes, state: state)
                 }
             } compactLeading: {
-                HermesWing()
-                    .fill(.white)
-                    .frame(width: 18, height: 18)
-                    .accessibilityLabel("Hermes")
+                if let face = attributes.face {
+                    IslandFace(look: face, state: state, size: 20)
+                        .accessibilityLabel(attributes.bot ?? "Hermes")
+                } else {
+                    HermesWing()
+                        .fill(.white)
+                        .frame(width: 18, height: 18)
+                        .accessibilityLabel("Hermes")
+                }
             } compactTrailing: {
                 IslandStatus(state: state)
             } minimal: {
-                HermesWing()
-                    .fill(state.phase == .needsYou ? Palette.warning : .white)
-                    .frame(width: 16, height: 16)
-                    .accessibilityLabel(state.phase == .needsYou ? "Hermes needs you" : "Hermes")
+                if let face = attributes.face, state.phase != .needsYou {
+                    IslandFace(look: face, state: state, size: 20)
+                        .accessibilityLabel(attributes.bot ?? "Hermes")
+                } else {
+                    HermesWing()
+                        .fill(state.phase == .needsYou ? Palette.warning : .white)
+                        .frame(width: 16, height: 16)
+                        .accessibilityLabel(state.phase == .needsYou ? "Hermes needs you" : "Hermes")
+                }
             }
             .keylineTint(state.phase == .needsYou ? Palette.warning : nil)
         }
@@ -79,7 +95,11 @@ struct TurnActivityView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                AppTile()
+                if let face = attributes.face {
+                    IslandFace(look: face, state: state, size: 36)
+                } else {
+                    AppTile()
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(state.title ?? attributes.chatTitle)
                         .font(.headline)
@@ -167,6 +187,20 @@ struct TurnActivityView: View {
 }
 
 /// The app icon: the white wing on black.
+/// A Bot's face in the Island and on the Lock Screen (`docs/bot-faces.md` §5.6): working with
+/// its dots while the turn runs, idle when it's done. Activities don't animate, so it's one frame.
+struct IslandFace: View {
+    let look: FaceLook
+    let state: TurnActivityState
+    let size: CGFloat
+
+    var body: some View {
+        StillFace(look: look, mood: state.phase == .done ? .idle : .working, size: size, time: 0.6)
+            // Small faces: the body's box, the dots tucked under it.
+            .frame(width: size, height: size * 1.1)
+    }
+}
+
 struct AppTile: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 9, style: .continuous)

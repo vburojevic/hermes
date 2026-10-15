@@ -21,7 +21,7 @@ struct BotSheet: View {
     @State private var loaded = false
     @State private var isDelighted = false
     @State private var celebrations = 0
-    @State private var pokes = 0
+    @State private var typingPauses = 0
     private enum Field: Hashable { case name, role }
     @FocusState private var focus: Field?
 
@@ -56,25 +56,18 @@ struct BotSheet: View {
                     // The Mac sheet is compact (`screens/mac/sheets.elyx` `macNewBot`): the face
                     // beside its name; iPhone and iPad give it the stage.
                     Self.headerLayout {
-                        Button {
-                            pokes += 1
-                            delight()
-                        } label: {
-                            BotFace(appearance: preview, size: Self.faceSize, mood: isSaving ? .thinking : (isDelighted ? .happy : (focus != nil ? .listening : .idle)))
-                                .ripple(at: CGPoint(x: Self.faceSize / 2, y: Self.faceSize * 0.54), trigger: pokes)
-                        }
-                        .buttonStyle(PokeStyle())
-                        .background {
-                            BotAura(color: preview.color, intensity: 0.75)
-                                .frame(width: Self.faceSize * 2.2, height: Self.faceSize * 2.2)
-                        }
+                        // It watches you name it (`docs/bot-faces.md` §5.5): eyes on the Name field
+                        // while it has focus, a blink when typing pauses, and a morph to each shape.
+                        BotFace(
+                            appearance: preview, size: Self.faceSize,
+                            mood: isSaving ? .thinking : (isDelighted ? .happy : (focus != nil ? .listening : .idle)),
+                            look: focus == .name ? CGVector(dx: Self.isCompact ? 0.6 : 0, dy: 1) : nil,
+                            blinks: typingPauses, boopable: true
+                        )
                         .overlay {
                             SparkleBurst(color: preview.color, trigger: celebrations)
                         }
                         .padding(.top, Self.isCompact ? 0 : 10)
-                        .animation(Theme.spring, value: draft.shape)
-                        .animation(Theme.spring, value: draft.hue)
-                        .sensoryFeedback(.impact(weight: .light, intensity: 0.7), trigger: pokes)
                         .sensoryFeedback(.success, trigger: celebrations)
                         .accessibilityLabel(Text("Preview of \(draft.title.isEmpty ? String(localized: "the new Bot") : draft.title)"))
                         VStack(alignment: Self.isCompact ? .leading : .center, spacing: 2) {
@@ -110,6 +103,12 @@ struct BotSheet: View {
                 Section {
                     TextField("Name", text: $draft.title, prompt: Text("Research Buddy"))
                         .focused($focus, equals: .name)
+                        .task(id: draft.title) {
+                            // A blink when typing pauses for 0.8 s.
+                            guard loaded, focus == .name, !draft.title.isEmpty else { return }
+                            try? await Task.sleep(for: .seconds(0.8))
+                            if !Task.isCancelled { typingPauses += 1 }
+                        }
                         .submitLabel(draft.role.isEmpty ? .next : .done)
                         .onSubmit { focus = draft.role.isEmpty ? .role : nil }
                     TextField("Role", text: $draft.role, prompt: Text("Digs through papers and the web for answers"), axis: .vertical)
@@ -208,12 +207,12 @@ struct BotSheet: View {
         #endif
     }
 
+    /// New Bot / Edit Bot preview (`docs/bot-faces.md` §4).
+    private static let faceSize: CGFloat = 88
     #if os(macOS)
     private static let isCompact = true
-    private static let faceSize: CGFloat = 56
     #else
     private static let isCompact = false
-    private static let faceSize: CGFloat = 92
     #endif
 
     /// The face beside its name on the Mac; above it elsewhere.

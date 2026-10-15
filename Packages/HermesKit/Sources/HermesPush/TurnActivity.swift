@@ -141,13 +141,16 @@ public struct TurnActivityAttributes: ActivityAttributes {
     public var chatTitle: String
     /// The Bot, in a Bot Chat.
     public var bot: String?
+    /// The Bot's face, for the Island and the Lock Screen (`docs/bot-faces.md` §5.6).
+    public var face: FaceLook?
 
-    public init(gatewayID: UUID, gatewayName: String, sessionID: String, chatTitle: String, bot: String? = nil) {
+    public init(gatewayID: UUID, gatewayName: String, sessionID: String, chatTitle: String, bot: String? = nil, face: FaceLook? = nil) {
         self.gatewayID = gatewayID
         self.gatewayName = gatewayName
         self.sessionID = sessionID
         self.chatTitle = chatTitle
         self.bot = bot
+        self.face = face
     }
 }
 #endif

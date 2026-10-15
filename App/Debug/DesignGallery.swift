@@ -1,5 +1,6 @@
 #if DEBUG
 import HermesKit
+import HermesPush
 import SwiftUI
 
 /// Debug-only pages that show components in isolation, for checking them against the Elyx
@@ -66,31 +67,68 @@ private struct VoicePage: View {
     }
 }
 
+/// The one-off motions, on a loop: a boop every 2.5 s, a shape morph every 1.5 s, a look around
+/// every second, and a blink each time a pill would be sent.
+private struct MotionChecks: View {
+    @State private var boops = 0
+    @State private var shape = FaceShape.squircle
+    @State private var look = 0
+    @State private var blinks = 0
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 28) {
+            BotFace(appearance: BotAppearance(profile: "sun", shape: "circle", color: "hsl(60 68% 58%)", customized: true), size: 88, boopable: true, boopTrigger: boops)
+            BotFace(appearance: BotAppearance(profile: "writer", shape: shape.rawValue, color: "hsl(330 68% 58%)", customized: true), size: 88)
+            BotFace(appearance: BotAppearance(profile: "researcher", shape: "hexagon", color: "hsl(150 68% 58%)", customized: true), size: 56,
+                    look: [nil, CGVector(dx: -1, dy: 0), CGVector(dx: 1, dy: 0), CGVector(dx: 0, dy: -1), CGVector(dx: 0, dy: 1)][look % 5])
+            BotFace(appearance: BotAppearance(profile: "writer", shape: "cloud", color: "hsl(330 68% 58%)", customized: true), size: 18, blinks: blinks)
+        }
+        .padding(.vertical, 16)
+        .task {
+            var tick = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(0.5))
+                tick += 1
+                if tick % 5 == 0 { boops += 1 }
+                if tick % 3 == 0 { shape = FaceShape.allCases[(FaceShape.allCases.firstIndex(of: shape)! + 1) % FaceShape.allCases.count] }
+                if tick % 2 == 0 { look += 1 }
+                if tick % 4 == 0 { blinks += 1 }
+            }
+        }
+    }
+}
+
+/// `controls/bot-face.elyx` and `flows/bot-faces.elyx`: the seven shapes × thirteen colours at
+/// 56 pt (still, Hermes's first paint), then every mood moving, and the sizes.
 private struct FacesPage: View {
-    private let profiles: [(String, String?, String?)] = [
-        ("default", nil, nil),
-        ("researcher", "hexagon", "hsl(150 68% 58%)"),
-        ("writer", "cloud", "hsl(330 68% 58%)"),
-        ("scout", "triangle", "hsl(30 68% 58%)"),
-        ("pill", "pill", "hsl(210 68% 58%)"),
-        ("sun", "circle", "hsl(60 68% 58%)"),
-        ("drop", "drop", "hsl(240 68% 58%)"),
-    ]
+    /// The board's rows and columns: default violet, then the twelve swatches.
+    private static let shapes: [FaceShape] = [.squircle, .circle, .pill, .hexagon, .triangle, .cloud, .drop]
+    private static let colors: [FaceColor] = [.defaultViolet] + FaceColor.swatches
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            ForEach([96, 40, 28] as [CGFloat], id: \.self) { size in
-                HStack(alignment: .bottom, spacing: 18) {
-                    ForEach(profiles, id: \.0) { profile in
-                        BotFace(appearance: BotAppearance(profile: profile.0, shape: profile.1, color: profile.2, customized: profile.1 != nil), size: size)
+            Grid(horizontalSpacing: 12, verticalSpacing: 10) {
+                ForEach(Self.shapes, id: \.self) { shape in
+                    GridRow {
+                        ForEach(Array(Self.colors.enumerated()), id: \.offset) { _, color in
+                            StillFace(look: FaceLook(shape: shape, color: color), size: 56)
+                        }
                     }
                 }
             }
+            HStack(alignment: .bottom, spacing: 22) {
+                ForEach(FaceMood.allCases, id: \.self) { mood in
+                    VStack(spacing: 6) {
+                        BotFace(appearance: BotAppearance(profile: "default"), size: 56, mood: mood, boopable: true)
+                        Text(mood.rawValue).font(.caption2).foregroundStyle(Theme.secondaryText)
+                    }
+                }
+            }
+            MotionChecks()
             HStack(alignment: .bottom, spacing: 18) {
-                BotFace(appearance: BotAppearance(profile: "default"), size: 56, mood: .thinking)
-                BotFace(appearance: BotAppearance(profile: "default"), size: 56, mood: .happy)
-                BotFace(appearance: BotAppearance(profile: "default"), size: 56, mood: .listening)
-                BotFace(appearance: BotAppearance(profile: "writer", shape: "cloud", color: "hsl(330 68% 58%)", customized: true), size: 56, mood: .thinking)
+                ForEach([160, 120, 88, 56, 36, 32, 28, 24, 20, 18] as [CGFloat], id: \.self) { size in
+                    BotFace(appearance: BotAppearance(profile: "writer", shape: "cloud", color: "hsl(330 68% 58%)", customized: true), size: size, mood: size == 56 ? .working : .idle)
+                }
             }
         }
     }

@@ -34,6 +34,15 @@ struct RootView: View {
                         switch UserDefaults.standard.string(forKey: "HERMES_OPEN") {
                         case "tasks": workspace.selection = .tasks
                         case "skills": workspace.selection = .skills
+                        case "bots":
+                            workspace.sidebarMode = .bots
+                            workspace.selection = nil
+                        case "new-bot":
+                            workspace.sidebarMode = .bots
+                            for _ in 0..<40 where workspace.roster?.isConnected != true {
+                                try? await Task.sleep(for: .milliseconds(250))
+                            }
+                            workspace.roster?.isCreatingBot = true
                         case let page? where page.hasPrefix("bot:"):
                             workspace.sidebarMode = .bots
                             workspace.selection = .bot(String(page.dropFirst(4)))
