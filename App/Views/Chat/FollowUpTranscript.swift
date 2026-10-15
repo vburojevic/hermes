@@ -124,6 +124,10 @@ struct RedirectMark: View {
 /// sent without asking.
 struct SteerMissedCard: View {
     let text: String
+    var title = String(localized: "Hermes finished before reading your note")
+    var sendTitle = String(localized: "Send as Message")
+    /// Where it sits: at the person's side in the chat; full width in a helper's card.
+    var alignment: Alignment = .trailing
     let onDiscard: () -> Void
     let onSend: () -> Void
 
@@ -132,7 +136,7 @@ struct SteerMissedCard: View {
             HStack(spacing: 6) {
                 Image(systemName: FollowUpMode.steer.symbol)
                     .font(.system(size: 12, weight: .semibold))
-                Text("Hermes finished before reading your note")
+                Text(title)
                     .font(.footnote.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -149,7 +153,7 @@ struct SteerMissedCard: View {
                 }
                 .buttonStyle(MissedButtonStyle(isInk: false))
                 Button(action: onSend) {
-                    Text("Send as Message")
+                    Text(sendTitle)
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 36)
                 }
@@ -159,7 +163,7 @@ struct SteerMissedCard: View {
         .padding(EdgeInsets(top: 12, leading: 14, bottom: 14, trailing: 14))
         .frame(maxWidth: 460, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(maxWidth: .infinity, alignment: alignment)
         .accessibilityElement(children: .contain)
     }
 }

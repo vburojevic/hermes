@@ -157,6 +157,14 @@ struct HermesCommands: Commands {
             .keyboardShortcut("r", modifiers: .command)
             .disabled(model.currentWorkspace?.currentConversation.sessionID == nil && !model.isShowingBotChat)
 
+            // The chat's helpers (`docs/helpers.md`): the Team inspector, or the Team page.
+            let helpers = model.currentWorkspace?.currentConversation.helpers
+            Button(helpers?.shownTeam == nil ? "Show Team" : "Hide Team") {
+                helpers?.toggleTeam()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .option])
+            .disabled(helpers?.latestTeamID == nil)
+
             Button("Next Conversation") {
                 model.currentWorkspace?.selectAdjacent(1)
             }

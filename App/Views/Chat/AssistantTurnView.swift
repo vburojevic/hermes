@@ -10,7 +10,10 @@ struct AssistantTurnView: View {
     var status: String?
     var isStopping = false
     var onBranch: BranchAction?
+    /// Helper teams no call in the transcript claims: the latest reply shows them.
+    var extraTeamIDs: [String] = []
 
+    @Environment(\.helperStore) private var helperStore
     @AppStorage(PreferenceKey.showUsage) private var alwaysShowsUsage = false
     @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
     @State private var showsUsage = false
@@ -54,7 +57,17 @@ struct AssistantTurnView: View {
         }
     }
 
+    /// The turn handed work to helpers (`delegate_task`), or shows a team nothing else claims.
+    /// Only then does it read the helpers, so a busy team redraws just its own turn.
+    private var delegates: Bool {
+        !extraTeamIDs.isEmpty || turn.steps.contains { step in
+            if case .tool(let tool) = step { return tool.name == "delegate_task" }
+            return false
+        }
+    }
+
     var body: some View {
+        let teams = delegates ? helperStore.map { TurnTeams.slots(for: turn, extra: extraTeamIDs, store: $0) } ?? [] : []
         VStack(alignment: .leading, spacing: 12) {
             // Hermes warns as the agent starts (a compression setting, a refusal): above the work.
             if let warning = turn.warning {
@@ -62,13 +75,17 @@ struct AssistantTurnView: View {
                     .transition(.opacity.combined(with: .offset(y: -6)))
             }
             if showsWork {
-                WorkSummaryView(turn: turn, status: status, isStopping: isStopping, isExpanded: isExpanded) {
+                WorkSummaryView(turn: turn, status: status, isStopping: isStopping, helpers: HelperHeadline(teams), isExpanded: isExpanded) {
                     userExpanded = !isExpanded
                     if turn.usage != nil { withAnimation(Theme.spring) { showsUsage.toggle() } }
                 }
             }
             if let models = turn.models {
                 ModelsCard(progress: models, isWorking: turn.isWorking)
+            }
+            // The team where the delegation happened, after what Hermes said before it.
+            if let helperStore, !teams.isEmpty {
+                TurnTeams(slots: teams, turnIsWorking: turn.isWorking, store: helperStore)
             }
             // Steers Hermes read come before what it went on to say.
             ForEach(steerBubbles.filter { !$0.isPending }) { bubble in
@@ -266,6 +283,8 @@ struct WorkSummaryView: View {
     let turn: AssistantTurn
     var status: String?
     var isStopping = false
+    /// The turn's helpers: they keep it working after its reply (background delegation).
+    var helpers: HelperHeadline?
     /// Whether the steps show; the reply owns it, as what it shows below depends on it.
     let isExpanded: Bool
     /// The header was tapped: open or close the steps.
@@ -281,9 +300,11 @@ struct WorkSummaryView: View {
 
     private var isWaiting: Bool { turn.state == .waitingForApproval }
 
+    private var helpersWorking: Bool { helpers?.isWorking == true }
+
     private var title: String {
         if isWaiting { return String(localized: "Waiting for your approval") }
-        return turn.isWorking ? workingTitle : doneTitle
+        return turn.isWorking || helpersWorking ? workingTitle : doneTitle
     }
 
     private func show(_ new: String) {
@@ -339,10 +360,10 @@ struct WorkSummaryView: View {
             onToggle()
         } label: {
             HStack(spacing: 6) {
-                TurnGlyph(phase: isWaiting ? .waiting : (turn.isWorking ? .working : .done))
+                TurnGlyph(phase: isWaiting ? .waiting : (turn.isWorking || helpersWorking ? .working : .done))
                 TickerTitle(
                     text: shownTitle ?? title,
-                    shimmers: turn.isWorking && !isWaiting,
+                    shimmers: (turn.isWorking || helpersWorking) && !isWaiting,
                     tint: isWaiting ? Theme.warning : Theme.tertiaryText
                 )
                 if hasSteps, !isWaiting {
@@ -369,7 +390,7 @@ struct WorkSummaryView: View {
         }
         .buttonStyle(.plain)
         .disabled(!hasSteps && turn.usage == nil)
-        .accessibilityLabel(turn.isWorking ? workingTitle : doneTitle)
+        .accessibilityLabel(title)
         .accessibilityHint(!hasSteps ? "" : (isExpanded ? "Hides the steps" : "Shows the steps"))
     }
 
@@ -377,6 +398,9 @@ struct WorkSummaryView: View {
         if isStopping { return String(localized: "Stopping…") }
         if turn.state == .waitingForApproval { return String(localized: "Waiting for your approval") }
         if let status { return status }
+        if let helpers, helpers.isWorking {
+            return helpers.count == 1 ? String(localized: "Working with 1 helper…") : String(localized: "Working with \(helpers.count) helpers…")
+        }
         if let current = turn.steps.last {
             switch current {
             case .tool(let tool) where tool.status == .running:
@@ -394,6 +418,10 @@ struct WorkSummaryView: View {
         let duration = turn.finishedAt.flatMap { end in turn.startedAt.map { end.timeIntervalSince($0) } }
         let tools = turn.toolCount
         let time = duration.map { Formatting.duration($0) }
+        if let helpers, helpers.count > 0 {
+            let team = helpers.count == 1 ? String(localized: "1 helper") : String(localized: "\(helpers.count) helpers")
+            return time.map { String(localized: "Worked for \($0) · \(team)") } ?? String(localized: "Worked with \(team)")
+        }
         switch (tools, time) {
         case (0, let time?): return String(localized: "Thought for \(time)")
         case (0, nil): return String(localized: "Thoughts")

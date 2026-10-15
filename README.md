@@ -21,6 +21,11 @@ split view on iPad and Mac.
   run in its primary folder and group by branch, worktree and task worktree, as in Hermes Desktop;
   start a chat in a project, move chats between projects, and see what Hermes knows about it.
   Needs Bot Mode (the `projects.*` calls are on the backend's socket).
+- **Helpers**: when Hermes splits a task across sub-agents, the turn shows the team live (what
+  each helper is doing, numbered 1, 2… and 1.1 when nested), then folds into a summary. The Team
+  page (iPhone, iPad portrait) or Team inspector (Mac, iPad landscape, ⌥⌘T) lets you stop or steer
+  one helper, read its live transcript, and pause new helpers on the gateway. Finished runs are
+  saved to the gateway's spawn-tree archive and reopen after a restart. Needs Bot Mode.
 - **Tasks**: Hermes' scheduled jobs — create, run now, pause, resume, delete.
 - **Skills**: browse the gateway's skills and tool sets; start a chat with a skill.
 - Markdown with tinted code blocks, tables, task lists and quotes; copy, share and read aloud.
@@ -214,3 +219,11 @@ sleep" runs a long test turn so Hermes App shows as working. Debug flags: `-HERM
 `-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
 `-HERMES_OPEN project-chat:<id>`, `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin` and
 `-HERMES_DRAWER YES`.
+
+It also has helpers (`Tools/mock-hermes/helpers.py`), shaped like Hermes' background delegation. A
+message with "helpers" (or "swift 6") runs a team of four: one auditing for over a minute, one done
+in seconds, one timing out, one waiting for a free slot; "nested helpers" runs a lead with three
+sub-helpers; add "slowly" for screenshots. A steer containing "late" lands after the helper's last
+step (missed) and one containing "reject" is rejected. "Swift 6 readiness check" has a saved past
+run. Debug flags, after `-HERMES_SEND`: `-HERMES_HELPERS team|helper:<n>|steer:<n>|stop:<n>`,
+`-HERMES_HELPERS_AFTER <seconds>` and `-HERMES_HELPERS_NOTE <text>` (sends the steer).

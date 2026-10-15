@@ -63,6 +63,7 @@ struct TranscriptView: View {
         let first = firstShownIndex(in: all)
         let separators = Self.separators(in: all, from: first, datesOpening: conversation.openedWithHistory)
         let rows = all[first...].map { DisplayRow(key: conversation.displayID(for: $0), item: $0) }
+        let unclaimed = Self.unclaimedTeams(in: all, store: conversation.helpers)
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 if first > 0 || conversation.hasEarlierMessages {
@@ -72,7 +73,7 @@ struct TranscriptView: View {
                         .frame(maxWidth: .infinity)
                 }
                 ForEach(rows, id: \.key) { shown in
-                    rowView(shown.item, date: separators[shown.item.id])
+                    rowView(shown.item, date: separators[shown.item.id], extraTeams: shown.item.id == unclaimed.turnID ? unclaimed.teams : [])
                         .transition(Self.insertion(for: shown.item))
                 }
                 ForEach(conversation.processes) { process in
@@ -118,6 +119,7 @@ struct TranscriptView: View {
             .frame(maxWidth: .infinity)
         }
         .environment(\.references, references)
+        .environment(\.helperStore, conversation.isBotChat ? nil : conversation.helpers)
         .environment(\.disclosureWillToggle, DisclosureAction {
             keepsTop = true
             keepsTopReset?.cancel()
@@ -303,13 +305,32 @@ struct TranscriptView: View {
         }
     }
 
-    private func rowView(_ item: TranscriptItem, date: Date?) -> some View {
+    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String]) -> some View {
         VStack(alignment: .leading, spacing: 30) {
             if let date {
                 DateSeparator(date: date)
             }
-            row(for: item)
+            row(for: item, extraTeams: extraTeams)
         }
+    }
+
+    /// Helper teams no `delegate_task` in the chat claims (seen before the call returned, or a chat
+    /// opened mid-run), for the latest reply. Reads only the store's team list, which changes when
+    /// a team comes or goes, not on every helper event.
+    static func unclaimedTeams(in rows: [TranscriptItem], store: HelperStore) -> (turnID: String?, teams: [String]) {
+        guard !store.teamKeys.isEmpty else { return (nil, []) }
+        var claimed = Set<String>()
+        var latest: String?
+        for item in rows {
+            guard case .assistant(let turn) = item else { continue }
+            latest = turn.id
+            for step in turn.steps {
+                guard case .tool(let tool) = step, tool.name == "delegate_task" else { continue }
+                if let call = tool.callID { claimed.insert(call) }
+                if let stored = StoredDelegation(tool: tool) { claimed.insert(stored.delegationID) }
+            }
+        }
+        return (latest, store.unanchoredTeamIDs(claimed: claimed))
     }
 
     /// Where the end of the chat is, and what moves it.
@@ -420,7 +441,7 @@ struct TranscriptView: View {
     static let rowsAnimation = Animation.smooth(duration: 0.36)
 
     @ViewBuilder
-    private func row(for item: TranscriptItem) -> some View {
+    private func row(for item: TranscriptItem, extraTeams: [String] = []) -> some View {
         switch item {
         case .user(let entry):
             if entry.isSteer {
@@ -444,7 +465,8 @@ struct TranscriptView: View {
                 pendingSteers: turn.id == conversation.live?.turn.id ? conversation.followUps.filter { $0.state == .steerWaiting && $0.turnID == turn.id } : [],
                 status: turn.isWorking ? conversation.liveStatus : nil,
                 isStopping: turn.isWorking && conversation.isStopping,
-                onBranch: branchAction(for: turn.id)
+                onBranch: branchAction(for: turn.id),
+                extraTeamIDs: extraTeams
             )
         case .notice(let notice) where notice.kind == "background-sent":
             if let caption = FollowUpRecord(text: notice.text, state: .background(answer: ""), turnID: nil).caption {

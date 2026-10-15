@@ -1346,6 +1346,10 @@ def main():
         projects = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(projects)
         projects.install(globals(), gateway, chats)
+        spec = importlib.util.spec_from_file_location("mock_helpers", here / "helpers.py")
+        helpers = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helpers)
+        helpers.install(globals(), gateway, chats)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib

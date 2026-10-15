@@ -72,6 +72,7 @@ struct RootView: View {
                         }
                         await openProjectSheet(in: workspace)
                         await sendDebugMessage(in: workspace)
+                        await openDebugHelpers(in: workspace)
                         #endif
                     }
             } else {
@@ -245,6 +246,38 @@ struct RootView: View {
         // steer|redirect|sendNext|askAside|background` picks the mode, `-HERMES_FOLLOWUP_SEND YES`
         // sends it). Several follow-ups go one after another, separated by `|`.
         await sendDebugFollowUp(in: conversation)
+    }
+
+    /// `-HERMES_HELPERS team|helper:<n>|steer:<n>|stop:<n>` opens the chat's latest team, its helper
+    /// n, a steer to it, or stops it, `-HERMES_HELPERS_AFTER <seconds>` after launch (helper screenshots).
+    private func openDebugHelpers(in workspace: BotWorkspace) async {
+        guard let action = UserDefaults.standard.string(forKey: "HERMES_HELPERS"), !action.isEmpty else { return }
+        let delay = UserDefaults.standard.string(forKey: "HERMES_HELPERS_AFTER").flatMap(Double.init) ?? 6
+        try? await Task.sleep(for: .seconds(delay))
+        let conversation = workspace.currentConversation
+        let store = conversation.helpers
+        guard let team = store.teams.last else { return }
+        let parts = action.split(separator: ":")
+        let index = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
+        let helper = team.topLevel.first { $0.taskIndex == index - 1 }
+        store.shownTeam = team.id
+        guard parts[0] != "team", let helper else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        store.shownHelper = helper.id
+        if parts[0] == "stop" {
+            try? await Task.sleep(for: .milliseconds(700))
+            store.stop(helper)
+        }
+        if parts[0] == "steer" {
+            try? await Task.sleep(for: .milliseconds(700))
+            conversation.helperSteerTarget = HelperSteerTarget(helperID: helper.id, number: team.number(of: helper))
+            // `-HERMES_HELPERS_NOTE <text>` sends it.
+            if let note = UserDefaults.standard.string(forKey: "HERMES_HELPERS_NOTE"), !note.isEmpty {
+                try? await Task.sleep(for: .milliseconds(600))
+                conversation.draft = note
+                conversation.send()
+            }
+        }
     }
 
     private func sendDebugFollowUp(in conversation: ConversationModel) async {

@@ -26,6 +26,8 @@ struct ChatScreen: View {
     /// Voice mode, while it runs (open or minimised).
     @State private var voice: VoiceSession?
     @State private var showsPermissions = false
+    /// The chat with its inspector, for choosing where the Team opens.
+    @State private var screenSize: CGSize = .zero
 
     private var isWide: Bool {
         #if os(macOS)
@@ -33,6 +35,35 @@ struct ChatScreen: View {
         #else
         horizontalSizeClass == .regular
         #endif
+    }
+
+    /// Mac and iPad landscape show the Team in an inspector; iPhone and iPad portrait push it.
+    private var usesTeamInspector: Bool {
+        #if os(macOS)
+        true
+        #else
+        horizontalSizeClass == .regular && screenSize.width > screenSize.height && screenSize.width >= 700
+        #endif
+    }
+
+    private var helperNavigator: HelperNavigator {
+        let store = conversation.helpers
+        let inspector = usesTeamInspector
+        return HelperNavigator(
+            openTeam: { id in
+                store.pushedHelper = nil
+                store.shownHelper = nil
+                store.shownTeam = id
+            },
+            openHelper: { helperID, teamID in
+                if inspector {
+                    store.shownTeam = teamID
+                    store.shownHelper = helperID
+                } else {
+                    store.pushedHelper = helperID
+                }
+            }
+        )
     }
 
     /// Set when this is a Bot's Bot Chat.
@@ -75,6 +106,13 @@ struct ChatScreen: View {
         #if os(macOS)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
+        .environment(\.helperNavigator, helperNavigator)
+        .modifier(HelperPresentation(conversation: conversation, workspace: workspace, usesInspector: usesTeamInspector, navigator: helperNavigator))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { screenSize = $0 }
+        // Steer from the inspector: the chat's composer takes the note.
+        .onChange(of: conversation.helperSteerTarget) { _, target in
+            if target != nil, usesTeamInspector { composerFocused = true }
+        }
         .navigationTitle(navigationTitle)
         .toolbarTitleDisplayMode(.inline)
         .task(id: conversation.id) {
@@ -539,5 +577,45 @@ struct ErrorBanner: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
+    }
+}
+
+/// Where helpers show (`docs/helpers.md` §3): the Team inspector beside the chat, or the Team page
+/// and a helper pushed onto the chat's stack.
+private struct HelperPresentation: ViewModifier {
+    let conversation: ConversationModel
+    let workspace: BotWorkspace
+    let usesInspector: Bool
+    let navigator: HelperNavigator
+
+    func body(content: Content) -> some View {
+        let store = conversation.helpers
+        content
+            .inspector(isPresented: Binding(
+                get: { usesInspector && store.shownTeam != nil },
+                set: { if !$0 { store.shownTeam = nil; store.shownHelper = nil } }
+            )) {
+                TeamInspector(store: store, conversation: conversation, workspace: workspace)
+                    .environment(\.helperNavigator, navigator)
+                    .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
+            }
+            .navigationDestination(item: Binding(
+                get: { usesInspector ? nil : store.shownTeam },
+                set: { id in
+                    store.shownTeam = id
+                    if id == nil { store.shownHelper = nil }
+                }
+            )) { teamID in
+                TeamView(store: store, conversation: conversation, workspace: workspace, teamID: teamID, style: .page)
+                    .navigationDestination(item: Binding(get: { store.shownHelper }, set: { store.shownHelper = $0 })) { helperID in
+                        HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
+                    }
+            }
+            .navigationDestination(item: Binding(
+                get: { usesInspector ? nil : store.pushedHelper },
+                set: { store.pushedHelper = $0 }
+            )) { helperID in
+                HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
+            }
     }
 }

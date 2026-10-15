@@ -588,7 +588,7 @@ public enum TranscriptBuilder {
         case "model_switch": return trimmed.isEmpty ? "Model changed" : trimmed
         case "auto_continue": return "Resumed an interrupted turn"
         case "failed_turn": return trimmed.isEmpty ? "This turn failed" : trimmed
-        case "async_delegation_complete": return "Background task finished"
+        case "async_delegation_complete": return "Helpers finished"
         case "process_complete": return "Background process finished"
         default: return trimmed.isEmpty ? kind.replacingOccurrences(of: "_", with: " ").capitalized : trimmed
         }

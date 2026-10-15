@@ -47,6 +47,7 @@ struct ComposerView: View {
 
     private var placeholder: String {
         if isOffline { return String(localized: "Offline") }
+        if let target = conversation.helperSteerTarget { return String(localized: "Note for helper \(target.number)") }
         if let roster, let name = conversation.botName {
             let title = roster.bot(named: name)?.title ?? name
             return String(localized: "Message \(title)")
@@ -204,6 +205,18 @@ struct ComposerView: View {
                     text: String(localized: "Editing queued message \(conversation.gatewayQueued.count + editing.index + 1) · Send puts it back"),
                     closeLabel: "Stop editing",
                     onClose: { conversation.cancelEditingQueued() }
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .transition(Self.rowAppears)
+            }
+            if let target = conversation.helperSteerTarget {
+                // Steering one helper (`helperSteer`): Send goes to it, not to Hermes.
+                ComposerStrip(
+                    symbol: "arrow.turn.up.right",
+                    text: String(localized: "To helper \(target.number) · it reads this after its current step"),
+                    closeLabel: "Stop steering",
+                    onClose: { conversation.helperSteerTarget = nil }
                 )
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
@@ -618,7 +631,7 @@ struct ComposerView: View {
                 return true
             }
             guard sendWithReturn else { return false }
-            if conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
+            if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
                 conversation.send()
             }
             return true
@@ -633,7 +646,7 @@ struct ComposerView: View {
             // ⌘Return: Redirect while a turn runs (where the gateway can); otherwise Send.
             if conversation.canSendFollowUp, sendWithReturn, conversation.availableFollowUpModes.contains(.redirect) {
                 conversation.sendFollowUp(.redirect)
-            } else if conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
+            } else if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
                 conversation.send()
             }
             return true
@@ -742,6 +755,7 @@ private struct TrailingButton: View {
     private enum Mode { case voice, send, stop }
 
     private var mode: Mode {
+        if conversation.helperSteerTarget != nil { return .send }
         if conversation.isWorking {
             let hasContent = conversation.hasDraftText || !conversation.attachments.isEmpty || !conversation.files.isEmpty
             return hasContent || conversation.draftCommand != nil || conversation.editingQueued != nil ? .send : .stop
@@ -773,6 +787,7 @@ private struct TrailingButton: View {
         switch mode {
         case .stop: return !conversation.isStopping
         case .send:
+            if conversation.helperSteerTarget != nil { return conversation.hasDraftText }
             // A command waits for its argument before Send turns on (`composerCommand`).
             if conversation.draftCommand != nil { return conversation.canSendCommand }
             if conversation.editingQueued != nil { return true }
@@ -810,7 +825,7 @@ private struct TrailingButton: View {
         .disabled(!isEnabled)
         // While a turn runs ⌘Return redirects; the field handles it.
         .keyboardShortcut(mode == .send && !conversation.isWorking ? KeyboardShortcut(.return, modifiers: .command) : nil)
-        .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? (conversation.isWorking ? sendLabel : "Send") : "Voice mode")
+        .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? (conversation.helperSteerTarget != nil ? "Send to helper" : conversation.isWorking ? sendLabel : "Send") : "Voice mode")
         .help(mode == .stop ? "Stop (⌘.)" : mode == .send ? "Send (⌘↩)" : "Voice mode")
     }
 }

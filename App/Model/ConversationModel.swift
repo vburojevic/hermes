@@ -226,6 +226,7 @@ final class ConversationModel: Identifiable {
     /// Something typed while a turn runs can go out now.
     var canSendFollowUp: Bool {
         isWorking && (hasDraftText || !attachments.isEmpty || !files.isEmpty) && !isStopping && draftCommand == nil
+            && helperSteerTarget == nil
     }
 
     /// With the field empty and nothing running, Send sends the first queued message.
@@ -339,6 +340,39 @@ final class ConversationModel: Identifiable {
     /// The socket that carries this chat over the gateway protocol: the Bot's roster, or for a
     /// normal chat the gateway's Bot Mode backend (`nil` without one).
     private var gatewayRoster: BotRoster? { roster ?? workspace?.roster }
+    /// The socket helper calls go over (`HelperStore`).
+    var gatewayRosterForHelpers: BotRoster? { gatewayRoster }
+
+    // MARK: Helpers (docs/helpers.md)
+
+    @ObservationIgnored private var helperStore: HelperStore?
+    /// This chat's helpers: live teams, saved runs, notes sent to them.
+    var helpers: HelperStore {
+        if let helperStore { return helperStore }
+        let store = HelperStore(conversation: self)
+        helperStore = store
+        return store
+    }
+
+    /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`.
+    var helperSteerTarget: HelperSteerTarget?
+
+    /// A note for the helper being steered is ready to go.
+    var canSteerHelper: Bool { helperSteerTarget != nil && hasDraftText }
+
+    /// A message from elsewhere in the app (Ask Hermes to Retry, a helper's missed note): a steer
+    /// into the running turn, held for after it, or a new message.
+    func sendMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if isWorking, !isStopping, turnUsesGateway {
+            steer(trimmed)
+        } else if isWorking || isFinishing || isBotTurnOpen {
+            queue.insert(QueuedFollowUp(text: trimmed), at: 0)
+        } else {
+            start(text: trimmed, images: [], files: [])
+        }
+    }
 
     /// The profile gateway calls are scoped to: the Bot, or the gateway's own profile.
     private var gatewayProfile: String? { botName ?? workspace?.bot.profileName }
@@ -863,6 +897,14 @@ final class ConversationModel: Identifiable {
     // MARK: - Sending
 
     func send() {
+        if let target = helperSteerTarget {
+            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            draft = ""
+            helperSteerTarget = nil
+            if let helper = helpers.helper(target.helperID) { helpers.steer(helper, text: text) }
+            return
+        }
         if let command = draftCommand {
             let argument = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard canSendCommand else { return }
@@ -2315,6 +2357,8 @@ extension ConversationModel {
             runtimeSessionID = runtime
             if !isBotChat { roster.attach(self) }
             if let info = LiveWorkspace(info: snapshot["info"]) { liveWorkspace = info }
+            // Helpers that ran on while nobody watched (`subagent.list`).
+            if !isBotChat { Task { await helpers.reconcile() } }
             let running = snapshot["running"]?.boolValue ?? false
             if running, live == nil {
                 beginRemoteTurn()
@@ -2587,6 +2631,15 @@ extension ConversationModel {
 
     /// Events for this chat, routed by the roster.
     func receive(_ event: GatewayEvent) {
+        // Helpers report on this session, during the turn and after it (background delegation):
+        // their team card keeps its own state and never reopens the turn.
+        if event.type.hasPrefix("subagent.") {
+            helpers.receive(event)
+            return
+        }
+        if event.type == "tool.start" || event.type == "tool.complete", event.payload["name"]?.stringValue == "delegate_task" {
+            helpers.delegationEvent(event)
+        }
         switch event.type {
         case "request.cancel":
             withdrawRequest(id: event.payload["id"]?.stringValue, method: event.payload["method"]?.stringValue, reason: event.payload["reason"]?.stringValue)
