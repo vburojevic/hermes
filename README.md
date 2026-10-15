@@ -33,6 +33,12 @@ split view on iPad and Mac.
   catalog or a git link, settings, updates that ask before widening access) and the built-in
   toolsets. Keys are write-only: the app shows an env name and "Set", never the value. Needs Bot
   Mode.
+- **Undo and checkpoints**: with checkpoints on, Hermes saves a chat's folder before a turn edits
+  files. A reply that changed files ends with an undo bar: Review what changed, or Undo (the files
+  go back, the turn leaves the chat, your message returns to the composer; it waits while Hermes
+  works). Checkpoints… (a chat's menu; on the Mac the Chat menu, ⌥⌘Z for Undo) lists older points,
+  restores one file at any time or all of them, and turns checkpoints on when they're off. Needs
+  Bot Mode.
 - **Tasks**: Hermes' scheduled jobs — create, run now, pause, resume, delete.
 - **Skills**: browse the gateway's skills and tool sets; start a chat with a skill.
 - Markdown with tinted code blocks, tables, task lists and quotes; copy, share and read aloud.
@@ -245,3 +251,13 @@ with image generation off. `mock.nous {"signed_in": false}` shows the Nous sign-
 `mock.connections.reset` puts everything back. Debug flags, after `-HERMES_OPEN settings`:
 `-HERMES_APPS_TOOLS apps|mcp|plugins|builtin`, with `:<app slug>`, `:<server>`, `:<plugin key>`,
 `mcp:add` or `plugins:update` (on the Mac the flag alone opens the Apps & Tools tab).
+
+And checkpoints (`Tools/mock-hermes/checkpoints.py`), shaped like `hermes serve`: the chat "Reconnect
+and backoff" in Hermes App has three turns that edited files and four checkpoints (14:31, 13:02,
+yesterday 18:40 twice); a restore overwrites the files (files created later stay), drops the newest
+turn and reports Models/weights.bin as too large to checkpoint; a whole restore mid-turn is refused
+with 4009. New turns in a project folder save a checkpoint before their first edit. `--checkpoints
+off` starts with them off (Turn On writes `PUT /api/config`; open chats keep the old setting until
+reattached); `mock.checkpoints {"enabled", "now", "busy", "container"}` switches states and
+`mock.checkpoints.reset` puts everything back. Debug flags: `-HERMES_OPEN chat:prj_undo` with
+`-HERMES_CHECKPOINTS review|undo|timeline|detail[:n]|restore-all[:n]|off`.
