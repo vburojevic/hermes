@@ -142,39 +142,37 @@ struct ChoiceRow: View {
     }
 }
 
-/// "Something else…": becomes a field with Send (`otherRow`).
+/// "Something else…": becomes a field for an answer in your own words (`otherRow`). It's the
+/// card's answer while it holds text (outlined like a pick), sent with the card's own button;
+/// Return sends too.
 struct OtherAnswerRow: View {
     @Binding var text: String
     @Binding var isEditing: Bool
-    let onSend: (String) -> Void
+    let onSubmit: () -> Void
     @FocusState private var focused: Bool
+
+    private var holdsAnswer: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         Group {
             if isEditing {
-                HStack(spacing: 8) {
-                    TextField("Your answer", text: $text, axis: .vertical)
-                        .font(.subheadline)
-                        .lineLimit(1...4)
-                        .textFieldStyle(.plain)
-                        .focused($focused)
-                        .onSubmit { send() }
-                    Button(action: send) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Theme.inkForeground)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.ink, in: Circle())
+                TextField("Your answer", text: $text, axis: .vertical)
+                    .font(.subheadline)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .onSubmit(onSubmit)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(minHeight: 46)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(holdsAnswer ? Theme.primaryText : Theme.hairline, lineWidth: holdsAnswer ? 2 : 1)
                     }
-                    .buttonStyle(PressableStyle())
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityLabel("Send")
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 8)
-                .padding(.vertical, 8)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .onAppear { focused = true }
+                    .onAppear { focused = true }
             } else {
                 Button {
                     isEditing = true
@@ -190,12 +188,6 @@ struct OtherAnswerRow: View {
                 .buttonStyle(PressableStyle())
             }
         }
-    }
-
-    private func send() {
-        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !answer.isEmpty else { return }
-        onSend(answer)
     }
 }
 

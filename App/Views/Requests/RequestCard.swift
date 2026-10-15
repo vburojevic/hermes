@@ -100,8 +100,9 @@ private struct ClarifyCard: View {
                         }
                     }
                     if !question.multiSelect {
-                        OtherAnswerRow(text: $other, isEditing: $editingOther) { text in
-                            record(text)
+                        // What's typed here is the answer, sent like a pick (Return sends too).
+                        OtherAnswerRow(text: $other, isEditing: $editingOther) {
+                            if hasAnswer { advance() }
                         }
                     }
                 }
@@ -110,9 +111,27 @@ private struct ClarifyCard: View {
         }
         .onChange(of: step) {
             freeText = answers[question.id] ?? ""
-            other = ""
-            editingOther = false
+            // Back to a question answered in words: the words, in their field.
+            let earlier = answers[question.id].flatMap { question.choices.contains($0) ? nil : $0 }
+            other = earlier ?? ""
+            editingOther = earlier != nil && !question.choices.isEmpty
         }
+        .onChange(of: other) { _, text in
+            guard editingOther, !question.multiSelect, !question.choices.isEmpty else { return }
+            let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            answers[question.id] = said.isEmpty ? nil : said
+        }
+        .onChange(of: editingOther) { _, editing in
+            // Writing an answer of your own sets the picks aside.
+            guard editing, !question.multiSelect, !question.choices.isEmpty else { return }
+            let said = other.trimmingCharacters(in: .whitespacesAndNewlines)
+            answers[question.id] = said.isEmpty ? nil : said
+        }
+    }
+
+    /// The current question has an answer to send (a pick, or words of your own).
+    private var hasAnswer: Bool {
+        !(answers[question.id] ?? "").isEmpty
     }
 
     private var title: String {
@@ -152,21 +171,16 @@ private struct ClarifyCard: View {
             ) {
                 record(freeText.trimmingCharacters(in: .whitespacesAndNewlines))
             }
-        } else if isSteps {
+        } else {
+            // A pick is a choice, not a send: it's confirmed here (Return too, on a keyboard).
             CardFooter(
-                secondary: step > 0 ? String(localized: "Back") : String(localized: "Skip"),
-                onSecondary: { step > 0 ? (step -= 1) : skipQuestion() },
+                secondary: isSteps && step > 0 ? String(localized: "Back") : String(localized: "Skip"),
+                onSecondary: { isSteps && step > 0 ? (step -= 1) : skipQuestion() },
                 primary: isLast ? String(localized: "Send") : String(localized: "Next"),
-                primaryEnabled: answers[question.id] != nil
+                primaryEnabled: hasAnswer
             ) {
                 advance()
             }
-        } else {
-            Button(String(localized: "Skip — let \(conversation.askerName) decide")) { skipQuestion() }
-                .font(.subheadline)
-                .foregroundStyle(Theme.secondaryText)
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
         }
     }
 
@@ -175,11 +189,11 @@ private struct ClarifyCard: View {
             var set = picked[question.id, default: []]
             if set.contains(choice) { set.remove(choice) } else { set.insert(choice) }
             picked[question.id] = set
-        } else if isSteps {
-            answers[question.id] = choice
         } else {
-            // One question, one tap: it's sent.
-            record(choice)
+            // Picked, not sent: Send (or Next) confirms. Picking sets aside words of your own.
+            answers[question.id] = choice
+            editingOther = false
+            other = ""
         }
     }
 
@@ -463,7 +477,7 @@ private struct ChooseCard: View {
                 secondary: String(localized: "Skip"),
                 onSecondary: { conversation.skip(request) },
                 primary: choice.multiSelect && selected.count > 0 ? String(localized: "Continue with \(selected.count)") : String(localized: "Continue"),
-                primaryEnabled: !selected.isEmpty
+                primaryEnabled: !selected.isEmpty || !said.isEmpty
             ) {
                 send()
             }
@@ -472,6 +486,15 @@ private struct ChooseCard: View {
             selected = Set(choice.preselected)
             if choice.kind == "theme", selected.isEmpty, let first = choice.options.first { selected = [first.id] }
         }
+        .onChange(of: editingOther) { _, editing in
+            // Writing an answer of your own sets the picks aside.
+            if editing { selected = [] }
+        }
+    }
+
+    /// An answer in your own words ("Something else…"), while it's being given.
+    private var said: String {
+        editingOther ? other.trimmingCharacters(in: .whitespacesAndNewlines) : ""
     }
 
     private var title: String {
@@ -533,15 +556,21 @@ private struct ChooseCard: View {
                     } else {
                         selected = [option.id]
                     }
+                    editingOther = false
+                    other = ""
                 }
             }
-            OtherAnswerRow(text: $other, isEditing: $editingOther) { said in
-                conversation.answer(request, with: .object(["picked": .null, "said": .string(said)]), receipt: String(localized: "Answered · \(said)"))
+            OtherAnswerRow(text: $other, isEditing: $editingOther) {
+                if !said.isEmpty { send() }
             }
         }
     }
 
     private func send() {
+        if !said.isEmpty {
+            conversation.answer(request, with: .object(["picked": .null, "said": .string(said)]), receipt: String(localized: "Answered · \(said)"))
+            return
+        }
         let picked = choice.options.filter { selected.contains($0.id) }
         guard !picked.isEmpty else { return }
         let label = picked.map(\.label).joined(separator: ", ")
