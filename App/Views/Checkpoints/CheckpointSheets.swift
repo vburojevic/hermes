@@ -483,12 +483,14 @@ struct CheckpointsTimelineSheet: View {
 struct CheckpointsTimelineList: View {
     let model: CheckpointsModel
     var selected: String?
+    /// The Mac's sheet: the folder is in its header, the rows sit on the sheet, no footer.
+    var isSidebar = false
     let open: (Checkpoint) -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if let folder = model.folder {
+                if let folder = model.folder, !isSidebar {
                     HStack(spacing: 8) {
                         Image(systemName: "folder")
                             .font(.footnote)
@@ -543,6 +545,7 @@ struct CheckpointsTimelineList: View {
             }
             rows
                 .opacity(model.isOnline ? 1 : 0.55)
+            if !isSidebar || model.timeline.isEmpty {
             Text(model.timeline.isEmpty
                  ? (model.justTurnedOn ? String(localized: "Checkpoints are on. They start with the next turn that edits files.") : String(localized: "Nothing to undo yet. Hermes saves the folder before the next turn that edits files."))
                  : CheckpointLimits.footer)
@@ -550,6 +553,7 @@ struct CheckpointsTimelineList: View {
                 .foregroundStyle(Theme.secondaryText)
                 .padding(.horizontal, 20)
                 .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -576,15 +580,16 @@ struct CheckpointsTimelineList: View {
                     )
                     .padding(.leading, 14)
                     .padding(.trailing, 16)
-                    .background(selected == CheckpointsModel.stableKey(checkpoint) ? Theme.rowSelected : .clear)
+                    .background(selected == CheckpointsModel.stableKey(checkpoint) ? Theme.rowSelected : .clear,
+                                in: RoundedRectangle(cornerRadius: isSidebar ? 10 : 0, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .task { await model.loadDiff(checkpoint) }
             }
         }
-        .background(Theme.sheetCell, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .padding(.horizontal, 16)
+        .background(isSidebar ? Color.clear : Theme.sheetCell, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: isSidebar ? 0 : 22, style: .continuous))
+        .padding(.horizontal, isSidebar ? 8 : 16)
     }
 
     private func changedLine(_ checkpoint: Checkpoint) -> String? {

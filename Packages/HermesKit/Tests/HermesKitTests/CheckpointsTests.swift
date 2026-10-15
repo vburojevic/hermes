@@ -126,6 +126,26 @@ struct CheckpointsTests {
         #expect(sent[2].method == "session.undo" && sent[2].params["intent"]?.stringValue == "undo")
     }
 
+    /// The bar counts a reply's own edits the way its diff cards show them.
+    @Test func aRepliesEditsCountChangedLinesOnly() {
+        var patch = ToolActivity(id: "1", name: "patch", status: .succeeded)
+        patch.arguments = .object(["path": .string("Sources/Sync/Backoff.swift"),
+                                   "old_string": .string("func next() -> Duration {\n    attempt += 1\n    return base * attempt"),
+                                   "new_string": .string("func next() -> Duration {\n    attempt += 1\n    return min(base * attempt, cap)\n}")])
+        var write = ToolActivity(id: "2", name: "write_file", status: .succeeded)
+        write.arguments = .object(["path": .string("Tests/ReconnectTests.swift"), "content": .string("import Testing\n@Test func reconnects() {}")])
+        var failed = ToolActivity(id: "3", name: "patch", status: .failed)
+        failed.arguments = .object(["path": .string("README.md")])
+        let read = ToolActivity(id: "4", name: "read_file", status: .succeeded)
+        let turn = AssistantTurn(id: "t", steps: [.tool(patch), .tool(write), .tool(failed), .tool(read)])
+        let edits = TurnFileEdits(turn: turn)
+        #expect(edits.paths == ["Sources/Sync/Backoff.swift", "Tests/ReconnectTests.swift"])
+        #expect(edits.added == 2 + 2 && edits.removed == 1)
+        #expect(TurnFileEdits(turn: AssistantTurn(id: "u", steps: [.tool(read)])).isEmpty)
+        // The card shows the same: kept lines as context.
+        #expect(patch.displayDiff?.components(separatedBy: "\n").dropFirst(2).map { String($0.prefix(1)) } == [" ", " ", "-", "+", "+"])
+    }
+
     @Test func turnsMatchCheckpointsByTime() {
         let base = Date(timeIntervalSince1970: 1_760_000_000.4)
         func user(_ id: String, _ text: String, _ offset: TimeInterval) -> TranscriptItem {

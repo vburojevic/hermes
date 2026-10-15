@@ -26,7 +26,7 @@ struct MacCheckpointsSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(spacing: 0) {
-                    CheckpointsTimelineList(model: model, selected: selected) { checkpoint in
+                    CheckpointsTimelineList(model: model, selected: selected, isSidebar: true) { checkpoint in
                         selected = CheckpointsModel.stableKey(checkpoint)
                         file = nil
                     }
