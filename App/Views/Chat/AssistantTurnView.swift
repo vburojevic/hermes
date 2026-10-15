@@ -75,7 +75,7 @@ struct AssistantTurnView: View {
                 steerBubble(bubble)
             }
             if let shown = shownText {
-                MarkdownView(text: turn.isWorking ? StreamingMarkdown.displayed(shown.text) : shown.text)
+                MarkdownView(text: turn.isWorking ? StreamingMarkdown.displayed(shown.text) : shown.text, caches: !turn.isWorking)
                     .equatable()
                     // Only the tone eases; the words switch at once, never drawn over each other.
                     .animation(.smooth(duration: 0.3)) { $0.opacity(shown.isInterim ? 0.55 : 1) }

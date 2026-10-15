@@ -107,9 +107,7 @@ struct BotRosterSections: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(.isHeader)
         .accessibilityValue(showsHidden ? Text("Expanded") : Text("Collapsed"))
-        .listRowInsets(SidebarMetrics.rowInsets)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
+        .modifier(SidebarRowInsets())
     }
 
     private var errorBinding: Binding<Bool> {

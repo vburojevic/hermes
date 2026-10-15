@@ -60,6 +60,9 @@ final class SentImageStore {
     private let directory: URL
     private var index: [String: [[String]]] = [:]
     private var loaded = false
+    /// Sent this run, possibly not on disk yet.
+    private var recent: [String: ImageAttachment] = [:]
+    private static let writes = DispatchQueue(label: "SentImageStore.writes", qos: .utility)
 
     init(botID: UUID) {
         directory = HermesStorage.applicationSupport
@@ -75,18 +78,25 @@ final class SentImageStore {
     func remember(_ images: [ImageAttachment], conversation: String, text: String) {
         guard !images.isEmpty else { return }
         loadIfNeeded()
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            var names: [String] = []
-            for image in images {
-                let name = image.id.uuidString + ".jpg"
-                try image.jpegData.write(to: directory.appending(path: name), options: .atomic)
-                names.append(name)
+        let files = images.map { (name: $0.id.uuidString + ".jpg", data: $0.jpegData) }
+        let names = files.map(\.name)
+        for (image, name) in zip(images, names) { recent[name] = image }
+        index[Self.key(conversation: conversation, text: text), default: []].append(names)
+        // Written off the main thread, in order; until then `recent` answers for them.
+        let directory = self.directory, indexURL = self.indexURL, index = self.index
+        Self.writes.async {
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                for file in files {
+                    try file.data.write(to: directory.appending(path: file.name), options: .atomic)
+                }
+                try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
+            } catch {
+                // Losing a local preview is harmless; the message itself was sent.
             }
-            index[Self.key(conversation: conversation, text: text), default: []].append(names)
-            try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
-        } catch {
-            // Losing a local preview is harmless; the message itself was sent.
+            Task { @MainActor [weak self] in
+                for name in names { self?.recent[name] = nil }
+            }
         }
     }
 
@@ -95,6 +105,7 @@ final class SentImageStore {
         loadIfNeeded()
         guard let sets = index[Self.key(conversation: conversation, text: text)], occurrence < sets.count else { return [] }
         return sets[occurrence].compactMap { name in
+            if let image = recent[name] { return image }
             guard let data = try? Data(contentsOf: directory.appending(path: name)) else { return nil }
             return ImageAttachment(jpegData: data, id: UUID(uuidString: String(name.dropLast(4))) ?? UUID())
         }
@@ -110,12 +121,15 @@ final class SentImageStore {
             index[key] = nil
             index[new + "\u{1F}" + key.dropFirst(prefix.count)] = value
         }
-        try? JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
+        let indexURL = self.indexURL, index = self.index
+        Self.writes.async { try? JSONEncoder().encode(index).write(to: indexURL, options: .atomic) }
     }
 
     func removeAll() {
-        try? FileManager.default.removeItem(at: directory)
+        let directory = self.directory
+        Self.writes.async { try? FileManager.default.removeItem(at: directory) }
         index = [:]
+        recent = [:]
     }
 
     private func loadIfNeeded() {

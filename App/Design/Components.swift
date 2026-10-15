@@ -79,6 +79,7 @@ struct ShimmerText: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pausesDecorativeMotion) private var motionPaused
+    @State private var sweeping = false
 
     var body: some View {
         // One line, always: a long status is a headline here, not a paragraph.
@@ -89,21 +90,31 @@ struct ShimmerText: View {
             label
                 .foregroundStyle(Theme.tertiaryText)
                 .overlay {
-                    // A soft sweep reads the same at 30 fps, at a quarter of ProMotion's cost.
-                    TimelineView(.animation(minimumInterval: 1 / 30, paused: motionPaused)) { context in
-                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.8) / 1.8
+                    // The text is drawn once and masks a highlight that only moves: no text is laid
+                    // out or drawn again per frame (that redrew it 30 times a second).
+                    GeometryReader { proxy in
+                        let width = max(proxy.size.width, 1)
                         LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: phase * 1.6 - 0.4),
-                                .init(color: Theme.primaryText, location: phase * 1.6 - 0.2),
-                                .init(color: .clear, location: phase * 1.6),
-                            ],
+                            stops: [.init(color: .clear, location: 0), .init(color: Theme.primaryText, location: 0.5), .init(color: .clear, location: 1)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
-                        .mask(label)
+                        .frame(width: width * 0.5)
+                        .offset(x: sweeping ? width : -width * 0.5)
                     }
+                    .mask(label)
+                    .allowsHitTesting(false)
                 }
+                .onAppear { sweep() }
+                .onChange(of: motionPaused) { sweep() }
+        }
+    }
+
+    private func sweep() {
+        if motionPaused {
+            withAnimation(nil) { sweeping = false }
+        } else if !sweeping {
+            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) { sweeping = true }
         }
     }
 }

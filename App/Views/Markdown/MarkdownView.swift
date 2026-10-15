@@ -9,13 +9,16 @@ import SwiftUI
 struct MarkdownView: View, Equatable {
     let text: String
     var tone: Tone = .primary
+    /// Text that is still streaming changes with every token: parsed, not kept.
+    var caches = true
 
     enum Tone { case primary, secondary }
 
     var body: some View {
-        MarkdownBlocksView(blocks: MarkdownDocument(parsing: text).blocks)
+        MarkdownBlocksView(blocks: (caches ? MarkdownCache.document(for: text) : MarkdownDocument(parsing: text)).blocks)
             .foregroundStyle(tone == .primary ? Theme.primaryText : Theme.secondaryText)
             .textSelection(.enabled)
+            .environment(\.markdownCaches, caches)
     }
 }
 
@@ -35,6 +38,9 @@ struct MarkdownBlocksView: View {
 extension EnvironmentValues {
     /// Body font for Markdown paragraphs, lists and tables; headings scale independently.
     @Entry var markdownBodyFont: Font = Theme.Typography.message
+    /// Off while the text streams: its code changes with every token, and each version kept
+    /// would push finished replies out of `MarkdownCache`.
+    @Entry var markdownCaches = true
 }
 
 private struct MarkdownBlockView: View {

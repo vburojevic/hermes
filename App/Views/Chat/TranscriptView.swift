@@ -44,6 +44,10 @@ struct TranscriptView: View {
     /// The composer's height over the end of the chat (see the end marker).
     @State private var bottomInset: CGFloat = 0
     private static let pageSize = 20
+    /// Opening a chat lays out only the latest rows (more than a screen), so the first frame is
+    /// cheap while the drawer or the window animates; the rest of the page follows a moment later,
+    /// above, out of sight.
+    private static let firstFrameRows = 8
 
     init(conversation: ConversationModel, workspace: BotWorkspace) {
         self.conversation = conversation
@@ -51,10 +55,13 @@ struct TranscriptView: View {
         _settled = State(initialValue: conversation.pendingUser != nil || conversation.isWorking)
     }
 
+    /// Time for the rest of the first page (`fillWindow`), once the drawer has settled.
+    @State private var pageDue = false
+
     var body: some View {
         let all = conversation.rows
-        let separators = Self.separators(in: all, datesOpening: conversation.openedWithHistory)
         let first = firstShownIndex(in: all)
+        let separators = Self.separators(in: all, from: first, datesOpening: conversation.openedWithHistory)
         let rows = all[first...].map { DisplayRow(key: conversation.displayID(for: $0), item: $0) }
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
@@ -218,7 +225,11 @@ struct TranscriptView: View {
                 LoadTrace.mark(conversation.stableKey, "transcript settled, showing")
                 withAnimation(.easeOut(duration: 0.15)) { settled = true }
             }
+            // After the opening animation (the drawer closing), the rest of the page.
+            try? await Task.sleep(for: .milliseconds(450))
+            pageDue = true
         }
+        .modifier(WhenSettled(isDue: pageDue, action: fillWindow))
         .opacity(settled ? 1 : 0)
     }
 
@@ -226,7 +237,28 @@ struct TranscriptView: View {
         if let firstShownKey, let index = all.firstIndex(where: { conversation.displayID(for: $0) == firstShownKey }) {
             return index
         }
-        return max(0, all.count - Self.pageSize)
+        return max(0, all.count - (settled ? Self.pageSize : Self.firstFrameRows))
+    }
+
+    /// The rest of the first page, above the rows on screen: the end stays where it is.
+    private func fillWindow() {
+        let all = conversation.rows
+        let first = firstShownIndex(in: all)
+        let target = max(0, all.count - Self.pageSize)
+        guard target < first, !isPrepending, !isScrolledByHand else { return }
+        let key = conversation.displayID(for: all[target])
+        let keep = conversation.displayID(for: all[first])
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        isPrepending = true
+        withTransaction(instant) { firstShownKey = key }
+        Task { @MainActor in
+            withTransaction(instant) {
+                if isFollowing { scrollToLatest() } else { position.scrollTo(id: keep, anchor: .top) }
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+            isPrepending = false
+        }
     }
 
     /// Fixes the window's top once there are rows, so later rows only add below it.
@@ -251,16 +283,23 @@ struct TranscriptView: View {
             }
             return
         }
-        let key = conversation.displayID(for: all[max(0, first - Self.pageSize)])
+        let target = max(0, first - Self.pageSize)
+        let key = conversation.displayID(for: all[target])
         let keep = conversation.displayID(for: all[first])
+        let answers = ConversationModel.answers(in: all[target..<first])
         var instant = Transaction()
         instant.disablesAnimations = true
         isPrepending = true
-        withTransaction(instant) { firstShownKey = key }
         Task { @MainActor in
-            withTransaction(instant) { position.scrollTo(id: keep, anchor: .top) }
-            try? await Task.sleep(for: .milliseconds(250))
-            isPrepending = false
+            // Their Markdown parsed off the main thread first: a page of replies parsed in the
+            // frame they go in stuttered the scroll.
+            await MarkdownCache.prewarm(answers)
+            withTransaction(instant) { firstShownKey = key }
+            Task { @MainActor in
+                withTransaction(instant) { position.scrollTo(id: keep, anchor: .top) }
+                try? await Task.sleep(for: .milliseconds(250))
+                isPrepending = false
+            }
         }
     }
 
@@ -321,18 +360,15 @@ struct TranscriptView: View {
     /// of more than an hour.
     /// - Parameter datesOpening: the first message of today gets one too (a chat opened with its
     ///   history). A chat started here gets none until a gap, so none appears above it later.
-    static func separators(in rows: [TranscriptItem], datesOpening: Bool) -> [String: Date] {
+    /// - Parameter first: only rows from here on (the ones shown) get lines, so a streamed token
+    ///   doesn't walk the whole history.
+    static func separators(in rows: [TranscriptItem], from first: Int = 0, datesOpening: Bool) -> [String: Date] {
         var result: [String: Date] = [:]
-        var previous: Date?
         let calendar = Calendar.current
-        for row in rows {
-            let date: Date? = switch row {
-            case .user(let entry): entry.timestamp
-            case .assistant(let turn): turn.startedAt
-            case .command(let command): command.timestamp
-            case .notice: nil
-            }
-            guard let date else { continue }
+        // The nearest dated row above the window decides the first shown row's line.
+        var previous: Date? = rows[..<min(first, rows.count)].reversed().lazy.compactMap(Self.date(of:)).first
+        for row in rows[min(first, rows.count)...] {
+            guard let date = Self.date(of: row) else { continue }
             if let previous {
                 if !calendar.isDate(date, inSameDayAs: previous) || date.timeIntervalSince(previous) > 3600 {
                     result[row.id] = date
@@ -343,6 +379,15 @@ struct TranscriptView: View {
             previous = date
         }
         return result
+    }
+
+    private static func date(of row: TranscriptItem) -> Date? {
+        switch row {
+        case .user(let entry): entry.timestamp
+        case .assistant(let turn): turn.startedAt
+        case .command(let command): command.timestamp
+        case .notice: nil
+        }
     }
 
     /// What this chat's text can name: its gateway's Bots, files, and the skills and commands
@@ -514,6 +559,20 @@ private struct TurnErrorRow: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .surface(radius: Theme.Radius.card)
+    }
+}
+
+/// Runs `action` once it's due and the drawer isn't sliding (`isSliding`). Reading the slide
+/// here, not in the transcript, keeps the slide's start and end from redrawing the transcript.
+private struct WhenSettled: ViewModifier {
+    let isDue: Bool
+    let action: () -> Void
+    @Environment(\.isSliding) private var isSliding
+
+    func body(content: Content) -> some View {
+        content.onChange(of: isDue && !isSliding) { _, ready in
+            if ready { action() }
+        }
     }
 }
 

@@ -44,6 +44,12 @@ enum SidebarMetrics {
     }
 }
 
+extension EnvironmentValues {
+    /// The rows sit in a plain lazy stack (the iPhone drawer) rather than a `List`, so they draw
+    /// their own insets and highlight.
+    @Entry var sidebarRowsInStack = false
+}
+
 /// A row in the sidebar or drawer: a quiet rounded wash when selected, and a lighter one under
 /// the pointer. The system list selection would fill with the Mac's accent colour instead.
 struct SidebarRow<Label: View>: View {
@@ -52,26 +58,78 @@ struct SidebarRow<Label: View>: View {
     let action: () -> Void
     @ViewBuilder let label: Label
 
+    @Environment(\.sidebarRowsInStack) private var inStack
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
-            label
-                .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
-                .contentShape(Rectangle())
+        if inStack {
+            Button(action: action) {
+                label
+                    .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
+                    .padding(.horizontal, SidebarMetrics.rowPadding)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(StackRowStyle(isSelected: isSelected, isHovered: isHovered))
+            .foregroundStyle(Theme.primaryText)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .onHover { isHovered = $0 }
+            #if os(iOS)
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous))
+            #endif
+            .padding(.horizontal, SidebarMetrics.listInset)
+        } else {
+            Button(action: action) {
+                label
+                    .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.primaryText)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .onHover { isHovered = $0 }
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
+                    .fill(isSelected ? Theme.rowSelected : isHovered ? Theme.rowHover : .clear)
+                    .padding(.horizontal, SidebarMetrics.listInset)
+                    .animation(.easeOut(duration: 0.12), value: isHovered)
+            )
+            .listRowSeparator(.hidden)
+            .listRowInsets(SidebarMetrics.rowInsets)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(Theme.primaryText)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .onHover { isHovered = $0 }
-        .listRowBackground(
-            RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
-                .fill(isSelected ? Theme.rowSelected : isHovered ? Theme.rowHover : .clear)
-                .padding(.horizontal, SidebarMetrics.listInset)
-                .animation(.easeOut(duration: 0.12), value: isHovered)
-        )
-        .listRowSeparator(.hidden)
-        .listRowInsets(SidebarMetrics.rowInsets)
+    }
+}
+
+/// A drawer row: the selected wash, and the lighter one under the finger (or pointer).
+private struct StackRowStyle: ButtonStyle {
+    let isSelected: Bool
+    let isHovered: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let lit = configuration.isPressed || isHovered
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
+                    .fill(isSelected ? Theme.rowSelected : lit ? Theme.rowHover : .clear)
+                    .animation(.easeOut(duration: 0.12), value: lit)
+            )
+    }
+}
+
+/// Insets for a row that isn't a `SidebarRow` (a title, a toggle, a spinner): `List` row
+/// insets in a list, padding in the drawer's stack.
+struct SidebarRowInsets: ViewModifier {
+    @Environment(\.sidebarRowsInStack) private var inStack
+
+    func body(content: Content) -> some View {
+        if inStack {
+            content
+                .padding(.horizontal, SidebarMetrics.listInset + SidebarMetrics.rowPadding)
+        } else {
+            content
+                .listRowInsets(SidebarMetrics.rowInsets)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        }
     }
 }
 
@@ -112,9 +170,7 @@ struct SidebarSectionTitle: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 14)
             .padding(.bottom, 6)
-            .listRowInsets(SidebarMetrics.rowInsets)
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .modifier(SidebarRowInsets())
             .accessibilityAddTraits(.isHeader)
     }
 }

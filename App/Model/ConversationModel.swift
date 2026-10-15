@@ -461,6 +461,20 @@ final class ConversationModel: Identifiable {
 
     // MARK: - Loading
 
+    /// Starts loading if it hasn't, and returns once the rows this device kept are showing (or
+    /// it has none), or after `limit`. Never waits on the gateway. The drawer waits on this
+    /// before it slides, so a chat slides in with its rows instead of getting them mid-slide.
+    func firstRows(within limit: Duration) async {
+        loadIfNeeded()
+        let deadline = ContinuousClock.now + limit
+        while loadState == .loading, items.isEmpty, !cacheChecked, ContinuousClock.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(8))
+        }
+    }
+
+    /// The device's copy has been looked at (`showCached`), shown or not there.
+    @ObservationIgnored private var cacheChecked = false
+
     func loadIfNeeded() {
         LoadTrace.mark(stableKey, "loadIfNeeded state=\(loadState) client=\(workspace?.client != nil)")
         guard loadState == .idle, sessionID != nil || isBotChat else { return }
@@ -487,7 +501,7 @@ final class ConversationModel: Identifiable {
                 let transcript = try await fetchLatest(sessionID)
                 LoadTrace.mark(stableKey, "fetched \(transcript.messages.count) rows")
                 guard !Task.isCancelled, !isWorking, !isFinishing else { return }
-                apply(transcript)
+                await applyLoaded(transcript)
                 LoadTrace.mark(stableKey, "applied \(items.count) items")
                 loadState = .loaded
                 needsReconcile = false
@@ -526,6 +540,13 @@ final class ConversationModel: Identifiable {
     /// meet; otherwise the page alone, with earlier rows still to fetch). A page that changes
     /// nothing leaves the transcript as it is: no rebuild, no redraw.
     private func apply(_ transcript: SessionTranscript) {
+        guard let merged = merge(transcript) else { return }
+        rebuild(from: merged)
+        saveCache()
+    }
+
+    /// The page put together with the rows held (see `apply`); `nil` when nothing changed.
+    private func merge(_ transcript: SessionTranscript) -> [SessionMessage]? {
         lastFetchedAt = .now
         if transcript.sessionID != sessionID {
             sessionID = transcript.sessionID
@@ -537,15 +558,45 @@ final class ConversationModel: Identifiable {
             earlier = hasEarlierMessages
         }
         if earlier != hasEarlierMessages { hasEarlierMessages = earlier }
-        if merged == rawMessages, !items.isEmpty, turnReceipts.isEmpty { return }
-        rebuild(from: merged)
+        if merged == rawMessages, !items.isEmpty, turnReceipts.isEmpty { return nil }
+        return merged
+    }
+
+    /// `apply` for a transcript being opened: the rows are folded into turns and the newest
+    /// replies' Markdown parsed off the main thread, so the main thread (and the drawer or window
+    /// animating meanwhile) only takes the result.
+    private func applyLoaded(_ transcript: SessionTranscript) async {
+        guard let merged = merge(transcript) else { return }
+        let built = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
+        // A chat picked in the drawer lands once the drawer has slid away, not in the middle.
+        await Settling.untilSettled()
+        guard !Task.isCancelled, !isWorking, !isFinishing else { return }
+        rebuild(from: merged, built: built)
         saveCache()
     }
 
-    /// Builds `items` from stored rows.
-    private func rebuild(from messages: [SessionMessage]) {
+    /// Off the main thread: the turns, and answers parsed into the Markdown cache: the newest
+    /// (`warming` 0), or the ones that many rows before the end (a page going in above).
+    private static func prepare(_ messages: [SessionMessage], hasEarlier: Bool, hidesSilence: Bool, warming end: Int = 0) async -> [TranscriptItem] {
+        let built = await Task.detached(priority: .userInitiated) {
+            TranscriptBuilder.build(fromTurnStart(messages, hasEarlier: hasEarlier), hidesSilence: hidesSilence)
+        }.value
+        await MarkdownCache.prewarm(Self.answers(in: built.dropLast(min(end, built.count)).suffix(24)))
+        return built
+    }
+
+    /// The replies' text in these rows, for `MarkdownCache.prewarm`.
+    static func answers(in items: some Sequence<TranscriptItem>) -> [String] {
+        items.compactMap { item -> String? in
+            if case .assistant(let turn) = item, !turn.answer.isEmpty { return turn.answer }
+            return nil
+        }
+    }
+
+    /// Builds `items` from stored rows (or takes them `built` already).
+    private func rebuild(from messages: [SessionMessage], built prebuilt: [TranscriptItem]? = nil) {
         rawMessages = messages
-        var built = TranscriptBuilder.build(Self.fromTurnStart(messages, hasEarlier: hasEarlierMessages), hidesSilence: botName != nil)
+        var built = prebuilt ?? TranscriptBuilder.build(Self.fromTurnStart(messages, hasEarlier: hasEarlierMessages), hidesSilence: botName != nil)
         if sentTurns == 0, completedTurns == 0, !built.isEmpty { openedWithHistory = true }
         resolveImages(in: built)
         restoreParts(in: &built)
@@ -561,7 +612,7 @@ final class ConversationModel: Identifiable {
 
     /// A page that starts partway through a turn starts at its next message from the person
     /// instead (the rest of that turn comes with the earlier page).
-    private static func fromTurnStart(_ messages: [SessionMessage], hasEarlier: Bool) -> [SessionMessage] {
+    nonisolated private static func fromTurnStart(_ messages: [SessionMessage], hasEarlier: Bool) -> [SessionMessage] {
         guard hasEarlier, let start = messages.firstIndex(where: { $0.role == "user" && $0.displayKind != "hidden" }) else { return messages }
         return Array(messages[start...])
     }
@@ -582,10 +633,14 @@ final class ConversationModel: Identifiable {
 
     /// The transcript this device saw last, while the gateway's copy is on its way.
     private func showCached() async {
+        defer { cacheChecked = true }
         guard let cacheKey, let cached = await TranscriptCache.load(cacheKey) else { return }
+        let built = await Self.prepare(cached.messages, hasEarlier: cached.hasEarlier, hidesSilence: botName != nil)
+        // Too late for the drawer's wait (`firstRows`): after its slide, not in the middle.
+        await Settling.untilSettled()
         guard items.isEmpty, live == nil, !Task.isCancelled else { return }
         hasEarlierMessages = cached.hasEarlier
-        rebuild(from: cached.messages)
+        rebuild(from: cached.messages, built: built)
         loadState = .loaded
         LoadTrace.mark(stableKey, "showed cache (\(cached.messages.count) rows)")
     }
@@ -629,7 +684,18 @@ final class ConversationModel: Identifiable {
         guard let page = try? await fetchPage(sessionID, limit: 200, offset: rawMessages.count),
               self.sessionID == sessionID, !isFinishing else { return }
         hasEarlierMessages = page.hasEarlier
-        rebuild(from: SessionTranscript.merge(earlier: page.messages, before: rawMessages))
+        // Folded off the main thread, with the replies that go in just above what's on screen
+        // parsed ahead (scrolling up shows them next).
+        let base = rawMessages
+        let merged = SessionTranscript.merge(earlier: page.messages, before: base)
+        let built = await Self.prepare(merged, hasEarlier: page.hasEarlier, hidesSilence: botName != nil, warming: items.count)
+        guard self.sessionID == sessionID else { return }
+        if rawMessages == base {
+            rebuild(from: merged, built: built)
+        } else {
+            // A turn ended meanwhile: fold the page in with what it brought.
+            rebuild(from: SessionTranscript.merge(earlier: page.messages, before: rawMessages))
+        }
         saveCache()
     }
 
@@ -1961,12 +2027,21 @@ final class ConversationModel: Identifiable {
         if let sessionID {
             transcript = try? await Task { try await fetch(sessionID) }.value
         }
+        // Folded off the main thread, the reply's Markdown parsed ahead: the swap below is then
+        // only the swap, not a whole chat built in one frame as the reply ends.
+        var prepared: (messages: [SessionMessage], items: [TranscriptItem])?
+        if let transcript, live?.turn.id == finished.turn.id, let merged = merge(transcript) {
+            prepared = (merged, await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil))
+        }
         guard live?.turn.id == finished.turn.id else { return }
         // The stored rows take over from the live ones in place (same identities), in one
         // animated step: the reply's actions fade in where it ends instead of shoving it up.
         animateRows {
-            if let transcript {
-                apply(transcript)
+            if transcript != nil {
+                if let prepared {
+                    rebuild(from: prepared.messages, built: prepared.items)
+                    saveCache()
+                }
                 handOverIdentity(shown: shownRows)
                 needsReconcile = false
                 carryOverExtras(from: finished.turn)
@@ -2200,8 +2275,7 @@ extension ConversationModel {
                     }
                     let transcript = try await fetchLatest(stored)
                     guard !Task.isCancelled, !isWorking, !isFinishing else { return }
-                    sessionID = stored
-                    apply(transcript)
+                    await applyLoaded(transcript)
                 }
                 let bot = roster.bot(named: botName)
                 seenActivity = bot?.activitySession?.lastActive

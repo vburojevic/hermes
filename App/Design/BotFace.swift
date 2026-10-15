@@ -122,6 +122,9 @@ struct BotFace: View {
 
     /// Tiles, headers and the hello screen move; small list faces stay still apart from the blink.
     private var isLarge: Bool { size >= 40 }
+    /// Only the hello screen's face breathes: a never-ending animation on every tile kept the
+    /// main thread redrawing a screen of faces, shadows and the text around them all day.
+    private var breathes: Bool { size >= 72 }
     private var moves: Bool { !reduceMotion && !motionPaused }
     private var increasedContrast: Bool { contrast == .increased }
 
@@ -137,7 +140,7 @@ struct BotFace: View {
 
     var body: some View {
         face
-            .modifier(Breathing(active: isLarge && moves && mood == .idle))
+            .modifier(Breathing(active: breathes && moves && mood == .idle))
             .rotationEffect(.degrees(mood == .listening && moves ? 2 : 0), anchor: .bottom)
             .keyframeAnimator(initialValue: Squash(), trigger: bounces) { content, value in
                 content.scaleEffect(x: value.x, y: value.y, anchor: .bottom)

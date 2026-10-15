@@ -158,6 +158,19 @@ struct ComposerView: View {
             if id != nil { focused.wrappedValue = true }
         }
         .onChange(of: conversation.draft) { peek = nil }
+        .onChange(of: conversation.id) {
+            // Another chat in the same composer: the last one's menus, previews and dictation go.
+            if dictation.isActive { dictation.cancel() }
+            draftBeforeDictation = ""
+            slashSelection = nil
+            dismissedQueryStart = nil
+            showsAllSkills = false
+            pathItems = []
+            peek = nil
+            skillPeek = nil
+            attachError = nil
+            photoSelection = []
+        }
         .onChange(of: field.query) { _, query in
             slashSelection = nil
             if query?.range.location != dismissedQueryStart { dismissedQueryStart = nil }
@@ -524,8 +537,9 @@ struct ComposerView: View {
         guard conversation.supportsImages else { return }
         Task {
             for image in images {
+                // Encoded off the main thread: a full-size photo took a noticeable moment.
                 #if os(iOS)
-                guard let data = image.pngData() else { continue }
+                guard let data = await Task.detached(priority: .userInitiated, operation: { image.pngData() }).value else { continue }
                 #else
                 guard let data = image.tiffRepresentation else { continue }
                 #endif
@@ -546,7 +560,8 @@ struct ComposerView: View {
             if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true, conversation.supportsImages {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                if let data = try? Data(contentsOf: url), let attachment = await ImageAttachment.make(from: data) {
+                let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+                if let data, let attachment = await ImageAttachment.make(from: data) {
                     conversation.attachments.append(attachment)
                     continue
                 }
@@ -1041,8 +1056,13 @@ struct CameraPicker: UIViewControllerRepresentable {
         init(_ parent: CameraPicker) { self.parent = parent }
 
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            if let image = info[.originalImage] as? UIImage, let data = image.jpegData(compressionQuality: 0.9) {
-                parent.onCapture(data)
+            if let image = info[.originalImage] as? UIImage {
+                let onCapture = parent.onCapture
+                Task { @MainActor in
+                    // Encoded off the main thread, so the camera's dismissal doesn't hitch.
+                    let data = await Task.detached(priority: .userInitiated) { image.jpegData(compressionQuality: 0.9) }.value
+                    if let data { onCapture(data) }
+                }
             }
             parent.dismiss()
         }

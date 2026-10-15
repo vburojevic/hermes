@@ -8,6 +8,9 @@ import UIKit
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    @Environment(\.appearsActive) private var appearsActive
+    #endif
     @AppStorage(PreferenceKey.appearance) private var appearance = AppearancePreference.system
     /// This window's sheets.
     @State private var router = WindowRouter()
@@ -98,10 +101,20 @@ struct RootView: View {
         .focusedSceneValue(\.windowRouter, router)
         // Outermost, so sheets inherit them too.
         .environment(router)
-        .environment(\.pausesDecorativeMotion, scenePhase != .active || PowerState.shared.isLowPower)
+        .environment(\.pausesDecorativeMotion, pausesMotion)
         #if HERMES_PUSH
         .pushPresentation()
         #endif
+    }
+
+    /// Decorative motion (faces, shimmer, auras) stops whenever nobody is looking at it: the app
+    /// in the background, Low Power Mode, and on the Mac a window that isn't the key window
+    /// (visible behind other apps, it kept animating all day).
+    private var pausesMotion: Bool {
+        #if os(macOS)
+        if !appearsActive { return true }
+        #endif
+        return scenePhase != .active || PowerState.shared.isLowPower
     }
 
     @ViewBuilder
@@ -303,7 +316,12 @@ struct MainView: View {
             .modifier(BotSheets(workspace: workspace))
             .modifier(ProjectSheets(workspace: workspace))
             // Another chat, Bot or page: the composer it typed into is gone.
-            .onChange(of: workspace.selection) { Keyboard.dismiss() }
+            .onChange(of: workspace.selection) {
+                Keyboard.dismiss()
+                #if DEBUG && os(iOS)
+                FrameMonitor.shared.mark("selection changed")
+                #endif
+            }
             #if DEBUG
             // `-HERMES_DRAWER YES` opens the iPhone drawer (screenshots).
             .task {
@@ -343,7 +361,14 @@ struct MainView: View {
     private var drawerLayout: some View {
         DrawerContainer(isOpen: $isDrawerOpen) {
             SidebarView(workspace: workspace, style: .drawer) {
-                withAnimation(Theme.spring) { isDrawerOpen = false }
+                // What was picked draws first, under the drawer, with its rows (the ones this
+                // device kept arrive in a moment); then the drawer slides away with nothing left
+                // to build. SwiftUI animates on the main thread: a chat built, or filled in,
+                // during the slide made it jump.
+                Task { @MainActor in
+                    await workspace.currentConversation.firstRows(within: .milliseconds(250))
+                    NextFrame.run { withAnimation(Theme.spring) { isDrawerOpen = false } }
+                }
             }
         } content: {
             NavigationStack {
@@ -459,8 +484,9 @@ struct DetailView: View {
             AllProjectsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
         case .session, .bot, nil:
             let conversation = workspace.currentConversation
+            // One screen for every chat: opening another one swaps its data and its transcript,
+            // not the toolbar, the composer and its text view (that cost a long frame per switch).
             ChatScreen(conversation: conversation, workspace: workspace, onToggleSidebar: onToggleSidebar)
-                .id(ObjectIdentifier(conversation))
         }
     }
 }
@@ -478,6 +504,16 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
     @State private var dragIsDrawerSwipe: Bool?
     /// Notices drags the system takes over (a scroll, a sheet), which end without `onEnded`.
     @GestureState private var isDragging = false
+    /// Where the drawer last came to rest. While `isOpen` differs from it, the drawer is sliding
+    /// (`isSliding`), known in the very update that flips `isOpen`.
+    @State private var restingOpen: Bool?
+    /// The slide's spring hasn't settled yet (a quick open-and-close never rests in between).
+    @State private var isSettling = false
+    @State private var slideEnd: Task<Void, Never>?
+
+    private var isSliding: Bool {
+        isSettling || restingOpen.map { $0 != isOpen } ?? false
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -501,21 +537,49 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                             .opacity(0.32 * progress)
                             .ignoresSafeArea()
                             .allowsHitTesting(isOpen)
-                            .onTapGesture { isOpen = false }
+                            .onTapGesture { withAnimation(Theme.spring) { isOpen = false } }
                             .accessibilityAddTraits(.isButton)
                             .accessibilityLabel("Close sidebar")
                             .accessibilityHidden(!isOpen)
                     }
                     .background(Theme.canvas.ignoresSafeArea())
-                    .shadow(color: .black.opacity(0.18 * progress), radius: 24, x: -4)
+                    // The edge's shadow is a gradient strip: a blurred shadow of the whole chat had
+                    // to be rendered again on every frame of the slide.
+                    .overlay(alignment: .leading) {
+                        LinearGradient(colors: [.black.opacity(0.16 * progress), .clear], startPoint: .trailing, endPoint: .leading)
+                            .frame(width: 18)
+                            .offset(x: -18)
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                     .offset(x: offset)
+                    .environment(\.isSliding, isSliding)
                     .accessibilityHidden(isOpen)
             }
             .simultaneousGesture(dragGesture(width: width))
-            .animation(Theme.spring, value: isOpen)
+            // No implicit animation here: it animated everything that changed with the drawer,
+            // the chat being opened included (old and new chats cross-faded, both rendered, for
+            // the whole slide). Opening and closing animate explicitly.
+            .onAppear { restingOpen = isOpen }
             .onChange(of: isOpen) { _, open in
                 if open { Keyboard.dismiss() }
+                #if DEBUG && os(iOS)
+                FrameMonitor.shared.mark(open ? "drawer opening" : "drawer closing")
+                #endif
+                isSettling = true
+                Settling.isSliding = true
+                slideEnd?.cancel()
+                slideEnd = Task {
+                    // `Theme.spring` (response 0.38) has visibly settled by then.
+                    try? await Task.sleep(for: .milliseconds(420))
+                    guard !Task.isCancelled else { return }
+                    restingOpen = open
+                    isSettling = false
+                    Settling.isSliding = false
+                }
             }
+            .onDisappear { Settling.isSliding = false }
             .onChange(of: isDragging) { _, dragging in
                 guard !dragging, dragOffset != 0 || dragIsDrawerSwipe != nil else { return }
                 dragIsDrawerSwipe = nil
@@ -561,6 +625,37 @@ struct DrawerContainer<Drawer: View, Content: View>: View {
                 }
             }
     }
+}
+
+/// Runs something once the frame being prepared now is on screen: after the work a change
+/// causes, not in the middle of it.
+@MainActor
+enum NextFrame {
+    static func run(_ action: @escaping @MainActor () -> Void) {
+        #if os(iOS)
+        let ticker = Ticker(action: action)
+        let link = CADisplayLink(target: ticker, selector: #selector(Ticker.tick(_:)))
+        link.add(to: .main, forMode: .common)
+        #else
+        DispatchQueue.main.async { action() }
+        #endif
+    }
+
+    #if os(iOS)
+    private final class Ticker: NSObject {
+        let action: @MainActor () -> Void
+        private var ticks = 0
+        init(action: @escaping @MainActor () -> Void) { self.action = action }
+
+        /// The first tick can come before this frame's commit; the second is the next frame.
+        @objc func tick(_ link: CADisplayLink) {
+            ticks += 1
+            guard ticks >= 2 else { return }
+            link.invalidate()
+            MainActor.assumeIsolated { action() }
+        }
+    }
+    #endif
 }
 
 /// The software keyboard, put away when what it was typing into leaves the screen (another chat,

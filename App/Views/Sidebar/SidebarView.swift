@@ -46,21 +46,7 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        List {
-            if !isSearching {
-                navigationRows
-                if botRoster == nil {
-                    ProjectSidebarSection(workspace: workspace, onNavigate: onNavigate)
-                }
-            }
-            if let botRoster {
-                BotRosterSections(roster: botRoster, workspace: workspace, onNavigate: onNavigate)
-            } else {
-                sessionSections
-            }
-        }
-        .modifier(SidebarListStyle(style: style))
-        .environment(\.defaultMinListRowHeight, 10)
+        rows
         .animation(Theme.spring, value: botOrder)
         .sensoryFeedback(.selection, trigger: workspace.sidebarMode)
         .refreshable { await refresh() }
@@ -97,6 +83,44 @@ struct SidebarView: View {
         }
     }
 
+    @ViewBuilder
+    private var rows: some View {
+        switch style {
+        case .split:
+            List { rowContent }
+                // Plain rows on the system's (glass) sidebar: the sidebar list style adds its own
+                // insets and selection, which the design doesn't use.
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, 10)
+        case .drawer:
+            // A lazy stack, not a List: a List is a collection view that lays out, sizes and
+            // configures (separators, swipe actions) every visible row again on each change, so
+            // picking a chat cost a long frame right as the drawer started to close. Here only
+            // the rows whose highlight changed redraw.
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) { rowContent }
+            }
+            .background(Theme.sidebar)
+            .environment(\.sidebarRowsInStack, true)
+        }
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
+        if !isSearching {
+            navigationRows
+            if botRoster == nil {
+                ProjectSidebarSection(workspace: workspace, onNavigate: onNavigate)
+            }
+        }
+        if let botRoster {
+            BotRosterSections(roster: botRoster, workspace: workspace, onNavigate: onNavigate)
+        } else {
+            sessionSections
+        }
+    }
+
     // MARK: Header
 
     private var header: some View {
@@ -125,10 +149,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var navigationRows: some View {
         if let roster = botRoster {
-            SidebarNavRow(title: "All Bots", symbol: "square.grid.2x2", isSelected: workspace.selection == nil) {
-                workspace.selection = nil
-                onNavigate()
-            }
+            DestinationRow(workspace: workspace, title: "All Bots", symbol: "square.grid.2x2", item: nil, onNavigate: onNavigate)
             SidebarNavRow(title: "New Bot", symbol: "plus", shortcut: "⇧⌘N") {
                 roster.isCreatingBot = true
             }
@@ -151,14 +172,8 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var destinationRows: some View {
-        SidebarNavRow(title: "Tasks", symbol: "calendar.badge.clock", isSelected: workspace.selection == .tasks, shortcut: "⇧⌘1") {
-            workspace.selection = .tasks
-            onNavigate()
-        }
-        SidebarNavRow(title: "Skills", symbol: "book.closed", isSelected: workspace.selection == .skills, shortcut: "⇧⌘2") {
-            workspace.selection = .skills
-            onNavigate()
-        }
+        DestinationRow(workspace: workspace, title: "Tasks", symbol: "calendar.badge.clock", item: .tasks, shortcut: "⇧⌘1", onNavigate: onNavigate)
+        DestinationRow(workspace: workspace, title: "Skills", symbol: "book.closed", item: .skills, shortcut: "⇧⌘2", onNavigate: onNavigate)
     }
 
     /// The navigation rows' height (and the Projects section's), so states centre in the space
@@ -189,22 +204,14 @@ struct SidebarView: View {
                 Spacer()
             }
             .padding(.vertical, 8)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+            .modifier(SidebarRowInsets())
             .task { await workspace.loadMoreSessions() }
         }
     }
 
     @ViewBuilder
     private func sessionRow(_ session: HermesSession) -> some View {
-        let item = SidebarItem.session(session.stableID)
-        let isSelected = workspace.selection == item
-        SidebarRow(isSelected: isSelected) {
-            workspace.selection = item
-            onNavigate()
-        } label: {
-            SessionRowLabel(session: session, isWorking: workspace.isWorking(sessionKey: session.stableID), isSelected: isSelected)
-        }
+        SessionRow(session: session, workspace: workspace, onNavigate: onNavigate)
         .contextMenu { contextMenu(for: session) }
         // In the drawer a leftward swipe closes the drawer, so actions live in the context menu.
         .swipeActions(edge: .trailing) {
@@ -383,23 +390,38 @@ struct SidebarView: View {
     }
 }
 
-/// Plain rows on the system sidebar (iPad, Mac) or on the drawer's own background.
-private struct SidebarListStyle: ViewModifier {
-    let style: SidebarView.Style
+/// A chat in the history. It reads the selection and the working state itself, so picking a
+/// chat redraws rows, not the whole sidebar (grouping the history by date included).
+private struct SessionRow: View {
+    let session: HermesSession
+    let workspace: BotWorkspace
+    let onNavigate: () -> Void
 
-    func body(content: Content) -> some View {
-        switch style {
-        case .split:
-            // Plain rows on the system's (glass) sidebar: the sidebar list style adds its own
-            // insets and selection, which the design doesn't use.
-            content
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-        case .drawer:
-            content
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(Theme.sidebar)
+    var body: some View {
+        let item = SidebarItem.session(session.stableID)
+        let isSelected = workspace.selection == item
+        SidebarRow(isSelected: isSelected) {
+            workspace.selection = item
+            onNavigate()
+        } label: {
+            SessionRowLabel(session: session, isWorking: workspace.isWorking(sessionKey: session.stableID), isSelected: isSelected)
+        }
+    }
+}
+
+/// All Bots, Tasks, Skills: reads the selection itself, like `SessionRow`.
+private struct DestinationRow: View {
+    let workspace: BotWorkspace
+    let title: LocalizedStringKey
+    let symbol: String
+    let item: SidebarItem?
+    var shortcut: String?
+    let onNavigate: () -> Void
+
+    var body: some View {
+        SidebarNavRow(title: title, symbol: symbol, isSelected: workspace.selection == item, shortcut: shortcut) {
+            workspace.selection = item
+            onNavigate()
         }
     }
 }

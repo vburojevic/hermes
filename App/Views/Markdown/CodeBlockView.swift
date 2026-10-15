@@ -7,6 +7,7 @@ struct CodeBlockView: View {
     let code: String
 
     @State private var copied = false
+    @Environment(\.markdownCaches) private var caches
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,7 +37,7 @@ struct CodeBlockView: View {
             .padding(.bottom, 6)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(Self.highlight(code, language: language))
+                Text(Self.highlight(code, language: language, caches: caches))
                     .font(Theme.Typography.code)
                     .lineSpacing(2)
                     .fixedSize(horizontal: true, vertical: true)
@@ -49,9 +50,10 @@ struct CodeBlockView: View {
         .sensoryFeedback(.success, trigger: copied) { _, new in new }
     }
 
-    static func highlight(_ code: String, language: String?) -> AttributedString {
+    static func highlight(_ code: String, language: String?, caches: Bool = true) -> AttributedString {
         var result = AttributedString()
-        for token in CodeHighlighter.tokenize(code, language: language) {
+        let tokens = caches ? MarkdownCache.tokens(for: code, language: language) : CodeHighlighter.tokenize(code, language: language)
+        for token in tokens {
             var run = AttributedString(token.text)
             run.foregroundColor = color(for: token.kind)
             if token.kind == .inserted || token.kind == .deleted {

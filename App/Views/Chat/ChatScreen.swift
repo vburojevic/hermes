@@ -54,7 +54,10 @@ struct ChatScreen: View {
     var body: some View {
         ZStack {
             Theme.canvas.ignoresSafeArea()
+            // The screen stays as chats change (switching is a data change, not a rebuild of
+            // the toolbar and composer); the chat's own content starts fresh for each one.
             content
+                .id(ObjectIdentifier(conversation))
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0; refitLift() }
         .safeAreaBar(edge: .bottom) {
@@ -83,9 +86,12 @@ struct ChatScreen: View {
                 updateLift()
             }
         }
-        .sensoryFeedback(.impact(weight: .light), trigger: conversation.sentTurns) { _, _ in hapticsEnabled }
-        .sensoryFeedback(.success, trigger: conversation.completedTurns) { _, _ in hapticsEnabled }
-        .sensoryFeedback(.warning, trigger: conversation.pendingApproval?.id) { _, new in hapticsEnabled && new != nil }
+        .modifier(ChatHaptics(conversation: conversation, enabled: hapticsEnabled))
+        .onChange(of: conversation.id) {
+            // Another chat in the same screen: nothing of the last one's carries over.
+            composerFocused = false
+            showsPermissions = false
+        }
         .onDrop(of: [.image, .fileURL], isTargeted: nil) { providers in
             AttachmentLoader.load(providers) { conversation.attachments.append($0) }
             return conversation.supportsImages
@@ -385,6 +391,38 @@ struct ChatScreen: View {
             .help("New chat (⌘N)")
             .disabled(conversation.isEmpty && conversation.sessionID == nil)
         }
+    }
+}
+
+/// Sent, finished and needs-you taps. Changes within one chat count, not a switch to another chat
+/// with other counts (the screen stays as chats change).
+private struct ChatHaptics: ViewModifier {
+    let conversation: ConversationModel
+    let enabled: Bool
+
+    private struct Count: Equatable {
+        let chat: UUID
+        let value: Int
+    }
+
+    private struct Request: Equatable {
+        let chat: UUID
+        let id: String?
+    }
+
+    private var sent: Count { Count(chat: conversation.id, value: conversation.sentTurns) }
+    private var completed: Count { Count(chat: conversation.id, value: conversation.completedTurns) }
+    private var approval: Request { Request(chat: conversation.id, id: conversation.pendingApproval?.id) }
+
+    private func sameChat(_ old: Count, _ new: Count) -> Bool { enabled && old.chat == new.chat }
+
+    func body(content: Content) -> some View {
+        content
+            .sensoryFeedback(.impact(weight: .light), trigger: sent, condition: sameChat)
+            .sensoryFeedback(.success, trigger: completed, condition: sameChat)
+            .sensoryFeedback(.warning, trigger: approval) { (old: Request, new: Request) -> Bool in
+                enabled && old.chat == new.chat && new.id != nil
+            }
     }
 }
 

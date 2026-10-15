@@ -29,6 +29,9 @@ struct HermesApp: App {
                     DesignGallery(page: page)
                 } else {
                     RootView()
+                        #if os(iOS)
+                        .onAppear { FrameMonitor.shared.startIfRequested() }
+                        #endif
                 }
                 #else
                 RootView()

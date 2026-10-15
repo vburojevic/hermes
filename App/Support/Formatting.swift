@@ -68,22 +68,43 @@ enum SessionGroup: Hashable, Comparable {
         lhs.rank < rhs.rank
     }
 
+    /// Where the buckets start, worked out once for a whole list rather than per session.
+    private struct Bounds {
+        let calendar: Calendar
+        let startOfTomorrow: Date
+        let startOfToday: Date
+        let startOfYesterday: Date
+        let weekAgo: Date
+        let monthAgo: Date
+
+        init(now: Date, calendar: Calendar) {
+            self.calendar = calendar
+            startOfToday = calendar.startOfDay(for: now)
+            startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? .distantFuture
+            startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday
+            weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday) ?? startOfToday
+            monthAgo = calendar.date(byAdding: .day, value: -30, to: startOfToday) ?? startOfToday
+        }
+    }
+
     static func group(for session: HermesSession, now: Date = .now, calendar: Calendar = .current) -> SessionGroup {
+        group(for: session, in: Bounds(now: now, calendar: calendar))
+    }
+
+    private static func group(for session: HermesSession, in bounds: Bounds) -> SessionGroup {
         if session.pinned { return .pinned }
         let date = session.activityDate
-        if calendar.isDate(date, inSameDayAs: now) { return .today }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return .yesterday
-        }
-        let startOfToday = calendar.startOfDay(for: now)
-        if let weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday), date >= weekAgo { return .previousWeek }
-        if let monthAgo = calendar.date(byAdding: .day, value: -30, to: startOfToday), date >= monthAgo { return .previousMonth }
-        let components = calendar.dateComponents([.year, .month], from: date)
+        if date >= bounds.startOfToday, date < bounds.startOfTomorrow { return .today }
+        if date >= bounds.startOfYesterday, date < bounds.startOfToday { return .yesterday }
+        if date >= bounds.weekAgo { return .previousWeek }
+        if date >= bounds.monthAgo { return .previousMonth }
+        let components = bounds.calendar.dateComponents([.year, .month], from: date)
         return .month(year: components.year ?? 1970, month: components.month ?? 1)
     }
 
     static func grouped(_ sessions: [HermesSession], now: Date = .now) -> [(SessionGroup, [HermesSession])] {
-        Dictionary(grouping: sessions) { group(for: $0, now: now) }
+        let bounds = Bounds(now: now, calendar: .current)
+        return Dictionary(grouping: sessions) { group(for: $0, in: bounds) }
             .map { ($0.key, $0.value.sorted { $0.activityDate > $1.activityDate }) }
             .sorted { $0.0 < $1.0 }
     }
