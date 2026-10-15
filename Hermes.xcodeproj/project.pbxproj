@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		001DBDA178379735F849569C /* CommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA130514841F895F341DD77 /* CommandViews.swift */; };
 		0255BA676231B67BE5885A2B /* HermesMacSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 0CCEEDE69065A76C92D5F1E8 /* HermesMacSupport */; };
+		0EF4297FCC0477C802BFB4FF /* LoadTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58CBFF18B5FB32D195421B /* LoadTrace.swift */; };
 		0F7259542373A616BF878048 /* HermesKit in Frameworks */ = {isa = PBXBuildFile; productRef = 16DFB2492EE20A5F0CC61E10 /* HermesKit */; };
 		106F5BC24FB5A649060FFC8B /* HermesPush in Frameworks */ = {isa = PBXBuildFile; productRef = 2F4ED1CC7C0438AA2C6FEDFE /* HermesPush */; };
 		1518FBC6499C87E9EFDD7AF2 /* ApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967F497D71C16BA410851985 /* ApprovalCard.swift */; };
@@ -77,6 +78,7 @@
 		A894F7F855A6F1A9F1FD54C0 /* PushAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ABE779FF5657A35A4130CED /* PushAppDelegate.swift */; };
 		AB458D35ADAE9277CB17A5FB /* SkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042C768AB2907943B7677D15 /* SkillsView.swift */; };
 		AB8ED4FAF20C225BAA0592BB /* ReferenceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49D00A93727ACE5AB8AE4B10 /* ReferenceContext.swift */; };
+		AC178049990D093B97A545F0 /* TranscriptCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16471D90FF6989063389860C /* TranscriptCache.swift */; };
 		AC46B817408B5D653DA9A91F /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BD603ACFDF0F74E3E93DBA /* NotificationService.swift */; };
 		AED5D9C35EB9BC2572A2BD1B /* HermesPush in Frameworks */ = {isa = PBXBuildFile; productRef = AF4894E19F1F83586D3DDFE6 /* HermesPush */; };
 		B11574255FABC7E07EAF60BF /* DynamicColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9A04B5C1D40414750FC712E /* DynamicColor.swift */; };
@@ -171,6 +173,7 @@
 		0DC4B53D1793821CF9E229CD /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
 		137EDA73B896BDE9D8EDB6A1 /* PairingConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingConnectView.swift; sourceTree = "<group>"; };
 		1526571A993B3EEBD5C03F78 /* RoutinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutinesView.swift; sourceTree = "<group>"; };
+		16471D90FF6989063389860C /* TranscriptCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptCache.swift; sourceTree = "<group>"; };
 		177942A1E815274590668D2B /* Formatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatting.swift; sourceTree = "<group>"; };
 		194CF757A863916B13EA8DC4 /* BotChatViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotChatViews.swift; sourceTree = "<group>"; };
 		1B1E4D3BD50D20E271564D85 /* BotSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotSheet.swift; sourceTree = "<group>"; };
@@ -251,6 +254,7 @@
 		DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCatalog.swift; sourceTree = "<group>"; };
 		DFF762D074CAEA5B49F439C4 /* PairingCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCode.swift; sourceTree = "<group>"; };
 		E47BA9AF3C026D6EEF719EF1 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		EA58CBFF18B5FB32D195421B /* LoadTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadTrace.swift; sourceTree = "<group>"; };
 		EA5F91A046860A0117EA19BB /* HermesMacSupport */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HermesMacSupport; path = Packages/HermesMacSupport; sourceTree = SOURCE_ROOT; };
 		EACA4AA1B8418DE48E92A67F /* PairingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheet.swift; sourceTree = "<group>"; };
 		F2C514DC77B1962F72DF7CEC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -320,6 +324,7 @@
 				001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */,
 				BCE8194331DB2E9630C792EE /* Preferences.swift */,
 				DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */,
+				16471D90FF6989063389860C /* TranscriptCache.swift */,
 				8F92FC2B984473525D5CF4FF /* VoiceSession.swift */,
 				C2195C5DC577A37D518BC540 /* WindowRouter.swift */,
 			);
@@ -360,13 +365,6 @@
 				042C768AB2907943B7677D15 /* SkillsView.swift */,
 			);
 			path = Skills;
-			sourceTree = "<group>";
-		};
-		19BB6BB4D91FE90360CE2050 /* .claude */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = .claude;
 			sourceTree = "<group>";
 		};
 		1B245E7644D22C411B766E63 /* Products */ = {
@@ -524,7 +522,6 @@
 		837FD6E23944C198EB5E34C7 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				19BB6BB4D91FE90360CE2050 /* .claude */,
 				3D7A8822E2EBF3356679B8C3 /* Debug */,
 				8340BC738E410B312899E697 /* Design */,
 				025B1A824EA51C4C441DA035 /* Model */,
@@ -608,6 +605,7 @@
 			children = (
 				A08A478CF569E541F077B3CA /* DictationController.swift */,
 				177942A1E815274590668D2B /* Formatting.swift */,
+				EA58CBFF18B5FB32D195421B /* LoadTrace.swift */,
 				0898D8B638E43B197D08F374 /* Platform.swift */,
 				79A52C42AC82C9A11ADC7358 /* SpeechController.swift */,
 				1C12D79274B1AE563BD6090A /* VoiceSpeaker.swift */,
@@ -884,6 +882,7 @@
 				2D17C956E128D49C1EB89CCD /* HermesMarkPath.swift in Sources */,
 				8F1D15B20B90A1A195A6F2B7 /* ImageAttachment.swift in Sources */,
 				752BCD5B083EC8C7EA024CE4 /* InlineFlow.swift in Sources */,
+				0EF4297FCC0477C802BFB4FF /* LoadTrace.swift in Sources */,
 				BEB0E3A3CF5FDAFC19D55613 /* MacNotifier.swift in Sources */,
 				68C181FF81413ABCCCB03A54 /* MacSettingsView.swift in Sources */,
 				20ED0A86CBE0F1AE0BC95301 /* MarkdownView.swift in Sources */,
@@ -925,6 +924,7 @@
 				6D338161EEC3D2AC31B5DB2B /* SpeechController.swift in Sources */,
 				311D242525B41371CA130E1B /* TasksView.swift in Sources */,
 				8D237ADC3014D97F32E0DC5F /* Theme.swift in Sources */,
+				AC178049990D093B97A545F0 /* TranscriptCache.swift in Sources */,
 				6847AB2F4BE7257C5FDFD77D /* TranscriptView.swift in Sources */,
 				89BBF2D076CAF94E7DCAF569 /* TurnActivityController.swift in Sources */,
 				EEBB26CBEA825B506837FF01 /* TurnExtras.swift in Sources */,

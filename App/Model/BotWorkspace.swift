@@ -344,10 +344,34 @@ final class BotWorkspace: Identifiable {
                 conversations[session.stableID]?.adoptSessionID(session.id)
             }
             if case .failed = connection { connection = .online(version: nil) }
+            prefetchRecent()
         } catch is CancellationError {
         } catch {
             if sessions.isEmpty {
                 connection = .failed(error as? HermesError ?? .invalidResponse(error.localizedDescription))
+            }
+        }
+    }
+
+    /// Chats whose transcript this launch fetched ahead.
+    @ObservationIgnored private var prefetched: Set<String> = []
+
+    /// The few most recent chats are fetched ahead into the transcript cache, so opening one
+    /// shows it at once. Once per chat per launch, after a pause (never competing with the chat
+    /// being opened), and not in Low Power Mode.
+    private func prefetchRecent() {
+        guard let client, !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+        let recent = sessions.sorted { $0.activityDate > $1.activityDate }.prefix(3)
+            .filter { !prefetched.contains($0.stableID) && conversations[$0.stableID]?.isEmpty != false }
+        guard !recent.isEmpty else { return }
+        prefetched.formUnion(recent.map(\.stableID))
+        let botID = bot.id.uuidString
+        Task(priority: .utility) {
+            try? await Task.sleep(for: .seconds(2))
+            for session in recent {
+                guard let transcript = try? await client.transcript(sessionID: session.id) else { continue }
+                TranscriptCache.save("\(botID)-\(session.stableID)", sessionID: transcript.sessionID,
+                                     messages: transcript.messages, hasEarlier: transcript.hasEarlier)
             }
         }
     }
@@ -409,6 +433,7 @@ final class BotWorkspace: Identifiable {
         sessions.removeAll { $0.stableID == session.stableID }
         conversations[session.stableID]?.cancelAll()
         conversations[session.stableID] = nil
+        TranscriptCache.remove("\(bot.id.uuidString)-\(session.stableID)")
         if selection == .session(session.stableID) {
             selection = nil
         }

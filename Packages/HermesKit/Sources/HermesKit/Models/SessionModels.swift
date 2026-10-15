@@ -133,7 +133,7 @@ public struct SessionPage: Decodable, Sendable {
 // MARK: - Messages
 
 /// One row of `GET /api/sessions/{id}/messages`.
-public struct SessionMessage: Decodable, Sendable, Hashable {
+public struct SessionMessage: Codable, Sendable, Hashable {
     public var id: Int?
     public var role: String
     public var content: MessageContent
@@ -190,10 +190,26 @@ public struct SessionMessage: Decodable, Sendable, Hashable {
         displayKind = try? c.decodeIfPresent(String.self, forKey: .displayKind)
         displayContent = try? c.decodeIfPresent(String.self, forKey: .displayContent)
     }
+
+    /// The same shape as the server's rows, so a cached transcript decodes like a fetched one.
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(id, forKey: .id)
+        try c.encode(role, forKey: .role)
+        try c.encode(content, forKey: .content)
+        if !toolCalls.isEmpty { try c.encode(toolCalls, forKey: .toolCalls) }
+        try c.encodeIfPresent(toolCallID, forKey: .toolCallID)
+        try c.encodeIfPresent(toolName, forKey: .toolName)
+        try c.encodeIfPresent(timestamp?.timeIntervalSince1970, forKey: .timestamp)
+        try c.encodeIfPresent(finishReason, forKey: .finishReason)
+        try c.encodeIfPresent(reasoning, forKey: .reasoning)
+        try c.encodeIfPresent(displayKind, forKey: .displayKind)
+        try c.encodeIfPresent(displayContent, forKey: .displayContent)
+    }
 }
 
 /// Message content: a string, multimodal parts, or nothing.
-public enum MessageContent: Decodable, Sendable, Hashable {
+public enum MessageContent: Codable, Sendable, Hashable {
     case text(String)
     case parts([ContentPart])
     case none
@@ -206,6 +222,15 @@ public enum MessageContent: Decodable, Sendable, Hashable {
             self = .text(text)
         } else {
             self = .parts(try container.decode([LossyElement<ContentPart>].self).compactMap(\.value))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let text): try container.encode(text)
+        case .parts(let parts): try container.encode(parts)
+        case .none: try container.encodeNil()
         }
     }
 
@@ -224,7 +249,7 @@ public enum MessageContent: Decodable, Sendable, Hashable {
     }
 }
 
-public struct ContentPart: Decodable, Sendable, Hashable {
+public struct ContentPart: Codable, Sendable, Hashable {
     public var type: String
     public var text: String?
     public var imageURL: String?
@@ -245,9 +270,16 @@ public struct ContentPart: Decodable, Sendable, Hashable {
             imageURL = object["url"]?.stringValue
         }
     }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(type, forKey: .type)
+        try c.encodeIfPresent(text, forKey: .text)
+        try c.encodeIfPresent(imageURL, forKey: .imageURL)
+    }
 }
 
-public struct ToolCall: Decodable, Sendable, Hashable {
+public struct ToolCall: Codable, Sendable, Hashable {
     public var id: String?
     public var name: String
     /// JSON-encoded arguments; may be invalid JSON.
@@ -277,6 +309,14 @@ public struct ToolCall: Decodable, Sendable, Hashable {
     }
 
     public var parsedArguments: JSONValue? { JSONValue.parse(arguments) }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(id, forKey: .id)
+        var function = c.nestedContainer(keyedBy: FunctionKeys.self, forKey: .function)
+        try function.encode(name, forKey: .name)
+        try function.encode(arguments, forKey: .arguments)
+    }
 }
 
 struct MessagesEnvelope: Decodable {
@@ -299,6 +339,31 @@ public struct SessionTranscript: Sendable {
     /// The live (post-compression) session id the server resolved.
     public var sessionID: String
     public var messages: [SessionMessage]
+    /// The newest page only: earlier messages exist and can be fetched (`offset`).
+    public var hasEarlier = false
+
+    public init(sessionID: String, messages: [SessionMessage], hasEarlier: Bool = false) {
+        self.sessionID = sessionID
+        self.messages = messages
+        self.hasEarlier = hasEarlier
+    }
+
+    /// How many rows the first page of a chat asks for: enough for a screen or two of the latest
+    /// turns, a fraction of the 500 the API server sends by default (tool output makes rows big).
+    public static let firstPage = 150
+
+    /// This page put after earlier rows already held: rows both have are kept once (pages
+    /// counted from the newest overlap when new rows arrive in between).
+    public func appending(toEarlier earlier: [SessionMessage]) -> [SessionMessage] {
+        guard let firstID = messages.first?.id else { return messages }
+        return earlier.filter { ($0.id ?? .max) < firstID } + messages
+    }
+
+    /// An earlier page put before the rows held now.
+    public static func merge(earlier: [SessionMessage], before rows: [SessionMessage]) -> [SessionMessage] {
+        guard let firstID = rows.first?.id else { return earlier + rows }
+        return earlier.filter { ($0.id ?? .min) < firstID } + rows
+    }
 }
 
 // MARK: - Runs

@@ -104,9 +104,15 @@ public struct HermesClient: Sendable {
     }
 
     /// The live transcript (up to the latest 500 messages), resolved to the current compression tip.
-    public func transcript(sessionID: String) async throws -> SessionTranscript {
-        let envelope: MessagesEnvelope = try await get(["api", "sessions", sessionID, "messages"])
-        return SessionTranscript(sessionID: envelope.sessionID ?? sessionID, messages: envelope.data)
+    /// The newest `limit` messages, skipping the newest `offset` (`order=latest` pages count back
+    /// from the end; rows still come oldest first).
+    public func transcript(sessionID: String, limit: Int = SessionTranscript.firstPage, offset: Int = 0) async throws -> SessionTranscript {
+        let envelope: MessagesEnvelope = try await get(["api", "sessions", sessionID, "messages"], query: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "order", value: "latest"),
+        ])
+        return SessionTranscript(sessionID: envelope.sessionID ?? sessionID, messages: envelope.data, hasEarlier: envelope.data.count >= limit)
     }
 
     // MARK: - Runs (detached turns)

@@ -56,6 +56,7 @@ TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
 
 CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin"}
+GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
 
 
 # ── Data ─────────────────────────────────────────────────────────────────────
@@ -1102,6 +1103,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_json(self, status, body, headers=None):
         data = json.dumps(body).encode()
+        if GATEWAY_PAGING:
+            GATEWAY_PAGING[1](len(data))
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
@@ -1157,10 +1160,8 @@ class Handler(BaseHTTPRequestHandler):
                 session = STORED.get(sid)
                 if session is None or session["profile"] != profile:
                     return self.send_json(404, {"detail": "Session not found"})
-                limit = int(query.get("limit", ["500"])[0])
-                rows = session["messages"][-limit:]
-            return self.send_json(200, {"session_id": sid, "profile": profile, "messages": rows,
-                                        "pagination": {"limit": limit, "offset": 0, "order": "latest", "returned": len(rows)}})
+                rows, pagination = GATEWAY_PAGING[0](list(session["messages"]), query) if GATEWAY_PAGING else (session["messages"][-int(query.get("limit", ["500"])[0]):], {})
+            return self.send_json(200, {"session_id": sid, "profile": profile, "messages": rows, "pagination": pagination})
         self.send_json(404, {"detail": "Not Found"})
 
     def do_POST(self):
@@ -1301,6 +1302,9 @@ def main():
                         help="also serve the API-server mock (server.py) on this port, sharing its sessions with "
                              "the socket, like the real gateway and backend share one database (chats.py)")
     parser.add_argument("--gateway-key", default="dev-key-0123456789abcdef")
+    parser.add_argument("--bandwidth", type=int, default=0, metavar="KBPS",
+                        help="answer HTTP like a phone over the network at this many kbit/s (0: localhost speed)")
+    parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one")
     parser.add_argument("--push-relay", default="simctl",
                         help="where push notices go (push.py): simctl (the simulator that registered), a relay URL, "
                              "or none (no plugin)")
@@ -1320,6 +1324,10 @@ def main():
         spec.loader.exec_module(gateway)
         gateway.Handler.key = args.gateway_key
         gateway.seed()
+        gateway.NETWORK["kbps"] = args.bandwidth
+        if args.long_chat:
+            gateway.seed_long_chat()
+        GATEWAY_PAGING.extend([gateway.page_rows, gateway.throttle])
         api = ThreadingHTTPServer((args.host, args.gateway_port), gateway.Handler)
         api.daemon_threads = True
         threading.Thread(target=api.serve_forever, daemon=True).start()

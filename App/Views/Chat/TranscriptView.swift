@@ -25,7 +25,7 @@ struct TranscriptView: View {
     /// Read in callbacks, never drawn: kept out of SwiftUI state, or every scroll frame and every
     /// streamed word would redraw the whole transcript.
     @State private var edge = EdgeTracker()
-    /// An opened chat stays out of sight until it has settled at the bottom, then fades in, rather
+    /// An opened chat stays out of sight for its first frame, until it's at the bottom, rather
     /// than visibly jumping as rows get measured. A chat that appears because you just sent (or a
     /// reply is running) shows at once.
     @State private var settled: Bool
@@ -43,7 +43,7 @@ struct TranscriptView: View {
     @State private var isPrepending = false
     /// The composer's height over the end of the chat (see the end marker).
     @State private var bottomInset: CGFloat = 0
-    private static let pageSize = 30
+    private static let pageSize = 20
 
     init(conversation: ConversationModel, workspace: BotWorkspace) {
         self.conversation = conversation
@@ -58,7 +58,7 @@ struct TranscriptView: View {
         let rows = all[first...].map { DisplayRow(key: conversation.displayID(for: $0), item: $0) }
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                if first > 0 {
+                if first > 0 || conversation.hasEarlierMessages {
                     // Earlier messages come in as the reader nears the top, a page at a time.
                     ProgressView()
                         .controlSize(.small)
@@ -146,7 +146,10 @@ struct TranscriptView: View {
         } action: { old, new in
             edge.distance = new.distance
             if new.inset != bottomInset { bottomInset = new.inset }
-            if new.nearTop, !old.nearTop || isScrolledByHand, !isFollowing || isScrolledByHand {
+            // Near the top while reading back (or a short page that doesn't fill the screen):
+            // the next page of earlier messages, from memory or from the gateway.
+            let fillsScreen = new.height > new.container
+            if new.nearTop, !old.nearTop || isScrolledByHand || !fillsScreen, !isFollowing || isScrolledByHand || !fillsScreen {
                 showEarlier()
             }
             if isScrolledByHand {
@@ -203,15 +206,17 @@ struct TranscriptView: View {
         }
         .animation(Theme.snappy, value: isFollowing)
         .task {
-            // The lazy history estimates its height, so the first offset can fall short on long
-            // chats; settle on the real end (still out of sight) before showing.
-            for delay in [50, 120, 120, 120, 120] {
+            LoadTrace.mark(conversation.stableKey, "transcript appeared (\(conversation.rows.count) rows)")
+            // The rows on screen are measured exactly, so the first offset is the end already;
+            // one frame later, make sure (out of sight), then show. Long only if it isn't there.
+            for delay in [16, 60, 60] {
                 try? await Task.sleep(for: .milliseconds(delay))
+                if edge.distance <= 16 { break } // (negative: everything fits on screen)
                 scrollToLatest()
-                if delay > 50, abs(edge.distance) <= 1 { break }
             }
             if !settled {
-                withAnimation(.easeOut(duration: 0.22)) { settled = true }
+                LoadTrace.mark(conversation.stableKey, "transcript settled, showing")
+                withAnimation(.easeOut(duration: 0.15)) { settled = true }
             }
         }
         .opacity(settled ? 1 : 0)
@@ -236,7 +241,16 @@ struct TranscriptView: View {
     private func showEarlier() {
         let all = conversation.rows
         let first = firstShownIndex(in: all)
-        guard first > 0, !isPrepending else { return }
+        guard !isPrepending else { return }
+        guard first > 0 else {
+            // Everything held is on screen: ask the gateway for the page before it.
+            guard conversation.hasEarlierMessages, !conversation.isLoadingEarlier else { return }
+            Task {
+                await conversation.loadEarlier()
+                showEarlier()
+            }
+            return
+        }
         let key = conversation.displayID(for: all[max(0, first - Self.pageSize)])
         let keep = conversation.displayID(for: all[first])
         var instant = Transaction()
@@ -275,7 +289,8 @@ struct TranscriptView: View {
     }
 
     final class EdgeTracker {
-        var distance: CGFloat = 0
+        /// Not measured yet: as far from the end as can be.
+        var distance: CGFloat = .greatestFiniteMagnitude
         var flip = false
         var settle: Task<Void, Never>?
     }

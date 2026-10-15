@@ -118,6 +118,7 @@ final class AppModel {
         #endif
         workspaces[botID]?.tearDown()
         workspaces[botID]?.imageStore.removeAll()
+        TranscriptCache.removeAll(gateway: botID)
         workspaces[botID] = nil
         bots = updated
         UserDefaults.standard.removeObject(forKey: "model.\(botID.uuidString)")

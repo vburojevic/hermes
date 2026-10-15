@@ -46,6 +46,50 @@ def session_row(sid, title, source, started, last, preview, model="anthropic/cla
     MESSAGES[sid] = []
 
 
+NETWORK = {"kbps": 0}  # --bandwidth: a phone on Wi-Fi or Tailscale, not localhost
+
+
+def throttle(size):
+    """Sends take as long as they would at the configured bandwidth (plus a round trip)."""
+    if NETWORK["kbps"]:
+        time.sleep(0.06 + size / (NETWORK["kbps"] * 128))
+
+
+def page_rows(rows, query):
+    """Hermes' GET /api/sessions/{id}/messages paging: limit (default and max 500), offset, and order
+    (latest pages count back from the newest row, still returned oldest first)."""
+    def arg(name):
+        value = query.get(name)
+        return value[0] if isinstance(value, list) else value
+    raw_limit = arg("limit")
+    limit = 500 if raw_limit is None else min(int(raw_limit), 500)
+    offset = int(arg("offset") or 0)
+    order = arg("order") or ("latest" if raw_limit is None else "oldest")
+    if order == "latest":
+        end = max(0, len(rows) - offset)
+        page = rows[max(0, end - limit):end]
+    else:
+        page = rows[offset:offset + limit]
+    return page, {"limit": limit, "offset": offset, "order": order, "returned": len(page)}
+
+
+def seed_long_chat(turns=60):
+    """A chat as big as a long real one: many turns of agent work with sizeable tool output."""
+    sid = "long_history"
+    session_row(sid, "Homelab rebuild", "cli", NOW - 9 * 86400, NOW - 3 * 60, "Rebuild the homelab")
+    t = NOW - 9 * 86400
+    for turn in range(turns):
+        add_message(sid, "user", f"Step {turn + 1}: check the services on node {turn % 7} and fix what's broken.", timestamp=t)
+        for call in range(8 + turn % 9):
+            cid = f"call_long_{turn}_{call}"
+            add_message(sid, "assistant", "", timestamp=t + call * 4 + 1,
+                        tool_calls=[{"id": cid, "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": f"systemctl status svc-{call} --no-pager"})}}])
+            output = "\n".join(f"svc-{call}.service line {i}: Active: active (running) since Tue; Main PID {1000 + i}; Tasks: {i % 9}; Memory: {i * 3}M" for i in range(30))
+            add_message(sid, "tool", json.dumps({"output": output, "exit_code": 0}), timestamp=t + call * 4 + 3, tool_call_id=cid, tool_name="terminal")
+        add_message(sid, "assistant", f"Node {turn % 7} is healthy again. I restarted **svc-{turn % 5}**, cleared a stale lock and confirmed the health checks pass.\n\n- Disk: 41% used\n- Load: 0.{turn % 9}\n- Next: watch the backups tonight.", timestamp=t + 200)
+        t += 3 * 3600
+
+
 def add_message(sid, role, content, **extra):
     with LOCK:
         rows = MESSAGES.setdefault(sid, [])
@@ -327,6 +371,7 @@ class Handler(BaseHTTPRequestHandler):
     # helpers
     def send_json(self, status, body, extra=None):
         data = json.dumps(body).encode()
+        throttle(len(data))
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
@@ -411,9 +456,8 @@ class Handler(BaseHTTPRequestHandler):
             if sid not in SESSIONS:
                 return self.error(404, f"Session not found: {sid}", "session_not_found")
             with LOCK:
-                rows = list(MESSAGES.get(sid, []))[-500:]
-            return self.send_json(200, {"object": "list", "session_id": sid, "data": rows,
-                                        "pagination": {"limit": 500, "offset": 0, "order": "latest", "returned": len(rows)}})
+                rows, pagination = page_rows(list(MESSAGES.get(sid, [])), query)
+            return self.send_json(200, {"object": "list", "session_id": sid, "data": rows, "pagination": pagination})
         m = re.fullmatch(r"/v1/runs/([^/]+)", path)
         if m:
             run = RUNS.get(m.group(1))

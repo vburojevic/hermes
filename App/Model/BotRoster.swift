@@ -569,8 +569,8 @@ final class BotRoster {
         await socket?.respond(to: requestID, result: result)
     }
 
-    func transcript(storedSessionID: String, profile: String) async throws -> SessionTranscript {
-        try await client.transcript(storedSessionID: storedSessionID, profile: profile)
+    func transcript(storedSessionID: String, profile: String, limit: Int = SessionTranscript.firstPage, offset: Int = 0) async throws -> SessionTranscript {
+        try await client.transcript(storedSessionID: storedSessionID, profile: profile, limit: limit, offset: offset)
     }
 
     var isConnected: Bool { socket != nil && state.isOnline }

@@ -72,8 +72,17 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var localItems: [(anchor: LocalAnchor, item: TranscriptItem)] = []
     /// Receipts from the running turn: shown between its message and its reply.
     private var turnReceipts: [TranscriptItem] = []
-    /// The stored rows behind `items`, for branch points.
+    /// The stored rows behind `items` (the newest pages; see `hasEarlierMessages`).
     @ObservationIgnored private var rawMessages: [SessionMessage] = []
+    /// Older messages exist on the gateway beyond `rawMessages`; scrolling up fetches them
+    /// (`loadEarlier`). Chats open on their newest page only.
+    private(set) var hasEarlierMessages = false
+    private(set) var isLoadingEarlier = false
+    /// When the transcript last arrived from the gateway: a reconnect right after needn't fetch it again.
+    @ObservationIgnored private var lastFetchedAt: Date?
+    /// The transcript load under way, if any.
+    @ObservationIgnored private var fetchToken: UUID?
+    private var isFetching: Bool { fetchToken != nil }
     /// Sent once the transcript has loaded (a branch made by Edit and Resend).
     @ObservationIgnored private var sendOnLoad: String?
     /// Editing an earlier message (`composerEditing`): sending branches from just before it.
@@ -449,6 +458,7 @@ final class ConversationModel: Identifiable {
     // MARK: - Loading
 
     func loadIfNeeded() {
+        LoadTrace.mark(stableKey, "loadIfNeeded state=\(loadState) client=\(workspace?.client != nil)")
         guard loadState == .idle, sessionID != nil || isBotChat else { return }
         reload()
     }
@@ -458,14 +468,23 @@ final class ConversationModel: Identifiable {
             reloadBotChat()
             return
         }
+        LoadTrace.begin(stableKey ?? "?", "reload (client: \(workspace?.client != nil))")
         guard let sessionID, let client = workspace?.client else { return }
         loadTask?.cancel()
-        if items.isEmpty { loadState = .loading }
+        let opening = items.isEmpty
+        if opening { loadState = .loading }
+        let token = UUID()
+        fetchToken = token
         loadTask = Task {
+            defer { if fetchToken == token { fetchToken = nil } }
+            // What this device saw last shows at once; the gateway's copy follows.
+            if opening { await showCached() }
             do {
-                let transcript = try await client.transcript(sessionID: sessionID)
+                let transcript = try await fetchLatest(sessionID)
+                LoadTrace.mark(stableKey, "fetched \(transcript.messages.count) rows")
                 guard !Task.isCancelled, !isWorking, !isFinishing else { return }
                 apply(transcript)
+                LoadTrace.mark(stableKey, "applied \(items.count) items")
                 loadState = .loaded
                 needsReconcile = false
                 if let text = sendOnLoad {
@@ -479,6 +498,7 @@ final class ConversationModel: Identifiable {
                 // still waiting for an answer.
                 if usesGateway, runtimeSessionID == nil {
                     _ = await attachGatewayChat()
+                    LoadTrace.mark(stableKey, "attached")
                 }
             } catch is CancellationError {
             } catch {
@@ -498,12 +518,30 @@ final class ConversationModel: Identifiable {
         sessionID = id
     }
 
+    /// The newest page from the gateway, put after the earlier rows already held (when they
+    /// meet; otherwise the page alone, with earlier rows still to fetch). A page that changes
+    /// nothing leaves the transcript as it is: no rebuild, no redraw.
     private func apply(_ transcript: SessionTranscript) {
+        lastFetchedAt = .now
         if transcript.sessionID != sessionID {
             sessionID = transcript.sessionID
         }
-        rawMessages = transcript.messages
-        var built = TranscriptBuilder.build(transcript.messages, hidesSilence: botName != nil)
+        var merged = transcript.messages
+        var earlier = transcript.hasEarlier
+        if transcript.hasEarlier, let first = transcript.messages.first?.id, let newest = rawMessages.last?.id, first <= newest {
+            merged = transcript.appending(toEarlier: rawMessages)
+            earlier = hasEarlierMessages
+        }
+        if earlier != hasEarlierMessages { hasEarlierMessages = earlier }
+        if merged == rawMessages, !items.isEmpty, turnReceipts.isEmpty { return }
+        rebuild(from: merged)
+        saveCache()
+    }
+
+    /// Builds `items` from stored rows.
+    private func rebuild(from messages: [SessionMessage]) {
+        rawMessages = messages
+        var built = TranscriptBuilder.build(Self.fromTurnStart(messages, hasEarlier: hasEarlierMessages), hidesSilence: botName != nil)
         if sentTurns == 0, completedTurns == 0, !built.isEmpty { openedWithHistory = true }
         resolveImages(in: built)
         restoreParts(in: &built)
@@ -515,6 +553,91 @@ final class ConversationModel: Identifiable {
         }
         items = mergeLocalItems(into: built)
         matchCaptions()
+    }
+
+    /// A page that starts partway through a turn starts at its next message from the person
+    /// instead (the rest of that turn comes with the earlier page).
+    private static func fromTurnStart(_ messages: [SessionMessage], hasEarlier: Bool) -> [SessionMessage] {
+        guard hasEarlier, let start = messages.firstIndex(where: { $0.role == "user" && $0.displayKind != "hidden" }) else { return messages }
+        return Array(messages[start...])
+    }
+
+    // MARK: Transcript cache and pages
+
+    /// Where this chat's transcript is kept on the device: per gateway, per chat.
+    private var cacheKey: String? {
+        if let botName, let roster { return "bot-\(roster.botID.uuidString)-\(botName)" }
+        guard let workspace, let stableKey else { return nil }
+        return "\(workspace.bot.id.uuidString)-\(stableKey)"
+    }
+
+    private func saveCache() {
+        guard let cacheKey, let sessionID else { return }
+        TranscriptCache.save(cacheKey, sessionID: sessionID, messages: rawMessages, hasEarlier: hasEarlierMessages)
+    }
+
+    /// The transcript this device saw last, while the gateway's copy is on its way.
+    private func showCached() async {
+        guard let cacheKey, let cached = await TranscriptCache.load(cacheKey) else { return }
+        guard items.isEmpty, live == nil, !Task.isCancelled else { return }
+        hasEarlierMessages = cached.hasEarlier
+        rebuild(from: cached.messages)
+        loadState = .loaded
+        LoadTrace.mark(stableKey, "showed cache (\(cached.messages.count) rows)")
+    }
+
+    /// A page of the stored transcript, from wherever this chat is served.
+    private func fetchPage(_ id: String, limit: Int, offset: Int) async throws -> SessionTranscript {
+        if let botName, let roster {
+            return try await roster.transcript(storedSessionID: id, profile: botName, limit: limit, offset: offset)
+        }
+        if let client = workspace?.client {
+            return try await client.transcript(sessionID: id, limit: limit, offset: offset)
+        }
+        if let roster = gatewayRoster {
+            return try await roster.transcript(storedSessionID: id, profile: gatewayProfile ?? "default", limit: limit, offset: offset)
+        }
+        throw GatewaySocket.Failure.notConnected
+    }
+
+    /// The newest page, reaching back to the rows already held so nothing between them goes
+    /// missing (a long turn can add more rows than a page).
+    private func fetchLatest(_ id: String) async throws -> SessionTranscript {
+        var page = try await fetchPage(id, limit: SessionTranscript.firstPage, offset: 0)
+        var rounds = 0
+        while page.hasEarlier, let newest = rawMessages.last?.id, let first = page.messages.first?.id, first > newest, rounds < 10 {
+            let more = try await fetchPage(id, limit: 200, offset: page.messages.count)
+            page = SessionTranscript(
+                sessionID: page.sessionID,
+                messages: SessionTranscript.merge(earlier: more.messages, before: page.messages),
+                hasEarlier: more.hasEarlier
+            )
+            rounds += 1
+        }
+        return page
+    }
+
+    /// The page before the earliest message held (scrolling up).
+    func loadEarlier() async {
+        guard hasEarlierMessages, !isLoadingEarlier, let sessionID else { return }
+        isLoadingEarlier = true
+        defer { isLoadingEarlier = false }
+        guard let page = try? await fetchPage(sessionID, limit: 200, offset: rawMessages.count),
+              self.sessionID == sessionID, !isFinishing else { return }
+        hasEarlierMessages = page.hasEarlier
+        rebuild(from: SessionTranscript.merge(earlier: page.messages, before: rawMessages))
+        saveCache()
+    }
+
+    /// Everything from the start (branching counts the rows before its point).
+    private func loadAllEarlier() async {
+        var pages = 0
+        while hasEarlierMessages, pages < 50 {
+            let before = rawMessages.count
+            await loadEarlier()
+            pages += 1
+            if rawMessages.count == before { break }
+        }
     }
 
     /// Captions kept by text find their stored rows: the newest message with that text.
@@ -1018,9 +1141,11 @@ final class ConversationModel: Identifiable {
             branch()
             return
         }
-        guard let count = visibleCount(at: point) else { return }
         Task {
             do {
+                // The count is from the start of the chat.
+                await loadAllEarlier()
+                guard let count = visibleCount(at: point) else { return }
                 let runtime = try await ensureRuntime()
                 let result = try await roster.request("session.branch", [
                     "session_id": .string(runtime),
@@ -1672,7 +1797,7 @@ final class ConversationModel: Identifiable {
                 live?.markFailed((error as? HermesError)?.errorDescription ?? error.localizedDescription)
             }
         }
-        await finishTurn { try await client.transcript(sessionID: $0) }
+        await finishTurn { try await self.fetchLatest($0) }
     }
 
     private func ensureSession(client: HermesClient, workspace: BotWorkspace) async throws -> String {
@@ -2048,17 +2173,28 @@ extension ConversationModel {
 
     fileprivate func reloadBotChat() {
         guard let roster, let botName else { return }
+        LoadTrace.begin(stableKey ?? "?", "bot reload (connected: \(roster.isConnected))")
         loadTask?.cancel()
-        if items.isEmpty { loadState = .loading }
+        let opening = items.isEmpty
+        if opening { loadState = .loading }
         guard roster.isConnected else {
+            if opening { Task { await showCached() } }
             roster.retryNow() // Reload means now, not after the backoff; the roster calls back once online
             return
         }
+        let token = UUID()
+        fetchToken = token
         loadTask = Task {
+            defer { if fetchToken == token { fetchToken = nil } }
+            if opening { await showCached() }
             do {
                 let stored = try await roster.resolveBotChat(botName)
+                LoadTrace.mark(stableKey, "resolved \(stored ?? "nil")")
                 if let stored {
-                    let transcript = try await roster.transcript(storedSessionID: stored, profile: botName)
+                    if sessionID != stored {
+                        sessionID = stored
+                    }
+                    let transcript = try await fetchLatest(stored)
                     guard !Task.isCancelled, !isWorking, !isFinishing else { return }
                     sessionID = stored
                     apply(transcript)
@@ -2305,13 +2441,8 @@ extension ConversationModel {
 
     private func finishBotTurn() async {
         defer { isBotTurnOpen = false }
-        if let roster, let botName {
-            await finishTurn { try await roster.transcript(storedSessionID: $0, profile: botName) }
-        } else if let client = workspace?.client {
-            await finishTurn { try await client.transcript(sessionID: $0) }
-        } else if let roster = gatewayRoster {
-            let profile = gatewayProfile ?? "default"
-            await finishTurn { try await roster.transcript(storedSessionID: $0, profile: profile) }
+        if roster != nil || workspace?.client != nil || gatewayRoster != nil {
+            await finishTurn { try await self.fetchLatest($0) }
         }
     }
 
@@ -2740,7 +2871,8 @@ extension ConversationModel {
             return // not opened yet
         case .loading, .failed:
             if !isWorking {
-                reload()
+                // A load already under way carries on; starting it again would fetch twice.
+                if !isFetching { reload() }
                 return
             }
         case .loaded:
@@ -2775,6 +2907,9 @@ extension ConversationModel {
             catchUpBuffer = nil
             connectionNote = nil
             guard live != nil else {
+                // A transcript fetched moments ago (the socket connecting as the app starts) is
+                // current: only a real outage needs catching up.
+                if let lastFetchedAt, Date.now.timeIntervalSince(lastFetchedAt) < 5 { return }
                 reload()
                 return
             }

@@ -147,16 +147,17 @@ public actor BackendClient {
     // MARK: - Sessions
 
     /// A profile's transcript, the authority Desktop renders from.
-    public func transcript(storedSessionID: String, profile: String?) async throws -> SessionTranscript {
+    public func transcript(storedSessionID: String, profile: String?, limit: Int = SessionTranscript.firstPage, offset: Int = 0) async throws -> SessionTranscript {
         var query = [
-            URLQueryItem(name: "limit", value: "200"),
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "order", value: "latest"),
             URLQueryItem(name: "include_compacted", value: "true"),
         ]
         if let profile { query.append(URLQueryItem(name: "profile", value: profile)) }
         let (data, _) = try await send(path: "api/sessions/\(Self.escape(storedSessionID))/messages", query: query)
         let envelope = try JSONDecoder().decode(BackendMessagesEnvelope.self, from: data)
-        return SessionTranscript(sessionID: envelope.sessionID ?? storedSessionID, messages: envelope.messages)
+        return SessionTranscript(sessionID: envelope.sessionID ?? storedSessionID, messages: envelope.messages, hasEarlier: envelope.messages.count >= limit)
     }
 
     // MARK: - Routines

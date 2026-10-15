@@ -164,6 +164,34 @@ struct TranscriptTests {
         #expect(GatewayQueue.busyMode(in: JSONValue.parse(#"{"value":"steer"}"#)!) == "steer")
     }
 
+    /// A cached transcript reads back exactly as it was fetched.
+    @Test func messagesRoundTripThroughTheCache() throws {
+        let messages = try decode("""
+        {"data":[
+         {"id":1,"role":"user","content":"Check the disks","timestamp":1760000000.5},
+         {"id":2,"role":"assistant","content":"","tool_calls":[{"id":"c1","function":{"name":"terminal","arguments":"{\\"command\\":\\"df -h\\"}"}}],"reasoning":"Look first."},
+         {"id":3,"role":"tool","content":"ok","tool_call_id":"c1","tool_name":"terminal"},
+         {"id":4,"role":"user","content":[{"type":"text","text":"and this"},{"type":"image_url","image_url":{"url":"https://x/y.png"}}]},
+         {"id":5,"role":"user","content":"[OUT-OF-BAND]","display_kind":"steer","display_content":"Only the NAS"}
+        ]}
+        """)
+        let data = try JSONEncoder().encode(messages)
+        let decoded = try JSONDecoder().decode([SessionMessage].self, from: data)
+        #expect(decoded == messages)
+    }
+
+    /// Pages from the newest end meet the rows already held without losing or repeating any.
+    @Test func pagesMerge() {
+        func rows(_ ids: ClosedRange<Int>) -> [SessionMessage] {
+            ids.map { SessionMessage(id: $0, role: "user", content: .text("\($0)")) }
+        }
+        // The newest page overlaps what's held (rows arrived since): earlier rows stay once.
+        let page = SessionTranscript(sessionID: "s", messages: rows(6...12), hasEarlier: true)
+        #expect(page.appending(toEarlier: rows(1...8)).compactMap(\.id) == Array(1...12))
+        // An earlier page overlapping the rows held (offset counted after new rows came).
+        #expect(SessionTranscript.merge(earlier: rows(3...7), before: rows(6...12)).compactMap(\.id) == Array(3...12))
+    }
+
     @Test func pairsByNameWhenIdsMissing() throws {
         let messages = try decode("""
         {"data":[
