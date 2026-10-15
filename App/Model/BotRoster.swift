@@ -21,10 +21,19 @@ final class BotRoster {
         var isOnline: Bool {
             if case .online = self { true } else { false }
         }
+
+        var isFailed: Bool {
+            if case .failed = self { true } else { false }
+        }
     }
 
     private(set) var link: BackendLink
-    private(set) var state: State = .idle
+    private(set) var state: State = .idle {
+        didSet {
+            guard state != oldValue else { return }
+            ConnectionLog.logger.notice("bots: \(String(describing: self.state), privacy: .public)")
+        }
+    }
     /// Every Bot as `profiles.list` reports it.
     private(set) var profiles: [BotProfile] = []
     /// Pinned first, then most recently active or created. Rebuilt only when the roster changes.
@@ -189,10 +198,12 @@ final class BotRoster {
         connectIfNeeded()
     }
 
-    func connectIfNeeded() {
+    /// - Parameter quietly: a retry in the background: Bots that are offline stay "offline" until
+    ///   they're back, rather than flickering to "Connecting…" on every attempt.
+    func connectIfNeeded(quietly: Bool = false) {
         guard !isTornDown, socket == nil, connectTask == nil else { return }
         watchNetwork()
-        startConnect()
+        startConnect(quietly: quietly)
     }
 
     /// Connect now, skipping any backoff wait: the person asked (Retry, Reload), or the
@@ -256,20 +267,20 @@ final class BotRoster {
     }
 
     /// One tracked connect at a time; a superseded attempt discards what it opened.
-    private func startConnect() {
+    private func startConnect(quietly: Bool = false) {
         connectTask?.cancel()
         connectStartedAt = .now
         connectGeneration += 1
         let generation = connectGeneration
         connectTask = Task { [weak self] in
-            await self?.connect(generation: generation)
+            await self?.connect(generation: generation, quietly: quietly)
             if self?.connectGeneration == generation { self?.connectTask = nil }
         }
     }
 
-    private func connect(generation: Int) async {
+    private func connect(generation: Int, quietly: Bool) async {
         reconnectTask?.cancel()
-        if !state.isOnline { state = .connecting }
+        if !state.isOnline, !(quietly && state.isFailed) { state = .connecting }
         func isCurrent() -> Bool { generation == connectGeneration && !Task.isCancelled && !isTornDown }
         do {
             let status = try await client.status()
@@ -299,6 +310,10 @@ final class BotRoster {
             guard isCurrent() else { return }
             startPolling()
             workspace?.projects.connected()
+            // Bot Mode runs on the gateway's machine: back for one, likely back for the other.
+            if let workspace, workspace.connection.isFailed {
+                Task { await workspace.connect(quietly: true) }
+            }
             for conversation in allConversations {
                 conversation.botChatReconnected()
             }
@@ -384,10 +399,11 @@ final class BotRoster {
         // 0.5, 1, 2, 4, 8, then every 15 s, with jitter so devices don't reconnect in lockstep.
         let base = min(15, 0.5 * pow(2, Double(min(reconnectAttempts - 1, 5))))
         let delay = base * Double.random(in: 0.8...1.2)
+        ConnectionLog.logger.notice("bots: reconnect \(self.reconnectAttempts) in \(delay, format: .fixed(precision: 1))s")
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
-            self?.connectIfNeeded()
+            self?.connectIfNeeded(quietly: true)
         }
     }
 
@@ -466,9 +482,13 @@ final class BotRoster {
         reconnectAttempts = 0
         if let socket {
             Task {
-                // A ping, not the socket's own idea of being open: after a suspension it often isn't.
-                // Generous: waking the cellular radio can take seconds, and a false "dead" costs a reconnect.
-                if await socket.probe(timeout: .seconds(8)) {
+                // Heard from moments ago (a poll, a heartbeat): alive. Probing it anyway only risked
+                // a false "dead" from a busy backend, and the reconnect that follows; on the Mac
+                // the app comes to the front all the time.
+                // Otherwise a ping, not the socket's own idea of being open: after a suspension it
+                // often isn't. Generous: waking the cellular radio can take seconds.
+                let alive = await socket.heard(within: 12) ? true : await socket.probe(timeout: .seconds(8))
+                if alive {
                     await refresh()
                     if self.pollTask == nil, self.socket === socket { self.startPolling() }
                 }
@@ -542,6 +562,7 @@ final class BotRoster {
 
     private func socketClosed(_ error: (any Error)?, socket closed: GatewaySocket) {
         guard socket === closed else { return }
+        ConnectionLog.logger.notice("bots: socket closed after \(Int(Date.now.timeIntervalSince(self.connectedAt ?? .now)))s: \(error.map { Self.describe($0) } ?? "no error", privacy: .public)")
         socket = nil
         droppedAt = .now
         pumpTask?.cancel()

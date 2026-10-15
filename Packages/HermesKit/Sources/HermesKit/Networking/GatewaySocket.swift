@@ -408,6 +408,11 @@ public actor GatewaySocket {
         return answered
     }
 
+    /// Open, and heard from within the last `seconds` (any frame or heartbeat answer).
+    public func heard(within seconds: Double) -> Bool {
+        isOpen && Date().timeIntervalSince(lastInbound) < seconds
+    }
+
     private func isQuiet() -> Bool {
         Date().timeIntervalSince(lastInbound) >= Self.heartbeatInterval - 1
     }

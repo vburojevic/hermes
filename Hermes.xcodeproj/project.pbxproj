@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		001DBDA178379735F849569C /* CommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA130514841F895F341DD77 /* CommandViews.swift */; };
 		0255BA676231B67BE5885A2B /* HermesMacSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 0CCEEDE69065A76C92D5F1E8 /* HermesMacSupport */; };
+		068B76484A7240440B1A6B94 /* ConnectionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 928671F9F911923EE7DFCB7A /* ConnectionLog.swift */; };
 		0EF4297FCC0477C802BFB4FF /* LoadTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58CBFF18B5FB32D195421B /* LoadTrace.swift */; };
 		0F7259542373A616BF878048 /* HermesKit in Frameworks */ = {isa = PBXBuildFile; productRef = 16DFB2492EE20A5F0CC61E10 /* HermesKit */; };
 		106F5BC24FB5A649060FFC8B /* HermesPush in Frameworks */ = {isa = PBXBuildFile; productRef = 2F4ED1CC7C0438AA2C6FEDFE /* HermesPush */; };
@@ -241,6 +242,7 @@
 		8F92FC2B984473525D5CF4FF /* VoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSession.swift; sourceTree = "<group>"; };
 		9056EA027A87EF84EE487D10 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		909DF8FB8ED51CE235B0C2CD /* BotEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotEditorView.swift; sourceTree = "<group>"; };
+		928671F9F911923EE7DFCB7A /* ConnectionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLog.swift; sourceTree = "<group>"; };
 		9665019EA8646C1D03F2432B /* PushCenter+Conversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PushCenter+Conversations.swift"; sourceTree = "<group>"; };
 		967F497D71C16BA410851985 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		97253A097FB095217EC3E459 /* ProjectChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectChip.swift; sourceTree = "<group>"; };
@@ -649,6 +651,7 @@
 		C4B5E76CFB5364695CE8C47D /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				928671F9F911923EE7DFCB7A /* ConnectionLog.swift */,
 				A08A478CF569E541F077B3CA /* DictationController.swift */,
 				177942A1E815274590668D2B /* Formatting.swift */,
 				9AF3D76568885BDC8E99A82D /* FrameMonitor.swift */,
@@ -912,6 +915,7 @@
 				001DBDA178379735F849569C /* CommandViews.swift in Sources */,
 				DD1A55FBE6CCB5FEA721E7C4 /* Components.swift in Sources */,
 				EE00BBB832C5017665D4C1B5 /* ComposerView.swift in Sources */,
+				068B76484A7240440B1A6B94 /* ConnectionLog.swift in Sources */,
 				FAE8FAEE1AA366BE3247DCB8 /* ConversationModel.swift in Sources */,
 				4111DB522AC945C6CEB3D3E8 /* DesignGallery.swift in Sources */,
 				6D660DB8CB0BDC3ED1D584EC /* DictationController.swift in Sources */,

@@ -36,6 +36,10 @@ final class BotWorkspace: Identifiable {
         var isOnline: Bool {
             if case .online = self { true } else { false }
         }
+
+        var isFailed: Bool {
+            if case .failed = self { true } else { false }
+        }
     }
 
     let id: UUID
@@ -43,7 +47,12 @@ final class BotWorkspace: Identifiable {
     private(set) var client: HermesClient?
     let imageStore: SentImageStore
 
-    private(set) var connection: Connection = .idle
+    private(set) var connection: Connection = .idle {
+        didSet {
+            guard connection != oldValue else { return }
+            ConnectionLog.logger.notice("gateway \(self.bot.name, privacy: .public): \(String(describing: self.connection), privacy: .public)")
+        }
+    }
     private(set) var capabilities: ServerCapabilities?
     private(set) var sessions: [HermesSession] = []
     private(set) var isLoadingSessions = false
@@ -342,13 +351,29 @@ final class BotWorkspace: Identifiable {
 
     // MARK: - Connection
 
-    func connect() async {
-        roster?.connectIfNeeded()
+    /// One connect at a time: the keeper, a Retry and the app coming to the front can all ask.
+    @ObservationIgnored private var connectTask: Task<Void, Never>?
+
+    /// - Parameter quietly: a retry in the background (`keepConnected`): an offline gateway
+    ///   stays "Offline" until it's back, rather than flickering to "Connecting…" every few seconds.
+    func connect(quietly: Bool = false) async {
+        if let connectTask {
+            await connectTask.value
+            return
+        }
+        let task = Task { await performConnect(quietly: quietly) }
+        connectTask = task
+        await task.value
+        connectTask = nil
+    }
+
+    private func performConnect(quietly: Bool) async {
+        roster?.connectIfNeeded(quietly: quietly)
         guard let client else {
             connection = .failed(.missingAPIKey)
             return
         }
-        if !connection.isOnline { connection = .connecting }
+        if !connection.isOnline, !(quietly && connection.isFailed) { connection = .connecting }
         do {
             async let health = client.health()
             async let capabilities = client.capabilities()
@@ -519,9 +544,90 @@ final class BotWorkspace: Identifiable {
         sessions[index] = merged
     }
 
+    // MARK: - Staying connected
+
+    /// While the app is in front the connection looks after itself, so a gateway that restarts
+    /// (or a Mac that slept, or Tailscale coming back) needs no Retry: offline, it tries again
+    /// after 2, 4, 8, 16, then every 30 s; online, a health check every 30 s notices a gateway
+    /// that went away, so the app says so and comes back by itself.
+    @ObservationIgnored private var keeper: Task<Void, Never>?
+    private static let healthInterval: Double = 30
+
+    func keepConnected() {
+        guard keeper == nil else { return }
+        keeper = Task { [weak self] in
+            var misses = 0
+            while !Task.isCancelled {
+                guard let delay = self?.nextCheck(after: misses) else { return }
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self else { return }
+                switch self.connection {
+                case .online:
+                    misses = await self.isStillOnline() ? 0 : 1
+                case .failed(let error) where !error.isTransient:
+                    continue // a missing or rejected key, a gateway too old: the person fixes it
+                case .connecting:
+                    continue
+                case .idle, .failed:
+                    await self.connect(quietly: true)
+                    guard self.connection.isOnline else {
+                        misses += 1
+                        continue
+                    }
+                    misses = 0
+                    // Replies that lost their stream while the gateway was away pick up again.
+                    for conversation in self.conversations.values {
+                        conversation.resumeIfNeeded()
+                    }
+                }
+            }
+        }
+    }
+
+    func stopKeepingConnected() {
+        keeper?.cancel()
+        keeper = nil
+    }
+
+    /// Seconds until the next look: online or waiting on the person, the health interval; a
+    /// connect under way, a moment; offline, backing off from 2 s.
+    private func nextCheck(after misses: Int) -> Double {
+        switch connection {
+        case .online: Self.healthInterval
+        case .failed(let error) where !error.isTransient: Self.healthInterval
+        case .connecting: 5
+        case .idle, .failed: misses == 0 ? 2 : min(Self.healthInterval, 2 * pow(2, Double(min(misses, 4))))
+        }
+    }
+
+    /// Two misses a few seconds apart count, so one slow answer from a busy machine doesn't
+    /// flash "Offline".
+    private func isStillOnline() async -> Bool {
+        guard let client else { return true }
+        var failure: HermesError?
+        for attempt in 0..<2 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
+            guard !Task.isCancelled else { return true }
+            do {
+                _ = try await client.health()
+                return true
+            } catch is CancellationError {
+                return true
+            } catch {
+                let error = error as? HermesError ?? .invalidResponse(error.localizedDescription)
+                guard error.isTransient else { return true } // not a connection problem
+                failure = error
+            }
+        }
+        guard !Task.isCancelled, connection.isOnline, let failure else { return true }
+        connection = .failed(failure)
+        return false
+    }
+
     // MARK: - Foreground
 
     func didBecomeActive() {
+        keepConnected()
         roster?.didBecomeActive()
         for conversation in conversations.values {
             conversation.resumeIfNeeded()
@@ -536,6 +642,7 @@ final class BotWorkspace: Identifiable {
     }
 
     func tearDown() {
+        stopKeepingConnected()
         roster?.tearDown()
         for conversation in conversations.values {
             conversation.cancelAll()

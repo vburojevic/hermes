@@ -49,8 +49,15 @@ final class AppModel {
         guard workspaces[botID] != nil else { return }
         selectedBotID = botID
         UserDefaults.standard.set(botID.uuidString, forKey: PreferenceKey.selectedBot)
-        if let workspace = workspaces[botID], !workspace.connection.isOnline {
-            Task { await workspace.connect() }
+        // Only the gateway in front keeps checking its connection.
+        for (id, workspace) in workspaces where id != botID {
+            workspace.stopKeepingConnected()
+        }
+        if let workspace = workspaces[botID] {
+            workspace.keepConnected()
+            if !workspace.connection.isOnline {
+                Task { await workspace.connect() }
+            }
         }
     }
 
@@ -257,6 +264,7 @@ final class AppModel {
     /// Every window is gone or hidden: Bot rosters stop polling until the app is back.
     func didEnterBackground() {
         for workspace in workspaces.values {
+            workspace.stopKeepingConnected()
             workspace.roster?.didEnterBackground()
         }
     }

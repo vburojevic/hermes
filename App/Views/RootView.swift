@@ -21,6 +21,7 @@ struct RootView: View {
                 MainView(workspace: workspace)
                     .id(workspace.id)
                     .task(id: workspace.id) {
+                        workspace.keepConnected()
                         if !workspace.connection.isOnline {
                             await workspace.connect()
                         }
