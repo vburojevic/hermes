@@ -138,11 +138,10 @@ struct MacCheckpointsSheet: View {
             }
             .keyboardShortcut(.defaultAction)
             #if os(macOS)
-            .buttonStyle(.borderedProminent)
+            .inkDefaultButton()
             #else
-            .buttonStyle(.glassProminent)
+            .prominentGlassButton()
             #endif
-            .tint(Theme.ink)
             .disabled(checkpoint == nil || !model.isOnline || model.chatIsWorking || model.refusal != nil)
         }
         .padding(.horizontal, 18)

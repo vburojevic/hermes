@@ -55,8 +55,7 @@ struct TasksSplitView: View {
                 ToolbarItemGroup(placement: .automatic) {
                     Button(job.isPaused ? "Resume" : "Pause") { togglePause(job) }
                     Button("Run Now") { runNow(job) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.ink)
+                        .inkDefaultButton()
                         .keyboardShortcut(.defaultAction)
                     TaskMoreMenu(job: job, onCreate: onCreate, remove: remove)
                 }

@@ -39,8 +39,17 @@ split view on iPad and Mac.
   works). Checkpoints… (a chat's menu; on the Mac the Chat menu, ⌥⌘Z for Undo) lists older points,
   restores one file at any time or all of them, and turns checkpoints on when they're off. Needs
   Bot Mode.
-- **Tasks**: Hermes' scheduled jobs — create, run now, pause, resume, delete.
-- **Skills**: browse the gateway's skills and tool sets; start a chat with a skill.
+- **Search**: the chat search finds words inside chats, not just titles (with Bot Mode; titles
+  only without it): one row per chat with the matching words in bold, chips for Chats, Projects,
+  Bots and Tasks, and where each chat lives. Opening a result jumps to the message and flashes it.
+  On the Mac, ⌘K opens a keyboard-only palette (chats, projects, actions) and ⌘F finds in the open
+  chat.
+- **Tasks**: Hermes' scheduled jobs — create, run now, pause, resume, delete. On iPad and the Mac
+  the list sits beside the selected task, with its recent runs (each one a chat).
+- **Skills**: browse the gateway's skills (a grid of cards on iPad and the Mac); Use puts one in
+  the composer's tray. Tools and Apps opens Settings → Apps and Tools.
+- **Voice**: talk to Hermes or a Bot hands-free. Full screen on iPhone, the conversation beside it
+  on iPad in landscape, a floating panel on the Mac (⌥⌘V).
 - Markdown with tinted code blocks, tables, task lists and quotes; copy, share and read aloud.
 
 ## Bot Mode
@@ -261,3 +270,12 @@ off` starts with them off (Turn On writes `PUT /api/config`; open chats keep the
 reattached); `mock.checkpoints {"enabled", "now", "busy", "container"}` switches states and
 `mock.checkpoints.reset` puts everything back. Debug flags: `-HERMES_OPEN chat:prj_undo` with
 `-HERMES_CHECKPOINTS review|undo|timeline|detail[:n]|restore-all[:n]|off`.
+
+And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`'s
+`/api/sessions/search`: "reconnect" matches seven chats across Hermes App's lanes, a task run of
+Check NAS backups and Ada's "Release notes draft"; prefixes match ("reconn"), `source`/`profile`
+filters work, and replies take 150 ms. Tasks have three recent runs, one failed
+(`/api/cron/jobs/<id>/runs`). Debug flags: `-HERMES_SEARCH <text>` types into the chat search
+(with `-HERMES_DRAWER YES` on iPhone), `-HERMES_PALETTE <text>` opens the Mac's ⌘K palette,
+`-HERMES_OPEN chat:<session id>` opens a chat, and `-HERMES_VOICE_PREVIEW YES` shows Voice without
+the microphone.

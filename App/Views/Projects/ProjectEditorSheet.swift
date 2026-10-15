@@ -147,9 +147,8 @@ struct ProjectEditorSheet: View {
                 } label: {
                     if isSaving { ProgressView().controlSize(.small) } else { Text("Create Project") }
                 }
-                .buttonStyle(.borderedProminent)
+                .inkDefaultButton()
                 .buttonBorderShape(.capsule)
-                .tint(Theme.ink)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSave || picked == nil)
             }

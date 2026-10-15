@@ -281,6 +281,18 @@ struct StateMessage: View {
     }
 }
 
+private struct InkDefaultButton: ViewModifier {
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.ink)
+            .foregroundStyle(appearsActive && isEnabled ? Theme.inkForeground : Theme.primaryText)
+    }
+}
+
 extension View {
     /// A quiet Liquid Glass button, only for controls that float over content or media.
     /// `.glass` fills itself with any tint around it while a Mac window is active, so the tint
@@ -296,6 +308,13 @@ extension View {
         buttonStyle(.glassProminent)
             .tint(Theme.ink)
             .foregroundStyle(Theme.inkForeground)
+    }
+
+    /// A Mac window's default action (Run Now, Create Project, Restore All…): filled with ink
+    /// while the window is active. An inactive window drops the fill, so the label goes back to
+    /// the text colour rather than ink-on-nothing.
+    func inkDefaultButton() -> some View {
+        modifier(InkDefaultButton())
     }
 
     /// The prominent action inside a glass card: a solid ink capsule (glass on glass would haze).

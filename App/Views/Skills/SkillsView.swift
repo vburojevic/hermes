@@ -99,7 +99,9 @@ struct SkillsView: View {
         #if os(iOS)
         .listStyle(.insetGrouped)
         #endif
+        // White cards on the grouped grey (`skills`).
         .scrollContentBackground(.hidden)
+        .background(Theme.groupedBackground)
     }
 
     // MARK: iPad and Mac

@@ -258,9 +258,8 @@ struct AllProjectsView: View {
             Button("New Project…") {
                 projects.editing = .new(folder: nil)
             }
-            .buttonStyle(.borderedProminent)
+            .inkDefaultButton()
             .buttonBorderShape(.capsule)
-            .tint(Theme.ink)
         }
         #else
         ToolbarItem(placement: .primaryAction) {
