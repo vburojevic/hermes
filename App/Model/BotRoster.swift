@@ -656,6 +656,11 @@ final class BotRoster {
         try await client.setEnv(key: key, value: value, profile: profile)
     }
 
+    /// A task's runs (`GET /api/cron/jobs/{id}/runs`).
+    func cronRuns(jobID: String, profile: String?, limit: Int = 20) async throws -> [CronRun] {
+        try await client.cronRuns(jobID: jobID, profile: profile, limit: limit)
+    }
+
     /// Full-text chat search (`GET /api/sessions/search`).
     func searchSessions(_ query: String, limit: Int, profile: String?, sources: [String], excludeSources: [String]) async throws -> [SessionSearchResult] {
         try await client.searchSessions(query, limit: limit, profile: profile, sources: sources, excludeSources: excludeSources)

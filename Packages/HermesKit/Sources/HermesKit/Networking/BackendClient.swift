@@ -258,6 +258,16 @@ public actor BackendClient {
         return profile.map { name in found.map { var result = $0; result.profile = result.profile ?? name; return result } } ?? found
     }
 
+    /// A task's runs, newest first (`GET /api/cron/jobs/{id}/runs`): agent runs are chats, script
+    /// runs only have output.
+    public func cronRuns(jobID: String, profile: String? = nil, limit: Int = 20) async throws -> [CronRun] {
+        var items = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100)))]
+        if let profile, !profile.isEmpty { items.append(URLQueryItem(name: "profile", value: profile)) }
+        let (data, _) = try await send(path: "api/cron/jobs/\(Self.escape(jobID))/runs", query: items)
+        let json = try JSONDecoder().decode(JSONValue.self, from: data)
+        return json["runs"].items.map(CronRun.init(json:))
+    }
+
     /// Turns checkpoints on or off in the profile's config (`PUT /api/config`, deep-merged).
     /// `config.set` doesn't take this key. A chat's agent reads it when it is built, so open chats
     /// keep the old value until they are reattached.

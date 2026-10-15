@@ -178,7 +178,11 @@ struct SkillsView: View {
 /// The skill's glyph: by name for the common ones, else by category.
 enum SkillGlyph {
     static func symbol(for skill: Skill) -> String {
-        let name = skill.name.lowercased()
+        symbol(name: skill.name, category: skill.category)
+    }
+
+    static func symbol(name rawName: String, category: String? = nil) -> String {
+        let name = rawName.lowercased()
         let byName: [(String, String)] = [
             ("github", "arrow.triangle.branch"), ("pr-", "arrow.triangle.branch"), ("test", "checkmark.square"),
             ("xcode", "hammer"), ("build", "hammer"), ("arxiv", "doc.text"), ("paper", "doc.text"),
@@ -187,7 +191,7 @@ enum SkillGlyph {
             ("home-assistant", "lightbulb"), ("homeassistant", "lightbulb"), ("calendar", "calendar"), ("music", "music.note"),
         ]
         if let match = byName.first(where: { name.contains($0.0) }) { return match.1 }
-        switch skill.category?.lowercased() ?? "" {
+        switch category?.lowercased() ?? "" {
         case let c where c.contains("research"): return "doc.text.magnifyingglass"
         case let c where c.contains("dev") || c.contains("software"): return "chevron.left.forwardslash.chevron.right"
         case let c where c.contains("ops"): return "server.rack"

@@ -64,6 +64,7 @@
 		69003CBCF349B25033273BCC /* NotificationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 062CA9DC49F4E08C7055959E /* NotificationViewController.swift */; };
 		6AF564FBE420E5E43FA5F787 /* ChatSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832AE24D1F65FAF1CD8E69DF /* ChatSearch.swift */; };
 		6C68940B53D9FC3FB44AB75E /* WindowRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2195C5DC577A37D518BC540 /* WindowRouter.swift */; };
+		6D1C85BCF2EE0D4E99325B95 /* TaskSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3D2825DBC3AEF1CEB79DAE /* TaskSplitViews.swift */; };
 		6D338161EEC3D2AC31B5DB2B /* SpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A52C42AC82C9A11ADC7358 /* SpeechController.swift */; };
 		6D59BFD79DF1976F7665300C /* MacAppsAndToolsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF62818A2A39AC83CBED2C28 /* MacAppsAndToolsPane.swift */; };
 		6D660DB8CB0BDC3ED1D584EC /* DictationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08A478CF569E541F077B3CA /* DictationController.swift */; };
@@ -268,6 +269,7 @@
 		8784642FF3F7763D4A1B0D46 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		8B7F146A3F863763C495CEF0 /* CheckpointsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointsModel.swift; sourceTree = "<group>"; };
 		8BE62AA56C7273A33AAF03D0 /* SearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViews.swift; sourceTree = "<group>"; };
+		8E3D2825DBC3AEF1CEB79DAE /* TaskSplitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSplitViews.swift; sourceTree = "<group>"; };
 		8EBCBF43CB09E699F6C87358 /* SlashMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashMenu.swift; sourceTree = "<group>"; };
 		8F0BF2A6657BB676114ADFB7 /* TeamViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamViews.swift; sourceTree = "<group>"; };
 		8F92FC2B984473525D5CF4FF /* VoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSession.swift; sourceTree = "<group>"; };
@@ -622,6 +624,7 @@
 		793A889366686E52C366A139 /* Tasks */ = {
 			isa = PBXGroup;
 			children = (
+				8E3D2825DBC3AEF1CEB79DAE /* TaskSplitViews.swift */,
 				DE480A0097C12F38535C11E8 /* TasksView.swift */,
 			);
 			path = Tasks;
@@ -1093,6 +1096,7 @@
 				D7D72F02DE8256F23E1D558B /* SlashCatalog.swift in Sources */,
 				A56E932D8818CAC807BFD085 /* SlashMenu.swift in Sources */,
 				6D338161EEC3D2AC31B5DB2B /* SpeechController.swift in Sources */,
+				6D1C85BCF2EE0D4E99325B95 /* TaskSplitViews.swift in Sources */,
 				311D242525B41371CA130E1B /* TasksView.swift in Sources */,
 				7DC12C677CEF90FDC613DE81 /* TeamViews.swift in Sources */,
 				8D237ADC3014D97F32E0DC5F /* Theme.swift in Sources */,

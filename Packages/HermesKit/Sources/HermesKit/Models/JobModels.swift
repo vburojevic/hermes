@@ -100,3 +100,54 @@ public struct NewCronJob: Encodable, Sendable {
         self.skills = skills
     }
 }
+
+/// One run of a task (`GET /api/cron/jobs/{id}/runs`, newest first). An agent run is a chat
+/// (`cron_<jobId>_<timestamp>`, source `cron`) that opens like any other; a script-only run has
+/// no chat, only its output.
+public struct CronRun: Identifiable, Hashable, Sendable {
+    /// The run's chat, when it has one.
+    public var sessionID: String?
+    public var startedAt: Date?
+    public var endedAt: Date?
+    /// What the run said: the chat's preview, or the script's output.
+    public var summary: String?
+    public var failed: Bool
+    public var error: String?
+
+    public var id: String { sessionID ?? "\(startedAt?.timeIntervalSince1970 ?? 0)" }
+
+    /// How long it ran.
+    public var duration: TimeInterval? {
+        guard let startedAt, let endedAt, endedAt >= startedAt else { return nil }
+        return endedAt.timeIntervalSince(startedAt)
+    }
+
+    public init(sessionID: String?, startedAt: Date?, endedAt: Date? = nil, summary: String? = nil, failed: Bool = false, error: String? = nil) {
+        self.sessionID = sessionID
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.summary = summary
+        self.failed = failed
+        self.error = error
+    }
+
+    init(json: JSONValue) {
+        func date(_ value: JSONValue?) -> Date? {
+            if let seconds = value?.doubleValue { return HermesDate.fromEpoch(seconds) }
+            return HermesDate.fromISO(value?.stringValue)
+        }
+        let status = (json["status"]?.stringValue ?? json["last_status"]?.stringValue ?? "").lowercased()
+        let reason = (json["end_reason"]?.stringValue ?? "").lowercased()
+        let error = json["error"]?.stringValue ?? json["last_error"]?.stringValue
+        let id = json["id"]?.stringValue ?? json["session_id"]?.stringValue
+        self.init(
+            sessionID: (id?.isEmpty ?? true) || json["kind"]?.stringValue == "output" ? nil : id,
+            startedAt: date(json["started_at"] ?? json["timestamp"] ?? json["ran_at"]),
+            endedAt: date(json["ended_at"] ?? json["finished_at"]),
+            summary: (json["summary"]?.stringValue ?? json["preview"]?.stringValue ?? json["output"]?.stringValue)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 },
+            failed: ["error", "failed", "failure"].contains(status) || reason.contains("error") || reason.contains("fail") || (error?.isEmpty == false),
+            error: error.flatMap { $0.isEmpty ? nil : $0 }
+        )
+    }
+}

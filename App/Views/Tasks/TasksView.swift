@@ -67,6 +67,16 @@ struct TasksView: View {
     @State private var model = TasksModel()
     @State private var isCreating = false
     @State private var inspecting: CronJob?
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// iPad (regular width) and Mac: the list beside the selected task (`ipadTasks`, `macTasks`).
+    private var usesSplit: Bool {
+        #if os(macOS)
+        true
+        #else
+        sizeClass == .regular
+        #endif
+    }
 
     var body: some View {
         content
@@ -79,6 +89,7 @@ struct TasksView: View {
                             .accessibilityLabel("Show sidebar")
                     }
                 }
+                #if os(iOS)
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         isCreating = true
@@ -88,6 +99,7 @@ struct TasksView: View {
                     .accessibilityLabel("New task")
                     .help("New task")
                 }
+                #endif
             }
             .task(id: workspace.id) { await model.load(client: workspace.client) }
             .refreshable { await model.load(client: workspace.client) }
@@ -138,6 +150,8 @@ struct TasksView: View {
             ) {
                 isCreating = true
             }
+        } else if usesSplit {
+            TasksSplitView(workspace: workspace, model: model, onCreate: { isCreating = true }, togglePause: togglePause, runNow: runNow)
         } else {
             List {
                 Section {
@@ -207,7 +221,7 @@ struct TasksView: View {
 
 /// A task (`screens/iphone/tasks.elyx`): icon tile, name, the schedule in words, and a tag
 /// for what's next: when it runs, how the last run went, or that it's paused.
-private struct TaskRow: View {
+struct TaskRow: View {
     let job: CronJob
 
     var body: some View {

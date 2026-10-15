@@ -25,6 +25,7 @@ def install(backend_globals, gateway_module):
     B, G = backend_globals, gateway_module
     B["HTTP_ROUTES"][("GET", "/api/sessions/search")] = search
     seed()
+    seed_runs()
 
 
 def seed():
@@ -49,6 +50,30 @@ def seed():
     B["add_message"](draft, "user", "Draft the release notes for 1.3", now - 86400 - 3600)
     B["add_message"](draft, "assistant", "Here's a draft: typed throws, Bot Chat routine cards and faster reconnects. "
                                          "Want the post too?", now - 86400 - 3500)
+
+
+def seed_runs():
+    """Each task's recent runs: chats with id cron_<job>_<timestamp>, source cron."""
+    day = 86400
+    midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+    for job_id, job in list(G.JOBS.items()):
+        runs = []
+        for i, (ago, seconds, answer, error) in enumerate([
+            (0, 41, "3 events, 2 PRs waiting, backup finished at 04:12.", None),
+            (1, 38, "4 events, no PRs, backup finished at 04:09.", None),
+            (3, 12, "", "Calendar sign-in expired. Nothing was sent."),
+        ]):
+            start = midnight - ago * day + 7.5 * 3600
+            sid = f"cron_{job_id}_{int(start)}"
+            G.session_row(sid, job["name"], "cron", start, start + seconds, job.get("prompt", "")[:60])
+            G.SESSIONS[sid]["ended_at"] = start + seconds
+            G.add_message(sid, "user", job.get("prompt", ""), timestamp=start)
+            if answer:
+                G.add_message(sid, "assistant", answer, timestamp=start + seconds)
+            runs.append({"id": sid, "source": "cron", "title": job["name"], "started_at": start, "ended_at": start + seconds,
+                         "last_active": start + seconds, "message_count": 2 if answer else 1, "preview": answer or None,
+                         "end_reason": "error" if error else "completed", "error": error})
+        B["HTTP_ROUTES"][("GET", f"/api/cron/jobs/{job_id}/runs")] = lambda q, body, runs=runs: (200, {"runs": runs, "limit": 20})
 
 
 def words_of(q):
