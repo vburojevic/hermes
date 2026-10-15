@@ -16,6 +16,8 @@ struct QuickOpenView: View {
     /// The row the arrow keys moved to; the first result when that's gone or there's none.
     @State private var highlighted: Item?
     @FocusState private var searchFocused: Bool
+    /// The last results and what they were worked out from (`groups`).
+    @State private var memo = Memo()
 
     enum Item: Hashable {
         case newChat, newBot, tasks, skills, pairDevice, settings
@@ -33,11 +35,14 @@ struct QuickOpenView: View {
     }
 
     private struct ResultGroup: Identifiable {
+        /// Which kind of result (actions, Bots, chats, gateways): the same group as the query
+        /// changes. (Named by its first row, a group became a new one whenever typing changed
+        /// what came first, and the lazy list kept that row's old, unhighlighted look.)
+        let id: String
         let title: LocalizedStringKey
         let rows: [Row]
         /// How well its best row matched (lower is better), to put the best group first.
         var best = 0
-        var id: String { rows.first.map { "\($0.item)" } ?? "" }
     }
 
     #if os(macOS)
@@ -275,13 +280,45 @@ struct QuickOpenView: View {
 
     // MARK: Content
 
+    private final class Memo {
+        var key: MemoKey?
+        var groups: [ResultGroup] = []
+    }
+
+    private struct MemoKey: Equatable {
+        let query: String
+        let sessions: [HermesSession]
+        let bots: [BotProfile]
+        let hiddenBots: [BotProfile]
+        let gateways: [BotConfiguration]
+        let canCreateBots: Bool
+    }
+
+    /// The results, worked out again only when the query or what it searches changes: not when
+    /// the arrow keys move the highlight (that redrew this view, and ranked every chat again).
     private var groups: [ResultGroup] {
+        let key = MemoKey(
+            query: trimmedQuery,
+            sessions: workspace.sessions,
+            bots: workspace.roster?.visibleBots ?? [],
+            hiddenBots: workspace.roster?.hiddenBots ?? [],
+            gateways: app.bots,
+            canCreateBots: workspace.roster?.isConnected ?? false
+        )
+        if memo.key == key { return memo.groups }
+        let groups = rankedGroups()
+        memo.key = key
+        memo.groups = groups
+        return groups
+    }
+
+    private func rankedGroups() -> [ResultGroup] {
         let query = trimmedQuery
         var groups: [ResultGroup] = []
 
         let actions = ranked(actionRows, query) { [$0.title] }
         if let first = actions.first {
-            groups.append(ResultGroup(title: "Actions", rows: actions.map { $0.element }, best: first.rank))
+            groups.append(ResultGroup(id: "actions", title: "Actions", rows: actions.map { $0.element }, best: first.rank))
         }
 
         if let roster = workspace.roster {
@@ -299,7 +336,7 @@ struct QuickOpenView: View {
                     )
                 }
             if let first = bots.first {
-                groups.append(ResultGroup(title: "Bots", rows: rows, best: first.rank))
+                groups.append(ResultGroup(id: "bots", title: "Bots", rows: rows, best: first.rank))
             }
         }
 
@@ -316,14 +353,14 @@ struct QuickOpenView: View {
                 )
             }
         if let first = sessions.first {
-            groups.append(ResultGroup(title: query.isEmpty ? "Recent Chats" : "Chats", rows: sessionRows, best: first.rank))
+            groups.append(ResultGroup(id: "chats", title: query.isEmpty ? "Recent Chats" : "Chats", rows: sessionRows, best: first.rank))
         }
 
         if app.bots.count > 1 {
             let gateways = ranked(app.bots.filter { $0.id != workspace.id }, query) { [$0.name] }
             if let first = gateways.first {
                 let rows = gateways.map { Row(item: .gateway($0.element.id), title: $0.element.name, subtitle: $0.element.displayAddress) }
-                groups.append(ResultGroup(title: "Switch Gateway", rows: rows, best: first.rank))
+                groups.append(ResultGroup(id: "gateways", title: "Switch Gateway", rows: rows, best: first.rank))
             }
         }
         // Stable: equally good groups keep their usual order.

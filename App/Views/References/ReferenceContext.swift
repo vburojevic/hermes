@@ -3,7 +3,14 @@ import SwiftUI
 
 /// What pills need to know about where they're shown: the gateway's Bots, skills and files, and
 /// where Open goes.
-struct ReferenceContext {
+///
+/// Equatable: a chat makes one on every update (each streamed token); an equal one doesn't
+/// count as a change for the messages that read it from the environment.
+struct ReferenceContext: Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.workspace === rhs.workspace && lhs.catalog === rhs.catalog && lhs.vocabulary == rhs.vocabulary
+    }
+
     weak var workspace: BotWorkspace?
     var catalog: SlashCatalog?
     /// The names plain text is upgraded against (`docs/commands-and-references.md` §4).

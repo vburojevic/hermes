@@ -51,8 +51,17 @@ struct CodeBlockView: View {
     }
 
     static func highlight(_ code: String, language: String?, caches: Bool = true) -> AttributedString {
+        guard caches else {
+            // Still streaming: the finished lines are highlighted once, the arriving one each time.
+            return MarkdownCache.streamingHighlight(code, language: language) {
+                attributed(CodeHighlighter.tokenize($0, language: language))
+            }
+        }
+        return attributed(MarkdownCache.tokens(for: code, language: language))
+    }
+
+    private static func attributed(_ tokens: [CodeHighlighter.Token]) -> AttributedString {
         var result = AttributedString()
-        let tokens = caches ? MarkdownCache.tokens(for: code, language: language) : CodeHighlighter.tokenize(code, language: language)
         for token in tokens {
             var run = AttributedString(token.text)
             run.foregroundColor = color(for: token.kind)

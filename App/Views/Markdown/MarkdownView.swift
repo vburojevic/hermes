@@ -15,7 +15,7 @@ struct MarkdownView: View, Equatable {
     enum Tone { case primary, secondary }
 
     var body: some View {
-        MarkdownBlocksView(blocks: (caches ? MarkdownCache.document(for: text) : MarkdownDocument(parsing: text)).blocks)
+        MarkdownBlocksView(blocks: caches ? MarkdownCache.document(for: text).blocks : MarkdownCache.streamingBlocks(for: text))
             .foregroundStyle(tone == .primary ? Theme.primaryText : Theme.secondaryText)
             .textSelection(.enabled)
             .environment(\.markdownCaches, caches)
@@ -28,7 +28,9 @@ struct MarkdownBlocksView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                // Equatable: while a reply streams only the block still arriving redraws.
                 MarkdownBlockView(block: block)
+                    .equatable()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,10 +45,12 @@ extension EnvironmentValues {
     @Entry var markdownCaches = true
 }
 
-private struct MarkdownBlockView: View {
+private struct MarkdownBlockView: View, Equatable {
     let block: MarkdownBlock
     @Environment(\.markdownBodyFont) private var bodyFont
     @Environment(\.references) private var references
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.block == rhs.block }
 
     var body: some View {
         switch block {

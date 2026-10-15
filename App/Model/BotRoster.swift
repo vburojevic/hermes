@@ -574,6 +574,7 @@ final class BotRoster {
             conversation.botChatConnectionLost()
         }
         guard !isTornDown else { return }
+        workspace?.checkConnectionNow()
         // A rejected sign-in needs the person, not a retry loop.
         if case GatewaySocket.Failure.closed(let reason)? = error as? GatewaySocket.Failure,
            reason.contains("sign-in"), link.signIn != .automatic {

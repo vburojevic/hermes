@@ -102,13 +102,40 @@ final class SentImageStore {
 
     /// Images for the `occurrence`-th user message with this text in the conversation.
     func images(conversation: String, text: String, occurrence: Int) -> [ImageAttachment] {
+        slots(conversation: conversation, text: text, occurrence: occurrence).compactMap { slot in
+            switch slot {
+            case .ready(let image): image
+            case .file(let id, let url): (try? Data(contentsOf: url)).flatMap { ImageAttachment(jpegData: $0, id: id) }
+            }
+        }
+    }
+
+    /// One of a message's images: in memory already, or a file to read.
+    enum Slot {
+        case ready(ImageAttachment)
+        case file(id: UUID, url: URL)
+    }
+
+    /// `images` without reading anything: what's at hand, and which files hold the rest (for
+    /// `read`, off the main thread).
+    func slots(conversation: String, text: String, occurrence: Int) -> [Slot] {
         loadIfNeeded()
         guard let sets = index[Self.key(conversation: conversation, text: text)], occurrence < sets.count else { return [] }
-        return sets[occurrence].compactMap { name in
-            if let image = recent[name] { return image }
-            guard let data = try? Data(contentsOf: directory.appending(path: name)) else { return nil }
-            return ImageAttachment(jpegData: data, id: UUID(uuidString: String(name.dropLast(4))) ?? UUID())
+        return sets[occurrence].map { name in
+            if let image = recent[name] { return .ready(image) }
+            return .file(id: UUID(uuidString: String(name.dropLast(4))) ?? UUID(), url: directory.appending(path: name))
         }
+    }
+
+    /// Reads these files off the main thread.
+    nonisolated static func read(_ urls: [URL]) async -> [URL: Data] {
+        await Task.detached(priority: .userInitiated) {
+            var contents: [URL: Data] = [:]
+            for url in urls {
+                contents[url] = try? Data(contentsOf: url)
+            }
+            return contents
+        }.value
     }
 
     /// Re-keys a conversation's images after the session id it was stored under changes.

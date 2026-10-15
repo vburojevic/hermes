@@ -602,6 +602,7 @@ final class ConversationModel: Identifiable {
     private func applyLoaded(_ transcript: SessionTranscript) async {
         guard let merged = merge(transcript) else { return }
         let built = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
+        await preloadImages(for: built)
         // A chat picked in the drawer lands once the drawer has slid away, not in the middle.
         await Settling.untilSettled()
         guard !Task.isCancelled, !isWorking, !isFinishing else { return }
@@ -670,6 +671,7 @@ final class ConversationModel: Identifiable {
         defer { cacheChecked = true }
         guard let cacheKey, let cached = await TranscriptCache.load(cacheKey) else { return }
         let built = await Self.prepare(cached.messages, hasEarlier: cached.hasEarlier, hidesSilence: botName != nil)
+        await preloadImages(for: built)
         // Too late for the drawer's wait (`firstRows`): after its slide, not in the middle.
         await Settling.untilSettled()
         guard items.isEmpty, live == nil, !Task.isCancelled else { return }
@@ -723,6 +725,7 @@ final class ConversationModel: Identifiable {
         let base = rawMessages
         let merged = SessionTranscript.merge(earlier: page.messages, before: base)
         let built = await Self.prepare(merged, hasEarlier: page.hasEarlier, hidesSilence: botName != nil, warming: items.count)
+        await preloadImages(for: built)
         guard self.sessionID == sessionID else { return }
         if rawMessages == base {
             rebuild(from: merged, built: built)
@@ -876,6 +879,36 @@ final class ConversationModel: Identifiable {
             entry.skillNames = parts.skills
             entry.parts = MessageParts(body: parts.text, references: parts.references ?? [], skills: parts.skills, command: parts.command)
             items[index] = .user(entry)
+        }
+    }
+
+    /// The images `resolveImages` would read for these rows, read off the main thread first, so
+    /// building the rows finds them in memory. (Rows aren't redrawn for images that arrive later.)
+    private func preloadImages(for items: [TranscriptItem]) async {
+        guard let store = workspace?.imageStore, let key = stableKey else { return }
+        var wanted: [(entryID: String, slots: [SentImageStore.Slot])] = []
+        var occurrences: [String: Int] = [:]
+        for item in items {
+            guard case .user(let entry) = item, entry.imagePlaceholderCount > 0 else { continue }
+            let occurrence = occurrences[entry.text, default: 0]
+            occurrences[entry.text] = occurrence + 1
+            guard userImages[entry.id] == nil else { continue }
+            let slots = store.slots(conversation: key, text: entry.text, occurrence: occurrence)
+            if !slots.isEmpty { wanted.append((entry.id, slots)) }
+        }
+        let files = wanted.flatMap(\.slots).compactMap { slot -> URL? in
+            if case .file(_, let url) = slot { url } else { nil }
+        }
+        guard !files.isEmpty else { return }
+        let contents = await SentImageStore.read(files)
+        for (entryID, slots) in wanted where userImages[entryID] == nil {
+            let images = slots.compactMap { slot -> ImageAttachment? in
+                switch slot {
+                case .ready(let image): image
+                case .file(let id, let url): contents[url].flatMap { ImageAttachment(jpegData: $0, id: id) }
+                }
+            }
+            if !images.isEmpty { userImages[entryID] = images }
         }
     }
 
@@ -2073,7 +2106,9 @@ final class ConversationModel: Identifiable {
         // only the swap, not a whole chat built in one frame as the reply ends.
         var prepared: (messages: [SessionMessage], items: [TranscriptItem])?
         if let transcript, live?.turn.id == finished.turn.id, let merged = merge(transcript) {
-            prepared = (merged, await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil))
+            let items = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
+            await preloadImages(for: items)
+            prepared = (merged, items)
         }
         guard live?.turn.id == finished.turn.id else { return }
         // The stored rows take over from the live ones in place (same identities), in one

@@ -18,6 +18,34 @@ public struct MarkdownDocument: Hashable, Sendable {
     }
 
     public var isEmpty: Bool { blocks.isEmpty }
+
+    /// Where text still arriving can be cut so that its two halves parse to the same blocks as
+    /// the whole: after a blank line outside a code fence, before a paragraph that can't belong
+    /// to what came before (a list item, a quote, a table row, an indented line or HTML could).
+    /// The latest such place, looking back a little; `nil` when there is none.
+    ///
+    /// While a reply streams only what follows the cut changes, so what precedes it is parsed once.
+    public static func streamingCut(in text: String) -> String.Index? {
+        var searchEnd = text.endIndex
+        for _ in 0..<24 {
+            guard let gap = text.range(of: "\n\n", options: .backwards, range: text.startIndex..<searchEnd) else { return nil }
+            var start = gap.upperBound
+            while start < text.endIndex, text[start] == "\n" { start = text.index(after: start) }
+            if start < text.endIndex, startsFreshBlock(text[start]), fencesClosed(text[..<gap.lowerBound]) {
+                return start
+            }
+            searchEnd = gap.lowerBound
+        }
+        return nil
+    }
+
+    private static func startsFreshBlock(_ first: Character) -> Bool {
+        first.isLetter || "#`\"“‘(".contains(first)
+    }
+
+    private static func fencesClosed(_ head: Substring) -> Bool {
+        head.components(separatedBy: "```").count % 2 == 1 && !head.contains("~~~")
+    }
 }
 
 public indirect enum MarkdownBlock: Hashable, Sendable {

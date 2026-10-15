@@ -15,6 +15,16 @@ nonisolated enum MarkdownCache {
         init(_ tokens: [CodeHighlighter.Token]) { self.tokens = tokens }
     }
 
+    private final class BlocksBox {
+        let blocks: [MarkdownBlock]
+        init(_ blocks: [MarkdownBlock]) { self.blocks = blocks }
+    }
+
+    private final class HighlightBox {
+        let text: AttributedString
+        init(_ text: AttributedString) { self.text = text }
+    }
+
     // NSCache is thread-safe and gives memory back under pressure.
     nonisolated(unsafe) private static let documents: NSCache<NSString, DocumentBox> = {
         let cache = NSCache<NSString, DocumentBox>()
@@ -27,6 +37,59 @@ nonisolated enum MarkdownCache {
         cache.countLimit = 200
         return cache
     }()
+
+    // MARK: Streaming
+
+    // A reply still arriving changes with every token, but up to its last finished paragraph
+    // (and a code block up to its last finished line) it only grows now and then. That part is
+    // parsed once and kept here, apart from the finished replies, for the few replies streaming
+    // now; only what is still arriving is parsed again.
+    nonisolated(unsafe) private static let streamingHeads: NSCache<NSString, BlocksBox> = {
+        let cache = NSCache<NSString, BlocksBox>()
+        cache.countLimit = 12
+        return cache
+    }()
+
+    nonisolated(unsafe) private static let streamingCode: NSCache<NSString, HighlightBox> = {
+        let cache = NSCache<NSString, HighlightBox>()
+        cache.countLimit = 12
+        return cache
+    }()
+
+    /// The blocks of a reply still streaming: its finished paragraphs from the cache, the one
+    /// still arriving parsed. A whole-text parse when no cut is safe.
+    static func streamingBlocks(for text: String) -> [MarkdownBlock] {
+        guard let cut = MarkdownDocument.streamingCut(in: text) else { return MarkdownDocument(parsing: text).blocks }
+        let head = String(text[..<cut])
+        let key = head as NSString
+        let headBlocks: [MarkdownBlock]
+        if let hit = streamingHeads.object(forKey: key) {
+            headBlocks = hit.blocks
+        } else {
+            headBlocks = MarkdownDocument(parsing: head).blocks
+            streamingHeads.setObject(BlocksBox(headBlocks), forKey: key)
+        }
+        return headBlocks + MarkdownDocument(parsing: String(text[cut...])).blocks
+    }
+
+    /// Highlighted code still streaming: its finished lines from the cache, the line arriving
+    /// highlighted with `highlight`.
+    static func streamingHighlight(_ code: String, language: String?, highlight: (String) -> AttributedString) -> AttributedString {
+        guard let cut = code.lastIndex(of: "\n") else { return highlight(code) }
+        let head = String(code[...cut])
+        let key = "\(language ?? "")\u{0}\(head)" as NSString
+        var result: AttributedString
+        if let hit = streamingCode.object(forKey: key) {
+            result = hit.text
+        } else {
+            result = highlight(head)
+            streamingCode.setObject(HighlightBox(result), forKey: key)
+        }
+        result.append(highlight(String(code[code.index(after: cut)...])))
+        return result
+    }
+
+    // MARK: Finished text
 
     static func document(for text: String) -> MarkdownDocument {
         let key = text as NSString

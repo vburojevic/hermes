@@ -584,6 +584,13 @@ final class BotWorkspace: Identifiable {
         }
     }
 
+    /// Something else on the gateway's machine just went quiet (Bot Mode's socket): look now,
+    /// rather than at the next health check, so the app says "Offline" before a send fails.
+    func checkConnectionNow() {
+        guard keeper != nil, connection.isOnline else { return }
+        Task { _ = await isStillOnline() }
+    }
+
     func stopKeepingConnected() {
         keeper?.cancel()
         keeper = nil
