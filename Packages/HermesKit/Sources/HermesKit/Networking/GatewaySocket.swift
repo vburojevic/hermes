@@ -167,7 +167,9 @@ public actor GatewaySocket {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask { try await self.waitForReady() }
                 group.addTask {
-                    try await Task.sleep(for: .seconds(12))
+                    // A backend that accepted the socket is there, just busy: a loaded machine took
+                    // over 12 s to say ready, and each retry asked it for the same work again.
+                    try await Task.sleep(for: .seconds(Self.readyTimeout))
                     throw Failure.handshakeTimedOut
                 }
                 defer { group.cancelAll() }
@@ -366,6 +368,9 @@ public actor GatewaySocket {
     }
 
     static let heartbeatInterval: Double = 10
+    /// How long an opened socket may take to say `gateway.ready`. One that can't connect at all fails
+    /// sooner: the upgrade request times out after 15 s and closes the wait.
+    static let readyTimeout: Double = 30
     static let staleAfter: Double = 30
 
     private func ping(beat: Int) async {

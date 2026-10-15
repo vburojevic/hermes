@@ -410,6 +410,7 @@ struct BotsHomeView: View {
 
     @State private var appeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(WindowRouter.self) private var router: WindowRouter?
 
     private var columns: [GridItem] {
         #if os(macOS)
@@ -419,11 +420,38 @@ struct BotsHomeView: View {
         #endif
     }
 
+    /// Before the first list: what the connection is doing, not a spinner that never says it gave up.
+    @ViewBuilder
+    private var notLoaded: some View {
+        switch roster.state {
+        case .connecting, .idle, .online:
+            SidebarState(isLoading: true, title: String(localized: "Connecting to your Bots…"))
+        case .signInRequired(let message):
+            SidebarState(
+                symbol: "person.badge.key",
+                title: String(localized: "Sign in to see your Bots"),
+                message: message,
+                actionTitle: String(localized: "Sign In…")
+            ) {
+                router?.sheet = .editGateway(workspace.bot)
+            }
+        case .failed(let message):
+            SidebarState(
+                symbol: "wifi.slash",
+                title: String(localized: "Can't reach your Bots"),
+                message: message.isEmpty ? String(localized: "Check that hermes serve is running on \(workspace.bot.name), then try again.") : message,
+                actionTitle: String(localized: "Retry")
+            ) {
+                Task { await roster.reconnectNow() }
+            }
+        }
+    }
+
     var body: some View {
         ZStack {
             Theme.canvas.ignoresSafeArea()
             if !roster.hasLoaded {
-                ProgressView()
+                notLoaded
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
