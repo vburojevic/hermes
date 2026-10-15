@@ -164,6 +164,23 @@ struct ChatScreen: View {
             }
         }
         .animation(.snappy(duration: 0.22), value: voice == nil)
+        #if DEBUG
+        // `-HERMES_OPEN_VOICE YES` starts Voice; `-HERMES_VOICE_PREVIEW YES` shows it without the
+        // microphone (screenshots).
+        .task {
+            if UserDefaults.standard.bool(forKey: "HERMES_OPEN_VOICE") {
+                try? await Task.sleep(for: .seconds(1))
+                startVoice()
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if UserDefaults.standard.bool(forKey: "HERMES_VOICE_PREVIEW") {
+                VoicePreview(isPanel: true)
+                    .padding(.top, 12)
+                    .padding(.trailing, 16)
+            }
+        }
+        #endif
         #endif
         // ⌥⌘V (Chat → Voice Mode): start or end it.
         .onChange(of: workspace.voiceToggleRequests) {
@@ -171,6 +188,11 @@ struct ChatScreen: View {
         }
         .onChange(of: conversation.id) { endVoice() }
         .onDisappear { endVoice() }
+        #if os(iOS) && DEBUG
+        .fullScreenCover(isPresented: .constant(UserDefaults.standard.bool(forKey: "HERMES_VOICE_PREVIEW"))) {
+            VoicePreview()
+        }
+        #endif
         #if os(iOS)
         .fullScreenCover(isPresented: Binding(
             get: { voice.map { !$0.isMinimised } ?? false },

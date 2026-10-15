@@ -107,6 +107,10 @@ struct SkillsView: View {
     private var grid: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                Text("Skills")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(Theme.primaryText)
+                    .padding(.bottom, 6)
                 if query.isEmpty {
                     ToolsAndAppsRow(model: workspace.appsAndTools, isWide: true, action: openAppsAndTools)
                         .padding(.bottom, 8)
@@ -131,6 +135,9 @@ struct SkillsView: View {
             .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // White cards on the grouped background; the grid draws its own large title.
+        .background(Theme.groupedBackground)
+        .toolbar(removing: .title)
     }
 
     @ViewBuilder
@@ -235,7 +242,7 @@ private struct ToolsAndAppsRow: View {
                     .accessibilityHidden(true)
             }
             .padding(isWide ? 14 : 0)
-            .background(isWide ? Theme.surface : Color.clear, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(isWide ? Theme.groupedCell : Color.clear, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -316,7 +323,7 @@ private struct SkillCard: View {
         #else
         .frame(minHeight: 150, alignment: .top)
         #endif
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 }

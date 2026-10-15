@@ -40,7 +40,9 @@ struct TasksSplitView: View {
         #if os(macOS)
         .toolbar {
             if let job = selected {
-                ToolbarItemGroup(placement: .primaryAction) {
+                // Pushed to the trailing side, as the design has them.
+                ToolbarSpacer(.flexible)
+                ToolbarItemGroup(placement: .automatic) {
                     Button(job.isPaused ? "Resume" : "Pause") { togglePause(job) }
                     Button("Run Now") { runNow(job) }
                         .buttonStyle(.borderedProminent)
@@ -137,11 +139,12 @@ struct TaskDetailPane: View {
     var body: some View {
         Form {
             Section {
+            } header: {
+                // The title on the page, not on a cell.
                 Text(current.name)
                     .font(.largeTitle.weight(.bold))
                     .foregroundStyle(Theme.primaryText)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 0, trailing: 0))
+                    .textCase(nil)
             }
             Section("Prompt") {
                 Text(current.prompt.isEmpty ? String(localized: "No prompt") : current.prompt)

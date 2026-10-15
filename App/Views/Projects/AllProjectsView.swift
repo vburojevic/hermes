@@ -71,7 +71,7 @@ struct AllProjectsView: View {
                             .padding(.vertical, 8)
                         }
                     }
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 if !projects.archivedProjects.isEmpty {
                     NavigationLink {
@@ -88,7 +88,7 @@ struct AllProjectsView: View {
             .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Theme.canvas)
+        .background(Theme.groupedBackground)
         // The grid draws its own large title.
         .toolbar(removing: .title)
     }
@@ -125,7 +125,7 @@ struct AllProjectsView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -251,15 +251,19 @@ struct AllProjectsView: View {
                 .accessibilityLabel("Show sidebar")
             }
         }
-        ToolbarItem(placement: .primaryAction) {
-            #if os(macOS)
+        #if os(macOS)
+        // The trailing side on the Mac.
+        ToolbarSpacer(.flexible)
+        ToolbarItem(placement: .automatic) {
             Button("New Project…") {
                 projects.editing = .new(folder: nil)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .tint(Theme.ink)
-            #else
+        }
+        #else
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 projects.editing = .new(folder: nil)
             } label: {
@@ -267,8 +271,8 @@ struct AllProjectsView: View {
             }
             .accessibilityLabel("New Project")
             .help("New Project")
-            #endif
         }
+        #endif
     }
 }
 

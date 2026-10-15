@@ -657,3 +657,37 @@ private struct TranscriptPanel: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 }
+
+#if DEBUG
+/// `-HERMES_VOICE_PREVIEW YES` (screenshots): Voice as `ipadVoice` / `macVoice` show it, without
+/// the microphone (a shell-launched Mac build can't ask for it).
+struct VoicePreview: View {
+    var isPanel = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private func state(_ layout: VoiceScreen.Layout) -> VoiceScreen.State {
+        VoiceScreen.State(
+            phase: .listening, title: "Ada · Voice", status: "Ada is listening…",
+            caption: "Can you turn the release notes into a short post for the blog?",
+            hint: "Pause to send · tap the face to interrupt", speakerName: "Ada",
+            botAppearance: BotAppearance(profile: "writer", shape: "cloud", color: "hsl(330 70% 62%)", customized: true),
+            level: 0.45, layout: layout,
+            transcript: [
+                .init(id: "1", speaker: "You", text: "What did we merge this week?", isReply: false),
+                .init(id: "2", speaker: "Ada", text: "Nine PRs: typed throws, Bot Chat routine cards and faster reconnects, plus six fixes.", isReply: true),
+                .init(id: "3", speaker: "You", text: "Can you turn the release notes into a short post for the blog?", isReply: false),
+            ]
+        )
+    }
+
+    var body: some View {
+        if isPanel {
+            VoiceScreen(state: state(.panel), actions: .init())
+        } else {
+            GeometryReader { geometry in
+                VoiceScreen(state: state(sizeClass == .regular && geometry.size.width > geometry.size.height ? .wide : .full), actions: .init())
+            }
+        }
+    }
+}
+#endif
