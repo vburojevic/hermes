@@ -103,7 +103,10 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
-            .onAppear { if router?.pluginInstallRequest != nil { opensAppsAndTools = true } }
+            .onAppear {
+                if router?.pluginInstallRequest != nil || router?.opensAppsAndTools == true { opensAppsAndTools = true }
+                router?.opensAppsAndTools = false
+            }
             .navigationDestination(isPresented: $opensAppsAndTools) {
                 if let workspace = app.currentWorkspace { AppsAndToolsView(model: workspace.appsAndTools) }
             }

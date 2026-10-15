@@ -9,7 +9,9 @@ struct MacSettingsView: View {
     let updater: Updater
 
     @AppStorage(PreferenceKey.appearance) private var appearance = AppearancePreference.system
-    @State private var pane = DebugFlags.appsAndTools != nil ? "apps" : "general"
+    /// The tab shown; kept, so Settings opens where it was (and Skills can open Apps & Tools).
+    @AppStorage(MacSettingsView.paneKey) private var pane = DebugFlags.appsAndTools != nil ? "apps" : "general"
+    static let paneKey = "macSettings.pane"
 
     var body: some View {
         TabView(selection: $pane) {
@@ -37,6 +39,7 @@ struct MacSettingsView: View {
             #endif
         }
         .preferredColorScheme(appearance.colorScheme)
+        .onAppear { if DebugFlags.appsAndTools != nil { pane = "apps" } }
     }
 }
 

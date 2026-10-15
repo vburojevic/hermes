@@ -70,6 +70,15 @@ final class WindowRouter {
         action?()
     }
 
+    /// Settings opens on Apps and Tools (Skills' Tools and Apps row).
+    var opensAppsAndTools = false
+
+    /// Settings → Apps and Tools, in the Settings sheet (iPhone, iPad).
+    func showAppsAndTools() {
+        opensAppsAndTools = true
+        sheet = .settings
+    }
+
     /// A catalog plugin a `plugin/install?catalog=` link asked for: Settings → Apps and Tools
     /// takes it and asks before installing.
     var pluginInstallRequest: String?

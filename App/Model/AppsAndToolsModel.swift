@@ -159,6 +159,18 @@ final class AppsAndToolsModel {
         return parts.joined(separator: " · ")
     }
 
+    /// "7 built-in tools on · 4 apps · 4 MCP servers" (Skills' Tools and Apps row).
+    var toolsSummary: String {
+        guard hasLoaded else { return summary }
+        let builtIn = BuiltInToolsetInfo.main.filter { name in toolsets.contains { $0.name == name && $0.enabled } }.count
+        var parts = [String(localized: "\(builtIn) built-in tools on")]
+        if appsAvailable {
+            parts.append(apps.count == 1 ? String(localized: "1 app") : String(localized: "\(apps.count) apps"))
+        }
+        parts.append(servers.count == 1 ? String(localized: "1 MCP server") : String(localized: "\(servers.count) MCP servers"))
+        return parts.joined(separator: " · ")
+    }
+
     // MARK: Loading
 
     func load() async {

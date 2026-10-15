@@ -81,6 +81,31 @@ final class BotWorkspace: Identifiable {
             } else if roster?.openBot != nil {
                 roster?.openBot = nil
             }
+            if case .session(let key) = selection { lastChatKey = key }
+            if selection == nil { lastChatKey = nil }
+        }
+    }
+    /// The chat open last (Skills' Use adds to its tray; `nil`: the new-chat draft).
+    @ObservationIgnored private(set) var lastChatKey: String?
+
+    /// Use on a skill (`docs/bots-groups-skills.md`): the skill goes in the tray of the chat that
+    /// was open, or of a new chat.
+    func use(_ skill: Skill) {
+        sidebarMode = .chats
+        let target: ConversationModel
+        if let key = lastChatKey, conversations[key] != nil {
+            selection = .session(key)
+            target = conversation(forKey: key)
+        } else {
+            startNewChat()
+            target = draft
+        }
+        if target.usesGateway {
+            if !target.skills.contains(skill.name), target.skills.count < MessageParts.maxSkills {
+                target.skills.append(skill.name)
+            }
+        } else if target.draft.isEmpty {
+            target.draft = "Use the \(skill.name) skill to "
         }
     }
     var searchText = ""
