@@ -632,6 +632,19 @@ final class BotRoster {
     }
 
     /// A new worktree on a new branch, for a chat that keeps its edits off the main checkout.
+    func startProviderSignIn(provider: String, profile: String?) async throws -> (sessionID: String, url: URL, userCode: String, interval: Int) {
+        try await client.startProviderSignIn(provider: provider, profile: profile)
+    }
+
+    func pollProviderSignIn(provider: String, sessionID: String, profile: String?) async throws -> String {
+        try await client.pollProviderSignIn(provider: provider, sessionID: sessionID, profile: profile)
+    }
+
+    /// A secret for the gateway's `.env` (plugin settings of `type: secret`). Write-only.
+    func setEnv(key: String, value: String, profile: String?) async throws {
+        try await client.setEnv(key: key, value: value, profile: profile)
+    }
+
     func addGitWorktree(repo: String) async throws -> GitWorktree {
         try await client.addGitWorktree(repo: repo)
     }

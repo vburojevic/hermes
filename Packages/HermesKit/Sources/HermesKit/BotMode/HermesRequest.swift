@@ -54,13 +54,70 @@ public struct HermesRequest: Identifiable, Sendable, Hashable {
         public var connectURL: URL?
         public var requiredEnv: [EnvField]
         public var detail: String?
-        /// Extra facts the card shows: origin ("official"), scan result.
+        /// Extra facts the card shows: the catalog tier ("official"), the scan result.
         public var origin: String?
         public var scan: String?
+        /// The hosted account this row connects or repairs.
+        public var alias: String?
+        public var connectionID: String?
 
         public var id: String { name }
         public var needsSignIn: Bool { connectURL != nil && requiredEnv.isEmpty }
         public var isAddOn: Bool { kind == "plugin" || kind == "skill" }
+        /// Connected, skipped, failed or expired: nothing more will happen to this row.
+        public var isFinished: Bool { ["connected", "skipped", "failed", "expired", "not_connected"].contains(state ?? "") }
+
+        public init(
+            name: String, kind: String = "connector", action: String = "connect", state: String? = nil, connectURL: URL? = nil,
+            requiredEnv: [EnvField] = [], detail: String? = nil, origin: String? = nil, scan: String? = nil,
+            alias: String? = nil, connectionID: String? = nil
+        ) {
+            self.name = name
+            self.kind = kind
+            self.action = action
+            self.state = state
+            self.connectURL = connectURL
+            self.requiredEnv = requiredEnv
+            self.detail = detail
+            self.origin = origin
+            self.scan = scan
+            self.alias = alias
+            self.connectionID = connectionID
+        }
+
+        /// One row of `connection.request`, `connection.update` or `connectors.operation.status`
+        /// (`ConnectionOperationTarget`).
+        public init?(json row: JSONValue) {
+            guard let name = row["name"]?.stringValue else { return nil }
+            var env: [EnvField] = []
+            if case .array(let fields)? = row["required_env"] {
+                env = fields.compactMap { field in
+                    guard let name = field["name"]?.stringValue else { return nil }
+                    return EnvField(
+                        name: name,
+                        required: field["required"]?.boolValue ?? true,
+                        secret: field["secret"]?.boolValue ?? true,
+                        defaultValue: field["default"]?.stringValue,
+                        prompt: field["prompt"]?.stringValue
+                    )
+                }
+            }
+            self.init(
+                name: name,
+                kind: row["kind"]?.stringValue ?? "connector",
+                action: row["action"]?.stringValue ?? "connect",
+                state: row["state"]?.stringValue,
+                connectURL: row["connect_url"]?.stringValue.flatMap(URL.init(string:)),
+                requiredEnv: env,
+                detail: row["detail"]?.stringValue ?? row["description"]?.stringValue,
+                // The catalog tier; older gateways said `origin`.
+                origin: row["tier"]?.stringValue ?? row["origin"]?.stringValue,
+                // `scan` is `{status, summary}`; older gateways sent a bare status.
+                scan: row["scan"]?["status"]?.stringValue ?? row["scan"]?.stringValue ?? row["scan_status"]?.stringValue,
+                alias: row["alias"]?.stringValue,
+                connectionID: row["connection_id"]?.stringValue
+            )
+        }
     }
 
     public struct Connection: Sendable, Hashable {
@@ -155,33 +212,7 @@ public struct HermesRequest: Identifiable, Sendable, Hashable {
     /// The `connection.request` event's payload as a card.
     public static func connection(from payload: JSONValue, now: Date = .now) -> HermesRequest? {
         guard let opID = payload["op_id"]?.stringValue, case .array(let rows)? = payload["targets"] else { return nil }
-        let targets = rows.compactMap { row -> Target? in
-            guard let name = row["name"]?.stringValue else { return nil }
-            var env: [EnvField] = []
-            if case .array(let fields)? = row["required_env"] {
-                env = fields.compactMap { field in
-                    guard let name = field["name"]?.stringValue else { return nil }
-                    return EnvField(
-                        name: name,
-                        required: field["required"]?.boolValue ?? true,
-                        secret: field["secret"]?.boolValue ?? true,
-                        defaultValue: field["default"]?.stringValue,
-                        prompt: field["prompt"]?.stringValue
-                    )
-                }
-            }
-            return Target(
-                name: name,
-                kind: row["kind"]?.stringValue ?? "connector",
-                action: row["action"]?.stringValue ?? "connect",
-                state: row["state"]?.stringValue,
-                connectURL: row["connect_url"]?.stringValue.flatMap(URL.init(string:)),
-                requiredEnv: env,
-                detail: row["detail"]?.stringValue ?? row["description"]?.stringValue,
-                origin: row["origin"]?.stringValue,
-                scan: row["scan"]?.stringValue ?? row["scan_status"]?.stringValue
-            )
-        }
+        let targets = rows.compactMap(Target.init(json:))
         guard !targets.isEmpty else { return nil }
         var deadline: Date?
         if let at = payload["deadline_at"]?.doubleValue {

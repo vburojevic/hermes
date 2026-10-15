@@ -4,6 +4,7 @@ import SwiftUI
 /// Gateways, appearance and chat behaviour.
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(WindowRouter.self) private var router: WindowRouter?
     @Environment(\.dismiss) private var dismiss
     @AppStorage(PreferenceKey.appearance) private var appearance = AppearancePreference.system
     @AppStorage(PreferenceKey.sendWithReturn) private var sendWithReturn = true
@@ -12,6 +13,8 @@ struct SettingsView: View {
     @AppStorage(PreferenceKey.showUsage) private var showUsage = false
     @State private var editing: BotConfiguration?
     @State private var isAddingBot = false
+    /// `-HERMES_APPS_TOOLS <tab>[:<item>]` opens Apps and Tools (screenshots).
+    @State private var opensAppsAndTools = DebugFlags.appsAndTools != nil
 
     var body: some View {
         NavigationStack {
@@ -54,6 +57,12 @@ struct SettingsView: View {
                     Text("API keys are stored in the Keychain on this device.")
                 }
 
+                if let workspace = app.currentWorkspace {
+                    Section("Hermes on \(workspace.bot.name)") {
+                        AppsAndToolsSettingsRow(model: workspace.appsAndTools)
+                    }
+                }
+
                 Section("Appearance") {
                     Picker("Theme", selection: $appearance) {
                         ForEach(AppearancePreference.allCases) { option in
@@ -94,6 +103,10 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            .onAppear { if router?.pluginInstallRequest != nil { opensAppsAndTools = true } }
+            .navigationDestination(isPresented: $opensAppsAndTools) {
+                if let workspace = app.currentWorkspace { AppsAndToolsView(model: workspace.appsAndTools) }
+            }
             .navigationTitle("Settings")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -130,5 +143,31 @@ struct SettingsView: View {
         let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = info?["CFBundleVersion"] as? String ?? "1"
         return "\(version) (\(build))"
+    }
+}
+
+/// Settings → Hermes on <gateway> → Apps and Tools: a count, plus "1 needs you" when something
+/// expired or failed.
+struct AppsAndToolsSettingsRow: View {
+    let model: AppsAndToolsModel
+
+    var body: some View {
+        NavigationLink {
+            AppsAndToolsView(model: model)
+        } label: {
+            HStack(spacing: 12) {
+                GlyphTile(symbol: "puzzlepiece.extension", ink: true, size: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Apps and Tools").foregroundStyle(Theme.primaryText)
+                    Text(model.summary)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+        }
+        .task(id: model.isOnline) {
+            if model.isOnline, !model.hasLoaded { await model.load() }
+        }
+        .accessibilityHint("What Hermes can reach on this gateway")
     }
 }

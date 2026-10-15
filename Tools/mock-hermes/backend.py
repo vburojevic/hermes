@@ -55,6 +55,7 @@ DROP = {"settle": 0, "refuse_until": 0.0}  # /api/mock/drop-sockets: resumes ans
 TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
 HTTP_ROUTES = {}   # (method, path) -> fn(query, body) -> (status, json): REST added by modules (projects.py)
+PUBLIC_ROUTES = {}  # path -> fn(query) -> (status, content_type, bytes): pages a browser opens without the token
 
 CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin"}
 GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
@@ -352,8 +353,11 @@ def ok(rid, result):
     return {"jsonrpc": "2.0", "id": rid, "result": result}
 
 
-def err(rid, code, message):
-    return {"jsonrpc": "2.0", "id": rid, "error": {"code": code, "message": message}}
+def err(rid, code, message, data=None):
+    error = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "id": rid, "error": error}
 
 
 def emit(sid, kind, payload):
@@ -1066,9 +1070,10 @@ def method_cron_manage(params):
 
 
 class RPCError(Exception):
-    def __init__(self, code, message):
+    def __init__(self, code, message, data=None):
         super().__init__(message)
         self.code = code
+        self.data = data  # e.g. {"reason": "NEEDS_NOUS_AUTH"} on connector errors
 
 
 METHODS = {
@@ -1153,6 +1158,14 @@ class Handler(BaseHTTPRequestHandler):
                                         "install_id": "mock-install-0001", "gateway_running": True})
         if url.path == "/api/health":
             return self.send_json(200, {"ok": True})
+        public = PUBLIC_ROUTES.get(url.path)
+        if public:
+            status, content_type, data = public(query)
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
         if url.path == "/":
             html = INDEX.format(token=json.dumps("" if CONFIG["password"] else CONFIG["token"])).encode()
             self.send_response(200)
@@ -1196,6 +1209,17 @@ class Handler(BaseHTTPRequestHandler):
                                             "last_read_at": session.get("last_read_at"),
                                             "runtime_revision": session.get("revision", 0), "runtime_generation": 0})
         self.send_json(404, {"detail": "Not Found"})
+
+    def do_PUT(self):
+        url = urlparse(self.path)
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length) or b"{}") if length else {}
+        if not self.authorized():
+            return self.send_json(401, {"detail": "Unauthorized"})
+        route = HTTP_ROUTES.get(("PUT", url.path))
+        if route:
+            return self.send_json(*route(parse_qs(url.query), body))
+        return self.send_json(404, {"detail": "Not Found"})
 
     def do_PATCH(self):
         url = urlparse(self.path)
@@ -1347,7 +1371,7 @@ class Handler(BaseHTTPRequestHandler):
                     RUNTIME[result["session_id"]]["peers"].add(peer)
             peer.send(ok(rid, result))
         except RPCError as error:
-            peer.send(err(rid, error.code, str(error)))
+            peer.send(err(rid, error.code, str(error), error.data))
         except Exception as error:  # noqa: BLE001 — a mock should say what broke
             peer.send(err(rid, 5000, f"{type(error).__name__}: {error}"))
 
@@ -1409,6 +1433,10 @@ def main():
         helpers = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helpers)
         helpers.install(globals(), gateway, chats)
+        spec = importlib.util.spec_from_file_location("mock_connections", here / "connections.py")
+        connections = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(connections)
+        connections.install(globals())
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib
@@ -1420,6 +1448,7 @@ def main():
                       chats_module=chats if args.gateway_port else None)
     if not args.quiet_world:
         threading.Thread(target=ambient, daemon=True).start()
+    CONFIG["port"] = args.port
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
     mode = f"gated (admin / {args.password})" if args.password else f"ungated (token {CONFIG['token']})"

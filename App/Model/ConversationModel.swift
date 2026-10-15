@@ -2918,6 +2918,18 @@ extension ConversationModel {
         ])
     }
 
+    /// Signs in through the browser for a connection card, then tells Hermes the browser came back
+    /// (`connectors.operation.wake`): the same flow as Settings → Apps and Tools. The card keeps
+    /// following `connection.update`.
+    func signIn(_ request: HermesRequest, at url: URL) async {
+        let back = await BrowserSignIn.shared.open(url)
+        guard let roster = gatewayRoster, let runtime = runtimeSessionID else { return }
+        _ = try? await roster.request("connectors.operation.wake", [
+            "owner": .object(["type": .string("session"), "session_id": .string(runtime)]),
+            "op_id": .string(back?.connectionDoneOperation ?? request.id),
+        ])
+    }
+
     func skip(_ request: HermesRequest) {
         answer(request, with: request.skipResult, receipt: String(localized: "Skipped · \(Self.title(of: request))"), symbol: "arrow.uturn.forward.circle")
     }

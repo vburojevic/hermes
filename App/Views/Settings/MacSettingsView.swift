@@ -3,30 +3,39 @@ import HermesKit
 import HermesMacSupport
 import SwiftUI
 
-/// Settings on the Mac (`screens/mac/settings.elyx`): General, Gateways and Chat tabs.
+/// Settings on the Mac (`screens/mac/settings.elyx`): General, Gateways, Apps & Tools, Chat and
+/// Notifications. Each pane sets its width; the window follows the selected one.
 struct MacSettingsView: View {
     let updater: Updater
 
     @AppStorage(PreferenceKey.appearance) private var appearance = AppearancePreference.system
+    @State private var pane = DebugFlags.appsAndTools != nil ? "apps" : "general"
 
     var body: some View {
-        TabView {
-            Tab("General", systemImage: "gearshape") {
+        TabView(selection: $pane) {
+            Tab("General", systemImage: "gearshape", value: "general") {
                 GeneralPane(updater: updater)
+                    .frame(width: 480)
             }
-            Tab("Gateways", systemImage: "server.rack") {
+            Tab("Gateways", systemImage: "server.rack", value: "gateways") {
                 GatewaysPane()
+                    .frame(width: 480)
             }
-            Tab("Chat", systemImage: "bubble.left") {
+            Tab("Apps & Tools", systemImage: "puzzlepiece.extension", value: "apps") {
+                MacAppsAndToolsPane()
+                    .frame(width: 880, height: 580)
+            }
+            Tab("Chat", systemImage: "bubble.left", value: "chat") {
                 ChatPane()
+                    .frame(width: 480)
             }
             #if HERMES_PUSH
-            Tab("Notifications", systemImage: "bell") {
+            Tab("Notifications", systemImage: "bell", value: "notifications") {
                 NavigationStack { NotificationSettingsView() }
+                    .frame(width: 480)
             }
             #endif
         }
-        .frame(width: 480)
         .preferredColorScheme(appearance.colorScheme)
     }
 }

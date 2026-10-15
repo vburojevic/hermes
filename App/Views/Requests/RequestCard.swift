@@ -597,7 +597,6 @@ private struct ConnectionCard: View {
     let connection: HermesRequest.Connection
     let conversation: ConversationModel
 
-    @Environment(\.openURL) private var openURL
     @State private var values: [String: String] = [:]
     @State private var enabled: Set<String> = []
     @State private var signingIn = false
@@ -718,7 +717,7 @@ private struct ConnectionCard: View {
                             .foregroundStyle(Theme.secondaryText)
                     }
                     CardFooter(secondary: String(localized: "Cancel"), onSecondary: skipAll, primary: String(localized: "Open Again")) {
-                        if let url = target.connectURL { openURL(url) }
+                        if let url = target.connectURL { Task { await conversation.signIn(request, at: url) } }
                     }
                 } else {
                     if let detail = target.detail {
@@ -727,9 +726,9 @@ private struct ConnectionCard: View {
                             .foregroundStyle(Theme.primaryText)
                     }
                     Button {
-                        if let url = target.connectURL { openURL(url) }
                         signingIn = true
                         approveSignIn(target)
+                        if let url = target.connectURL { Task { await conversation.signIn(request, at: url) } }
                     } label: {
                         Label("Sign In with \(name)", systemImage: "arrow.up.forward.square")
                             .font(.subheadline.weight(.semibold))

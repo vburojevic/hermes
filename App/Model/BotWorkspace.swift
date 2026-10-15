@@ -107,6 +107,14 @@ final class BotWorkspace: Identifiable {
     @ObservationIgnored var voiceModeRequested = false
     /// This gateway's projects (Bot Mode backends only).
     private(set) var projects: ProjectsModel!
+    @ObservationIgnored private var appsAndToolsModel: AppsAndToolsModel?
+    /// What Hermes on this gateway can reach: Settings → Apps and Tools.
+    var appsAndTools: AppsAndToolsModel {
+        if let appsAndToolsModel { return appsAndToolsModel }
+        let model = AppsAndToolsModel(workspace: self)
+        appsAndToolsModel = model
+        return model
+    }
     /// A project home's composer: the next chat in that project, by project id.
     @ObservationIgnored private var projectDrafts: [String: ConversationModel] = [:]
 

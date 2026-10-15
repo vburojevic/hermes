@@ -26,6 +26,13 @@ split view on iPad and Mac.
   page (iPhone, iPad portrait) or Team inspector (Mac, iPad landscape, ⌥⌘T) lets you stop or steer
   one helper, read its live transcript, and pause new helpers on the gateway. Finished runs are
   saved to the gateway's spawn-tree archive and reopen after a restart. Needs Bot Mode.
+- **Apps and Tools** (Settings → Hermes on <gateway>; a tab in the Mac's Settings): apps
+  connected through Nous (accounts, sign-in in the browser, which tools Hermes may use — writes
+  and destructive tools tagged, destructive ones off when you connect), MCP servers (live status,
+  add from the catalog or by command/URL, tested before they're saved), plugins (install from the
+  catalog or a git link, settings, updates that ask before widening access) and the built-in
+  toolsets. Keys are write-only: the app shows an env name and "Set", never the value. Needs Bot
+  Mode.
 - **Tasks**: Hermes' scheduled jobs — create, run now, pause, resume, delete.
 - **Skills**: browse the gateway's skills and tool sets; start a chat with a skill.
 - Markdown with tinted code blocks, tables, task lists and quotes; copy, share and read aloud.
@@ -227,3 +234,14 @@ sub-helpers; add "slowly" for screenshots. A steer containing "late" lands after
 step (missed) and one containing "reject" is rejected. "Swift 6 readiness check" has a saved past
 run. Debug flags, after `-HERMES_SEND`: `-HERMES_HELPERS team|helper:<n>|steer:<n>|stop:<n>`,
 `-HERMES_HELPERS_AFTER <seconds>` and `-HERMES_HELPERS_NOTE <text>` (sends the steer).
+
+And Apps and Tools (`Tools/mock-hermes/connections.py`): GitHub with two accounts and 38 tools
+(one blocked by the organization), Gmail, Linear signed out, Slack; Notion, Google Calendar and
+Figma to connect (the sign-in page returns to the app after a few seconds); MCP servers
+filesystem, github (from a plugin), sentry failing with a 401 until its key changes, and postgres
+starting when needed; presets Brave Search, PostgreSQL and Playwright; plugins Xcode, Blender (app
+not running) and homeassistant with an update that asks for shell access; eight built-in toolsets
+with image generation off. `mock.nous {"signed_in": false}` shows the Nous sign-in state and
+`mock.connections.reset` puts everything back. Debug flags, after `-HERMES_OPEN settings`:
+`-HERMES_APPS_TOOLS apps|mcp|plugins|builtin`, with `:<app slug>`, `:<server>`, `:<plugin key>`,
+`mcp:add` or `plugins:update` (on the Mac the flag alone opens the Apps & Tools tab).

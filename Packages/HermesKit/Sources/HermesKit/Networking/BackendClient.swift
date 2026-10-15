@@ -227,6 +227,38 @@ public actor BackendClient {
         return GitWorktree(path: path, branch: json["branch"]?.stringValue, isMain: false)
     }
 
+    // MARK: - Credentials
+
+    /// Stores a secret in the profile's `.env` (`PUT /api/env`, the dashboard's credential route):
+    /// where plugin settings of `type: secret` live. Write-only: nothing reads it back, and the
+    /// value is never logged.
+    public func setEnv(key: String, value: String, profile: String?) async throws {
+        var body: [String: JSONValue] = ["key": .string(key), "value": .string(value)]
+        if let profile, !profile.isEmpty { body["profile"] = .string(profile) }
+        _ = try await send(path: "api/env", method: "PUT", body: .object(body))
+    }
+
+    /// A provider sign-in by device code (`POST /api/providers/oauth/<provider>/start`): Nous for
+    /// the Apps tab. The person approves at `url`; `pollProviderSignIn` says when they have.
+    public func startProviderSignIn(provider: String, profile: String?) async throws -> (sessionID: String, url: URL, userCode: String, interval: Int) {
+        var query: [URLQueryItem] = []
+        if let profile, !profile.isEmpty { query.append(URLQueryItem(name: "profile", value: profile)) }
+        let (data, _) = try await send(path: "api/providers/oauth/\(Self.escape(provider))/start", method: "POST", query: query, body: .object([:]))
+        let json = try JSONDecoder().decode(JSONValue.self, from: data)
+        guard let id = json["session_id"]?.stringValue, let url = json["verification_url"]?.stringValue.flatMap(URL.init(string:)) else {
+            throw Failure.http(200, "The gateway started no sign-in.")
+        }
+        return (id, url, json["user_code"]?.stringValue ?? "", json["poll_interval"]?.doubleValue.map { Int($0) } ?? 3)
+    }
+
+    /// `pending`, `approved`, `expired`, `error` or `cancelled`.
+    public func pollProviderSignIn(provider: String, sessionID: String, profile: String?) async throws -> String {
+        var query: [URLQueryItem] = []
+        if let profile, !profile.isEmpty { query.append(URLQueryItem(name: "profile", value: profile)) }
+        let (data, _) = try await send(path: "api/providers/oauth/\(Self.escape(provider))/poll/\(Self.escape(sessionID))", query: query)
+        return try JSONDecoder().decode(JSONValue.self, from: data)["status"]?.stringValue ?? "pending"
+    }
+
     // MARK: - Plumbing
 
     private func endpoint(_ path: String) -> URL {

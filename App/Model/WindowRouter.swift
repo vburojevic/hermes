@@ -61,9 +61,21 @@ final class WindowRouter {
         action?()
     }
 
-    /// Opens `hermesapp://connect` links; ignores everything else.
+    /// A catalog plugin a `plugin/install?catalog=` link asked for: Settings → Apps and Tools
+    /// takes it and asks before installing.
+    var pluginInstallRequest: String?
+
+    /// Opens `hermesapp://connect` and `hermesapp://plugin/install?catalog=<name>` links; ignores
+    /// everything else.
     @discardableResult
     func open(_ url: URL) -> Bool {
+        if url.host() == "plugin", url.path() == "/install",
+           let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "catalog" })?.value,
+           !name.isEmpty {
+            pluginInstallRequest = name
+            sheet = .settings
+            return true
+        }
         guard let link = PairingLink(url: url) else { return false }
         sheet = .connect(link, rightAway: false)
         return true

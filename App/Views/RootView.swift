@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     #if os(macOS)
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.openSettings) private var openSettings
     #endif
     @AppStorage(PreferenceKey.appearance) private var appearance = AppearancePreference.system
     /// This window's sheets.
@@ -99,6 +100,14 @@ struct RootView: View {
         }
         #if DEBUG
         .task { openDebugSheet() }
+        #if os(macOS)
+        // `-HERMES_APPS_TOOLS …`: the Settings window on Apps & Tools (screenshots).
+        .task {
+            guard DebugFlags.appsAndTools != nil else { return }
+            try? await Task.sleep(for: .seconds(2))
+            openSettings()
+        }
+        #endif
         #endif
         .focusedSceneValue(\.windowRouter, router)
         // Outermost, so sheets inherit them too.
