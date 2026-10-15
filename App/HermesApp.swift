@@ -170,6 +170,12 @@ struct HermesCommands: Commands {
             .keyboardShortcut("t", modifiers: [.command, .option])
             .disabled(helpers?.latestTeamID == nil)
 
+            Button("Voice Mode") {
+                model.currentWorkspace?.voiceToggleRequests += 1
+            }
+            .keyboardShortcut("v", modifiers: [.command, .option])
+            .disabled(model.currentWorkspace == nil)
+
             // Search (`docs/search.md`): find in this chat, or search every chat in the sidebar.
             Button("Find in Chat…") {
                 if let conversation = model.currentWorkspace?.currentConversation { conversation.find(conversation.findText ?? "") }

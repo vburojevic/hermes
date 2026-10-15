@@ -144,6 +144,24 @@ struct ChatScreen: View {
             AttachmentLoader.load(providers) { conversation.attachments.append($0) }
             return conversation.supportsImages
         }
+        #if os(macOS)
+        // Voice on the Mac (`macVoice`): a floating glass panel; the chat stays in view.
+        .overlay(alignment: .topTrailing) {
+            if let voice {
+                VoiceModeView(session: voice, onKeyboard: leaveVoiceForKeyboard, onEnd: endVoice, isPanel: true)
+                    .padding(.top, 12)
+                    .padding(.trailing, 16)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
+            }
+        }
+        .animation(.snappy(duration: 0.22), value: voice == nil)
+        #endif
+        // ⌥⌘V (Chat → Voice Mode): start or end it.
+        .onChange(of: workspace.voiceToggleRequests) {
+            if voice == nil { startVoice() } else { endVoice() }
+        }
+        .onChange(of: conversation.id) { endVoice() }
+        .onDisappear { endVoice() }
         #if os(iOS)
         .fullScreenCover(isPresented: Binding(
             get: { voice.map { !$0.isMinimised } ?? false },
@@ -153,8 +171,6 @@ struct ChatScreen: View {
                 VoiceModeView(session: voice, onKeyboard: leaveVoiceForKeyboard, onEnd: endVoice)
             }
         }
-        .onChange(of: conversation.id) { endVoice() }
-        .onDisappear { endVoice() }
         .task(id: conversation.id) {
             guard workspace.voiceModeRequested else { return }
             workspace.voiceModeRequested = false
@@ -211,13 +227,9 @@ struct ChatScreen: View {
 
     // MARK: Voice mode
 
-    /// Voice mode is designed for iPhone and iPad; the Mac has dictation only for now.
+    /// Voice mode: full screen on iPhone and iPad, a floating panel on the Mac.
     private var voiceModeAction: (() -> Void)? {
-        #if os(iOS)
         startVoice
-        #else
-        nil
-        #endif
     }
 
     private func startVoice() {

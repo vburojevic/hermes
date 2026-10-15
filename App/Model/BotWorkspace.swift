@@ -130,6 +130,8 @@ final class BotWorkspace: Identifiable {
     private(set) var draft: ConversationModel!
     /// Voice mode was asked for before its chat was on screen (a project home's composer).
     @ObservationIgnored var voiceModeRequested = false
+    /// Bumped by Chat → Voice Mode (⌥⌘V): the open chat starts or ends Voice.
+    var voiceToggleRequests = 0
     /// This gateway's projects (Bot Mode backends only).
     private(set) var projects: ProjectsModel!
     @ObservationIgnored private var appsAndToolsModel: AppsAndToolsModel?

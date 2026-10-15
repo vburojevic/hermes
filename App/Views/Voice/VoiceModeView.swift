@@ -7,10 +7,37 @@ struct VoiceModeView: View {
     /// Back to the chat with the composer focused.
     let onKeyboard: () -> Void
     let onEnd: () -> Void
+    /// The Mac's floating panel; otherwise full screen (wide on iPad landscape).
+    var isPanel = false
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
+        if isPanel {
+            screen(layout: .panel)
+        } else {
+            GeometryReader { geometry in
+                screen(layout: sizeClass == .regular && geometry.size.width > geometry.size.height && geometry.size.width >= 900 ? .wide : .full)
+            }
+        }
+    }
+
+    /// What was said, newest last, for the transcript panel: the chat's messages, then what's
+    /// being heard right now.
+    private var transcript: [VoiceScreen.Line] {
+        var lines: [VoiceScreen.Line] = session.conversation.rows.suffix(12).compactMap { item in
+            guard let text = SearchFocus.text(of: item)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            if case .user = item { return VoiceScreen.Line(id: item.id, speaker: String(localized: "You"), text: text, isReply: false) }
+            return VoiceScreen.Line(id: item.id, speaker: session.speakerName, text: text, isReply: true)
+        }
+        if session.phase == .listening, !session.listener.transcript.isEmpty {
+            lines.append(VoiceScreen.Line(id: "heard", speaker: String(localized: "You"), text: session.listener.transcript, isReply: false))
+        }
+        return lines
+    }
+
+    private func screen(layout: VoiceScreen.Layout) -> some View {
         VoiceScreen(
             state: VoiceScreen.State(
                 phase: session.phase,
@@ -27,7 +54,9 @@ struct VoiceModeView: View {
                 isMuted: session.isMuted,
                 prefersSpeaker: session.prefersSpeaker,
                 showsCaptions: session.showsCaptions,
-                approval: session.conversation.pendingApproval
+                approval: session.conversation.pendingApproval,
+                layout: layout,
+                transcript: layout == .wide ? transcript : []
             ),
             actions: VoiceScreen.Actions(
                 minimise: { session.isMinimised = true },
@@ -53,6 +82,18 @@ struct VoiceModeView: View {
 /// is being said in large type, and Mute · Keyboard · Speaker · End. Swipe down or the chevron
 /// minimises it; the conversation keeps going in the chat.
 struct VoiceScreen: View {
+    /// iPhone and iPad portrait fill the screen; iPad landscape adds the transcript panel
+    /// (`ipadVoice`); the Mac floats a panel over the chat (`macVoice`).
+    enum Layout { case full, wide, panel }
+
+    /// A line of the transcript panel.
+    struct Line: Identifiable, Hashable {
+        let id: String
+        let speaker: String
+        let text: String
+        let isReply: Bool
+    }
+
     struct State {
         var phase: VoiceSession.Phase
         var title: String
@@ -71,6 +112,8 @@ struct VoiceScreen: View {
         var prefersSpeaker = true
         var showsCaptions = true
         var approval: ApprovalRequest?
+        var layout: Layout = .full
+        var transcript: [Line] = []
     }
 
     struct Actions {
@@ -95,6 +138,88 @@ struct VoiceScreen: View {
     private var isApproval: Bool { state.phase == .approval }
 
     var body: some View {
+        switch state.layout {
+        case .full: fullScreen
+        case .wide: wideScreen
+        case .panel: panel
+        }
+    }
+
+    /// iPad landscape: the face and controls, and the conversation in a panel on the right.
+    private var wideScreen: some View {
+        HStack(spacing: 20) {
+            fullScreen
+            TranscriptPanel(lines: state.transcript)
+                .frame(width: 340)
+                .padding(.vertical, 12)
+                .padding(.trailing, 20)
+        }
+        .background(Theme.canvas.ignoresSafeArea())
+    }
+
+    /// The Mac's floating panel: the title and shortcut, the face in its rings, what's said,
+    /// then Mute · Keyboard · End.
+    private var panel: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text(state.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                Spacer()
+                Text("⌥⌘V")
+                    .font(.caption)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .accessibilityHidden(true)
+            }
+            figure
+                .padding(.top, 4)
+            VStack(spacing: 6) {
+                Text(state.status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.secondaryText)
+                if let caption = state.caption {
+                    Text(caption)
+                        .font(.subheadline)
+                        .foregroundStyle(state.captionIsSecondary ? Theme.secondaryText : Theme.primaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(4)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            if isApproval, let approval = state.approval {
+                ApprovalCard(approval: approval, asker: state.speakerName) { choice in actions.respond(choice) }
+            } else {
+                HStack(spacing: 22) {
+                    VoiceControl(symbol: state.isMuted ? "mic.slash.fill" : "mic", label: state.isMuted ? "Unmute" : "Mute", isOn: state.isMuted, size: 44, action: actions.toggleMute)
+                    VoiceControl(symbol: "keyboard", label: "Keyboard", size: 44, action: actions.keyboard)
+                    Button(action: actions.end) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .buttonBorderShape(.circle)
+                    .tint(Theme.danger)
+                    .accessibilityLabel("End Voice")
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(16)
+        .frame(width: 340)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if state.phase == .speaking { actions.interrupt() }
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.25) : Theme.spring, value: state.phase)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(state.title)
+    }
+
+    private var fullScreen: some View {
         VStack(spacing: 0) {
             topBar
                 .padding(.horizontal, 16)
@@ -172,8 +297,15 @@ struct VoiceScreen: View {
 
     // MARK: Figure
 
-    private var figureSize: CGFloat { isApproval ? 150 : 300 }
+    private var figureSize: CGFloat {
+        switch state.layout {
+        case .full: isApproval ? 150 : 300
+        case .wide: isApproval ? 200 : 336
+        case .panel: 200
+        }
+    }
 
+    @ViewBuilder
     private var figure: some View {
         Group {
             if let appearance = state.botAppearance {
@@ -190,7 +322,7 @@ struct VoiceScreen: View {
     /// while it listens, its body squashes with its own voice while it talks, and its eyes stay on
     /// the person.
     private func botFigure(_ appearance: BotAppearance) -> some View {
-        let faceSize: CGFloat = isApproval ? 60 : 160
+        let faceSize: CGFloat = isApproval ? 60 : (state.layout == .panel ? 84 : 160)
         return ZStack {
             VoiceRings(color: appearance.color, level: state.phase == .listening ? state.level : 0, faceSize: faceSize, enabled: !reduceMotion)
                 .opacity(state.phase == .listening ? 1 : 0)
@@ -355,14 +487,15 @@ private struct VoiceControl: View {
     let symbol: String
     let label: LocalizedStringKey
     var isOn = false
+    var size: CGFloat = 58
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 21, weight: .regular))
+                .font(.system(size: size * 0.36, weight: .regular))
                 .foregroundStyle(isOn ? Theme.inkForeground : Theme.primaryText)
-                .frame(width: 58, height: 58)
+                .frame(width: size, height: size)
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.glass)
@@ -475,5 +608,52 @@ struct VoiceMiniBar: View {
         .padding(.trailing, 8)
         .padding(.vertical, 8)
         .glassEffect(.regular, in: .capsule)
+    }
+}
+
+/// The conversation beside Voice on iPad landscape (`ipadVoice`): who said what, the latest
+/// reply on a card.
+private struct TranscriptPanel: View {
+    let lines: [VoiceScreen.Line]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("This conversation")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        let latestReply = lines.last(where: \.isReply)?.id
+                        ForEach(lines) { line in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(line.speaker)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.secondaryText)
+                                Text(line.text)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.primaryText)
+                                    .lineLimit(8)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(line.id == latestReply ? Theme.surfaceRaised : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .id(line.id)
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 12)
+                }
+                .onChange(of: lines.last?.text) {
+                    if let last = lines.last?.id { withAnimation { proxy.scrollTo(last, anchor: .bottom) } }
+                }
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 }
