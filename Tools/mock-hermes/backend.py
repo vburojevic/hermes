@@ -1394,6 +1394,8 @@ def main():
     parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one")
     parser.add_argument("--late-store", type=float, default=0, metavar="SECONDS",
                         help="write a turn's reply this long after message.complete (Hermes' busy-database retry queue)")
+    parser.add_argument("--checkpoints", choices=["on", "off"], default="on",
+                        help="checkpoints.enabled on the gateway (off: the Turn On state)")
     parser.add_argument("--push-relay", default="simctl",
                         help="where push notices go (push.py): simctl (the simulator that registered), a relay URL, "
                              "or none (no plugin)")
@@ -1437,6 +1439,10 @@ def main():
         connections = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(connections)
         connections.install(globals())
+        spec = importlib.util.spec_from_file_location("mock_checkpoints", here / "checkpoints.py")
+        checkpoints = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checkpoints)
+        checkpoints.install(globals(), gateway, chats, enabled=args.checkpoints == "on")
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib
