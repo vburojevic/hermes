@@ -381,3 +381,60 @@ public enum CheckpointFailure: Error, Hashable, Sendable {
         }
     }
 }
+
+/// The files a reply's tools wrote, for its undo bar: "3 files changed · +41 −12". From the
+/// turn itself (each edit's diff), so it reads the same live and from history.
+public struct TurnFileEdits: Hashable, Sendable {
+    public var paths: [String]
+    public var added: Int
+    public var removed: Int
+
+    public var isEmpty: Bool { paths.isEmpty }
+
+    public init(turn: AssistantTurn) {
+        var paths: [String] = []
+        var added = 0
+        var removed = 0
+        for step in turn.steps {
+            guard case .tool(let tool) = step, tool.status != .failed, Self.edits(tool) else { continue }
+            let path = tool.filePath ?? tool.preview ?? tool.name
+            if !paths.contains(path) { paths.append(path) }
+            let counts = Self.counts(tool)
+            added += counts.added
+            removed += counts.removed
+        }
+        self.paths = paths
+        self.added = added
+        self.removed = removed
+    }
+
+    /// A call that wrote a file: Hermes saves the folder before these.
+    static func edits(_ tool: ToolActivity) -> Bool {
+        ["write_file", "patch"].contains(tool.name) || (tool.diff?.isEmpty == false)
+    }
+
+    /// Lines added and removed: the sent diff, else the edit's old and new text compared line by
+    /// line (lines both share don't count).
+    static func counts(_ tool: ToolActivity) -> (added: Int, removed: Int) {
+        if let diff = tool.diff, !diff.isEmpty {
+            var added = 0
+            var removed = 0
+            for line in diff.split(separator: "\n", omittingEmptySubsequences: false) {
+                if line.hasPrefix("+++") || line.hasPrefix("---") { continue }
+                if line.hasPrefix("+") { added += 1 } else if line.hasPrefix("-") { removed += 1 }
+            }
+            return (added, removed)
+        }
+        switch tool.name {
+        case "patch":
+            let old = tool.arguments?["old_string"]?.stringValue?.components(separatedBy: "\n") ?? []
+            let new = tool.arguments?["new_string"]?.stringValue?.components(separatedBy: "\n") ?? []
+            let difference = new.difference(from: old)
+            return (difference.insertions.count, difference.removals.count)
+        case "write_file":
+            return (tool.arguments?["content"]?.stringValue?.components(separatedBy: "\n").count ?? 0, 0)
+        default:
+            return (0, 0)
+        }
+    }
+}

@@ -230,6 +230,15 @@ struct ComposerView: View {
                 .padding(.top, 10)
                 .transition(Self.rowAppears)
             }
+            if conversation.hasUndoneMessage {
+                // After Undo (`composerEditing`): the undone turn's message, back to edit.
+                ComposerStrip(symbol: "arrow.uturn.backward", text: String(localized: "Undone · your message is back to edit"), closeLabel: "Discard the message") {
+                    conversation.dismissUndoneMessage()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .transition(Self.rowAppears)
+            }
             if !conversation.attachments.isEmpty {
                 AttachmentStrip(attachments: $conversation.attachments)
                     .padding(.horizontal, 12)

@@ -108,6 +108,8 @@ struct ChatScreen: View {
         #endif
         .environment(\.helperNavigator, helperNavigator)
         .modifier(HelperPresentation(conversation: conversation, workspace: workspace, usesInspector: usesTeamInspector, navigator: helperNavigator))
+        // Review, Undo, the timeline and the off state (`docs/checkpoints.md`).
+        .modifier(CheckpointSheets(model: conversation.checkpoints))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { screenSize = $0 }
         // Steer from the inspector: the chat's composer takes the note.
         .onChange(of: conversation.helperSteerTarget) { _, target in

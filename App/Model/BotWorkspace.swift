@@ -264,6 +264,14 @@ final class BotWorkspace: Identifiable {
         selection = .session(session.stableID)
     }
 
+    /// Checkpoints… from a chat's menu: opens the chat with its checkpoints on top.
+    func showCheckpoints(for session: HermesSession) {
+        open(session)
+        let conversation = conversation(forKey: session.stableID)
+        conversation.loadIfNeeded()
+        conversation.checkpoints.showTimeline()
+    }
+
     /// The composer at the bottom of a project home: its next chat in that project.
     func projectDraft(for projectID: String) -> ConversationModel {
         if let existing = projectDrafts[projectID], existing.sessionID == nil { return existing }

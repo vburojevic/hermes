@@ -121,6 +121,13 @@ struct TranscriptView: View {
         }
         .environment(\.references, references)
         .environment(\.helperStore, conversation.isBotChat ? nil : conversation.helpers)
+        .environment(\.checkpoints, conversation.usesGateway ? conversation.checkpoints : nil)
+        // Which replies can be undone: listed when a chat with file edits opens, as an edit
+        // lands, and when a turn ends.
+        .task(id: checkpointTrigger) {
+            guard conversation.usesGateway, conversation.rows.contains(where: Self.editsFiles) else { return }
+            await conversation.checkpoints.refresh()
+        }
         .environment(\.disclosureWillToggle, DisclosureAction {
             keepsTop = true
             keepsTopReset?.cancel()
@@ -484,6 +491,28 @@ struct TranscriptView: View {
         #endif
     }
 
+    private struct CheckpointTrigger: Hashable {
+        let chat: UUID
+        let completed: Int
+        let items: Int
+        let working: Bool
+        let liveEdits: Int
+        let gateway: Bool
+    }
+
+    private var checkpointTrigger: CheckpointTrigger {
+        CheckpointTrigger(
+            chat: conversation.id, completed: conversation.completedTurns, items: conversation.items.count,
+            working: conversation.isWorking, liveEdits: conversation.live.map { TurnFileEdits(turn: $0.snapshot).paths.count } ?? 0,
+            gateway: conversation.usesGateway
+        )
+    }
+
+    private static func editsFiles(_ item: TranscriptItem) -> Bool {
+        if case .assistant(let turn) = item { return !TurnFileEdits(turn: turn).isEmpty }
+        return false
+    }
+
     /// How rows come and go (`ConversationModel.animateRows` uses the same).
     static let rowsAnimation = Animation.smooth(duration: 0.36)
 
@@ -525,6 +554,8 @@ struct TranscriptView: View {
             ReceiptRow(notice: notice, conversation: conversation)
         case .notice(let notice) where notice.kind == "failed_turn":
             FailedTurnRow(notice: notice)
+        case .notice(let notice) where notice.kind == "restored":
+            RestoredNoteRow(note: conversation.restoredNotes[notice.id] ?? RestoredNote(title: notice.text, details: [], warnings: []))
         case .notice(let notice):
             NoticeRow(notice: notice)
         case .command(let command):

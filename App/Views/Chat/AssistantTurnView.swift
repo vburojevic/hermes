@@ -14,6 +14,7 @@ struct AssistantTurnView: View {
     var extraTeamIDs: [String] = []
 
     @Environment(\.helperStore) private var helperStore
+    @Environment(\.checkpoints) private var checkpoints
     @AppStorage(PreferenceKey.showUsage) private var alwaysShowsUsage = false
     @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
     @State private var showsUsage = false
@@ -87,6 +88,17 @@ struct AssistantTurnView: View {
             if let helperStore, !teams.isEmpty {
                 TurnTeams(slots: teams, turnIsWorking: turn.isWorking, store: helperStore)
             }
+            // A turn that changed files and has a checkpoint: Review and Undo (`turnCheckpoint`).
+            if let checkpoints, let edits = fileEdits, checkpoints.checkpoint(beforeTurn: turn.id) != nil {
+                TurnCheckpointBar(
+                    edits: edits,
+                    isWorking: checkpoints.chatIsWorking,
+                    canUndo: checkpoints.isOnline && checkpoints.refusal == nil,
+                    onReview: { checkpoints.sheet = .review(turnID: turn.id) },
+                    onUndo: { checkpoints.undo(turnID: turn.id) }
+                )
+                .transition(.opacity)
+            }
             // Steers Hermes read come before what it went on to say.
             ForEach(steerBubbles.filter { !$0.isPending }) { bubble in
                 steerBubble(bubble)
@@ -137,6 +149,12 @@ struct AssistantTurnView: View {
         return read + waiting
     }
 
+    /// The files this reply's tools wrote, when it wrote any.
+    private var fileEdits: TurnFileEdits? {
+        let edits = TurnFileEdits(turn: turn)
+        return edits.isEmpty ? nil : edits
+    }
+
     /// `Overlays.replyMenu`.
     @ViewBuilder
     private var replyMenu: some View {
@@ -158,6 +176,11 @@ struct AssistantTurnView: View {
         if let onBranch {
             Divider()
             Button("Branch from Here", systemImage: "arrow.triangle.branch") { onBranch() }
+        }
+        if let checkpoints, fileEdits != nil {
+            Divider()
+            // Off: the off sheet, which offers Turn On.
+            Button("Undo File Changes…", systemImage: "arrow.uturn.backward") { checkpoints.undo(turnID: turn.id) }
         }
         if turn.usage != nil {
             Button(showsUsage ? "Hide Usage" : "Show Usage", systemImage: "chart.bar") {

@@ -63,6 +63,15 @@ struct RootView: View {
                                 workspace.projects.expandedIDs.insert(expand)
                             }
                             workspace.selection = .project(String(page.dropFirst(8)))
+                        case let page? where page.hasPrefix("chat:"):
+                            // `-HERMES_OPEN chat:<session id>`, with `-HERMES_CHECKPOINTS` for its checkpoints.
+                            workspace.sidebarMode = .chats
+                            let id = String(page.dropFirst(5))
+                            for _ in 0..<40 where workspace.sessions.isEmpty {
+                                try? await Task.sleep(for: .milliseconds(250))
+                            }
+                            workspace.open(workspace.session(forKey: id) ?? HermesSession(id: id))
+                            await openDebugCheckpoints(in: workspace)
                         case let page? where page.hasPrefix("project-chat:"):
                             workspace.sidebarMode = .chats
                             for _ in 0..<40 where !workspace.projects.isAvailable {
@@ -272,6 +281,37 @@ struct RootView: View {
 
     /// `-HERMES_HELPERS team|helper:<n>|steer:<n>|stop:<n>` opens the chat's latest team, its helper
     /// n, a steer to it, or stops it, `-HERMES_HELPERS_AFTER <seconds>` after launch (helper screenshots).
+    /// `-HERMES_CHECKPOINTS review|undo|timeline|detail[:n]|off|restore-all[:n]` (screenshots).
+    private func openDebugCheckpoints(in workspace: BotWorkspace) async {
+        guard let action = UserDefaults.standard.string(forKey: "HERMES_CHECKPOINTS"), !action.isEmpty else { return }
+        let conversation = workspace.currentConversation
+        let checkpoints = conversation.checkpoints
+        for _ in 0..<60 where checkpoints.list == nil {
+            try? await Task.sleep(for: .milliseconds(250))
+            if !conversation.items.isEmpty, checkpoints.list == nil { await checkpoints.refresh() }
+        }
+        let parts = action.split(separator: ":")
+        let index = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
+        let row = checkpoints.timeline.indices.contains(index - 1) ? checkpoints.timeline[index - 1] : nil
+        try? await Task.sleep(for: .milliseconds(600))
+        switch parts[0] {
+        case "review":
+            if let turnID = checkpoints.latestUndoableTurnID { checkpoints.sheet = .review(turnID: turnID) }
+        case "undo":
+            if let turnID = checkpoints.latestUndoableTurnID { checkpoints.undo(turnID: turnID) }
+        case "timeline":
+            checkpoints.showTimeline()
+        case "detail":
+            checkpoints.showTimeline(selecting: row)
+        case "restore-all":
+            if let row { checkpoints.sheet = .confirm(CheckpointsModel.Target(checkpoint: row)) }
+        case "off":
+            checkpoints.sheet = .off
+        default:
+            break
+        }
+    }
+
     private func openDebugHelpers(in workspace: BotWorkspace) async {
         guard let action = UserDefaults.standard.string(forKey: "HERMES_HELPERS"), !action.isEmpty else { return }
         let delay = UserDefaults.standard.string(forKey: "HERMES_HELPERS_AFTER").flatMap(Double.init) ?? 6

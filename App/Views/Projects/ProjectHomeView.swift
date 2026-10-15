@@ -279,6 +279,11 @@ struct ProjectHomeView: View {
         Button("Move to Project…", systemImage: "folder") {
             projects.movingSession = workspace.session(forKey: row.stableID) ?? row.session
         }
+        if workspace.roster?.isConnected == true {
+            Button("Checkpoints…", systemImage: "clock.arrow.circlepath") {
+                workspace.showCheckpoints(for: workspace.session(forKey: row.stableID) ?? row.session)
+            }
+        }
         Button("Copy Session ID", systemImage: "number") {
             Pasteboard.copy(row.id)
         }

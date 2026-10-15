@@ -645,6 +645,11 @@ final class BotRoster {
         try await client.setEnv(key: key, value: value, profile: profile)
     }
 
+    /// `checkpoints.enabled` in the profile's config (Turn On Checkpoints).
+    func setCheckpointsEnabled(_ enabled: Bool, profile: String?) async throws {
+        try await client.setCheckpointsEnabled(enabled, profile: profile)
+    }
+
     func addGitWorktree(repo: String) async throws -> GitWorktree {
         try await client.addGitWorktree(repo: repo)
     }

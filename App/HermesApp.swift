@@ -165,6 +165,21 @@ struct HermesCommands: Commands {
             .keyboardShortcut("t", modifiers: [.command, .option])
             .disabled(helpers?.latestTeamID == nil)
 
+            // Checkpoints (`docs/checkpoints.md`): the sheet, and Undo for the newest reply that
+            // changed files.
+            let conversation = model.currentWorkspace?.currentConversation
+            Button("Checkpoints…") {
+                conversation?.checkpoints.showTimeline()
+            }
+            .disabled(conversation?.usesGateway != true || conversation?.sessionID == nil)
+            Button("Undo File Changes…") {
+                if let checkpoints = conversation?.checkpoints, let turnID = checkpoints.latestUndoableTurnID {
+                    checkpoints.undo(turnID: turnID)
+                }
+            }
+            .keyboardShortcut("z", modifiers: [.command, .option])
+            .disabled(conversation?.usesGateway != true || conversation?.checkpoints.latestUndoableTurnID == nil)
+
             Button("Next Conversation") {
                 model.currentWorkspace?.selectAdjacent(1)
             }

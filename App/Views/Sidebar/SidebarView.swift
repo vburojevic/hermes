@@ -260,6 +260,13 @@ struct SidebarView: View {
                 }
             }
         }
+        // Checkpoints live on the gateway's socket (Bot Mode).
+        if workspace.roster?.isConnected == true {
+            Button("Checkpoints…", systemImage: "clock.arrow.circlepath") {
+                workspace.showCheckpoints(for: session)
+                onNavigate()
+            }
+        }
         Button("Copy Session ID", systemImage: "number") {
             Pasteboard.copy(session.id)
         }

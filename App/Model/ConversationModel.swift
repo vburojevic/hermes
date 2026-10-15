@@ -354,6 +354,75 @@ final class ConversationModel: Identifiable {
         return store
     }
 
+    // MARK: Checkpoints (docs/checkpoints.md)
+
+    @ObservationIgnored private var checkpointStore: CheckpointsModel?
+    /// This chat's checkpoints: the undo bar, Review, Undo and the timeline.
+    var checkpoints: CheckpointsModel {
+        if let checkpointStore { return checkpointStore }
+        let store = CheckpointsModel(conversation: self)
+        checkpointStore = store
+        return store
+    }
+
+    /// The socket checkpoint calls go over (`CheckpointsModel`).
+    var gatewayRosterForCheckpoints: BotRoster? { gatewayRoster }
+
+    /// After an undo, the message is back in the composer (`composerEditing`: "Undone · your
+    /// message is back to edit").
+    private(set) var hasUndoneMessage = false
+    /// What the composer held before the undone message replaced it.
+    @ObservationIgnored private var draftBeforeUndo: (text: String, references: [MessageReference])?
+    /// What restores said, by notice id (`restoredNote`).
+    private(set) var restoredNotes: [String: RestoredNote] = [:]
+
+    /// The runtime session checkpoint calls are scoped to, attaching the chat when it isn't yet.
+    func runtimeForCheckpoints() async -> String? {
+        if let runtimeSessionID { return runtimeSessionID }
+        guard usesGateway, sessionID != nil else { return nil }
+        _ = await attachGatewayChat()
+        return runtimeSessionID
+    }
+
+    /// The gateway dropped turns from `userID` on (an undo or restore): take them out here, say
+    /// what happened where they were, and load the stored chat again.
+    func applyUndo(from userID: String?, note: RestoredNote, returning message: String?) {
+        animateRows {
+            if let userID, let index = items.firstIndex(where: { $0.id == userID }) {
+                let gone = Set(items[index...].map(\.id))
+                localItems.removeAll { gone.contains($0.item.id) }
+                items.removeSubrange(index...)
+            }
+            let notice = Notice(id: "restored-\(UUID().uuidString)", kind: "restored", text: note.title)
+            restoredNotes[notice.id] = note
+            appendLocal(.notice(notice))
+        }
+        if let message {
+            draftBeforeUndo = hasDraftText ? (draft, draftReferences) : nil
+            draft = message
+            hasUndoneMessage = true
+        }
+        reload()
+    }
+
+    /// Closes the "Undone" strip: the composer gets back what it had.
+    func dismissUndoneMessage() {
+        hasUndoneMessage = false
+        draft = draftBeforeUndo?.text ?? ""
+        draftReferences = draftBeforeUndo?.references ?? []
+        draftBeforeUndo = nil
+    }
+
+    /// Ends this chat's live session on the gateway and resumes it, so Hermes builds its agent
+    /// again and reads settings like `checkpoints.enabled`. The history stays. Only when idle.
+    @discardableResult
+    func reattachForSettings() async -> Bool {
+        guard !isWorking, !isFinishing, let roster = gatewayRoster, let runtime = runtimeSessionID else { return false }
+        _ = try? await CheckpointsClient { method, params in try await roster.request(method, params) }.closeSession(sessionID: runtime)
+        runtimeSessionID = nil
+        return await attachGatewayChat() != nil
+    }
+
     /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`.
     var helperSteerTarget: HelperSteerTarget?
 
@@ -376,6 +445,8 @@ final class ConversationModel: Identifiable {
 
     /// The profile gateway calls are scoped to: the Bot, or the gateway's own profile.
     private var gatewayProfile: String? { botName ?? workspace?.bot.profileName }
+    /// The profile whose config Turn On Checkpoints writes.
+    var gatewayProfileForCheckpoints: String? { gatewayProfile }
 
     /// New turns run over the backend's gateway protocol whenever it's connected: commands,
     /// questions, follow-ups, plans and the rest only exist there. Otherwise the API server.
@@ -1873,6 +1944,8 @@ final class ConversationModel: Identifiable {
 
     private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, queued: Bool = false) {
         settleBackgroundRuns()
+        hasUndoneMessage = false
+        draftBeforeUndo = nil
         banner = nil
         turnError = nil
         lastUserText = text

@@ -238,6 +238,15 @@ public actor BackendClient {
         _ = try await send(path: "api/env", method: "PUT", body: .object(body))
     }
 
+    /// Turns checkpoints on or off in the profile's config (`PUT /api/config`, deep-merged).
+    /// `config.set` doesn't take this key. A chat's agent reads it when it is built, so open chats
+    /// keep the old value until they are reattached.
+    public func setCheckpointsEnabled(_ enabled: Bool, profile: String?) async throws {
+        var body: [String: JSONValue] = ["config": .object(["checkpoints": .object(["enabled": .bool(enabled)])])]
+        if let profile, !profile.isEmpty { body["profile"] = .string(profile) }
+        _ = try await send(path: "api/config", method: "PUT", body: .object(body))
+    }
+
     /// A provider sign-in by device code (`POST /api/providers/oauth/<provider>/start`): Nous for
     /// the Apps tab. The person approves at `url`; `pollProviderSignIn` says when they have.
     public func startProviderSignIn(provider: String, profile: String?) async throws -> (sessionID: String, url: URL, userCode: String, interval: Int) {
