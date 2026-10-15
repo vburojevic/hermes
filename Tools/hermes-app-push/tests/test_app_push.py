@@ -457,6 +457,14 @@ def test_bot_chat_notices_carry_the_profile(hermes, monkeypatch):
     assert str(core.Store().dir).startswith(os.environ["HERMES_HOME"])
 
 
+def test_a_bots_own_process_reads_the_roots_devices(monkeypatch):
+    """`hermes -p <bot> chat` and cron workers start with HERMES_HOME at the Bot's profile: their
+    notices still go to the devices registered with the root."""
+    store = sys.modules[_core_module().__name__.rsplit(".", 1)[0] + ".store"]
+    monkeypatch.setenv("HERMES_HOME", str(HOME / "profiles" / "writer"))
+    assert Path(store._root_home()).resolve() == HOME.resolve()
+
+
 def test_never_touches_the_real_hermes_home():
     # The gateway's own plugin may write there meanwhile; a test device never does.
     after = _snapshot(REAL_DATA)

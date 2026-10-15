@@ -60,12 +60,18 @@ final class MacNotifier {
         post(notice, posted: Posted(conversation: conversation, gatewayID: workspace.id, request: request))
     }
 
-    /// A turn finished: worth a notification when it ran past the threshold and nobody watched.
+    /// A turn finished: worth a notification when it ran past the threshold and nobody watched. A Bot
+    /// answering you is a reply, as on the iPhone; a turn the Bot started itself (a routine's delivery,
+    /// another Bot's message) follows "Bots and group chats".
     func turnFinished(in conversation: ConversationModel, workspace: BotWorkspace, seconds: Double, text: String?) {
         let prefs = center.preferences
         guard let text, !text.isEmpty else { return }
-        if conversation.isBotChat {
-            guard prefs.bots == .all else { return }
+        if conversation.isBotChat, Self.botStartedLatestTurn(in: conversation) {
+            switch prefs.bots {
+            case .all: break
+            case .mentions: guard Self.mentions(prefs.mentionNames, in: text) else { return }
+            case .off: return
+            }
         } else {
             guard prefs.replies, seconds >= Double(prefs.replyAfter) else { return }
         }
@@ -176,6 +182,24 @@ final class MacNotifier {
         let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let joined = lines.prefix(2).joined(separator: " ")
         return joined.count > 240 ? String(joined.prefix(239)) + "…" : joined
+    }
+
+    /// The message the latest turn answered came from the Bot's own machinery, not from you.
+    static func botStartedLatestTurn(in conversation: ConversationModel) -> Bool {
+        for item in conversation.rows.reversed() {
+            switch item {
+            case .user(let entry): return entry.routineName != nil || entry.sender != nil
+            case .notice(let notice) where notice.kind == "internal_notification": return true
+            default: continue
+            }
+        }
+        return false
+    }
+
+    /// `@name` for any of your names, or `@all`/`@everyone` (the plugin's rule for group chats).
+    static func mentions(_ names: [String], in text: String) -> Bool {
+        let lowered = text.lowercased()
+        return (names.map { $0.lowercased() }.filter { !$0.isEmpty } + ["all", "everyone"]).contains { lowered.contains("@\($0)") }
     }
 }
 #endif

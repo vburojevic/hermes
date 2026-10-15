@@ -1,7 +1,7 @@
 """What the plugin remembers between processes.
 
 Hooks fire in whichever Hermes process runs the turn (the TUI gateway, the messaging gateway, a cron
-worker), so everything shared lives in one JSON file under ``<HERMES_HOME>/plugin-data/hermes-app-push``,
+worker), so everything shared lives in one JSON file under ``<Hermes root>/plugin-data/hermes-app-push``,
 read and written under an ``fcntl`` lock with atomic replaces. The relay's installation secret lives in
 its own owner-only file and is never logged or returned to a client.
 """
@@ -22,14 +22,24 @@ RESOLVED_MEMORY = 30
 PRESENCE_TTL = 75
 
 
-# The gateway process's own home, read once at load. Hooks can fire inside a Bot's profile scope, where
-# Hermes resolves "the home" to that profile; devices register against the process, so every profile's
-# notices must read the same state.
-_PROCESS_HOME = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+def _root_home() -> str:
+    """The Hermes root every profile shares. Hooks can fire inside a Bot's profile scope, and a Bot's own
+    process (``hermes -p <bot> chat``, a cron worker) even starts with HERMES_HOME set to
+    ``<root>/profiles/<bot>``; devices register against the root, so every profile's notices must read
+    the same state."""
+    with contextlib.suppress(Exception):
+        from hermes_constants import get_default_hermes_root
+        return str(get_default_hermes_root())
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    return str(home.parent.parent if home.parent.name == "profiles" else home)
+
+
+# Read once at load.
+_PROCESS_HOME = _root_home()
 
 
 def data_dir() -> Path:
-    """``<HERMES_HOME of the gateway process>/plugin-data/hermes-app-push`` (created on first use)."""
+    """``<Hermes root>/plugin-data/hermes-app-push`` (created on first use)."""
     return Path(_PROCESS_HOME) / "plugin-data" / "hermes-app-push"
 
 
