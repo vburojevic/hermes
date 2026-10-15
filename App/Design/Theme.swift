@@ -135,6 +135,8 @@ nonisolated enum Theme {
     static let spring = Animation.spring(response: 0.38, dampingFraction: 0.86)
     static let snappy = Animation.spring(response: 0.26, dampingFraction: 0.9)
     static let gentle = Animation.easeInOut(duration: 0.24)
+    /// A request or approval card rising out of the composer, or sinking back into it.
+    static let cardMotion = Animation.spring(duration: 0.42, bounce: 0.16)
 }
 
 // MARK: - Dynamic colours

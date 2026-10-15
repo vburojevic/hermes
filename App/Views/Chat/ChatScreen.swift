@@ -26,6 +26,8 @@ struct ChatScreen: View {
     /// Voice mode, while it runs (open or minimised).
     @State private var voice: VoiceSession?
     @State private var showsPermissions = false
+    /// The card stepped aside for the dock (`docksWhileTyping`), changed with an animation.
+    @State private var docksRequest = false
     /// The chat with its inspector, for choosing where the Team opens.
     @State private var screenSize: CGSize = .zero
 
@@ -149,6 +151,9 @@ struct ChatScreen: View {
             }
         }
         .modifier(ChatHaptics(conversation: conversation, enabled: hapticsEnabled))
+        .onChange(of: docksWhileTyping) { _, docks in
+            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Theme.cardMotion) { docksRequest = docks }
+        }
         .onChange(of: conversation.id) {
             // Another chat in the same screen: nothing of the last one's carries over.
             composerFocused = false
@@ -227,7 +232,7 @@ struct ChatScreen: View {
     // MARK: Requests
 
     /// While typing on a phone, the card steps aside for a one-line dock.
-    private var docksRequest: Bool {
+    private var docksWhileTyping: Bool {
         composerFocused && !isWide
     }
 
@@ -235,6 +240,7 @@ struct ChatScreen: View {
     private var requestDock: some View {
         if docksRequest {
             NeedsYouDock(conversation: conversation) { composerFocused = false }
+                .modifier(DockSlot(id: "dock", glass: bottomGlass))
         } else if let approval = conversation.pendingApproval {
             ApprovalCard(
                 approval: approval,
@@ -255,9 +261,11 @@ struct ChatScreen: View {
             .sheet(isPresented: $showsPermissions) {
                 ChatPermissionsSheet(conversation: conversation)
             }
+            .modifier(DockSlot(id: "approval", glass: bottomGlass))
         } else if let request = conversation.requests.first {
             RequestCard(request: request, conversation: conversation)
                 .id(request.id)
+                .modifier(DockSlot(id: "approval", glass: bottomGlass))
         }
     }
 
@@ -387,8 +395,7 @@ struct ChatScreen: View {
             VStack(spacing: 10) {
                 if conversation.pendingApproval != nil || !conversation.requests.isEmpty {
                     requestDock
-                        .glassEffectID("approval", in: bottomGlass)
-                        .transition(ComposerView.rowAppears)
+                        .transition(reduceMotion ? .opacity : .risesFromComposer)
                 }
                 if let banner = conversation.banner {
                     ErrorBanner(error: banner) { conversation.banner = nil }
@@ -718,4 +725,18 @@ private struct HelperPresentation: ViewModifier {
 /// The Team sheet's identity (a team id).
 private struct TeamSheetID: Identifiable, Hashable {
     let id: String
+}
+
+/// What the slot above the composer shows: a card, the next one, or the dock while you type. The
+/// contents blur across. The dock's glass is its own: sharing the card's, the change from one to
+/// the other happened in a frame; as two, one flows into the other.
+private struct DockSlot: ViewModifier {
+    let id: String
+    let glass: Namespace.ID
+
+    func body(content: Content) -> some View {
+        content
+            .glassEffectID(id, in: glass)
+            .transition(.blurReplace)
+    }
 }

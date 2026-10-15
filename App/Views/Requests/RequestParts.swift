@@ -117,6 +117,9 @@ struct ChoiceRow: View {
                             .foregroundStyle(Theme.secondaryText)
                     }
                 }
+                // A long answer wraps. The row's minimum height reaches the label as its height,
+                // room for one line, and the label cut itself to that.
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 14)
@@ -394,6 +397,8 @@ struct ActionTile: View {
                         .foregroundStyle(detailColor)
                         .lineLimit(2)
                 }
+                // Both lines of each, whatever the tile's minimum height offers (see `ChoiceRow`).
+                .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 12)
             .padding(.top, 11)

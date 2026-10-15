@@ -83,6 +83,28 @@ struct NeedsYouDock: View {
     }
 }
 
+extension AnyTransition {
+    /// A request card coming out of the composer: it grows up from its bottom edge, coming into
+    /// focus (`Theme.cardMotion`). Answered, it sinks back the same way, quicker, as the chat
+    /// takes its place.
+    static let risesFromComposer = AnyTransition.asymmetric(
+        insertion: .modifier(active: RisesFromComposer(progress: 0), identity: RisesFromComposer(progress: 1)),
+        removal: .modifier(active: RisesFromComposer(progress: 0), identity: RisesFromComposer(progress: 1))
+            .animation(.smooth(duration: 0.26))
+    )
+}
+
+private struct RisesFromComposer: ViewModifier {
+    var progress: Double
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(0.9 + 0.1 * progress, anchor: .bottom)
+            .blur(radius: 6 * (1 - progress))
+            .opacity(progress)
+    }
+}
+
 /// A settled request, one line in the chat (`approvalReceipt`, `approvalResolved`,
 /// `requestTimedOut`…). A session allow links to the chat's permissions.
 struct ReceiptRow: View {

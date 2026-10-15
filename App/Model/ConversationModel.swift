@@ -530,6 +530,13 @@ final class ConversationModel: Identifiable {
         withAnimation(.smooth(duration: 0.36), change)
     }
 
+    /// The cards above the composer (requests, approvals) come and go animated: they rise out of
+    /// the composer and sink back into it. The change carries the animation; one the bar added
+    /// itself missed changes made by a tap in the card, which then vanished in a frame.
+    private func moveCards(_ change: () -> Void) {
+        withAnimation(Theme.cardMotion, change)
+    }
+
     /// The identity a row is drawn under (see `rowAliases`).
     func displayID(for item: TranscriptItem) -> String {
         rowAliases[item.id] ?? item.id
@@ -588,7 +595,7 @@ final class ConversationModel: Identifiable {
             #if HERMES_PUSH
             PushCenter.shared.conversation(self, approval: approval, replacing: pendingApproval)
             #endif
-            pendingApproval = approval
+            moveCards { pendingApproval = approval }
         }
         let status = connectionNote ?? live?.status
         if status != liveStatus { liveStatus = status }
@@ -2991,14 +2998,14 @@ extension ConversationModel {
 
     func receive(_ request: HermesRequest) {
         guard !requests.contains(where: { $0.id == request.id }) else { return }
-        requests.append(request)
+        moveCards { requests.append(request) }
     }
 
     /// Sends the card's answer. `receipt` is the line left in the chat; never put a secret in it.
     func answer(_ request: HermesRequest, with result: JSONValue, receipt: String?, symbol: String = "checkmark.circle") {
         // A double tap answers once.
         guard requests.contains(where: { $0.id == request.id }) else { return }
-        requests.removeAll { $0.id == request.id }
+        moveCards { requests.removeAll { $0.id == request.id } }
         connectionStates[request.id] = nil
         if let receipt { addReceipt(receipt, symbol: symbol) }
         guard let roster = gatewayRoster else { return }
@@ -3080,7 +3087,7 @@ extension ConversationModel {
         }
         var matched = false
         if requests.contains(where: { $0.id == id }) {
-            requests.removeAll { $0.id == id }
+            moveCards { requests.removeAll { $0.id == id } }
             connectionStates[id] = nil
             matched = true
         }
@@ -3104,7 +3111,7 @@ extension ConversationModel {
             }
         }
         if payload["settled"]?.boolValue == true, let request = requests.first(where: { $0.id == opID }) {
-            requests.removeAll { $0.id == opID }
+            moveCards { requests.removeAll { $0.id == opID } }
             addReceipt(String(localized: "Connected · \(Self.title(of: request))"), symbol: "checkmark.seal.fill")
         }
     }

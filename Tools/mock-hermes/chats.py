@@ -417,6 +417,12 @@ def run_request_turn(sid, stored, lower):
     elif "clarify open" in lower:
         r = ask(sid, "clarify", {"questions": [{"qid": "skip", "question": "Which topics should the daily digest skip from now on?"}]})
         answer = f"Noted: {json.dumps((r or {}).get('answers'))}."
+    elif "clarify long" in lower:
+        # A real ask: a long question, and a pick too long for one line.
+        r = ask(sid, "clarify", {"questions": [{"qid": "swap", "question": "Pull Appeeky volume and difficulty for replacement keywords (e.g. carryon, camping, flight, beach, essentials) and bring you an exact keyword-field swap? Costs roughly 20–30 Appeeky credits.",
+                                                "choices": ["Yes, research and draft the swap (Recommended, about 25 credits)", "Leave keywords as they are",
+                                                            "Draft from judgement, no credit spend"]}]})
+        answer = f"Going with: {json.dumps((r or {}).get('answers'))}."
     elif "clarify" in lower:
         r = ask(sid, "clarify", {"questions": [{"qid": "db", "question": "Which database should I run the migration against first?",
                                                 "choices": ["Staging — Safe to reset; refreshed nightly", "Production — Takes a backup first",
