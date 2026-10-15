@@ -29,7 +29,7 @@ DEFAULT_PREFERENCES = {
     "reply_after": 30,          # seconds a turn must run before its reply notifies
     "tasks": "all",             # all | failures | off (scheduled tasks and Kanban cards)
     "bots": "mentions",         # all | mentions | off
-    "background": True,
+    "background": True,         # unused: helpers no longer notify on their own; older apps still send it
     "live_activity": True,
     "show_details": "unlocked",  # always | unlocked | never (the app applies it; synced for completeness)
     "mention_names": [],        # how the person is @mentioned in group chats
@@ -224,8 +224,6 @@ class Push:
             return False
         if kind == "message" and (prefs["bots"] == "off" or (prefs["bots"] == "mentions"
                                                             and not notice.extra.get("mention"))):
-            return False
-        if kind == "background" and not prefs["background"]:
             return False
         presence = None if ignore_presence else self.store.presence(device_id)
         if presence:
@@ -461,16 +459,6 @@ class Push:
             state = {**(self._activity_state.get(session) or {}), "phase": "working", "step": "Continuing"}
             state.pop("question", None)
             self._activity(session, state, force=True)
-
-    def on_subagent_stop(self, parent_session_id: str = "", child_role: str = "", child_summary: str = "",
-                         child_status: str = "", duration_ms: Any = 0, **_: Any) -> None:
-        # Only work that outlived its turn (a background delegation) is news; a sync helper isn't.
-        if (duration_ms or 0) < 60_000 or parent_session_id in self._active_sessions:
-            return
-        self.deliver(notices.background(session_id=parent_session_id, chat=self.chat_title(parent_session_id),
-                                        gateway_name=self.gateway_name(), name=(child_role or "Background task")[:60],
-                                        summary=child_summary or "", ok=str(child_status) in ("", "ok", "completed",
-                                                                                               "success")))
 
     def on_room_member_activity(self, room_id: str = "", member_id: str = "", turn_id: str = "", kind: str = "",
                                 payload: Any = None, **_: Any) -> None:

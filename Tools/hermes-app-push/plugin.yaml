@@ -18,7 +18,6 @@ provides_hooks:
   - post_approval_response
   - on_human_input_request
   - on_human_input_resolved
-  - subagent_stop
   - on_room_member_activity
   - kanban_task_completed
   - kanban_task_blocked

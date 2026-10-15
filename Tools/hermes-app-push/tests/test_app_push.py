@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -28,6 +29,15 @@ SOURCE = Path(os.environ.get("HERMES_SOURCE", Path.home() / ".hermes" / "hermes-
 SECRET = "sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c"
 
 HOME = Path(tempfile.mkdtemp(prefix="hermes-app-push-test-"))
+# The real install's data (the plugin runs on this Mac's gateway): the tests must leave it as it was.
+REAL_DATA = Path.home() / ".hermes" / "plugin-data" / "hermes-app-push"
+
+
+def _snapshot(folder: Path) -> dict[str, float]:
+    return {str(p): p.stat().st_mtime for p in folder.rglob("*") if p.is_file()} if folder.exists() else {}
+
+
+REAL_BEFORE = _snapshot(REAL_DATA)
 os.environ["HERMES_HOME"] = str(HOME)
 sys.path.insert(0, str(SOURCE))
 
@@ -387,6 +397,9 @@ def test_reply_after_walking_away_and_kanban_jobs(hermes):
         handler("presence " + json.dumps({"device_id": "dev-walker", "state": "away"}))
         plugins.invoke_hook("post_llm_call", session_id=session, turn_id=turn, assistant_response="Done.")
         plugins.invoke_hook("on_session_end", session_id=session, turn_id=turn, completed=True)
+    # Nor does a helper finishing on its own, however long it ran: the results turn's reply does.
+    plugins.invoke_hook("subagent_stop", parent_session_id=session, child_role="Audit the targets",
+                        child_summary="Done.", child_status="completed", duration_ms=600_000)
     time.sleep(0.5)
     assert len(pushes_for(token, "alert")) == before
     # A Kanban card done (passive) and one blocked (active), on by default.
@@ -445,5 +458,12 @@ def test_bot_chat_notices_carry_the_profile(hermes, monkeypatch):
 
 
 def test_never_touches_the_real_hermes_home():
-    real = Path.home() / ".hermes" / "plugin-data" / "hermes-app-push"
-    assert not real.exists(), f"tests wrote to {real}"
+    # The gateway's own plugin may write there meanwhile; a test device never does.
+    after = _snapshot(REAL_DATA)
+    added = set(after) - set(REAL_BEFORE)
+    assert not added, f"tests wrote to {REAL_DATA}: {sorted(added)}"
+    # Test devices are "dev-<word>"; a real one is "dev-<uuid>".
+    test_device = re.compile(r'"dev-[a-z]+(?:-[a-z]+)*"')
+    for path in after:
+        if path in REAL_BEFORE and after[path] != REAL_BEFORE[path]:
+            assert not test_device.search(Path(path).read_text(errors="ignore")), f"a test device reached {path}"

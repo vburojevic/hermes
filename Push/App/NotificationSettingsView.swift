@@ -63,10 +63,6 @@ struct NotificationSettingsView: View {
                     Text("Mentions").tag(PushPreferences.Bots.mentions)
                     Text("Off").tag(PushPreferences.Bots.off)
                 }
-                Toggle(isOn: $push.preferences.background) {
-                    Text("Background work")
-                    Text("Processes and side tasks that finish.")
-                }
             }
             .disabled(push.isDenied)
             #if os(iOS)

@@ -186,13 +186,6 @@ def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: 
         extra={"room_id": room_id, "member_id": member_id, "bot": bot, "mention": mention})
 
 
-def background(*, session_id: str, chat: str, gateway_name: str, name: str, summary: str, ok: bool) -> Notice:
-    return Notice(
-        kind="background", id=f"bg-{short_hash(session_id + name + str(time.time()))}", session_id=session_id,
-        thread=session_id, summary=chat, title=name or "Background work", subtitle=chat,
-        body=first_lines(summary) or ("Done." if ok else "Didn't finish."), hidden=f"Work finished on {gateway_name}")
-
-
 # -- APNs requests ---------------------------------------------------------------------------------
 
 def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, resolved: list[str]) -> dict:
