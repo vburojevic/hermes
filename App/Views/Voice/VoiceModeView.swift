@@ -158,7 +158,7 @@ struct VoiceScreen: View {
     }
 
     /// The Mac's floating panel: the title and shortcut, the face in its rings, what's said,
-    /// then Mute · Keyboard · End.
+    /// then Mute · Keyboard · Speaker · End.
     private var panel: some View {
         VStack(spacing: 12) {
             HStack {
@@ -190,18 +190,27 @@ struct VoiceScreen: View {
             if isApproval, let approval = state.approval {
                 ApprovalCard(approval: approval, asker: state.speakerName) { choice in actions.respond(choice) }
             } else {
-                HStack(spacing: 22) {
+                HStack(spacing: 18) {
                     VoiceControl(symbol: state.isMuted ? "mic.slash.fill" : "mic", label: state.isMuted ? "Unmute" : "Mute", isOn: state.isMuted, size: 44, action: actions.toggleMute)
                     VoiceControl(symbol: "keyboard", label: "Keyboard", size: 44, action: actions.keyboard)
+                    // The Mac has no earpiece: here it's whether replies are read aloud.
+                    VoiceControl(
+                        symbol: state.prefersSpeaker ? "speaker.wave.2" : "speaker.slash",
+                        label: state.prefersSpeaker ? "Stop Reading Replies" : "Read Replies Aloud",
+                        isOn: !state.prefersSpeaker,
+                        size: 44,
+                        action: actions.toggleSpeaker
+                    )
+                    // Solid: a Mac window that isn't key would turn a tinted glass button grey.
                     Button(action: actions.end) {
                         Image(systemName: "xmark")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
+                            .background(Theme.danger, in: Circle())
+                            .contentShape(Circle())
                     }
-                    .buttonStyle(.glassProminent)
-                    .buttonBorderShape(.circle)
-                    .tint(Theme.danger)
+                    .buttonStyle(PressableStyle())
                     .accessibilityLabel("End Voice")
                 }
                 .padding(.top, 4)

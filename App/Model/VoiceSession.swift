@@ -36,8 +36,14 @@ final class VoiceSession: Identifiable {
         didSet { UserDefaults.standard.set(showsCaptions, forKey: "voiceCaptions") }
     }
     private(set) var isMuted = false
+    /// iPhone and iPad: the loudspeaker rather than the earpiece. Mac: replies are read aloud.
     var prefersSpeaker = true {
-        didSet { listener.prefersSpeaker = prefersSpeaker }
+        didSet {
+            listener.prefersSpeaker = prefersSpeaker
+            #if os(macOS)
+            if !prefersSpeaker { speaker.stop() }
+            #endif
+        }
     }
     /// A line under the caption after a spoken approval that needs a tap ("Always Allow").
     private(set) var approvalHint: String?
@@ -333,6 +339,9 @@ final class VoiceSession: Identifiable {
     private func say(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        #if os(macOS)
+        guard prefersSpeaker else { return }
+        #endif
         recentlySpoken = String((recentlySpoken + " " + trimmed).suffix(600))
         speaker.speak(trimmed)
     }
