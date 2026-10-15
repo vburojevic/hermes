@@ -170,6 +170,27 @@ public actor BackendClient {
         )
     }
 
+    // MARK: - Git
+
+    /// A repo's checkouts: the main one and its linked worktrees (`GET /api/git/worktrees`, the
+    /// REST mirror Hermes Desktop uses for remote gateways; the gateway protocol has no git calls).
+    public func gitWorktrees(repo: String) async throws -> [GitWorktree] {
+        let (data, _) = try await send(path: "api/git/worktrees", query: [URLQueryItem(name: "path", value: repo)])
+        let json = try JSONDecoder().decode(JSONValue.self, from: data)
+        guard case .array(let rows)? = json["worktrees"] else { return [] }
+        return rows.compactMap(GitWorktree.init(json:))
+    }
+
+    /// Adds a worktree on a new branch under `<repo>/.worktrees/` (`POST /api/git/worktree/add`).
+    public func addGitWorktree(repo: String, name: String? = nil) async throws -> GitWorktree {
+        var body: [String: JSONValue] = ["path": .string(repo)]
+        if let name, !name.isEmpty { body["name"] = .string(name) }
+        let (data, _) = try await send(path: "api/git/worktree/add", method: "POST", body: .object(body))
+        let json = try JSONDecoder().decode(JSONValue.self, from: data)
+        guard let path = json["path"]?.stringValue else { throw Failure.http(200, "The gateway didn't say where it made the worktree.") }
+        return GitWorktree(path: path, branch: json["branch"]?.stringValue, isMain: false)
+    }
+
     // MARK: - Plumbing
 
     private func endpoint(_ path: String) -> URL {

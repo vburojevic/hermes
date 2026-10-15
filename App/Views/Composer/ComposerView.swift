@@ -51,6 +51,11 @@ struct ComposerView: View {
             let title = roster.bot(named: name)?.title ?? name
             return String(localized: "Message \(title)")
         }
+        if conversation.isEmpty, conversation.sessionID == nil, !conversation.isBotChat,
+           let id = (conversation.placement ?? workspace.projects.defaultPlacement).projectID,
+           let name = workspace.projects.project(id)?.name {
+            return String(localized: "Ask about \(name)")
+        }
         return conversation.isEmpty ? String(localized: "Ask Hermes anything") : String(localized: "Reply to Hermes")
     }
 
@@ -300,6 +305,11 @@ struct ComposerView: View {
                 FollowUpModeChip(conversation: conversation, focused: focused)
                     .modifier(ChipSlot(isShown: showsModeChip))
             }
+            // Where the chat runs (projects). It stays in place under the send mode, faded.
+            ProjectChip(conversation: conversation, workspace: workspace)
+                .opacity(showsModeChip ? 0 : 1)
+                .allowsHitTesting(!showsModeChip)
+                .animation(.easeOut(duration: 0.18), value: showsModeChip)
             Spacer(minLength: 4)
             if let status = hint {
                 Text(status)

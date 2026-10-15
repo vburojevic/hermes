@@ -40,6 +40,12 @@ struct ChatScreen: View {
         conversation.isBotChat ? workspace.roster : nil
     }
 
+    /// A new chat in a project shows the project's own suggestions above the composer.
+    private var startsInProject: Bool {
+        conversation.sessionID == nil && !conversation.isBotChat && workspace.projects.isAvailable
+            && (conversation.placement ?? workspace.projects.defaultPlacement).projectID != nil
+    }
+
     /// Wide layouts centre the composer on an empty chat, like Grok on the web and Mac.
     private var centersComposer: Bool {
         isWide && conversation.isKnownEmpty
@@ -95,6 +101,12 @@ struct ChatScreen: View {
         }
         .onChange(of: conversation.id) { endVoice() }
         .onDisappear { endVoice() }
+        .task(id: conversation.id) {
+            guard workspace.voiceModeRequested else { return }
+            workspace.voiceModeRequested = false
+            try? await Task.sleep(for: .milliseconds(350))
+            startVoice()
+        }
         #if DEBUG
         .task {
             if UserDefaults.standard.bool(forKey: "HERMES_OPEN_VOICE") {
@@ -294,7 +306,7 @@ struct ChatScreen: View {
                 ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
                     .glassEffectID("composer", in: bottomGlass)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
-                if centersComposer {
+                if centersComposer, !startsInProject {
                     centredChips
                         .padding(.top, 6)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height + 16 } action: { chipsHeight = $0 }
@@ -413,7 +425,7 @@ private struct BotModeBanner: View {
 }
 
 /// Shown under the toolbar when the gateway can't be reached.
-private struct ConnectionBanner: View {
+struct ConnectionBanner: View {
     let workspace: BotWorkspace
     @Environment(AppModel.self) private var app
     @Environment(WindowRouter.self) private var router: WindowRouter?

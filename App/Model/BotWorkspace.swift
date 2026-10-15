@@ -12,6 +12,10 @@ enum SidebarItem: Hashable {
     case bot(String)
     /// A hosted group chat, keyed by room id.
     case group(String)
+    /// A project's home, keyed by project id (`docs/projects.md`).
+    case project(String)
+    /// All Projects.
+    case allProjects
 }
 
 /// The sidebar's two halves, like Hermes Desktop's Sessions and Bots modes.
@@ -90,6 +94,12 @@ final class BotWorkspace: Identifiable {
     @ObservationIgnored private var selectionByMode: [SidebarMode: SidebarItem?] = [:]
     /// A conversation waiting for its first message.
     private(set) var draft: ConversationModel!
+    /// Voice mode was asked for before its chat was on screen (a project home's composer).
+    @ObservationIgnored var voiceModeRequested = false
+    /// This gateway's projects (Bot Mode backends only).
+    private(set) var projects: ProjectsModel!
+    /// A project home's composer: the next chat in that project, by project id.
+    @ObservationIgnored private var projectDrafts: [String: ConversationModel] = [:]
 
     private(set) var preferredModel: ModelSelection?
     private(set) var preferredEffort: ReasoningEffort?
@@ -118,6 +128,7 @@ final class BotWorkspace: Identifiable {
         }
         preferredEffort = defaults.string(forKey: "effort.\(bot.id.uuidString)").flatMap(ReasoningEffort.init(rawValue:))
         draft = ConversationModel(workspace: self)
+        projects = ProjectsModel(workspace: self)
         roster?.workspace = self
     }
 
@@ -199,7 +210,8 @@ final class BotWorkspace: Identifiable {
         if sidebarMode == .bots, let roster {
             return roster.visibleBots.map { .bot($0.name) }
         }
-        return SessionGroup.grouped(sessions).flatMap { $0.1 }.map { .session($0.stableID) }
+        let history = sessions.filter { $0.pinned || !projects.isScoped($0) }
+        return SessionGroup.grouped(history).flatMap { $0.1 }.map { .session($0.stableID) }
     }
 
     /// Next / Previous Conversation: moves the selection along the sidebar.
@@ -213,12 +225,35 @@ final class BotWorkspace: Identifiable {
         }
     }
 
-    /// Starts a fresh chat, reusing the current draft if it is still untouched.
-    func startNewChat() {
-        if !draft.isEmpty || draft.sessionID != nil {
+    /// Starts a fresh chat, reusing the current draft if it is still untouched. It runs where
+    /// Run In last pointed (the active project), unless a project is given.
+    func startNewChat(inProject projectID: String? = nil) {
+        if !draft.isEmpty || draft.sessionID != nil || (projectID != nil && draft.placement?.projectID != projectID) {
             draft = ConversationModel(workspace: self)
         }
+        if let projectID {
+            draft.placement = projects.placement(in: projectID)
+        }
         selection = nil
+    }
+
+    /// Opens a chat that may not be in the loaded history page (a project's chats come from the
+    /// tree, which reaches further back).
+    func open(_ session: HermesSession) {
+        if !sessions.contains(where: { $0.stableID == session.stableID }) {
+            let index = sessions.firstIndex { ($0.lastActive ?? .distantPast) < (session.lastActive ?? .distantPast) && !$0.pinned }
+            sessions.insert(session, at: index ?? sessions.endIndex)
+        }
+        selection = .session(session.stableID)
+    }
+
+    /// The composer at the bottom of a project home: its next chat in that project.
+    func projectDraft(for projectID: String) -> ConversationModel {
+        if let existing = projectDrafts[projectID], existing.sessionID == nil { return existing }
+        let conversation = ConversationModel(workspace: self)
+        conversation.placement = projects.placement(in: projectID)
+        projectDrafts[projectID] = conversation
+        return conversation
     }
 
     /// The draft got its server session on first send: file it under that session.
@@ -232,6 +267,12 @@ final class BotWorkspace: Identifiable {
         if conversation === draft {
             draft = ConversationModel(workspace: self)
             if selection == nil {
+                selection = .session(session.stableID)
+            }
+        } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
+            // Sent from a project home: the chat opens.
+            projectDrafts[projectID] = nil
+            if selection == .project(projectID) {
                 selection = .session(session.stableID)
             }
         }

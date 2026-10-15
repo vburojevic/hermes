@@ -54,6 +54,7 @@ CLIENTS = set()    # connected WebSocket peers
 DROP = {"settle": 0, "refuse_until": 0.0}  # /api/mock/drop-sockets: resumes answered 4009, sockets refused
 TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
+HTTP_ROUTES = {}   # (method, path) -> fn(query, body) -> (status, json): REST added by modules (projects.py)
 
 CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin"}
 GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
@@ -1152,6 +1153,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.wfile.write(html)
         if not self.authorized():
             return self.send_json(401, {"detail": "Unauthorized"})
+        route = HTTP_ROUTES.get(("GET", url.path))
+        if route:
+            return self.send_json(*route(query, {}))
         match = re.fullmatch(r"/api/sessions/([^/]+)/messages", url.path)
         if match:
             sid = unquote(match.group(1))
@@ -1181,6 +1185,9 @@ class Handler(BaseHTTPRequestHandler):
             ])
         if not self.authorized():
             return self.send_json(401, {"detail": "Unauthorized"})
+        route = HTTP_ROUTES.get(("POST", url.path))
+        if route:
+            return self.send_json(*route(parse_qs(url.query), body))
         if url.path == "/api/auth/ws-ticket":
             ticket = secrets.token_urlsafe(18)
             with LOCK:
@@ -1335,6 +1342,10 @@ def main():
         chats = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(chats)
         chats.install(globals(), gateway)
+        spec = importlib.util.spec_from_file_location("mock_projects", here / "projects.py")
+        projects = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(projects)
+        projects.install(globals(), gateway, chats)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib

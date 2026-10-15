@@ -22,8 +22,13 @@ struct SidebarView: View {
     private var query: String { workspace.searchText.trimmingCharacters(in: .whitespaces) }
     private var isSearching: Bool { !query.isEmpty }
 
+    /// The history: chats outside a project, plus any pinned chat (`docs/projects.md` §2). A
+    /// search covers every chat.
     private var filteredSessions: [HermesSession] {
-        guard isSearching else { return workspace.sessions }
+        guard isSearching else {
+            let projects = workspace.projects!
+            return workspace.sessions.filter { $0.pinned || !projects.isScoped($0) }
+        }
         return workspace.sessions.filter {
             $0.displayTitle.localizedCaseInsensitiveContains(query) || ($0.preview?.localizedCaseInsensitiveContains(query) ?? false)
         }
@@ -44,6 +49,9 @@ struct SidebarView: View {
         List {
             if !isSearching {
                 navigationRows
+                if botRoster == nil {
+                    ProjectSidebarSection(workspace: workspace, onNavigate: onNavigate)
+                }
             }
             if let botRoster {
                 BotRosterSections(roster: botRoster, workspace: workspace, onNavigate: onNavigate)
@@ -153,9 +161,15 @@ struct SidebarView: View {
         }
     }
 
-    /// The navigation rows' height, so states centre in the space below them.
+    /// The navigation rows' height (and the Projects section's), so states centre in the space
+    /// below them.
     private var navigationHeight: CGFloat {
-        CGFloat(botRoster == nil ? 3 : 4) * SidebarMetrics.rowHeight
+        guard botRoster == nil else { return 4 * SidebarMetrics.rowHeight }
+        let projects = workspace.projects!
+        guard projects.isAvailable else { return 3 * SidebarMetrics.rowHeight }
+        let expanded = UserDefaults.standard.object(forKey: "sidebar.projectsExpanded") as? Bool ?? true
+        let rows = expanded ? projects.sidebarProjects.count + 1 : 0
+        return CGFloat(3 + rows) * SidebarMetrics.rowHeight + 38
     }
 
     // MARK: Sessions
@@ -225,6 +239,11 @@ struct SidebarView: View {
         }
         Button(session.pinned ? "Unpin" : "Pin", systemImage: session.pinned ? "pin.slash" : "pin") {
             Task { await run { try await workspace.setPinned(session, !session.pinned) } }
+        }
+        if workspace.projects.isAvailable {
+            Button("Move to Project…", systemImage: "folder") {
+                workspace.projects.movingSession = session
+            }
         }
         if workspace.capabilities?.features.sessionFork != false {
             Button("Branch", systemImage: "arrow.triangle.branch") {

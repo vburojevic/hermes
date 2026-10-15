@@ -47,8 +47,26 @@ struct RootView: View {
                                     chat.send()
                                 }
                             }
+                        case "projects":
+                            workspace.sidebarMode = .chats
+                            workspace.selection = .allProjects
+                        case let page? where page.hasPrefix("project:"):
+                            // `-HERMES_OPEN project:<id>` (and `-HERMES_PROJECT_LANE <lane id>`).
+                            workspace.sidebarMode = .chats
+                            workspace.projects.focusLane = UserDefaults.standard.string(forKey: "HERMES_PROJECT_LANE")
+                            if let expand = UserDefaults.standard.string(forKey: "HERMES_PROJECT_EXPAND") {
+                                workspace.projects.expandedIDs.insert(expand)
+                            }
+                            workspace.selection = .project(String(page.dropFirst(8)))
+                        case let page? where page.hasPrefix("project-chat:"):
+                            workspace.sidebarMode = .chats
+                            for _ in 0..<40 where !workspace.projects.isAvailable {
+                                try? await Task.sleep(for: .milliseconds(250))
+                            }
+                            workspace.startNewChat(inProject: String(page.dropFirst(13)))
                         default: break
                         }
+                        await openProjectSheet(in: workspace)
                         await sendDebugMessage(in: workspace)
                         #endif
                     }
@@ -232,6 +250,26 @@ struct RootView: View {
         }
     }
 
+    /// `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session id>|runin` opens a projects sheet once
+    /// the projects have loaded (screenshots).
+    private func openProjectSheet(in workspace: BotWorkspace) async {
+        guard let sheet = UserDefaults.standard.string(forKey: "HERMES_PROJECT_SHEET") else { return }
+        for _ in 0..<40 where !workspace.projects.isAvailable {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        try? await Task.sleep(for: .milliseconds(600))
+        let projects = workspace.projects!
+        switch sheet {
+        case "new": projects.editing = .new(folder: nil)
+        case let value where value.hasPrefix("edit:"): projects.editing = .edit(String(value.dropFirst(5)))
+        case let value where value.hasPrefix("move:"):
+            let id = String(value.dropFirst(5))
+            projects.movingSession = workspace.session(forKey: id) ?? HermesSession(id: id)
+        case "runin": projects.runInConversation = workspace.currentConversation
+        default: break
+        }
+    }
+
     /// `-HERMES_OPEN_PAIRING YES|reveal` opens the current gateway's pairing code;
     /// `-HERMES_OPEN_LINK <url>` opens a pairing link; `-HERMES_OPEN_QUICK <query>` opens
     /// Quick Open (screenshot and flow tests).
@@ -263,8 +301,18 @@ struct MainView: View {
     var body: some View {
         layout
             .modifier(BotSheets(workspace: workspace))
+            .modifier(ProjectSheets(workspace: workspace))
             // Another chat, Bot or page: the composer it typed into is gone.
             .onChange(of: workspace.selection) { Keyboard.dismiss() }
+            #if DEBUG
+            // `-HERMES_DRAWER YES` opens the iPhone drawer (screenshots).
+            .task {
+                if UserDefaults.standard.bool(forKey: "HERMES_DRAWER") {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    isDrawerOpen = true
+                }
+            }
+            #endif
     }
 
     @ViewBuilder
@@ -404,6 +452,11 @@ struct DetailView: View {
             } else {
                 StateMessage(symbol: "person.3", title: String(localized: "Group chat not found"), message: String(localized: "It may have been deleted on the gateway."))
             }
+        case .project(let id):
+            ProjectHomeView(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
+                .id(id)
+        case .allProjects:
+            AllProjectsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
         case .session, .bot, nil:
             let conversation = workspace.currentConversation
             ChatScreen(conversation: conversation, workspace: workspace, onToggleSidebar: onToggleSidebar)

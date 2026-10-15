@@ -298,6 +298,7 @@ final class BotRoster {
             await refresh()
             guard isCurrent() else { return }
             startPolling()
+            workspace?.projects.connected()
             for conversation in allConversations {
                 conversation.botChatReconnected()
             }
@@ -501,6 +502,11 @@ final class BotRoster {
     }
 
     private func route(_ event: GatewayEvent) {
+        // The gateway's change watcher: broadcast to every client, not tagged with a profile.
+        if event.type == "projects.changed" || event.type == "sessions.changed" {
+            workspace?.projects.changeEvent(event.type)
+            return
+        }
         if event.sessionID.isEmpty {
             // Broadcasts (`approval.cancelled`, `session.reclaimed`) name their chat in the payload.
             let runtime = event.payload["session_id"]?.stringValue
@@ -567,6 +573,16 @@ final class BotRoster {
 
     func respond(to requestID: String, result: JSONValue) async {
         await socket?.respond(to: requestID, result: result)
+    }
+
+    /// A repo's checkouts on the gateway (the dashboard's git REST; the protocol has no git calls).
+    func gitWorktrees(repo: String) async throws -> [GitWorktree] {
+        try await client.gitWorktrees(repo: repo)
+    }
+
+    /// A new worktree on a new branch, for a chat that keeps its edits off the main checkout.
+    func addGitWorktree(repo: String) async throws -> GitWorktree {
+        try await client.addGitWorktree(repo: repo)
     }
 
     func transcript(storedSessionID: String, profile: String, limit: Int = SessionTranscript.firstPage, offset: Int = 0) async throws -> SessionTranscript {

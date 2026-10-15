@@ -119,6 +119,10 @@ final class ConversationModel: Identifiable {
     /// `nil` means the gateway's configured default model.
     var model: ModelSelection?
     var reasoningEffort: ReasoningEffort?
+    /// Where this chat starts (Run In, `docs/projects.md` §3); `nil` follows the active project.
+    var placement: ChatPlacement?
+    /// Where the gateway says the chat runs (`session.info`): folder, branch and project.
+    private(set) var liveWorkspace: LiveWorkspace?
     /// A transient error shown above the composer.
     var banner: HermesError?
 
@@ -2236,6 +2240,7 @@ extension ConversationModel {
             }
             runtimeSessionID = runtime
             if !isBotChat { roster.attach(self) }
+            if let info = LiveWorkspace(info: snapshot["info"]) { liveWorkspace = info }
             let running = snapshot["running"]?.boolValue ?? false
             if running, live == nil {
                 beginRemoteTurn()
@@ -2465,6 +2470,11 @@ extension ConversationModel {
             params["provider"] = .string(model.provider)
         }
         if let reasoningEffort { params["reasoning_effort"] = .string(reasoningEffort.rawValue) }
+        // A project's folder; without one the gateway uses its default (No Project).
+        let placement = placement ?? workspace?.projects.defaultPlacement
+        if let placement, let cwd = try await workspace?.projects.resolveFolder(for: placement) {
+            params["cwd"] = .string(cwd)
+        }
         let created = try await roster.request("session.create", params)
         guard let runtime = created["session_id"]?.stringValue, let stored = created["stored_session_id"]?.stringValue else {
             throw HermesError.invalidResponse("session.create")
@@ -2475,6 +2485,8 @@ extension ConversationModel {
         roster.attach(self)
         sessionID = stored
         stableKey = stored
+        if let info = LiveWorkspace(info: created["info"]) { liveWorkspace = info }
+        workspace?.projects.placed(storedID: stored, in: placement?.projectID)
         apply(.sessionChanged(stored))
         workspace?.adopt(self, session: HermesSession(id: stored))
         return runtime
@@ -2513,6 +2525,8 @@ extension ConversationModel {
             return
         case "session.info":
             if let yolo = event.payload["yolo"]?.boolValue, yolo != allowsEverything { allowsEverything = yolo }
+            // A move (`session.workspace.move`) or `session.cwd.set` names the new folder.
+            if let info = LiveWorkspace(info: event.payload), info != liveWorkspace { liveWorkspace = info }
         case "review.summary":
             if let text = event.payload["text"]?.stringValue, !text.isEmpty {
                 addReceipt(String(localized: "Reviewed the last reply · \(text)"), symbol: "checkmark.seal.fill")
