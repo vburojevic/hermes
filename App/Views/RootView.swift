@@ -428,6 +428,8 @@ struct MainView: View {
     @Environment(WindowRouter.self) private var router: WindowRouter?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var isDrawerOpen = false
+    /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
+    @SceneStorage("window.selection") private var storedSelection: String?
 
     var body: some View {
         layout
@@ -459,8 +461,16 @@ struct MainView: View {
             }
             #endif
             #endif
+            .task {
+                // The window comes back where it was (Tasks keeps its task; see TasksSplitView).
+                if workspace.selection == nil, let storedSelection, let item = SidebarItem(storedValue: storedSelection) {
+                    if case .project = item { workspace.sidebarMode = .chats }
+                    workspace.selection = item
+                }
+            }
             // Another chat, Bot or page: the composer it typed into is gone.
             .onChange(of: workspace.selection) {
+                storedSelection = workspace.selection?.storedValue
                 Keyboard.dismiss()
                 #if DEBUG && os(iOS)
                 FrameMonitor.shared.mark("selection changed")

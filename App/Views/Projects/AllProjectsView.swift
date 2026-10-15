@@ -13,6 +13,131 @@ struct AllProjectsView: View {
     private var projects: ProjectsModel { workspace.projects }
 
     var body: some View {
+        content
+            .navigationTitle("Projects")
+            .toolbar { toolbar }
+            .task(id: projects.isAvailable) {
+                await projects.loadDiscovered()
+            }
+            .refreshable {
+                async let tree: Void = projects.refresh()
+                async let found: Void = projects.loadDiscovered()
+                _ = await (tree, found)
+            }
+            .alert("Couldn't add the folder", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(error ?? "")
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if os(macOS)
+        macGrid
+        #else
+        list
+        #endif
+    }
+
+    #if os(macOS)
+    /// The Mac (`macAllProjects`): a grid of project cards, then the folders Hermes found.
+    private var macGrid: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Projects")
+                    .font(.largeTitle.weight(.bold))
+                if projects.projectsByActivity.isEmpty, projects.hasLoaded {
+                    Text("No projects yet. A project groups the chats that run in its folders.")
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 340), spacing: 14)], alignment: .leading, spacing: 14) {
+                    ForEach(projects.projectsByActivity) { node in
+                        projectCard(node)
+                    }
+                }
+                if !projects.suggestedRepos.isEmpty {
+                    Text("Found on \(workspace.bot.name)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.top, 8)
+                    VStack(spacing: 0) {
+                        ForEach(Array(projects.suggestedRepos.enumerated()), id: \.element.id) { index, repo in
+                            if index > 0 { Divider().padding(.leading, 40) }
+                            RepoSuggestionRow(repo: repo, displayPath: projects.displayPath(repo.root), isAdding: adding.contains(repo.root)) {
+                                add(repo)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                if !projects.archivedProjects.isEmpty {
+                    NavigationLink {
+                        ArchivedProjectsView(workspace: workspace)
+                    } label: {
+                        Label("Archived · \(projects.archivedProjects.count)", systemImage: "archivebox")
+                    }
+                    .buttonStyle(.link)
+                    .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 36)
+            .padding(.vertical, 20)
+            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Theme.canvas)
+        // The grid draws its own large title.
+        .toolbar(removing: .title)
+    }
+
+    /// A project card: tile, name, folder in mono, chats and when.
+    private func projectCard(_ node: ProjectNode) -> some View {
+        let project = projects.project(node.id)
+        let working = projects.isWorking(node.id)
+        return Button {
+            projects.focusLane = nil
+            workspace.selection = .project(node.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    ProjectTile(appearance: projects.appearance(node.id), size: 36)
+                    Spacer()
+                    if working { StatusDot(color: Theme.warning, pulsing: true) }
+                }
+                .padding(.bottom, 8)
+                Text(project?.name ?? node.label)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
+                if let path = project?.primaryPath ?? node.path {
+                    Text(projects.displayPath(path))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Text([ProjectCount.chats(node.sessionCount), node.lastActive.map(LaneChatRow.time)].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu { ProjectMenuItems(workspace: workspace, projectID: node.id) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ProjectRowLabel.accessibilityText(name: project?.name ?? node.label, count: node.sessionCount, working: working))
+        .accessibilityHint(subtitle(node))
+        .accessibilityAddTraits(.isButton)
+    }
+    #endif
+
+    private var list: some View {
         List {
             Section {
                 if projects.projectsByActivity.isEmpty, projects.hasLoaded {
@@ -55,21 +180,6 @@ struct AllProjectsView: View {
         #else
         .listStyle(.insetGrouped)
         #endif
-        .navigationTitle("Projects")
-        .toolbar { toolbar }
-        .task(id: projects.isAvailable) {
-            await projects.loadDiscovered()
-        }
-        .refreshable {
-            async let tree: Void = projects.refresh()
-            async let found: Void = projects.loadDiscovered()
-            _ = await (tree, found)
-        }
-        .alert("Couldn't add the folder", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(error ?? "")
-        }
     }
 
     private func projectRow(_ node: ProjectNode) -> some View {
@@ -142,6 +252,14 @@ struct AllProjectsView: View {
             }
         }
         ToolbarItem(placement: .primaryAction) {
+            #if os(macOS)
+            Button("New Project…") {
+                projects.editing = .new(folder: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .tint(Theme.ink)
+            #else
             Button {
                 projects.editing = .new(folder: nil)
             } label: {
@@ -149,6 +267,7 @@ struct AllProjectsView: View {
             }
             .accessibilityLabel("New Project")
             .help("New Project")
+            #endif
         }
     }
 }

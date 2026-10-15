@@ -36,6 +36,151 @@ struct ProjectEditorSheet: View {
     private var canSave: Bool { !trimmedName.isEmpty && !isSaving }
 
     var body: some View {
+        #if os(macOS)
+        if editing == nil {
+            macNewProject
+        } else {
+            editorForm
+        }
+        #else
+        editorForm
+        #endif
+    }
+
+    #if os(macOS)
+    /// New Project on the Mac (`macNewProject`): the tile and what a project is, then name,
+    /// colour, symbol and the folder on the gateway (Choose… browses the gateway's files), then
+    /// Cancel / Create Project.
+    private var macNewProject: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                ProjectTile(appearance: appearance, size: 52)
+                    .animation(Theme.snappy, value: appearance)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New Project")
+                        .font(.headline)
+                    Text("Chats in the project run in its folder on \(workspace.bot.name).")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+            VStack(spacing: 0) {
+                macRow("Name") {
+                    TextField("Name", text: $name, prompt: Text("Project name"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .focused($nameFocused)
+                }
+                Divider()
+                macRow("Colour") {
+                    HStack(spacing: 10) {
+                        ForEach(ProjectAccent.allCases) { accent in
+                            Button {
+                                appearance.accent = accent
+                            } label: {
+                                Circle()
+                                    .fill(LinearGradient(colors: [accent.top, accent.deep], startPoint: .top, endPoint: .bottom))
+                                    .frame(width: 20, height: 20)
+                                    .padding(3)
+                                    .overlay {
+                                        if appearance.accent == accent { Circle().strokeBorder(Theme.primaryText, lineWidth: 2) }
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(accent.name)
+                            .accessibilityAddTraits(appearance.accent == accent ? .isSelected : [])
+                        }
+                    }
+                }
+                Divider()
+                macRow("Symbol") {
+                    HStack(spacing: 6) {
+                        ForEach(ProjectGlyph.allCases) { glyph in
+                            Button {
+                                appearance.glyph = glyph
+                            } label: {
+                                Image(systemName: glyph.rawValue)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(appearance.glyph == glyph ? Theme.primaryText : Theme.secondaryText)
+                                    .frame(width: 28, height: 28)
+                                    .background(appearance.glyph == glyph ? Theme.surfaceRaised : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(glyph.name)
+                            .accessibilityAddTraits(appearance.glyph == glyph ? .isSelected : [])
+                        }
+                    }
+                }
+                Divider()
+                macRow("Folder") {
+                    HStack {
+                        Text(picked.map { projects.displayPath($0) } ?? String(localized: "None chosen"))
+                            .font(.body.monospaced())
+                            .foregroundStyle(picked == nil ? Theme.tertiaryText : Theme.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Choose…") { choosingFolder = true }
+                            .buttonBorderShape(.capsule)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Text("Git folders Hermes has worked in are suggested first. Hermes reads the folder's AGENTS.md before each chat.")
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.danger)
+            }
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel") { onDone(nil) }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonBorderShape(.capsule)
+                Button {
+                    save()
+                } label: {
+                    if isSaving { ProgressView().controlSize(.small) } else { Text("Create Project") }
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .tint(Theme.ink)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSave || picked == nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
+        .task {
+            await populate()
+            if picked == nil, let first = projects.suggestedRepos.first { pick(first.root) }
+        }
+        .sheet(isPresented: $choosingFolder) {
+            FolderPickerSheet(workspace: workspace, title: String(localized: "Choose a Folder")) { path in
+                choosingFolder = false
+                guard let path else { return }
+                chose(path)
+            }
+        }
+    }
+
+    private func macRow<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .frame(width: 120, alignment: .leading)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minHeight: 44)
+    }
+    #endif
+
+    private var editorForm: some View {
         NavigationStack {
             Form {
                 Section {

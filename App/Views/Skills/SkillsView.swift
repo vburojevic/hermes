@@ -12,7 +12,8 @@ struct SkillsView: View {
     @State private var skills: [Skill] = []
     @State private var skillsError: HermesError?
     @State private var isLoading = false
-    @State private var query = ""
+    /// The window's skill filter, kept with the window.
+    @SceneStorage("skills.query") private var query = ""
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(WindowRouter.self) private var router: WindowRouter?
     #if os(macOS)

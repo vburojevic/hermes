@@ -16,6 +16,33 @@ enum SidebarItem: Hashable {
     case project(String)
     /// All Projects.
     case allProjects
+
+    /// As a string for `SceneStorage`: what a window showed, restored when it opens again.
+    var storedValue: String {
+        switch self {
+        case .session(let key): "session:\(key)"
+        case .tasks: "tasks"
+        case .skills: "skills"
+        case .bot(let name): "bot:\(name)"
+        case .group(let id): "group:\(id)"
+        case .project(let id): "project:\(id)"
+        case .allProjects: "allProjects"
+        }
+    }
+
+    init?(storedValue: String) {
+        let parts = storedValue.split(separator: ":", maxSplits: 1).map(String.init)
+        switch (parts.first, parts.count > 1 ? parts[1] : nil) {
+        case ("session", let key?): self = .session(key)
+        case ("tasks", _): self = .tasks
+        case ("skills", _): self = .skills
+        case ("bot", let name?): self = .bot(name)
+        case ("group", let id?): self = .group(id)
+        case ("project", let id?): self = .project(id)
+        case ("allProjects", _): self = .allProjects
+        default: return nil
+        }
+    }
 }
 
 /// The sidebar's two halves, like Hermes Desktop's Sessions and Bots modes.
