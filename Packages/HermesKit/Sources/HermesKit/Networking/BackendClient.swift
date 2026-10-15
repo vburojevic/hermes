@@ -238,6 +238,26 @@ public actor BackendClient {
         _ = try await send(path: "api/env", method: "PUT", body: .object(body))
     }
 
+    /// Chats that mention `query` (`GET /api/sessions/search`): one per chat, ID matches first,
+    /// then message content (words prefix-matched, quoted phrases exact), then titles. `profile`
+    /// searches a Bot's chats; `sources` / `excludeSources` filter by where a chat came from.
+    public func searchSessions(
+        _ query: String, limit: Int = SessionSearch.defaultLimit, profile: String? = nil,
+        sources: [String] = [], excludeSources: [String] = []
+    ) async throws -> [SessionSearchResult] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        var items = [URLQueryItem(name: "q", value: trimmed), URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100)))]
+        if let profile, !profile.isEmpty { items.append(URLQueryItem(name: "profile", value: profile)) }
+        if !sources.isEmpty { items.append(URLQueryItem(name: "sources", value: sources.joined(separator: ","))) }
+        if !excludeSources.isEmpty { items.append(URLQueryItem(name: "exclude_sources", value: excludeSources.joined(separator: ","))) }
+        let (data, _) = try await send(path: "api/sessions/search", query: items)
+        let json = try JSONDecoder().decode(JSONValue.self, from: data)
+        let found = json["results"].items.compactMap(SessionSearchResult.init(json:))
+        // A profile asked for by name answers for that profile.
+        return profile.map { name in found.map { var result = $0; result.profile = result.profile ?? name; return result } } ?? found
+    }
+
     /// Turns checkpoints on or off in the profile's config (`PUT /api/config`, deep-merged).
     /// `config.set` doesn't take this key. A chat's agent reads it when it is built, so open chats
     /// keep the old value until they are reattached.

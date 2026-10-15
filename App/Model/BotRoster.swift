@@ -656,6 +656,11 @@ final class BotRoster {
         try await client.setEnv(key: key, value: value, profile: profile)
     }
 
+    /// Full-text chat search (`GET /api/sessions/search`).
+    func searchSessions(_ query: String, limit: Int, profile: String?, sources: [String], excludeSources: [String]) async throws -> [SessionSearchResult] {
+        try await client.searchSessions(query, limit: limit, profile: profile, sources: sources, excludeSources: excludeSources)
+    }
+
     /// `checkpoints.enabled` in the profile's config (Turn On Checkpoints).
     func setCheckpointsEnabled(_ enabled: Bool, profile: String?) async throws {
         try await client.setCheckpointsEnabled(enabled, profile: profile)

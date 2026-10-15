@@ -92,6 +92,14 @@ struct RootView: View {
                         await openProjectSheet(in: workspace)
                         await sendDebugMessage(in: workspace)
                         await openDebugHelpers(in: workspace)
+                        // `-HERMES_SEARCH <text>` types it in the chats search (screenshots).
+                        if let text = UserDefaults.standard.string(forKey: "HERMES_SEARCH"), !text.isEmpty {
+                            for _ in 0..<40 where workspace.roster?.isConnected != true {
+                                try? await Task.sleep(for: .milliseconds(250))
+                            }
+                            workspace.sidebarMode = .chats
+                            workspace.searchText = text
+                        }
                         #endif
                     }
             } else {

@@ -40,7 +40,6 @@ final class FrameMonitor: NSObject {
         let cpu = Self.threadCPU()
         defer { last = now; lastCPU = cpu }
         guard last > 0 else { return }
-        let budget = link.targetTimestamp - link.timestamp
         let frame = now - last
         let work = cpu - lastCPU
         cpuSinceMark += work

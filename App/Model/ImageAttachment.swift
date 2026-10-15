@@ -84,7 +84,7 @@ final class SentImageStore {
         index[Self.key(conversation: conversation, text: text), default: []].append(names)
         // Written off the main thread, in order; until then `recent` answers for them.
         let directory = self.directory, indexURL = self.indexURL, index = self.index
-        Self.writes.async {
+        Self.writes.async { [weak self] in
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 for file in files {

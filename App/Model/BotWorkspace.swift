@@ -115,6 +115,14 @@ final class BotWorkspace: Identifiable {
         appsAndToolsModel = model
         return model
     }
+    @ObservationIgnored private var chatSearchModel: ChatSearch?
+    /// Searching this gateway's chats by what was said (`docs/search.md`).
+    var search: ChatSearch {
+        if let chatSearchModel { return chatSearchModel }
+        let model = ChatSearch(workspace: self)
+        chatSearchModel = model
+        return model
+    }
     /// A project home's composer: the next chat in that project, by project id.
     @ObservationIgnored private var projectDrafts: [String: ConversationModel] = [:]
 
@@ -262,6 +270,33 @@ final class BotWorkspace: Identifiable {
             sessions.insert(session, at: index ?? sessions.endIndex)
         }
         selection = .session(session.stableID)
+    }
+
+    /// Opens a search result at the message that matched (`docs/search.md`). A Bot's result opens
+    /// that Bot's chat.
+    func open(_ hit: ChatSearch.Hit) {
+        let result = hit.result
+        let focus = SearchFocus(result: result)
+        if let botName = hit.botName, let roster, roster.bot(named: botName) != nil {
+            sidebarMode = .bots
+            selection = .bot(botName)
+            roster.conversation(for: botName).searchFocus = focus
+            return
+        }
+        sidebarMode = .chats
+        let known = sessions.first { $0.id == result.sessionID || (result.lineageRoot != nil && $0.stableID == result.lineageRoot) }
+        var session = known ?? HermesSession(id: result.sessionID)
+        if known == nil {
+            session.title = result.title
+            session.lineageRootID = result.lineageRoot
+            session.source = result.source
+            session.startedAt = result.sessionStarted
+            session.lastActive = result.lastActive ?? result.sessionStarted
+        }
+        open(session)
+        let conversation = conversation(forKey: session.stableID)
+        conversation.loadIfNeeded()
+        conversation.searchFocus = focus
     }
 
     /// Checkpoints… from a chat's menu: opens the chat with its checkpoints on top.

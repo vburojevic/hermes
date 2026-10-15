@@ -33,6 +33,9 @@ struct TranscriptView: View {
     /// pushing it up the screen.
     @State private var keepsTop = false
     @State private var keepsTopReset: Task<Void, Never>?
+    /// A search result landed here: its row flashes once (`surface` → `canvas`).
+    @State private var flashKey: String?
+    @State private var flashOn = false
 
     /// The first row shown. The chat opens on the latest `pageSize` rows; new rows only add below,
     /// and scrolling near the top shows a page more. (Counting from the end instead, each new row
@@ -75,6 +78,14 @@ struct TranscriptView: View {
                 }
                 ForEach(rows, id: \.key) { shown in
                     rowView(shown.item, date: separators[shown.item.id], extraTeams: shown.item.id == unclaimed.turnID ? unclaimed.teams : [], answered: answeredRoutines.contains(shown.item.id))
+                        .background {
+                            if flashKey == shown.key {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Theme.surface)
+                                    .opacity(flashOn ? 1 : 0)
+                                    .padding(-10)
+                            }
+                        }
                         .transition(Self.insertion(for: shown.item))
                 }
                 ForEach(conversation.processes) { process in
@@ -122,6 +133,8 @@ struct TranscriptView: View {
         .environment(\.references, references)
         .environment(\.helperStore, conversation.isBotChat ? nil : conversation.helpers)
         .environment(\.checkpoints, conversation.usesGateway ? conversation.checkpoints : nil)
+        // Opened from search: land on the message that matched (`docs/search.md`).
+        .task(id: conversation.searchFocus?.id) { await landOnSearchMatch() }
         // Which replies can be undone: listed when a chat with file edits opens, as an edit
         // lands, and when a turn ends.
         .task(id: checkpointTrigger) {
@@ -287,6 +300,41 @@ struct TranscriptView: View {
             try? await Task.sleep(for: .milliseconds(250))
             isPrepending = false
         }
+    }
+
+    /// Scrolls to the first message with the search result's words and flashes it. A message
+    /// not loaded yet brings in older pages, at most 5.
+    private func landOnSearchMatch() async {
+        guard let focus = conversation.searchFocus else { return }
+        for _ in 0..<60 where conversation.loadState != .loaded || conversation.rows.isEmpty || !settled {
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else { return }
+        }
+        var target = focus.target(in: conversation.rows)
+        var pages = 0
+        while target == nil, conversation.hasEarlierMessages, pages < 5, !Task.isCancelled {
+            await conversation.loadEarlier()
+            pages += 1
+            target = focus.target(in: conversation.rows)
+        }
+        if conversation.searchFocus?.id == focus.id { conversation.searchFocus = nil }
+        guard let target, !Task.isCancelled else { return }
+        let all = conversation.rows
+        let key = conversation.displayID(for: target)
+        if let index = all.firstIndex(where: { $0.id == target.id }), index < firstShownIndex(in: all) {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { firstShownKey = key }
+        }
+        isFollowing = false
+        try? await Task.sleep(for: .milliseconds(150))
+        withAnimation(.smooth(duration: 0.35)) { position.scrollTo(id: key, anchor: .center) }
+        flashKey = key
+        flashOn = true
+        try? await Task.sleep(for: .milliseconds(400))
+        withAnimation(.easeOut(duration: 0.8)) { flashOn = false }
+        try? await Task.sleep(for: .milliseconds(850))
+        if flashKey == key { flashKey = nil }
     }
 
     /// Fixes the window's top once there are rows, so later rows only add below it.

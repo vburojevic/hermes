@@ -60,6 +60,14 @@ struct SidebarView: View {
             stateView
                 .padding(.top, isSearching ? 0 : navigationHeight)
         }
+        // The chats search follows the field; Bots mode filters the roster itself.
+        .onChange(of: workspace.searchText, initial: true) {
+            let text = botRoster == nil ? workspace.searchText : ""
+            if workspace.search.query != text { workspace.search.query = text }
+        }
+        .onChange(of: workspace.sidebarMode) {
+            if botRoster != nil { workspace.search.clear() }
+        }
         .alert("Rename Chat", isPresented: renameBinding) {
             TextField("Title", text: $renameText)
             Button("Cancel", role: .cancel) {}
@@ -116,6 +124,9 @@ struct SidebarView: View {
         }
         if let botRoster {
             BotRosterSections(roster: botRoster, workspace: workspace, onNavigate: onNavigate)
+        } else if isSearching {
+            // What was said, not only titles (`docs/search.md`).
+            SearchResultsSection(workspace: workspace, onNavigate: onNavigate)
         } else {
             sessionSections
         }
@@ -282,12 +293,10 @@ struct SidebarView: View {
     private var stateView: some View {
         if let roster = botRoster {
             botsState(roster)
-        } else if isSearching, filteredSessions.isEmpty {
-            SidebarState(
-                symbol: "magnifyingglass",
-                title: String(localized: "No chats match “\(query)”"),
-                message: workspace.roster == nil ? String(localized: "Try a different word.") : String(localized: "Try a different word, or search Bots instead.")
-            )
+        } else if isSearching {
+            if workspace.search.isEmpty {
+                SearchEmptyState(search: workspace.search)
+            }
         } else if workspace.sessions.isEmpty, !workspace.isLoadingSessions {
             switch workspace.connection {
             case .online:

@@ -361,6 +361,12 @@ final class ConversationModel: Identifiable {
         return store
     }
 
+    // MARK: Search (docs/search.md)
+
+    /// A search result to land on once the chat is open: the transcript scrolls to the first
+    /// message with its words (loading up to 5 older pages) and flashes it.
+    var searchFocus: SearchFocus?
+
     // MARK: Checkpoints (docs/checkpoints.md)
 
     @ObservationIgnored private var checkpointStore: CheckpointsModel?
@@ -605,7 +611,7 @@ final class ConversationModel: Identifiable {
             return
         }
         LoadTrace.begin(stableKey ?? "?", "reload (client: \(workspace?.client != nil))")
-        guard let sessionID, let client = workspace?.client else { return }
+        guard let sessionID, workspace?.client != nil else { return }
         loadTask?.cancel()
         let opening = items.isEmpty
         if opening { loadState = .loading }

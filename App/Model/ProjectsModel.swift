@@ -146,6 +146,13 @@ final class ProjectsModel {
         sessionIndex[id] ?? placedSessions[id]
     }
 
+    /// The branch lane a chat sits in, once its project's chats are known.
+    func lane(forSessionID id: String) -> String? {
+        guard let projectID = projectID(forSessionID: id) else { return nil }
+        let rows = (details[projectID]?.hydratedSessions ?? []) + (tree.node(id: projectID)?.previewSessions ?? [])
+        return rows.first { $0.id == id || $0.stableID == id || $0.lineageRootID == id }?.gitBranch
+    }
+
     /// Whether the flat history leaves this chat out (it's in a project); Pinned keeps it.
     func isScoped(_ session: HermesSession) -> Bool {
         projectID(forSession: session) != nil

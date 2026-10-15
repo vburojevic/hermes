@@ -1443,6 +1443,10 @@ def main():
         checkpoints = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(checkpoints)
         checkpoints.install(globals(), gateway, chats, enabled=args.checkpoints == "on")
+        spec = importlib.util.spec_from_file_location("mock_search", here / "search.py")
+        search = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(search)
+        search.install(globals(), gateway)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib
