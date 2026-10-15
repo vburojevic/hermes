@@ -107,10 +107,12 @@ struct SkillsView: View {
     private var grid: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                #if os(macOS)
                 Text("Skills")
                     .font(.largeTitle.weight(.bold))
                     .foregroundStyle(Theme.primaryText)
                     .padding(.bottom, 6)
+                #endif
                 if query.isEmpty {
                     ToolsAndAppsRow(model: workspace.appsAndTools, isWide: true, action: openAppsAndTools)
                         .padding(.bottom, 8)
@@ -135,9 +137,11 @@ struct SkillsView: View {
             .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // White cards on the grouped background; the grid draws its own large title.
+        // White cards on the grouped background. The Mac grid draws its own large title.
         .background(Theme.groupedBackground)
+        #if os(macOS)
         .toolbar(removing: .title)
+        #endif
     }
 
     @ViewBuilder

@@ -427,6 +427,8 @@ struct MainView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(WindowRouter.self) private var router: WindowRouter?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// iPad: the Team inspector hid the sidebar.
+    @State private var teamHidesSidebar = false
     @State private var isDrawerOpen = false
     /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
     @SceneStorage("window.selection") private var storedSelection: String?
@@ -506,10 +508,31 @@ struct MainView: View {
                 .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
         } detail: {
             NavigationStack {
-                DetailView(workspace: workspace, onToggleSidebar: nil)
+                DetailView(workspace: workspace, onToggleSidebar: sidebarButton)
             }
         }
         .navigationSplitViewStyle(.balanced)
+        #if os(iOS)
+        // iPad: the Team inspector hides the sidebar while it's open (`ipadHelpers`); the
+        // toolbar's sidebar button brings it back.
+        .onChange(of: router?.teamInspectorIsOpen ?? false) { _, isOpen in
+            teamHidesSidebar = isOpen
+            withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : .all }
+        }
+        #endif
+    }
+
+    /// The sidebar button, on iPad while the sidebar is hidden.
+    private var sidebarButton: (() -> Void)? {
+        #if os(iOS)
+        guard teamHidesSidebar else { return nil }
+        return {
+            teamHidesSidebar = false
+            withAnimation(Theme.snappy) { columnVisibility = .all }
+        }
+        #else
+        nil
+        #endif
     }
 
     private var drawerLayout: some View {

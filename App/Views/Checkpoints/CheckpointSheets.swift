@@ -267,6 +267,7 @@ private struct RestoreFileButton: View {
 struct PairedSheetButtons: View {
     let secondary: String
     let onSecondary: () -> Void
+    var secondarySymbol: String?
     let primary: String
     var symbol: String?
     var primaryEnabled = true
@@ -275,7 +276,10 @@ struct PairedSheetButtons: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onSecondary) {
-                Text(secondary).frame(maxWidth: .infinity)
+                Group {
+                    if let secondarySymbol { Label(secondary, systemImage: secondarySymbol) } else { Text(secondary) }
+                }
+                .frame(maxWidth: .infinity)
             }
             .glassButton()
             Button(action: onPrimary) {

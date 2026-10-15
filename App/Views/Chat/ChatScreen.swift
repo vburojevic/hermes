@@ -119,12 +119,17 @@ struct ChatScreen: View {
             }
             .animation(.snappy(duration: 0.2), value: conversation.findText == nil)
         }
-        .toolbar { toolbar }
         #if os(macOS)
+        .toolbar { toolbar }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         .environment(\.helperNavigator, helperNavigator)
         .modifier(HelperPresentation(conversation: conversation, workspace: workspace, usesInspector: usesTeamInspector, usesSheet: usesTeamSheet, navigator: helperNavigator))
+        #if os(iOS)
+        // Outside the Team inspector: inside it, iPad drops the chat's toolbar (model picker,
+        // New Chat) even while the inspector is closed.
+        .toolbar { toolbar }
+        #endif
         // Review, Undo, the timeline and the off state (`docs/checkpoints.md`).
         .modifier(CheckpointSheets(model: conversation.checkpoints))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { screenSize = $0 }
@@ -418,10 +423,17 @@ struct ChatScreen: View {
 
     // MARK: Toolbar
 
+    /// Leading. On iPad `.navigation` lands on the trailing side while the Team inspector is open.
+    #if os(iOS)
+    private static let sidebarPlacement = ToolbarItemPlacement.topBarLeading
+    #else
+    private static let sidebarPlacement = ToolbarItemPlacement.navigation
+    #endif
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if let onToggleSidebar {
-            ToolbarItem(placement: .navigation) {
+            ToolbarItem(placement: Self.sidebarPlacement) {
                 Button(action: onToggleSidebar) {
                     SidebarGlyph()
                 }
@@ -642,11 +654,18 @@ private struct HelperPresentation: ViewModifier {
     /// iPad portrait: the Team in a sheet, its helpers pushed inside it.
     var usesSheet = false
     let navigator: HelperNavigator
+    @Environment(WindowRouter.self) private var router: WindowRouter?
 
     func body(content: Content) -> some View {
         let store = conversation.helpers
         let pushes = !usesInspector && !usesSheet
         content
+            #if os(iOS)
+            .onChange(of: usesInspector && store.shownTeam != nil, initial: true) { _, isOpen in
+                router?.teamInspectorIsOpen = isOpen
+            }
+            .onDisappear { router?.teamInspectorIsOpen = false }
+            #endif
             .sheet(item: Binding(
                 get: { usesSheet ? store.shownTeam.map(TeamSheetID.init) : nil },
                 set: { id in

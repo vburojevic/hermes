@@ -35,8 +35,18 @@ struct TasksSplitView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.groupedBackground)
         }
-        // The list draws its own large title.
+        // The list and the detail draw their own large titles.
         .toolbar(removing: .title)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let job = selected {
+                ToolbarItem(placement: .topBarTrailing) {
+                    TaskMoreMenu(job: job, onCreate: onCreate, remove: remove)
+                }
+            }
+        }
+        #endif
         #if os(macOS)
         .toolbar {
             if let job = selected {
@@ -77,7 +87,7 @@ struct TasksSplitView: View {
                         TaskRow(job: job)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .background(isSelected ? Theme.rowSelected : Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(isSelected ? Theme.rowSelected : Self.rowBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -97,8 +107,17 @@ struct TasksSplitView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(Theme.canvas)
+        .background(Self.listBackground)
     }
+
+    /// iPad: white cards on the grouped grey. Mac: plain rows on the window's white.
+    #if os(macOS)
+    private static let listBackground = Theme.canvas
+    private static let rowBackground = Color.clear
+    #else
+    private static let listBackground = Theme.groupedBackground
+    private static let rowBackground = Theme.groupedCell
+    #endif
 
     private func remove(_ job: CronJob) {
         Task { await model.remove(job, client: workspace.client) }
@@ -113,8 +132,11 @@ private struct TaskMoreMenu: View {
 
     var body: some View {
         Menu {
+            #if os(macOS)
+            // iPad has + in the toolbar.
             Button("New Task…", systemImage: "plus", action: onCreate)
             Divider()
+            #endif
             Button("Delete Task", systemImage: "trash", role: .destructive) { remove(job) }
         } label: {
             Image(systemName: "ellipsis")
@@ -193,11 +215,13 @@ struct TaskDetailPane: View {
             PairedSheetButtons(
                 secondary: current.isPaused ? String(localized: "Resume") : String(localized: "Pause"),
                 onSecondary: { togglePause(current) },
+                secondarySymbol: current.isPaused ? "play" : "pause.fill",
                 primary: String(localized: "Run Now"), symbol: "play.fill"
             ) {
                 runNow(current)
             }
-            .frame(maxWidth: 520)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
         }
         #endif
     }

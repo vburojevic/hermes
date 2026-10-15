@@ -391,7 +391,8 @@ struct VoiceScreen: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .frame(maxWidth: 420)
+        // iPad landscape gives the words a wider line.
+        .frame(maxWidth: state.layout == .wide ? 600 : 420)
         .accessibilityElement(children: .combine)
     }
 
@@ -477,7 +478,7 @@ struct VoiceScreen: View {
             .tint(Theme.danger)
             .accessibilityLabel("End Voice")
         }
-        .frame(maxWidth: 300)
+        .frame(maxWidth: state.layout == .wide ? 360 : 300)
         .padding(.horizontal, 24)
     }
 }
@@ -640,7 +641,7 @@ private struct TranscriptPanel: View {
                             }
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(line.id == latestReply ? Theme.surfaceRaised : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(line.id == latestReply ? Theme.canvas : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .id(line.id)
                             .accessibilityElement(children: .combine)
                         }

@@ -1,9 +1,9 @@
 import HermesKit
 import SwiftUI
 
-/// The Mac's checkpoints (`macCheckpoints`): one window-modal sheet, the timeline on the left and
-/// the selected checkpoint's files and diff on the right; Restore per file, then Done /
-/// Restore All… in the footer.
+/// The Mac's checkpoints (`macCheckpoints`), and iPad's (`ipadCheckpoints`): one sheet, the
+/// timeline on the left and the selected checkpoint's files and diff on the right; Restore per
+/// file, then Restore All… in the footer (with Done on the Mac; iPad has it in the bar).
 struct MacCheckpointsSheet: View {
     let model: CheckpointsModel
     var initial: String?
@@ -18,9 +18,37 @@ struct MacCheckpointsSheet: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        sheet
+            .frame(width: 820, height: 560)
+        #else
+        // iPad (`ipadCheckpoints`): a centred sheet with Close and Done in its bar.
+        NavigationStack {
+            sheet
+                .navigationTitle("Checkpoints")
+                .navigationSubtitle(model.folder.map { "\($0) on \(model.gatewayName)" } ?? "")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", systemImage: "xmark") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done", systemImage: "checkmark") { dismiss() }
+                            .buttonStyle(.glassProminent)
+                            .tint(Theme.ink)
+                    }
+                }
+        }
+        .frame(width: 800, height: 600)
+        #endif
+    }
+
+    private var sheet: some View {
         VStack(spacing: 0) {
+            #if os(macOS)
             header
             Divider()
+            #endif
             if model.isEnabled == false {
                 CheckpointsOffView(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -39,11 +67,6 @@ struct MacCheckpointsSheet: View {
             Divider()
             footer
         }
-        #if os(macOS)
-        .frame(width: 820, height: 560)
-        #else
-        .frame(width: 800, height: 600)
-        #endif
         .background(Theme.sheetBackground)
         .task {
             await model.refresh(force: true)
@@ -106,13 +129,19 @@ struct MacCheckpointsSheet: View {
                     .foregroundStyle(Theme.secondaryText)
             }
             Spacer()
+            #if os(macOS)
             Button("Done") { dismiss() }
                 .keyboardShortcut(.cancelAction)
+            #endif
             Button("Restore All…") {
                 if let checkpoint { confirming = CheckpointsModel.Target(checkpoint: checkpoint) }
             }
             .keyboardShortcut(.defaultAction)
+            #if os(macOS)
             .buttonStyle(.borderedProminent)
+            #else
+            .buttonStyle(.glassProminent)
+            #endif
             .tint(Theme.ink)
             .disabled(checkpoint == nil || !model.isOnline || model.chatIsWorking || model.refusal != nil)
         }
