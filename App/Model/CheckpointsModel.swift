@@ -57,6 +57,7 @@ final class CheckpointsModel {
     private(set) var working: Set<String> = []
     /// Files restored here, `<key>:<path>`, so their rows say so.
     private(set) var restoredFiles: Set<String> = []
+    @ObservationIgnored private var restoredOrder: [String] = []
     /// The gateway refused for this chat and said why (a chat in a container).
     private(set) var refusal: String?
     /// Turn On worked: checkpoints start with the next turn that edits files.
@@ -121,11 +122,12 @@ final class CheckpointsModel {
         return points
     }
 
-    /// The newest reply that changed files and can be undone (⌥⌘Z).
-    var latestUndoableTurnID: String? {
+    /// The newest reply that changed files (⌥⌘Z, and the reply menu's Undo File Changes…). Its
+    /// Undo opens the off sheet when checkpoints are off.
+    var latestEditingTurnID: String? {
         for item in (conversation?.rows ?? []).reversed() {
             guard case .assistant(let turn) = item else { continue }
-            if !TurnFileEdits(turn: turn).isEmpty { return checkpoint(beforeTurn: turn.id) != nil ? turn.id : nil }
+            if !TurnFileEdits(turn: turn).isEmpty { return turn.id }
         }
         return nil
     }
@@ -144,6 +146,12 @@ final class CheckpointsModel {
     func isWorking(_ key: String) -> Bool { working.contains(key) }
     func allKey(_ checkpoint: Checkpoint) -> String { "all:\(Self.stableKey(checkpoint))" }
     func fileKey(_ checkpoint: Checkpoint, _ path: String) -> String { "file:\(Self.stableKey(checkpoint)):\(path)" }
+    /// Files restored here from `checkpoint`, in the order they were.
+    func restoredPaths(from checkpoint: Checkpoint) -> [String] {
+        let prefix = "\(Self.stableKey(checkpoint)):"
+        return restoredOrder.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+    }
+
     func wasRestored(_ path: String, from checkpoint: Checkpoint) -> Bool {
         restoredFiles.contains("\(Self.stableKey(checkpoint)):\(path)")
     }
@@ -235,6 +243,7 @@ final class CheckpointsModel {
             let diff = try await client.diff(sessionID: runtime, hash: try await currentHash(of: checkpoint, runtime: runtime))
             diffs[key] = diff
             diffFailures[key] = nil
+            refusal = nil
         } catch {
             let failure = CheckpointFailure(error: error)
             if case .refused(let reason)? = failure { refusal = reason }
@@ -353,7 +362,10 @@ final class CheckpointsModel {
                 alert = result.error ?? String(localized: "Hermes couldn't restore \(file.fileName).")
                 return
             }
-            restoredFiles.insert("\(Self.stableKey(checkpoint)):\(file.path)")
+            let restored = "\(Self.stableKey(checkpoint)):\(file.path)"
+            restoredOrder.removeAll { $0 == restored }
+            restoredOrder.append(restored)
+            restoredFiles.insert(restored)
             await refresh(force: true)
             await loadDiff(checkpoint, force: true)
         } catch {

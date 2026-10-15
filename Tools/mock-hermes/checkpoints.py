@@ -267,6 +267,7 @@ BASE = {
     "Sources/Sync/SyncClient.swift": ["import Foundation", "", "actor SyncClient {", "    let socket: Socket", ""] + SYNC_OLD + ["}"],
     "Package.resolved": ["{", '  "pins" : [', "    {"] + RESOLVED_OLD + ['      "version" : "1.2.0"', "    }", "  ]", "}"],
     "README.md": ["# Hermes App", "", "The Hermes client for iPhone, iPad and Mac."],
+    "Project.xcconfig": ["SWIFT_VERSION = 6.0", "SWIFT_STRICT_CONCURRENCY = minimal", "SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor"],
 }
 
 

@@ -118,6 +118,15 @@ struct ChangedFiles: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // A restored file matches the checkpoint now, so it leaves the list: say it's back.
+            if restores {
+                ForEach(model.restoredPaths(from: checkpoint), id: \.self) { path in
+                    Label("\((path as NSString).lastPathComponent) is back as it was at \(CheckpointsModel.time(checkpoint.date)).", systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.success)
+                        .padding(.horizontal, 20)
+                }
+            }
             if let diff = model.diff(for: checkpoint) {
                 if diff.files.isEmpty {
                     Text("The files are as they were at \(CheckpointsModel.time(checkpoint.date)).")
@@ -160,7 +169,8 @@ struct ChangedFiles: View {
                 if index > 0 {
                     Divider().overlay(Theme.separator).padding(.leading, 42)
                 }
-                CheckpointFileRow(file: file, isSelected: shown(diff)?.id == file.id) {
+                // Next to Restore there's room for the name; the diff below has the path.
+                CheckpointFileRow(file: file, shortPath: restores, isSelected: shown(diff)?.id == file.id) {
                     if restores {
                         RestoreFileButton(model: model, checkpoint: checkpoint, file: file)
                     } else {
@@ -417,6 +427,7 @@ struct CheckpointConfirmSheet: View {
             } label: {
                 ZStack {
                     Text(isUndo ? String(localized: "Undo Turn") : String(localized: "Restore All"))
+                        .foregroundStyle(Theme.danger)
                         .opacity(model.isWorking(model.allKey(target.checkpoint)) ? 0 : 1)
                     if model.isWorking(model.allKey(target.checkpoint)) { ProgressView().controlSize(.small) }
                 }
@@ -602,7 +613,7 @@ struct CheckpointDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(time) · \(model.title(for: checkpoint))")
-                        .font(.title3.weight(.semibold))
+                        .font(.headline)
                         .foregroundStyle(Theme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("Compared with the files now")

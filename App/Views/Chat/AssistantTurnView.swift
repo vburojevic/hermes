@@ -93,7 +93,8 @@ struct AssistantTurnView: View {
                 TurnCheckpointBar(
                     edits: edits,
                     isWorking: checkpoints.chatIsWorking,
-                    canUndo: checkpoints.isOnline && checkpoints.refusal == nil,
+                    canUndo: checkpoints.isOnline,
+                    isRefused: checkpoints.refusal != nil,
                     onReview: { checkpoints.sheet = .review(turnID: turn.id) },
                     onUndo: { checkpoints.undo(turnID: turn.id) }
                 )

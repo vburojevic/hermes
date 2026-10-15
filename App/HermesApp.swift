@@ -173,12 +173,12 @@ struct HermesCommands: Commands {
             }
             .disabled(conversation?.usesGateway != true || conversation?.sessionID == nil)
             Button("Undo File Changes…") {
-                if let checkpoints = conversation?.checkpoints, let turnID = checkpoints.latestUndoableTurnID {
+                if let checkpoints = conversation?.checkpoints, let turnID = checkpoints.latestEditingTurnID {
                     checkpoints.undo(turnID: turnID)
                 }
             }
             .keyboardShortcut("z", modifiers: [.command, .option])
-            .disabled(conversation?.usesGateway != true || conversation?.checkpoints.latestUndoableTurnID == nil)
+            .disabled(conversation?.usesGateway != true || conversation?.checkpoints.latestEditingTurnID == nil)
 
             Button("Next Conversation") {
                 model.currentWorkspace?.selectAdjacent(1)

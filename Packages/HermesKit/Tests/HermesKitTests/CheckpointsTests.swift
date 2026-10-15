@@ -70,6 +70,8 @@ struct CheckpointsTests {
         #expect(reconnect?.diff?.contains("withBackoff") == true)
         let tests = diff.files.first { $0.path == "Tests/ReconnectTests.swift" }
         #expect(tests?.change == .created && tests?.added == 3)
+        // Just the hunks: no `new file mode` or `+++` lines for the card to show.
+        #expect(tests?.diff?.hasPrefix("@@") == true && tests?.diff?.contains("new file mode") == false)
         // Not in the diff text: counted from the stat, restorable by its full path.
         let backoff = diff.files.first { $0.path == "Sources/Sync/Backoff.swift" }
         #expect(backoff?.diff == nil && backoff?.pathIsExact == true && (backoff?.added ?? 0) + (backoff?.removed ?? 0) == 12)

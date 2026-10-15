@@ -296,9 +296,9 @@ struct RootView: View {
         try? await Task.sleep(for: .milliseconds(600))
         switch parts[0] {
         case "review":
-            if let turnID = checkpoints.latestUndoableTurnID { checkpoints.sheet = .review(turnID: turnID) }
+            if let turnID = checkpoints.latestEditingTurnID { checkpoints.sheet = .review(turnID: turnID) }
         case "undo":
-            if let turnID = checkpoints.latestUndoableTurnID { checkpoints.undo(turnID: turnID) }
+            if let turnID = checkpoints.latestEditingTurnID { checkpoints.undo(turnID: turnID) }
         case "timeline":
             checkpoints.showTimeline()
         case "detail":

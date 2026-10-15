@@ -14,8 +14,10 @@ extension EnvironmentValues {
 struct TurnCheckpointBar: View {
     let edits: TurnFileEdits
     let isWorking: Bool
-    /// Offline, or the gateway refused for this chat: Undo can't go out.
+    /// Offline: Undo can't go out yet.
     var canUndo = true
+    /// The gateway refuses checkpoints for this chat (a container): no Undo at all.
+    var isRefused = false
     let onReview: () -> Void
     let onUndo: () -> Void
 
@@ -51,13 +53,15 @@ struct TurnCheckpointBar: View {
                 .font(.footnote.weight(.medium))
                 .cardButton()
                 .controlSize(.small)
-            Button(action: onUndo) {
-                Label("Undo", systemImage: "arrow.uturn.backward")
+            if !isRefused {
+                Button(action: onUndo) {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .font(.footnote.weight(.medium))
+                .cardButton()
+                .controlSize(.small)
+                .disabled(isWorking || !canUndo)
             }
-            .font(.footnote.weight(.medium))
-            .cardButton()
-            .controlSize(.small)
-            .disabled(isWorking || !canUndo)
         }
         .padding(.leading, 12)
         .padding([.vertical, .trailing], 10)
@@ -67,7 +71,8 @@ struct TurnCheckpointBar: View {
 
     /// "3 files changed, 41 lines added, 12 removed."
     private var accessibilityText: String {
-        let lines = String(localized: "\(edits.added) lines added, \(edits.removed) removed")
+        let added = edits.added == 1 ? String(localized: "1 line added") : String(localized: "\(edits.added) lines added")
+        let lines = "\(added), " + String(localized: "\(edits.removed) removed")
         return isWorking ? "\(title), \(lines). " + String(localized: "Undo is available when Hermes stops.") : "\(title), \(lines)."
     }
 }

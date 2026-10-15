@@ -212,9 +212,11 @@ public struct CheckpointDiff: Hashable, Sendable {
             return body.range(of: " b/").map { String(body[$0.upperBound...]) }
         }()
         guard let path = newPath ?? oldPath ?? fromHeader else { return nil }
+        // The hunks, without git's header lines (`index`, `new file mode`, `---`, `+++`).
+        let hunks = lines.drop { !$0.hasPrefix("@@") }
         return CheckpointFileChange(
             path: path, added: added, removed: removed, change: change, isBinary: isBinary,
-            diff: lines.joined(separator: "\n")
+            diff: hunks.isEmpty ? nil : hunks.joined(separator: "\n")
         )
     }
 

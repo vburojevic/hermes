@@ -18,9 +18,8 @@ extension ToolActivity {
         switch name {
         case "patch":
             guard let old = arguments?["old_string"]?.stringValue, let new = arguments?["new_string"]?.stringValue else { return nil }
-            let removed = old.components(separatedBy: "\n").map { "-" + $0 }
-            let added = new.components(separatedBy: "\n").map { "+" + $0 }
-            return (["--- a/\(filePath ?? "file")", "+++ b/\(filePath ?? "file")"] + removed + added).joined(separator: "\n")
+            let lines = Self.lineDiff(old.components(separatedBy: "\n"), new.components(separatedBy: "\n"))
+            return (["--- a/\(filePath ?? "file")", "+++ b/\(filePath ?? "file")"] + lines).joined(separator: "\n")
         case "write_file":
             guard let content = arguments?["content"]?.stringValue else { return nil }
             let added = content.components(separatedBy: "\n").map { "+" + $0 }
@@ -28,6 +27,38 @@ extension ToolActivity {
         default:
             return nil
         }
+    }
+
+    /// `old` to `new` as diff lines: lines both keep stay as context, the rest are − or +.
+    static func lineDiff(_ old: [String], _ new: [String]) -> [String] {
+        let difference = new.difference(from: old)
+        var removed: Set<Int> = []
+        var inserted: Set<Int> = []
+        for change in difference {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+        var lines: [String] = []
+        var i = 0
+        var j = 0
+        while i < old.count || j < new.count {
+            if i < old.count, removed.contains(i) {
+                lines.append("-" + old[i])
+                i += 1
+            } else if j < new.count, inserted.contains(j) {
+                lines.append("+" + new[j])
+                j += 1
+            } else if j < new.count {
+                lines.append(" " + new[j])
+                i += 1
+                j += 1
+            } else {
+                i += 1
+            }
+        }
+        return lines
     }
 
     // MARK: Command output
