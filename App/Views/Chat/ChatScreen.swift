@@ -271,8 +271,6 @@ struct ChatScreen: View {
     private var bottomBar: some View {
         GlassEffectContainer(spacing: 10) {
             VStack(spacing: 10) {
-                // The bar's height changes in one step and what comes into it fades in, so the
-                // transcript, which follows that step, never lags behind an eased height.
                 if conversation.pendingApproval != nil || !conversation.requests.isEmpty {
                     requestDock
                         .glassEffectID("approval", in: bottomGlass)

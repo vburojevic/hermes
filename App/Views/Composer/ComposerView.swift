@@ -133,10 +133,9 @@ struct ComposerView: View {
         } message: {
             Text("Turn on the microphone and speech recognition for Hermes in Settings to dictate. You can keep typing.")
         }
-        // The composer's height changes in one step, and what comes into it fades in: the chat
-        // above follows that step exactly, where an eased height would leave it a frame behind
-        // all the way (`Self.rowAppears`). Each swap below carries its own animation, so none
-        // of them eases the rest of the composer along with it.
+        // The composer changes height in one step and what comes into it fades in (an eased
+        // height would slide the field under a row still fading in); the chat above eases to
+        // its new end.
         .task(id: conversation.usesGateway) { conversation.loadSlashCatalog() }
         .task(id: pathToken) {
             guard let token = pathToken else {
@@ -283,9 +282,9 @@ struct ComposerView: View {
         (conversation.canSendFollowUp || conversation.editingQueued != nil) && !dictation.isActive
     }
 
-    /// A row coming into the composer (the queue, a strip, attachments): the height is there at
-    /// once, the content fades in.
-    static let rowAppears = AnyTransition.opacity.animation(.easeOut(duration: 0.2))
+    /// A row coming into the composer or the bar (the queue, a strip, attachments, a card): it
+    /// fades in as its room opens.
+    static let rowAppears = AnyTransition.opacity.animation(.easeOut(duration: 0.22))
 
 
     private var controls: some View {
