@@ -720,7 +720,12 @@ USAGE = {"model": "anthropic/claude-sonnet-4.6", "input": 18310, "output": 912, 
 
 def finish(sid, stored, text, *, status="complete", error=None, recoverable=None, warning=None, usage_override=None):
     if text:
-        G.add_message(stored, "assistant", text, finish_reason="stop")
+        late = B["CONFIG"].get("late_store") or 0
+        if late:
+            # Hermes queues transcript writes while its database is busy: the reply lands after the turn ends.
+            threading.Timer(late, lambda: G.add_message(stored, "assistant", text, finish_reason="stop")).start()
+        else:
+            G.add_message(stored, "assistant", text, finish_reason="stop")
     payload = {"text": text, "status": status, "usage": {**USAGE, **(usage_override or {})}}
     if error:
         payload["error"] = error

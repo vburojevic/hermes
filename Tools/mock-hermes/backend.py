@@ -1368,11 +1368,14 @@ def main():
     parser.add_argument("--bandwidth", type=int, default=0, metavar="KBPS",
                         help="answer HTTP like a phone over the network at this many kbit/s (0: localhost speed)")
     parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one")
+    parser.add_argument("--late-store", type=float, default=0, metavar="SECONDS",
+                        help="write a turn's reply this long after message.complete (Hermes' busy-database retry queue)")
     parser.add_argument("--push-relay", default="simctl",
                         help="where push notices go (push.py): simctl (the simulator that registered), a relay URL, "
                              "or none (no plugin)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
+    CONFIG["late_store"] = args.late_store
     CONFIG["long_bot_chats"] = args.long_bot_chats
     CONFIG["seed_bot_chat"] = args.seed_bot_chat
     if args.token:

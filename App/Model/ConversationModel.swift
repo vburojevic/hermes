@@ -408,6 +408,9 @@ final class ConversationModel: Identifiable {
     /// in place; as new rows they were laid out from scratch, which on long chats with heavy
     /// replies showed blank frames before the content came back.
     @ObservationIgnored private var rowAliases: [String: String] = [:]
+    /// A turn whose stored rows weren't written yet when it ended: what was on screen, to hand its
+    /// identities over once a later load brings them (`after`: the newest message id before it).
+    @ObservationIgnored private var heldOver: (shown: [TranscriptItem], after: Int?)?
 
     /// Changes to the transcript's rows (a message sent, a reply settling into the stored one, a
     /// steer read, a redirect) go out as one animated transaction, so the scroll view keeps its
@@ -642,7 +645,26 @@ final class ConversationModel: Identifiable {
             turnReceipts = []
         }
         items = mergeLocalItems(into: built)
+        if let held = heldOver, Self.holdsTurn(messages, after: held.after) {
+            heldOver = nil
+            handOverIdentity(shown: held.shown)
+            LoadTrace.mark(stableKey ?? "?", "held turn: \(held.shown.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(held.shown.count) rows kept their identity")
+        }
         matchCaptions()
+    }
+
+    /// The stored messages hold a turn that ended after message `after`: a message newer than
+    /// that, ending in the reply (an answer without tool calls) or a failed turn's notice. A
+    /// stopped turn may store no answer at all: your message is enough.
+    nonisolated static func holdsTurn(_ messages: [SessionMessage], after: Int?, stopped: Bool = false) -> Bool {
+        let fresh = messages.filter { message in
+            guard let after else { return true }
+            return (message.id ?? .max) > after
+        }
+        guard fresh.contains(where: { $0.role == "user" }) || after == nil else { return false }
+        if stopped || fresh.contains(where: { $0.displayKind == "failed_turn" }) { return true }
+        guard let last = fresh.last(where: { $0.role != "tool" }) else { return false }
+        return last.role == "assistant" && last.toolCalls.isEmpty
     }
 
     /// A page that starts partway through a turn starts at its next message from the person
@@ -770,18 +792,19 @@ final class ConversationModel: Identifiable {
         var index = items.count - 1
         for row in shown.reversed() {
             var match: Int?
-            while index >= 0 {
-                let stored = items[index]
+            var probe = index
+            while probe >= 0 {
+                let stored = items[probe]
                 if case .assistant = row {
-                    if case .assistant = stored { match = index; break }
-                    if isPersonsMessage(stored) { return }
+                    if case .assistant = stored { match = probe; break }
+                    if isPersonsMessage(stored) { break } // no stored reply (yet): the message still matches
                 } else if isPersonsMessage(stored) {
-                    match = index
+                    match = probe
                     break
                 }
-                index -= 1
+                probe -= 1
             }
-            guard let match else { return }
+            guard let match else { continue }
             if items[match].id != row.id { rowAliases[items[match].id] = row.id }
             index = match - 1
         }
@@ -2095,20 +2118,32 @@ final class ConversationModel: Identifiable {
             turnError = TurnFailure(message: message, canRetry: failureIsRetryable)
         }
         let stoppedByUser = wasStopping || finished.turn.state == .stopped
+        heldOver = nil // a turn before this one that never got its stored rows: too late to match
         // What was on screen, in order, to hand its identities to the stored rows.
         let shownRows = (pendingUser.map { [TranscriptItem.user($0)] } ?? []) + redirectedParts + [.assistant(finished.turn)]
-        // Fetch in an unstructured task: a turn that ended by cancellation must still reconcile.
+        // Hermes can write the turn's rows a moment after it says the turn ended. A transcript
+        // without them would swap your message for its stored copy as a new row (it left and came
+        // back) and drop the reply: ask again for up to about 2 s, then keep what's on screen.
+        let newestBefore = rawMessages.last?.id
         var transcript: SessionTranscript?
-        if let sessionID {
-            transcript = try? await Task { try await fetch(sessionID) }.value
-        }
         // Folded off the main thread, the reply's Markdown parsed ahead: the swap below is then
         // only the swap, not a whole chat built in one frame as the reply ends.
         var prepared: (messages: [SessionMessage], items: [TranscriptItem])?
-        if let transcript, live?.turn.id == finished.turn.id, let merged = merge(transcript) {
-            let items = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
-            await preloadImages(for: items)
-            prepared = (merged, items)
+        if let sessionID {
+            for wait in [0, 500, 1500] {
+                if wait > 0 { try? await Task.sleep(for: .milliseconds(wait)) }
+                guard live?.turn.id == finished.turn.id else { return }
+                // Fetch in an unstructured task: a turn that ended by cancellation must still reconcile.
+                guard let fetched = try? await Task(operation: { try await fetch(sessionID) }).value else { continue }
+                guard Self.holdsTurn(fetched.messages, after: newestBefore, stopped: stoppedByUser) else { continue }
+                transcript = fetched
+                if live?.turn.id == finished.turn.id, let merged = merge(fetched) {
+                    let items = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
+                    await preloadImages(for: items)
+                    prepared = (merged, items)
+                }
+                break
+            }
         }
         guard live?.turn.id == finished.turn.id else { return }
         // The stored rows take over from the live ones in place (same identities), in one
@@ -2126,9 +2161,11 @@ final class ConversationModel: Identifiable {
                     markLastTurnStopped()
                 }
             } else {
-                // Couldn't reach the server: keep what streamed in, and reload when we can.
+                // Couldn't reach the server, or it hasn't written the turn yet: keep what streamed
+                // in, and reload when we can.
                 items += shownRows
                 needsReconcile = true
+                heldOver = (shownRows, newestBefore)
             }
             pendingUser = nil
             redirectedParts = []
@@ -2139,6 +2176,14 @@ final class ConversationModel: Identifiable {
         }
         loadState = .loaded
         completedTurns += 1
+        LoadTrace.mark(stableKey ?? "?", "turn end: \(shownRows.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(shownRows.count) rows kept their identity\(transcript == nil ? ", held for a later load" : "")")
+        if transcript == nil, sessionID != nil {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, self.needsReconcile, !self.isWorking, !self.isFinishing else { return }
+                self.reload()
+            }
+        }
         if let botName {
             seenActivity = .now
             seenChat = nil // the next roster read describes this turn
