@@ -335,6 +335,10 @@ struct ProjectHomeView: View {
                 .accessibilityLabel("Show sidebar")
             }
         }
+        #if os(macOS)
+        // Without a centred item the Mac lines items up from the leading edge.
+        ToolbarSpacer(.flexible)
+        #endif
         ToolbarItem(placement: Self.menuPlacement) {
             Menu {
                 ProjectMenuItems(workspace: workspace, projectID: projectID)
