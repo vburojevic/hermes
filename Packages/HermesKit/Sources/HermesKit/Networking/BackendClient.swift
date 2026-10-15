@@ -160,6 +160,42 @@ public actor BackendClient {
         return SessionTranscript(sessionID: envelope.sessionID ?? storedSessionID, messages: envelope.messages, hasEarlier: envelope.messages.count >= limit)
     }
 
+    // MARK: - Read state
+
+    /// When any device last read a stored session: Hermes' sidebar watermark (`last_read_at`,
+    /// the one Hermes Desktop keeps). Nil until a client has marked it read.
+    public func lastRead(storedSessionID: String, profile: String) async throws -> Date? {
+        let (data, _) = try await send(path: "api/sessions/\(Self.escape(storedSessionID))",
+                                       query: [URLQueryItem(name: "profile", value: profile)])
+        let row = try JSONDecoder().decode(JSONValue.self, from: data)
+        guard let seconds = row["last_read_at"]?.doubleValue, seconds > 0 else { return nil } // 0: marked unread
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// Marks a stored session read for every device, as Hermes Desktop does: the session's
+    /// current revision, then an edit fenced on it. A turn landing in between moves the revision;
+    /// that conflict is retried once with a fresh one.
+    public func markRead(storedSessionID: String, profile: String) async throws {
+        let id = Self.escape(storedSessionID)
+        let profileItem = URLQueryItem(name: "profile", value: profile)
+        for attempt in 0..<2 {
+            let (data, _) = try await send(path: "api/sessions/\(id)/mutation-snapshot", query: [profileItem])
+            let snapshot = try JSONDecoder().decode(JSONValue.self, from: data)
+            guard snapshot["exists"]?.boolValue == true, let revision = snapshot["runtime_revision"]?.doubleValue else { return }
+            var body: [String: JSONValue] = [
+                "unread": .bool(false), "request_id": .string(UUID().uuidString),
+                "expected_revision": .number(revision), "profile": .string(profile),
+            ]
+            if let generation = snapshot["runtime_generation"]?.doubleValue { body["expected_generation"] = .number(generation) }
+            do {
+                _ = try await send(path: "api/sessions/\(id)", method: "PATCH", body: .object(body))
+                return
+            } catch Failure.http(409, let detail?) where detail == "revision_conflict" && attempt == 0 {
+                continue
+            }
+        }
+    }
+
     // MARK: - Routines
 
     /// Runs a routine now (REST only; there is no RPC for it).

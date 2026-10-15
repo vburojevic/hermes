@@ -1175,7 +1175,54 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(404, {"detail": "Session not found"})
                 rows, pagination = GATEWAY_PAGING[0](list(session["messages"]), query) if GATEWAY_PAGING else (session["messages"][-int(query.get("limit", ["500"])[0]):], {})
             return self.send_json(200, {"session_id": sid, "profile": profile, "messages": rows, "pagination": pagination})
+        match = re.fullmatch(r"/api/sessions/([^/]+)(/mutation-snapshot)?", url.path)
+        if match:
+            # Hermes' session detail (the raw row, with the `last_read_at` read mark) and the revision a
+            # fenced edit must name (`runtime_revision`).
+            sid = unquote(match.group(1))
+            profile = (query.get("profile", ["default"])[0] or "default")
+            with LOCK:
+                session = STORED.get(sid)
+                if session is not None and session["profile"] != profile:
+                    session = None
+                if match.group(2):
+                    return self.send_json(200, {"session_id": sid, "exists": session is not None,
+                                                "runtime_revision": session.get("revision", 0) if session else 0,
+                                                "runtime_generation": 0 if session else None})
+                if session is None:
+                    return self.send_json(404, {"detail": "Session not found"})
+                return self.send_json(200, {"id": sid, "title": session["title"], "profile": profile,
+                                            "started_at": session["started_at"], "last_activity_at": session["last_active"],
+                                            "last_read_at": session.get("last_read_at"),
+                                            "runtime_revision": session.get("revision", 0), "runtime_generation": 0})
         self.send_json(404, {"detail": "Not Found"})
+
+    def do_PATCH(self):
+        url = urlparse(self.path)
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length) or b"{}") if length else {}
+        if not self.authorized():
+            return self.send_json(401, {"detail": "Unauthorized"})
+        match = re.fullmatch(r"/api/sessions/([^/]+)", url.path)
+        if not match:
+            return self.send_json(404, {"detail": "Not Found"})
+        # Hermes' sidebar edit (`rename_session_endpoint`): revision-fenced; `unread: false` stamps the read mark.
+        if body.get("request_id") is None or body.get("expected_revision") is None:
+            return self.send_json(409, {"detail": "mutation_identity_required"})
+        sid = unquote(match.group(1))
+        profile = (body.get("profile") or "default").strip() or "default"
+        with LOCK:
+            session = STORED.get(sid)
+            if session is None or session["profile"] != profile:
+                return self.send_json(404, {"detail": "not_found"})
+            if int(body["expected_revision"]) != session.get("revision", 0):
+                return self.send_json(409, {"detail": "revision_conflict"})
+            session["revision"] = session.get("revision", 0) + 1
+            if "unread" in body:
+                session["last_read_at"] = 0.0 if body["unread"] else time.time()
+            if "title" in body:
+                session["title"] = body["title"]
+            return self.send_json(200, {"ok": True, "session_id": sid, "operation": "sidebar", "revision": session["revision"]})
 
     def do_POST(self):
         url = urlparse(self.path)

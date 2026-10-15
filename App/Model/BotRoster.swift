@@ -2,6 +2,11 @@ import Foundation
 import HermesKit
 import Network
 import Observation
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// Bot Mode for one gateway: the roster of Bots on its Hermes backend (`hermes serve`),
 /// their Bot Chats, looks and routines — Hermes Desktop's Bots pane, natively.
@@ -92,6 +97,14 @@ final class BotRoster {
     @ObservationIgnored private var photoTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var index: [String: BotProfile] = [:]
     @ObservationIgnored private var watermarks: [String: Double]
+    /// The Bot Chat's read mark on the server (`last_read_at`, shared by every device), by profile
+    /// name: as last fetched, or as far as this device's own mark is known to reach.
+    @ObservationIgnored private var serverRead: [String: Double] = [:]
+    @ObservationIgnored private var readCheckedAt: [String: Date] = [:]
+    @ObservationIgnored private var sharingRead: Set<String> = []
+    #if os(macOS)
+    @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
+    #endif
     @ObservationIgnored private var reconnectAttempts = 0
     @ObservationIgnored private var connectGeneration = 0
     @ObservationIgnored private var connectedAt: Date?
@@ -119,6 +132,17 @@ final class BotRoster {
         self.store = store
         self.client = Self.makeClient(botID: botID, link: link, store: store)
         watermarks = UserDefaults.standard.dictionary(forKey: Self.watermarkKey(botID)) as? [String: Double] ?? [:]
+        #if os(macOS)
+        // Coming to the front with a Bot Chat open is reading it (`isInFront`).
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let openBot = self.openBot else { return }
+                self.markRead(openBot)
+            }
+        }
+        #endif
     }
 
     private static func makeClient(botID: UUID, link: BackendLink, store: BotStore) -> BackendClient {
@@ -450,6 +474,10 @@ final class BotRoster {
 
     func tearDown() {
         isTornDown = true
+        #if os(macOS)
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+        activationObserver = nil
+        #endif
         pathMonitor?.cancel()
         pathMonitor = nil
         networkSettleTask?.cancel()
@@ -480,6 +508,7 @@ final class BotRoster {
         guard !isTornDown else { return }
         isInBackground = false
         reconnectAttempts = 0
+        if let openBot { markRead(openBot) } // seen now, on every device
         if let socket {
             Task {
                 // Heard from moments ago (a poll, a heartbeat): alive. Probing it anyway only risked
@@ -677,8 +706,8 @@ final class BotRoster {
 
     // MARK: - Unread
 
-    /// Client-side, like Desktop: a Bot's activity watermark is seeded on first sight;
-    /// a later advance while its chat isn't open makes it unread.
+    /// A Bot's activity watermark is seeded on first sight; a later advance while its chat isn't
+    /// open makes it unread, unless the Bot Chat was read since on another device (`serverRead`).
     private func updateUnread() {
         var marks = watermarks
         var next = unread
@@ -688,9 +717,12 @@ final class BotRoster {
                 marks[bot.name] = active
                 continue
             }
-            if active > seen + 0.5 {
+            if active > max(seen, serverRead[bot.name] ?? 0) + 0.5 {
                 if bot.name == openBot {
                     marks[bot.name] = active
+                    // Opened before the roster loaded, or written to while on screen: read everywhere,
+                    // once the reply is done (a turn in progress moves on every poll).
+                    if conversations[bot.name]?.isWorking != true { shareRead(bot) }
                 } else {
                     next.insert(bot.name)
                 }
@@ -702,14 +734,70 @@ final class BotRoster {
             watermarks = marks
             UserDefaults.standard.set(marks, forKey: Self.watermarkKey(botID))
         }
+        checkReadElsewhere()
     }
 
     func markRead(_ name: String) {
         if unread.contains(name) { unread.remove(name) }
-        guard let active = bot(named: name)?.lastActive?.timeIntervalSince1970 else { return }
+        guard let bot = bot(named: name), let active = bot.lastActive?.timeIntervalSince1970 else { return }
         if (watermarks[name] ?? 0) < active {
             watermarks[name] = active
             UserDefaults.standard.set(watermarks, forKey: Self.watermarkKey(botID))
+        }
+        shareRead(bot)
+    }
+
+    /// Tells Hermes the Bot Chat was read (the mark Hermes Desktop keeps), so the person's other
+    /// devices stop showing the Bot unread.
+    private func shareRead(_ bot: BotProfile) {
+        let name = bot.name
+        guard Self.isInFront, let chat = bot.canonicalSession, let active = bot.lastActive?.timeIntervalSince1970,
+              (serverRead[name] ?? 0) + 0.5 < active, !sharingRead.contains(name) else { return }
+        sharingRead.insert(name)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.sharingRead.remove(name) }
+            do {
+                try await self.client.markRead(storedSessionID: chat.resolvedID, profile: name)
+                // Stamped by the server after this activity; its clock, not ours, so no later.
+                self.serverRead[name] = max(self.serverRead[name] ?? 0, active)
+            } catch is CancellationError {
+            } catch {
+                ConnectionLog.logger.notice("bots: couldn't mark \(name, privacy: .public) read: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// The person is looking at the app. A Mac often keeps a Bot Chat open all day: that counts as
+    /// read here, but only what was on screen while Hermes was in front is read on other devices.
+    private static var isInFront: Bool {
+        #if os(iOS)
+        UIApplication.shared.applicationState == .active
+        #else
+        NSApp.isActive
+        #endif
+    }
+
+    /// Bots unread here that another device may have read since: ask Hermes for the Bot Chat's
+    /// read mark, at most every 15 s per Bot.
+    private func checkReadElsewhere() {
+        let now = Date.now
+        for name in unread where now.timeIntervalSince(readCheckedAt[name] ?? .distantPast) > 15 {
+            guard let chat = index[name]?.canonicalSession else { continue }
+            readCheckedAt[name] = now
+            Task { [weak self] in
+                guard let self, let read = try? await self.client.lastRead(storedSessionID: chat.resolvedID, profile: name) else { return }
+                let seconds = read.timeIntervalSince1970
+                self.serverRead[name] = max(self.serverRead[name] ?? 0, seconds)
+                guard let active = self.index[name]?.lastActive?.timeIntervalSince1970, seconds + 0.5 >= active,
+                      self.unread.contains(name) else { return }
+                ConnectionLog.logger.notice("bots: \(name, privacy: .public) was read on another device")
+                self.unread.remove(name)
+                if (self.watermarks[name] ?? 0) < active {
+                    self.watermarks[name] = active
+                    UserDefaults.standard.set(self.watermarks, forKey: Self.watermarkKey(self.botID))
+                }
+            }
         }
     }
 
