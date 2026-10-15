@@ -17,6 +17,10 @@ split view on iPad and Mac.
 - **Resilient**: text turns run as detached `/v1/runs`, so leaving the app doesn't kill the
   agent; the app re-attaches to the event stream (`last_seq` replay) when it comes back.
 - **Images**: attach from Photos, the camera, Files, paste or drag and drop.
+- **Projects**: a project is a set of folders on the gateway with a colour and a glyph. Its chats
+  run in its primary folder and group by branch, worktree and task worktree, as in Hermes Desktop;
+  start a chat in a project, move chats between projects, and see what Hermes knows about it.
+  Needs Bot Mode (the `projects.*` calls are on the backend's socket).
 - **Tasks**: Hermes' scheduled jobs — create, run now, pause, resume, delete.
 - **Skills**: browse the gateway's skills and tool sets; start a chat with a skill.
 - Markdown with tinted code blocks, tables, task lists and quotes; copy, share and read aloud.
@@ -202,3 +206,11 @@ python3 Tools/mock-hermes/backend.py --port 19119 --password pw   # gated: admin
 and turn on **Bot Mode** for the gateway with `127.0.0.1:19119`, or add
 `HERMES_BOOTSTRAP_BACKEND=http://127.0.0.1:19119` to the Debug launch environment. "approve",
 "slow" and "fail" work in Bot Chats too, and `@mentioning` another Bot drops a message in its chat.
+
+With `--gateway-port 18642` the backend also has projects (`Tools/mock-hermes/projects.py`): the
+design's Hermes App, Homelab, Blog, Hermes Agent fork and dotfiles, an archived Portfolio written
+by the desktop app, and the found repos caffeinated-site and typedock. "Fix the reconnect after
+sleep" runs a long test turn so Hermes App shows as working. Debug flags: `-HERMES_OPEN projects`,
+`-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
+`-HERMES_OPEN project-chat:<id>`, `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin` and
+`-HERMES_DRAWER YES`.
