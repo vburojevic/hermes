@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		001DBDA178379735F849569C /* CommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA130514841F895F341DD77 /* CommandViews.swift */; };
 		0255BA676231B67BE5885A2B /* HermesMacSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 0CCEEDE69065A76C92D5F1E8 /* HermesMacSupport */; };
+		06519A331E1BA2BA15CC4984 /* SearchPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62249440A00899D4CBDCB679 /* SearchPalette.swift */; };
 		068B76484A7240440B1A6B94 /* ConnectionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 928671F9F911923EE7DFCB7A /* ConnectionLog.swift */; };
 		0AA5AB1E818B9E85E9BF275F /* CheckpointSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA318054AF92B0EDE167D76 /* CheckpointSheets.swift */; };
 		0EF4297FCC0477C802BFB4FF /* LoadTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA58CBFF18B5FB32D195421B /* LoadTrace.swift */; };
@@ -242,6 +243,7 @@
 		5AE14883E5C4F76A1654A74F /* HermesKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HermesKit; path = Packages/HermesKit; sourceTree = SOURCE_ROOT; };
 		5EFF89F60A2BD93A621783F1 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 		61C5334C16DEA85C688B84F4 /* TurnExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnExtras.swift; sourceTree = "<group>"; };
+		62249440A00899D4CBDCB679 /* SearchPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPalette.swift; sourceTree = "<group>"; };
 		64008DDC964C1C69C8B394C9 /* MarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownView.swift; sourceTree = "<group>"; };
 		641683BC38CC6ED1D64A4640 /* PushCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushCenter.swift; sourceTree = "<group>"; };
 		6503D50FE251017B2F3A4A76 /* PairingScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingScanner.swift; sourceTree = "<group>"; };
@@ -500,6 +502,7 @@
 		23B2AC7AF33BE3280BF28EA8 /* Search */ = {
 			isa = PBXGroup;
 			children = (
+				62249440A00899D4CBDCB679 /* SearchPalette.swift */,
 				8BE62AA56C7273A33AAF03D0 /* SearchViews.swift */,
 			);
 			path = Search;
@@ -1078,6 +1081,7 @@
 				E6F685CDCB30D7E5DAFBA413 /* RequestParts.swift in Sources */,
 				E1FB61F088B0D428B68DA446 /* RootView.swift in Sources */,
 				E68F2F493BCBC14B3BCE29BF /* RoutinesView.swift in Sources */,
+				06519A331E1BA2BA15CC4984 /* SearchPalette.swift in Sources */,
 				C448DCC47F657119BDF46F09 /* SearchViews.swift in Sources */,
 				582BE152880BA5E4F3B77E15 /* ServerViews.swift in Sources */,
 				44ED42635D980BA1BE34A607 /* SettingsView.swift in Sources */,

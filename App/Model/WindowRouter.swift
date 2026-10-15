@@ -42,6 +42,15 @@ final class WindowRouter {
     /// window's sheets, which can't appear while this one is still leaving.
     @ObservationIgnored var afterDismiss: (() -> Void)?
 
+    /// The Mac's ⌘K search palette (`macSearch`), over the window.
+    var showsSearchPalette = false
+    /// Bumped to put the sidebar's search field in focus (⌥⌘F, Show All Results).
+    private(set) var sidebarSearchFocus = 0
+
+    func focusSidebarSearch() {
+        sidebarSearchFocus += 1
+    }
+
     var isShowingQuickOpen: Bool {
         if case .quickOpen = sheet { true } else { false }
     }

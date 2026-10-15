@@ -96,11 +96,19 @@ struct ChatScreen: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0; refitLift() }
         }
         .safeAreaBar(edge: .top) {
-            if let roster {
-                BotModeBanner(roster: roster)
-            } else {
-                ConnectionBanner(workspace: workspace)
+            VStack(spacing: 8) {
+                if let roster {
+                    BotModeBanner(roster: roster)
+                } else {
+                    ConnectionBanner(workspace: workspace)
+                }
+                // ⌘F: find in the loaded chat (`docs/search.md` §2).
+                if conversation.findText != nil {
+                    FindInChatBar(conversation: conversation)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .animation(.snappy(duration: 0.2), value: conversation.findText == nil)
         }
         .toolbar { toolbar }
         #if os(macOS)

@@ -135,6 +135,11 @@ struct TranscriptView: View {
         .environment(\.checkpoints, conversation.usesGateway ? conversation.checkpoints : nil)
         // Opened from search: land on the message that matched (`docs/search.md`).
         .task(id: conversation.searchFocus?.id) { await landOnSearchMatch() }
+        // ⌘F: the shown match.
+        .onChange(of: findTarget) { _, id in
+            guard let id, let item = conversation.rows.first(where: { $0.id == id }) else { return }
+            Task { await land(on: item) }
+        }
         // Which replies can be undone: listed when a chat with file edits opens, as an edit
         // lands, and when a turn ends.
         .task(id: checkpointTrigger) {
@@ -319,6 +324,18 @@ struct TranscriptView: View {
         }
         if conversation.searchFocus?.id == focus.id { conversation.searchFocus = nil }
         guard let target, !Task.isCancelled else { return }
+        await land(on: target)
+    }
+
+    /// The row in-chat find is on.
+    private var findTarget: String? {
+        guard conversation.findText != nil else { return nil }
+        let matches = conversation.findMatches
+        return matches.indices.contains(conversation.findIndex) ? matches[conversation.findIndex].id : nil
+    }
+
+    /// Brings a row into the window, scrolls it to the middle and flashes it once.
+    private func land(on target: TranscriptItem) async {
         let all = conversation.rows
         let key = conversation.displayID(for: target)
         if let index = all.firstIndex(where: { $0.id == target.id }), index < firstShownIndex(in: all) {

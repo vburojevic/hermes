@@ -421,6 +421,7 @@ struct MainView: View {
     @Bindable var workspace: BotWorkspace
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(WindowRouter.self) private var router: WindowRouter?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var isDrawerOpen = false
 
@@ -428,6 +429,32 @@ struct MainView: View {
         layout
             .modifier(BotSheets(workspace: workspace))
             .modifier(ProjectSheets(workspace: workspace))
+            #if os(macOS)
+            // ⌘K: the search palette over the window; a click outside closes it.
+            .overlay(alignment: .top) {
+                if let router, router.showsSearchPalette {
+                    ZStack(alignment: .top) {
+                        Color.black.opacity(0.001)
+                            .onTapGesture { router.showsSearchPalette = false }
+                        SearchPalette(workspace: workspace, router: router)
+                            .padding(.top, 72)
+                            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                    }
+                }
+            }
+            .animation(.snappy(duration: 0.18), value: router?.showsSearchPalette)
+            #if DEBUG
+            // `-HERMES_PALETTE <text>` opens ⌘K with it typed (screenshots).
+            .task {
+                guard UserDefaults.standard.string(forKey: "HERMES_PALETTE") != nil else { return }
+                for _ in 0..<40 where workspace.roster?.isConnected != true {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                try? await Task.sleep(for: .seconds(1))
+                router?.showsSearchPalette = true
+            }
+            #endif
+            #endif
             // Another chat, Bot or page: the composer it typed into is gone.
             .onChange(of: workspace.selection) {
                 Keyboard.dismiss()

@@ -271,3 +271,49 @@ struct SearchEmptyState: View {
         .padding(.horizontal, 24)
     }
 }
+
+/// In-chat find (⌘F): looks through the loaded transcript; ↑ older, ↓ newer, Esc closes.
+struct FindInChatBar: View {
+    @Bindable var conversation: ConversationModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let matches = conversation.findMatches.count
+        HStack(spacing: 8) {
+            Image(systemName: "text.magnifyingglass")
+                .foregroundStyle(Theme.secondaryText)
+                .accessibilityHidden(true)
+            TextField("Find in chat", text: Binding(get: { conversation.findText ?? "" }, set: { conversation.find($0) }))
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .autocorrectionDisabled()
+                .onSubmit { conversation.stepFind(-1) }
+                .onKeyPress(.escape) {
+                    conversation.findText = nil
+                    return .handled
+                }
+            if !(conversation.findText ?? "").isEmpty {
+                Text(matches == 0 ? String(localized: "No matches") : String(localized: "\(conversation.findIndex + 1) of \(matches)"))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Theme.secondaryText)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+            Button("Previous Match", systemImage: "chevron.up") { conversation.stepFind(-1) }
+                .labelStyle(.iconOnly)
+                .disabled(matches < 2)
+            Button("Next Match", systemImage: "chevron.down") { conversation.stepFind(1) }
+                .labelStyle(.iconOnly)
+                .disabled(matches < 2)
+            Button("Done") { conversation.findText = nil }
+                .fontWeight(.semibold)
+        }
+        .buttonStyle(.plain)
+        .font(.subheadline)
+        .padding(.horizontal, 14)
+        .frame(height: 40)
+        .glassEffect(.regular, in: Capsule())
+        .frame(maxWidth: 560)
+        .padding(.horizontal, 16)
+        .onAppear { focused = true }
+    }
+}

@@ -140,7 +140,7 @@ struct SidebarView: View {
             if let roster = workspace.roster {
                 SidebarModeSwitcher(mode: $workspace.sidebarMode, roster: roster)
             }
-            SearchField(text: $workspace.searchText, prompt: botRoster == nil ? "Search chats" : "Search Bots")
+            SearchField(text: $workspace.searchText, prompt: botRoster == nil ? "Search chats" : "Search Bots", focusRequest: router?.sidebarSearchFocus ?? 0)
         }
         #if os(macOS)
         .padding(.horizontal, 12)
@@ -683,6 +683,10 @@ struct ConnectionStatusLabel: View {
 struct SearchField: View {
     @Binding var text: String
     var prompt: LocalizedStringKey = "Search chats"
+    /// Bumped to put the field in focus (⌥⌘F, Show All Results).
+    var focusRequest = 0
+
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -691,6 +695,13 @@ struct SearchField: View {
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
+                .focused($focused)
+                .onChange(of: focusRequest) { focused = true }
+                .onKeyPress(.escape) {
+                    guard !text.isEmpty else { return .ignored }
+                    text = ""
+                    return .handled
+                }
             if !text.isEmpty {
                 Button {
                     text = ""

@@ -183,18 +183,30 @@ public struct SearchFocus: Equatable, Sendable {
         self.init(words: result.matchedWords, phrase: phrase.replacingOccurrences(of: "…", with: "").trimmingCharacters(in: .whitespaces))
     }
 
+    /// What a row says: the person's message, or the reply and what Hermes said between steps.
+    public static func text(of item: TranscriptItem) -> String? {
+        switch item {
+        case .user(let entry): entry.text
+        case .assistant(let turn):
+            ([turn.answer] + turn.steps.compactMap { step in
+                if case .narration(_, let text) = step { text } else { nil }
+            }).joined(separator: "\n")
+        default: nil
+        }
+    }
+
+    /// The rows that say `text` (in-chat find), oldest first.
+    public static func rows(saying text: String, in items: [TranscriptItem]) -> [TranscriptItem] {
+        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return [] }
+        return items.filter { item in
+            Self.text(of: item)?.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
     /// The first message (oldest first) that has the phrase, else all the words, else any of them.
     public func target(in items: [TranscriptItem]) -> TranscriptItem? {
-        let texts = items.map { item -> (TranscriptItem, String)? in
-            switch item {
-            case .user(let entry): (item, entry.text)
-            case .assistant(let turn):
-                (item, ([turn.answer] + turn.steps.compactMap { step in
-                    if case .narration(_, let text) = step { text } else { nil }
-                }).joined(separator: "\n"))
-            default: nil
-            }
-        }.compactMap { $0 }
+        let texts = items.compactMap { item in Self.text(of: item).map { (item, $0) } }
         func has(_ needle: String, _ text: String) -> Bool {
             text.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }

@@ -367,6 +367,30 @@ final class ConversationModel: Identifiable {
     /// message with its words (loading up to 5 older pages) and flashes it.
     var searchFocus: SearchFocus?
 
+    /// In-chat find (⌘F): what's looked for in the loaded transcript (`nil`: the bar is closed),
+    /// and which match is shown, counting from the oldest.
+    var findText: String?
+    var findIndex = 0
+
+    /// Opens find with `text`, on the newest match.
+    func find(_ text: String) {
+        findText = text
+        findIndex = max(0, findMatches.count - 1)
+    }
+
+    /// The rows that say the find text, oldest first.
+    var findMatches: [TranscriptItem] {
+        guard let findText else { return [] }
+        return SearchFocus.rows(saying: findText, in: rows)
+    }
+
+    /// The previous or next match, wrapping around.
+    func stepFind(_ step: Int) {
+        let count = findMatches.count
+        guard count > 0 else { return }
+        findIndex = ((findIndex + step) % count + count) % count
+    }
+
     // MARK: Checkpoints (docs/checkpoints.md)
 
     @ObservationIgnored private var checkpointStore: CheckpointsModel?

@@ -106,7 +106,12 @@ struct HermesCommands: Commands {
             .keyboardShortcut("n", modifiers: [.command, .option])
             Divider()
             Button("Open Quickly…") {
+                #if os(macOS)
+                // The search palette (`macSearch`).
+                router?.showsSearchPalette.toggle()
+                #else
                 router?.toggleQuickOpen()
+                #endif
             }
             .keyboardShortcut("k", modifiers: .command)
             .disabled(model.currentWorkspace == nil || router == nil)
@@ -164,6 +169,19 @@ struct HermesCommands: Commands {
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
             .disabled(helpers?.latestTeamID == nil)
+
+            // Search (`docs/search.md`): find in this chat, or search every chat in the sidebar.
+            Button("Find in Chat…") {
+                if let conversation = model.currentWorkspace?.currentConversation { conversation.find(conversation.findText ?? "") }
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(model.currentWorkspace?.currentConversation.isEmpty ?? true)
+            Button("Search Chats") {
+                model.currentWorkspace?.sidebarMode = .chats
+                router?.focusSidebarSearch()
+            }
+            .keyboardShortcut("f", modifiers: [.command, .option])
+            .disabled(model.currentWorkspace == nil || router == nil)
 
             // Checkpoints (`docs/checkpoints.md`): the sheet, and Undo for the newest reply that
             // changed files.
