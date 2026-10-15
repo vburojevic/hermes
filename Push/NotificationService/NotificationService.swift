@@ -70,7 +70,7 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
         }
         let presentation = NoticePresentation(
             notice, gatewayName: gateway?.name, slot: gateway?.slot,
-            showDetails: shared.preferences.showDetails, unlocked: shared.isUnlocked
+            showDetails: shared.preferences.showDetails
         )
         presentation.apply(to: content)
         content.userInfo.merge(PushUserInfo.values(for: notice)) { _, new in new }

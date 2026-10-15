@@ -73,17 +73,19 @@ import Testing
     @Test func presentationUsesTheAppsGatewayNameAndHidesDetails() throws {
         let key = try PushDeviceKey(rawRepresentation: Self.privateKey)
         let notice = try key.open(PushNotice.self, from: Self.envelope)
-        let shown = NoticePresentation(notice, gatewayName: "Home Server", slot: 2, showDetails: .unlocked, unlocked: true)
+        let shown = NoticePresentation(notice, gatewayName: "Home Server", slot: 2, showDetails: .always)
         #expect(shown.title == "Hermes needs your OK")
         #expect(shown.subtitle == "Disk cleanup on the NAS")
         #expect(shown.body == "Run rm -rf ~/snapshots/2026-0[1-8]-* on Home Server?")
         #expect(shown.categoryIdentifier == "APPROVAL.2")
         #expect(shown.interruptionLevel == .timeSensitive)
-        let locked = NoticePresentation(notice, gatewayName: "Home Server", slot: 2, showDetails: .unlocked, unlocked: false)
-        #expect(locked.title == "Hermes" && locked.subtitle.isEmpty && locked.body == "Needs your OK on Home Server")
-        let never = NoticePresentation(notice, gatewayName: nil, slot: nil, showDetails: .never, unlocked: true)
+        // Older builds' "When Unlocked" carries the text too: the Lock Screen is iPhone's to hide.
+        let unlocked = NoticePresentation(notice, gatewayName: "Home Server", slot: 2, showDetails: .unlocked)
+        #expect(unlocked == shown && !unlocked.hidesDetails)
+        let never = NoticePresentation(notice, gatewayName: nil, slot: nil, showDetails: .never)
+        #expect(never.title == "Hermes" && never.subtitle.isEmpty)
         #expect(never.body == "Needs your OK on mac-mini" && never.categoryIdentifier == "APPROVAL")
-        let task = NoticePresentation(PushNotice(kind: .task, id: "t", title: "Backup", body: "Done."), gatewayName: "NAS", slot: nil, showDetails: .always, unlocked: true)
+        let task = NoticePresentation(PushNotice(kind: .task, id: "t", title: "Backup", body: "Done."), gatewayName: "NAS", slot: nil, showDetails: .always)
         #expect(task.interruptionLevel == .passive && !task.plays)
     }
 

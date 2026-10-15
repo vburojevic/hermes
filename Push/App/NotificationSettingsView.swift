@@ -71,20 +71,24 @@ struct NotificationSettingsView: View {
 
             #if os(iOS)
             Section {
+                Toggle(isOn: $push.preferences.showsText) {
+                    Text("Show Message Text")
+                    Text("The reply, question or command itself. Off, a notification says only what happened (“Reply ready on \(sampleGateway)”).")
+                }
                 Toggle(isOn: $push.preferences.liveActivity) {
                     Text("Live Activity")
                     Text("Progress on the Lock Screen and in the Dynamic Island.")
                 }
-                Picker("Show details", selection: $push.preferences.showDetails) {
-                    Text("Always").tag(PushPreferences.ShowDetails.always)
-                    Text("When Unlocked").tag(PushPreferences.ShowDetails.unlocked)
-                    Text("Never").tag(PushPreferences.ShowDetails.never)
-                }
-                .pickerStyle(.navigationLink)
             } header: {
                 Text("Lock Screen")
             } footer: {
-                Text("When locked, notifications say only what kind of thing happened (“Needs your OK on \(sampleGateway)”).")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("While iPhone is locked, the text waits for Face ID when Show Previews is set to When Unlocked.")
+                    if let settings = URL(string: UIApplication.openNotificationSettingsURLString) {
+                        Link("Notification Settings", destination: settings)
+                            .font(.footnote.weight(.medium))
+                    }
+                }
             }
             .disabled(push.isDenied)
             #endif

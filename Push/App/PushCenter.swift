@@ -111,7 +111,6 @@ final class PushCenter {
 
     func sceneDidBecomeActive() {
         isActive = true
-        shared.writeUnlockProbe()
         Task {
             await refreshAuthorization()
             await refreshBadge()

@@ -96,9 +96,14 @@ def plain(markdown: str) -> str:
     return text
 
 
-def first_lines(markdown: str, lines: int = 2, limit: int = 240) -> str:
-    rows = [row.strip() for row in plain(markdown).splitlines() if row.strip()]
-    return clip(" ".join(rows[:lines]), limit)
+def first_lines(markdown: str, lines: int = 2, limit: int = 240, *, breaks: bool = False) -> str:
+    """The text's opening lines, plain. ``breaks`` keeps them as lines (a reply's points read as points
+    in the notification) instead of one run of text."""
+    rows = [clip(row, limit) for row in plain(markdown).splitlines() if row.strip()]
+    if not breaks:
+        return clip(" ".join(rows[:lines]), limit)
+    text = "\n".join(rows[:lines])
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def short_hash(value: str) -> str:
@@ -152,7 +157,7 @@ def reply(*, session_id: str, turn_id: str, chat: str, gateway_name: str, text: 
     # The gist of the answer, not just "Hermes replied": the first lines, enough to act on.
     return Notice(
         kind="reply", id=f"reply-{short_hash(session_id)}", session_id=session_id, thread=session_id, summary=chat,
-        title=chat or "Hermes", body=first_lines(text, 3, 360) or "Hermes finished.",
+        title=chat or "Hermes", body=first_lines(text, 4, 480, breaks=True) or "Hermes finished.",
         hidden=f"Reply ready on {gateway_name}", extra={"turn_id": turn_id, "seconds": round(seconds)})
 
 
@@ -160,7 +165,7 @@ def task(*, job_id: str, name: str, gateway_name: str, text: str, failed: bool) 
     return Notice(
         kind="task_failed" if failed else "task", id=f"task-{short_hash(job_id or name)}",
         thread=f"task:{job_id or name}", summary=name, title=name or "Scheduled task",
-        subtitle="Failed" if failed else "", body=first_lines(text, 4, 400) or ("Failed." if failed else "Done."),
+        subtitle="Failed" if failed else "", body=first_lines(text, 4, 400, breaks=True) or ("Failed." if failed else "Done."),
         hidden=(f"A task failed on {gateway_name}" if failed else f"A task finished on {gateway_name}"),
         extra={"job_id": job_id, "failed": failed})
 
@@ -181,7 +186,7 @@ def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: 
             mention: bool) -> Notice:
     return Notice(
         kind="message", id=f"msg-{short_hash(room_id + member_id + str(time.time()))}", thread=f"room:{room_id}",
-        summary=room, title=bot or member_id, subtitle=room, body=first_lines(text, 3, 300),
+        summary=room, title=bot or member_id, subtitle=room, body=first_lines(text, 3, 300, breaks=True),
         hidden=f"New message on {gateway_name}",
         extra={"room_id": room_id, "member_id": member_id, "bot": bot, "mention": mention})
 

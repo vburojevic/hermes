@@ -31,7 +31,7 @@ DEFAULT_PREFERENCES = {
     "bots": "mentions",         # all | mentions | off
     "background": True,         # unused: helpers no longer notify on their own; older apps still send it
     "live_activity": True,
-    "show_details": "unlocked",  # always | unlocked | never (the app applies it; synced for completeness)
+    "show_details": "always",  # always | unlocked | never (the app applies it; synced for completeness)
     "mention_names": [],        # how the person is @mentioned in group chats
 }
 CHOICE_OPTIONS = {"tasks": {"all", "failures", "off"}, "bots": {"all", "mentions", "off"},

@@ -388,7 +388,7 @@ def test_reply_after_walking_away_and_kanban_jobs(hermes):
     plugins.invoke_hook("on_session_end", session_id=session, turn_id="walk-1", completed=True)
     push = wait_for(lambda: next(iter(pushes_for(token, "alert")), None))
     body = opened(key, push)["body"]
-    assert body == "Freed 42 GB. Kept the last 7 days. Nothing else touched."
+    assert body == "Freed 42 GB.\nKept the last 7 days.\nNothing else touched.\nMore."  # its lines, as lines
     # A subagent's turn and a Telegram chat's turn never notify here.
     before = len(pushes_for(token, "alert"))
     for turn, extra in (("sub-1", {"parent_session_id": session}), ("tg-1", {"platform": "telegram"})):

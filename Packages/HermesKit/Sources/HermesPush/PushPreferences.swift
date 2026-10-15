@@ -27,7 +27,15 @@ public struct PushPreferences: Codable, Sendable, Hashable {
     public var bots = Bots.mentions
     public var background = true
     public var liveActivity = true
-    public var showDetails = ShowDetails.unlocked
+    /// `never` keeps every notification to its kind ("Reply ready on Home Server"). `always` and
+    /// `unlocked` (older builds' default) both carry the text; the Lock Screen hides it until
+    /// unlock when iPhone's Show Previews says When Unlocked.
+    public var showDetails = ShowDetails.always
+    /// Settings → Notifications → Show Message Text.
+    public var showsText: Bool {
+        get { showDetails != .never }
+        set { showDetails = newValue ? .always : .never }
+    }
     /// How the person is @mentioned in group chats.
     public var mentionNames: [String] = []
 

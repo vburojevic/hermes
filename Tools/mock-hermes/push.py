@@ -30,7 +30,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 PLUGIN = HERE.parent / "hermes-app-push"
 PRESENCE_TTL = 75
 DEFAULT_PREFERENCES = {"approvals": True, "passwords": True, "replies": True, "reply_after": 30, "tasks": "all",
-                       "bots": "mentions", "background": True, "live_activity": True, "show_details": "unlocked",
+                       "bots": "mentions", "background": True, "live_activity": True, "show_details": "always",
                        "mention_names": []}
 
 B: dict = {}          # backend.py's globals
@@ -393,6 +393,19 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
     methods["command.dispatch"] = dispatch
     methods["approval.respond"] = approval_respond
     methods["request.answer"] = request_answer
+
+    def push_reply(query, body):
+        # Mock-only: a finished reply's notice now, as if its turn ran long ({"text", "chat", "session_id",
+        # "profile"}), for checking how notifications read without waiting out a 30 s turn.
+        notice = notices.reply(session_id=body.get("session_id") or "mock_session", turn_id=f"mock-{time.time()}",
+                               chat=body.get("chat") or "", gateway_name=GATEWAY["name"], text=body.get("text") or "",
+                               seconds=999)
+        if body.get("profile"):
+            notice.extra["profile"] = body["profile"]
+        deliver(notice)
+        return 200, {"ok": True}
+
+    backend_globals["HTTP_ROUTES"][("POST", "/api/mock/push-reply")] = push_reply
 
     original_request = backend_globals["server_request"]
 

@@ -19,11 +19,13 @@ public struct NoticePresentation: Sendable, Equatable {
 
     /// - Parameters:
     ///   - gatewayName: the app's name for the gateway, else the gateway's own.
-    ///   - showDetails: Settings → Notifications → Show details.
-    ///   - unlocked: whether the device was unlocked when it arrived.
+    ///   - showDetails: Settings → Notifications → Show Message Text. The Lock Screen is iPhone's:
+    ///     with Show Previews at When Unlocked it shows the category's placeholder ("Reply ready on
+    ///     Home Server") and the text once Face ID unlocks. Deciding it here, as the notice arrived,
+    ///     left a phone that was locked then with the placeholder for good.
     public init(
         _ notice: PushNotice, gatewayName: String?, slot: Int?,
-        showDetails: PushPreferences.ShowDetails, unlocked: Bool
+        showDetails: PushPreferences.ShowDetails
     ) {
         let gateway = gatewayName ?? notice.gateway?.name
         let category = Self.category(for: notice)
@@ -85,8 +87,8 @@ public struct NoticePresentation: Sendable, Equatable {
             relevanceScore = notice.kind == .reply ? 0.5 : 0.6
         }
         plays = interruptionLevel != .passive
-        // Never, or When Unlocked while locked: only the kind and the gateway, no content.
-        if showDetails == .never || (showDetails == .unlocked && !unlocked) {
+        // Never: only the kind and the gateway, no content.
+        if showDetails == .never {
             hidesDetails = true
             title = "Hermes"
             subtitle = ""

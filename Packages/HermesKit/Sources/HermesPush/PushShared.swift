@@ -139,26 +139,6 @@ public final class PushShared: @unchecked Sendable {
         encode(names, "push.bots.\(appID.uuidString)")
     }
 
-    // MARK: Lock state
-
-    private var probeURL: URL? { container?.appending(path: "unlock-probe") }
-
-    /// Written by the app with complete protection: unreadable while the device is locked.
-    public func writeUnlockProbe() {
-        guard let probeURL else { return }
-        #if os(iOS)
-        try? Data("ok".utf8).write(to: probeURL, options: [.atomic, .completeFileProtection])
-        #else
-        try? Data("ok".utf8).write(to: probeURL, options: .atomic)
-        #endif
-    }
-
-    /// Whether the device is unlocked right now, as far as an extension can tell.
-    public var isUnlocked: Bool {
-        guard let probeURL, FileManager.default.fileExists(atPath: probeURL.path) else { return true }
-        return (try? Data(contentsOf: probeURL)) != nil
-    }
-
     // MARK: Device key
 
     private static let keyService = "co.caffeinatedcode.hermes.push"

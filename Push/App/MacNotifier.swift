@@ -102,7 +102,7 @@ final class MacNotifier {
     private func post(_ notice: PushNotice, posted entry: Posted) {
         guard center.canNotify, !center.isShowing(notice) else { return }
         let presentation = NoticePresentation(notice, gatewayName: entry.conversation.flatMap { _ in notice.gateway?.name },
-                                              slot: nil, showDetails: .always, unlocked: true)
+                                              slot: nil, showDetails: .always)
         let content = UNMutableNotificationContent()
         presentation.apply(to: content)
         content.userInfo = PushUserInfo.values(for: notice).merging([PushUserInfo.localGateway: entry.gatewayID.uuidString]) { $1 }
@@ -178,10 +178,11 @@ final class MacNotifier {
         }
     }
 
+    /// The reply's opening lines, as lines (its points read as points), like the iPhone's.
     static func firstLines(_ text: String) -> String {
         let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        let joined = lines.prefix(2).joined(separator: " ")
-        return joined.count > 240 ? String(joined.prefix(239)) + "…" : joined
+        let joined = lines.prefix(4).joined(separator: "\n")
+        return joined.count > 480 ? String(joined.prefix(479)) + "…" : joined
     }
 
     /// The message the latest turn answered came from the Bot's own machinery, not from you.
