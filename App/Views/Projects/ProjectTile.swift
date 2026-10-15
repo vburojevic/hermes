@@ -164,3 +164,18 @@ struct OutlineTile: View {
             .accessibilityHidden(true)
     }
 }
+
+/// Counts as the project screens say them ("1 chat", "9 chats").
+enum ProjectCount {
+    static func chats(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 chat") : String(localized: "\(count) chats")
+    }
+
+    static func tasks(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 task") : String(localized: "\(count) tasks")
+    }
+
+    static func branches(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 branch") : String(localized: "\(count) branches")
+    }
+}

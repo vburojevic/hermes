@@ -184,13 +184,32 @@ public struct ProjectsClient: Sendable {
     }
 
     /// Folders under `word` on the gateway (`complete.path`), for choosing another folder.
-    /// `word` starts with `~/` or `/`; results keep that form.
+    /// `word` ends with `/` and starts with `~/` or `/`; results keep that form.
+    ///
+    /// `complete.path` stops at 30 entries, files and dot-entries included, so a busy folder (a
+    /// home folder) would hide most of its folders. When a listing comes back full, the folder is
+    /// asked again per first character (the gateway matches names by prefix) and merged.
     public func folders(under word: String) async throws -> [String] {
+        let first = try await listing(word)
+        guard first.total >= 30, word.hasSuffix("/") else { return first.folders }
+        let starts = "abcdefghijklmnopqrstuvwxyz0123456789_".map(String.init)
+        var found = Set(first.folders)
+        try await withThrowingTaskGroup(of: [String].self) { group in
+            for start in starts {
+                group.addTask { try await self.listing(word + start).folders }
+            }
+            for try await folders in group { found.formUnion(folders) }
+        }
+        return found.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private func listing(_ word: String) async throws -> (folders: [String], total: Int) {
         let result = try await call("complete.path", ["word": .string(word)])
-        guard case .array(let items)? = result["items"] else { return [] }
-        return items.compactMap { item -> String? in
+        guard case .array(let items)? = result["items"] else { return ([], 0) }
+        let folders = items.compactMap { item -> String? in
             guard item["meta"]?.stringValue == "dir" || item["kind"]?.stringValue == "dir", let text = item["text"]?.stringValue else { return nil }
             return text
         }
+        return (folders, items.count)
     }
 }

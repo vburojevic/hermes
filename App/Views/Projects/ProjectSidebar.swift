@@ -139,7 +139,7 @@ struct ProjectRowLabel: View {
     static func accessibilityText(name: String, count: Int, working: Bool) -> String {
         working
             ? String(localized: "\(name), project, working")
-            : String(localized: "\(name), project, \(count) chats")
+            : String(localized: "\(name), project, \(ProjectCount.chats(count))")
     }
 }
 
@@ -220,7 +220,7 @@ struct MacProjectRows: View {
             .padding(.leading, Self.disclosureWidth + 16)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "\(lane.displayName), \(lane.kind == .main ? String(localized: "branch") : String(localized: "worktree")), \(lane.sessions.count) chats"))
+        .accessibilityLabel(String(localized: "\(lane.displayName), \(lane.kind == .main ? String(localized: "branch") : String(localized: "worktree")), \(ProjectCount.chats(lane.sessions.count))"))
     }
 
     private func toggle() {

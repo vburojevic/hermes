@@ -14,6 +14,7 @@ struct ProjectHomeView: View {
     @State private var expandedLanes: Set<String> = []
     /// The toolbar names the project once its header has scrolled away.
     @State private var headerScrolledAway = false
+    @State private var width: CGFloat = 0
 
     private var projects: ProjectsModel { workspace.projects }
     private var node: ProjectNode? { projects.node(projectID) }
@@ -91,7 +92,9 @@ struct ProjectHomeView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 Group {
-                    if isWide {
+                    // Two columns where there's room (iPad landscape, Mac); one on iPhone and
+                    // narrower iPad layouts, with the facts at the end.
+                    if isWide, width >= 860 {
                         HStack(alignment: .top, spacing: 28) {
                             VStack(alignment: .leading, spacing: 0) {
                                 header
@@ -116,7 +119,8 @@ struct ProjectHomeView: View {
                             factsCard
                                 .padding(.top, 16)
                         }
-                        .padding(.horizontal, 20)
+                        .frame(maxWidth: 640)
+                        .padding(.horizontal, isWide ? 32 : 20)
                     }
                 }
                 .padding(.top, isWide ? 24 : 8)
@@ -124,6 +128,7 @@ struct ProjectHomeView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > 140 } action: { _, away in
                 if away != headerScrolledAway { withAnimation(.easeOut(duration: 0.2)) { headerScrolledAway = away } }
             }
@@ -191,10 +196,10 @@ struct ProjectHomeView: View {
     /// "9 chats · 2 branches · 3 tasks · Studio Mac".
     private var summary: String {
         let detail = projects.details[projectID]
-        var parts = [String(localized: "\(node?.sessionCount ?? 0) chats")]
+        var parts = [ProjectCount.chats(node?.sessionCount ?? 0)]
         if let detail {
-            if detail.branchCount > 1 { parts.append(String(localized: "\(detail.branchCount) branches")) }
-            if detail.taskCount > 0 { parts.append(String(localized: "\(detail.taskCount) tasks")) }
+            if detail.branchCount > 1 { parts.append(ProjectCount.branches(detail.branchCount)) }
+            if detail.taskCount > 0 { parts.append(ProjectCount.tasks(detail.taskCount)) }
         }
         parts.append(workspace.bot.name)
         return parts.joined(separator: " · ")
@@ -375,7 +380,7 @@ struct LaneHeader: View {
                     .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             }
             Spacer(minLength: 8)
-            Text(lane.kind == .tasks ? String(localized: "\(count) tasks") : String(localized: "\(count) chats"))
+            Text(lane.kind == .tasks ? ProjectCount.tasks(count) : ProjectCount.chats(count))
                 .font(.footnote)
                 .foregroundStyle(Theme.tertiaryText)
                 .lineLimit(1)

@@ -109,7 +109,8 @@ struct FolderPickerSheet: View {
         defer { isLoading = false }
         do {
             entries = try await projects.folders(under: path)
-                .filter { !ProjectPath.lastComponent($0).hasPrefix(".") || path != "~/" || $0.hasSuffix("/.hermes/") }
+                // Hidden folders stay out of the way, except Hermes's own (its agent checkout).
+                .filter { !ProjectPath.lastComponent($0).hasPrefix(".") || ProjectPath.lastComponent($0) == ".hermes" }
             error = nil
         } catch {
             entries = []

@@ -114,7 +114,7 @@ struct AllProjectsView: View {
     private func subtitle(_ node: ProjectNode) -> String {
         var parts: [String] = []
         if let path = projects.project(node.id)?.primaryPath ?? node.path { parts.append(projects.displayPath(path)) }
-        parts.append(node.sessionCount == 1 ? String(localized: "1 chat") : String(localized: "\(node.sessionCount) chats"))
+        parts.append(ProjectCount.chats(node.sessionCount))
         if let date = node.lastActive, node.sessionCount > 0 { parts.append(LaneChatRow.time(date)) }
         return parts.joined(separator: " · ")
     }
@@ -172,7 +172,7 @@ struct RepoSuggestionRow: View {
                     .font(.body)
                     .foregroundStyle(Theme.primaryText)
                     .lineLimit(1)
-                Text(repo.sessions == 1 ? "\(displayPath) · \(String(localized: "1 chat"))" : "\(displayPath) · \(String(localized: "\(repo.sessions) chats"))")
+                Text("\(displayPath) · \(ProjectCount.chats(repo.sessions))")
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
