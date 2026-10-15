@@ -39,7 +39,11 @@ struct MacCheckpointsSheet: View {
             Divider()
             footer
         }
+        #if os(macOS)
         .frame(width: 820, height: 560)
+        #else
+        .frame(width: 800, height: 600)
+        #endif
         .background(Theme.sheetBackground)
         .task {
             await model.refresh(force: true)

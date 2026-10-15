@@ -32,9 +32,10 @@ struct ComposerQuery: Equatable {
 
 /// A key the composer handles before the text does.
 enum ComposerKey {
-    /// Return. ⌥Return is `sendNext` and ⌘Return `redirect` (docs/follow-ups.md §1); the composer
-    /// treats them as a new line and Send when no turn runs.
-    case send, newline, sendNext, redirect, up, down, tab, escape
+    /// Return. On the Mac ⌥Return is `sendNext` and ⌘Return `redirect` (docs/follow-ups.md §1);
+    /// an iPad's hardware keyboard has ⌥Return open the mode menu (`modeMenu`) and ⌘Return send
+    /// as Send Next (§4a). With no turn running they're a new line and Send.
+    case send, newline, sendNext, redirect, modeMenu, up, down, tab, escape
 }
 
 /// A pill the person long-pressed (hovered on the Mac): what it is and where, in the field's
@@ -179,8 +180,9 @@ final class PillUITextView: UITextView {
         var commands = [
             UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(returnKey)),
             UIKeyCommand(input: "\r", modifierFlags: .shift, action: #selector(newlineKey)),
-            UIKeyCommand(input: "\r", modifierFlags: .alternate, action: #selector(sendNextKey)),
-            UIKeyCommand(input: "\r", modifierFlags: .command, action: #selector(redirectKey)),
+            // iPad (docs/follow-ups.md §4a): ⌥Return opens the mode menu, ⌘Return sends next.
+            UIKeyCommand(input: "\r", modifierFlags: .alternate, action: #selector(modeMenuKey)),
+            UIKeyCommand(input: "\r", modifierFlags: .command, action: #selector(commandReturnKey)),
         ]
         if menuOpen {
             commands += [
@@ -202,12 +204,13 @@ final class PillUITextView: UITextView {
         if onKey?(.newline) != true { insertText("\n") }
     }
 
-    @objc private func sendNextKey() {
-        if onKey?(.sendNext) != true { insertText("\n") }
+    @objc private func modeMenuKey() {
+        if onKey?(.modeMenu) != true { insertText("\n") }
     }
 
-    @objc private func redirectKey() {
-        _ = onKey?(.redirect)
+    /// ⌘Return: Send Next while a turn runs, otherwise Send.
+    @objc private func commandReturnKey() {
+        if onKey?(.sendNext) != true { _ = onKey?(.send) }
     }
 
     @objc private func upKey() { _ = onKey?(.up) }

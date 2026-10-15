@@ -175,6 +175,10 @@ struct RootView: View {
             #endif
         case .settings:
             SettingsView()
+                #if os(iOS)
+                // Page-sized on iPad: Apps and Tools splits into two columns in landscape.
+                .presentationSizing(.page)
+                #endif
         case .pairing(let botID):
             PairingSheet(botID: botID)
                 #if os(macOS)

@@ -297,7 +297,7 @@ private struct GroupComposer: View {
             guard sendWithReturn else { return false }
             if hasText { chat.send() }
             return true
-        case .newline, .sendNext:
+        case .newline, .sendNext, .modeMenu:
             return false
         case .redirect:
             // ⌘Return sends.

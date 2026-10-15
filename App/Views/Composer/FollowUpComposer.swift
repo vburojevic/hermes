@@ -13,7 +13,6 @@ struct FollowUpModeChip: View {
     @Bindable var conversation: ConversationModel
     var focused: Binding<Bool>
 
-    @State private var showsMenu = false
     @State private var refocus = false
     /// Picks from the menu, for the tick (not the reset after each send).
     @State private var picks = 0
@@ -29,7 +28,7 @@ struct FollowUpModeChip: View {
         Button {
             refocus = focused.wrappedValue
             focused.wrappedValue = false
-            showsMenu = true
+            conversation.showsFollowUpMenu = true
         } label: {
             ChipLabel(title: mode.title, symbol: mode.symbol, isActive: true, showsChevron: !isLocked)
         }
@@ -39,19 +38,19 @@ struct FollowUpModeChip: View {
         .accessibilityLabel("Send mode")
         .accessibilityValue(mode.title)
         .help("Send mode")
-        .popover(isPresented: $showsMenu, arrowEdge: .bottom) {
+        .popover(isPresented: $conversation.showsFollowUpMenu, arrowEdge: .bottom) {
             FollowUpModeMenu(modes: modes, selected: mode) { picked in
                 if conversation.editingQueued != nil {
                     conversation.followUpPick = picked == .sendNext ? nil : picked
                 } else {
                     conversation.followUpPick = picked == FollowUpMode.preferredDefault ? nil : picked
                 }
-                showsMenu = false
+                conversation.showsFollowUpMenu = false
                 picks += 1
             }
             .presentationCompactAdaptation(.popover)
         }
-        .onChange(of: showsMenu) { _, open in
+        .onChange(of: conversation.showsFollowUpMenu) { _, open in
             if !open, refocus { focused.wrappedValue = true }
         }
         .sensoryFeedback(.selection, trigger: picks)

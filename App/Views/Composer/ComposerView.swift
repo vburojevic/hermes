@@ -653,6 +653,11 @@ struct ComposerView: View {
             guard conversation.canSendFollowUp, conversation.availableFollowUpModes.contains(.sendNext) else { return false }
             conversation.sendFollowUp(.sendNext)
             return true
+        case .modeMenu:
+            // iPad ⌥Return: the send-mode menu while a turn runs; otherwise a new line.
+            guard conversation.canSendFollowUp, conversation.availableFollowUpModes.count > 1 else { return false }
+            conversation.showsFollowUpMenu = true
+            return true
         case .redirect:
             // ⌘Return: Redirect while a turn runs (where the gateway can); otherwise Send.
             if conversation.canSendFollowUp, sendWithReturn, conversation.availableFollowUpModes.contains(.redirect) {

@@ -10,7 +10,69 @@ struct AppsAndToolsView: View {
     /// The Add sheet opened by `-HERMES_APPS_TOOLS mcp:add` (screenshots).
     @State private var debugAddsServer = false
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var width: CGFloat = 0
+
+    /// iPad landscape (`ipadAppsTools`): the tabs and list on the left, the selected item on the
+    /// right. Portrait and iPhone push the detail.
+    private var isWide: Bool {
+        #if os(iOS)
+        sizeClass == .regular && width >= 900
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
+        Group {
+            if isWide {
+                HStack(spacing: 0) {
+                    list
+                        .formStyle(.grouped)
+                        .frame(width: 440)
+                    Divider()
+                    detailColumn
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                list
+                    .formStyle(.grouped)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .navigationTitle("Apps and Tools")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .task(id: model.isOnline) {
+            if model.isOnline { await model.load() }
+        }
+        .refreshable { await model.load() }
+        .modifier(AppsAndToolsAlerts(model: model))
+        .animation(Theme.snappy, value: model.tab)
+        .navigationDestination(item: Binding(get: { isWide ? nil : model.route }, set: { model.route = $0 })) { route in
+            switch route {
+            case .app(let slug): AppDetailView(model: model, slug: slug)
+            case .server(let name): ServerDetailView(model: model, name: name)
+            case .plugin(let key): PluginDetailView(model: model, key: key)
+            }
+        }
+        .sheet(isPresented: $debugAddsServer) { AddServerSheet(model: model) }
+        .task { await openDebugRoute() }
+        .task { await takeInstallRequest() }
+        .alert(String(localized: "Install \(model.installOffer?.title ?? "")?"),
+               isPresented: Binding(get: { model.installOffer != nil }, set: { if !$0 { model.installOffer = nil } })) {
+            Button("Install") {
+                if let offer = model.installOffer { Task { await model.install(catalogName: offer.name, title: offer.title) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(String(localized: "From the Hermes catalog. It runs on \(model.gatewayName) with the access its manifest asks for."))
+        }
+    }
+
+    /// The scope line, the tabs and the selected tab's list.
+    private var list: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
@@ -45,35 +107,31 @@ struct AppsAndToolsView: View {
             .disabled(!model.isOnline)
             .opacity(model.isOnline ? 1 : 0.55)
         }
-        .formStyle(.grouped)
-        .navigationTitle("Apps and Tools")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .task(id: model.isOnline) {
-            if model.isOnline { await model.load() }
+    }
+
+    /// The right column on iPad landscape: the chosen app, MCP server or plugin.
+    @ViewBuilder
+    private var detailColumn: some View {
+        switch model.route ?? defaultRoute {
+        case .app(let slug)?:
+            AppDetailView(model: model, slug: slug, macLayout: true).id(slug)
+        case .server(let name)?:
+            ServerDetailView(model: model, name: name, macLayout: true).id(name)
+        case .plugin(let key)?:
+            PluginDetailView(model: model, key: key, macLayout: true).id(key)
+        case nil:
+            ContentUnavailableView(model.tab == .builtIn ? "Built-in tools" : "Nothing chosen", systemImage: "puzzlepiece.extension",
+                                   description: Text(model.tab == .builtIn ? "Switch them on the left." : "Pick an app, MCP server or plugin."))
         }
-        .refreshable { await model.load() }
-        .modifier(AppsAndToolsAlerts(model: model))
-        .animation(Theme.snappy, value: model.tab)
-        .navigationDestination(item: $model.route) { route in
-            switch route {
-            case .app(let slug): AppDetailView(model: model, slug: slug)
-            case .server(let name): ServerDetailView(model: model, name: name)
-            case .plugin(let key): PluginDetailView(model: model, key: key)
-            }
-        }
-        .sheet(isPresented: $debugAddsServer) { AddServerSheet(model: model) }
-        .task { await openDebugRoute() }
-        .task { await takeInstallRequest() }
-        .alert(String(localized: "Install \(model.installOffer?.title ?? "")?"),
-               isPresented: Binding(get: { model.installOffer != nil }, set: { if !$0 { model.installOffer = nil } })) {
-            Button("Install") {
-                if let offer = model.installOffer { Task { await model.install(catalogName: offer.name, title: offer.title) } }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(String(localized: "From the Hermes catalog. It runs on \(model.gatewayName) with the access its manifest asks for."))
+    }
+
+    /// The first item of the tab, until one is picked.
+    private var defaultRoute: AppsAndToolsModel.Route? {
+        switch model.tab {
+        case .apps: model.apps.first.map { .app($0.id) }
+        case .mcp: model.servers.first.map { .server($0.name) }
+        case .plugins: model.installedPlugins.first.map { .plugin($0.key) }
+        case .builtIn: nil
         }
     }
 

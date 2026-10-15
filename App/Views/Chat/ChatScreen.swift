@@ -37,7 +37,8 @@ struct ChatScreen: View {
         #endif
     }
 
-    /// Mac and iPad landscape show the Team in an inspector; iPhone and iPad portrait push it.
+    /// Mac and iPad landscape show the Team in an inspector; iPad portrait in a sheet
+    /// (`ipadHelpers`); iPhone pushes it.
     private var usesTeamInspector: Bool {
         #if os(macOS)
         true
@@ -46,9 +47,17 @@ struct ChatScreen: View {
         #endif
     }
 
+    private var usesTeamSheet: Bool {
+        #if os(macOS)
+        false
+        #else
+        horizontalSizeClass == .regular && !usesTeamInspector
+        #endif
+    }
+
     private var helperNavigator: HelperNavigator {
         let store = conversation.helpers
-        let inspector = usesTeamInspector
+        let inspector = usesTeamInspector || usesTeamSheet
         return HelperNavigator(
             openTeam: { id in
                 store.pushedHelper = nil
@@ -115,7 +124,7 @@ struct ChatScreen: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         .environment(\.helperNavigator, helperNavigator)
-        .modifier(HelperPresentation(conversation: conversation, workspace: workspace, usesInspector: usesTeamInspector, navigator: helperNavigator))
+        .modifier(HelperPresentation(conversation: conversation, workspace: workspace, usesInspector: usesTeamInspector, usesSheet: usesTeamSheet, navigator: helperNavigator))
         // Review, Undo, the timeline and the off state (`docs/checkpoints.md`).
         .modifier(CheckpointSheets(model: conversation.checkpoints))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { screenSize = $0 }
@@ -608,11 +617,34 @@ private struct HelperPresentation: ViewModifier {
     let conversation: ConversationModel
     let workspace: BotWorkspace
     let usesInspector: Bool
+    /// iPad portrait: the Team in a sheet, its helpers pushed inside it.
+    var usesSheet = false
     let navigator: HelperNavigator
 
     func body(content: Content) -> some View {
         let store = conversation.helpers
+        let pushes = !usesInspector && !usesSheet
         content
+            .sheet(item: Binding(
+                get: { usesSheet ? store.shownTeam.map(TeamSheetID.init) : nil },
+                set: { id in
+                    store.shownTeam = id?.id
+                    if id == nil { store.shownHelper = nil }
+                }
+            )) { team in
+                NavigationStack {
+                    TeamView(store: store, conversation: conversation, workspace: workspace, teamID: team.id, style: .page)
+                        .navigationDestination(item: Binding(get: { store.shownHelper }, set: { store.shownHelper = $0 })) { helperID in
+                            HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
+                        }
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { store.shownTeam = nil }
+                            }
+                        }
+                }
+                .environment(\.helperNavigator, navigator)
+            }
             .inspector(isPresented: Binding(
                 get: { usesInspector && store.shownTeam != nil },
                 set: { if !$0 { store.shownTeam = nil; store.shownHelper = nil } }
@@ -622,7 +654,7 @@ private struct HelperPresentation: ViewModifier {
                     .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
             }
             .navigationDestination(item: Binding(
-                get: { usesInspector ? nil : store.shownTeam },
+                get: { pushes ? store.shownTeam : nil },
                 set: { id in
                     store.shownTeam = id
                     if id == nil { store.shownHelper = nil }
@@ -634,10 +666,15 @@ private struct HelperPresentation: ViewModifier {
                     }
             }
             .navigationDestination(item: Binding(
-                get: { usesInspector ? nil : store.pushedHelper },
+                get: { pushes ? store.pushedHelper : nil },
                 set: { store.pushedHelper = $0 }
             )) { helperID in
                 HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
             }
     }
+}
+
+/// The Team sheet's identity (a team id).
+private struct TeamSheetID: Identifiable, Hashable {
+    let id: String
 }

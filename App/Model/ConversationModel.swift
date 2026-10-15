@@ -460,6 +460,9 @@ final class ConversationModel: Identifiable {
         return await attachGatewayChat() != nil
     }
 
+    /// The send-mode menu is open (the chip, or ⌥Return on an iPad's keyboard).
+    var showsFollowUpMenu = false
+
     /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`.
     var helperSteerTarget: HelperSteerTarget?
 

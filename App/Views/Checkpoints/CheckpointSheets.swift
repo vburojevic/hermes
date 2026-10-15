@@ -8,6 +8,17 @@ import SwiftUI
 /// Presents the chat's checkpoint sheets.
 struct CheckpointSheets: ViewModifier {
     @Bindable var model: CheckpointsModel
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// Mac, and iPad at regular width (`ipadCheckpoints`): one sheet with the timeline left and
+    /// the files and diff right.
+    private var usesTwoColumns: Bool {
+        #if os(macOS)
+        true
+        #else
+        sizeClass == .regular
+        #endif
+    }
 
     func body(content: Content) -> some View {
         content
@@ -15,19 +26,21 @@ struct CheckpointSheets: ViewModifier {
                 Group {
                     switch sheet {
                     case .review(let turnID):
-                        #if os(macOS)
-                        MacCheckpointsSheet(model: model, initial: model.checkpoint(beforeTurn: turnID).map(CheckpointsModel.stableKey))
-                        #else
-                        ReviewChangesSheet(model: model, turnID: turnID)
-                        #endif
+                        if usesTwoColumns {
+                            MacCheckpointsSheet(model: model, initial: model.checkpoint(beforeTurn: turnID).map(CheckpointsModel.stableKey))
+                                .presentationSizing(.fitted)
+                        } else {
+                            ReviewChangesSheet(model: model, turnID: turnID)
+                        }
                     case .confirm(let target):
                         CheckpointConfirmSheet(model: model, target: target) { model.sheet = nil }
                     case .timeline(let selected):
-                        #if os(macOS)
-                        MacCheckpointsSheet(model: model, initial: selected)
-                        #else
-                        CheckpointsTimelineSheet(model: model, initial: selected)
-                        #endif
+                        if usesTwoColumns {
+                            MacCheckpointsSheet(model: model, initial: selected)
+                                .presentationSizing(.fitted)
+                        } else {
+                            CheckpointsTimelineSheet(model: model, initial: selected)
+                        }
                     case .off:
                         CheckpointsOffSheet(model: model)
                     }
