@@ -131,7 +131,7 @@ struct TranscriptView: View {
         })
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .defaultScrollAnchor(isPrepending ? .bottom : .top, for: .sizeChanges)
+        .defaultScrollAnchor(sizeChangeAnchor, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
         #if DEBUG
@@ -139,7 +139,7 @@ struct TranscriptView: View {
             guard UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG") else { return "" }
             return "off=\(Int(g.contentOffset.y)) size=\(Int(g.contentSize.height)) cont=\(Int(g.containerSize.height)) vis=\(Int(g.visibleRect.minY))-\(Int(g.visibleRect.maxY)) ins=\(Int(g.contentInsets.top))/\(Int(g.contentInsets.bottom))"
         } action: { _, line in
-            if !line.isEmpty { print("SCROLLLOG \(line) follow=\(isFollowing) keepsTop=\(keepsTop)") }
+            if !line.isEmpty { print("SCROLLLOG \(Int(CACurrentMediaTime() * 1000) % 100_000)ms \(line) follow=\(isFollowing) keepsTop=\(keepsTop)") }
         }
         #endif
         .onScrollGeometryChange(for: ScrollEdge.self) { geometry in
@@ -170,11 +170,22 @@ struct TranscriptView: View {
             guard isFollowing, !keepsTop, settled, abs(new.distance) > 0.5 else { return }
             let changed = new.height != old.height || new.inset != old.inset || new.container != old.container
             guard changed else { return }
+            #if os(macOS)
+            // The Mac keeps to the very end, at once: the bottom anchor (`sizeChangeAnchor`) then
+            // carries growing content in the same layout pass. Easing after it instead moved the
+            // chat in steps, pauses and jumps (the Mac's scroll view doesn't blend a new scroll
+            // animation into one under way), which read as the whole window jittering. Inside the
+            // transaction that opened a row the request would take that animation, so: none.
+            var now = Transaction()
+            now.disablesAnimations = true
+            withTransaction(now) { scrollToLatest() }
+            #else
             if abs(new.distance) < 600 {
                 withAnimation(.easeOut(duration: 0.24)) { scrollToLatest() }
             } else {
                 scrollToLatest()
             }
+            #endif
             settleSoon()
         }
         .onScrollPhaseChange { _, phase in
@@ -191,10 +202,16 @@ struct TranscriptView: View {
             }
         }
         .onChange(of: conversation.rows.count, initial: true) { pinWindow() }
-        // Sending brings the chat to its end.
+        // Sending brings the chat to its end. (On the Mac, at the end already, the bottom anchor
+        // carries the new message in; a scroll animation on top of it only fought it.)
         .onChange(of: conversation.sentTurns) {
+            #if os(macOS)
+            let wasAway = !isFollowing || edge.distance > 1
+            #else
+            let wasAway = true
+            #endif
             isFollowing = true
-            withAnimation(Self.rowsAnimation) { scrollToLatest() }
+            if wasAway { withAnimation(Self.rowsAnimation) { scrollToLatest() } }
         }
         .overlay(alignment: .bottom) {
             if !isFollowing {
@@ -233,6 +250,7 @@ struct TranscriptView: View {
         }
         .modifier(WhenSettled(isDue: pageDue, action: fillWindow))
         .opacity(settled ? 1 : 0)
+        .modifier(TakesOfferedSize())
     }
 
     private func firstShownIndex(in all: [TranscriptItem]) -> Int {
@@ -419,6 +437,17 @@ struct TranscriptView: View {
 
     private static let endID = "transcript-end"
 
+    /// What stays put when the content changes size: the bottom while following the end on the
+    /// Mac (the content moves up in the same layout pass as it grows: a scroll request resolves
+    /// against the previous frame, so following by scrolling trailed every change by a frame) and
+    /// while earlier messages go in above; the top otherwise (reading back, opening a fold).
+    private var sizeChangeAnchor: UnitPoint {
+        #if os(macOS)
+        if isFollowing, !isScrolledByHand, !keepsTop { return .bottom }
+        #endif
+        return isPrepending ? .bottom : .top
+    }
+
     /// Once things stop moving, make sure the end really is on the composer: a change that lands
     /// while a scroll is under way can leave it short.
     private func settleSoon() {
@@ -431,10 +460,16 @@ struct TranscriptView: View {
     }
 
     private func scrollToLatest() {
+        #if os(macOS)
+        // The very end, above the composer: the bottom anchor holds on to the content only while
+        // it's exactly there (the end marker sits the stack's bottom padding short of it).
+        position.scrollTo(edge: .bottom)
+        #else
         // The same request twice is no change to a scroll position, so a second follow while the
         // first is under way would be dropped: alternate between two anchors that mean the same.
         edge.flip.toggle()
         position.scrollTo(id: Self.endID, anchor: UnitPoint(x: edge.flip ? 0.5 : 0.25, y: 1))
+        #endif
     }
 
     /// How rows come and go (`ConversationModel.animateRows` uses the same).
@@ -598,6 +633,26 @@ private struct WhenSettled: ViewModifier {
     }
 }
 
+/// The transcript takes the space it's offered without measuring its rows. Asked for a size
+/// without one (the Mac window works out its minimum and maximum on every layout pass), a scroll
+/// view measures all of its content: in a long chat, much of each frame while a reply streamed in
+/// or a message went out.
+private struct TakesOfferedSize: ViewModifier {
+    func body(content: Content) -> some View {
+        OfferedSize { content }
+    }
+
+    private struct OfferedSize: Layout {
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            proposal.replacingUnspecifiedDimensions(by: CGSize(width: 320, height: 320))
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+        }
+    }
+}
+
 /// A row that takes its height gradually as it appears: the space for it opens over the
 /// animation instead of in one frame. The row itself is laid out at full size from the start.
 struct GrowIn: ViewModifier, Animatable {
@@ -638,5 +693,16 @@ private struct HeightFraction: Layout {
         }
         let size = child.sizeThatFits(ProposedViewSize(width: bounds.width, height: proposal.height))
         child.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: size.height))
+    }
+
+    // Every row keeps this layout (a transition's identity stays applied), and the default
+    // alignment answer asks the whole row again: the transcript's stack, aligning its rows, walked
+    // every row's contents on each layout pass. A row's edges are its own frame's.
+    func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+        nil
+    }
+
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+        nil
     }
 }

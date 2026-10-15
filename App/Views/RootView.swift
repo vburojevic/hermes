@@ -189,6 +189,19 @@ struct RootView: View {
     /// `-HERMES_SEND <text>` sends a message in a new chat once connected (turn screenshots and
     /// flow tests without driving the keyboard). Waits for Bot Mode so it runs over the socket.
     private func sendDebugMessage(in workspace: BotWorkspace) async {
+        // `-HERMES_SEND_HERE <text>` sends into the chat that's open, `-HERMES_SEND_HERE_AFTER <s>`
+        // after launch (default 6), three times 20 s apart (send-animation checks).
+        if let text = UserDefaults.standard.string(forKey: "HERMES_SEND_HERE"), !text.isEmpty {
+            let after = UserDefaults.standard.double(forKey: "HERMES_SEND_HERE_AFTER")
+            try? await Task.sleep(for: .seconds(after > 0 ? after : 6))
+            for round in 1...3 {
+                let conversation = workspace.currentConversation
+                conversation.draft = "\(text) (\(round))"
+                conversation.send()
+                try? await Task.sleep(for: .seconds(20))
+            }
+            return
+        }
         // `-HERMES_DRAFT <text>` opens a new chat with the text typed but not sent.
         if let typed = UserDefaults.standard.string(forKey: "HERMES_DRAFT"), !typed.isEmpty {
             for _ in 0..<40 where workspace.roster != nil && workspace.roster?.isConnected != true {
