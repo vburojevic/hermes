@@ -308,13 +308,19 @@ struct TranscriptView: View {
     }
 
     /// Scrolls to the first message with the search result's words and flashes it. A message
-    /// not loaded yet brings in older pages, at most 5.
+    /// not loaded yet brings in older pages, at most 5. Waits for the opening animation (on
+    /// iPhone the drawer slides away over the chat) and the first page, so the flash is seen.
     private func landOnSearchMatch() async {
         guard let focus = conversation.searchFocus else { return }
-        for _ in 0..<60 where conversation.loadState != .loaded || conversation.rows.isEmpty || !settled {
+        for _ in 0..<60 where conversation.loadState != .loaded || conversation.rows.isEmpty || !settled || !pageDue {
             try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
         }
+        try? await Task.sleep(for: .milliseconds(100))
+        for _ in 0..<10 where isPrepending {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        guard !Task.isCancelled else { return }
         var target = focus.target(in: conversation.rows)
         var pages = 0
         while target == nil, conversation.hasEarlierMessages, pages < 5, !Task.isCancelled {
@@ -322,9 +328,10 @@ struct TranscriptView: View {
             pages += 1
             target = focus.target(in: conversation.rows)
         }
+        guard !Task.isCancelled else { return }
+        if let target { await land(on: target) }
+        // Last: the focus is this task's id, and clearing it cancels the task (and its flash).
         if conversation.searchFocus?.id == focus.id { conversation.searchFocus = nil }
-        guard let target, !Task.isCancelled else { return }
-        await land(on: target)
     }
 
     /// The row in-chat find is on.
