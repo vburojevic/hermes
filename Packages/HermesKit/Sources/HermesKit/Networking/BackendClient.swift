@@ -127,17 +127,23 @@ public actor BackendClient {
 
     /// The `/api/ws` URL with this credential attached (`?token=` or a one-time `?ticket=`).
     public func gatewaySocketURL() async throws -> URL {
-        var components = URLComponents(url: endpoint("api/ws"), resolvingAgainstBaseURL: false)!
+        try await socketURL(path: "api/ws")
+    }
+
+    /// A WebSocket URL on this backend with the credential attached: the session token, or a
+    /// one-time ticket (30 s, single use) minted with the login cookies.
+    func socketURL(path: String, query: [URLQueryItem] = []) async throws -> URL {
+        var components = URLComponents(url: endpoint(path), resolvingAgainstBaseURL: false)!
         components.scheme = baseURL.scheme == "https" ? "wss" : "ws"
         switch credential {
         case .sessionToken(let token):
-            components.queryItems = [URLQueryItem(name: "token", value: token)]
+            components.queryItems = query + [URLQueryItem(name: "token", value: token)]
         case .cookies:
             let (data, _) = try await send(path: "api/auth/ws-ticket", method: "POST", body: .object([:]))
             guard let ticket = (try? JSONDecoder().decode(JSONValue.self, from: data))?["ticket"]?.stringValue else {
                 throw Failure.signInRequired
             }
-            components.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+            components.queryItems = query + [URLQueryItem(name: "ticket", value: ticket)]
         case nil:
             throw Failure.signInRequired
         }
@@ -369,11 +375,18 @@ public actor BackendClient {
 
     // MARK: - Plumbing
 
+    /// A call to the kanban plugin (`/api/plugins/kanban/<path>`); the Board's calls are in
+    /// `BoardAPI.swift`.
+    func kanban(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: JSONValue? = nil) async throws -> JSONValue {
+        let (data, _) = try await send(path: "api/plugins/kanban/" + path, method: method, query: query, body: body)
+        return (try? JSONDecoder().decode(JSONValue.self, from: data)) ?? .null
+    }
+
     private func endpoint(_ path: String) -> URL {
         path.isEmpty ? baseURL : baseURL.appending(path: path)
     }
 
-    private static func escape(_ component: String) -> String {
+    static func escape(_ component: String) -> String {
         component.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? component
     }
 
