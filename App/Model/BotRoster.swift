@@ -89,6 +89,11 @@ final class BotRoster {
         gatewayChats[ObjectIdentifier(conversation)] = WeakConversation(value: conversation)
     }
 
+    /// A Bot Chat or attached chat by its id.
+    func loadedConversation(id: UUID) -> ConversationModel? {
+        allConversations.first { $0.id == id }
+    }
+
     /// Every chat this socket serves: the Bot Chats and the attached normal chats.
     private var allConversations: [ConversationModel] {
         Array(conversations.values) + gatewayChats.values.compactMap(\.value)
@@ -567,6 +572,13 @@ final class BotRoster {
             workspace?.projects.changeEvent(event.type)
             return
         }
+        // The Bot Screen's control moved (`display.lease`, to every client).
+        if event.type == "display.lease" {
+            for conversation in allConversations {
+                conversation.inspectorIfLoaded?.screenLeaseChanged(event.payload)
+            }
+            return
+        }
         if event.sessionID.isEmpty {
             // Broadcasts (`approval.cancelled`, `session.reclaimed`) name their chat in the payload.
             let runtime = event.payload["session_id"]?.stringValue
@@ -594,8 +606,16 @@ final class BotRoster {
             target.receive(approval)
         } else if let card = HermesRequest.parse(request) {
             target.receive(card)
+        } else if PreviewBridge.requestMethods.contains(request.method) {
+            // Hermes reading and using the Inspector (`docs/inspector.md` §2). A chat whose
+            // Inspector isn't on screen declines, so the gateway stops waiting at once.
+            if let answer = await target.inspector.answer(request) {
+                await socket.respond(to: request.id, result: answer)
+            } else {
+                await socket.decline(request.id, code: PreviewBridge.notShownCode, message: "This chat's Inspector isn't on screen in the Hermes app.")
+            }
         } else {
-            // terminal.read, preview.*, window.read, tour: desktop-only surfaces.
+            // tour: a desktop-only surface.
             await socket.decline(request.id)
         }
     }

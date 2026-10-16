@@ -54,7 +54,7 @@ public actor BackendClient {
         }
     }
 
-    public let baseURL: URL
+    public nonisolated let baseURL: URL
     public private(set) var credential: BackendCredential?
     private let session: URLSession
     private let onCredentialChange: (@Sendable (BackendCredential) -> Void)?

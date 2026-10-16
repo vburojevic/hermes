@@ -109,6 +109,10 @@ final class ConversationModel: Identifiable {
         var output: String
         var isRunning: Bool
         var startedAt: Date
+        var cwd: String?
+        var pid: Int?
+        var exitCode: Int?
+        var finishedAt: Date?
     }
 
     private enum LocalAnchor {
@@ -391,6 +395,25 @@ final class ConversationModel: Identifiable {
         findIndex = ((findIndex + step) % count + count) % count
     }
 
+    // MARK: Inspector (docs/inspector.md)
+
+    @ObservationIgnored private var inspectorStore: InspectorModel?
+    /// This chat's Inspector: its tabs and what's behind them.
+    var inspector: InspectorModel {
+        if let inspectorStore { return inspectorStore }
+        let pins = workspace?.inspectorPins ?? InspectorPins(workspaceID: UUID())
+        let model = InspectorModel(conversation: self, pins: pins)
+        inspectorStore = model
+        if let workspace { model.restore(chatKey: stableKey, workspaceID: workspace.id) }
+        return model
+    }
+
+    /// The Inspector, only if this chat has made one.
+    var inspectorIfLoaded: InspectorModel? { inspectorStore }
+
+    /// How much of a background process's output the Terminal keeps (never logged).
+    static let processOutputLimit = 64_000
+
     // MARK: Checkpoints (docs/checkpoints.md)
 
     @ObservationIgnored private var checkpointStore: CheckpointsModel?
@@ -586,6 +609,9 @@ final class ConversationModel: Identifiable {
         if working, isResting { isResting = false }
         if working != isWorking {
             isWorking = working
+            // This Turn's base, and Hermes's ink dots going out when it's done.
+            if working, usesGateway, !isBotChat { inspector.turnStarted() }
+            if !working { inspectorStore?.turnFinished() }
             #if HERMES_PUSH
             PushCenter.shared.conversation(self, working: working)
             #endif
@@ -1351,16 +1377,37 @@ final class ConversationModel: Identifiable {
         }
     }
 
-    /// The commands behind background processes (`process.list`).
-    private func nameProcesses() async {
+    /// The chat's background processes (`process.list`): commands, folders, pids, and how the
+    /// finished ones ended. Ones this device hadn't seen yet (a reopened chat) join the list.
+    func refreshProcesses() async {
+        await nameProcesses(adding: true)
+    }
+
+    private func nameProcesses(adding: Bool = false) async {
         guard let roster = gatewayRoster, let runtime = runtimeSessionID,
               let result = try? await roster.request("process.list", ["session_id": .string(runtime)]),
               case .array(let rows)? = result["processes"] else { return }
         for row in rows {
-            guard let id = row["id"]?.stringValue ?? row["process_id"]?.stringValue,
-                  let index = processes.firstIndex(where: { $0.id == id }) else { continue }
+            guard let id = row["session_id"]?.stringValue ?? row["id"]?.stringValue ?? row["process_id"]?.stringValue else { continue }
+            let index: Int
+            if let found = processes.firstIndex(where: { $0.id == id }) {
+                index = found
+            } else if adding {
+                processes.append(BackgroundProcess(id: id, command: "", output: row["output_tail"]?.stringValue ?? "", isRunning: row["status"]?.stringValue != "exited", startedAt: .now))
+                index = processes.count - 1
+            } else {
+                continue
+            }
             if let command = row["command"]?.stringValue ?? row["cmd"]?.stringValue { processes[index].command = command }
-            if let started = row["started_at"]?.doubleValue { processes[index].startedAt = Date(timeIntervalSince1970: started) }
+            if let uptime = row["uptime_seconds"]?.doubleValue { processes[index].startedAt = Date.now.addingTimeInterval(-uptime) }
+            processes[index].cwd = row["cwd"]?.stringValue ?? processes[index].cwd
+            processes[index].pid = row["pid"]?.doubleValue.map { Int($0) } ?? processes[index].pid
+            if row["status"]?.stringValue == "exited" {
+                processes[index].isRunning = false
+                processes[index].exitCode = row["exit_code"]?.doubleValue.map { Int($0) }
+                processes[index].finishedAt = row["exited_at"]?.doubleValue.map { Date(timeIntervalSince1970: $0) } ?? processes[index].finishedAt
+            }
+            if processes[index].output.isEmpty, let tail = row["output_tail"]?.stringValue { processes[index].output = tail }
         }
     }
 
@@ -2550,6 +2597,9 @@ extension ConversationModel {
         guard let roster = gatewayRoster, let stored = sessionID else { return nil }
         var params: [String: JSONValue] = ["session_id": .string(stored), "omit_messages": .bool(true)]
         if let profile = gatewayProfile { params["profile"] = .string(profile) }
+        // As the desktop platform, so Hermes can open and use the Inspector (`desktop_ui`). The
+        // stored row keeps its own source; Bot chats keep theirs.
+        if !isBotChat { params["source"] = .string(PreviewBridge.sessionSource) }
         do {
             let snapshot = try await roster.request("session.resume", params, timeout: .seconds(45))
             guard let runtime = snapshot["session_id"]?.stringValue else { return nil }
@@ -2795,7 +2845,8 @@ extension ConversationModel {
             return runtimeSessionID
         }
         var params: [String: JSONValue] = [
-            "source": .string("hermes_app"),
+            // The desktop platform: Hermes gets its Inspector tools (`docs/inspector.md` §2).
+            "source": .string(PreviewBridge.sessionSource),
             "idempotency_key": .string(UUID().uuidString),
         ]
         if let profile = gatewayProfile { params["profile"] = .string(profile) }
@@ -2819,6 +2870,7 @@ extension ConversationModel {
         roster.attach(self)
         sessionID = stored
         stableKey = stored
+        if let workspace { inspectorStore?.restore(chatKey: stored, workspaceID: workspace.id) }
         if let info = LiveWorkspace(info: created["info"]) { liveWorkspace = info }
         workspace?.projects.placed(storedID: stored, in: placement?.projectID)
         apply(.sessionChanged(stored))
@@ -2855,6 +2907,10 @@ extension ConversationModel {
         }
         if event.type == "tool.start" || event.type == "tool.complete", event.payload["name"]?.stringValue == "delegate_task" {
             helpers.delegationEvent(event)
+        }
+        // A file changed: localhost Previews reload, open files and Changes catch up.
+        if event.type == "tool.complete", let diff = event.payload["inline_diff"]?.stringValue, !diff.isEmpty {
+            inspectorStore?.filesChanged(paths: Self.diffPaths(diff))
         }
         switch event.type {
         case "request.cancel":
@@ -2893,16 +2949,36 @@ extension ConversationModel {
             guard let id = event.payload["process_id"]?.stringValue else { return }
             let chunk = event.payload["chunk"]?.stringValue ?? ""
             if let index = processes.firstIndex(where: { $0.id == id }) {
-                processes[index].output = String((processes[index].output + chunk).suffix(4000))
+                processes[index].output = String((processes[index].output + chunk).suffix(Self.processOutputLimit))
             } else {
                 processes.append(BackgroundProcess(id: id, command: String(localized: "Background process"), output: chunk, isRunning: true, startedAt: .now))
                 Task { await nameProcesses() }
             }
+            inspector.processOutput(id)
             return
         case "terminal.close":
             if let id = event.payload["process_id"]?.stringValue, let index = processes.firstIndex(where: { $0.id == id }) {
                 processes[index].isRunning = false
+                processes[index].finishedAt = .now
+                Task { await nameProcesses() }
             }
+            return
+        // Hermes opens and closes the Inspector's Preview (`desktop_preview`) and reveals its panes.
+        case "preview.open":
+            if let url = event.payload["url"]?.stringValue, !url.isEmpty {
+                inspector.previewOpen(url: url, label: event.payload["label"]?.stringValue)
+            }
+            return
+        case "preview.close":
+            inspector.previewClose(url: event.payload["url"]?.stringValue ?? "")
+            return
+        case "pane.reveal":
+            if let pane = event.payload["pane"]?.stringValue { inspector.paneReveal(pane) }
+            return
+        case "preview.restart.complete":
+            inspectorStore?.previewServerRestarted()
+            return
+        case "preview.restart.progress":
             return
         default:
             break
@@ -2962,6 +3038,17 @@ extension ConversationModel {
                 guard !Task.isCancelled else { return }
                 self?.settle()
             }
+        }
+    }
+
+    /// The files a unified diff touches (`+++ b/path`).
+    static func diffPaths(_ diff: String) -> [String] {
+        diff.split(separator: "\n").compactMap { line in
+            guard line.hasPrefix("+++ ") else { return nil }
+            var path = String(line.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+            if path == "/dev/null" { return nil }
+            if path.hasPrefix("b/") { path.removeFirst(2) }
+            return path
         }
     }
 

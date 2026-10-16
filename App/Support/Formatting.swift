@@ -126,7 +126,9 @@ struct SessionSource {
         case "email": (label, symbol) = ("Email", "envelope")
         case "sms": (label, symbol) = ("SMS", "message")
         case "cli", "tui": (label, symbol) = ("Terminal", "terminal")
-        case "desktop": (label, symbol) = ("Hermes Desktop", "desktopcomputer")
+        // This app starts chats as the desktop platform (Hermes's Inspector tools), so Desktop's
+        // chats and its own read alike.
+        case "desktop", "hermes_app": (label, symbol) = ("Hermes App", "bubble.left.and.bubble.right")
         case "dashboard", "hermes_browser": (label, symbol) = ("Dashboard", "safari")
         case "cron": (label, symbol) = ("Scheduled task", "calendar.badge.clock")
         case "acp": (label, symbol) = ("Editor", "chevron.left.forwardslash.chevron.right")

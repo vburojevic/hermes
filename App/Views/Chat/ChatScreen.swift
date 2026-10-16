@@ -39,9 +39,9 @@ struct ChatScreen: View {
         #endif
     }
 
-    /// Mac and iPad landscape show the Team in an inspector; iPad portrait in a sheet
-    /// (`ipadHelpers`); iPhone pushes it.
-    private var usesTeamInspector: Bool {
+    /// The Inspector sits beside the chat on the Mac and iPad in landscape; iPhone and iPad in
+    /// portrait use its sheet (`docs/inspector.md` §1).
+    private var usesInspectorPanel: Bool {
         #if os(macOS)
         true
         #else
@@ -49,27 +49,21 @@ struct ChatScreen: View {
         #endif
     }
 
-    private var usesTeamSheet: Bool {
-        #if os(macOS)
-        false
-        #else
-        horizontalSizeClass == .regular && !usesTeamInspector
-        #endif
-    }
-
+    /// The Team opens in the Inspector's Team tab; on iPhone a helper still pushes its own page.
     private var helperNavigator: HelperNavigator {
         let store = conversation.helpers
-        let inspector = usesTeamInspector || usesTeamSheet
+        let inspector = conversation.inspector
+        let helpersInInspector = isWide
         return HelperNavigator(
             openTeam: { id in
                 store.pushedHelper = nil
                 store.shownHelper = nil
-                store.shownTeam = id
+                inspector.openTeam(id)
             },
             openHelper: { helperID, teamID in
-                if inspector {
-                    store.shownTeam = teamID
+                if helpersInInspector {
                     store.shownHelper = helperID
+                    inspector.openTeam(teamID)
                 } else {
                     store.pushedHelper = helperID
                 }
@@ -126,9 +120,12 @@ struct ChatScreen: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         .environment(\.helperNavigator, helperNavigator)
-        .modifier(HelperPresentation(conversation: conversation, workspace: workspace, usesInspector: usesTeamInspector, usesSheet: usesTeamSheet, navigator: helperNavigator))
+        .environment(\.inspectorModel, conversation.inspector)
+        .modifier(HelperPresentation(conversation: conversation, workspace: workspace, navigator: helperNavigator))
+        // The Inspector: tabs for what the chat shows, beside it or in a sheet.
+        .modifier(InspectorPresentation(conversation: conversation, workspace: workspace, usesPanel: usesInspectorPanel, windowWidth: screenSize.width))
         #if os(iOS)
-        // Outside the Team inspector: inside it, iPad drops the chat's toolbar (model picker,
+        // Outside the inspector column: inside it, iPad drops the chat's toolbar (model picker,
         // New Chat) even while the inspector is closed.
         .toolbar { toolbar }
         #endif
@@ -137,7 +134,7 @@ struct ChatScreen: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { screenSize = $0 }
         // Steer from the inspector: the chat's composer takes the note.
         .onChange(of: conversation.helperSteerTarget) { _, target in
-            if target != nil, usesTeamInspector { composerFocused = true }
+            if target != nil, isWide { composerFocused = true }
         }
         .navigationTitle(navigationTitle)
         .toolbarTitleDisplayMode(.inline)
@@ -412,6 +409,12 @@ struct ChatScreen: View {
                         .glassEffectID("voice", in: bottomGlass)
                         .transition(ComposerView.rowAppears)
                 }
+                // iPhone and iPad portrait: the Inspector's pill (`inspectorPill`) above the composer.
+                if !usesInspectorPanel, !conversation.inspector.tabs.isEmpty, !conversation.inspector.isPresented {
+                    InspectorPill(inspector: conversation.inspector)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(ComposerView.rowAppears)
+                }
                 ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
                     .glassEffectID("composer", in: bottomGlass)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
@@ -459,6 +462,7 @@ struct ChatScreen: View {
         ToolbarItem(placement: .principal) {
             BotChatTitle(roster: roster, botName: name, conversation: conversation)
         }
+        inspectorToolbarItem
         ToolbarItem(placement: .primaryAction) {
             Button {
                 roster.routinesBot = name
@@ -486,11 +490,22 @@ struct ChatScreen: View {
         }
     }
 
+    /// The Inspector's button (Mac, iPad): ink while the panel is open.
+    @ToolbarContentBuilder
+    private var inspectorToolbarItem: some ToolbarContent {
+        if isWide {
+            ToolbarItem(placement: .primaryAction) {
+                InspectorToolbarButton(inspector: conversation.inspector)
+            }
+        }
+    }
+
     @ToolbarContentBuilder
     private var sessionToolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
             ModelPickerButton(conversation: conversation, workspace: workspace)
         }
+        inspectorToolbarItem
         ToolbarItem(placement: .primaryAction) {
             Button {
                 workspace.startNewChat()
@@ -652,79 +667,23 @@ struct ErrorBanner: View {
     }
 }
 
-/// Where helpers show (`docs/helpers.md` §3): the Team inspector beside the chat, or the Team page
-/// and a helper pushed onto the chat's stack.
+/// Where helpers show (`docs/helpers.md` §3) outside the Inspector: on iPhone the Team page and a
+/// helper push onto the chat's stack. The Team tab is the Inspector's (`InspectorPresentation`).
 private struct HelperPresentation: ViewModifier {
     let conversation: ConversationModel
     let workspace: BotWorkspace
-    let usesInspector: Bool
-    /// iPad portrait: the Team in a sheet, its helpers pushed inside it.
-    var usesSheet = false
     let navigator: HelperNavigator
-    @Environment(WindowRouter.self) private var router: WindowRouter?
 
     func body(content: Content) -> some View {
         let store = conversation.helpers
-        let pushes = !usesInspector && !usesSheet
         content
-            #if os(iOS)
-            .onChange(of: usesInspector && store.shownTeam != nil, initial: true) { _, isOpen in
-                router?.teamInspectorIsOpen = isOpen
-            }
-            .onDisappear { router?.teamInspectorIsOpen = false }
-            #endif
-            .sheet(item: Binding(
-                get: { usesSheet ? store.shownTeam.map(TeamSheetID.init) : nil },
-                set: { id in
-                    store.shownTeam = id?.id
-                    if id == nil { store.shownHelper = nil }
-                }
-            )) { team in
-                NavigationStack {
-                    TeamView(store: store, conversation: conversation, workspace: workspace, teamID: team.id, style: .page)
-                        .navigationDestination(item: Binding(get: { store.shownHelper }, set: { store.shownHelper = $0 })) { helperID in
-                            HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
-                        }
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { store.shownTeam = nil }
-                            }
-                        }
-                }
-                .environment(\.helperNavigator, navigator)
-            }
-            .inspector(isPresented: Binding(
-                get: { usesInspector && store.shownTeam != nil },
-                set: { if !$0 { store.shownTeam = nil; store.shownHelper = nil } }
-            )) {
-                TeamInspector(store: store, conversation: conversation, workspace: workspace)
-                    .environment(\.helperNavigator, navigator)
-                    .inspectorColumnWidth(min: 280, ideal: 340, max: 460)
-            }
             .navigationDestination(item: Binding(
-                get: { pushes ? store.shownTeam : nil },
-                set: { id in
-                    store.shownTeam = id
-                    if id == nil { store.shownHelper = nil }
-                }
-            )) { teamID in
-                TeamView(store: store, conversation: conversation, workspace: workspace, teamID: teamID, style: .page)
-                    .navigationDestination(item: Binding(get: { store.shownHelper }, set: { store.shownHelper = $0 })) { helperID in
-                        HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
-                    }
-            }
-            .navigationDestination(item: Binding(
-                get: { pushes ? store.pushedHelper : nil },
+                get: { store.pushedHelper },
                 set: { store.pushedHelper = $0 }
             )) { helperID in
                 HelperDetailView(store: store, conversation: conversation, workspace: workspace, helperID: helperID, style: .page)
             }
     }
-}
-
-/// The Team sheet's identity (a team id).
-private struct TeamSheetID: Identifiable, Hashable {
-    let id: String
 }
 
 /// What the slot above the composer shows: a card, the next one, or the dock while you type. The

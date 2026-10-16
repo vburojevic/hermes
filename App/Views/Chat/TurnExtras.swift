@@ -12,6 +12,8 @@ private let cardRadius: CGFloat = Theme.Radius.card
 struct PlanCard: View {
     let plan: [PlanItem]
 
+    @Environment(\.inspectorModel) private var inspector
+
     private var done: Int { plan.filter { $0.status == .completed }.count }
 
     var body: some View {
@@ -41,8 +43,14 @@ struct PlanCard: View {
         }
         .padding(14)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: cardRadius, style: .continuous))
+        .contextMenu {
+            if let inspector {
+                Button("Open in Inspector", systemImage: "sidebar.right") { inspector.open(.plan) }
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Plan, \(done) of \(plan.count) done"))
+        .accessibilityAction(named: Text("Open in Inspector")) { inspector?.open(.plan) }
     }
 
     private func row(_ item: PlanItem) -> some View {
@@ -79,6 +87,8 @@ struct DiffCard: View {
     let diff: String
 
     @State private var expanded = false
+    /// In the chat, Open shows the file in the Inspector (`docs/inspector.md` §2).
+    @Environment(\.inspectorModel) private var inspector
 
     private struct Line: Identifiable {
         enum Kind { case added, removed, context }
@@ -117,10 +127,24 @@ struct DiffCard: View {
                 Spacer(minLength: 6)
                 Text("+\(added)").foregroundStyle(Theme.success)
                 Text("−\(removed)").foregroundStyle(Theme.danger)
+                if let inspector {
+                    Button("Open") { inspector.openFile(path) }
+                        .font(.footnote.weight(.medium))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.primaryText)
+                        .padding(.leading, 4)
+                        .accessibilityLabel(Text("Open \(path) in the Inspector"))
+                }
             }
             .font(.footnote.monospacedDigit().weight(.semibold))
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+            .contextMenu {
+                if let inspector {
+                    Button("Open File", systemImage: "doc") { inspector.openFile(path) }
+                    Button("Show in Changes", systemImage: "arrow.triangle.branch") { inspector.openChanges(scope: .lastTurn) }
+                }
+            }
             Divider().overlay(Theme.hairline)
             ScrollView(.horizontal, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -263,12 +287,14 @@ struct OutputBlock: View {
 /// Numbered web results, so the reply can cite them. Tapping opens the page.
 struct SearchResultsCard: View {
     let results: [SearchResult]
+    /// How many show (the Inspector's Sources tab shows them all).
+    var limit: Int? = 5
 
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(Array(results.prefix(5).enumerated()), id: \.element.id) { index, result in
+            ForEach(Array(results.prefix(limit ?? results.count).enumerated()), id: \.element.id) { index, result in
                 if index > 0 { Divider().overlay(Theme.hairline).padding(.leading, 52) }
                 Button {
                     if let url = result.url.flatMap(URL.init(string:)) { openURL(url) }
@@ -313,6 +339,7 @@ struct SourcesRow: View {
     let results: [SearchResult]
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.inspectorModel) private var inspector
 
     var body: some View {
         let visible = Array(results.prefix(3))
@@ -340,13 +367,20 @@ struct SourcesRow: View {
                 .buttonStyle(PressableStyle())
                 .accessibilityLabel(Text("Source \(index + 1), \(result.site ?? result.title)"))
             }
-            if results.count > 3 {
-                Text("+\(results.count - 3)")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondaryText)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Theme.surface, in: Capsule())
+            if results.count > 3 || inspector != nil {
+                Button {
+                    inspector?.open(.sources)
+                } label: {
+                    Text(results.count > 3 ? "+\(results.count - 3)" : String(localized: "All"))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Theme.surface, in: Capsule())
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(inspector == nil)
+                .accessibilityLabel(Text("All \(results.count) sources"))
             }
         }
     }
@@ -738,6 +772,8 @@ struct ProcessCard: View {
     let process: ConversationModel.BackgroundProcess
     let onStop: () -> Void
     let onDismiss: () -> Void
+    /// Opens the process in the Inspector's Terminal.
+    var onOpen: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -756,6 +792,12 @@ struct ProcessCard: View {
                     Text(process.isRunning ? String(localized: "Running · \(minutes) min") : String(localized: "Ended"))
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
+                }
+                if let onOpen {
+                    Button("Open", action: onOpen)
+                        .font(.footnote.weight(.medium))
+                        .cardButton()
+                        .controlSize(.small)
                 }
                 Button(action: process.isRunning ? onStop : onDismiss) {
                     Image(systemName: process.isRunning ? "stop.fill" : "xmark")

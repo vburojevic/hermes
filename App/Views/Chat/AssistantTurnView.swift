@@ -17,6 +17,9 @@ struct AssistantTurnView: View {
 
     @Environment(\.helperStore) private var helperStore
     @Environment(\.checkpoints) private var checkpoints
+    /// Artifacts and pages open in the chat's Inspector (`docs/inspector.md`).
+    @Environment(\.inspectorModel) private var inspector
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(PreferenceKey.showUsage) private var alwaysShowsUsage = false
     @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
     @State private var showsUsage = false
@@ -92,7 +95,7 @@ struct AssistantTurnView: View {
                     isWorking: checkpoints.chatIsWorking,
                     canUndo: checkpoints.isOnline,
                     isRefused: checkpoints.refusal != nil,
-                    onReview: { checkpoints.sheet = .review(turnID: turn.id) },
+                    onReview: { review(checkpoints) },
                     onUndo: { checkpoints.undo(turnID: turn.id) }
                 )
                 .transition(.opacity)
@@ -102,7 +105,7 @@ struct AssistantTurnView: View {
                 steerBubble(bubble)
             }
             if let shown = shownText {
-                MarkdownView(text: turn.isWorking ? StreamingMarkdown.displayed(shown.text) : shown.text, caches: !turn.isWorking)
+                MarkdownView(text: turn.isWorking ? StreamingMarkdown.displayed(shown.text) : replyText(shown.text), caches: !turn.isWorking)
                     .equatable()
                     // Only the tone eases; the words switch at once, never drawn over each other.
                     .animation(.smooth(duration: 0.3)) { $0.opacity(shown.isInterim ? 0.55 : 1) }
@@ -111,6 +114,10 @@ struct AssistantTurnView: View {
             // One still waiting sits at the end, where it was sent; read, it glides into place.
             ForEach(steerBubbles.filter(\.isPending)) { bubble in
                 steerBubble(bubble)
+            }
+            // What the reply made or opened, as cards that open in the Inspector (`artifactCard`).
+            if let inspector, !turn.isWorking {
+                TurnInspectorCards(turn: turn, inspector: inspector)
             }
             if !turn.isWorking, !turn.answer.isEmpty, !sources.isEmpty {
                 SourcesRow(results: sources)
@@ -145,6 +152,27 @@ struct AssistantTurnView: View {
             record.caption.map { SteerBubbleItem(id: "steer-\(read.count + index)", text: record.text, caption: $0, isPending: true) }
         }
         return read + waiting
+    }
+
+    /// A finished reply without its artifacts' code: each shows as a card instead.
+    private func replyText(_ text: String) -> String {
+        guard inspector != nil else { return text }
+        return ArtifactDetector.liftingArtifacts(from: text).text
+    }
+
+    /// Review (`turnCheckpoint`): on iPad and Mac the latest turn's changes open in the
+    /// Inspector's Changes tab (This Turn); otherwise, and for older turns, the Review sheet.
+    private func review(_ checkpoints: CheckpointsModel) {
+        #if os(macOS)
+        let wide = true
+        #else
+        let wide = horizontalSizeClass == .regular
+        #endif
+        if wide, let inspector, inspector.turnBase != nil, inspector.workingFolder != nil, checkpoints.latestEditingTurnID == turn.id {
+            inspector.openChanges(scope: .lastTurn)
+        } else {
+            checkpoints.sheet = .review(turnID: turn.id)
+        }
     }
 
     /// The files this reply's tools wrote, when it wrote any.

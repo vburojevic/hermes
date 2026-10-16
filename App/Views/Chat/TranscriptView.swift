@@ -89,7 +89,8 @@ struct TranscriptView: View {
                         .transition(Self.insertion(for: shown.item))
                 }
                 ForEach(conversation.processes) { process in
-                    ProcessCard(process: process, onStop: { conversation.stopProcess(process) }, onDismiss: { conversation.dismissProcess(process) })
+                    ProcessCard(process: process, onStop: { conversation.stopProcess(process) }, onDismiss: { conversation.dismissProcess(process) },
+                                onOpen: { conversation.inspector.openTerminal(process.id) })
                 }
                 ForEach(conversation.asides) { aside in
                     AsideCard(aside: aside) { conversation.dismissAside(aside) }

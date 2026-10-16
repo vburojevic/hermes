@@ -169,6 +169,14 @@ final class BotWorkspace: Identifiable {
     var voiceToggleRequests = 0
     /// This gateway's projects (Bot Mode backends only).
     private(set) var projects: ProjectsModel!
+    @ObservationIgnored private var pinStore: InspectorPins?
+    /// Inspector tabs pinned across this gateway's chats (`docs/inspector.md` §1).
+    var inspectorPins: InspectorPins {
+        if let pinStore { return pinStore }
+        let pins = InspectorPins(workspaceID: id)
+        pinStore = pins
+        return pins
+    }
     @ObservationIgnored private var boardModels: [String: BoardModel] = [:]
     /// A project's Board (`docs/board.md`), one per project for as long as the gateway is open.
     func board(for projectID: String) -> BoardModel {
@@ -314,6 +322,13 @@ final class BotWorkspace: Identifiable {
         default:
             return draft
         }
+    }
+
+    /// A chat this window already has open, by its id (an Inspector tab's own window).
+    func loadedConversation(id: UUID) -> ConversationModel? {
+        if draft?.id == id { return draft }
+        if let found = conversations.values.first(where: { $0.id == id }) { return found }
+        return roster?.loadedConversation(id: id)
     }
 
     func conversation(forKey key: String) -> ConversationModel {
@@ -721,7 +736,7 @@ final class BotWorkspace: Identifiable {
         var row = HermesSession(id: storedID)
         row.title = title
         row.lastActive = .now
-        row.source = parent?.source ?? "hermes_app"
+        row.source = parent?.source ?? PreviewBridge.sessionSource
         row.preview = parent?.preview
         if !sessions.contains(where: { $0.stableID == row.stableID }) {
             sessions.insert(row, at: 0)

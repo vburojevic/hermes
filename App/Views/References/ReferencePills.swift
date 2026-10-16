@@ -75,6 +75,8 @@ struct FilePill: View {
     var size: PillSize = .message
 
     @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+    /// In a chat, a file opens in the Inspector's File tab and a folder in Files.
+    @Environment(\.inspectorModel) private var inspector
 
     var body: some View {
         HStack(spacing: 5) {
@@ -93,6 +95,15 @@ struct FilePill: View {
         .frame(maxWidth: 260)
         .background(Theme.surfaceRaised, in: Capsule())
         .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Capsule())
+        .onTapGesture {
+            guard let inspector else { return }
+            if isFolder {
+                inspector.open(.files, key: path, title: ProjectPath.lastComponent(path))
+            } else {
+                inspector.openFile(path)
+            }
+        }
     }
 }
 

@@ -97,6 +97,52 @@ public enum ArtifactDetector {
         }
     }
 
+    /// The reply without its artifact fences (the transcript shows a card for each instead),
+    /// and the artifacts in order. Other fences stay as they are.
+    public static func liftingArtifacts(from text: String) -> (text: String, artifacts: [ArtifactBlock]) {
+        var kept: [Substring] = []
+        var found: [ArtifactBlock] = []
+        var open: (marker: Character, length: Int, info: String, lines: [Substring], fence: Substring)?
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let stripped = line.drop { $0 == " " }
+            if var current = open {
+                let run = stripped.prefix { $0 == current.marker }
+                if run.count >= current.length, stripped.dropFirst(run.count).allSatisfy(\.isWhitespace) {
+                    let body = current.lines.joined(separator: "\n")
+                    if let detection = detect(language: current.info, code: body) {
+                        found.append(ArtifactBlock(detection: detection, content: body.trimmingCharacters(in: .whitespacesAndNewlines)))
+                    } else {
+                        kept.append(current.fence)
+                        kept.append(contentsOf: current.lines)
+                        kept.append(line)
+                    }
+                    open = nil
+                } else {
+                    current.lines.append(line)
+                    open = current
+                }
+                continue
+            }
+            if let first = stripped.first, first == "`" || first == "~" {
+                let run = stripped.prefix { $0 == first }
+                let info = String(stripped.dropFirst(run.count)).trimmingCharacters(in: .whitespaces)
+                if run.count >= 3, !(first == "`" && info.contains("`")) {
+                    open = (first, run.count, info, [], line)
+                    continue
+                }
+            }
+            kept.append(line)
+        }
+        // An unclosed fence (still streaming) stays as written.
+        if let open {
+            kept.append(open.fence)
+            kept.append(contentsOf: open.lines)
+        }
+        guard !found.isEmpty else { return (text, []) }
+        let joined = kept.joined(separator: "\n").replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        return (joined.trimmingCharacters(in: .whitespacesAndNewlines), found)
+    }
+
     /// Fenced blocks (``` or ~~~, three or more) with their info string.
     static func fences(in text: String) -> [(language: String, body: String)] {
         var result: [(String, String)] = []

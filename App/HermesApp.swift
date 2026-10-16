@@ -72,6 +72,16 @@ struct HermesApp: App {
             MacSettingsView(updater: updater)
                 .environment(model)
         }
+
+        // An Inspector tab dragged out into its own window (`docs/inspector.md` §1).
+        WindowGroup("Inspector", for: InspectorWindowRef.self) { $ref in
+            if let ref {
+                InspectorTabWindow(ref: ref)
+                    .environment(model)
+            }
+        }
+        .defaultSize(width: 760, height: 680)
+        .windowToolbarStyle(.unified(showsTitle: true))
         #endif
     }
 }
@@ -206,6 +216,31 @@ struct HermesCommands: Commands {
             }
             .keyboardShortcut("v", modifiers: [.command, .option])
             .disabled(model.currentWorkspace == nil)
+
+            // The Inspector (`docs/inspector.md` §1): show or hide it, open an address, switch tabs.
+            let inspector = model.currentWorkspace?.currentConversation.inspector
+            Button(inspector?.isPresented == true ? "Hide Inspector" : "Show Inspector") {
+                inspector?.toggle()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .disabled(inspector == nil)
+            Button("Open Address…") {
+                inspector?.showsAddressPrompt = true
+                if inspector?.isPresented == false { inspector?.toggle() }
+            }
+            .keyboardShortcut("l", modifiers: .command)
+            .disabled(inspector == nil)
+            if let inspector, !inspector.tabs.isEmpty {
+                Menu("Inspector Tabs") {
+                    ForEach(Array(inspector.tabs.prefix(9).enumerated()), id: \.element.id) { index, tab in
+                        Button(tab.title) {
+                            inspector.select(tab.id)
+                            if !inspector.isPresented { inspector.toggle() }
+                        }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command, .option])
+                    }
+                }
+            }
 
             // Search (`docs/search.md`): find in this chat, or search every chat in the sidebar.
             Button("Find in Chat…") {

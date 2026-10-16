@@ -73,8 +73,9 @@ final class WindowRouter {
     /// Settings opens on Apps and Tools (Skills' Tools and Apps row).
     var opensAppsAndTools = false
 
-    /// iPad landscape: the Team inspector is open, and takes the sidebar's room (`ipadHelpers`).
-    var teamInspectorIsOpen = false
+    /// The Inspector is open beside the chat: on iPad it takes the sidebar's room; on a Mac
+    /// window under 1,400 pt the sidebar collapses (`docs/inspector.md` §1).
+    var inspectorIsOpen = false
 
     /// Settings → Apps and Tools, in the Settings sheet (iPhone, iPad).
     func showAppsAndTools() {

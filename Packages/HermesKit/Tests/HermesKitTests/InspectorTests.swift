@@ -58,6 +58,20 @@ struct InspectorTests {
         #expect(artifacts[0].latest.content.contains("$9"))
     }
 
+    @Test func repliesLoseTheirArtifactFencesButKeepOtherCode() {
+        let reply = "Here it is:\n\n```html\n\(pricingPage)\n```\n\nRun it with:\n\n```sh\nopen index.html\n```"
+        let lifted = ArtifactDetector.liftingArtifacts(from: reply)
+        #expect(lifted.artifacts.count == 1)
+        #expect(!lifted.text.contains("<!doctype"))
+        #expect(lifted.text.contains("```sh\nopen index.html\n```"))
+        #expect(lifted.text.hasPrefix("Here it is:"))
+        let plain = "No code here."
+        #expect(ArtifactDetector.liftingArtifacts(from: plain).text == plain)
+        // Still streaming: the open fence stays.
+        let streaming = "```html\n" + pricingPage
+        #expect(ArtifactDetector.liftingArtifacts(from: streaming).text == streaming)
+    }
+
     @Test func fencesWithTildesAndLongerRunsAreFound() {
         let text = "~~~~html\n\(pricingPage)\n~~~~\n````swift\nlet x = 1\n````"
         let fences = ArtifactDetector.fences(in: text)

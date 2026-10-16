@@ -184,11 +184,19 @@ public struct ShipInfo: Sendable, Hashable {
     public var ghReady: Bool
     public var pullRequestURL: URL?
     public var pullRequestNumber: Int?
+    /// `OPEN`, `MERGED` or `CLOSED`.
+    public var pullRequestState: String?
+
+    /// The branch has a pull request still open (Create Pull Request opens it instead).
+    public var openPullRequest: URL? {
+        pullRequestState?.uppercased() == "OPEN" ? pullRequestURL : nil
+    }
 
     init(json: JSONValue) {
         ghReady = json["ghReady"]?.boolValue ?? false
         pullRequestURL = json["pr"]?["url"]?.stringValue.flatMap(URL.init(string:))
         pullRequestNumber = json["pr"]?["number"]?.doubleValue.map { Int($0) }
+        pullRequestState = json["pr"]?["state"]?.stringValue
     }
 }
 

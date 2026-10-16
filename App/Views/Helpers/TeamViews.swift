@@ -179,11 +179,20 @@ struct TeamView: View {
         return team.everyone == 1 ? String(localized: "Team · 1 helper") : String(localized: "Team · \(team.everyone) helpers")
     }
 
+    @Environment(\.inInspectorTab) private var inInspectorTab
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                if style == .inspector {
+                if style == .inspector, !inInspectorTab {
                     InspectorHeader(title: title, onClose: { store.shownTeam = nil })
+                } else if inInspectorTab {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(Theme.primaryText)
+                        .padding(.leading, 4)
+                        .padding(.top, 4)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 pauseSwitch
                 if let team {
@@ -358,6 +367,7 @@ struct HelperDetailView: View {
 
     @State private var composerFocused = false
     @State private var confirmingStop = false
+    @Environment(\.inInspectorTab) private var inInspectorTab
     @State private var position = ScrollPosition(edge: .top)
     /// Following the newest line, until the person scrolls up.
     @State private var follows = true
@@ -388,7 +398,8 @@ struct HelperDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if style == .inspector {
-                    InspectorHeader(title: String(localized: "Team"), onBack: { store.shownHelper = nil }, onClose: { store.shownTeam = nil; store.shownHelper = nil })
+                    InspectorHeader(title: String(localized: "Team"), onBack: { store.shownHelper = nil },
+                                    onClose: inInspectorTab ? nil : { store.shownTeam = nil; store.shownHelper = nil })
                 }
                 header(helper, team)
                 metrics(helper)

@@ -475,8 +475,10 @@ struct MainView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(WindowRouter.self) private var router: WindowRouter?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    /// iPad: the Team inspector hid the sidebar.
+    /// iPad: the Inspector hid the sidebar.
     @State private var teamHidesSidebar = false
+    /// Mac: the window's width, for collapsing the sidebar when the Inspector opens.
+    @State private var windowWidth: CGFloat = 0
     @State private var boardHidesSidebar = false
     @State private var isDrawerOpen = false
     /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
@@ -561,10 +563,24 @@ struct MainView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        #if os(macOS)
+        // Mac: opening the Inspector in a window under 1,400 pt collapses the sidebar
+        // (`docs/inspector.md` §1); closing it brings the sidebar back.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .onChange(of: router?.inspectorIsOpen ?? false) { _, isOpen in
+            if isOpen, windowWidth < 1400, columnVisibility != .detailOnly {
+                teamHidesSidebar = true
+                withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
+            } else if !isOpen, teamHidesSidebar {
+                teamHidesSidebar = false
+                withAnimation(Theme.snappy) { columnVisibility = .all }
+            }
+        }
+        #endif
         #if os(iOS)
-        // iPad: the Team inspector hides the sidebar while it's open (`ipadHelpers`); the
-        // toolbar's sidebar button brings it back.
-        .onChange(of: router?.teamInspectorIsOpen ?? false) { _, isOpen in
+        // iPad: the Inspector hides the sidebar while it's open beside the chat; the toolbar's
+        // sidebar button brings it back.
+        .onChange(of: router?.inspectorIsOpen ?? false) { _, isOpen in
             teamHidesSidebar = isOpen
             withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : .all }
         }
