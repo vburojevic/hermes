@@ -195,6 +195,10 @@ def wants(device_id, device, notice, walked_away=(), ignore_presence=False):
         return False
     if kind == "task_failed" and prefs["tasks"] == "off":
         return False
+    if kind in ("card_review", "card_done") and prefs["tasks"] != "all":
+        return False
+    if kind in ("card_needs_you", "card_stopped") and prefs["tasks"] == "off":
+        return False
     if kind == "message" and (prefs["bots"] == "off" or (prefs["bots"] == "mentions" and not notice.extra.get("mention"))):
         return False
     here = None if ignore_presence else presence(device_id)
@@ -213,6 +217,26 @@ def expire():
     with LOCK:
         for rid in [rid for rid, r in STATE["requests"].items() if r.get("expires_at") and r["expires_at"] < now - 30]:
             STATE["requests"].pop(rid, None)
+
+
+def card_notice(kind, card, payload):
+    """The mock board's events as the plugin's card notices (docs/board.md §5)."""
+    if kind == "blocked" and (payload.get("kind") or "needs_input") in ("needs_input", "capability"):
+        notice_kind, text = "card_needs_you", payload.get("reason") or ""
+    elif kind == "review_requested":
+        notice_kind, text = "card_review", B["MOCK_KANBAN"].latest_summary(card) or ""
+    elif kind in ("gave_up", "crashed"):
+        notice_kind, text = "card_stopped", payload.get("error") or card.get("last_failure_error") or ""
+    elif kind == "completed":
+        notice_kind, text = "card_done", payload.get("summary") or ""
+    else:
+        return
+    profile = card.get("assignee") or ""
+    board = card.get("_board") or "default"
+    project = (B["MOCK_KANBAN"].BOARDS.get(board) or {}).get("project_id") or ""
+    who = "Hermes" if profile in ("", "default") else B["bot_title"](profile)
+    deliver(notices.card(notice_kind, card_id=card["id"], board=board, title=card.get("title", ""), who=who,
+                         profile=profile, project_id=project, gateway_name=GATEWAY["name"], text=text))
 
 
 def deliver(notice, walked_away=()):
@@ -359,6 +383,9 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
     GATEWAY["name"] = gateway_name
     methods = backend_globals["METHODS"]
     original_dispatch = methods.get("command.dispatch")
+    kanban = backend_globals.get("MOCK_KANBAN")
+    if kanban is not None:
+        kanban.HOOKS.append(card_notice)
 
     def dispatch(params):
         if str(params.get("name") or "").lstrip("/") == "app-push":

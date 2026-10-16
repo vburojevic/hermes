@@ -12,9 +12,16 @@ export const ALERT_TITLES = new Set([
   "New message",
   "Background work finished",
   "Push notifications are on",
+  // "Save to memory?" (docs/memory.md)
+  "Hermes wants to remember something",
+  // The Board's cards (docs/board.md §5): never "task", which is a scheduled job in the app.
+  "A card needs you",
+  "A card is ready for review",
+  "A card stopped",
+  "A card is done",
 ]);
 export const ALERT_BODIES = new Set(["Open Hermes to see it.", "Open Hermes to answer."]);
-export const CATEGORIES = new Set(["APPROVAL", "QUESTION", "REPLY", "MESSAGE", "TASK", "OPEN"]);
+export const CATEGORIES = new Set(["APPROVAL", "QUESTION", "REPLY", "MESSAGE", "TASK", "OPEN", "MEMORY", "CARD", "BOARD"]);
 export const LEVELS = new Set(["passive", "active", "time-sensitive"]);
 export const PHASES = new Set(["working", "needsYou", "done"]);
 export const DEFAULT_TOPICS = ["co.caffeinatedcode.hermes", "co.caffeinatedcode.hermes.dev"];

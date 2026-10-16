@@ -61,6 +61,41 @@ import Testing
         #expect(notice.kind == .unknown && notice.title == "Hi")
     }
 
+    @Test func boardCardNoticesReadAsCards() throws {
+        let needsYou = try JSONDecoder().decode(PushNotice.self, from: Data(#"""
+        {"kind":"card_needs_you","id":"card-1","title":"Ada needs you on “Write the App Store listing”",
+         "body":"Which category: Developer Tools or Productivity?","thread":"board:hermes-app","summary":"Write the App Store listing",
+         "card_id":"t_8f31c4e8","board":"hermes-app","project_id":"p_4f2a9c1e","card_title":"Write the App Store listing","bot":"Ada",
+         "assignee":"writer","category":"CARD"}
+        """#.utf8))
+        #expect(needsYou.kind == .cardNeedsYou && needsYou.kind.isCard)
+        #expect(needsYou.cardID == "t_8f31c4e8" && needsYou.board == "hermes-app" && needsYou.projectID == "p_4f2a9c1e")
+        #expect(needsYou.chatID == nil)
+        let shown = NoticePresentation(needsYou, gatewayName: "Studio Mac", slot: 1, showDetails: .always)
+        #expect(shown.title == "Ada needs you on “Write the App Store listing”")
+        #expect(shown.body == "Which category: Developer Tools or Productivity?")
+        #expect(shown.category == .card && shown.categoryIdentifier == "CARD.1")
+        #expect(shown.interruptionLevel == .timeSensitive)
+        let hidden = NoticePresentation(needsYou, gatewayName: "Studio Mac", slot: nil, showDetails: .never)
+        #expect(hidden.body == "A card needs you on Studio Mac")
+
+        var done = needsYou
+        done.kind = .cardDone
+        done.body = "Uploaded build 2610161021."
+        let doneShown = NoticePresentation(done, gatewayName: "Studio Mac", slot: nil, showDetails: .always)
+        #expect(doneShown.title == "Done" && doneShown.subtitle == "Write the App Store listing")
+        #expect(doneShown.category == .board && doneShown.interruptionLevel == .passive && !doneShown.plays)
+        for kind in [PushNotice.Kind.cardNeedsYou, .cardReview, .cardStopped, .cardDone] {
+            var notice = needsYou
+            notice.kind = kind
+            let text = NoticePresentation(notice, gatewayName: "Studio Mac", slot: nil, showDetails: .never).body
+            #expect(!text.localizedCaseInsensitiveContains("task"))
+        }
+        // Reply answers the card; Open shows it.
+        #expect(NotificationCatalog.actions(for: .card).map(\.identifier) == [NotificationCatalog.Action.reply, NotificationCatalog.Action.open])
+        #expect(NotificationCatalog.actions(for: .board).map(\.identifier) == [NotificationCatalog.Action.open])
+    }
+
     @Test func questionChoicesBecomeActionsOnlyWhenSimple() {
         var notice = PushNotice(kind: .question, id: "q", questions: [.init(question: "Which?", choices: ["A", "B", "C", "D"])])
         #expect(notice.actionChoices == ["A", "B", "C"])

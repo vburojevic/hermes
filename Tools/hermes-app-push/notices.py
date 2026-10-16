@@ -19,6 +19,7 @@ from typing import Any
 from . import crypto
 
 APPROVAL, QUESTION, REPLY, MESSAGE, TASK, OPEN = "APPROVAL", "QUESTION", "REPLY", "MESSAGE", "TASK", "OPEN"
+CARD, BOARD = "CARD", "BOARD"  # a board card needs you (Reply, Open); a card's other news (Open)
 MEMORY = "MEMORY"  # an approval titled "Save to memory?": Save, Don't Save (docs/memory.md)
 
 KINDS = {
@@ -32,7 +33,13 @@ KINDS = {
     "message": (MESSAGE, "active", 0.6, "New message"),
     "background": (OPEN, "passive", 0.2, "Background work finished"),
     "test": (OPEN, "active", 0.4, "Push notifications are on"),
+    # The Board (docs/board.md §5). Never "task": in the app, tasks are scheduled jobs.
+    "card_needs_you": (CARD, "time-sensitive", 1.0, "A card needs you"),
+    "card_review": (BOARD, "active", 0.6, "A card is ready for review"),
+    "card_stopped": (BOARD, "active", 0.6, "A card stopped"),
+    "card_done": (BOARD, "passive", 0.3, "A card is done"),
 }
+CARD_KINDS = ("card_needs_you", "card_review", "card_stopped", "card_done")
 
 MAX_BODY = 400
 MAX_COMMAND = 600
@@ -180,16 +187,29 @@ def task(*, job_id: str, name: str, gateway_name: str, text: str, failed: bool) 
         extra={"job_id": job_id, "failed": failed})
 
 
-def kanban(*, task_id: str, board: str, title: str, assignee: str, gateway_name: str, text: str,
-           blocked: bool) -> Notice:
-    """A Kanban card finished (or is stuck and needs someone)."""
-    name = clip(redact(title), 80) or "Task"
+def card(kind: str, *, card_id: str, board: str, title: str, who: str, profile: str, project_id: str,
+         gateway_name: str, text: str) -> Notice:
+    """A board card: needs you (with the question), ready for review, stopped, or done. One notice
+    per card at a time (the id collapses them); the thread is the board."""
+    name = clip(redact(title), 80) or "A card"
+    who = who or "Hermes"
+    if kind == "card_needs_you":
+        heading, subtitle, fallback = f"{who} needs you on “{name}”", "", "Open Hermes to answer."
+        hidden = f"A card needs you on {gateway_name}"
+    elif kind == "card_review":
+        heading, subtitle, fallback = "Ready for review", name, "Open Hermes to review it."
+        hidden = f"A card is ready for review on {gateway_name}"
+    elif kind == "card_stopped":
+        heading, subtitle, fallback = "Stopped", name, "It stopped before it was done."
+        hidden = f"A card stopped on {gateway_name}"
+    else:
+        heading, subtitle, fallback = "Done", name, "Done."
+        hidden = f"A card is done on {gateway_name}"
     return Notice(
-        kind="task_failed" if blocked else "task", id=f"kanban-{short_hash(task_id)}", thread=f"kanban:{board or 'default'}",
-        summary=name, title=name, subtitle=("Blocked" if blocked else "Done") + (f" · {assignee}" if assignee else ""),
-        body=first_lines(redact(text), 4, 400) or ("Needs a look." if blocked else "Done."),
-        hidden=(f"A task is blocked on {gateway_name}" if blocked else f"A task finished on {gateway_name}"),
-        extra={"job_id": task_id, "failed": blocked, "kanban": True})
+        kind=kind, id=f"card-{short_hash(card_id)}", thread=f"board:{board or 'default'}", summary=name,
+        title=heading, subtitle=subtitle, body=first_lines(redact(text), 4, 400) or fallback, hidden=hidden,
+        extra={"card_id": card_id, "board": board or "default", "project_id": project_id or "",
+               "card_title": name, **({"bot": who} if who != "Hermes" else {}), "assignee": profile or ""})
 
 
 def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: str, text: str,
@@ -219,7 +239,7 @@ def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, r
         "payload": {"aps": aps, "hermes": crypto.seal(device["public_key"], notice.content(gateway, open_count,
                                                                                             resolved))},
     }
-    if notice.request_id or notice.kind in ("reply", "task", "task_failed"):
+    if notice.request_id or notice.kind in ("reply", "task", "task_failed", *CARD_KINDS):
         request["collapse_id"] = (notice.request_id or notice.id)[:64]
     expiry = notice.expires_at or time.time() + 86_400
     request["expiration"] = int(expiry)

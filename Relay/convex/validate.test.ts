@@ -24,6 +24,26 @@ describe("validatePush", () => {
         body: "Open Hermes to answer." }, sound: "default" } } }).ok).toBe(true);
   });
 
+  test("accepts the Memory ask and the Board's card notices", () => {
+    const kinds: [string, string, string][] = [
+      ["Hermes wants to remember something", "MEMORY", "active"],
+      ["A card needs you", "CARD", "time-sensitive"],
+      ["A card is ready for review", "BOARD", "active"],
+      ["A card stopped", "BOARD", "active"],
+      ["A card is done", "BOARD", "passive"],
+    ];
+    for (const [title, category, level] of kinds) {
+      const push = structuredClone(alert) as any;
+      push.payload.aps.alert.title = title;
+      push.payload.aps.category = category;
+      push.payload.aps["interruption-level"] = level;
+      expect(validatePush(push).ok).toBe(true);
+    }
+    const task = structuredClone(alert) as any;
+    task.payload.aps.alert.title = "A task is blocked";
+    expect(validatePush(task).ok).toBe(false);
+  });
+
   test("refuses readable content", () => {
     const leak = structuredClone(alert);
     leak.payload.aps.alert.title = "Run rm -rf ./build on Home Server?";

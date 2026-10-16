@@ -91,6 +91,9 @@ def _register_platform(ctx) -> None:
             super().__init__(config=config, platform=Platform(PLATFORM))
 
         async def connect(self, *, is_reconnect: bool = False) -> bool:
+            # Only the gateway connects platforms: its process watches the boards for cards ready
+            # for review or stopped (Hermes has no hook for those).
+            _instance().watch_cards()
             return True
 
         async def disconnect(self) -> None:

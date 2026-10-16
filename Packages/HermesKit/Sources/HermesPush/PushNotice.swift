@@ -7,6 +7,11 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
     public enum Kind: String, Codable, Sendable {
         case approval, question, password, reply, task, message, background, test, withdraw
         case taskFailed = "task_failed"
+        /// Board cards (`docs/board.md` §5): a card needs you, is ready for review, stopped, is done.
+        case cardNeedsYou = "card_needs_you"
+        case cardReview = "card_review"
+        case cardStopped = "card_stopped"
+        case cardDone = "card_done"
         case unknown
 
         public init(from decoder: any Decoder) throws {
@@ -15,6 +20,9 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
 
         /// Hermes is paused until someone answers.
         public var needsYou: Bool { self == .approval || self == .question || self == .password }
+
+        /// A board card's news.
+        public var isCard: Bool { self == .cardNeedsYou || self == .cardReview || self == .cardStopped || self == .cardDone }
     }
 
     public struct Gateway: Codable, Sendable, Hashable {
@@ -117,6 +125,15 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
     public var profile: String?
     public var mention: Bool
 
+    // Board cards
+    /// The card (`t_<hex>`), its board and the project the app keeps that board for.
+    public var cardID: String?
+    public var board: String?
+    public var projectID: String?
+    public var cardTitle: String?
+    /// The profile working on it.
+    public var assignee: String?
+
     // Withdrawals
     public var ids: [String]
 
@@ -138,6 +155,11 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         case roomID = "room_id"
         case memberID = "member_id"
         case bot, profile, mention, ids
+        case cardID = "card_id"
+        case board
+        case projectID = "project_id"
+        case cardTitle = "card_title"
+        case assignee
     }
 
     public init(
@@ -214,6 +236,11 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         profile = try c.decodeIfPresent(String.self, forKey: .profile)
         mention = try c.decodeIfPresent(Bool.self, forKey: .mention) ?? false
         ids = try c.decodeIfPresent([String].self, forKey: .ids) ?? []
+        cardID = try c.decodeIfPresent(String.self, forKey: .cardID)
+        board = try c.decodeIfPresent(String.self, forKey: .board)
+        projectID = try c.decodeIfPresent(String.self, forKey: .projectID).flatMap { $0.isEmpty ? nil : $0 }
+        cardTitle = try c.decodeIfPresent(String.self, forKey: .cardTitle)
+        assignee = try c.decodeIfPresent(String.self, forKey: .assignee).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -248,10 +275,17 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(profile, forKey: .profile)
         if mention { try c.encode(true, forKey: .mention) }
         if !ids.isEmpty { try c.encode(ids, forKey: .ids) }
+        try c.encodeIfPresent(cardID, forKey: .cardID)
+        try c.encodeIfPresent(board, forKey: .board)
+        try c.encodeIfPresent(projectID, forKey: .projectID)
+        try c.encodeIfPresent(cardTitle, forKey: .cardTitle)
+        try c.encodeIfPresent(assignee, forKey: .assignee)
     }
 
-    /// The chat this notice is about (opening it, grouping, the foreground rule).
+    /// The chat this notice is about (opening it, grouping, the foreground rule). A card's
+    /// notice is about a board, not a chat.
     public var chatID: String? {
+        if kind.isCard { return nil }
         if let sessionID, !sessionID.isEmpty { return sessionID }
         return thread.isEmpty ? nil : thread
     }

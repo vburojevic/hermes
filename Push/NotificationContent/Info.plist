@@ -43,6 +43,23 @@
 				<string>QUESTION.13</string>
 				<string>QUESTION.14</string>
 				<string>QUESTION.15</string>
+				<string>CARD</string>
+				<string>CARD.0</string>
+				<string>CARD.1</string>
+				<string>CARD.2</string>
+				<string>CARD.3</string>
+				<string>CARD.4</string>
+				<string>CARD.5</string>
+				<string>CARD.6</string>
+				<string>CARD.7</string>
+				<string>CARD.8</string>
+				<string>CARD.9</string>
+				<string>CARD.10</string>
+				<string>CARD.11</string>
+				<string>CARD.12</string>
+				<string>CARD.13</string>
+				<string>CARD.14</string>
+				<string>CARD.15</string>
 			</array>
 			<key>UNNotificationExtensionInitialContentSizeRatio</key>
 			<real>0.4</real>

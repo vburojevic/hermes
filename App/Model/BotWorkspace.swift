@@ -183,6 +183,23 @@ final class BotWorkspace: Identifiable {
         }
     }
 
+    /// Opens a card (a notification, a link): its project's board with the card open. Without the
+    /// project, the gateway's boards say which project the board belongs to.
+    func openCard(_ cardID: String, board slug: String?, projectID: String?) {
+        sidebarMode = .chats
+        if let projectID {
+            selection = .board(projectID)
+            board(for: projectID).openCardID = cardID
+            return
+        }
+        guard let slug, let client = roster?.boardClient else { return }
+        Task {
+            guard let info = try? await client.boards().first(where: { $0.slug == slug }), let projectID = info.projectID else { return }
+            selection = .board(projectID)
+            board(for: projectID).openCardID = cardID
+        }
+    }
+
     /// The Board on screen, if one is.
     var shownBoard: BoardModel? {
         if case .board(let id) = selection { board(for: id) } else { nil }

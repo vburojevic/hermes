@@ -545,7 +545,9 @@ final class PushCenter {
         let appID = shared.gateway(notice.gateway?.id)?.appID ?? model.selectedBotID
         guard let appID, let workspace = model.workspaces[appID] else { return }
         model.select(appID)
-        if let room = notice.roomID {
+        if notice.kind.isCard, let card = notice.cardID {
+            workspace.openCard(card, board: notice.board, projectID: notice.projectID)
+        } else if let room = notice.roomID {
             workspace.sidebarMode = .bots
             workspace.selection = .group(room)
         } else if let profile = notice.profile {

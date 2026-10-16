@@ -63,7 +63,7 @@ struct RequestDetail: View {
     let received: Date
 
     private var context: String {
-        [notice.summary.isEmpty ? notice.subtitle : notice.summary, gateway ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        [place, gateway ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     var body: some View {
@@ -97,6 +97,16 @@ struct RequestDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Palette.surface, in: .rect(cornerRadius: 14))
             }
+            if notice.kind == .cardNeedsYou, !notice.body.isEmpty {
+                Text(notice.body)
+                    .font(.body)
+                    .foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface, in: .rect(cornerRadius: 14))
+            }
             if notice.kind == .question, notice.questions.count > 1 {
                 Text("\(notice.questions.count) questions. Answer the first here, or open Hermes for all of them.")
                     .font(.footnote)
@@ -120,9 +130,16 @@ struct RequestDetail: View {
             (notice.command?.isEmpty ?? true) ? String(localized: "\(notice.bot ?? "Hermes") needs your permission") : String(localized: "Run this command?")
         case .question:
             notice.questions.first?.question ?? notice.body
+        case .cardNeedsYou:
+            String(localized: "\(notice.bot ?? "Hermes") needs you")
         default:
             notice.title
         }
+    }
+
+    /// A card's title, else the chat, then the gateway.
+    private var place: String {
+        notice.kind == .cardNeedsYou ? (notice.cardTitle ?? notice.summary) : (notice.summary.isEmpty ? notice.subtitle : notice.summary)
     }
 
     /// Hermes's own description of the risk ("recursive delete"), as a sentence.
@@ -132,6 +149,9 @@ struct RequestDetail: View {
     }
 
     private var footer: String {
+        if notice.kind == .cardNeedsYou {
+            return String(localized: "Reply answers it on the card, and the card goes back to Ready.")
+        }
         if notice.kind == .question {
             return notice.isExpired() ? String(localized: "This question has expired.") : String(localized: "Hermes is waiting for your answer.")
         }

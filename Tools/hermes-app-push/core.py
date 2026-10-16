@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import socket
@@ -40,6 +41,7 @@ _TOKEN = re.compile(r"^[0-9a-fA-F]{32,400}$")
 _TOPIC = re.compile(r"^[A-Za-z0-9.-]{3,200}$")
 _DEVICE = re.compile(r"^[A-Za-z0-9._:-]{4,80}$")
 ACTIVITY_MIN_INTERVAL = 12.0   # seconds between "working" Live Activity updates
+CARD_POLL_SECONDS = 5.0        # how often the gateway looks for cards ready for review or stopped
 ROOM_MESSAGE_SETTLE = 5.0      # a Bot's streamed message counts as finished after this quiet time
 # Surfaces whose replies the app reports. A messaging platform's own app already notifies, and cron
 # results come through the delivery platform.
@@ -221,6 +223,11 @@ class Push:
         if kind == "task" and prefs["tasks"] != "all":
             return False
         if kind == "task_failed" and prefs["tasks"] == "off":
+            return False
+        # Board cards follow the same switch: a card that needs you or stopped is a "failure".
+        if kind in ("card_review", "card_done") and prefs["tasks"] != "all":
+            return False
+        if kind in ("card_needs_you", "card_stopped") and prefs["tasks"] == "off":
             return False
         if kind == "message" and (prefs["bots"] == "off" or (prefs["bots"] == "mentions"
                                                             and not notice.extra.get("mention"))):
@@ -490,17 +497,88 @@ class Push:
         self.deliver(notices.message(room_id=room_id, room=room_name, member_id=member_id, bot=bot,
                                      gateway_name=self.gateway_name(), text=buffer["text"], mention=mention))
 
+    # -- the Board (docs/board.md §5) -------------------------------------------------------------------
+    # Hermes fires hooks for a blocked card and a finished one; "ready for review" and "stopped" have
+    # none, so the gateway's process watches the boards' events for those (``watch_cards``).
+
     def on_kanban_task_completed(self, task_id: str = "", board: str = "", assignee: str = "",
                                  summary: str = "", **_: Any) -> None:
-        self.deliver(notices.kanban(task_id=task_id, board=board, title=_kanban_title(task_id, board),
-                                    assignee=assignee or "", gateway_name=self.gateway_name(), text=summary or "",
-                                    blocked=False))
+        self.card_notice("card_done", task_id, board, assignee, summary)
 
     def on_kanban_task_blocked(self, task_id: str = "", board: str = "", assignee: str = "", reason: str = "",
                                **_: Any) -> None:
-        self.deliver(notices.kanban(task_id=task_id, board=board, title=_kanban_title(task_id, board),
-                                    assignee=assignee or "", gateway_name=self.gateway_name(), text=reason or "",
-                                    blocked=True))
+        # Only a card that waits on a person: a dependency wait (back in To Do) or a flaky failure
+        # that may clear says nothing.
+        card = _kanban_card(task_id, board)
+        if card is not None and (card.get("status") != "blocked" or card.get("block_kind") in ("dependency", "transient")):
+            return
+        self.card_notice("card_needs_you", task_id, board, assignee, reason, card=card)
+
+    def card_notice(self, kind: str, task_id: str, board: str, assignee: str, text: str,
+                    card: dict | None = None) -> None:
+        if not task_id:
+            return
+        card = card if card is not None else (_kanban_card(task_id, board) or {})
+        profile = assignee or card.get("assignee") or ""
+        self.deliver(notices.card(kind, card_id=task_id, board=board or card.get("board") or "", title=card.get("title", ""),
+                                  who=_profile_title(profile), profile=profile, project_id=card.get("project_id", ""),
+                                  gateway_name=self.gateway_name(), text=text or ""))
+
+    def watch_cards(self) -> None:
+        """Starts the board watcher once (the gateway process; worker processes don't)."""
+        with self._lock:
+            if getattr(self, "_card_watch", None) is not None:
+                return
+            self._card_watch = threading.Thread(target=self._watch_cards, name="app-push-cards", daemon=True)
+            self._card_watch.start()
+
+    def _watch_cards(self) -> None:
+        while True:
+            time.sleep(CARD_POLL_SECONDS)
+            try:
+                if self.store.devices():
+                    self.poll_cards()
+            except Exception:
+                logger.debug("app push: card watch failed", exc_info=True)
+
+    def poll_cards(self) -> int:
+        """Review requests and stops since the last look, once each: the cursor per board moves under
+        the store's lock, so two processes never send the same one."""
+        from hermes_cli import kanban_db
+        from hermes_cli.kanban_db_connect import connect_closing
+        sent = 0
+        for meta in kanban_db.list_boards():
+            slug = meta.get("slug") or "default"
+            with connect_closing(board=slug) as conn:
+                latest = int(conn.execute("SELECT COALESCE(MAX(id), 0) FROM task_events").fetchone()[0])
+
+                def advance(state: dict, slug: str = slug, latest: int = latest):
+                    cursors = state.setdefault("card_cursors", {})
+                    start = cursors.get(slug)
+                    cursors[slug] = max(latest, start or 0)
+                    return start
+
+                start = self.store.update(advance)
+                if start is None or start >= latest:
+                    continue  # first sight of the board: start from now, never the backlog
+                rows = conn.execute(
+                    "SELECT task_id, kind, payload FROM task_events WHERE id > ? AND id <= ? "
+                    "AND kind IN ('review_requested', 'gave_up', 'crashed') ORDER BY id", (start, latest)).fetchall()
+            for task_id, kind, payload in rows:
+                try:
+                    data = json.loads(payload) if payload else {}
+                except ValueError:
+                    data = {}
+                card = _kanban_card(task_id, slug)
+                if card is None:
+                    continue
+                if kind == "review_requested":
+                    self.card_notice("card_review", task_id, slug, card.get("assignee") or "", card.get("summary") or "", card=card)
+                else:
+                    self.card_notice("card_stopped", task_id, slug, card.get("assignee") or "",
+                                     str(data.get("error") or card.get("error") or ""), card=card)
+                sent += 1
+        return sent
 
     # -- cron delivery -------------------------------------------------------------------------------------
 
@@ -656,15 +734,37 @@ def _parse_cron(message: str) -> tuple[str, str, str]:
     return "", "", str(message or "")
 
 
-def _kanban_title(task_id: str, board: str) -> str:
+def _kanban_card(task_id: str, board: str) -> dict | None:
+    """The card's facts a notice needs (title, column, why it's blocked, who, project, latest
+    summary); None when it can't be read."""
     with contextlib.suppress(Exception):
         from hermes_cli import kanban_db
         from hermes_cli.kanban_db_connect import connect_closing
         with connect_closing(board=board or None) as conn:
             task = kanban_db.get_task(conn, task_id)
-            if task is not None and task.title:
-                return str(task.title)
-    return ""
+            if task is None:
+                return None
+            project = task.project_id
+            if not project:
+                with contextlib.suppress(Exception):
+                    project = (kanban_db.read_board_metadata(board) or {}).get("project_id") if board else None
+            return {"title": str(task.title or ""), "status": task.status, "block_kind": task.block_kind,
+                    "assignee": task.assignee or "", "project_id": project or "", "board": board or "",
+                    "summary": kanban_db.latest_summary(conn, task_id) or "", "error": task.last_failure_error or ""}
+    return None
+
+
+def _profile_title(profile: str) -> str:
+    """A profile's name as the app shows it: "Hermes" for the default, else its display name."""
+    if not profile or profile == "default":
+        return "Hermes"
+    with contextlib.suppress(Exception):
+        from hermes_cli.profiles import get_profile_dir, read_profile_meta
+        meta = read_profile_meta(get_profile_dir(profile))
+        name = meta.get("bot_title") or meta.get("display_name")
+        if name:
+            return str(name)
+    return profile.replace("-", " ").replace("_", " ").title()
 
 
 def _room_names(room_id: str, member_id: str) -> tuple[str, str]:

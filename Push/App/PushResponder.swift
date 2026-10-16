@@ -57,6 +57,8 @@ enum PushResponder {
             await answer(notice, center: center, identifier: response.identifier) {
                 if notice.kind == .question {
                     try await answerQuestion(notice, with: text, center: center)
+                } else if notice.kind == .cardNeedsYou {
+                    try await answerCard(notice, with: text, center: center)
                 } else {
                     try await reply(notice, with: text, center: center)
                 }
@@ -152,6 +154,17 @@ enum PushResponder {
     }
 
     // MARK: - Replies
+
+    /// Reply… on a card that needs you: the answer goes on the card as a comment, then the card
+    /// goes back to Ready for the dispatcher to pick up (`docs/board.md` §3).
+    @MainActor
+    static func answerCard(_ notice: PushNotice, with text: String, center: PushCenter) async throws {
+        let (workspace, _) = try gateway(for: notice, center: center)
+        guard let card = notice.cardID, let client = workspace.roster?.boardClient else { throw Failure.noBackend }
+        let board = notice.board ?? "default"
+        try await client.commentOnBoardCard(card, board: board, body: text)
+        try await client.updateBoardCard(card, board: board, column: "ready")
+    }
 
     /// Reply…: a new message in that chat (or room). The turn runs on the gateway; the reply
     /// notifies like any other.

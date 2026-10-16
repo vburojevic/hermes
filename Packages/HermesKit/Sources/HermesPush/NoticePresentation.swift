@@ -68,6 +68,21 @@ public struct NoticePresentation: Sendable, Equatable {
             title = notice.bot ?? notice.title
             subtitle = notice.subtitle
             body = notice.body
+        case .cardNeedsYou:
+            // "Ada needs you on “Write the App Store listing”", with the question.
+            let card = notice.cardTitle ?? notice.summary
+            let who = notice.bot ?? "Hermes"
+            title = card.isEmpty ? String(localized: "\(who) needs you", bundle: .module) : String(localized: "\(who) needs you on “\(card)”", bundle: .module)
+            subtitle = ""
+            body = notice.body
+        case .cardReview, .cardStopped, .cardDone:
+            title = switch notice.kind {
+            case .cardReview: String(localized: "Ready for review", bundle: .module)
+            case .cardStopped: String(localized: "Stopped", bundle: .module)
+            default: String(localized: "Done", bundle: .module)
+            }
+            subtitle = notice.cardTitle ?? notice.subtitle
+            body = notice.body
         case .test:
             title = String(localized: "Push notifications are on", bundle: .module)
             subtitle = ""
@@ -87,6 +102,12 @@ public struct NoticePresentation: Sendable, Equatable {
         case .taskFailed:
             interruptionLevel = .active
             relevanceScore = 0.6
+        case .cardNeedsYou:
+            interruptionLevel = .timeSensitive
+            relevanceScore = 1
+        case .cardDone:
+            interruptionLevel = .passive
+            relevanceScore = 0.3
         case .task, .background:
             interruptionLevel = .passive
             relevanceScore = notice.kind == .task ? 0.3 : 0.2
@@ -112,6 +133,8 @@ public struct NoticePresentation: Sendable, Equatable {
         case .reply: .reply
         case .message: .message
         case .task, .taskFailed: .task
+        case .cardNeedsYou: .card
+        case .cardReview, .cardStopped, .cardDone: .board
         default: notice.category.flatMap { NotificationCatalog.Category(identifier: $0) } ?? .open
         }
     }

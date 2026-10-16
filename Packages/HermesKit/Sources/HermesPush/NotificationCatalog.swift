@@ -20,6 +20,10 @@ public enum NotificationCatalog {
         case password = "PASSWORD"
         /// "Save to memory?" (Ask Before Saving on): Save, Don't Save.
         case memory = "MEMORY"
+        /// A board card needs you: Reply (answers it and sends it back to Ready), Open.
+        case card = "CARD"
+        /// A card's other news (ready for review, stopped, done): Open.
+        case board = "BOARD"
 
         /// The category id for a gateway slot.
         public func identifier(slot: Int?) -> String {
@@ -66,6 +70,8 @@ public enum NotificationCatalog {
             case .message: return String(localized: "New message", bundle: .module)
             case .open: return String(localized: "Work finished", bundle: .module)
             case .memory: return String(localized: "Wants to remember something", bundle: .module)
+            case .card: return String(localized: "A card needs you", bundle: .module)
+            case .board: return String(localized: "Board update", bundle: .module)
             }
         }
         switch category {
@@ -78,6 +84,8 @@ public enum NotificationCatalog {
         case .message: return String(localized: "New message on \(gateway)", bundle: .module)
         case .open: return String(localized: "Work finished on \(gateway)", bundle: .module)
         case .memory: return String(localized: "Wants to remember something on \(gateway)", bundle: .module)
+        case .card: return String(localized: "A card needs you on \(gateway)", bundle: .module)
+        case .board: return String(localized: "Board update on \(gateway)", bundle: .module)
         }
     }
 
@@ -129,11 +137,17 @@ public enum NotificationCatalog {
             return choiceActions(choices) + [replyAction(answer: true)]
         case .reply, .message:
             return [replyAction(answer: false)]
-        case .task:
-            return [UNNotificationAction(identifier: Action.open, title: String(localized: "Open", bundle: .module), options: [.foreground], icon: .init(systemImageName: "arrow.up.forward.app"))]
+        case .task, .board:
+            return [openAction]
+        case .card:
+            return [replyAction(answer: true), openAction]
         case .open, .password:
             return []
         }
+    }
+
+    static var openAction: UNNotificationAction {
+        UNNotificationAction(identifier: Action.open, title: String(localized: "Open", bundle: .module), options: [.foreground], icon: .init(systemImageName: "arrow.up.forward.app"))
     }
 
     /// Up to three of a question's choices, each answering it in the background.
