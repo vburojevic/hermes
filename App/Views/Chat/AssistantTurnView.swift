@@ -12,7 +12,7 @@ struct AssistantTurnView: View {
     var onBranch: BranchAction?
     /// Helper teams no call in the transcript claims: the latest reply shows them.
     var extraTeamIDs: [String] = []
-    /// Whose memory the turn's memory notes open.
+    /// The chat the turn's notes act on: whose memory they open, which board Open Board shows.
     var memoryContext: MemoryNoteContext?
 
     @Environment(\.helperStore) private var helperStore
@@ -217,6 +217,10 @@ struct AssistantTurnView: View {
         }
         if !turn.isWorking, !memoryChanges.isEmpty {
             MemoryNotes(changes: memoryChanges, context: memoryContext)
+        }
+        // Cards Hermes put on a board (`kanban_create`, `docs/board.md` §4).
+        if !turn.isWorking, let memoryContext, case let cards = turn.addedCards, !cards.isEmpty {
+            CardsAddedNote(cards: cards, context: memoryContext)
         }
         if let onBranch, onBranch.isLatest, !turn.isWorking, let percent = turn.usage?.contextPercent, percent >= 80 {
             ContextNotice(percent: percent) { onBranch.conversation.runCommand("compress", argument: nil) }

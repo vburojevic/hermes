@@ -23,6 +23,8 @@ import threading
 import time
 
 B = None          # backend.py's globals
+G = None          # server.py (the API server), for regular chats
+C = None          # chats.py
 LOCK = threading.RLock()
 HOME = "/Users/studio"
 APP_REPO = f"{HOME}/Code/hermes-app"
@@ -876,9 +878,58 @@ def seed_worker_chats():
                      ts=time.time() - 20)
 
 
-def install(backend_globals):
-    global B
-    B = backend_globals
+def chat_turn(sid, text):
+    """"Plan … as cards": Hermes adds three cards with `kanban_create` (`boardFromChat`)."""
+    import json
+    runtime = B["RUNTIME"][sid]
+    if runtime.get("kind") == "chat":
+        stored = runtime["stored"]
+        G.add_message(stored, "user", text)
+        tool = lambda name, args, result: C.tool(sid, stored, name, args, 0.5, context=args.get("title", ""), result=result)
+        stream, finish = (lambda t: C.stream(sid, t)), (lambda t: C.finish(sid, stored, t))
+    else:
+        stored = B["ensure_row"](sid)
+        B["add_message"](stored, "user", text)
+        tool = lambda name, args, result: B["tool"](sid, stored, name, args, result, 0.5, args.get("title", ""))
+        stream, finish = (lambda t: B["stream"](sid, t)), (lambda t: B["finish"](sid, stored, t))
+    B["emit"](sid, "session.info", {"running": True})
+    B["emit"](sid, "message.start", {})
+    time.sleep(0.3)
+    made = []
+    plan = [("Write the App Store listing", "writer", [], "Subtitle, description, keywords and what's new for 1.3."),
+            ("Record the preview video", "default", [], "30 s, iPhone and Mac, from the TestFlight build."),
+            ("Ship 1.3 to TestFlight", "default", [0, 1], "Archive, upload, write the notes for testers.")]
+    for title, who, parents, body in plan:
+        ids = [made[i] for i in parents]
+        with LOCK:
+            cid = card_id(f"{title}{time.time()}")
+            card = new_card("hermes-app", cid, title, "ready", body=body, assignee=who, parents=ids, workspace_kind="scratch")
+            card["session_id"] = stored
+            if parents_open(card):
+                card["status"] = "todo"
+        emit(card, "created", {"assignee": who, "status": card["status"]})
+        made.append(cid)
+        args = {"title": title, "body": body, "assignee": who, "parents": ids}
+        result = {"ok": True, "task_id": cid, "status": card["status"], "workspace_kind": "scratch", "workspace_path": None,
+                  "project_id": "p_4f2a9c1e", "gated": card["status"] == "todo", "subscribed": False}
+        if card["status"] == "todo":
+            result["gated_by"] = ids[0]
+        tool("kanban_create", args, json.dumps(result))
+    answer = "Split it into three cards. The listing goes to Ada; TestFlight waits for the listing and the video."
+    stream(answer)
+    return finish(answer)
+
+
+def install(backend_globals, gateway_module=None, chats_module=None):
+    global B, G, C
+    B, G, C = backend_globals, gateway_module, chats_module
+    original_start = B.get("start_turn")
+    if original_start:
+        def start_turn(sid, text, runner):
+            if " as cards" in (text or "").lower():
+                return original_start(sid, text, chat_turn)
+            return original_start(sid, text, runner)
+        B["start_turn"] = start_turn
     routes = B["HTTP_ROUTES"]
     base = "/api/plugins/kanban"
     routes[("GET", f"{base}/workflow")] = get_workflow

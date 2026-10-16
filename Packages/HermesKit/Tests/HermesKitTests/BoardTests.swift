@@ -254,6 +254,27 @@ struct BoardTests {
         #expect(run.changedFiles == [BoardChangedFile(path: "A.swift"), BoardChangedFile(path: "B.swift", added: 312), BoardChangedFile(path: "C.swift", added: 4, removed: 4)])
     }
 
+    // MARK: From a chat
+
+    @Test func aChatTurnListsTheCardsItAdded() throws {
+        func step(_ args: String, _ reply: String, status: ToolActivity.Status = .succeeded) throws -> AssistantStep {
+            .tool(ToolActivity(id: UUID().uuidString, name: "kanban_create", arguments: try json(args), result: reply, status: status))
+        }
+        let turn = AssistantTurn(id: "turn", steps: [
+            try step(#"{"title": "Write the App Store listing", "assignee": "writer"}"#,
+                     #"{"ok": true, "task_id": "t_8f31c4e8", "status": "ready", "project_id": "p_1", "gated": false}"#),
+            try step(#"{"title": "Ship 1.3 to TestFlight", "assignee": "default", "parents": ["t_8f31c4e8", "t_2b6d8c3e"]}"#,
+                     #"{"ok": true, "task_id": "t_7c1e0b19", "status": "todo", "project_id": "p_1", "gated": true, "gated_by": "t_8f31c4e8"}"#),
+            try step(#"{"title": "Refused"}"#, #"{"ok": false, "error": "assignee is required"}"#),
+            try step(#"{"title": "Failed"}"#, "boom", status: .failed),
+            .tool(ToolActivity(id: "m", name: "memory", status: .succeeded)),
+        ])
+        let cards = turn.addedCards
+        #expect(cards.map(\.title) == ["Write the App Store listing", "Ship 1.3 to TestFlight"])
+        #expect(cards[0].column == "ready" && cards[0].assignee == "writer" && !cards[0].isWaiting)
+        #expect(cards[1].isWaiting && cards[1].parentCount == 2 && cards[1].projectID == "p_1")
+    }
+
     @Test func workerLogKeepsTheLastLines() {
         let log = BoardWorkerLog(exists: true, content: "one\n\ntwo\nthree\n  \nfour\n", truncated: false)
         #expect(log.lastLines(3) == ["two", "three", "four"])

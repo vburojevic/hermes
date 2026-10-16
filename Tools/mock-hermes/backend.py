@@ -1507,7 +1507,7 @@ def main():
         spec = importlib.util.spec_from_file_location("mock_kanban", here / "kanban.py")
         kanban = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(kanban)
-        kanban.install(globals())
+        kanban.install(globals(), gateway, chats)
         globals()["MOCK_KANBAN"] = kanban
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
