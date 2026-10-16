@@ -20,7 +20,8 @@ Turns (regular chats and Bot Chats):
 
 Demo data is the designs': six things about you, fourteen notes (94% full), two saves waiting for
 review; Research Buddy has its own three and nine. The chat "Hermes app in SwiftUI" saved one of
-the about-you entries ("New in this chat"). mock.memory.reset puts it all back; mock.memory.stage
+the about-you entries ("New in this chat"). mock.memory.reset (or POST /api/mock/memory/reset) puts it all
+back; mock.memory.stage
 {text, target, profile} stages a save as a task would.
 """
 
@@ -100,6 +101,7 @@ def install(backend_globals, gateway_module, chats_module):
     routes[("GET", "/api/memory")] = memory_status
     routes[("PUT", "/api/memory/provider")] = memory_provider
     routes[("POST", "/api/memory/reset")] = memory_reset
+    routes[("POST", "/api/mock/memory/reset")] = lambda query, body: (seed(), (200, {"ok": True}))[1]
 
     previous_get, previous_put = routes.get(("GET", "/api/config")), routes.get(("PUT", "/api/config"))
 

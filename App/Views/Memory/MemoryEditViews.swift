@@ -57,7 +57,8 @@ struct MemoryEditSheet: View {
                         .foregroundStyle(Theme.primaryText)
                         .scrollContentBackground(.hidden)
                         .padding(10)
-                        .frame(minHeight: 130)
+                        // It scrolls inside past this, so the room left and any refusal stay in view.
+                        .frame(minHeight: 130, maxHeight: 200)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .disabled(!loaded)
                         .accessibilityLabel(Text("Memory"))
@@ -146,7 +147,10 @@ struct MemoryEditSheet: View {
                 // Changed on the gateway: work on the entry as it is now, keeping the typed text.
                 if MemoryModel.isStale(message) {
                     self.entry = model.current(entry, at: target.index)
-                    if self.entry == nil {
+                    if let fresh = self.entry {
+                        // What the gateway has now, beside what the person typed.
+                        refusal = String(localized: "\(message)\nOn \(model.gatewayName) it now says: “\(fresh.text)”. Save to replace it with your text.")
+                    } else {
                         refusal = String(localized: "This was forgotten on \(model.gatewayName). Your text is still here to copy.")
                     }
                 }

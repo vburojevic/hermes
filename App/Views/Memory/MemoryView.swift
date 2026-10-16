@@ -95,8 +95,11 @@ struct MemoryView: View {
                     .padding(.top, 14)
                 footer
                     .padding(.top, 10)
-                tellButton
-                    .padding(.top, 20)
+                // The empty state has its own Tell Hermes Something.
+                if !model.entries(in: model.tab).isEmpty || model.list == nil {
+                    tellButton
+                        .padding(.top, 20)
+                }
             }
             options
                 .padding(.top, 28)
@@ -200,7 +203,7 @@ struct MemoryView: View {
                 }
                 .padding(.bottom, 16)
             }
-            if model.list != nil {
+            if model.list != nil, !entries.isEmpty {
                 MemoryMeter(store: store, count: entries.count, fraction: model.fraction(in: store))
                     .padding(.bottom, 10)
             }
