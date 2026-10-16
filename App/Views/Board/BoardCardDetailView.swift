@@ -34,6 +34,7 @@ struct BoardCardDetailView: View {
         }
         .background((inInspector ? Theme.sheetBackground : Theme.groupedBackground).ignoresSafeArea())
         .task(id: cardID) { await model.watchDetail(cardID) }
+        .onChange(of: commentFocused) { _, focused in model.isTyping = focused }
         .onAppear { model.appear() }
         .onDisappear { model.disappear() }
     }

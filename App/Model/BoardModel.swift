@@ -58,6 +58,8 @@ final class BoardModel {
     var assigneeFilter: String?
     /// A refusal or failure to show over the board.
     var notice: String?
+    /// Typing in a card's reply or comment field: ⌘→ / ⌘← move the cursor, not the card.
+    var isTyping = false
     /// The card being dragged (iPad, Mac): columns it can't go to dim.
     var draggingCardID: String?
     /// "Nothing will pick it up" from the gateway, under cards just added.

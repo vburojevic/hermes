@@ -160,6 +160,16 @@ struct HermesCommands: Commands {
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
             .disabled(model.currentWorkspace?.currentProjectID == nil || model.currentWorkspace?.roster == nil)
+            // Drag and drop's keyboard path (`docs/board.md` §6): the selected card to the next
+            // column it may go to. Off while typing in the card, where ⌘→ moves the cursor.
+            let board = model.currentWorkspace?.shownBoard
+            let canMove = board.map { $0.openCardID != nil && !$0.isTyping } ?? false
+            Button("Move Card Right") { Task { await board?.moveOpenCard(forward: true) } }
+                .keyboardShortcut(.rightArrow, modifiers: .command)
+                .disabled(!canMove)
+            Button("Move Card Left") { Task { await board?.moveOpenCard(forward: false) } }
+                .keyboardShortcut(.leftArrow, modifiers: .command)
+                .disabled(!canMove)
             Divider()
         }
         // Chat (macMenuChat): the turn, the conversation, then the gateways.

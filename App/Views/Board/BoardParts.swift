@@ -502,6 +502,7 @@ struct NeedsInputCard: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Theme.warning, lineWidth: 1)
         }
+        .onChange(of: focused) { _, focused in model.isTyping = focused }
     }
 
     private func send() {

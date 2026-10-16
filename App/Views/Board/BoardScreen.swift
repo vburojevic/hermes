@@ -93,16 +93,6 @@ struct BoardScreen: View {
         .onChange(of: model.phase) { pickOpeningColumn() }
         .onChange(of: model.snapshot.cards.count) { pickOpeningColumn() }
         #if os(macOS)
-        .onKeyPress(.rightArrow, phases: .down) { press in
-            guard press.modifiers.contains(.command), model.openCardID != nil else { return .ignored }
-            Task { await model.moveOpenCard(forward: true) }
-            return .handled
-        }
-        .onKeyPress(.leftArrow, phases: .down) { press in
-            guard press.modifiers.contains(.command), model.openCardID != nil else { return .ignored }
-            Task { await model.moveOpenCard(forward: false) }
-            return .handled
-        }
         .onKeyPress(.escape) {
             guard !model.selection.isEmpty || model.openCardID != nil else { return .ignored }
             model.selection = []
