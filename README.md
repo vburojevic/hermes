@@ -47,6 +47,17 @@ split view on iPad and Mac.
   and pick a ready memory provider. A reply that saved something ends with "Remembered: …"; tap it
   for the entry. Memory is read at the start of a chat, so changes apply from the next one. Entries
   are never logged, cached or indexed. Needs Bot Mode.
+- **Board**: a project's cards that Hermes and its Bots work through on their own (the gateway's
+  kanban), from the project home's Board row (on the Mac, under the project in the sidebar, or ⇧⌘B).
+  One column at a time on iPhone, opening where something needs you; columns side by side on iPad
+  and the Mac, the card in an inspector (a sheet on iPad in portrait). Columns and every move come
+  from the gateway's workflow, and the board updates live. A card that needs you takes your answer
+  (Reply and Continue sends it back to Ready); a review shows its PR checks, and Approve says which
+  check failed when it's refused; Stop ends a run and Watch follows its chat. New Card picks who
+  works on it, Hermes first, or lets Hermes write it up. On the Mac, drag cards between the columns
+  they may go to, ⌘-click several for Move, Assign and Archive, ⌘N for New Card and ⌘→ / ⌘← to move
+  the selected card. Cards Hermes adds from a chat are listed under its reply, with Open Board.
+  They're always "cards": Tasks are scheduled jobs. Needs Bot Mode.
 - **Search**: the chat search finds words inside chats, not just titles (with Bot Mode; titles
   only without it): one row per chat with the matching words in bold, chips for Chats, Projects,
   Bots and Tasks, and where each chat lives. Opening a result jumps to the message and flashes it.
@@ -102,8 +113,9 @@ address, e.g. Tailscale Serve's `https://<mac>.<tailnet>.ts.net:8642`.
 
 ## Push notifications
 
-Approvals, questions, password prompts, finished replies, scheduled tasks, Kanban cards and Bot messages
-reach the iPhone and iPad when Hermes isn't on screen, plus a Live Activity for long turns. Hermes Agent
+Approvals, questions, password prompts, finished replies, scheduled tasks, board cards (one needs you,
+ready for review, stopped, done; Reply answers a card that needs you) and Bot messages reach the
+iPhone and iPad when Hermes isn't on screen, plus a Live Activity for long turns. Hermes Agent
 can't push to Apple, so a gateway plugin seals each notice for each device and sends it through a relay:
 
 ```
@@ -287,6 +299,19 @@ first while Ask Before Saving is on), "in a task" stages the save for review, "f
 "beta 3" updates and "three things" saves a batch. `POST /api/mock/memory/reset` puts it all back.
 Debug flags, with `-HERMES_OPEN settings`: `-HERMES_MEMORY about|notes|options|edit:<n>|reset|bot:<profile>`
 (on the Mac it opens Settings → Memory).
+
+And the Board (`Tools/mock-hermes/kanban.py`), shaped like the gateway's kanban plugin
+(`/api/plugins/kanban/*` and its event socket): Hermes App's board as the design draws it (two
+running, one quiet for 9 minutes, a card that needs Ada's answer, one that gave up, a review with its
+PR checks, a split card). A pretend dispatcher picks up cards that become Ready while it runs, works
+on them for 20 s with worker output, and finishes them; seeded cards stay put. Refusals use the
+gateway's words. In a chat, "… as cards" adds three cards with `kanban_create`. `POST
+/api/mock/kanban/act {card, action: needs_input|review|gave_up|complete|stale}` drives a card
+(`review` takes `ok: false` for a failing check), `POST /api/mock/kanban/config {dispatcher, socket}`
+pauses the dispatcher or refuses the socket (the app then polls every 5 s), and `POST
+/api/mock/kanban/reset` puts it back. Debug flags: `-HERMES_OPEN board:<project id>` with
+`-HERMES_BOARD_COLUMN <column>`, `-HERMES_BOARD_CARD <card id>` and
+`-HERMES_BOARD_SHEET new|assign|reopen|watch|edit`.
 
 And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`'s
 `/api/sessions/search`: "reconnect" matches seven chats across Hermes App's lanes, a task run of
