@@ -9,11 +9,11 @@ public enum FaceMood: String, Sendable, Codable, CaseIterable {
     case listening
     /// Hermes "think": looks up, sways, dots wave.
     case thinking
-    /// Hermes "work": glances at the work, dots wave a little faster.
+    /// Hermes "work": eyes down on the work, reading along, dots wave a little faster.
     case working
     /// ^ ^ for a moment: a reply landed, or it was tapped.
     case happy
-    /// Offline or reclaimed: eyes closed, half strength, still.
+    /// Offline or reclaimed: eyes closed, half strength, breathing slowly.
     case sleeping
 
     /// The working moods' eyes are 2.6 tall instead of 2.3, and their dots wave.
@@ -32,75 +32,91 @@ public enum FaceEyes: Sendable, Equatable {
     case sleeping
 }
 
-/// One frame of a face: Hermes's `FacePose`.
+/// One frame of a face. The body only ever moves as a whole (it leans, breathes, hops), so its
+/// outline keeps its shape; the life is in the eyes.
 public struct FacePose: Sendable, Equatable {
-    /// Degrees. turn and tilt squash the outline; tilt also rotates the face.
-    public var turn: Double
-    public var tilt: Double
-    public var roll: Double
-    /// Eye offset in face units (±3.6 at most in Hermes's moods; ±3.2 when looking at something).
+    /// Degrees the face leans, rigidly, about the bottom of the body.
+    public var lean: Double
+    /// The body's height against rest (1): a little taller on the in-breath.
+    public var breath: Double
+    /// Where the eyes look, in face units from their rest. The painter keeps them on the body.
     public var gazeX: Double
     public var gazeY: Double
-    public var blink: Bool
+    /// How open the eyelids are, 0 (shut) to 1.
+    public var lid: Double
     /// The three dots' opacities.
     public var dots: (Double, Double, Double)
 
-    public init(turn: Double = 0, tilt: Double = 0, roll: Double = 0, gazeX: Double = 0, gazeY: Double = 0, blink: Bool = false, dots: (Double, Double, Double) = (0, 0, 0)) {
-        self.turn = turn
-        self.tilt = tilt
-        self.roll = roll
+    public init(lean: Double = 0, breath: Double = 1, gazeX: Double = 0, gazeY: Double = 0, lid: Double = 1, dots: (Double, Double, Double) = (0, 0, 0)) {
+        self.lean = lean
+        self.breath = breath
         self.gazeX = gazeX
         self.gazeY = gazeY
-        self.blink = blink
+        self.lid = lid
         self.dots = dots
     }
 
     public static let rest = FacePose()
 
     public static func == (a: FacePose, b: FacePose) -> Bool {
-        a.turn == b.turn && a.tilt == b.tilt && a.roll == b.roll && a.gazeX == b.gazeX && a.gazeY == b.gazeY
-            && a.blink == b.blink && a.dots == b.dots
+        a.lean == b.lean && a.breath == b.breath && a.gazeX == b.gazeX && a.gazeY == b.gazeY && a.lid == b.lid && a.dots == b.dots
     }
 
-    /// Hermes's `facePose` (t in seconds on the shared clock), plus the app's moods.
-    public static func of(_ mood: FaceMood, at t: Double) -> FacePose {
+    /// The pose of `mood` at `t` seconds on the shared clock. `seed` (from the Bot's name) gives
+    /// each face its own timing, so a grid of Bots never sways or blinks in step.
+    public static func of(_ mood: FaceMood, at t: Double, seed: UInt32 = 0) -> FacePose {
+        let rate = 0.9 + 0.2 * FaceNoise.unit(seed, 0, salt: 1)
+        let time = t * rate + FaceNoise.unit(seed, 0, salt: 2) * 97
+        var pose = FacePose(dots: mood.isBusy ? wave(t, frequency: mood == .working ? 2.6 : 2.2) : (0, 0, 0))
         switch mood {
-        case .thinking:
-            return FacePose(
-                turn: -18 + sin(t * 0.55) * 14,
-                tilt: sin(t * 0.48) * 12 + sin(t * 1.35) * 3,
-                roll: sin(t * 0.95) * 10,
-                gazeX: sin(t * 0.7) * 3.6,
-                gazeY: -2.2 + sin(t * 0.4) * 2.2,
-                blink: t.truncatingRemainder(dividingBy: 1.45) > 1.26,
-                dots: wave(t, frequency: 2.4)
-            )
-        case .working:
-            return FacePose(
-                turn: -11 + sin(t * 0.48) * 8,
-                tilt: sin(t * 0.42) * 8 + sin(t * 1.1) * 1.6,
-                roll: sin(t * 0.75) * 4.2,
-                gazeX: sin(t * 0.55) * 3.6,
-                gazeY: -1.6 + sin(t * 0.38) * 2,
-                blink: t.truncatingRemainder(dividingBy: 1.45) > 1.26,
-                dots: wave(t, frequency: 2.6)
-            )
-        case .sleeping:
-            return .rest
-        case .idle, .listening, .happy:
-            var pose = FacePose(
-                turn: sin(t * 0.5) * 1.5,
-                tilt: sin(t * 0.27),
-                roll: sin(t * 0.85) * 1.2,
-                blink: t.truncatingRemainder(dividingBy: 3.2) > 3.02
-            )
-            if mood == .listening {
-                pose.gazeX = 1.4
-                pose.gazeY = 1.0
+        case .idle, .happy:
+            pose.lean = 1.4 * sin(2 * .pi * time / 6.3) + 0.5 * sin(2 * .pi * time / 2.9)
+            pose.breath = 1 + 0.016 * sin(2 * .pi * time / 3.6)
+            (pose.gazeX, pose.gazeY) = glance(time, seed: seed, every: 2.6, settle: 0.12) { k in
+                // Mostly straight ahead; now and then a look around.
+                FaceNoise.unit(seed, k, salt: 3) < 0.4 ? (0, 0)
+                    : ((FaceNoise.unit(seed, k, salt: 4) - 0.5) * 4.6, (FaceNoise.unit(seed, k, salt: 5) - 0.5) * 2.4)
             }
-            if mood == .happy { pose.blink = false }
-            return pose
+            if mood == .happy {
+                pose.gazeX *= 0.3
+                pose.gazeY = -0.4
+            } else {
+                pose.lid = blink(time, seed: seed, every: 4.4)
+            }
+        case .listening:
+            // Attentive: leaning in a touch, eyes on the composer, the odd small glance.
+            pose.lean = -1.6 + 0.6 * sin(2 * .pi * time / 4.7)
+            pose.breath = 1 + 0.012 * sin(2 * .pi * time / 3.2)
+            (pose.gazeX, pose.gazeY) = glance(time, seed: seed, every: 1.9, settle: 0.1) { k in
+                (0.8 + (FaceNoise.unit(seed, k, salt: 6) - 0.5) * 1.2, 1.4 + (FaceNoise.unit(seed, k, salt: 7) - 0.5) * 0.6)
+            }
+            pose.lid = blink(time, seed: seed, every: 5.2)
+        case .thinking:
+            // Eyes up, drifting from one side to the other; a slow sway.
+            pose.lean = 3.2 * sin(2 * .pi * time / 4.1)
+            pose.breath = 1 + 0.014 * sin(2 * .pi * time / 3.0)
+            (pose.gazeX, pose.gazeY) = glance(time, seed: seed, every: 1.7, settle: 0.38) { k in
+                let side: Double = FaceNoise.unit(seed, k, salt: 8) < 0.5 ? -1 : 1
+                return (side * (1.2 + FaceNoise.unit(seed, k, salt: 9) * 1.4), -1.6 - FaceNoise.unit(seed, k, salt: 10) * 0.8)
+            }
+            pose.lid = blink(time, seed: seed, every: 3.4)
+        case .working:
+            // Eyes down on the work, reading along a line and back.
+            pose.lean = 1.1 * sin(2 * .pi * time / 1.8)
+            pose.breath = 1 + 0.012 * sin(2 * .pi * time / 2.4)
+            let line = 1.25
+            let along = (time / line).truncatingRemainder(dividingBy: 1)
+            let row = Int((time / line).rounded(.down))
+            let sweep = along < 0.82 ? along / 0.82 : 1 - FaceNoise.easeOut((along - 0.82) / 0.18)
+            pose.gazeX = -1.9 + 3.8 * sweep
+            pose.gazeY = 1.1 + (FaceNoise.unit(seed, row, salt: 11) - 0.5) * 0.5
+            pose.lid = blink(time, seed: seed, every: 3.1)
+        case .sleeping:
+            pose.breath = 1 + 0.024 * sin(2 * .pi * time / 4.8)
+            pose.gazeY = 0.6
+            pose.lid = 0
         }
+        return pose
     }
 
     /// 0.2 + 0.8·max(0, sin(f·t − 0.7k)) for dot k.
@@ -110,38 +126,89 @@ public struct FacePose: Sendable, Equatable {
          0.2 + 0.8 * max(0, sin(t * frequency - 1.4)))
     }
 
-    /// Reduce Motion: no sway or gaze; the blink and the dots stay.
-    public var stilled: FacePose {
-        FacePose(blink: blink, dots: dots)
+    /// Eyes that hop between targets: one target per `every` seconds, switched at an uneven moment
+    /// of each stretch (so glances don't keep time), moving there in `settle` seconds.
+    static func glance(_ time: Double, seed: UInt32, every: Double, settle: Double, target: (Int) -> (Double, Double)) -> (Double, Double) {
+        let index = Int((time / every).rounded(.down))
+        let into = time - Double(index) * every
+        let at = every * (0.15 + 0.6 * FaceNoise.unit(seed, index, salt: 12))
+        let previous = target(index - 1), next = target(index)
+        guard into >= at else { return previous }
+        let p = FaceNoise.easeOut(min(1, (into - at) / settle))
+        return (previous.0 + (next.0 - previous.0) * p, previous.1 + (next.1 - previous.1) * p)
     }
 
-    /// `self` moved toward `other` by `amount` (blink comes from `other`).
+    /// The eyelids, 1 open to 0 shut: about one blink per `every` seconds at an uneven moment, now
+    /// and then a double one. Shuts in 70 ms, opens in 120 ms.
+    static func blink(_ time: Double, seed: UInt32, every: Double) -> Double {
+        let index = Int((time / every).rounded(.down))
+        let into = time - Double(index) * every
+        let at = every * (0.2 + 0.6 * FaceNoise.unit(seed, index, salt: 13))
+        var lid = lidCurve(into - at)
+        if FaceNoise.unit(seed, index, salt: 14) < 0.18 { lid = min(lid, lidCurve(into - at - 0.26)) }
+        return lid
+    }
+
+    /// The eyelids `since` seconds into a blink: 1, shut in 70 ms, open again by 240 ms.
+    public static func lidCurve(_ since: Double) -> Double {
+        switch since {
+        case ..<0: 1
+        case ..<0.07: 1 - FaceNoise.easeIn(since / 0.07)
+        case ..<0.12: 0
+        case ..<0.24: FaceNoise.easeOut((since - 0.12) / 0.12)
+        default: 1
+        }
+    }
+
+    /// Reduce Motion: no sway, breath or glances; the blink and the dots stay.
+    public var stilled: FacePose {
+        FacePose(lid: lid, dots: dots)
+    }
+
+    /// `self` moved toward `other` by `amount`.
     public func blended(toward other: FacePose, by amount: Double) -> FacePose {
         func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * amount }
         return FacePose(
-            turn: mix(turn, other.turn), tilt: mix(tilt, other.tilt), roll: mix(roll, other.roll),
-            gazeX: mix(gazeX, other.gazeX), gazeY: mix(gazeY, other.gazeY), blink: other.blink,
+            lean: mix(lean, other.lean), breath: mix(breath, other.breath),
+            gazeX: mix(gazeX, other.gazeX), gazeY: mix(gazeY, other.gazeY), lid: mix(lid, other.lid),
             dots: (mix(dots.0, other.dots.0), mix(dots.1, other.dots.1), mix(dots.2, other.dots.2))
         )
     }
 }
 
-/// What a face is aiming for: a mood, and maybe something to look at.
+/// Deterministic noise for faces: the same Bot moves the same way on every device and redraw.
+public enum FaceNoise {
+    /// 0…1 from a seed, an index and a salt (splitmix64).
+    public static func unit(_ seed: UInt32, _ index: Int, salt: UInt64) -> Double {
+        var z = UInt64(seed) &* 0x9E37_79B9_7F4A_7C15 &+ UInt64(bitPattern: Int64(index)) &* 0xBF58_476D_1CE4_E5B9 &+ salt &* 0x94D0_49BB_1331_11EB
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        return Double(z >> 11) / Double(1 << 53)
+    }
+
+    static func easeOut(_ p: Double) -> Double { 1 - pow(1 - max(0, min(1, p)), 3) }
+    static func easeIn(_ p: Double) -> Double { pow(max(0, min(1, p)), 2) }
+}
+
+/// What a face is aiming for: a mood, maybe something to look at, and its own timing.
 public struct FaceTarget: Sendable, Equatable {
     public var mood: FaceMood
     /// A direction to look in (each axis −1…1), or nil for the mood's own gaze.
     public var look: CGVector?
+    public var seed: UInt32
 
-    public init(mood: FaceMood, look: CGVector? = nil) {
+    public init(mood: FaceMood, look: CGVector? = nil, seed: UInt32 = 0) {
         self.mood = mood
         self.look = look
+        self.seed = seed
     }
 
-    /// Looking at something moves the eyes up to ±3.2.
+    /// Looking at something moves the eyes up to 3.2 units (kept on the body when drawn).
     public static let maxGaze = 3.2
 
     public func pose(at t: Double) -> FacePose {
-        var pose = FacePose.of(mood, at: t)
+        var pose = FacePose.of(mood, at: t, seed: seed)
         if let look, mood != .sleeping {
             pose.gazeX = max(-1, min(1, look.dx)) * Self.maxGaze
             pose.gazeY = max(-1, min(1, look.dy)) * Self.maxGaze
@@ -150,8 +217,8 @@ public struct FaceTarget: Sendable, Equatable {
     }
 }
 
-/// Moving from one target to the next: Hermes's `settlePose`, blending from the pose on screen
-/// over 0.4 s with ease-out (1 − (1 − p)²).
+/// Moving from one target to the next: blending from the pose on screen over 0.4 s with ease-out
+/// (1 − (1 − p)²), so a mood change never jumps.
 public struct FaceTransition: Sendable, Equatable {
     public private(set) var target: FaceTarget
     public private(set) var from: FacePose

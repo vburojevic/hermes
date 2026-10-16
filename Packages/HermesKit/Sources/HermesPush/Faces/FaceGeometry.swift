@@ -143,19 +143,6 @@ public enum FaceGeometry {
         return path
     }
 
-    // MARK: Head turn
-
-    /// Hermes's `projectFacePoint`: roll rotates the point about (20, 20); turn and tilt squash it.
-    public static func project(_ point: CGPoint, turn: Double, tilt: Double, roll: Double) -> CGPoint {
-        let dx = point.x - 20, dy = point.y - 20
-        let r = roll * .pi / 180
-        let xr = dx * cos(r) - dy * sin(r)
-        let yr = dx * sin(r) + dy * cos(r)
-        let sx = 0.74 + 0.26 * abs(cos(turn * .pi / 180))
-        let sy = 0.8 + 0.2 * abs(cos(tilt * .pi / 180))
-        return CGPoint(x: 20 + xr * sx, y: 20 + yr * sy)
-    }
-
     /// `count` points evenly spaced along a closed ring by arc length, starting nearest the top
     /// centre: two shapes resampled this way morph point to point.
     public static func resample(_ ring: [CGPoint], count: Int) -> [CGPoint] {
@@ -185,5 +172,114 @@ public enum FaceGeometry {
             points.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
         }
         return points
+    }
+}
+
+/// A shape as the app draws it: Hermes's outline, fitted into the face box. Every shape gets about
+/// the same weight (a square no longer looms over a hexagon), sits centred with room to move, and
+/// never reaches past the box, so none is cut off and none crowds the dots below it.
+public struct FaceBody: @unchecked Sendable {
+    public let shape: FaceShape
+    /// `pointCount` points evenly spaced along the outline, the same way round for every shape and
+    /// starting at the top: drawn as is, and morphed point to point.
+    public let points: [CGPoint]
+    public let path: CGPath
+    public let bounds: CGRect
+    /// The midpoint between the eyes.
+    public let eyes: CGPoint
+    /// How far the eyes can look each way and still sit on the body.
+    public let gaze: GazeRange
+
+    public struct GazeRange: Sendable, Equatable {
+        public var left: Double
+        public var right: Double
+        public var up: Double
+        public var down: Double
+
+        /// `(x, y)` pulled back inside the range.
+        public func clamp(x: Double, y: Double) -> (x: Double, y: Double) {
+            (max(-left, min(right, x)), max(-up, min(down, y)))
+        }
+    }
+
+    public static let pointCount = 240
+    /// The eyes' half spacing and size (Hermes's 15.4 / 24.6 and rx 2.2).
+    public static let eyeSpread = 4.6
+    public static let eyeRadius = 2.2
+    /// The weight every shape is fitted to (about a 29.5-unit circle), and the most room one may take.
+    static let targetArea = 680.0
+    static let maxExtent = 33.0
+
+    public static func of(_ shape: FaceShape) -> FaceBody {
+        cache[shape] ?? make(shape)
+    }
+
+    private static let cache: [FaceShape: FaceBody] = Dictionary(uniqueKeysWithValues: FaceShape.allCases.map { ($0, make($0)) })
+
+    /// The eye line, as a share of the body's height from its top: lower where the top narrows.
+    static func eyeLine(_ shape: FaceShape) -> Double {
+        switch shape {
+        case .triangle: 0.62
+        case .drop: 0.6
+        case .cloud: 0.6
+        case .pill: 0.46
+        case .circle, .squircle, .hexagon: 0.44
+        }
+    }
+
+    static func make(_ shape: FaceShape) -> FaceBody {
+        let raw = FaceGeometry.resample(FaceGeometry.ring(shape, steps: 480), count: 480)
+        let rawBounds = boundingBox(raw)
+        var scale = (targetArea / max(1, area(raw))).squareRoot()
+        scale = min(scale, maxExtent / max(rawBounds.width, rawBounds.height))
+        let center = CGPoint(x: rawBounds.midX, y: rawBounds.midY)
+        let fitted = raw.map { CGPoint(x: 20 + ($0.x - center.x) * scale, y: 20 + ($0.y - center.y) * scale) }
+        let points = FaceGeometry.resample(fitted, count: pointCount)
+        let path = CGMutablePath()
+        path.addLines(between: points)
+        path.closeSubpath()
+        let bounds = boundingBox(points)
+        let eyes = CGPoint(x: 20, y: bounds.minY + bounds.height * eyeLine(shape))
+        return FaceBody(shape: shape, points: points, path: path, bounds: bounds, eyes: eyes, gaze: gazeRange(path: path, eyes: eyes))
+    }
+
+    /// How far both eyes (with a margin) can move along each axis and stay inside the outline.
+    static func gazeRange(path: CGPath, eyes: CGPoint) -> GazeRange {
+        func fits(_ dx: Double, _ dy: Double) -> Bool {
+            let margin = 1.4
+            let reach = eyeRadius + margin
+            for side in [-eyeSpread, eyeSpread] {
+                let x = eyes.x + side + dx, y = eyes.y + dy
+                for (px, py) in [(x - reach, y), (x + reach, y), (x, y - reach - 0.2), (x, y + reach + 0.2),
+                                 (x - reach * 0.7, y - reach * 0.7), (x + reach * 0.7, y - reach * 0.7),
+                                 (x - reach * 0.7, y + reach * 0.7), (x + reach * 0.7, y + reach * 0.7)] {
+                    if !path.contains(CGPoint(x: px, y: py)) { return false }
+                }
+            }
+            return true
+        }
+        func reach(_ step: (Double) -> (Double, Double)) -> Double {
+            var distance = 0.0
+            while distance < 3.4 {
+                let (dx, dy) = step(distance + 0.1)
+                guard fits(dx, dy) else { break }
+                distance += 0.1
+            }
+            return distance
+        }
+        return GazeRange(
+            left: reach { (-$0, 0) }, right: reach { ($0, 0) },
+            up: reach { (0, -$0) }, down: reach { (0, $0) }
+        )
+    }
+
+    static func boundingBox(_ points: [CGPoint]) -> CGRect {
+        let xs = points.map(\.x), ys = points.map(\.y)
+        guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max() else { return .zero }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    static func area(_ points: [CGPoint]) -> Double {
+        abs(zip(points, points.dropFirst() + [points[0]]).reduce(0.0) { $0 + ($1.0.x * $1.1.y - $1.1.x * $1.0.y) }) / 2
     }
 }

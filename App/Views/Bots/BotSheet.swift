@@ -26,6 +26,8 @@ struct BotSheet: View {
     @State private var typingPauses = 0
     private enum Field: Hashable { case name, role }
     @FocusState private var focus: Field?
+    /// The shape and colour highlights slide from one pick to the next.
+    @Namespace private var picks
 
     private var editingName: String? {
         if case .edit(let name) = mode { name } else { nil }
@@ -37,11 +39,15 @@ struct BotSheet: View {
         editingName ?? roster.uniqueSlug(for: draft.title.isEmpty ? "bot" : draft.title)
     }
 
+    /// The face being edited keeps one identity while the name is typed (the handle changes with
+    /// every key): it morphs to each new shape and colour instead of starting over.
+    private var faceID: String { editingName ?? "new-bot" }
+
     private func preview(for profile: String) -> BotAppearance {
         if let bot, roster.photos[bot.name] != nil, draft == BotDraft(bot: bot, appearance: roster.appearance(for: bot)) {
             return roster.appearance(for: bot)
         }
-        return BotAppearance(profile: profile, shape: draft.shape.rawValue, color: draft.colorValue, customized: true)
+        return BotAppearance(profile: faceID, shape: draft.shape.rawValue, color: draft.colorValue, customized: true)
     }
 
     private var canSave: Bool {
@@ -128,43 +134,51 @@ struct BotSheet: View {
                 }
 
                 Section("Look") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(BotAppearance.Shape.allCases, id: \.self) { shape in
-                                Button {
-                                    draft.shape = shape
-                                } label: {
-                                    BotFace(appearance: BotAppearance(profile: profile, shape: shape.rawValue, color: draft.colorValue, customized: true), size: Self.isCompact ? 26 : 34)
-                                        .padding(6)
-                                        .background(
+                    // All seven shapes in one row, each a live face in the picked colour; the
+                    // highlight slides to the one picked.
+                    HStack(spacing: 0) {
+                        ForEach(BotAppearance.Shape.allCases, id: \.self) { shape in
+                            Button {
+                                withAnimation(Theme.snappy) { draft.shape = shape }
+                            } label: {
+                                // Each its own timing, so the row doesn't blink in unison.
+                                BotFace(appearance: BotAppearance(profile: "\(faceID)·\(shape.rawValue)", shape: shape.rawValue, color: draft.colorValue, customized: true), size: Self.isCompact ? 26 : 36)
+                                    .padding(.vertical, 7)
+                                    .frame(maxWidth: .infinity)
+                                    .background {
+                                        if shape == draft.shape {
                                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                .strokeBorder(shape == draft.shape ? Theme.primaryText : .clear, lineWidth: 2)
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(shape.label)
-                                .accessibilityAddTraits(shape == draft.shape ? .isSelected : [])
+                                                .fill(Theme.controlFill)
+                                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.primaryText.opacity(0.85), lineWidth: 1.5))
+                                                .matchedGeometryEffect(id: "shape", in: picks)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
                             }
+                            .buttonStyle(PressableStyle())
+                            .accessibilityLabel(shape.label)
+                            .accessibilityAddTraits(shape == draft.shape ? .isSelected : [])
                         }
-                        .padding(.vertical, 4)
                     }
+                    .padding(.vertical, 2)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Self.isCompact ? 4 : 8), count: Self.isCompact ? 12 : 6), spacing: 10) {
                         ForEach(BotDraft.hues, id: \.self) { hue in
                             Button {
-                                draft.hue = hue
+                                withAnimation(Theme.snappy) { draft.hue = hue }
                             } label: {
                                 Circle()
                                     .fill(Color(hue: Double(hue) / 360, saturation: 0.68, lightness: 0.58))
                                     .frame(width: Self.isCompact ? 20 : 28, height: Self.isCompact ? 20 : 28)
-                                    .overlay {
+                                    .background {
                                         if hue == draft.hue {
                                             Circle().strokeBorder(Theme.primaryText, lineWidth: 2).padding(-4)
+                                                .matchedGeometryEffect(id: "hue", in: picks)
                                         }
                                     }
                                     .frame(maxWidth: .infinity, minHeight: Self.isCompact ? 30 : 40)
                                     .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PressableStyle())
                             .accessibilityLabel(BotDraft.colorName(hue))
                             .accessibilityAddTraits(hue == draft.hue ? .isSelected : [])
                         }

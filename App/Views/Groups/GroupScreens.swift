@@ -215,13 +215,14 @@ private struct GroupTitle: View {
     }
 
     var body: some View {
-        let faces = chat.room.members.prefix(4).compactMap { member in
+        // Three faces at most, so the room's name has space (the member count is under it).
+        let faces = chat.room.members.prefix(3).compactMap { member in
             roster?.bot(named: member.profile).map { GroupFaceStack.Face(id: member.memberID, appearance: roster!.appearance(for: $0)) }
         }
         let passed = Set(chat.memberStates.filter { $0.value == .passed }.map(\.key))
         HStack(spacing: 8) {
             // Everyone looks at who's talking (`docs/bot-faces.md` §5.2).
-            GroupFaceStack(faces: faces, active: chat.activeMemberID, passed: passed, handOff: chat.lastHandOff, size: 22)
+            GroupFaceStack(faces: faces, active: chat.activeMemberID, passed: passed, handOff: chat.lastHandOff, size: 20)
             VStack(alignment: .leading, spacing: 0) {
                 Text(chat.room.name)
                     .font(.subheadline.weight(.semibold))
@@ -233,6 +234,7 @@ private struct GroupTitle: View {
                     .lineLimit(1)
                     .contentTransition(.opacity)
             }
+            .layoutPriority(1)
         }
         .animation(Theme.snappy, value: status.0)
         .accessibilityElement(children: .combine)
@@ -465,7 +467,7 @@ struct NewGroupSheet: View {
             Form {
                 Section {
                     let faces = picked.prefix(2).compactMap { roster.bot(named: $0).map(roster.appearance(for:)) }
-                    GroupAvatar(front: faces.last, back: faces.count > 1 ? faces.first : nil, size: 72, cutout: Theme.groupedBackground)
+                    GroupAvatar(front: faces.last, back: faces.count > 1 ? faces.first : nil, size: 72)
                         .frame(maxWidth: .infinity)
                         .listRowBackground(Color.clear)
                 }

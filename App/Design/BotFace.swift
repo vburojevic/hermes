@@ -7,6 +7,9 @@ import SwiftUI
 struct BotAppearance: Hashable, Sendable {
     typealias Shape = FaceShape
 
+    /// Whose face this is (the profile name): a face shown for another Bot changes at once, while
+    /// the same Bot's new shape or colour morphs into place.
+    var id: String
     /// The drawn face: shape and colour.
     var look: FaceLook
     /// `data:` or `http(s):` image that replaces the drawn face.
@@ -21,6 +24,7 @@ struct BotAppearance: Hashable, Sendable {
     /// Hermes's rules (`botAppearance`): a stored pick wins; otherwise shape and hue come from the
     /// profile name. The primary profile wears a fixed violet squircle.
     init(profile: String, shape storedShape: String? = nil, color storedColor: String? = nil, image: String? = nil, customized: Bool = false) {
+        id = profile
         look = FaceLook(profile: profile, shape: storedShape, color: storedColor, customized: customized)
         imageURL = (image?.isEmpty ?? true) ? nil : image
     }
@@ -29,6 +33,9 @@ struct BotAppearance: Hashable, Sendable {
     static func stringHash(_ text: String) -> UInt32 {
         FaceColor.nameHash(text)
     }
+
+    /// The face's own timing (`FacePose.of`): Bots side by side never sway or blink in step.
+    var seed: UInt32 { FaceColor.nameHash(id) }
 }
 
 extension FaceShape {
@@ -65,11 +72,12 @@ enum FaceClock {
     }
 }
 
-/// A Bot's face, exactly as Hermes Bot Mode draws it: a flat body in the Bot's colour, two small
-/// eyes with a catchlight, and three dots in the body colour while it thinks or works. No gradient,
-/// gloss, glow or shadow; the life is in the motion (`docs/bot-faces.md`).
+/// A Bot's face: Hermes Bot Mode's shapes and colours (a flat body, two small eyes with a
+/// catchlight, three dots while it thinks or works), fitted so every shape shows whole. The body
+/// only leans, breathes and hops as one piece; the life is in the eyes, which glance about and
+/// blink on each Bot's own timing (`docs/bot-faces.md`).
 ///
-/// One clock drives every face: 15 fps in lists and grids, 60 fps for the face in focus, 10 in
+/// One clock drives every face: 30 fps in lists and grids, 60 fps for the face in focus, 10 in
 /// Low Power Mode, and nothing while the face is off screen. Reduce Motion keeps the blink and
 /// the dots.
 struct BotFace: View {
@@ -100,6 +108,7 @@ struct BotFace: View {
     @State private var boops = 0
     @State private var blinkSince: Double?
     @State private var morph: (from: FaceShape, since: Double)?
+    @State private var recolor: (from: FaceColor, since: Double)?
     @State private var isVisible = true
     @State private var wiggles = 0
 
@@ -117,7 +126,7 @@ struct BotFace: View {
         self.blinks = blinks
         self.boopable = boopable
         self.boopTrigger = boopTrigger
-        _transition = State(initialValue: FaceTransition(target: FaceTarget(mood: self.mood, look: look)))
+        _transition = State(initialValue: FaceTransition(target: FaceTarget(mood: self.mood, look: look, seed: appearance.seed)))
     }
 
     /// Faces under 24 pt (mention pills) hold still apart from their one-off blinks.
@@ -126,12 +135,15 @@ struct BotFace: View {
     /// The one face in focus runs at 60 fps: Voice mode, the hello screen, the New Bot preview,
     /// a face being tapped or changing shape.
     private func isFocused(at t: Double) -> Bool {
-        size >= 88 || voiceLevel != nil || (boopSince.map { t - $0 < 1.2 } ?? false) || (morph.map { t - $0.since < 0.35 } ?? false)
+        size >= 88 || voiceLevel != nil || (boopSince.map { t - $0 < 1.2 } ?? false) || (morph.map { t - $0.since < Self.morphDuration } ?? false)
     }
 
     private var target: FaceTarget {
-        FaceTarget(mood: mood, look: reduceMotion ? nil : look)
+        FaceTarget(mood: mood, look: reduceMotion ? nil : look, seed: appearance.seed)
     }
+
+    /// A new shape or colour settles in this long.
+    private static let morphDuration = 0.42
 
     var body: some View {
         content
@@ -153,9 +165,17 @@ struct BotFace: View {
             }
             .onChange(of: blinks) { blinkSince = FaceClock.time() }
             .onChange(of: boopTrigger) { boop() }
-            .onChange(of: appearance.shape) { old, _ in
-                guard moves else { return }
-                morph = (old, FaceClock.time())
+            .onChange(of: appearance) { old, new in
+                // Another Bot in this place (a list reordering, the next chat): it just shows. The
+                // same Bot's new look (the editor) morphs into place.
+                guard old.id == new.id else {
+                    morph = nil
+                    recolor = nil
+                    return
+                }
+                let now = FaceClock.time()
+                if old.shape != new.shape, moves { morph = (old.shape, now) }
+                if old.look.color != new.look.color, !reduceMotion { recolor = (old.look.color, now) }
             }
             .task(id: OneOffs(blink: blinkSince, boop: boopSince, happy: happySince, morph: morph?.since)) {
                 // A finished blink, boop or hop hands the face back to its usual pace (or to rest).
@@ -166,7 +186,8 @@ struct BotFace: View {
                 if let since = blinkSince, now - since > 0.3 { blinkSince = nil }
                 if let since = boopSince, now - since > 1.3 { boopSince = nil }
                 if let since = happySince, now - since > 1.3, mood != .happy { happySince = nil }
-                if let since = morph?.since, now - since > 0.4 { morph = nil }
+                if let since = morph?.since, now - since > Self.morphDuration { morph = nil }
+                if let since = recolor?.since, now - since > Self.morphDuration { recolor = nil }
             }
             .task(id: needsYou && moves) {
                 guard needsYou, moves else { return }
@@ -208,15 +229,18 @@ struct BotFace: View {
 
     private var drawnFace: some View {
         let now = FaceClock.time()
-        let interval = PowerState.shared.isLowPower ? 1.0 / 10 : (isFocused(at: now) ? 1.0 / 60 : 1.0 / 15)
-        // Still faces need the clock only for a one-off: a blink, a boop or a hop.
-        let oneOff = [blinkSince, boopSince, happySince].compactMap { $0 }.contains { now - $0 < 1.3 } || (morph.map { now - $0.since < 0.35 } ?? false)
+        let interval = PowerState.shared.isLowPower ? 1.0 / 10 : (isFocused(at: now) ? 1.0 / 60 : 1.0 / 30)
+        // Still faces need the clock only for a one-off: a blink, a boop, a hop or a new look.
+        let oneOff = [blinkSince, boopSince, happySince].compactMap { $0 }.contains { now - $0 < 1.3 }
+            || (morph.map { now - $0.since < Self.morphDuration } ?? false) || (recolor.map { now - $0.since < Self.morphDuration } ?? false)
         let ticks = mood != .sleeping && (!holdsStill || oneOff)
         let paused = !isVisible || motionPaused || !ticks
         return TimelineView(.animation(minimumInterval: interval, paused: paused)) { context in
             let t = FaceClock.time(context.date)
             Canvas { canvas, canvasSize in
-                FacePainter.draw(appearance.look, frame: frame(at: t), in: &canvas, size: canvasSize)
+                var look = appearance.look
+                look.color = currentColor(at: t)
+                FacePainter.draw(look, frame: frame(at: t), in: &canvas, size: canvasSize)
             }
             .overlay {
                 if let boopSince, t - boopSince < 0.7, moves {
@@ -227,12 +251,29 @@ struct BotFace: View {
         .frame(width: size, height: FacePainter.height(forWidth: size))
     }
 
+    /// The colour on screen: the Bot's, or on its way there from the last one.
+    private func currentColor(at t: Double) -> FaceColor {
+        let color = appearance.look.color
+        guard let recolor else { return color }
+        let p = max(0, min(1, (t - recolor.since) / Self.morphDuration))
+        guard p < 1 else { return color }
+        let e = 1 - (1 - p) * (1 - p)
+        return FaceColor(
+            red: recolor.from.red + (color.red - recolor.from.red) * e,
+            green: recolor.from.green + (color.green - recolor.from.green) * e,
+            blue: recolor.from.blue + (color.blue - recolor.from.blue) * e
+        )
+    }
+
     /// One frame: the blended pose, the eyes for the mood, and the one-offs on top.
     private func frame(at t: Double) -> FaceFrame {
         var pose = transition.pose(at: t)
         if !moves { pose = pose.stilled }
-        if holdsStill { pose.dots = FacePose.of(mood, at: 0.6).dots } // a still frame of the wave
-        if let blinkSince, t - blinkSince >= 0, t - blinkSince < 0.18 { pose.blink = true }
+        if holdsStill {
+            // A still frame: eyes open and ahead, dots mid-wave.
+            pose = FacePose(lid: pose.lid, dots: FacePose.of(mood, at: 0.6).dots)
+        }
+        if let blinkSince { pose.lid = min(pose.lid, FacePose.lidCurve(t - blinkSince)) }
         let happyNow = mood == .happy || (happySince.map { t - $0 < 1.2 && t >= $0 } ?? false)
         var frame = FaceFrame(mood: happyNow ? .happy : mood, pose: pose)
         if mood == .sleeping { frame.bodyOpacity = 0.45 }
@@ -250,10 +291,18 @@ struct BotFace: View {
             frame.squash = CGSize(width: frame.squash.width * (2 - sy), height: frame.squash.height * sy)
         }
         if let morph {
-            let p = (t - morph.since) / 0.3
-            if p < 1 { frame.morph = (morph.from, 1 - (1 - p) * (1 - p)) }
+            let p = (t - morph.since) / Self.morphDuration
+            if p < 1 { frame.morph = (morph.from, Self.morphCurve(p)) }
         }
         return frame
+    }
+
+    /// A morph's progress: quick at first, then settling gently into the new shape.
+    static func morphCurve(_ p: Double) -> Double {
+        guard p > 0 else { return 0 }
+        guard p < 1 else { return 1 }
+        let omega = 9.0, damping = 0.62
+        return min(1, 1 - exp(-damping * omega * p) * cos(omega * (1 - damping * damping).squareRoot() * p))
     }
 
     /// 0…1 of the hop's height: up in 0.12 s, then a spring back (response 0.35, damping 0.6).

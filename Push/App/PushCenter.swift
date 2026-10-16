@@ -585,7 +585,7 @@ final class PushCenter {
         shared.setBotNames(Dictionary(roster.profiles.map { ($0.name, $0.title) }, uniquingKeysWith: { first, _ in first }),
                            gateway: workspace.id)
         // Faces drawn before the current style (`docs/bot-faces.md`) are drawn again once.
-        let styleKey = "faces.style", style = 2
+        let styleKey = "faces.style", style = 3
         let restyle = shared.defaults.integer(forKey: styleKey) != style
         for bot in roster.profiles {
             guard let url = shared.faceURL(gateway: workspace.id, bot: bot.name) else { continue }

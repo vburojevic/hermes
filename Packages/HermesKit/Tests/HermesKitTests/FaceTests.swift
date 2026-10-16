@@ -3,8 +3,8 @@ import Foundation
 import Testing
 @testable import HermesPush
 
-/// The faces match Hermes Bot Mode (`avatar.tsx`, `profile-color.ts`); the expected numbers were
-/// worked out independently from Hermes's formulas.
+/// The faces keep Hermes Bot Mode's shapes and colours (`avatar.tsx`, `profile-color.ts`; the expected
+/// numbers were worked out independently from its formulas), fitted and moved the app's own way.
 @Suite("Bot faces")
 struct FaceTests {
     private func near(_ a: CGPoint, _ x: Double, _ y: Double, _ tolerance: Double = 0.001) -> Bool {
@@ -55,10 +55,6 @@ struct FaceTests {
         }
     }
 
-    @Test func headTurnSquashesLikeHermes() {
-        #expect(near(FaceGeometry.project(CGPoint(x: 36.2, y: 20), turn: -18, tilt: 12, roll: 10), 35.7509, 22.8008))
-    }
-
     @Test func coloursComeFromTheNameAndEyesFromLuminance() {
         // Hermes `hashString` and `defaultShapeFor`.
         #expect(FaceColor.nameHash("researcher") % 360 == 312)
@@ -79,42 +75,98 @@ struct FaceTests {
         #expect(FaceLook(profile: "writer").color == FaceColor.forName("writer"))
     }
 
-    @Test func posesMatchTheTable() {
-        let t = 2.0
-        let think = FacePose.of(.thinking, at: t)
-        #expect(abs(think.turn - (-18 + sin(t * 0.55) * 14)) < 1e-9)
-        #expect(abs(think.tilt - (sin(t * 0.48) * 12 + sin(t * 1.35) * 3)) < 1e-9)
-        #expect(abs(think.dots.1 - (0.2 + 0.8 * max(0, sin(t * 2.4 - 0.7)))) < 1e-9)
-        let work = FacePose.of(.working, at: t)
-        #expect(abs(work.gazeY - (-1.6 + sin(t * 0.38) * 2)) < 1e-9)
-        #expect(abs(work.dots.0 - (0.2 + 0.8 * max(0, sin(t * 2.6)))) < 1e-9)
-        let idle = FacePose.of(.idle, at: 3.1)
-        #expect(idle.blink && !FacePose.of(.idle, at: 3.0).blink)
-        #expect(idle.dots == (0, 0, 0))
-        #expect(FacePose.of(.listening, at: t).gazeX == 1.4)
-        #expect(FacePose.of(.sleeping, at: t) == .rest)
+    @Test func everyShapeFitsWholeWithRoomToMove() {
+        for shape in FaceShape.allCases {
+            let body = FaceBody.of(shape)
+            // Inside the face box with room for a lean and a breath, and clear of the dots (y 40).
+            #expect(body.bounds.minX >= 3 && body.bounds.maxX <= 37, "\(shape) \(body.bounds)")
+            #expect(body.bounds.minY >= 3 && body.bounds.maxY <= 37, "\(shape) \(body.bounds)")
+            // About the same weight: no shape looms over another.
+            let area = FaceBody.area(body.points)
+            #expect(area > 520 && area < 700, "\(shape) area \(area)")
+            // Leaning 4° and breathing in, still inside the 40 × 44 canvas.
+            let base = body.bounds.maxY, angle = 4.0 * .pi / 180
+            for point in body.points {
+                let dx = point.x - 20, dy = (point.y - base) * 1.03
+                let x = 20 + dx * cos(angle) - dy * sin(angle), y = base + dx * sin(angle) + dy * cos(angle)
+                #expect(x > 0.5 && x < 39.5 && y > 0.5, "\(shape) leaves the canvas at \(x), \(y)")
+            }
+        }
+    }
+
+    @Test func eyesStayOnTheBodyWhereverTheyLook() {
+        for shape in FaceShape.allCases {
+            let body = FaceBody.of(shape)
+            #expect(body.gaze.left >= 0.8 && body.gaze.right >= 0.8, "\(shape) eyes can hardly move: \(body.gaze)")
+            for mood in FaceMood.allCases {
+                for step in 0..<400 {
+                    let pose = FacePose.of(mood, at: Double(step) * 0.05, seed: 77)
+                    let gaze = body.gaze.clamp(x: pose.gazeX, y: pose.gazeY)
+                    for side in [-FaceBody.eyeSpread, FaceBody.eyeSpread] {
+                        let eye = CGPoint(x: body.eyes.x + side + gaze.x, y: body.eyes.y + gaze.y)
+                        for corner in [CGPoint(x: -2.2, y: 0), CGPoint(x: 2.2, y: 0), CGPoint(x: 0, y: -2.6), CGPoint(x: 0, y: 2.6)] {
+                            #expect(body.path.contains(CGPoint(x: eye.x + corner.x, y: eye.y + corner.y)), "\(shape) \(mood) eye off the body")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func eachBotKeepsItsOwnTime() {
+        // The same Bot moves the same way every time; two Bots don't blink or glance in step.
+        let a = (0..<300).map { FacePose.of(.idle, at: Double($0) * 0.05, seed: 1) }
+        let again = (0..<300).map { FacePose.of(.idle, at: Double($0) * 0.05, seed: 1) }
+        let b = (0..<300).map { FacePose.of(.idle, at: Double($0) * 0.05, seed: 2) }
+        #expect(a == again)
+        let blinksA = Set(a.indices.filter { a[$0].lid < 0.5 }), blinksB = Set(b.indices.filter { b[$0].lid < 0.5 })
+        #expect(!blinksA.isEmpty && !blinksB.isEmpty)
+        #expect(blinksA != blinksB)
+        #expect(zip(a, b).contains { abs($0.gazeX - $1.gazeX) > 0.5 })
+        // Idle eyes look around: not frozen straight ahead.
+        #expect(Set(a.map { ($0.gazeX * 10).rounded() }).count > 3)
+    }
+
+    @Test func blinksCloseAndOpenSmoothly() {
+        #expect(FacePose.lidCurve(-0.1) == 1)
+        #expect(FacePose.lidCurve(0.035) > 0 && FacePose.lidCurve(0.035) < 1)
+        #expect(FacePose.lidCurve(0.1) == 0)
+        #expect(FacePose.lidCurve(0.18) > 0 && FacePose.lidCurve(0.18) < 1)
+        #expect(FacePose.lidCurve(0.3) == 1)
+        // Half-shut eyes draw as narrower ellipses, then a line.
+        #expect(FaceFrame.eyes(for: .idle, pose: FacePose(lid: 1)) == .open(height: 2.3))
+        #expect(FaceFrame.eyes(for: .idle, pose: FacePose(lid: 0.5)) == .open(height: 1.15))
+        #expect(FaceFrame.eyes(for: .idle, pose: FacePose(lid: 0.05)) == .closed)
+        #expect(FaceFrame.eyes(for: .working, pose: FacePose()) == .open(height: 2.6))
+        #expect(FaceFrame.eyes(for: .happy, pose: FacePose(lid: 0)) == .happy)
+        #expect(FaceFrame(mood: .sleeping, pose: .rest).bodyOpacity == 0.45)
+    }
+
+    @Test func busyMoodsWaveTheirDotsAndLookTheirPart() {
+        let think = FacePose.of(.thinking, at: 2, seed: 5)
+        #expect(think.gazeY < -1) // up
+        let work = (0..<100).map { FacePose.of(.working, at: Double($0) * 0.05, seed: 5) }
+        #expect(work.allSatisfy { $0.gazeY > 0.5 }) // down, on the work
+        #expect(work.contains { $0.gazeX < -1 } && work.contains { $0.gazeX > 1 }) // reading along
+        #expect(FacePose.of(.idle, at: 2).dots == (0, 0, 0))
+        #expect(think.dots.0 >= 0.2 && think.dots.0 <= 1)
+        #expect(FacePose.of(.sleeping, at: 2).lid == 0)
     }
 
     @Test func moodChangesBlendOverFourTenthsWithEaseOut() {
-        var transition = FaceTransition(target: FaceTarget(mood: .idle), at: 10)
-        transition.change(to: FaceTarget(mood: .thinking), at: 10)
-        let start = transition.pose(at: 10), idle = FacePose.of(.idle, at: 10)
-        #expect(abs(start.turn - idle.turn) < 1e-9)
-        let half = transition.pose(at: 10.2), think = FacePose.of(.thinking, at: 10.2), from = FacePose.of(.idle, at: 10)
+        var transition = FaceTransition(target: FaceTarget(mood: .idle, seed: 3), at: 10)
+        let from = transition.pose(at: 10)
+        transition.change(to: FaceTarget(mood: .thinking, seed: 3), at: 10)
+        #expect(abs(transition.pose(at: 10).lean - from.lean) < 1e-9)
+        let half = transition.pose(at: 10.2), think = FacePose.of(.thinking, at: 10.2, seed: 3)
         // 1 − (1 − 0.5)² = 0.75 of the way.
-        #expect(abs(half.turn - (from.turn + (think.turn - from.turn) * 0.75)) < 1e-9)
-        #expect(transition.pose(at: 10.4) == FacePose.of(.thinking, at: 10.4))
+        #expect(abs(half.lean - (from.lean + (think.lean - from.lean) * 0.75)) < 1e-9)
+        #expect(transition.pose(at: 10.4) == FacePose.of(.thinking, at: 10.4, seed: 3))
         // Looking at something: up to ±3.2.
         #expect(FaceTarget(mood: .idle, look: CGVector(dx: -2, dy: 0.5)).pose(at: 1).gazeX == -3.2)
     }
 
-    @Test func eyesFollowTheMood() {
-        #expect(FaceFrame.eyes(for: .working, pose: FacePose()) == .open(height: 2.6))
-        #expect(FaceFrame.eyes(for: .idle, pose: FacePose()) == .open(height: 2.3))
-        #expect(FaceFrame.eyes(for: .idle, pose: FacePose(blink: true)) == .closed)
-        #expect(FaceFrame.eyes(for: .happy, pose: FacePose(blink: true)) == .happy)
-        #expect(FaceFrame(mood: .sleeping, pose: .rest).bodyOpacity == 0.45)
-        // Increase Contrast outlines: yellow on white, blue on a dark window; not orange on white.
+    @Test func increaseContrastOutlinesPaleBodies() {
         let darkWindow = FaceColor(hex: 0x1C1C1E)
         #expect(FaceColor.hue(60).contrast(with: .white) < 3 && FaceColor.hue(240).contrast(with: darkWindow) < 3)
         #expect(FacePainter.contrastOutline(for: .hue(30), on: .white, separator: .gray) != nil) // orange is 2.3:1 too

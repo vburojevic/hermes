@@ -1,16 +1,17 @@
 import HermesKit
+import HermesPush
 import SwiftUI
 
 // The pieces of a group chat (`blocks/groups.elyx`).
 
-/// Two member faces overlapping, the front one cut out of the background (`groupAvatar`); or
-/// the room's own picture (`groupAvatarPicture`).
+/// Two member faces overlapping, a sliver of space cut around the front one along its own outline
+/// (`groupAvatar`), so it reads on any row, selected or not; or the room's own picture
+/// (`groupAvatarPicture`).
 struct GroupAvatar: View {
     var front: BotAppearance?
     var back: BotAppearance?
     var picture: PlatformImage?
     var size: CGFloat = 40
-    var cutout: Color = Theme.sidebar
 
     var body: some View {
         Group {
@@ -26,18 +27,44 @@ struct GroupAvatar: View {
                         BotFace(appearance: back, size: size * 0.65)
                             .offset(x: size * 0.35)
                     }
-                    Circle()
-                        .fill(cutout)
-                        .frame(width: size * 0.75, height: size * 0.75)
-                        .offset(x: -size * 0.05, y: size * 0.25)
                     if let front {
+                        FaceHalo(appearance: front, size: size * 0.65, width: 5)
+                            .offset(y: size * 0.3)
+                            .blendMode(.destinationOut)
                         BotFace(appearance: front, size: size * 0.65)
                             .offset(y: size * 0.3)
                     }
                 }
+                .compositingGroup()
                 .frame(width: size, height: size, alignment: .topLeading)
             }
         }
+        .accessibilityHidden(true)
+    }
+}
+
+/// A face's silhouette grown by `width` face units: what's erased around a face laid over another.
+struct FaceHalo: View {
+    let appearance: BotAppearance
+    let size: CGFloat
+    var width: CGFloat = 4
+
+    var body: some View {
+        Canvas { context, canvasSize in
+            if appearance.imageURL != nil {
+                // Photo faces are rounded squares (22% radius) at the top of the face box.
+                let side = canvasSize.width
+                let rect = CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: -width * side / 80, dy: -width * side / 80)
+                context.fill(Path(roundedRect: rect, cornerRadius: side * 0.22 + width * side / 80, style: .continuous), with: .color(.black))
+            } else {
+                let scale = canvasSize.width / 40
+                context.scaleBy(x: scale, y: scale)
+                let body = FacePainter.body(appearance.shape)
+                context.fill(body, with: .color(.black))
+                context.stroke(body, with: .color(.black), style: StrokeStyle(lineWidth: width, lineJoin: .round))
+            }
+        }
+        .frame(width: size, height: FacePainter.height(forWidth: size))
         .accessibilityHidden(true)
     }
 }

@@ -480,14 +480,10 @@ struct BotsHomeView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // The iPhone and iPad title is the navigation bar's large "Bots".
             #if os(macOS)
             Text("Bots")
                 .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(Theme.primaryText)
-                .accessibilityAddTraits(.isHeader)
-            #else
-            Text("Your Bots")
-                .font(.title3.weight(.semibold))
                 .foregroundStyle(Theme.primaryText)
                 .accessibilityAddTraits(.isHeader)
             #endif
@@ -562,13 +558,12 @@ private struct BotTile: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.tertiaryText)
                     .lineLimit(1)
-                if let role = bot.role {
-                    Text(role)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(2)
-                        .padding(.top, 2)
-                }
+                // Two lines kept for the role on every tile, so a row of tiles lines up.
+                Text(bot.role ?? "")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(2, reservesSpace: true)
+                    .padding(.top, 2)
             }
             HStack(spacing: 6) {
                 StatusDot(color: status.color, pulsing: roster.isBusy(bot.name))
