@@ -3,8 +3,8 @@ import HermesKit
 import HermesMacSupport
 import SwiftUI
 
-/// Settings on the Mac (`screens/mac/settings.elyx`): General, Gateways, Apps & Tools, Chat and
-/// Notifications. Each pane sets its width; the window follows the selected one.
+/// Settings on the Mac (`screens/mac/settings.elyx`): General, Gateways, Apps & Tools, Memory,
+/// Chat and Notifications. Each pane sets its width; the window follows the selected one.
 struct MacSettingsView: View {
     let updater: Updater
 
@@ -27,6 +27,10 @@ struct MacSettingsView: View {
                 MacAppsAndToolsPane()
                     .frame(width: 880, height: 580)
             }
+            Tab("Memory", systemImage: "brain", value: "memory") {
+                MacMemoryPane()
+                    .frame(width: 880, height: 600)
+            }
             Tab("Chat", systemImage: "bubble.left", value: "chat") {
                 ChatPane()
                     .frame(width: 480)
@@ -39,7 +43,10 @@ struct MacSettingsView: View {
             #endif
         }
         .preferredColorScheme(appearance.colorScheme)
-        .onAppear { if DebugFlags.appsAndTools != nil { pane = "apps" } }
+        .onAppear {
+            if DebugFlags.appsAndTools != nil { pane = "apps" }
+            if DebugFlags.memory != nil { pane = "memory" }
+        }
     }
 }
 

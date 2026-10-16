@@ -351,6 +351,13 @@ enum MemoryCopy {
         store == .about ? aboutCount(count) : notesCount(count)
     }
 
+    /// An entry read aloud: its text with one full stop, then where it lives.
+    static func spoken(_ entry: MemoryEntry) -> String {
+        let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sentence = text.last.map { ".!?…".contains($0) } == true ? text : text + "."
+        return "\(sentence) \(storeLabel(entry.store))"
+    }
+
     static func storeTitle(_ store: MemoryStoreKind) -> String {
         store == .about ? String(localized: "About You") : String(localized: "Hermes's Notes")
     }

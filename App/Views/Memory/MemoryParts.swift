@@ -85,7 +85,7 @@ struct MemoryEntryRow: View {
         .contentShape(Rectangle())
         .contextMenu { actions }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(entry.text). \(MemoryCopy.storeLabel(entry.store))\(isNew ? String(localized: ", new in this chat") : "")"))
+        .accessibilityLabel(Text(MemoryCopy.spoken(entry) + (isNew ? String(localized: ", new in this chat") : "")))
         .accessibilityAction(named: "Edit", edit)
         .accessibilityAction(named: "Copy") { Pasteboard.copy(entry.text) }
         .accessibilityAction(named: "Forget", forget)

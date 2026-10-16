@@ -127,9 +127,9 @@ struct RootView: View {
         #if DEBUG
         .task { openDebugSheet() }
         #if os(macOS)
-        // `-HERMES_APPS_TOOLS …`: the Settings window on Apps & Tools (screenshots).
+        // `-HERMES_APPS_TOOLS …` / `-HERMES_MEMORY …`: the Settings window on that tab (screenshots).
         .task {
-            guard DebugFlags.appsAndTools != nil else { return }
+            guard DebugFlags.appsAndTools != nil || DebugFlags.memory != nil else { return }
             try? await Task.sleep(for: .seconds(2))
             openSettings()
         }
