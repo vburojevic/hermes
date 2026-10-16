@@ -10,8 +10,6 @@ struct TerminalTabView: View {
     let conversation: ConversationModel
     let processID: String
 
-    @State private var shownIDs: Set<String> = []
-
     private var processes: [ConversationModel.BackgroundProcess] { conversation.processes }
     private var main: ConversationModel.BackgroundProcess? { processes.first { $0.id == processID } }
     private var others: [ConversationModel.BackgroundProcess] {
@@ -19,30 +17,34 @@ struct TerminalTabView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                if let main {
-                    ProcessHeader(process: main, stop: { conversation.stopProcess(main) })
-                    OutputView(text: main.output)
-                } else {
-                    Text("This process isn't running in this chat anymore.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondaryText)
-                        .padding(.vertical, 20)
-                }
-                ForEach(others) { process in
-                    ProcessHeader(process: process, stop: { conversation.stopProcess(process) }, show: {
-                        if shownIDs.contains(process.id) { shownIDs.remove(process.id) } else { shownIDs.insert(process.id) }
-                    }, isShown: shownIDs.contains(process.id))
-                    if shownIDs.contains(process.id) {
-                        OutputView(text: process.output)
+        VStack(alignment: .leading, spacing: 10) {
+            if let main {
+                ProcessHeader(process: main, stop: { conversation.stopProcess(main) })
+                OutputView(text: main.output)
+                    .layoutPriority(1)
+            } else {
+                Text("This process isn't running in this chat anymore.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .padding(.vertical, 20)
+            }
+            if !others.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(others) { process in
+                            ProcessHeader(process: process, stop: { conversation.stopProcess(process) }, show: {
+                                inspector.openTerminal(process.id)
+                            })
+                        }
                     }
                 }
+                .frame(maxHeight: 200)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 16)
+            Spacer(minLength: 0)
         }
-        .defaultScrollAnchor(.top)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
         .task { await conversation.refreshProcesses() }
     }
 }
@@ -52,13 +54,13 @@ private struct ProcessHeader: View {
     let process: ConversationModel.BackgroundProcess
     let stop: () -> Void
     var show: (() -> Void)?
-    var isShown = false
 
     var body: some View {
         HStack(spacing: 10) {
             Circle()
                 .fill(process.isRunning ? Theme.success : Theme.tertiaryText)
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
                 .overlay {
                     if process.isRunning { Circle().stroke(Theme.success.opacity(0.3), lineWidth: 4) }
                 }
@@ -77,19 +79,22 @@ private struct ProcessHeader: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The words read as one element; the button stays its own (a combined element
+            // holding a control that disappears sent AppKit's accessibility into a loop).
+            .accessibilityElement(children: .combine)
             if process.isRunning {
                 Button("Stop", action: stop)
                     .font(.footnote.weight(.medium))
                     .cardButton()
+                    .accessibilityLabel(Text("Stop \(process.command)"))
             } else if let show {
-                Button(isShown ? "Hide" : "Show", action: show)
+                Button("Show", action: show)
                     .font(.footnote.weight(.medium))
                     .cardButton()
             }
         }
         .padding(.horizontal, 4)
         .frame(minHeight: 44)
-        .accessibilityElement(children: .combine)
     }
 
     /// "Running 12 min · ~/Code/hermes-site · pid 48213", "Finished 9 min ago · exit 0".
@@ -122,14 +127,19 @@ private struct OutputView: View {
 
     var body: some View {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).suffix(400)
-        Text(attributed(lines))
+        let text = Text(attributed(lines))
             .font(.system(.footnote, design: .monospaced))
             .lineSpacing(3)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .accessibilityLabel(Text("Output"))
+        // Short output hugs its lines; long output scrolls and follows the newest lines.
+        ViewThatFits(in: .vertical) {
+            text.fixedSize(horizontal: false, vertical: true)
+            ScrollView { text }
+                .defaultScrollAnchor(.bottom)
+        }
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func attributed(_ lines: ArraySlice<Substring>) -> AttributedString {
@@ -176,6 +186,11 @@ struct ScreenTabView: View {
                     .accessibilityLabel(Text("Hermes's screen, live"))
                     .accessibilityAddTraits(.updatesFrequently)
                 } else {
+                    placeholder
+                }
+                // Closed over the last frame: why, and Reconnect.
+                if screen.image != nil, case .closed = screen.phase {
+                    Theme.mediaDim
                     placeholder
                 }
                 LinearGradient(colors: [.clear, Theme.mediaDim], startPoint: .top, endPoint: .bottom)
@@ -327,7 +342,7 @@ private struct ScreenBar: View {
             return String(localized: "Live · Hermes is in control")
         case .connecting: return String(localized: "Connecting…")
         case .idle: return String(localized: "Not connected")
-        case .closed: return String(localized: "Disconnected")
+        case .closed(let reason): return reason
         }
     }
 }

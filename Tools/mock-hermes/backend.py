@@ -58,6 +58,7 @@ HTTP_ROUTES = {}   # (method, path) -> fn(query, body) -> (status, json): REST a
 PUBLIC_ROUTES = {}  # path -> fn(query) -> (status, content_type, bytes): pages a browser opens without the token
 PATTERN_ROUTES = []  # (method, compiled regex, fn(match, query, body) -> (status, json)): REST with ids in the path (kanban.py)
 WS_ROUTES = {}      # path -> fn(handler, query): other WebSockets (kanban.py's event stream)
+RAW_ROUTES = {}     # (method, path) -> fn(query) -> (status, content_type, bytes): authenticated files (inspector.py)
 
 CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin"}
 GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
@@ -1201,6 +1202,14 @@ class Handler(BaseHTTPRequestHandler):
         route = HTTP_ROUTES.get(("GET", url.path))
         if route:
             return self.send_json(*route(query, {}))
+        raw = RAW_ROUTES.get(("GET", url.path))
+        if raw:
+            status, content_type, data = raw(query)
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
         if self.pattern_route("GET", url.path, query, {}):
             return
         match = re.fullmatch(r"/api/sessions/([^/]+)/messages", url.path)
@@ -1449,6 +1458,7 @@ def main():
                              "(a gateway on an overloaded Mac)")
     parser.add_argument("--late-store", type=float, default=0, metavar="SECONDS",
                         help="write a turn's reply this long after message.complete (Hermes' busy-database retry queue)")
+    parser.add_argument("--dev-port", type=int, default=5173, help="the Inspector's localhost dev server (inspector.py)")
     parser.add_argument("--checkpoints", choices=["on", "off"], default="on",
                         help="checkpoints.enabled on the gateway (off: the Turn On state)")
     parser.add_argument("--push-relay", default="simctl",
@@ -1513,6 +1523,10 @@ def main():
         spec.loader.exec_module(kanban)
         kanban.install(globals(), gateway, chats)
         globals()["MOCK_KANBAN"] = kanban
+        spec = importlib.util.spec_from_file_location("mock_inspector", here / "inspector.py")
+        inspector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(inspector)
+        inspector.install(globals(), gateway, chats, projects, dev_port=args.dev_port)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib

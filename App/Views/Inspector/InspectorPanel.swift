@@ -14,7 +14,7 @@ struct InspectorPanel: View {
     /// Shows only this tab (a tab's own window).
     var onlyTab: String?
 
-    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
 
     private var shown: InspectorTab? {
         if let onlyTab { return inspector.tab(onlyTab) }
@@ -43,6 +43,7 @@ struct InspectorPanel: View {
         // Cards inside the Inspector don't offer to open themselves in it.
         .environment(\.inspectorModel, nil)
         .focusedValue(\.inspectorPanel, inspector)
+        .onChange(of: colorScheme, initial: true) { _, scheme in inspector.isDark = scheme == .dark }
         .background { InspectorCloseShortcut(inspector: inspector) }
         .alert("Open Address", isPresented: Binding(get: { inspector.showsAddressPrompt }, set: { inspector.showsAddressPrompt = $0 })) {
             AddressPrompt(inspector: inspector)
@@ -294,6 +295,7 @@ struct InspectorOpenMenu: View {
         }
         .padding(.vertical, 6)
         .frame(width: 280)
+        .task { await inspector.refreshOffers() }
     }
 
     private func row(symbol: String, title: String, detail: String, action: @escaping () -> Void) -> some View {
@@ -362,6 +364,7 @@ struct InspectorOpenGrid: View {
             .padding(12)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .task { await inspector.refreshOffers() }
     }
 
     private func tile(symbol: String, title: String, detail: String, action: @escaping () -> Void) -> some View {

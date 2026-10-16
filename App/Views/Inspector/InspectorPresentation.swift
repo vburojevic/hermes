@@ -94,6 +94,7 @@ private struct InspectorSheet: View {
     let workspace: BotWorkspace
 
     @State private var detent = PresentationDetent.medium
+    @Environment(\.colorScheme) private var colorScheme
 
     private var isLarge: Bool { detent == .large }
 
@@ -128,6 +129,7 @@ private struct InspectorSheet: View {
         .presentationBackground(isLarge ? AnyShapeStyle(Theme.sheetBackground) : AnyShapeStyle(.clear))
         .onChange(of: detent) { _, new in inspector.sheetHeight = new == .large ? .large : .medium }
         .onAppear { detent = inspector.sheetHeight == .large ? .large : .medium }
+        .onChange(of: colorScheme, initial: true) { _, scheme in inspector.isDark = scheme == .dark }
         .alert("Open Address", isPresented: Binding(get: { inspector.showsAddressPrompt }, set: { inspector.showsAddressPrompt = $0 })) {
             SheetAddressPrompt(inspector: inspector)
         } message: {
@@ -233,6 +235,22 @@ struct InspectorPill: View {
     }
 }
 
+/// Ink glass while the Inspector is open (the design's filled toolbar circle).
+private struct OpenProminence: ViewModifier {
+    let isOpen: Bool
+
+    func body(content: Content) -> some View {
+        if isOpen {
+            content
+                .buttonStyle(.glassProminent)
+                .tint(Theme.ink)
+                .foregroundStyle(Theme.inkForeground)
+        } else {
+            content
+        }
+    }
+}
+
 /// The toolbar's Inspector button (Mac, iPad): ink while the panel is open.
 struct InspectorToolbarButton: View {
     let inspector: InspectorModel
@@ -243,6 +261,7 @@ struct InspectorToolbarButton: View {
         } label: {
             Image(systemName: "sidebar.right")
         }
+        .modifier(OpenProminence(isOpen: inspector.isPresented))
         .accessibilityLabel(inspector.isPresented ? "Hide Inspector" : "Show Inspector")
         .help(inspector.isPresented ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")
     }

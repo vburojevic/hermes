@@ -416,8 +416,20 @@ final class InspectorModel {
 
     /// "4 files · +169 −12", once Changes has looked.
     private var changesSummary: String? {
-        guard let list = reviews.values.first?.list, !list.files.isEmpty else { return nil }
-        return String(localized: "\(list.files.count) files · +\(list.added) −\(list.removed)")
+        reviews.values.first?.summary ?? offerSummary
+    }
+
+    /// What the + menu learned when it opened (Changes' count, whether the Bot Screen runs).
+    private var offerSummary: String?
+
+    /// Looks up what the + menu offers that only the gateway knows: the changes waiting, and
+    /// whether Hermes's screen is running (Linux gateways only).
+    func refreshOffers() async {
+        if let folder = workingFolder, let backend, reviews.isEmpty,
+           let list = try? await backend.reviewList(folder, scope: .uncommitted), !list.files.isEmpty {
+            offerSummary = list.files.count == 1 ? String(localized: "1 file") : String(localized: "\(list.files.count) files")
+        }
+        await screenController().refreshStatus()
     }
 
     /// Opens a kind from the + menu.
@@ -498,9 +510,10 @@ final class InspectorModel {
 
     // MARK: Turn data
 
-    /// The plan of the latest turn that has one (`todo.updated`).
+    /// The plan of the latest turn that has one (`todo.updated`), the running turn's first.
     var latestPlan: [PlanItem]? {
-        conversation?.items.reversed().lazy.compactMap { item -> [PlanItem]? in
+        if let live = conversation?.liveTurn, !live.plan.isEmpty { return live.plan }
+        return conversation?.items.reversed().lazy.compactMap { item -> [PlanItem]? in
             if case .assistant(let turn) = item, !turn.plan.isEmpty { return turn.plan }
             return nil
         }.first
@@ -791,7 +804,7 @@ final class InspectorModel {
         }
         drivingEnds?.cancel()
         if action.actsOnElement {
-            let colors = Self.inkColors
+            let colors = inkColors
             await controller.ring(action, ink: colors.ink, onInk: colors.onInk)
             try? await Task.sleep(for: .milliseconds(600))
         }
@@ -830,14 +843,12 @@ final class InspectorModel {
         return words.prefix(1).uppercased() + words.dropFirst()
     }
 
+    /// The panel's appearance (the app can differ from the system's), for the ring's ink.
+    var isDark = false
+
     /// Ink and its foreground as CSS, for the ring drawn in the page.
-    private static var inkColors: (ink: String, onInk: String) {
-        #if os(macOS)
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        #else
-        let dark = UITraitCollection.current.userInterfaceStyle == .dark
-        #endif
-        return dark ? ("#F5F5F7", "#111113") : ("#111113", "#FFFFFF")
+    private var inkColors: (ink: String, onInk: String) {
+        isDark ? ("#F5F5F7", "#111113") : ("#111113", "#FFFFFF")
     }
 
     // MARK: terminal.read and window.read

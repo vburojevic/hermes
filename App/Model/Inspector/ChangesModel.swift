@@ -58,6 +58,40 @@ final class ChangesModel {
         if list == nil, !isLoading { await refresh() }
     }
 
+    /// Whether `gh` can make pull requests, checked whenever the tab shows (a sign-in on the
+    /// gateway counts at once).
+    func refreshGitHub() async {
+        guard let backend = inspector?.backend else { return }
+        gitHub = try? await backend.gitHubAuth()
+        ship = try? await backend.shipInfo(root)
+    }
+
+    /// "4 files · +169 −12".
+    var summary: String? {
+        guard let list, !list.files.isEmpty else { return nil }
+        let files = list.files.count == 1 ? String(localized: "1 file") : String(localized: "\(list.files.count) files")
+        return "\(files) · +\(list.added) −\(list.removed)"
+    }
+
+    /// The commit message's first line, and the rest.
+    var subject: String {
+        get { message.components(separatedBy: "\n").first ?? "" }
+        set { message = Self.join(newValue, body) }
+    }
+
+    var body: String {
+        get {
+            let lines = message.components(separatedBy: "\n")
+            return lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .newlines)
+        }
+        set { message = Self.join(subject, newValue) }
+    }
+
+    private static func join(_ subject: String, _ body: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .newlines)
+        return trimmed.isEmpty ? subject.replacingOccurrences(of: "\n", with: " ") : subject.replacingOccurrences(of: "\n", with: " ") + "\n\n" + trimmed
+    }
+
     func refresh() async {
         guard let backend = inspector?.backend else { return }
         isLoading = true

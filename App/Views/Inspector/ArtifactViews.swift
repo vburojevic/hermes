@@ -34,10 +34,12 @@ struct InspectorCard: View {
                     .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
             Button(isShowing ? "Showing" : "Open", action: open)
                 .font(.footnote.weight(.medium))
                 .cardButton()
-                .disabled(isShowing)
+                .allowsHitTesting(!isShowing)
+                .accessibilityLabel(isShowing ? Text("\(title), showing in the Inspector") : Text("Open \(title) in the Inspector"))
         }
         .padding(.leading, 10)
         .padding(.trailing, 12)
@@ -50,9 +52,6 @@ struct InspectorCard: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onTapGesture { if !isShowing { open() } }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint(isShowing ? Text("Showing in the Inspector") : Text("Opens in the Inspector"))
         .frame(maxWidth: 460, alignment: .leading)
     }
 }

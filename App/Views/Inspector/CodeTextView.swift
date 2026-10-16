@@ -139,6 +139,8 @@ private struct CodeTextRepresentable: NSViewRepresentable {
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets()
         let textView = CodeNSTextView()
         textView.isRichText = false
         textView.allowsUndo = true

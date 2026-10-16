@@ -124,9 +124,11 @@ private struct URLBar: View {
         .padding(.horizontal, 12)
         .frame(height: 30)
         .background(Theme.controlFill, in: Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Address, \(controller.address)"))
-        .accessibilityAddTraits(.isButton)
+        .modifier(AddressAccessibility(isEditing: editing, address: controller.address) {
+            draft = controller.address
+            editing = true
+            focused = true
+        })
     }
 
     private func button(_ symbol: String, label: LocalizedStringKey, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -140,6 +142,25 @@ private struct URLBar: View {
         .opacity(enabled ? 1 : 0.4)
         .accessibilityLabel(label)
         .help(Text(label))
+    }
+}
+
+/// The address reads as one button until it's being edited; the field is its own control then.
+private struct AddressAccessibility: ViewModifier {
+    let isEditing: Bool
+    let address: String
+    let edit: () -> Void
+
+    func body(content: Content) -> some View {
+        if isEditing {
+            content
+        } else {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("Address, \(address)"))
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { edit() }
+        }
     }
 }
 

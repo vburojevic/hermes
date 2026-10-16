@@ -51,7 +51,10 @@ struct ChangesTabView: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
         }
-        .task { await model.loadIfNeeded() }
+        .task {
+            await model.loadIfNeeded()
+            await model.refreshGitHub()
+        }
         .onChange(of: model.pullRequestURL) { _, url in
             if url != nil, let url = model.consumePullRequestURL() { openURL(url) }
         }
@@ -75,8 +78,8 @@ struct ChangesTabView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(maxWidth: 300)
-            if let list = model.list, !list.files.isEmpty {
-                Text("\(list.files.count) files · +\(list.added) −\(list.removed)")
+            if let summary = model.summary {
+                Text(summary)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
@@ -165,14 +168,21 @@ private struct ShipBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Commit message", text: Binding(get: { model.message }, set: { model.message = $0; model.edited() }), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.footnote)
-                .lineLimit(2...6)
+            VStack(alignment: .leading, spacing: 2) {
+                TextField("Commit message", text: Binding(get: { model.subject }, set: { model.subject = $0; model.edited() }))
+                    .textFieldStyle(.plain)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                TextField("Description", text: Binding(get: { model.body }, set: { model.body = $0; model.edited() }), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1...5)
+            }
                 .focused($editing)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .frame(minHeight: 60, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
                 .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
             HStack(spacing: 6) {
@@ -250,7 +260,11 @@ private struct ShipBar: View {
     private var meta: String {
         var parts: [String] = []
         if let branch = model.branchLine { parts.append(branch) }
-        if !model.files.isEmpty { parts.append(String(localized: "\(model.stagedCount) of \(model.files.count) files staged")) }
+        if !model.files.isEmpty {
+            parts.append(model.files.count == 1
+                ? String(localized: "\(model.stagedCount) of 1 file staged")
+                : String(localized: "\(model.stagedCount) of \(model.files.count) files staged"))
+        }
         return parts.joined(separator: " · ")
     }
 }
