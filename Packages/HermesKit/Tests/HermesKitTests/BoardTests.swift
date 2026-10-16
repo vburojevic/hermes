@@ -128,7 +128,11 @@ struct BoardTests {
         #expect(card("blocked") { $0.blockKind = "transient" }.state(now: now) == .blocked)
         #expect(card("blocked") { $0.consecutiveFailures = 3; $0.lastFailureError = "Build fails" }.state(now: now) == .gaveUp(tries: 3))
         #expect(card("todo") { $0.parentCount = 2 }.state(now: now) == .waiting(parents: 2))
-        #expect(card("triage") { $0.progress = (2, 5) }.state(now: now) == .parent(done: 2, total: 5))
+        // The detail knows how many are still open, and whether the card was split.
+        #expect(card("todo") { $0.parentCount = 3 }.state(now: now, extras: BoardCardExtras(openParents: 1)) == .waiting(parents: 1))
+        #expect(card("todo") { $0.parentCount = 5 }.state(now: now, extras: BoardCardExtras(openParents: 3, split: BoardProgress(done: 2, total: 5))) == .parent(done: 2, total: 5))
+        // The board's own `progress` counts cards waiting on this one: not sub-cards.
+        #expect(card("ready") { $0.progress = (0, 1) }.state(now: now) == .idle)
         #expect(card("review").state(now: now) == .review)
         #expect(card("ready").state(now: now) == .idle)
     }
@@ -165,7 +169,7 @@ struct BoardTests {
         #expect(checks.pendingCount == 1)
         #expect(checks.checks.first?.url?.absoluteString == "https://github.com/x/1")
         #expect(detail.question == "Which category?")
-        #expect(detail.changedFiles == ["App/Theme.swift", "Tests/Snapshots.swift"])
+        #expect(detail.changedFiles.map(\.path) == ["App/Theme.swift", "Tests/Snapshots.swift"])
         #expect(detail.reviewerComment?.body == "Two snapshots differ on iPad.")
         #expect(detail.refusal?.contains("failed") == true)
         #expect(detail.parentCards.map(\.title) == ["Parent"])
@@ -174,6 +178,23 @@ struct BoardTests {
         #expect(card.commentCount == 2 && card.parentCount == 1 && card.childCount == 2)
         #expect(card.progress?.done == 1 && card.progress?.total == 2)
         #expect(detail.activeRun == nil)
+        #expect(detail.extras.openParents == 0)
+        #expect(detail.extras.split == nil)
+        #expect(detail.extras.checks?.prNumber == 142)
+    }
+
+    @Test func aSplitCardWaitsOnItsNewCards() throws {
+        // `decompose` links the split card under every new card; its progress is theirs.
+        let detail = try #require(BoardCardDetail(json: try json("""
+        {"task": {"id": "t_root", "title": "Release 1.3", "status": "todo"},
+         "events": [{"id": 1, "kind": "decomposed", "payload": {}, "created_at": 1}],
+         "links": {"parents": ["t_a", "t_b", "t_c"], "children": []},
+         "link_tasks": [{"id": "t_a", "title": "A", "status": "done"}, {"id": "t_b", "title": "B", "status": "ready"},
+                        {"id": "t_c", "title": "C", "status": "archived"}], "runs": []}
+        """)))
+        #expect(detail.extras.split == BoardProgress(done: 2, total: 3))
+        #expect(detail.extras.openParents == 1)
+        #expect(detail.card.state(extras: detail.extras) == .parent(done: 2, total: 3))
     }
 
     @Test func theQuestionFallsBackToTheSummary() throws {
@@ -226,6 +247,11 @@ struct BoardTests {
         #expect(full.json["project_id"]?.stringValue == "p_1")
         #expect(full.json["triage"]?.boolValue == true)
         #expect(full.json["parents"] == .array([.string("t_1"), .string("t_2")]))
+    }
+
+    @Test func changedFilesTakePathsOrObjects() throws {
+        let run = try #require(BoardRun(json: try json(#"{"id": 3, "status": "done", "metadata": {"changed_files": ["A.swift", {"path": "B.swift", "additions": 312}, {"file": "C.swift", "added": 4, "removed": 4}, {"nope": 1}]}}"#)))
+        #expect(run.changedFiles == [BoardChangedFile(path: "A.swift"), BoardChangedFile(path: "B.swift", added: 312), BoardChangedFile(path: "C.swift", added: 4, removed: 4)])
     }
 
     @Test func workerLogKeepsTheLastLines() {

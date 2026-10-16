@@ -373,6 +373,19 @@ public actor BackendClient {
         return try JSONDecoder().decode(JSONValue.self, from: data)["status"]?.stringValue ?? "pending"
     }
 
+    /// The newest chat a card's worker ran in, for Watch. Workers' chats are tagged `kanban`, run
+    /// in the card's folder, and live in the assignee's profile (`GET /api/sessions`); the
+    /// project tree leaves them out.
+    public func boardWorkerChat(folder: String, profile: String?) async throws -> String? {
+        let query = [
+            URLQueryItem(name: "source", value: "kanban"), URLQueryItem(name: "cwd_prefix", value: folder),
+            URLQueryItem(name: "order", value: "recent"), URLQueryItem(name: "limit", value: "1"),
+        ] + Self.profileQuery(profile)
+        let (data, _) = try await send(path: "api/sessions", query: query)
+        guard case .array(let rows)? = try JSONDecoder().decode(JSONValue.self, from: data)["sessions"] else { return nil }
+        return rows.first?["id"]?.stringValue
+    }
+
     // MARK: - Plumbing
 
     /// A call to the kanban plugin (`/api/plugins/kanban/<path>`); the Board's calls are in

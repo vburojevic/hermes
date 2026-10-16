@@ -56,6 +56,8 @@ TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
 HTTP_ROUTES = {}   # (method, path) -> fn(query, body) -> (status, json): REST added by modules (projects.py)
 PUBLIC_ROUTES = {}  # path -> fn(query) -> (status, content_type, bytes): pages a browser opens without the token
+PATTERN_ROUTES = []  # (method, compiled regex, fn(match, query, body) -> (status, json)): REST with ids in the path (kanban.py)
+WS_ROUTES = {}      # path -> fn(handler, query): other WebSockets (kanban.py's event stream)
 
 CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin"}
 GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
@@ -347,6 +349,25 @@ class Peer:
             message += bytes(payload)
             if fin:
                 return message.decode("utf-8", "replace")
+
+
+def accept_socket(handler, query):
+    """Upgrades a request to a WebSocket for a module's socket (kanban.py); None after a refusal."""
+    key = handler.headers.get("Sec-WebSocket-Key")
+    if not key or (handler.headers.get("Upgrade") or "").lower() != "websocket":
+        handler.send_json(400, {"detail": "Expected a WebSocket upgrade"})
+        return None
+    accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+    authorized = handler.authorized(query)
+    handler.wfile.write((f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                         f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode())
+    handler.wfile.flush()
+    handler.close_connection = True
+    peer = Peer(handler)
+    if not authorized:
+        peer.close(1008, "unauthorized")
+        return None
+    return peer
 
 
 def ok(rid, result):
@@ -1152,6 +1173,8 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(url.query)
         if url.path == "/api/ws":
             return self.websocket(query)
+        if url.path in WS_ROUTES:
+            return WS_ROUTES[url.path](self, query)
         if url.path == "/api/status":
             return self.send_json(200, {"version": "0.21.6", "auth_required": bool(CONFIG["password"]),
                                         "auth_providers": ["basic"] if CONFIG["password"] else [],
@@ -1178,6 +1201,8 @@ class Handler(BaseHTTPRequestHandler):
         route = HTTP_ROUTES.get(("GET", url.path))
         if route:
             return self.send_json(*route(query, {}))
+        if self.pattern_route("GET", url.path, query, {}):
+            return
         match = re.fullmatch(r"/api/sessions/([^/]+)/messages", url.path)
         if match:
             sid = unquote(match.group(1))
@@ -1219,6 +1244,8 @@ class Handler(BaseHTTPRequestHandler):
         route = HTTP_ROUTES.get(("PUT", url.path))
         if route:
             return self.send_json(*route(parse_qs(url.query), body))
+        if self.pattern_route("PUT", url.path, parse_qs(url.query), body):
+            return
         return self.send_json(404, {"detail": "Not Found"})
 
     def do_DELETE(self):
@@ -1230,6 +1257,8 @@ class Handler(BaseHTTPRequestHandler):
         route = HTTP_ROUTES.get(("DELETE", url.path))
         if route:
             return self.send_json(*route(parse_qs(url.query), body))
+        if self.pattern_route("DELETE", url.path, parse_qs(url.query), body):
+            return
         return self.send_json(404, {"detail": "Not Found"})
 
     def do_PATCH(self):
@@ -1238,6 +1267,8 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length) or b"{}") if length else {}
         if not self.authorized():
             return self.send_json(401, {"detail": "Unauthorized"})
+        if self.pattern_route("PATCH", url.path, parse_qs(url.query), body):
+            return
         match = re.fullmatch(r"/api/sessions/([^/]+)", url.path)
         if not match:
             return self.send_json(404, {"detail": "Not Found"})
@@ -1279,6 +1310,8 @@ class Handler(BaseHTTPRequestHandler):
         route = HTTP_ROUTES.get(("POST", url.path))
         if route:
             return self.send_json(*route(parse_qs(url.query), body))
+        if self.pattern_route("POST", url.path, parse_qs(url.query), body):
+            return
         if url.path == "/api/auth/ws-ticket":
             ticket = secrets.token_urlsafe(18)
             with LOCK:
@@ -1313,6 +1346,14 @@ class Handler(BaseHTTPRequestHandler):
                 deliver_routine(profile, job["name"].split("] ", 1)[-1], job["prompt"], "Done. Everything looks good ✅")
             return self.send_json(200, {"ok": True, "job_id": job["job_id"]})
         self.send_json(404, {"detail": "Not Found"})
+
+    def pattern_route(self, method, path, query, body):
+        for verb, pattern, route in PATTERN_ROUTES:
+            match = pattern.fullmatch(path) if verb == method else None
+            if match:
+                self.send_json(*route(match, query, body))
+                return True
+        return False
 
     def websocket(self, query):
         key = self.headers.get("Sec-WebSocket-Key")
@@ -1462,6 +1503,12 @@ def main():
         memory = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(memory)
         memory.install(globals(), gateway, chats)
+        globals()["MOCK_PROJECTS"] = projects.PROJECTS
+        spec = importlib.util.spec_from_file_location("mock_kanban", here / "kanban.py")
+        kanban = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(kanban)
+        kanban.install(globals())
+        globals()["MOCK_KANBAN"] = kanban
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib

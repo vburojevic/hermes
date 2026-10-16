@@ -255,8 +255,9 @@ public struct BoardCard: Identifiable, Hashable, Sendable {
     /// dispatcher only reclaims after an hour, the desktop dims after two minutes.
     public static let staleAfter: TimeInterval = 5 * 60
 
-    /// What the card shows, from the columns' facts.
-    public func state(now: Date = .now) -> BoardCardState {
+    /// What the card shows, from the board's facts and, for cards that wait or are in review,
+    /// what their detail added (`BoardCardExtras`).
+    public func state(now: Date = .now, extras: BoardCardExtras? = nil) -> BoardCardState {
         switch column {
         case "running":
             let heard = lastHeartbeatAt ?? currentRunStartedAt ?? startedAt
@@ -270,10 +271,12 @@ public struct BoardCard: Identifiable, Hashable, Sendable {
             return .review
         case "done":
             return .done(at: completedAt)
-        case "todo" where parentCount > 0:
-            return .waiting(parents: parentCount)
         default:
-            if let progress { return .parent(done: progress.done, total: progress.total) }
+            if let split = extras?.split { return .parent(done: split.done, total: split.total) }
+            if column == "todo", parentCount > 0 {
+                let open = extras?.openParents ?? parentCount
+                if open > 0 { return .waiting(parents: open) }
+            }
             return .idle
         }
     }
@@ -284,6 +287,32 @@ public struct BoardCard: Identifiable, Hashable, Sendable {
         case .needsYou: true
         default: false
         }
+    }
+}
+
+/// What a card's detail adds to the board: how many cards it still waits for, a split card's
+/// progress, and a review's checks. Fetched for the few cards that need it.
+public struct BoardCardExtras: Hashable, Sendable {
+    public var openParents: Int?
+    /// Split into cards (`decompose`): the split card waits on every new card, so its progress
+    /// is how many of those are done.
+    public var split: BoardProgress?
+    public var checks: BoardChecks?
+
+    public init(openParents: Int? = nil, split: BoardProgress? = nil, checks: BoardChecks? = nil) {
+        self.openParents = openParents
+        self.split = split
+        self.checks = checks
+    }
+}
+
+public struct BoardProgress: Hashable, Sendable {
+    public var done: Int
+    public var total: Int
+
+    public init(done: Int, total: Int) {
+        self.done = done
+        self.total = total
     }
 }
 
@@ -389,6 +418,33 @@ public struct BoardSnapshot: Hashable, Sendable {
     }
 }
 
+/// A file a worker reported changing (`metadata.changed_files`: paths, or objects with a path
+/// and line counts; the field is free-form).
+public struct BoardChangedFile: Hashable, Sendable, Identifiable {
+    public var path: String
+    public var added: Int?
+    public var removed: Int?
+    public var id: String { path }
+
+    public init(path: String, added: Int? = nil, removed: Int? = nil) {
+        self.path = path
+        self.added = added
+        self.removed = removed
+    }
+
+    init?(json: JSONValue) {
+        if let path = json.stringValue, !path.isEmpty {
+            self.init(path: path)
+            return
+        }
+        guard let path = (json["path"] ?? json["file"] ?? json["filename"])?.stringValue, !path.isEmpty else { return nil }
+        func count(_ keys: String...) -> Int? {
+            keys.lazy.compactMap { json[$0]?.doubleValue }.first.map { Int($0) }
+        }
+        self.init(path: path, added: count("additions", "added", "insertions"), removed: count("deletions", "removed"))
+    }
+}
+
 /// One attempt at a card (`runs[]`).
 public struct BoardRun: Identifiable, Hashable, Sendable {
     public var id: Int
@@ -402,12 +458,12 @@ public struct BoardRun: Identifiable, Hashable, Sendable {
     public var endedAt: Date?
     public var lastHeartbeatAt: Date?
     /// Files the worker reported changing (`metadata.changed_files`).
-    public var changedFiles: [String]
+    public var changedFiles: [BoardChangedFile]
     public var metadata: JSONValue?
 
     public init(
         id: Int, profile: String? = nil, status: String, outcome: String? = nil, summary: String? = nil, error: String? = nil,
-        startedAt: Date? = nil, endedAt: Date? = nil, lastHeartbeatAt: Date? = nil, changedFiles: [String] = [], metadata: JSONValue? = nil
+        startedAt: Date? = nil, endedAt: Date? = nil, lastHeartbeatAt: Date? = nil, changedFiles: [BoardChangedFile] = [], metadata: JSONValue? = nil
     ) {
         self.id = id
         self.profile = profile
@@ -427,9 +483,9 @@ public struct BoardRun: Identifiable, Hashable, Sendable {
         // Older rows stored the metadata as a JSON string.
         var metadata = json["metadata"]
         if let text = metadata?.stringValue { metadata = JSONValue.parse(text) }
-        var files: [String] = []
+        var files: [BoardChangedFile] = []
         if case .array(let rows)? = metadata?["changed_files"] {
-            files = rows.compactMap { $0.stringValue ?? $0["path"]?.stringValue }
+            files = rows.compactMap(BoardChangedFile.init(json:))
         }
         self.init(
             id: Int(id),
@@ -644,6 +700,17 @@ public struct BoardCardDetail: Hashable, Sendable {
         )
     }
 
+    /// What the board shows from this detail.
+    public var extras: BoardCardExtras {
+        let parentsDone = parentCards.filter { $0.column == "done" || $0.column == BoardWorkflow.archived }.count
+        let split = events.contains { $0.kind == "decomposed" } && !parents.isEmpty
+        return BoardCardExtras(
+            openParents: parents.count - parentsDone,
+            split: split ? BoardProgress(done: parentsDone, total: parents.count) : nil,
+            checks: checks
+        )
+    }
+
     /// The checks from the latest `pr_acceptance` event, if the card has a PR.
     public var checks: BoardChecks? {
         events.last { $0.kind == "pr_acceptance" }.flatMap(BoardChecks.init(event:))
@@ -661,7 +728,7 @@ public struct BoardCardDetail: Hashable, Sendable {
     public var activeRun: BoardRun? { runs.last { $0.isActive } }
 
     /// Files the latest finished attempt changed.
-    public var changedFiles: [String] {
+    public var changedFiles: [BoardChangedFile] {
         runs.last { !$0.changedFiles.isEmpty }?.changedFiles ?? []
     }
 
