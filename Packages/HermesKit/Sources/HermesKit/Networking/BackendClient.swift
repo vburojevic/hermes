@@ -397,6 +397,19 @@ public actor BackendClient {
 
     // MARK: - Plumbing
 
+    /// A JSON call to the backend (the Inspector's `/api/fs/*`, `/api/git/*`; see
+    /// `WorkspaceAPI.swift`).
+    func rest(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: JSONValue? = nil) async throws -> JSONValue {
+        let (data, _) = try await send(path: path, method: method, query: query, body: body)
+        return (try? JSONDecoder().decode(JSONValue.self, from: data)) ?? .null
+    }
+
+    /// Raw bytes from the backend (a gateway file for the Preview, with its content type).
+    func restData(_ path: String, query: [URLQueryItem] = []) async throws -> (Data, String?) {
+        let (data, response) = try await send(path: path, query: query, accept: "*/*")
+        return (data, response.value(forHTTPHeaderField: "Content-Type"))
+    }
+
     /// A call to the kanban plugin (`/api/plugins/kanban/<path>`); the Board's calls are in
     /// `BoardAPI.swift`.
     func kanban(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: JSONValue? = nil) async throws -> JSONValue {
