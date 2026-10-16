@@ -477,6 +477,7 @@ struct MainView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     /// iPad: the Team inspector hid the sidebar.
     @State private var teamHidesSidebar = false
+    @State private var boardHidesSidebar = false
     @State private var isDrawerOpen = false
     /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
     @SceneStorage("window.selection") private var storedSelection: String?
@@ -566,6 +567,13 @@ struct MainView: View {
         .onChange(of: router?.teamInspectorIsOpen ?? false) { _, isOpen in
             teamHidesSidebar = isOpen
             withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : .all }
+        }
+        // iPad: the Board takes the sidebar's room (`ipadBoard`); its back button returns home.
+        .onChange(of: workspace.selection, initial: true) { _, selection in
+            let isBoard = if case .board = selection { true } else { false }
+            guard isBoard != boardHidesSidebar else { return }
+            boardHidesSidebar = isBoard
+            withAnimation(Theme.snappy) { columnVisibility = isBoard ? .detailOnly : .all }
         }
         #endif
     }

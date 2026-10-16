@@ -16,7 +16,7 @@ struct BoardScreen: View {
     var onToggleSidebar: (() -> Void)?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var width: CGFloat = 0
+    @State private var size: CGSize = .zero
     @State private var targetedColumn: String?
 
     private var model: BoardModel { workspace.board(for: projectID) }
@@ -35,15 +35,16 @@ struct BoardScreen: View {
         #if os(macOS)
         true
         #else
-        !isCompact && width >= 1000
+        !isCompact && size.width > size.height && size.width >= 900
         #endif
     }
 
+    /// The Mac's and iPad landscape's columns are fixed; iPad portrait fits two across.
     private var columnWidth: CGFloat {
         #if os(macOS)
         222
         #else
-        255
+        usesInspector || size.width == 0 ? 255 : max(255, (size.width - 52) / 2)
         #endif
     }
 
@@ -59,7 +60,7 @@ struct BoardScreen: View {
             }
         }
         .background(background.ignoresSafeArea())
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
         .modifier(BoardCardPresentation(model: model, isCompact: isCompact, usesInspector: usesInspector))
         .toolbar { toolbar }
         #if os(macOS)
