@@ -299,9 +299,15 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         return await PushCenter.shared.presentation(for: notice)
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    /// Finishes on the main thread: UIKit updates the app's snapshot in the completion handler and
+    /// stops the app if that runs anywhere else. The `async` form called it wherever the handling
+    /// finished, and opening a notice crashed the app (TestFlight 2610152328).
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let response = PushResponder.Response(response)
-        await PushCenter.shared.handle(response)
+        Task { @MainActor in
+            await PushCenter.shared.handle(response)
+            completionHandler()
+        }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?) {
