@@ -39,6 +39,14 @@ split view on iPad and Mac.
   works). Checkpoints… (a chat's menu; on the Mac the Chat menu, ⌥⌘Z for Undo) lists older points,
   restores one file at any time or all of them, and turns checkpoints on when they're off. Needs
   Bot Mode.
+- **Memory**: what Hermes (or a Bot) remembers between chats — About You and Hermes's Notes — in
+  Settings → Hermes on <gateway> → Memory, Edit Bot → What <Bot> Remembers, and the Mac's Settings
+  → Memory. Edit, copy or forget any entry (Forget and Reset always ask: the gateway can't undo
+  them), review saves staged while nobody could answer, switch either store off, turn on Ask
+  Before Saving (the chat then asks "Save to memory?": Don't Save, Save, Save All in This Chat),
+  and pick a ready memory provider. A reply that saved something ends with "Remembered: …"; tap it
+  for the entry. Memory is read at the start of a chat, so changes apply from the next one. Entries
+  are never logged, cached or indexed. Needs Bot Mode.
 - **Search**: the chat search finds words inside chats, not just titles (with Bot Mode; titles
   only without it): one row per chat with the matching words in bold, chips for Chats, Projects,
   Bots and Tasks, and where each chat lives. Opening a result jumps to the message and flashes it.
@@ -270,6 +278,15 @@ off` starts with them off (Turn On writes `PUT /api/config`; open chats keep the
 reattached); `mock.checkpoints {"enabled", "now", "busy", "container"}` switches states and
 `mock.checkpoints.reset` puts everything back. Debug flags: `-HERMES_OPEN chat:prj_undo` with
 `-HERMES_CHECKPOINTS review|undo|timeline|detail[:n]|restore-all[:n]|off`.
+
+And memory (`Tools/mock-hermes/memory.py`), shaped like the gateway's `/api/learning/*`,
+`/api/memory*` and `/memory` command: six things about you, fourteen notes (94% full) and two saves
+waiting for review; Research Buddy has its own. Edits over a store's cap and stale ids are refused
+with the gateway's words. In a chat, "remember …" or "vegetarian" saves (asking "Save to memory?"
+first while Ask Before Saving is on), "in a task" stages the save for review, "forget …" removes,
+"beta 3" updates and "three things" saves a batch. `POST /api/mock/memory/reset` puts it all back.
+Debug flags, with `-HERMES_OPEN settings`: `-HERMES_MEMORY about|notes|options|edit:<n>|reset|bot:<profile>`
+(on the Mac it opens Settings → Memory).
 
 And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`'s
 `/api/sessions/search`: "reconnect" matches seven chats across Hermes App's lanes, a task run of
