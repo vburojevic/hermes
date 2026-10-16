@@ -35,7 +35,10 @@ struct ApprovalCard: View {
 
     var body: some View {
         Group {
-            if isBatch {
+            if approval.isMemorySave {
+                // Ask Before Saving: Don't Save / Save / Save All in This Chat (`memorySaveAsk`).
+                MemorySaveAsk(approval: approval, asker: asker, onChoice: onChoice)
+            } else if isBatch {
                 batch
             } else if approval.smartDenied {
                 flagged

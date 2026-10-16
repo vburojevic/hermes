@@ -9,7 +9,7 @@ struct NeedsYouDock: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: conversation.pendingApproval != nil ? "hand.raised.fill" : "questionmark.circle.fill")
+            Image(systemName: conversation.pendingApproval?.isMemorySave == true ? "brain" : (conversation.pendingApproval != nil ? "hand.raised.fill" : "questionmark.circle.fill"))
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.warning)
                 .frame(width: 32, height: 32)
@@ -35,7 +35,7 @@ struct NeedsYouDock: View {
                 Button {
                     conversation.respond(to: approval, with: .deny)
                 } label: {
-                    Text("Deny")
+                    Text(approval.isMemorySave ? String(localized: "Don't Save") : String(localized: "Deny"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.danger)
                         .padding(.horizontal, 14)
@@ -46,7 +46,7 @@ struct NeedsYouDock: View {
                 Button {
                     conversation.respond(to: approval, with: .once)
                 } label: {
-                    Text("Allow")
+                    Text(approval.isMemorySave ? String(localized: "Save") : String(localized: "Allow"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.inkForeground)
                         .padding(.horizontal, 14)
@@ -54,7 +54,7 @@ struct NeedsYouDock: View {
                         .background(Theme.ink, in: Capsule())
                 }
                 .buttonStyle(PressableStyle())
-                .accessibilityHint("Allows this command once")
+                .accessibilityHint(approval.isMemorySave ? "Saves this to memory" : "Allows this command once")
             } else {
                 Button(action: onExpand) {
                     Image(systemName: "chevron.up")
@@ -75,6 +75,7 @@ struct NeedsYouDock: View {
 
     private var subject: String {
         if let approval = conversation.pendingApproval {
+            if approval.isMemorySave { return approval.memoryText }
             let more = conversation.waitingApprovals.count
             return more > 0 ? String(localized: "\(more + 1) commands") : approval.summary
         }

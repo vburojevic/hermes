@@ -213,6 +213,32 @@ def test_approval_notifies_with_request_id_and_withdraws_when_answered(hermes):
     assert withdraw["payload"]["aps"] == {"content-available": 1}
 
 
+def test_a_memory_save_request_has_its_own_category(hermes):
+    """An approval titled "Save to memory?" (Ask Before Saving on): MEMORY, Save / Don't Save, no Always."""
+    _, handler = hermes
+    key, token = make_device(handler, "memory")
+    from tools import approval
+    from tools.approval_gateway_wait import _await_gateway_decision
+    session = "20261016_memory_test"
+    result = {}
+    worker = threading.Thread(target=lambda: result.update(_await_gateway_decision(
+        session, lambda data: None, {"command": "Vegetarian; avoids flights after 21:00.",
+                                     "description": "Save to memory: add to user profile",
+                                     "allow_permanent": False, "pattern_key": "memory", "pattern_keys": ["memory"]})))
+    worker.start()
+    push = wait_for(lambda: next(iter(pushes_for(token, "alert")), None))
+    content = opened(key, push)
+    assert push["payload"]["aps"]["category"] == "MEMORY"
+    assert push["payload"]["aps"]["interruption-level"] == "active"
+    assert content["title"] == "Hermes wants to remember something"
+    assert content["body"] == "Vegetarian; avoids flights after 21:00."
+    assert "always" not in content["choices"] and content["memory"] is True
+    assert content["hidden"] == "Wants to remember something on Test Mac"
+    approval.resolve_gateway_approval(session, "deny", request_id=content["request_id"])
+    worker.join(5)
+    assert result.get("choice") == "deny"
+
+
 def test_approval_timeout_withdraws(hermes):
     _, handler = hermes
     key, token = make_device(handler, "timeout")
@@ -333,11 +359,11 @@ def test_relay_never_sees_content():
     blob = "\n".join(FakeRelay.raw)
     assert FakeRelay.raw, "no pushes were sent"
     for needle in (SECRET, "curl", "rm -rf", "apt-get", "Which branch", "Freed 12 GB", "Nightly backup", "disk full",
-                   "Test Mac"):
+                   "Test Mac", "Vegetarian"):
         assert needle not in blob, f"{needle!r} reached the relay"
     allowed_titles = {"Hermes needs your OK", "Hermes has a question", "Hermes needs a password", "Hermes replied",
                       "A scheduled task finished", "A scheduled task failed", "New message",
-                      "Background work finished", "Push notifications are on"}
+                      "Background work finished", "Push notifications are on", "Hermes wants to remember something"}
     for push in FakeRelay.pushes:
         alert = push["payload"].get("aps", {}).get("alert")
         if alert:

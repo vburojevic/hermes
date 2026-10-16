@@ -19,6 +19,7 @@ from typing import Any
 from . import crypto
 
 APPROVAL, QUESTION, REPLY, MESSAGE, TASK, OPEN = "APPROVAL", "QUESTION", "REPLY", "MESSAGE", "TASK", "OPEN"
+MEMORY = "MEMORY"  # an approval titled "Save to memory?": Save, Don't Save (docs/memory.md)
 
 KINDS = {
     # kind: (category, interruption level, relevance, fallback title)
@@ -55,7 +56,7 @@ class Notice:
 
     @property
     def category(self) -> str:
-        return KINDS[self.kind][0]
+        return MEMORY if self.kind == "approval" and self.extra.get("memory") else KINDS[self.kind][0]
 
     def content(self, gateway: dict, open_count: int, resolved: list[str]) -> dict:
         data = {k: v for k, v in asdict(self).items() if v not in ("", None, {}) and k != "extra"}
@@ -117,6 +118,15 @@ def approval(*, request_id: str, session_id: str, chat: str, gateway_name: str, 
              surface: str = "", bot: str = "") -> Notice:
     command = clip(redact(command), MAX_COMMAND)
     description = clip(redact(description), 200)
+    if description.startswith("Save to memory"):
+        # The memory tool asking before it saves: the entry is the one memory text a push carries.
+        return Notice(
+            kind="approval", id=request_id, request_id=request_id, session_id=session_id, thread=session_id,
+            summary=chat, title=f"{bot} wants to remember something" if bot else "Hermes wants to remember something",
+            subtitle=chat, body=clip(command, 240), hidden=f"Wants to remember something on {gateway_name}",
+            expires_at=expires_at,
+            extra={"command": command, "description": description, "choices": [c for c in choices if c != "always"],
+                   "memory": True, "surface": surface, **({"bot": bot} if bot else {})})
     shown = clip(command, 80) or "a command"
     return Notice(
         kind="approval", id=request_id, request_id=request_id, session_id=session_id, thread=session_id,
@@ -195,6 +205,8 @@ def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: 
 
 def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, resolved: list[str]) -> dict:
     category, level, relevance, fallback = KINDS[notice.kind]
+    if notice.category == MEMORY:
+        category, level, fallback = MEMORY, "active", "Hermes wants to remember something"
     aps: dict[str, Any] = {
         "alert": {"title": fallback, "body": "Open Hermes to see it."},
         "mutable-content": 1, "category": category, "interruption-level": level, "relevance-score": relevance,

@@ -12,6 +12,8 @@ struct AssistantTurnView: View {
     var onBranch: BranchAction?
     /// Helper teams no call in the transcript claims: the latest reply shows them.
     var extraTeamIDs: [String] = []
+    /// Whose memory the turn's memory notes open.
+    var memoryContext: MemoryNoteContext?
 
     @Environment(\.helperStore) private var helperStore
     @Environment(\.checkpoints) private var checkpoints
@@ -42,13 +44,8 @@ struct AssistantTurnView: View {
         !turn.steps.isEmpty || !turn.plan.isEmpty || (turn.isWorking && turn.answer.isEmpty)
     }
 
-    /// What the memory tool kept during the turn (`memoryNote`).
-    private var remembered: [String] {
-        turn.steps.compactMap { step in
-            if case .tool(let tool) = step, tool.status == .succeeded { return tool.rememberedText }
-            return nil
-        }
-    }
+    /// What the memory tool did during the turn (`memoryNote`).
+    private var memoryChanges: [MemoryChange] { turn.memoryChanges }
 
     /// Pages the turn found, cited under the reply.
     private var sources: [SearchResult] {
@@ -218,10 +215,8 @@ struct AssistantTurnView: View {
         case .streaming, .waitingForApproval:
             EmptyView()
         }
-        if !turn.isWorking {
-            ForEach(remembered, id: \.self) { text in
-                TurnNote(symbol: "brain", text: String(localized: "Remembered: \(text)"))
-            }
+        if !turn.isWorking, !memoryChanges.isEmpty {
+            MemoryNotes(changes: memoryChanges, context: memoryContext)
         }
         if let onBranch, onBranch.isLatest, !turn.isWorking, let percent = turn.usage?.contextPercent, percent >= 80 {
             ContextNotice(percent: percent) { onBranch.conversation.runCommand("compress", argument: nil) }

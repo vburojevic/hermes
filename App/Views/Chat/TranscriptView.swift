@@ -614,7 +614,8 @@ struct TranscriptView: View {
                 status: turn.isWorking ? conversation.liveStatus : nil,
                 isStopping: turn.isWorking && conversation.isStopping,
                 onBranch: branchAction(for: turn.id),
-                extraTeamIDs: extraTeams
+                extraTeamIDs: extraTeams,
+                memoryContext: MemoryNoteContext(workspace: workspace, conversation: conversation)
             )
         case .notice(let notice) where notice.kind == "background-sent":
             if let caption = FollowUpRecord(text: notice.text, state: .background(answer: ""), turnID: nil).caption {

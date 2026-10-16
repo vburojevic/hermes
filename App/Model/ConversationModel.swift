@@ -3142,6 +3142,15 @@ extension ConversationModel {
     }
 
     private func addApprovalReceipt(for approval: ApprovalRequest, choice: ApprovalChoice, count: Int = 1) {
+        if approval.isMemorySave {
+            // "Save to memory?" answered: no command was run, nothing to add to Chat Permissions.
+            switch choice {
+            case .deny: addReceipt(String(localized: "Not saved · \(approval.memoryText)"), symbol: "xmark.circle")
+            case .session: addReceipt(String(localized: "Saving to memory in this chat · \(approval.memoryText)"), symbol: "brain")
+            default: addReceipt(String(localized: "Saved to memory · \(approval.memoryText)"), symbol: "brain")
+            }
+            return
+        }
         let subject = count > 1 ? String(localized: "\(count) commands") : approval.summary
         switch choice {
         case .once:

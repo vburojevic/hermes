@@ -105,6 +105,25 @@ import Testing
         #expect(NotificationCatalog.Action.choiceIndex("question.choice.2") == 2)
     }
 
+    @Test func memorySavesHaveTheirOwnCategory() throws {
+        let json = """
+        {"v": 1, "kind": "approval", "id": "r1", "title": "Hermes wants to remember something", "body": "Vegetarian.",
+         "category": "MEMORY", "command": "Vegetarian; avoids flights after 21:00.",
+         "description": "Save to memory: add to user profile", "choices": ["once", "session", "deny"]}
+        """
+        let notice = try JSONDecoder().decode(PushNotice.self, from: Data(json.utf8))
+        #expect(notice.isMemorySave)
+        let shown = NoticePresentation(notice, gatewayName: "Studio Mac", slot: 1, showDetails: .always)
+        #expect(shown.title == "Hermes wants to remember something")
+        #expect(shown.body == "Vegetarian; avoids flights after 21:00.")
+        #expect(shown.categoryIdentifier == "MEMORY.1" && shown.interruptionLevel == .active)
+        let memory = NotificationCatalog.categories().first { $0.identifier == "MEMORY" }!
+        #expect(memory.actions.map(\.identifier) == ["memory.save", "memory.dontsave"])
+        #expect(memory.actions.map(\.title) == ["Save", "Don't Save"])
+        let hidden = NoticePresentation(notice, gatewayName: "Studio Mac", slot: nil, showDetails: .never)
+        #expect(hidden.body == "Wants to remember something on Studio Mac")
+    }
+
     @Test func sharedStoreSumsOpenRequestsAndAssignsSlots() {
         let shared = PushShared(suiteName: "push-tests-\(UUID().uuidString)")
         let home = UUID(), vps = UUID()

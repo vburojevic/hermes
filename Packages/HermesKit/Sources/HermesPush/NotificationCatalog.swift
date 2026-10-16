@@ -18,6 +18,8 @@ public enum NotificationCatalog {
         case open = "OPEN"
         /// Passwords and sign-ins: `OPEN` with its own placeholder.
         case password = "PASSWORD"
+        /// "Save to memory?" (Ask Before Saving on): Save, Don't Save.
+        case memory = "MEMORY"
 
         /// The category id for a gateway slot.
         public func identifier(slot: Int?) -> String {
@@ -37,6 +39,9 @@ public enum NotificationCatalog {
         public static let reply = "reply"
         public static let open = "open"
         public static let choicePrefix = "question.choice."
+        /// "Save to memory?": once / deny. Never Always.
+        public static let memorySave = "memory.save"
+        public static let memoryDontSave = "memory.dontsave"
 
         public static func choice(_ index: Int) -> String { "\(choicePrefix)\(index)" }
 
@@ -60,6 +65,7 @@ public enum NotificationCatalog {
             case .task: return failed ? String(localized: "A task failed", bundle: .module) : String(localized: "A task finished", bundle: .module)
             case .message: return String(localized: "New message", bundle: .module)
             case .open: return String(localized: "Work finished", bundle: .module)
+            case .memory: return String(localized: "Wants to remember something", bundle: .module)
             }
         }
         switch category {
@@ -71,6 +77,7 @@ public enum NotificationCatalog {
             return failed ? String(localized: "A task failed on \(gateway)", bundle: .module) : String(localized: "A task finished on \(gateway)", bundle: .module)
         case .message: return String(localized: "New message on \(gateway)", bundle: .module)
         case .open: return String(localized: "Work finished on \(gateway)", bundle: .module)
+        case .memory: return String(localized: "Wants to remember something on \(gateway)", bundle: .module)
         }
     }
 
@@ -111,6 +118,12 @@ public enum NotificationCatalog {
                 UNNotificationAction(identifier: Action.allowOnce, title: String(localized: "Allow Once", bundle: .module), options: [.authenticationRequired], icon: .init(systemImageName: "checkmark")),
                 UNNotificationAction(identifier: Action.deny, title: String(localized: "Deny", bundle: .module), options: [.authenticationRequired, .destructive], icon: .init(systemImageName: "xmark")),
                 UNNotificationAction(identifier: Action.moreOptions, title: String(localized: "More Options…", bundle: .module), options: [.foreground], icon: .init(systemImageName: "ellipsis")),
+            ]
+        case .memory:
+            // Save is the default action.
+            return [
+                UNNotificationAction(identifier: Action.memorySave, title: String(localized: "Save", bundle: .module), options: [.authenticationRequired], icon: .init(systemImageName: "checkmark")),
+                UNNotificationAction(identifier: Action.memoryDontSave, title: String(localized: "Don't Save", bundle: .module), options: [.authenticationRequired, .destructive], icon: .init(systemImageName: "xmark")),
             ]
         case .question:
             return choiceActions(choices) + [replyAction(answer: true)]

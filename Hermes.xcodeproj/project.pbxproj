@@ -63,6 +63,7 @@
 		6847AB2F4BE7257C5FDFD77D /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83E87D6FB065DBE46D0E67A /* TranscriptView.swift */; };
 		68C181FF81413ABCCCB03A54 /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BB1960694B7A5F36E4F79E1 /* MacSettingsView.swift */; };
 		69003CBCF349B25033273BCC /* NotificationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 062CA9DC49F4E08C7055959E /* NotificationViewController.swift */; };
+		6A33CCD6B11FC60D6A3270AE /* MemoryChatViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00F509B5DBD669F7AA2E736 /* MemoryChatViews.swift */; };
 		6AF564FBE420E5E43FA5F787 /* ChatSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832AE24D1F65FAF1CD8E69DF /* ChatSearch.swift */; };
 		6C68940B53D9FC3FB44AB75E /* WindowRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2195C5DC577A37D518BC540 /* WindowRouter.swift */; };
 		6D1C85BCF2EE0D4E99325B95 /* TaskSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3D2825DBC3AEF1CEB79DAE /* TaskSplitViews.swift */; };
@@ -330,6 +331,7 @@
 		EA5F91A046860A0117EA19BB /* HermesMacSupport */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HermesMacSupport; path = Packages/HermesMacSupport; sourceTree = SOURCE_ROOT; };
 		EACA4AA1B8418DE48E92A67F /* PairingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheet.swift; sourceTree = "<group>"; };
 		EDBB658DBE0F6CCA6754823A /* CheckpointParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointParts.swift; sourceTree = "<group>"; };
+		F00F509B5DBD669F7AA2E736 /* MemoryChatViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryChatViews.swift; sourceTree = "<group>"; };
 		F2C514DC77B1962F72DF7CEC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		F6A1CBED0AAD3FDE87A4E72B /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		F6A985699450F23889560E3E /* ConnectionsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsComponents.swift; sourceTree = "<group>"; };
@@ -804,6 +806,7 @@
 		EC0ABC21DE50497BB8F5D846 /* Memory */ = {
 			isa = PBXGroup;
 			children = (
+				F00F509B5DBD669F7AA2E736 /* MemoryChatViews.swift */,
 				FD59462F69EA19F6D1F33B36 /* MemoryEditViews.swift */,
 				6A3472D56E936333D8BF4EBF /* MemoryParts.swift */,
 				784E49783307A8E4CB7379B4 /* MemoryView.swift */,
@@ -1067,6 +1070,7 @@
 				68C181FF81413ABCCCB03A54 /* MacSettingsView.swift in Sources */,
 				298957203B1DDD4665C6731E /* MarkdownCache.swift in Sources */,
 				20ED0A86CBE0F1AE0BC95301 /* MarkdownView.swift in Sources */,
+				6A33CCD6B11FC60D6A3270AE /* MemoryChatViews.swift in Sources */,
 				772A08B5AAC846CE61E37670 /* MemoryEditViews.swift in Sources */,
 				F51BE6C1A76C75CDE795DB3D /* MemoryModel.swift in Sources */,
 				3F3264FB6816BB1E1DA41FAA /* MemoryParts.swift in Sources */,

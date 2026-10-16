@@ -45,9 +45,11 @@ enum PushResponder {
         switch action {
         case UNNotificationDismissActionIdentifier:
             return
-        case NotificationCatalog.Action.allowOnce, NotificationCatalog.Action.deny:
+        case NotificationCatalog.Action.allowOnce, NotificationCatalog.Action.deny,
+             NotificationCatalog.Action.memorySave, NotificationCatalog.Action.memoryDontSave:
+            let allows = action == NotificationCatalog.Action.allowOnce || action == NotificationCatalog.Action.memorySave
             await answer(notice, center: center, identifier: response.identifier) {
-                try await approve(notice, choice: action == NotificationCatalog.Action.allowOnce ? .once : .deny, center: center)
+                try await approve(notice, choice: allows ? .once : .deny, center: center)
             }
         case NotificationCatalog.Action.reply:
             let text = response.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

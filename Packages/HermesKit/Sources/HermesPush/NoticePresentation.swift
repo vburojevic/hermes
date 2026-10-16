@@ -35,6 +35,11 @@ public struct NoticePresentation: Sendable, Equatable {
         var chat = notice.summary.isEmpty ? notice.subtitle : notice.summary
         if let bot = notice.bot, chat == bot || chat == "Bot Chat" { chat = "" }
         switch notice.kind {
+        case .approval where category == .memory:
+            // "Hermes wants to remember something" · the entry: the one memory text a push carries.
+            title = notice.bot.map { String(localized: "\($0) wants to remember something", bundle: .module) } ?? String(localized: "Hermes wants to remember something", bundle: .module)
+            subtitle = chat
+            body = notice.command.map { Self.clip($0, 240) } ?? notice.body
         case .approval:
             title = notice.bot.map { String(localized: "\($0) needs your OK", bundle: .module) } ?? String(localized: "Hermes needs your OK", bundle: .module)
             subtitle = chat
@@ -73,6 +78,9 @@ public struct NoticePresentation: Sendable, Equatable {
             body = notice.body
         }
         switch notice.kind {
+        case .approval where category == .memory:
+            interruptionLevel = .active
+            relevanceScore = 0.8
         case .approval, .question, .password:
             interruptionLevel = .timeSensitive
             relevanceScore = notice.kind == .question ? 0.9 : 1
@@ -98,7 +106,7 @@ public struct NoticePresentation: Sendable, Equatable {
 
     public static func category(for notice: PushNotice) -> NotificationCatalog.Category {
         switch notice.kind {
-        case .approval: .approval
+        case .approval: notice.isMemorySave ? .memory : .approval
         case .question: .question
         case .password: .password
         case .reply: .reply
@@ -145,5 +153,12 @@ extension PushNotice {
             return String(localized: "Hermes is paused until you answer. It expires in \(hours) hours if no one answers.", bundle: .module)
         }
         return String(localized: "Hermes is paused until you answer. It expires in \(minutes) minutes if no one answers.", bundle: .module)
+    }
+}
+
+extension PushNotice {
+    /// A "Save to memory?" request (Ask Before Saving on), not a command.
+    public var isMemorySave: Bool {
+        category == NotificationCatalog.Category.memory.rawValue || (detail?.hasPrefix("Save to memory") ?? false)
     }
 }
