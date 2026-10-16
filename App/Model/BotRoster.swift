@@ -288,7 +288,7 @@ final class BotRoster {
         guard !isTornDown, !isInBackground else { return }
         reconnectAttempts = 0
         if let socket {
-            Task { _ = await socket.probe(timeout: .seconds(8)) }
+            Task { _ = await socket.probe(timeout: .seconds(15)) }
             return
         }
         reconnectTask?.cancel()
@@ -526,8 +526,8 @@ final class BotRoster {
                 // a false "dead" from a busy backend, and the reconnect that follows; on the Mac
                 // the app comes to the front all the time.
                 // Otherwise a ping, not the socket's own idea of being open: after a suspension it
-                // often isn't. Generous: waking the cellular radio can take seconds.
-                let alive = await socket.heard(within: 12) ? true : await socket.probe(timeout: .seconds(8))
+                // often isn't. Generous: waking the cellular radio, or a busy Mac, can take a while.
+                let alive = await socket.heard(within: 12) ? true : await socket.probe(timeout: .seconds(15))
                 if alive {
                     await refresh()
                     if self.pollTask == nil, self.socket === socket { self.startPolling() }

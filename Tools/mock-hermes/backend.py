@@ -1444,6 +1444,9 @@ def main():
     parser.add_argument("--bandwidth", type=int, default=0, metavar="KBPS",
                         help="answer HTTP like a phone over the network at this many kbit/s (0: localhost speed)")
     parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one")
+    parser.add_argument("--busy", type=float, default=0, metavar="SECONDS",
+                        help="the API-server mock answers /health at once and every other GET after this long "
+                             "(a gateway on an overloaded Mac)")
     parser.add_argument("--late-store", type=float, default=0, metavar="SECONDS",
                         help="write a turn's reply this long after message.complete (Hermes' busy-database retry queue)")
     parser.add_argument("--checkpoints", choices=["on", "off"], default="on",
@@ -1469,6 +1472,7 @@ def main():
         gateway.Handler.key = args.gateway_key
         gateway.seed()
         gateway.NETWORK["kbps"] = args.bandwidth
+        gateway.NETWORK["busy"] = args.busy
         if args.long_chat:
             gateway.seed_long_chat()
         GATEWAY_PAGING.extend([gateway.page_rows, gateway.throttle])

@@ -46,7 +46,7 @@ def session_row(sid, title, source, started, last, preview, model="anthropic/cla
     MESSAGES[sid] = []
 
 
-NETWORK = {"kbps": 0}  # --bandwidth: a phone on Wi-Fi or Tailscale, not localhost
+NETWORK = {"kbps": 0, "busy": 0}  # --bandwidth: a phone on Wi-Fi or Tailscale, not localhost; --busy: see below
 
 
 def throttle(size):
@@ -429,6 +429,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"status": "ok", "platform": "hermes-agent", "version": "0.21.6"})
         if not self.authorized():
             return
+        # --busy: an overloaded Mac, whose gateway answers its health check at once and
+        # everything else only after a long wait.
+        if NETWORK["busy"]:
+            time.sleep(NETWORK["busy"])
         if path == "/v1/capabilities":
             return self.send_json(200, CAPABILITIES)
         if path == "/v1/models":

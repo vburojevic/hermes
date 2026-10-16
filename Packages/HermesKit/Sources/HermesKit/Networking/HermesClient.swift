@@ -14,7 +14,9 @@ public struct HermesClient: Sendable {
 
     public static let defaultSession: URLSession = {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 30
+        // A gateway on a busy Mac can take minutes over a chat list while its health check
+        // answers at once: requests wait it out, and `health()` alone decides "offline".
+        configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 60 * 60 * 6
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
@@ -27,10 +29,13 @@ public struct HermesClient: Sendable {
 
     // MARK: - Server
 
-    /// Unauthenticated liveness probe.
+    /// Unauthenticated liveness probe. Quick to answer even on a busy machine, so it gives up
+    /// sooner than other requests: a Mac that's away is "offline" within seconds.
     public func health() async throws -> HealthStatus {
-        try await get(["health"], authenticated: false)
+        try await get(["health"], authenticated: false, timeout: Self.healthTimeout)
     }
+
+    public static let healthTimeout: TimeInterval = 15
 
     public func capabilities() async throws -> ServerCapabilities {
         try await get(["v1", "capabilities"])
@@ -263,9 +268,11 @@ public struct HermesClient: Sendable {
     }
 
     private func get<Response: Decodable>(
-        _ path: [String], query: [URLQueryItem] = [], authenticated: Bool = true
+        _ path: [String], query: [URLQueryItem] = [], authenticated: Bool = true, timeout: TimeInterval? = nil
     ) async throws -> Response {
-        try await perform(makeRequest("GET", path, query: query, authenticated: authenticated))
+        var request = makeRequest("GET", path, query: query, authenticated: authenticated)
+        if let timeout { request.timeoutInterval = timeout }
+        return try await perform(request)
     }
 
     private func send<Response: Decodable>(

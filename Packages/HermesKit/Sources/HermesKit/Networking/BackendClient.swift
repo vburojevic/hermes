@@ -68,7 +68,8 @@ public actor BackendClient {
         self.credential = credential
         self.onCredentialChange = onCredentialChange
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 20
+        // Bot Mode on a busy Mac answers late, not never.
+        configuration.timeoutIntervalForRequest = 60
         // Cookies are handled explicitly so they can live in the Keychain.
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never

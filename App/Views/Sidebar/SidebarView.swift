@@ -496,7 +496,9 @@ struct BotSwitcher: View {
 
     private var statusLine: String {
         switch workspace.connection {
+        case .online where workspace.isBusy: String(localized: "Connected · \(workspace.bot.name) is busy, replies are slow")
         case .online(let version): version.map { String(localized: "Connected to Hermes \($0)") } ?? String(localized: "Connected")
+        case .connecting where workspace.isBusy: String(localized: "Waiting for \(workspace.bot.name), it's busy…")
         case .connecting, .idle: String(localized: "Connecting…")
         case .failed: String(localized: "Offline")
         }
@@ -648,9 +650,16 @@ struct ConnectionStatusLabel: View {
     @ViewBuilder
     private var gatewayStatus: some View {
         switch workspace.connection {
+        case .online where workspace.isBusy:
+            // Its Mac is overloaded: everything still works, only slowly.
+            StatusDot(color: Theme.warning)
+            Text("Connected · busy, replies are slow")
         case .online(let version):
             StatusDot(color: Theme.success)
             Text(version.map { String(localized: "Connected · Hermes \($0)") } ?? String(localized: "Connected"))
+        case .connecting where workspace.isBusy:
+            StatusDot(color: Theme.warning)
+            Text("Waiting for a busy Mac…")
         case .connecting, .idle:
             StatusDot(color: Theme.warning)
             Text("Connecting…")

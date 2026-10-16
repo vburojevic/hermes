@@ -75,6 +75,11 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
     }
 
     /// Whether retrying the same request later could succeed.
+    /// The gateway didn't answer in time (as opposed to being unreachable or refusing).
+    public var isTimeout: Bool {
+        if case .unreachable(_, .timedOut) = self { true } else { false }
+    }
+
     public var isTransient: Bool {
         switch self {
         case .rateLimited, .gatewayRestarting, .unreachable: true

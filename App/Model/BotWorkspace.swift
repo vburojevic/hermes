@@ -85,6 +85,10 @@ final class BotWorkspace: Identifiable {
         }
     }
     private(set) var capabilities: ServerCapabilities?
+    /// The gateway answers its health check but takes ages over everything else (its Mac is
+    /// overloaded): still connected, and the status line says why things are slow.
+    private(set) var isBusy = false
+    @ObservationIgnored private var busyRetry: Task<Void, Never>?
     private(set) var sessions: [HermesSession] = []
     private(set) var isLoadingSessions = false
     private(set) var hasMoreSessions = false
@@ -540,20 +544,31 @@ final class BotWorkspace: Identifiable {
         }
         if !connection.isOnline, !(quietly && connection.isFailed) { connection = .connecting }
         do {
-            async let health = client.health()
-            async let capabilities = client.capabilities()
-            let (status, features) = try await (health, capabilities)
+            let (status, features) = try await watchingForBusy {
+                async let health = client.health()
+                async let capabilities = client.capabilities()
+                return try await (health, capabilities)
+            }
             self.capabilities = features
             guard features.supportsNativeClient else {
                 connection = .failed(.unsupportedServer)
                 return
             }
             connection = .online(version: status.version)
+            if isBusy { isBusy = false }
             await refreshSessions()
             await loadModelOptions()
         } catch is CancellationError {
         } catch {
-            connection = .failed(error as? HermesError ?? .invalidResponse(error.localizedDescription))
+            let failure = error as? HermesError ?? .invalidResponse(error.localizedDescription)
+            // Alive but too slow to finish connecting: keep at it (the keeper looks again in a
+            // few seconds) and say the Mac is busy, rather than calling it offline.
+            if failure.isTimeout, (try? await client.health()) != nil {
+                isBusy = true
+                connection = .connecting
+                return
+            }
+            connection = .failed(failure)
         }
     }
 
@@ -563,7 +578,7 @@ final class BotWorkspace: Identifiable {
         defer { isLoadingSessions = false }
         do {
             let limit = min(200, max(50, nextSessionOffset))
-            let page = try await client.sessions(limit: limit)
+            let page = try await watchingForBusy { try await client.sessions(limit: limit) }
             let localOnly = sessions.filter { local in
                 // Keep rows this device just created if the list hasn't caught up yet.
                 conversations[local.stableID]?.isWorking == true && !page.sessions.contains { $0.stableID == local.stableID }
@@ -575,12 +590,42 @@ final class BotWorkspace: Identifiable {
                 conversations[session.stableID]?.adoptSessionID(session.id)
             }
             if case .failed = connection { connection = .online(version: nil) }
+            if isBusy { isBusy = false }
             prefetchRecent()
         } catch is CancellationError {
         } catch {
-            if sessions.isEmpty {
-                connection = .failed(error as? HermesError ?? .invalidResponse(error.localizedDescription))
+            let failure = error as? HermesError ?? .invalidResponse(error.localizedDescription)
+            // Too slow, but alive: a busy Mac, not an offline one. Say so and try again shortly.
+            if failure.isTimeout, (try? await client.health()) != nil {
+                isBusy = true
+                if !connection.isOnline { connection = .online(version: nil) }
+                retrySessionsWhileBusy()
+                return
             }
+            if sessions.isEmpty { connection = .failed(failure) }
+        }
+    }
+
+    /// Runs `work`; still going after 8 s while the health check answers at once, the gateway's Mac
+    /// is busy, and the status line says so while the work carries on.
+    private func watchingForBusy<T>(_ work: () async throws -> T) async throws -> T {
+        let watcher = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let client = self?.client else { return }
+            if (try? await client.health()) != nil, !Task.isCancelled { self?.isBusy = true }
+        }
+        defer { watcher.cancel() }
+        return try await work()
+    }
+
+    /// Another go at the chat list once a busy Mac has had a moment.
+    private func retrySessionsWhileBusy() {
+        guard busyRetry == nil else { return }
+        busyRetry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard let self, !Task.isCancelled else { return }
+            self.busyRetry = nil
+            await self.refreshSessions()
         }
     }
 

@@ -61,16 +61,18 @@ struct ComposerView: View {
     }
 
     private var hint: String? {
+        // The gateway's Mac is overloaded: everything works, slowly. Not "Offline".
+        let busy = workspace.isBusy ? String(localized: "Mac is busy…") : nil
         if let roster {
             switch roster.state {
-            case .online: return nil
-            case .connecting, .idle: return String(localized: "Connecting…")
+            case .online: return busy
+            case .connecting, .idle: return busy ?? String(localized: "Connecting…")
             case .signInRequired: return String(localized: "Sign-in needed")
             case .failed: return nil
             }
         }
-        if case .connecting = workspace.connection { return String(localized: "Connecting…") }
-        return nil
+        if case .connecting = workspace.connection { return busy ?? String(localized: "Connecting…") }
+        return busy
     }
 
     var body: some View {

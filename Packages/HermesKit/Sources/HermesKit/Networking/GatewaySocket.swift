@@ -345,8 +345,10 @@ public actor GatewaySocket {
     }
 
     /// Keeps the link proven: a quiet socket is pinged every 10 s, and one that has heard nothing
-    /// for 30 s is closed so the roster reconnects, instead of waiting on a connection a network
-    /// change or a sleep already killed. Uses `gateway.ping` when the backend offers it (it also
+    /// for 75 s is closed so the roster reconnects, instead of waiting on a connection a network
+    /// change or a sleep already killed (those are probed straight away). Not sooner: a backend on
+    /// a busy Mac goes quiet for a minute or more and then carries on, and closing it then only
+    /// queued a reconnect behind the same stall. Uses `gateway.ping` when the backend offers it (it also
     /// keeps the backend's side of the session alive), else a WebSocket ping.
     private func startHeartbeat() {
         heartbeatTask?.cancel()
@@ -368,10 +370,11 @@ public actor GatewaySocket {
     }
 
     static let heartbeatInterval: Double = 10
-    /// How long an opened socket may take to say `gateway.ready`. One that can't connect at all fails
-    /// sooner: the upgrade request times out after 15 s and closes the wait.
-    static let readyTimeout: Double = 30
-    static let staleAfter: Double = 30
+    /// How long an opened socket may take to say `gateway.ready` (a busy Mac's backend can take most
+    /// of a minute). One that can't connect at all fails sooner: the upgrade request times out after
+    /// 15 s and closes the wait.
+    static let readyTimeout: Double = 60
+    static let staleAfter: Double = 75
 
     private func ping(beat: Int) async {
         if serverHeartbeat {
