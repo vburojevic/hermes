@@ -671,6 +671,12 @@ final class BotRoster {
         try await client.setCheckpointsEnabled(enabled, profile: profile)
     }
 
+    // MARK: Board (`docs/board.md`; card text is never logged)
+
+    /// The backend the Board calls (`/api/plugins/kanban/…`). It changes when the link does, so
+    /// read it for each call.
+    var boardClient: BackendClient { client }
+
     // MARK: Memory (`docs/memory.md`; entries are never kept here)
 
     func memoryEntries(profile: String?) async throws -> MemoryList {

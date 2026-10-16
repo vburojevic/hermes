@@ -54,10 +54,13 @@ public struct HermesProject: Identifiable, Hashable, Sendable {
     public var createdAt: Date?
     /// Primary first, then oldest first (the gateway's order).
     public var folders: [Folder]
+    /// The kanban board bound to it (`hermes projects set-board`); the board's own `project_id`
+    /// points back.
+    public var boardSlug: String?
 
     public init(
         id: String, slug: String = "", name: String, description: String? = nil, icon: String? = nil, color: String? = nil,
-        primaryPath: String? = nil, archived: Bool = false, createdAt: Date? = nil, folders: [Folder] = []
+        primaryPath: String? = nil, archived: Bool = false, createdAt: Date? = nil, folders: [Folder] = [], boardSlug: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -69,6 +72,7 @@ public struct HermesProject: Identifiable, Hashable, Sendable {
         self.archived = archived
         self.createdAt = createdAt
         self.folders = folders
+        self.boardSlug = boardSlug
     }
 
     public init?(json: JSONValue?) {
@@ -84,7 +88,8 @@ public struct HermesProject: Identifiable, Hashable, Sendable {
             primaryPath: json["primary_path"]?.stringValue ?? folders.first(where: \.isPrimary)?.path,
             archived: json["archived"]?.boolValue ?? false,
             createdAt: HermesDate.fromEpoch(json["created_at"]?.doubleValue),
-            folders: folders
+            folders: folders,
+            boardSlug: json["board_slug"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 

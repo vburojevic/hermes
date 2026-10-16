@@ -64,6 +64,13 @@ struct RootView: View {
                         case "projects":
                             workspace.sidebarMode = .chats
                             workspace.selection = .allProjects
+                        case let page? where page.hasPrefix("board:"):
+                            // `-HERMES_OPEN board:<project id>` (and `-HERMES_BOARD_CARD <card id>`,
+                            // `-HERMES_BOARD_COLUMN <column>`, `-HERMES_BOARD_SHEET new|assign|reopen|watch`).
+                            workspace.sidebarMode = .chats
+                            let projectID = String(page.dropFirst(6))
+                            workspace.selection = .board(projectID)
+                            await openDebugBoard(workspace.board(for: projectID))
                         case let page? where page.hasPrefix("project:"):
                             // `-HERMES_OPEN project:<id>` (and `-HERMES_PROJECT_LANE <lane id>`).
                             workspace.sidebarMode = .chats
@@ -122,7 +129,7 @@ struct RootView: View {
             Text(app.storageError ?? "")
         }
         .onOpenURL { url in
-            router.open(url)
+            if !openBoardLink(url) { router.open(url) }
         }
         #if DEBUG
         .task { openDebugSheet() }
@@ -214,6 +221,25 @@ struct RootView: View {
     }
 
     /// A new gateway that other devices can reach goes straight to its pairing code on the Mac.
+    /// `hermesapp://board/<project id>?card=<id>&gateway=<id>` (Copy Link, a card's push):
+    /// opens the project's board on that gateway with the card open.
+    private func openBoardLink(_ url: URL) -> Bool {
+        guard url.scheme == "hermesapp", url.host() == "board" else { return false }
+        let projectID = url.pathComponents.dropFirst().first ?? ""
+        guard !projectID.isEmpty else { return true }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let gateway = items.first(where: { $0.name == "gateway" })?.value.flatMap(UUID.init(uuidString:)), app.workspaces[gateway] != nil {
+            app.select(gateway)
+        }
+        guard let workspace = app.currentWorkspace else { return true }
+        workspace.sidebarMode = .chats
+        workspace.selection = .board(projectID)
+        if let card = items.first(where: { $0.name == "card" })?.value {
+            workspace.board(for: projectID).openCardID = card
+        }
+        return true
+    }
+
     private func pairAfterAdding(_ bot: BotConfiguration) {
         #if os(macOS)
         if app.pairingLink(for: bot.id)?.isReachableFromOtherDevices == true {
@@ -396,6 +422,28 @@ struct RootView: View {
             let id = String(value.dropFirst(5))
             projects.movingSession = workspace.session(forKey: id) ?? HermesSession(id: id)
         case "runin": projects.runInConversation = workspace.currentConversation
+        default: break
+        }
+    }
+
+    /// The board's debug flags (screenshots): a card open, a column, a sheet.
+    private func openDebugBoard(_ board: BoardModel) async {
+        let defaults = UserDefaults.standard
+        for _ in 0..<60 where board.phase != .ready {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        if let column = defaults.string(forKey: "HERMES_BOARD_COLUMN") { board.visibleColumn = column }
+        try? await Task.sleep(for: .milliseconds(500))
+        if let card = defaults.string(forKey: "HERMES_BOARD_CARD") { board.openCardID = card }
+        guard let sheet = defaults.string(forKey: "HERMES_BOARD_SHEET") else { return }
+        try? await Task.sleep(for: .milliseconds(800))
+        let card = board.openCardID.flatMap(board.card)
+        switch sheet {
+        case "new": board.newCard = BoardModel.NewCardTarget()
+        case "assign": board.assigning = card
+        case "reopen": board.reopening = card
+        case "watch": board.watching = card
+        case "edit": board.editing = card
         default: break
         }
     }
@@ -656,6 +704,9 @@ struct DetailView: View {
             }
         case .project(let id):
             ProjectHomeView(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
+                .id(id)
+        case .board(let id):
+            BoardScreen(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
                 .id(id)
         case .allProjects:
             AllProjectsView(workspace: workspace, onToggleSidebar: onToggleSidebar)

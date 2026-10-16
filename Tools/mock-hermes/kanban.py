@@ -736,6 +736,9 @@ def mock_act(query, body):
         elif action == "review":
             ok = bool(body.get("ok", True))
             run_id = end_current_run(card, "review_requested", summary=body.get("summary") or "Ready for review.")
+            if run_id is None:
+                run_id = add_run(card, status="done", started=now() - 600, ended=now(), outcome="review_requested",
+                                 summary=body.get("summary") or "Ready for review.")["id"]
             card["status"] = "review"
             if body.get("reviewer"):
                 card["assignee"] = body["reviewer"]

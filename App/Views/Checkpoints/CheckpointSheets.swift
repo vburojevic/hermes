@@ -271,13 +271,18 @@ struct PairedSheetButtons: View {
     let primary: String
     var symbol: String?
     var primaryEnabled = true
+    /// How far long labels may shrink to fit ("Reopen with Note…").
+    var minimumScale: CGFloat = 0.85
     let onPrimary: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onSecondary) {
-                Group {
-                    if let secondarySymbol { Label(secondary, systemImage: secondarySymbol) } else { Text(secondary) }
+                // A long label drops its symbol before it would cut off ("Reopen with Note…").
+                ViewThatFits(in: .horizontal) {
+                    if let secondarySymbol { Label(secondary, systemImage: secondarySymbol).fixedSize() }
+                    Text(secondary).fixedSize()
+                    Text(secondary)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -293,7 +298,7 @@ struct PairedSheetButtons: View {
         }
         .font(.body.weight(.semibold))
         .lineLimit(1)
-        .minimumScaleFactor(0.85)
+        .minimumScaleFactor(minimumScale)
         .controlSize(.extraLarge)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

@@ -373,6 +373,14 @@ public actor BackendClient {
         return try JSONDecoder().decode(JSONValue.self, from: data)["status"]?.stringValue ?? "pending"
     }
 
+    /// How many cards the kanban dispatcher runs at once (`kanban.max_in_progress` in the
+    /// gateway's config); nil when it's left to the gateway (a memory-derived default).
+    public func boardRunLimit() async throws -> Int? {
+        let (data, _) = try await send(path: "api/config")
+        let kanban = try JSONDecoder().decode(JSONValue.self, from: data)["kanban"]
+        return kanban?["max_in_progress"]?.doubleValue.map { Int($0) }
+    }
+
     /// The newest chat a card's worker ran in, for Watch. Workers' chats are tagged `kanban`, run
     /// in the card's folder, and live in the assignee's profile (`GET /api/sessions`); the
     /// project tree leaves them out.

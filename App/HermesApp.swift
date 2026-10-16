@@ -86,13 +86,22 @@ struct HermesCommands: Commands {
     var body: some Commands {
         // File (Elyx macMenuFile): New Chat, New Bot…, New Window; Pair a Device…; Close Window.
         CommandGroup(replacing: .newItem) {
-            Button("New Chat") {
-                guard let workspace = model.currentWorkspace else { return }
-                workspace.sidebarMode = .chats
-                workspace.startNewChat()
+            // On a Board, ⌘N adds a card (`docs/board.md` §2).
+            if let board = model.currentWorkspace?.shownBoard {
+                Button("New Card") {
+                    board.newCard = BoardModel.NewCardTarget()
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(!board.isOnline || board.workflow == nil)
+            } else {
+                Button("New Chat") {
+                    guard let workspace = model.currentWorkspace else { return }
+                    workspace.sidebarMode = .chats
+                    workspace.startNewChat()
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(model.currentWorkspace == nil)
             }
-            .keyboardShortcut("n", modifiers: .command)
-            .disabled(model.currentWorkspace == nil)
             Button("New Bot…") {
                 guard let workspace = model.currentWorkspace, let roster = workspace.roster else { return }
                 workspace.sidebarMode = .bots
@@ -139,6 +148,18 @@ struct HermesCommands: Commands {
             }
             .keyboardShortcut("2", modifiers: [.command, .shift])
             .disabled(model.currentWorkspace == nil)
+            // The project's Board: from its home, one of its chats, or the Board itself (back home).
+            Button("Board") {
+                guard let workspace = model.currentWorkspace, let projectID = workspace.currentProjectID else { return }
+                workspace.sidebarMode = .chats
+                if case .board = workspace.selection {
+                    workspace.selection = .project(projectID)
+                } else {
+                    workspace.selection = .board(projectID)
+                }
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(model.currentWorkspace?.currentProjectID == nil || model.currentWorkspace?.roster == nil)
             Divider()
         }
         // Chat (macMenuChat): the turn, the conversation, then the gateways.

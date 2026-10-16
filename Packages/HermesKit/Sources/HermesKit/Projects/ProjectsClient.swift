@@ -116,8 +116,9 @@ public struct ProjectsClient: Sendable {
 
     /// Changes the given fields only; the others stay as they are (another client may have
     /// written values this app doesn't draw).
-    public func update(id: String, name: String? = nil, description: String? = nil, icon: String? = nil, color: String? = nil) async throws -> HermesProject {
+    public func update(id: String, name: String? = nil, description: String? = nil, icon: String? = nil, color: String? = nil, boardSlug: String? = nil) async throws -> HermesProject {
         var params: [String: JSONValue] = ["id": .string(id)]
+        if let boardSlug { params["board_slug"] = .string(boardSlug) }
         if let name { params["name"] = .string(name) }
         if let description { params["description"] = .string(description) }
         if let icon { params["icon"] = .string(icon) }

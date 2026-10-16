@@ -2,7 +2,7 @@ import HermesKit
 import SwiftUI
 
 /// A project's home (`projectHome`, `ipadProjectHome`, `macProjectHome`): the header, its chats by
-/// lane (main checkout, worktrees, task worktrees), what Hermes knows about it, and a composer that
+/// lane (main checkout, worktrees, card worktrees), what Hermes knows about it, and a composer that
 /// starts a chat in it. iPad and Mac put the facts (and on the Mac, the folders) in a right column.
 struct ProjectHomeView: View {
     let workspace: BotWorkspace
@@ -98,6 +98,7 @@ struct ProjectHomeView: View {
                         HStack(alignment: .top, spacing: 28) {
                             VStack(alignment: .leading, spacing: 0) {
                                 header
+                                boardRow
                                 lanes
                             }
                             .frame(maxWidth: 560)
@@ -115,6 +116,7 @@ struct ProjectHomeView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
                             header
+                            boardRow
                             lanes
                             factsCard
                                 .padding(.top, 16)
@@ -199,10 +201,22 @@ struct ProjectHomeView: View {
         var parts = [ProjectCount.chats(node?.sessionCount ?? 0)]
         if let detail {
             if detail.branchCount > 1 { parts.append(ProjectCount.branches(detail.branchCount)) }
-            if detail.taskCount > 0 { parts.append(ProjectCount.tasks(detail.taskCount)) }
+            if detail.taskCount > 0 { parts.append(ProjectCount.cards(detail.taskCount)) }
         }
         parts.append(workspace.bot.name)
         return parts.joined(separator: " · ")
+    }
+
+    /// The project's Board (`boardSummaryRow`), above the lanes, on gateways with Bot Mode.
+    @ViewBuilder
+    private var boardRow: some View {
+        if workspace.roster != nil {
+            BoardSummaryRow(model: workspace.board(for: projectID)) {
+                workspace.selection = .board(projectID)
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 6)
+        }
     }
 
     // MARK: Lanes
@@ -356,7 +370,7 @@ struct ProjectHomeView: View {
     }
 }
 
-/// A lane's title (`laneHeader*`): branch or worktree in monospace with a tag, or "Task worktrees".
+/// A lane's title (`laneHeader*`): branch or worktree in monospace with a tag, or "Card worktrees".
 struct LaneHeader: View {
     let lane: ProjectLane
     let count: Int
@@ -389,7 +403,7 @@ struct LaneHeader: View {
                     .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             }
             Spacer(minLength: 8)
-            Text(lane.kind == .tasks ? ProjectCount.tasks(count) : ProjectCount.chats(count))
+            Text(lane.kind == .tasks ? ProjectCount.cards(count) : ProjectCount.chats(count))
                 .font(.footnote)
                 .foregroundStyle(Theme.tertiaryText)
                 .lineLimit(1)

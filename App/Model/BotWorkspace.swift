@@ -14,6 +14,8 @@ enum SidebarItem: Hashable {
     case group(String)
     /// A project's home, keyed by project id (`docs/projects.md`).
     case project(String)
+    /// A project's Board, keyed by project id (`docs/board.md`).
+    case board(String)
     /// All Projects.
     case allProjects
 
@@ -26,6 +28,7 @@ enum SidebarItem: Hashable {
         case .bot(let name): "bot:\(name)"
         case .group(let id): "group:\(id)"
         case .project(let id): "project:\(id)"
+        case .board(let id): "board:\(id)"
         case .allProjects: "allProjects"
         }
     }
@@ -39,6 +42,7 @@ enum SidebarItem: Hashable {
         case ("bot", let name?): self = .bot(name)
         case ("group", let id?): self = .group(id)
         case ("project", let id?): self = .project(id)
+        case ("board", let id?): self = .board(id)
         case ("allProjects", _): self = .allProjects
         default: return nil
         }
@@ -161,6 +165,29 @@ final class BotWorkspace: Identifiable {
     var voiceToggleRequests = 0
     /// This gateway's projects (Bot Mode backends only).
     private(set) var projects: ProjectsModel!
+    @ObservationIgnored private var boardModels: [String: BoardModel] = [:]
+    /// A project's Board (`docs/board.md`), one per project for as long as the gateway is open.
+    func board(for projectID: String) -> BoardModel {
+        if let model = boardModels[projectID] { return model }
+        let model = BoardModel(workspace: self, projectID: projectID)
+        boardModels[projectID] = model
+        return model
+    }
+
+    /// The project on screen: its home, its Board, or a chat in it (⇧⌘B opens its Board).
+    var currentProjectID: String? {
+        switch selection {
+        case .project(let id), .board(let id): id
+        case .session(let key): projects?.projectID(forSessionID: key)
+        default: nil
+        }
+    }
+
+    /// The Board on screen, if one is.
+    var shownBoard: BoardModel? {
+        if case .board(let id) = selection { board(for: id) } else { nil }
+    }
+
     @ObservationIgnored private var appsAndToolsModel: AppsAndToolsModel?
     /// What Hermes on this gateway can reach: Settings → Apps and Tools.
     var appsAndTools: AppsAndToolsModel {

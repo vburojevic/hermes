@@ -171,8 +171,9 @@ enum ProjectCount {
         count == 1 ? String(localized: "1 chat") : String(localized: "\(count) chats")
     }
 
-    static func tasks(_ count: Int) -> String {
-        count == 1 ? String(localized: "1 task") : String(localized: "\(count) tasks")
+    /// Chats in card worktrees (the Board's runs): never "tasks", which are scheduled jobs.
+    static func cards(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 card") : String(localized: "\(count) cards")
     }
 
     static func branches(_ count: Int) -> String {

@@ -182,13 +182,41 @@ struct MacProjectRows: View {
             if isExpanded, projects.details[node.id] == nil { await projects.loadDetail(node.id) }
         }
         if isExpanded {
+            if workspace.roster != nil { boardRow }
             ForEach(lanes) { lane in
                 laneRow(lane)
             }
         }
     }
 
-    /// Branches and worktrees with chats (task worktrees live on the project home).
+    /// The project's Board (⇧⌘B), first under the project.
+    private var boardRow: some View {
+        let isSelected = workspace.selection == .board(node.id)
+        return SidebarRow(isSelected: isSelected) {
+            workspace.selection = .board(node.id)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.tertiaryText)
+                Text("Board")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryText)
+                Spacer(minLength: 4)
+                let needsYou = workspace.board(for: node.id).needsYouCount
+                if needsYou > 0 {
+                    Text(needsYou, format: .number)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.warning)
+                }
+            }
+            .padding(.leading, Self.disclosureWidth + 16)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Board, \(node.label)"))
+    }
+
+    /// Branches and worktrees with chats (card worktrees live on the project home).
     private var lanes: [ProjectLane] {
         (projects.details[node.id] ?? node).lanes.filter { $0.kind != .tasks && (!$0.sessions.isEmpty || projects.details[node.id] == nil) }
     }
@@ -269,11 +297,11 @@ struct ProjectMenuItems: View {
 
 extension ProjectLane {
     /// What a lane is called: the branch for the main checkout and for a worktree whose chats all
-    /// recorded one (the gateway names worktree lanes by folder), "Task worktrees" for kanban.
+    /// recorded one (the gateway names worktree lanes by folder), "Card worktrees" for the Board's runs.
     var displayName: String {
         switch kind {
         case .main: return label
-        case .tasks: return String(localized: "Task worktrees")
+        case .tasks: return String(localized: "Card worktrees")
         case .worktree:
             let branches = Set(sessions.compactMap(\.gitBranch))
             if branches.count == 1, let branch = branches.first, !branch.isEmpty { return branch }
