@@ -236,11 +236,15 @@ struct BotFace: View {
         let ticks = mood != .sleeping && (!holdsStill || oneOff)
         let paused = !isVisible || motionPaused || !ticks
         return TimelineView(.animation(minimumInterval: interval, paused: paused)) { context in
-            let t = FaceClock.time(context.date)
+            // A paused clock (a Mac window in the back, the app in the background) keeps the date
+            // it stopped at, so a mood that changed since (asleep until Bot Mode connects, then
+            // idle) was drawn from where its change began: every face with its eyes shut. Paused,
+            // a face shows where it's going instead.
+            let t = paused ? FaceClock.time() : FaceClock.time(context.date)
             Canvas { canvas, canvasSize in
                 var look = appearance.look
                 look.color = currentColor(at: t)
-                FacePainter.draw(look, frame: frame(at: t), in: &canvas, size: canvasSize)
+                FacePainter.draw(look, frame: frame(at: t, settled: paused), in: &canvas, size: canvasSize)
             }
             .overlay {
                 if let boopSince, t - boopSince < 0.7, moves {
@@ -265,9 +269,12 @@ struct BotFace: View {
         )
     }
 
-    /// One frame: the blended pose, the eyes for the mood, and the one-offs on top.
-    private func frame(at t: Double) -> FaceFrame {
-        var pose = transition.pose(at: t)
+    /// One frame: the blended pose (or, `settled`, the one it's heading for), the eyes for the
+    /// mood, and the one-offs on top.
+    private func frame(at t: Double, settled: Bool = false) -> FaceFrame {
+        var pose = settled ? transition.target.pose(at: t) : transition.pose(at: t)
+        // A still frame never lands mid-blink.
+        if settled { pose.lid = mood == .sleeping ? 0 : 1 }
         if !moves { pose = pose.stilled }
         if holdsStill {
             // A still frame: eyes open and ahead, dots mid-wave.
