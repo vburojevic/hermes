@@ -74,6 +74,15 @@ private struct URLBar: View {
         .frame(height: 36)
     }
 
+    private var address: some View {
+        Text(controller.address)
+            .font(.footnote)
+            .foregroundStyle(Theme.primaryText)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var externalURL: URL? {
         guard let url = controller.loadedURL, url.scheme == "http" || url.scheme == "https" else { return nil }
         return url
@@ -101,23 +110,26 @@ private struct URLBar: View {
                     }
                     .onChange(of: focused) { _, isFocused in if !isFocused { editing = false } }
             } else {
-                Text(controller.address)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        draft = controller.address
-                        editing = true
-                        focused = true
+                // The address first; where it runs only when there's room for both.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        address.fixedSize()
+                        Spacer(minLength: 4)
+                        if let note = controller.hostNote {
+                            Text(note)
+                                .font(.caption)
+                                .foregroundStyle(Theme.tertiaryText)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                     }
-                if let note = controller.hostNote {
-                    Text(note)
-                        .font(.caption)
-                        .foregroundStyle(Theme.tertiaryText)
-                        .lineLimit(1)
+                    address
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    draft = controller.address
+                    editing = true
+                    focused = true
                 }
             }
         }

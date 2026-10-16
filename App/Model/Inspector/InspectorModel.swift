@@ -187,6 +187,7 @@ final class InspectorModel {
         }
         if byHermes { hermesTabs.insert(tab.id) }
         detachedTabs.remove(tab.id)
+        showsOpenGrid = false
         select(tab.id)
         if present { withAnimation(Theme.snappy) { isPresented = true } }
         save()
@@ -195,6 +196,7 @@ final class InspectorModel {
 
     func select(_ id: String) {
         selectedID = id
+        showsOpenGrid = false
         unseenTabs.remove(id)
         save()
     }
@@ -398,7 +400,9 @@ final class InspectorModel {
             offers.append(Offer(kind: .terminal, detail: first.command.isEmpty ? detail : detail))
         }
         if let screen, screen.isAvailable {
-            offers.append(Offer(kind: .screen, detail: screen.status?.holder == "human" ? String(localized: "You're in control") : String(localized: "Hermes is using it")))
+            let detail = screen.personInControl ? String(localized: "You're in control")
+                : screen.someoneElseInControl ? String(localized: "Someone else is in control") : String(localized: "Hermes is using it")
+            offers.append(Offer(kind: .screen, detail: detail))
         }
         if let plan = latestPlan, !plan.isEmpty {
             offers.append(Offer(kind: .plan, detail: String(localized: "\(plan.filter { $0.status == .completed }.count) of \(plan.count) done")))
@@ -770,6 +774,7 @@ final class InspectorModel {
             guard canAnswerHermes else { return nil }
             // Nothing open reads as empty: the tool tells Hermes to open a page first.
             guard let tab = activePreviewTab else { return .object(["value": .string("")]) }
+            await bringForward(tab)
             return await preview(for: tab).read(start: request.params["start"]?.doubleValue.map { Int($0) }, count: request.params["count"]?.doubleValue.map { Int($0) })
         case "preview.act":
             guard canAnswerHermes else { return nil }
@@ -795,9 +800,18 @@ final class InspectorModel {
         return all.last { $0.kind == .preview && hermesTabs.contains($0.id) } ?? all.last { $0.kind == .preview }
     }
 
+    /// Hermes reads and acts where the person can see it: its page comes to the front (a web
+    /// view that isn't on screen stops running the page's scripts).
+    private func bringForward(_ tab: InspectorTab) async {
+        guard selected?.id != tab.id, !detachedTabs.contains(tab.id) else { return }
+        select(tab.id)
+        try? await Task.sleep(for: .milliseconds(400))
+    }
+
     private func drive(_ action: PreviewAction, in tab: InspectorTab) async -> JSONValue {
         let controller = preview(for: tab)
         hermesTabs.insert(tab.id)
+        await bringForward(tab)
         if action.verb != .elements {
             let step = (driving?.tabID == tab.id ? driving?.step ?? 0 : 0) + 1
             driving = Driving(tabID: tab.id, action: describe(action), step: step)

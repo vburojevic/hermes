@@ -24,6 +24,7 @@ Mock-only:
   POST /api/mock/inspector/touch {path, text}                  a change on the "gateway" (conflicts)
   POST /api/mock/inspector/dev {running: bool}                 stop or start the dev server
   POST /api/mock/inspector/pace {seconds}                      wait between Hermes's actions in the Preview
+  POST /api/mock/inspector/turn {session, text}                a turn in a chat, as if the person sent it
 """
 
 import base64
@@ -155,6 +156,7 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
     routes[("POST", "/api/mock/inspector/gh")] = mock_gh
     routes[("POST", "/api/mock/inspector/touch")] = mock_touch
     routes[("POST", "/api/mock/inspector/dev")] = mock_dev
+    routes[("POST", "/api/mock/inspector/turn")] = mock_turn
     routes[("POST", "/api/mock/inspector/pace")] = lambda q, b: (200, {"pace": STATE.update(pace=float(b.get("seconds") or 0)) or STATE["pace"]})
     B["WS_ROUTES"]["/api/display/ws"] = display_socket
     methods = B["METHODS"]
@@ -450,6 +452,16 @@ def llm_oneshot(params):
             return {"text": "Beta sign-up page with validation\n\nThe form checks the address before posting and thanks people with the TestFlight link."}
         return {"text": "Add the beta sign-up page\n\nForm with email validation, success state and a TestFlight link."}
     return {"text": "Done."}
+
+
+def mock_turn(query, body):
+    stored = body.get("session") or ""
+    with B["LOCK"]:
+        sid = next((k for k, r in B["RUNTIME"].items() if r.get("stored") == stored), None)
+    if sid is None:
+        return 404, {"detail": "That chat isn't open on the socket."}
+    B["start_turn"](sid, body.get("text") or "Test the beta sign-up.", C.run_chat_turn)
+    return 200, {"ok": True, "session_id": sid}
 
 
 def mock_gh(query, body):

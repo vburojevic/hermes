@@ -792,6 +792,8 @@ struct ProcessCard: View {
                     Text(process.isRunning ? String(localized: "Running · \(minutes) min") : String(localized: "Ended"))
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 if let onOpen {
                     Button("Open", action: onOpen)

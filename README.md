@@ -58,6 +58,20 @@ split view on iPad and Mac.
   they may go to, ⌘-click several for Move, Assign and Archive, ⌘N for New Card and ⌘→ / ⌘← to move
   the selected card. Cards Hermes adds from a chat are listed under its reply, with Open Board.
   They're always "cards": Tasks are scheduled jobs. Needs Bot Mode.
+- **Inspector**: one panel beside the chat (a two-height sheet on iPhone and iPad in portrait, with
+  a pill above the composer) where anything from the chat opens as a tab: Preview (pages,
+  localhost, files on the gateway), Artifact (HTML, SVG and long code from a reply, versioned and
+  sandboxed with no network unless allowed), File (edit and save, with "Hermes changed this file"
+  when it changed meanwhile), Files (the project tree with git letters), Changes (This Turn,
+  Branch, Uncommitted; stage, commit and push with a message Hermes drafts on request, create a
+  pull request), Terminal (background processes and their output, Stop), Screen (the Bot Screen,
+  Take Control and Hand Back), Team, Plan and Sources. Hermes opens Previews itself and drives
+  them (reading, clicking, typing) with the target ringed for 0.6 s and a bar to Take Over or
+  Stop; touching the page pauses it. A localhost page the device can't reach says where it runs
+  and offers to have Hermes share it on the tailnet. Pinned tabs stay across chats; the others
+  come back with the chat. ⌥⌘I shows it, ⌘L opens an address, ⌘⌥1–9 switch tabs, and on the
+  Mac a tab drags out into its own window. Chats start as the gateway's desktop platform so
+  Hermes has its Inspector tools. Needs Bot Mode.
 - **Search**: the chat search finds words inside chats, not just titles (with Bot Mode; titles
   only without it): one row per chat with the matching words in bold, chips for Chats, Projects,
   Bots and Tasks, and where each chat lives. Opening a result jumps to the message and flashes it.
@@ -312,6 +326,18 @@ pauses the dispatcher or refuses the socket (the app then polls every 5 s), and 
 /api/mock/kanban/reset` puts it back. Debug flags: `-HERMES_OPEN board:<project id>` with
 `-HERMES_BOARD_COLUMN <column>`, `-HERMES_BOARD_CARD <card id>` and
 `-HERMES_BOARD_SHEET new|assign|reopen|watch|edit`.
+
+And the Inspector (`Tools/mock-hermes/inspector.py`): a "Hermes Site" project
+(`/Users/studio/Code/hermes-site`) with files (`/api/fs/*`), git status and review with four
+changed files, staging, commits, pushes and pull requests (`/api/git/*`), a dev server on
+`127.0.0.1:5173` (`--dev-port`) serving the beta sign-up page, `preview.restart`, `llm.oneshot`
+drafts, and the Bot Screen over RFB (`display.*`, `WS /api/display/ws`) with the lease. Its chat
+"Pricing card" has two versions of an HTML artifact. In a chat, "… sign-up" or "… beta" writes the
+page, starts `npm run dev`, opens it in the Preview and drives it (`preview.act`, `preview.read`);
+"pricing" adds an artifact version; "terminal" reads the Terminal. Mock-only: `POST
+/api/mock/inspector/screen {action: evict|stop|start}` (close codes 4000 and 4001),
+`…/gh {authenticated, available}`, `…/touch {path, text}` (a change on the gateway), `…/dev
+{running}`, `…/pace {seconds}` (slower driving, for screenshots) and `…/turn {session, text}`.
 
 And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`'s
 `/api/sessions/search`: "reconnect" matches seven chats across Hermes App's lanes, a task run of

@@ -111,13 +111,21 @@ private struct InspectorSheet: View {
                     .padding(.top, isLarge ? 0 : 14)
                     .padding(.bottom, 8)
                 if let tab = inspector.selected {
-                    InspectorTabContent(tab: tab, inspector: inspector, conversation: conversation, workspace: workspace)
-                        .id(tab.id)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.canvas, in: RoundedRectangle(cornerRadius: isLarge ? 0 : 22, style: .continuous))
-                        .clipShape(RoundedRectangle(cornerRadius: isLarge ? 0 : 22, style: .continuous))
-                        .padding(.horizontal, isLarge ? 0 : 10)
-                        .padding(.bottom, isLarge ? 0 : 10)
+                    if isLarge {
+                        // Full height: the sheet's own solid fill, down to the bottom edge.
+                        InspectorTabContent(tab: tab, inspector: inspector, conversation: conversation, workspace: workspace)
+                            .id(tab.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        // Medium: the sheet is glass and the content sits in a solid card.
+                        InspectorTabContent(tab: tab, inspector: inspector, conversation: conversation, workspace: workspace)
+                            .id(tab.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 10)
+                    }
                 }
             }
         }

@@ -151,7 +151,8 @@ final class PreviewController: NSObject {
         default: kind = "browser"
         }
         guard let webView = webViewStorage, reach == .loaded,
-              let raw = try? await webView.evaluateJavaScript("window.__hermesApp ? window.__hermesApp.read() : ''") as? String,
+              let read = await Self.withTimeout(.seconds(8), { try await webView.evaluateJavaScript("window.__hermesApp ? window.__hermesApp.read() : ''") as? String }),
+              let raw = read,
               let data = raw.data(using: .utf8),
               let page = try? JSONDecoder().decode(JSONValue.self, from: data) else {
             var answer: [String: JSONValue] = ["kind": .string(kind), "url": .string(address), "title": .string(pageTitle), "text": .string(""),
@@ -191,22 +192,50 @@ final class PreviewController: NSObject {
         default:
             break
         }
-        do {
-            let result = try await webView.callAsyncJavaScript(
+        let result = await Self.withTimeout(.seconds(8)) {
+            try await webView.callAsyncJavaScript(
                 "if (!window.__hermesApp) { return JSON.stringify({success: false, error: 'The page is still loading. Call elements again in a moment.'}); } return JSON.stringify(await window.__hermesApp.run(JSON.parse(args)));",
                 arguments: ["args": action.engineArguments], in: nil, contentWorld: .page
-            )
-            guard let text = result as? String, let data = text.data(using: .utf8),
-                  case .object(let object) = try JSONDecoder().decode(JSONValue.self, from: data) else {
-                return PreviewBridge.answer(["success": .bool(false), "error": .string("The page didn't answer.")])
-            }
-            return PreviewBridge.answer(object)
-        } catch {
+            ) as? String
+        }
+        guard let result else {
+            return PreviewBridge.answer(["success": .bool(false), "error": .string("The page did not answer in time, so it may not have acted. Call elements to see where it is.")])
+        }
+        guard let text = result, let data = text.data(using: .utf8),
+              case .object(let object)? = try? JSONDecoder().decode(JSONValue.self, from: data) else {
             // A click that navigates tears the page down mid-answer.
             return PreviewBridge.answer([
                 "success": .bool(true), "note": .string("The page stopped answering right after; it is probably navigating. Call elements to see where you landed."),
                 "url": .string(webView.url?.absoluteString ?? ""),
             ])
+        }
+        return PreviewBridge.answer(object)
+    }
+
+    /// Runs a page call, giving up after `limit` (a navigation can leave it hanging): nil when it
+    /// timed out, `.some(nil)` when the page threw or answered nothing.
+    private static func withTimeout(_ limit: Duration, _ work: @escaping @MainActor () async throws -> String?) async -> String?? {
+        await withCheckedContinuation { (done: CheckedContinuation<String??, Never>) in
+            let once = Once()
+            Task { @MainActor in
+                let value = try? await work()
+                if once.take() { done.resume(returning: .some(value ?? nil)) }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: limit)
+                if once.take() { done.resume(returning: .none) }
+            }
+        }
+    }
+
+    @MainActor
+    private final class Once {
+        private var taken = false
+
+        func take() -> Bool {
+            guard !taken else { return false }
+            taken = true
+            return true
         }
     }
 
