@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var isAddingBot = false
     /// `-HERMES_APPS_TOOLS <tab>[:<item>]` opens Apps and Tools (screenshots).
     @State private var opensAppsAndTools = DebugFlags.appsAndTools != nil
+    /// `-HERMES_MEMORY …` opens Memory (screenshots).
+    @State private var opensMemory = DebugFlags.memory != nil
 
     var body: some View {
         NavigationStack {
@@ -60,6 +62,7 @@ struct SettingsView: View {
                 if let workspace = app.currentWorkspace {
                     Section("Hermes on \(workspace.bot.name)") {
                         AppsAndToolsSettingsRow(model: workspace.appsAndTools)
+                        MemorySettingsRow(workspace: workspace)
                     }
                 }
 
@@ -110,6 +113,9 @@ struct SettingsView: View {
             .navigationDestination(isPresented: $opensAppsAndTools) {
                 if let workspace = app.currentWorkspace { AppsAndToolsView(model: workspace.appsAndTools) }
             }
+            .navigationDestination(isPresented: $opensMemory) {
+                if let workspace = app.currentWorkspace { DebugMemoryPage(workspace: workspace) }
+            }
             .navigationTitle("Settings")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -151,6 +157,71 @@ struct SettingsView: View {
 
 /// Settings → Hermes on <gateway> → Apps and Tools: a count, plus "1 needs you" when something
 /// expired or failed.
+/// `-HERMES_MEMORY …`: Memory with a model of its own (screenshots).
+private struct DebugMemoryPage: View {
+    @State private var model: MemoryModel
+
+    init(workspace: BotWorkspace) {
+        let route = DebugFlags.memory ?? ""
+        let scope: MemoryModel.Scope = route.hasPrefix("bot:") ? .bot(String(route.dropFirst(4))) : .hermes
+        _model = State(initialValue: MemoryModel(workspace: workspace, scope: scope, newInChat: workspace.currentConversation.memorySaves))
+    }
+
+    var body: some View {
+        MemoryView(model: model)
+    }
+}
+
+/// Settings → Hermes on <gateway> → Memory: "6 things about you · 14 notes · 2 to review". The
+/// page it opens shares this row's model, made when Settings opens and dropped with it.
+struct MemorySettingsRow: View {
+    let workspace: BotWorkspace
+    var scope: MemoryModel.Scope = .hermes
+    @State private var model: MemoryModel?
+
+    private var title: String {
+        if case .bot(let name) = scope, let bot = workspace.roster?.bot(named: name) {
+            return String(localized: "What \(bot.title) Remembers")
+        }
+        return String(localized: "Memory")
+    }
+
+    var body: some View {
+        NavigationLink {
+            if let model { MemoryView(model: model) }
+        } label: {
+            HStack(spacing: 12) {
+                if scope == .hermes {
+                    GlyphTile(symbol: "brain", ink: true, size: 30)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).foregroundStyle(Theme.primaryText)
+                    Text(model?.summary ?? String(localized: "What Hermes knows about you"))
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .contentTransition(.numericText())
+                }
+            }
+        }
+        .onAppear {
+            if model == nil {
+                // "New in this chat": what the open chat saved.
+                let saves: [String] = switch scope {
+                case .hermes: workspace.currentConversation.memorySaves
+                case .bot(let name): workspace.roster?.conversation(for: name).memorySaves ?? []
+                }
+                let created = MemoryModel(workspace: workspace, scope: scope, newInChat: saves)
+                model = created
+                Task { await created.load(includingPending: scope == .hermes) }
+            }
+        }
+        .onChange(of: workspace.roster?.isConnected) {
+            if let model, model.isOnline, model.list == nil { Task { await model.load() } }
+        }
+        .accessibilityHint("What Hermes remembers about you and your setup")
+    }
+}
+
 struct AppsAndToolsSettingsRow: View {
     let model: AppsAndToolsModel
 

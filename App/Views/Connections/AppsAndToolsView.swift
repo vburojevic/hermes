@@ -183,6 +183,15 @@ enum DebugFlags {
         nil
         #endif
     }
+
+    /// `-HERMES_MEMORY about|notes|options|edit:<n>|notes-edit:<n>|reset|bot:<profile>` opens Memory.
+    static var memory: String? {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "HERMES_MEMORY")
+        #else
+        nil
+        #endif
+    }
 }
 
 /// The gateway can't be reached, or has no Bot Mode (Apps and Tools speak its gateway protocol).

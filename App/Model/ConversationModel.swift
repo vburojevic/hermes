@@ -2598,6 +2598,19 @@ extension ConversationModel {
     }
 
     /// The chat's runtime id, resuming the Bot Chat or creating it on first use.
+    /// A session in this chat's profile, for commands the gateway scopes by session (`/memory`).
+    func runtimeForCommands() async throws -> String {
+        try await ensureRuntime()
+    }
+
+    /// What the memory tool saved or updated in this chat ("New in this chat" in Memory).
+    var memorySaves: [String] {
+        rows.flatMap { item -> [String] in
+            guard case .assistant(let turn) = item else { return [] }
+            return turn.memoryChanges.filter { $0.kind == .saved || $0.kind == .updated }.map(\.text)
+        }
+    }
+
     private func ensureRuntime() async throws -> String {
         if let runtimeSessionID { return runtimeSessionID }
         guard let botName else { return try await ensureChatRuntime() }

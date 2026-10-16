@@ -589,7 +589,7 @@ private struct BotSheets: ViewModifier {
                     }
                 }
                 .sheet(item: Binding(get: { roster.editingBot.map(BotSheetTarget.init) }, set: { roster.editingBot = $0?.name })) { target in
-                    BotSheet(roster: roster, mode: .edit(target.name)) { _ in
+                    BotSheet(roster: roster, mode: .edit(target.name), workspace: workspace) { _ in
                         roster.editingBot = nil
                     }
                     #if os(macOS)

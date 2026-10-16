@@ -132,12 +132,3 @@ public struct SearchResult: Hashable, Sendable, Identifiable {
     }
 }
 
-extension ToolActivity {
-    /// What the memory tool kept ("you prefer 24-hour times"), for `memoryNote`.
-    public var rememberedText: String? {
-        guard name == "memory" else { return nil }
-        let action = arguments?["action"]?.stringValue ?? "add"
-        guard action == "add" || action == "replace" || action == "save" else { return nil }
-        return (arguments?["content"]?.stringValue ?? arguments?["text"]?.stringValue)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}

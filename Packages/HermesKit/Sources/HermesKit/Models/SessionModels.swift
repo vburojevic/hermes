@@ -484,6 +484,8 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
     public var patternKeys: [String] = []
     /// Hermes's safety check flagged it: only a one-time override is on offer.
     public var smartDenied = false
+    /// The card's title when the asker names one ("Save to memory?").
+    public var title: String?
 
     public var id: String { requestID ?? gatewayRequestID ?? (command ?? "") + (description ?? "") }
 
@@ -496,6 +498,7 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
         case toolName = "tool_name"
         case patternKey = "pattern_key"
         case patternKeys = "pattern_keys"
+        case title
     }
 
     public init(requestID: String?, command: String?, description: String?, choices: [ApprovalChoice]) {
@@ -511,6 +514,7 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
         command = try? c.decodeIfPresent(String.self, forKey: .command)
         description = try? c.decodeIfPresent(String.self, forKey: .description)
         toolName = try? c.decodeIfPresent(String.self, forKey: .toolName)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
         let flagged = (try? c.decodeIfPresent(Bool.self, forKey: .smartDenied)) == true
         smartDenied = flagged
         if let keys = try? c.decodeIfPresent([String].self, forKey: .patternKeys) {

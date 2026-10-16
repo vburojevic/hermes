@@ -671,6 +671,44 @@ final class BotRoster {
         try await client.setCheckpointsEnabled(enabled, profile: profile)
     }
 
+    // MARK: Memory (`docs/memory.md`; entries are never kept here)
+
+    func memoryEntries(profile: String?) async throws -> MemoryList {
+        try await client.memoryEntries(profile: profile)
+    }
+
+    func memoryEntryText(id: String, profile: String?) async throws -> String {
+        try await client.memoryEntryText(id: id, profile: profile)
+    }
+
+    func editMemoryEntry(id: String, content: String, profile: String?) async throws {
+        try await client.editMemoryEntry(id: id, content: content, profile: profile)
+    }
+
+    func forgetMemoryEntry(id: String, profile: String?) async throws {
+        try await client.forgetMemoryEntry(id: id, profile: profile)
+    }
+
+    func memoryStatus(profile: String?) async throws -> MemoryStatus {
+        try await client.memoryStatus(profile: profile)
+    }
+
+    func memorySettings(profile: String?) async throws -> MemorySettings {
+        try await client.memorySettings(profile: profile)
+    }
+
+    func setMemorySetting(_ key: String, to value: Bool, profile: String?) async throws {
+        try await client.setMemorySetting(key, to: value, profile: profile)
+    }
+
+    func setMemoryProvider(_ provider: String, profile: String?) async throws {
+        try await client.setMemoryProvider(provider, profile: profile)
+    }
+
+    func resetMemory(target: String, profile: String?) async throws {
+        try await client.resetMemory(target: target, profile: profile)
+    }
+
     func addGitWorktree(repo: String) async throws -> GitWorktree {
         try await client.addGitWorktree(repo: repo)
     }

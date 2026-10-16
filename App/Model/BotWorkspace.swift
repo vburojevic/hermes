@@ -306,6 +306,22 @@ final class BotWorkspace: Identifiable {
 
     /// Starts a fresh chat, reusing the current draft if it is still untouched. It runs where
     /// Run In last pointed (the active project), unless a project is given.
+    /// Tell Hermes Something to Remember… (`docs/memory.md` §1): a new chat, or the Bot's chat,
+    /// with "Remember that " typed. Hermes saves it with its memory tool.
+    func startRememberChat(bot name: String?) {
+        let prompt = String(localized: "Remember that ")
+        if let name, let roster, roster.bot(named: name)?.isDefault != true {
+            sidebarMode = .bots
+            selection = .bot(name)
+            let chat = roster.conversation(for: name)
+            if chat.draft.isEmpty { chat.draft = prompt }
+        } else {
+            sidebarMode = .chats
+            startNewChat()
+            draft.draft = prompt
+        }
+    }
+
     func startNewChat(inProject projectID: String? = nil) {
         if !draft.isEmpty || draft.sessionID != nil || (projectID != nil && draft.placement?.projectID != projectID) {
             draft = ConversationModel(workspace: self)

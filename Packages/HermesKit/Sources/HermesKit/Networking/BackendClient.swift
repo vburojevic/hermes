@@ -277,6 +277,75 @@ public actor BackendClient {
         _ = try await send(path: "api/config", method: "PUT", body: .object(body))
     }
 
+    // MARK: Memory (`docs/memory.md` §1)
+
+    private static func profileQuery(_ profile: String?) -> [URLQueryItem] {
+        guard let profile, !profile.isEmpty else { return [] }
+        return [URLQueryItem(name: "profile", value: profile)]
+    }
+
+    /// Every entry of About You and Hermes's Notes, in file order (`GET /api/learning/graph`).
+    public func memoryEntries(profile: String?) async throws -> MemoryList {
+        let (data, _) = try await send(path: "api/learning/graph", query: Self.profileQuery(profile))
+        return MemoryList(graph: try JSONDecoder().decode(JSONValue.self, from: data))
+    }
+
+    /// An entry's whole text, for editing (`GET /api/learning/node`). Fails when the entry
+    /// changed since it was listed.
+    public func memoryEntryText(id: String, profile: String?) async throws -> String {
+        let (data, _) = try await send(path: "api/learning/node", query: [URLQueryItem(name: "id", value: id)] + Self.profileQuery(profile))
+        return try JSONDecoder().decode(JSONValue.self, from: data)["content"]?.stringValue ?? ""
+    }
+
+    /// Rewrites an entry (`PUT /api/learning/node`). The gateway refuses a stale id and an edit
+    /// over the store's size cap with a message to show.
+    public func editMemoryEntry(id: String, content: String, profile: String?) async throws {
+        var body: [String: JSONValue] = ["id": .string(id), "content": .string(content)]
+        if let profile, !profile.isEmpty { body["profile"] = .string(profile) }
+        _ = try await send(path: "api/learning/node", method: "PUT", query: Self.profileQuery(profile), body: .object(body))
+    }
+
+    /// Removes an entry (`DELETE /api/learning/node`). The gateway has no undo.
+    public func forgetMemoryEntry(id: String, profile: String?) async throws {
+        var body: [String: JSONValue] = ["id": .string(id)]
+        if let profile, !profile.isEmpty { body["profile"] = .string(profile) }
+        _ = try await send(path: "api/learning/node", method: "DELETE", query: Self.profileQuery(profile), body: .object(body))
+    }
+
+    /// The provider in use, the ones on the gateway, the files' sizes (`GET /api/memory`).
+    public func memoryStatus(profile: String?) async throws -> MemoryStatus {
+        let (data, _) = try await send(path: "api/memory", query: Self.profileQuery(profile))
+        return MemoryStatus(json: try JSONDecoder().decode(JSONValue.self, from: data))
+    }
+
+    /// Switches the provider (`PUT /api/memory/provider`); "" is built-in. Only ready providers.
+    public func setMemoryProvider(_ provider: String, profile: String?) async throws {
+        _ = try await send(path: "api/memory/provider", method: "PUT", query: Self.profileQuery(profile), body: .object(["provider": .string(provider)]))
+    }
+
+    /// Deletes the files (`POST /api/memory/reset`): `all`, `memory` or `user`. The backend
+    /// refuses an unnamed profile while it serves several, so the default one is named.
+    public func resetMemory(target: String, profile: String?) async throws {
+        let named = (profile?.isEmpty ?? true) ? "default" : profile
+        _ = try await send(path: "api/memory/reset", method: "POST", query: Self.profileQuery(named), body: .object(["target": .string(target)]))
+    }
+
+    /// The `memory` section of the profile's config (`GET /api/config`).
+    public func memorySettings(profile: String?) async throws -> MemorySettings {
+        let (data, _) = try await send(path: "api/config", query: Self.profileQuery(profile))
+        return MemorySettings(config: try JSONDecoder().decode(JSONValue.self, from: data))
+    }
+
+    /// Sets `memory.<key>` in the profile's config (`PUT /api/config`, deep-merged):
+    /// `memory_enabled`, `user_profile_enabled`, `write_approval`. `config.set` has no memory
+    /// keys, and `/memory approval` through `command.dispatch` ignores `profile` without a
+    /// session, so a Bot's gate would land on the launch profile.
+    public func setMemorySetting(_ key: String, to value: Bool, profile: String?) async throws {
+        var body: [String: JSONValue] = ["config": .object(["memory": .object([key: .bool(value)])])]
+        if let profile, !profile.isEmpty { body["profile"] = .string(profile) }
+        _ = try await send(path: "api/config", method: "PUT", query: Self.profileQuery(profile), body: .object(body))
+    }
+
     /// A provider sign-in by device code (`POST /api/providers/oauth/<provider>/start`): Nous for
     /// the Apps tab. The person approves at `url`; `pollProviderSignIn` says when they have.
     public func startProviderSignIn(provider: String, profile: String?) async throws -> (sessionID: String, url: URL, userCode: String, interval: Int) {

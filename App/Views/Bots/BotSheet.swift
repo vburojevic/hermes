@@ -10,6 +10,8 @@ struct BotSheet: View {
 
     let roster: BotRoster
     let mode: Mode
+    /// The gateway, for What <Bot> Remembers (Edit Bot).
+    var workspace: BotWorkspace?
     /// Called with the Bot's profile name when it was created or saved.
     let onDone: (String?) -> Void
 
@@ -116,6 +118,13 @@ struct BotSheet: View {
                         .focused($focus, equals: .role)
                 } footer: {
                     Text("The role tells the Bot who it is. You can refine it later in its chat.")
+                }
+
+                // Edit Bot → What <Bot> Remembers (`editBot`): the Bot's own memory.
+                if let editingName, let workspace {
+                    Section("Memory") {
+                        MemorySettingsRow(workspace: workspace, scope: .bot(editingName))
+                    }
                 }
 
                 Section("Look") {

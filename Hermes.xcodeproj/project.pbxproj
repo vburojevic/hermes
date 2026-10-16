@@ -39,6 +39,7 @@
 		38612C2054849AA73691A4BD /* ProjectTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83C6DFB0F7C15C310B85F37 /* ProjectTile.swift */; };
 		39FE8AD218F2F31163457CB7 /* AnswerFromActivityIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A526CB3D525BDF1E197EEFBC /* AnswerFromActivityIntent.swift */; };
 		3C04DD66FC877F5AC8B10430 /* HelperStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63C8D13F7821764FD3D29E4 /* HelperStore.swift */; };
+		3F3264FB6816BB1E1DA41FAA /* MemoryParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A3472D56E936333D8BF4EBF /* MemoryParts.swift */; };
 		4111DB522AC945C6CEB3D3E8 /* DesignGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203DAC47C6E03EE23A70BB37 /* DesignGallery.swift */; };
 		444176C4AAE5F530206C801B /* FrameMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF3D76568885BDC8E99A82D /* FrameMonitor.swift */; };
 		4442F21174CB4D99B2CC5110 /* BotWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7670C4D879B1C88014035EE0 /* BotWorkspace.swift */; };
@@ -71,6 +72,7 @@
 		6E4BC7F483F0439F749C448C /* ChatScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0363790D1D1BBE404C2C5C0F /* ChatScreen.swift */; };
 		71C3DCE960F5E71B6F0C36FD /* PushCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 641683BC38CC6ED1D64A4640 /* PushCenter.swift */; };
 		752BCD5B083EC8C7EA024CE4 /* InlineFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D395A69D7839A8E4686044B /* InlineFlow.swift */; };
+		772A08B5AAC846CE61E37670 /* MemoryEditViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD59462F69EA19F6D1F33B36 /* MemoryEditViews.swift */; };
 		7DC12C677CEF90FDC613DE81 /* TeamViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0BF2A6657BB676114ADFB7 /* TeamViews.swift */; };
 		7F168A710171B04B1FD3277A /* Effects.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8186567282DB3FFB0DD3172 /* Effects.swift */; };
 		86872F98BB9420D033F6D558 /* PairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EACA4AA1B8418DE48E92A67F /* PairingSheet.swift */; };
@@ -147,6 +149,8 @@
 		EC61D9545174614E2E27CB99 /* FollowUps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704C5D19D6138DE82884D59C /* FollowUps.swift */; };
 		EE00BBB832C5017665D4C1B5 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E1BF571A6BF9AFEE131A53 /* ComposerView.swift */; };
 		EEBB26CBEA825B506837FF01 /* TurnExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C5334C16DEA85C688B84F4 /* TurnExtras.swift */; };
+		EF81CF40C102D2FAA2D51ECB /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 784E49783307A8E4CB7379B4 /* MemoryView.swift */; };
+		F51BE6C1A76C75CDE795DB3D /* MemoryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84164182BC8A67B056F80BA /* MemoryModel.swift */; };
 		F62D0A56E57E187470CCC1A2 /* BotChatViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194CF757A863916B13EA8DC4 /* BotChatViews.swift */; };
 		F75384FF7ACBD0911C2B5251 /* Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177942A1E815274590668D2B /* Formatting.swift */; };
 		F7BF6DE45240EED5C5B70469 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0898D8B638E43B197D08F374 /* Platform.swift */; };
@@ -250,6 +254,7 @@
 		6503D50FE251017B2F3A4A76 /* PairingScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingScanner.swift; sourceTree = "<group>"; };
 		66E1BF571A6BF9AFEE131A53 /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerView.swift; sourceTree = "<group>"; };
 		688513237C13FDE87E5FF515 /* PushSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushSheets.swift; sourceTree = "<group>"; };
+		6A3472D56E936333D8BF4EBF /* MemoryParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryParts.swift; sourceTree = "<group>"; };
 		6AFB1CC865189FD4112A877C /* MacNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotifier.swift; sourceTree = "<group>"; };
 		6CDAD721460ADCBB56CBF826 /* Hermes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Hermes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6CFB0BAE70770C4EBE4E8D13 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -258,6 +263,7 @@
 		73327689C0F7522EE0092197 /* BotFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotFace.swift; sourceTree = "<group>"; };
 		739F04618F407BB73EF31D69 /* AppsAndToolsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppsAndToolsModel.swift; sourceTree = "<group>"; };
 		7670C4D879B1C88014035EE0 /* BotWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotWorkspace.swift; sourceTree = "<group>"; };
+		784E49783307A8E4CB7379B4 /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
 		79980A0B9CF4CE8153EC2AA6 /* HermesNotificationContent.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = HermesNotificationContent.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79A52C42AC82C9A11ADC7358 /* SpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechController.swift; sourceTree = "<group>"; };
 		7AB786670227F23BE604A7E7 /* SidebarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarChrome.swift; sourceTree = "<group>"; };
@@ -293,6 +299,7 @@
 		B3C395A2EC5C6B0FD9C9E883 /* RequestDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestDock.swift; sourceTree = "<group>"; };
 		B44702411639E8D97E9C1E82 /* TurnActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnActivityController.swift; sourceTree = "<group>"; };
 		B65F86E4FDC5733C8ABF5605 /* SidebarModeSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeSwitcher.swift; sourceTree = "<group>"; };
+		B84164182BC8A67B056F80BA /* MemoryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryModel.swift; sourceTree = "<group>"; };
 		BC8933EA0ADEC930A6EC2949 /* CodeBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeBlockView.swift; sourceTree = "<group>"; };
 		BCE8194331DB2E9630C792EE /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		BD6BD8207EE8F9466A5B0CDC /* ProjectsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsModel.swift; sourceTree = "<group>"; };
@@ -329,6 +336,7 @@
 		F8186567282DB3FFB0DD3172 /* Effects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Effects.swift; sourceTree = "<group>"; };
 		F87CAB7DF8D11ABAADBD9AAB /* PushResponder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushResponder.swift; sourceTree = "<group>"; };
 		F9F767ABBADB39D58165E593 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		FD59462F69EA19F6D1F33B36 /* MemoryEditViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryEditViews.swift; sourceTree = "<group>"; };
 		FDE63B9B4552E01494E93B76 /* PillTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillTextView.swift; sourceTree = "<group>"; };
 		FEE123807FB792EEE6DB6EBF /* HermesWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesWidgets.swift; sourceTree = "<group>"; };
 		FF2AD4B883A16048295A1357 /* BotRosterSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotRosterSections.swift; sourceTree = "<group>"; };
@@ -395,6 +403,7 @@
 				824EEF0292B194C418188B32 /* GroupChats.swift */,
 				A63C8D13F7821764FD3D29E4 /* HelperStore.swift */,
 				001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */,
+				B84164182BC8A67B056F80BA /* MemoryModel.swift */,
 				BCE8194331DB2E9630C792EE /* Preferences.swift */,
 				BD6BD8207EE8F9466A5B0CDC /* ProjectsModel.swift */,
 				DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */,
@@ -477,6 +486,7 @@
 				351A334EFF09AEBF3F908B40 /* Groups */,
 				64A173E800AA761A17719905 /* Helpers */,
 				90A912ABA5DF78F5A4C96D26 /* Markdown */,
+				EC0ABC21DE50497BB8F5D846 /* Memory */,
 				CE59ABABCB34D38B3464D4C8 /* Onboarding */,
 				F8F5663692E77C6A487DA5CE /* Pairing */,
 				31616A1C33455B728A10C80B /* Projects */,
@@ -791,6 +801,16 @@
 			path = Sidebar;
 			sourceTree = "<group>";
 		};
+		EC0ABC21DE50497BB8F5D846 /* Memory */ = {
+			isa = PBXGroup;
+			children = (
+				FD59462F69EA19F6D1F33B36 /* MemoryEditViews.swift */,
+				6A3472D56E936333D8BF4EBF /* MemoryParts.swift */,
+				784E49783307A8E4CB7379B4 /* MemoryView.swift */,
+			);
+			path = Memory;
+			sourceTree = "<group>";
+		};
 		EDA50A5821375233B5DCC630 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -1047,6 +1067,10 @@
 				68C181FF81413ABCCCB03A54 /* MacSettingsView.swift in Sources */,
 				298957203B1DDD4665C6731E /* MarkdownCache.swift in Sources */,
 				20ED0A86CBE0F1AE0BC95301 /* MarkdownView.swift in Sources */,
+				772A08B5AAC846CE61E37670 /* MemoryEditViews.swift in Sources */,
+				F51BE6C1A76C75CDE795DB3D /* MemoryModel.swift in Sources */,
+				3F3264FB6816BB1E1DA41FAA /* MemoryParts.swift in Sources */,
+				EF81CF40C102D2FAA2D51ECB /* MemoryView.swift in Sources */,
 				A37442CB11F0646DFDE70BE0 /* ModelPicker.swift in Sources */,
 				2781B9569789A85414C563C4 /* Motion.swift in Sources */,
 				A15456F7B17E325EFB6FA50C /* NotificationSettingsView.swift in Sources */,

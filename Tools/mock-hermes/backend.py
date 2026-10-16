@@ -1221,6 +1221,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*route(parse_qs(url.query), body))
         return self.send_json(404, {"detail": "Not Found"})
 
+    def do_DELETE(self):
+        url = urlparse(self.path)
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length) or b"{}") if length else {}
+        if not self.authorized():
+            return self.send_json(401, {"detail": "Unauthorized"})
+        route = HTTP_ROUTES.get(("DELETE", url.path))
+        if route:
+            return self.send_json(*route(parse_qs(url.query), body))
+        return self.send_json(404, {"detail": "Not Found"})
+
     def do_PATCH(self):
         url = urlparse(self.path)
         length = int(self.headers.get("Content-Length") or 0)
@@ -1447,6 +1458,10 @@ def main():
         search = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(search)
         search.install(globals(), gateway)
+        spec = importlib.util.spec_from_file_location("mock_memory", here / "memory.py")
+        memory = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(memory)
+        memory.install(globals(), gateway, chats)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib
