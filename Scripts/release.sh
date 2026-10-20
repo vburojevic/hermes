@@ -4,6 +4,7 @@
 #     (the "Internal Testers" group has automatic access to every build).
 #   • macOS → Developer ID signed, notarized and stapled DMG + Sparkle appcast, published as a
 #     GitHub release on vburojevic/hermes-releases (the feed the app reads).
+#   • iOS / iPadOS → also the public TestFlight: the "Public Beta" group, submitted for beta review.
 #   • Source → the commit it was built from is tagged v<version>-<build> on vburojevic/hermes, with a
 #     GitHub release there (pre-release while Hermes is in beta) and its section in CHANGELOG.md.
 #
@@ -249,7 +250,7 @@ EOF
     xcodebuild -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios-upload" \
       -exportOptionsPlist "$OUT/ExportOptions-iOS-upload.plist" "${AUTH[@]}" > "$OUT/upload-iOS.log" 2>&1 \
       || { grep -E "error" "$OUT/upload-iOS.log" | head -20; exit 1; }
-    echo "uploaded iOS $VERSION ($BUILD_NUMBER) — internal testers get it once processing finishes"
+    echo "uploaded iOS $VERSION ($BUILD_NUMBER) — internal testers get it once processing finishes; Public Beta after the Mac"
   fi
 fi
 
@@ -373,12 +374,43 @@ EOF
   fi
 fi
 
+# The release before this one: notes run from it to HEAD (public TestFlight, GitHub release, CHANGELOG).
+if [ $DRY_RUN = 0 ]; then
+  git fetch --quiet --tags origin main
+  PREVIOUS_TAG="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude "v$VERSION-$BUILD_NUMBER" HEAD 2>/dev/null || true)"
+fi
+
+# --- iOS → public TestFlight (docs/releasing.md §Public TestFlight) ------------------------------------
+# Every release goes to the "Public Beta" group and to beta review too (Vedran, 2026-10-20). Runs after
+# the Mac so the build has processed meanwhile. A refusal (a build already waiting for review, a
+# review still needed) is reported, and the release still succeeds.
+PUBLIC_GROUP="Public Beta"
+if [ $IOS = 1 ] && [ $DRY_RUN = 0 ]; then
+  log "public TestFlight: $PUBLIC_GROUP"
+  python3 -I Scripts/release_notes.py testflight "$VERSION" "$BUILD_NUMBER" "$PREVIOUS_TAG" > "$OUT/whats-new.txt"
+  if "${ASC[@]}" publish testflight --app "$ASC_APP_ID" --build-number "$BUILD_NUMBER" --platform IOS \
+      --group "$PUBLIC_GROUP" --test-notes "$(cat "$OUT/whats-new.txt")" --locale en-US \
+      --wait --timeout 60m --submit --confirm --output json > "$OUT/public-testflight.json" 2> "$OUT/public-testflight.log"; then
+    echo "public TestFlight: $BUILD_NUMBER is in $PUBLIC_GROUP and submitted for beta review"
+  else
+    echo "public TestFlight: App Store Connect refused part of it; the release still stands:" >&2
+    tail -5 "$OUT/public-testflight.log" >&2
+  fi
+  # Say where it stands, whatever happened above.
+  BUILD_ID="$("${ASC[@]}" builds list --app "$ASC_APP_ID" --build-number "$BUILD_NUMBER" --platform IOS --output json 2>/dev/null \
+    | python3 -I -c 'import json,sys; d=json.load(sys.stdin)["data"]; print(d[0]["id"] if d else "")' 2>/dev/null || true)"
+  if [ -n "$BUILD_ID" ]; then
+    STATE="$("${ASC[@]}" testflight distribution view --build-id "$BUILD_ID" --output json 2>/dev/null \
+      | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["attributes"]["externalBuildState"])' 2>/dev/null || echo unknown)"
+    echo "public TestFlight: external state $STATE (https://testflight.apple.com/join/CVhbq8Ur)"
+  fi
+fi
+
 # --- Source: tag, GitHub release and CHANGELOG (docs/releasing.md §Public release) ---------------
 # Stays off hermes-releases' "latest": Sparkle and the website read that repo's latest release, and
 # a pre-release there would never be served.
 if [ $DRY_RUN = 0 ]; then
   TAG="v$VERSION-$BUILD_NUMBER"
-  git fetch --quiet --tags origin main
   if [ "$(gh repo view "$SOURCE_REPO" --json visibility --jq .visibility)" != PUBLIC ]; then
     echo "source: $SOURCE_REPO isn't public yet, so $TAG wasn't tagged"
   elif gh release view "$TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
@@ -388,7 +420,6 @@ if [ $DRY_RUN = 0 ]; then
     exit 1
   else
     log "tag $TAG on $SOURCE_REPO"
-    PREVIOUS_TAG="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null || true)"
     python3 -I Scripts/release_notes.py notes "$VERSION" "$BUILD_NUMBER" "$TAG" "$PREVIOUS_TAG" > "$OUT/release-notes.md"
     PRERELEASE=(); [ $BETA = 1 ] && PRERELEASE=(--prerelease)
     gh release create "$TAG" --repo "$SOURCE_REPO" --target "$(git rev-parse HEAD)" ${PRERELEASE[@]+"${PRERELEASE[@]}"} \

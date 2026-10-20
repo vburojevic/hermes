@@ -5,6 +5,8 @@
         prints the GitHub release notes for the commits since <previous tag>
     python3 -I Scripts/release_notes.py changelog <version> <build> [<previous tag>]
         adds the same changes to CHANGELOG.md, as the newest build under the version's heading
+    python3 -I Scripts/release_notes.py testflight <version> <build> [<previous tag>]
+        prints TestFlight's What to Test for the public beta: plain text, under 4,000 characters
 
 Subjects read "Area: what changed for the person" (AGENTS.md), so they are the notes. Areas
 that don't change the app for the person using it (docs, tests, mocks, release tooling) are left
@@ -73,6 +75,25 @@ def notes(version, build, tag, previous_tag):
     return "\n".join(lines) + "\n"
 
 
+def testflight(version, build, previous_tag, limit=4000):
+    """What to Test: TestFlight shows plain text, so no Markdown, and caps it at 4,000 characters."""
+    head = (f"Hermes {version} beta, build {build}. It's a beta: expect rough edges. Send feedback with a "
+            f"screenshot from TestFlight, or report bugs at github.com/{SOURCE_REPO}/issues. Leave keys "
+            f"and addresses out of both.")
+    rows = changes(previous_tag)
+    lines = [f"- {area}: {text}" for area, text in rows] or ["- Fixes and polish."]
+    tail = f"Every change: github.com/{SOURCE_REPO}/releases"
+    kept = []
+    for i, line in enumerate(lines):
+        rest = len(lines) - i
+        more = f"- …and {rest} more" if rest > 1 else ""
+        if len("\n".join([head, "", "What's new:", *kept, line, more, "", tail])) > limit:
+            kept.append(f"- …and {rest} more")
+            break
+        kept.append(line)
+    return "\n".join([head, "", "What's new:", *kept, "", tail]) + "\n"
+
+
 def changelog(version, build, previous_tag, path="CHANGELOG.md"):
     """Insert this build's changes right under the version's heading (and its highlights)."""
     text = open(path, encoding="utf-8").read()
@@ -97,6 +118,9 @@ if __name__ == "__main__":
     if command == "notes":
         version, build, tag = args[:3]
         sys.stdout.write(notes(version, build, tag, args[3] if len(args) > 3 else ""))
+    elif command == "testflight":
+        version, build = args[:2]
+        sys.stdout.write(testflight(version, build, args[2] if len(args) > 2 else ""))
     elif command == "changelog":
         version, build = args[:2]
         changelog(version, build, args[2] if len(args) > 2 else "")

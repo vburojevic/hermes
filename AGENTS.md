@@ -23,7 +23,7 @@ without a real Hermes or a paid model.
 | `Tools/hermes-app-push/` | The Hermes Agent plugin that sends notices to the relay. Published to `vburojevic/hermes-app-push` with `Scripts/publish-push-plugin.sh`. |
 | `Tools/hermes-app-widgets/` | The Hermes Agent plugin for widgets agents send to the app: the `widget` tool, its checks and store, and plain text on other platforms. Published to `vburojevic/hermes-app-widgets` with `Scripts/publish-widgets-plugin.sh`. |
 | `Tools/IconGen/` | Renders the app icons from the same path the UI draws. |
-| `Scripts/release.sh` | The maintainers' release (TestFlight + notarized Mac DMG). Needs the studio's signing escrow; never run it unless asked. |
+| `Scripts/release.sh` | The maintainers' release (TestFlight, including the public beta, + notarized Mac DMG). Needs the studio's signing escrow; never run it unless asked. |
 
 ## Build and test
 

@@ -13,7 +13,7 @@ Scripts/release.sh --mac-only       # or --ios-only
 
 - **iPhone and iPad → TestFlight.** The app and its three extensions are signed with the studio's
   Apple Distribution identity and App Store profiles, validated and uploaded. Internal testers get
-  every build automatically.
+  every build automatically, and every build goes to the public beta too (§Public TestFlight below).
 - **Mac → a notarized DMG with Sparkle.** Developer ID signed (Sparkle's nested code re-signed
   inside-out with the Hardened Runtime), notarized and stapled, then published with its
   `appcast.xml` as a release on
@@ -26,6 +26,24 @@ Signing identities are loaded into a temporary keychain that is deleted when the
 nothing is minted, and the login keychain is left as it was. Sparkle's EdDSA public key is built into
 every Mac release, so its private half must never change. Build numbers are UTC `yyMMddHHmm`, and
 the script refuses to ship a Release build that still contains the Debug demo code.
+
+## Public TestFlight
+
+Every release puts its iOS build in the public beta, the "Public Beta" group
+([testflight.apple.com/join/CVhbq8Ur](https://testflight.apple.com/join/CVhbq8Ur)), and submits it for
+beta review. The step runs after the Mac, so the build has finished processing by then:
+
+1. `asc publish testflight` finds the build by number, waits until it's VALID (up to an hour), sets
+   its What to Test, adds it to the group and submits it for review.
+2. What to Test comes from the commit subjects since the previous release
+   (`Scripts/release_notes.py testflight`): plain text, under TestFlight's 4,000 characters, saying
+   it's a beta and where to report bugs.
+3. The script then prints the build's external state, such as `WAITING_FOR_BETA_REVIEW` or
+   `BETA_APPROVED`.
+
+App Store Connect can refuse the submission, for example when another build is still waiting for
+review. The script then prints what it said, and the release still succeeds. Add the build later
+with the same command, or in App Store Connect.
 
 ## Public release
 
