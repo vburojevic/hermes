@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: items/0/movement: {'good': 'up'} is not valid under any of the given schemas",
+  "payload": {
+    "type": "list",
+    "v": 1,
+    "id": "w_bad03l002",
+    "title": "Keyword movers",
+    "as_of": "2026-10-16T06:00:00-04:00",
+    "fallback_text": "Keyword movers.",
+    "layout": "ranked",
+    "items": [
+      {
+        "rank": 3,
+        "movement": {
+          "good": "up"
+        },
+        "title": "hiking app"
+      }
+    ]
+  }
+}

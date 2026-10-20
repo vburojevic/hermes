@@ -1,0 +1,236 @@
+{
+  "$comment": "Rules the JSON Schemas can’t express. Generated with the schemas; payload-contract.md §10.",
+  "rules": [
+    {
+      "id": "actions.ids",
+      "types": "*",
+      "rule": "Action ids are unique within a widget, and the built-in ids (answer, submit, cancel, check, set, approve, edit, reject, undo, rate, acknowledge, refresh, retry) are used only for their built-in meaning.",
+      "example_error": "actions[1].id \"approve\" is reserved; use another id",
+      "where": "both"
+    },
+    {
+      "id": "actions.primary",
+      "types": "*",
+      "rule": "At most one action (including a summary’s do_first) is primary.",
+      "example_error": "two primary actions; make one secondary",
+      "where": "both"
+    },
+    {
+      "id": "actions.destructive",
+      "types": "*",
+      "rule": "A destructive action has confirm; an open action has url; a copy action has value.",
+      "example_error": "actions[0]: destructive needs confirm",
+      "where": "both"
+    },
+    {
+      "id": "times.order",
+      "types": "*",
+      "rule": "expires_at is after as_of; every end is after its start; stale_after is positive.",
+      "example_error": "expires_at is before as_of",
+      "where": "plugin"
+    },
+    {
+      "id": "percent.fraction",
+      "types": "*",
+      "rule": "A percent Quantity or Delta is a fraction (0.12 = 12%). An absolute value over 1.5 is almost always a mistake.",
+      "example_error": "items[0].delta.value 12 with format percent: send 0.12 for 12%",
+      "where": "warn"
+    },
+    {
+      "id": "fallback.absolute",
+      "types": "*",
+      "rule": "fallback_text uses absolute dates and times; relative words only beside an absolute one.",
+      "example_error": "fallback_text says “tomorrow” without a date",
+      "where": "warn"
+    },
+    {
+      "id": "fallback.cap",
+      "types": "*",
+      "rule": "fallback_text is ≤ 2,000 characters (≤ 4,000 for a stack); over the cap it ends “… and N more (in the Hermes app)”.",
+      "example_error": "fallback_text is 2,412 characters",
+      "where": "plugin"
+    },
+    {
+      "id": "secrets",
+      "types": "*",
+      "rule": "No string matches the gateway’s redaction patterns; masked values (card numbers, phone numbers) show at most 4 digits.",
+      "example_error": "details.sections[0].fields[3].value looks like a card number",
+      "where": "plugin"
+    },
+    {
+      "id": "producer",
+      "types": "*",
+      "rule": "producer is set by the plugin from the session; a bot:<handle> icon names the producer; handoff.from.bot is the producer.",
+      "example_error": "icon bot:scout on a widget from Hermes",
+      "where": "plugin"
+    },
+    {
+      "id": "groups",
+      "types": "*",
+      "rule": "In a group session: no private widgets; approval, control and form need for; only the producer may update.",
+      "example_error": "private widget in a group chat",
+      "where": "plugin"
+    },
+    {
+      "id": "icon.allowlist",
+      "types": "*",
+      "rule": "icon and symbol fields name an SF Symbol from the allowlist (payload-contract.md §7) or bot:<handle>.",
+      "example_error": "icon “rocket.fill” isn’t in the allowlist; drawn as the default glyph",
+      "where": "warn"
+    },
+    {
+      "id": "directives",
+      "types": "*",
+      "rule": "At most three directives per reply (a stack counts as one); each id was created or delivered in this chat.",
+      "example_error": "four widgets in one reply; use a stack",
+      "where": "warn"
+    },
+    {
+      "id": "ids.unique",
+      "types": "*",
+      "rule": "Item, option, field, node, step and card ids are unique within their list.",
+      "example_error": "items[4].id “tomatoes” is used twice",
+      "where": "plugin"
+    },
+    {
+      "id": "chart.series",
+      "types": "chart",
+      "rule": "Every series has one value per x value; callout.x is one of the x values; x values parse in their format.",
+      "example_error": "series[1] has 13 values for 14 x values",
+      "where": "plugin"
+    },
+    {
+      "id": "verdict.safety",
+      "types": "verdict",
+      "rule": "With kind safety, there is one criterion per item the person declared (each allergen asked about).",
+      "example_error": "Maya avoids peanuts, tree nuts and sesame; criteria cover 2 of 3",
+      "where": "plugin"
+    },
+    {
+      "id": "meter.zones",
+      "types": "meter",
+      "rule": "Zones are ordered and don’t overlap; target lies within min–max.",
+      "example_error": "zones overlap at 70–75",
+      "where": "plugin"
+    },
+    {
+      "id": "calendar.range",
+      "types": "calendar",
+      "rule": "Every mark’s date lies within start–end; one mark per date.",
+      "example_error": "mark 2026-11-02 is outside 21 Sep – 18 Oct",
+      "where": "plugin"
+    },
+    {
+      "id": "list.counts",
+      "types": "list",
+      "rule": "A group’s count equals its number of rows (or says “of N” when rows are cut).",
+      "example_error": "groups[1].count 3 but 2 rows",
+      "where": "plugin"
+    },
+    {
+      "id": "table.keys",
+      "types": "table",
+      "rule": "Every row’s keys are column keys; the total row covers numeric columns only.",
+      "example_error": "rows[2] has key “chang” that isn’t a column",
+      "where": "plugin"
+    },
+    {
+      "id": "details.emphasis",
+      "types": "details",
+      "rule": "At most one field has emphasis.",
+      "example_error": "two emphasised fields",
+      "where": "plugin"
+    },
+    {
+      "id": "outline.size",
+      "types": "outline",
+      "rule": "At most 60 nodes in all, 4 levels deep.",
+      "example_error": "outline has 74 nodes",
+      "where": "plugin"
+    },
+    {
+      "id": "entity.rating",
+      "types": "entity",
+      "rule": "rating.value ≤ rating.scale.",
+      "example_error": "rating 6 on a scale of 5",
+      "where": "plugin"
+    },
+    {
+      "id": "media.mix",
+      "types": "media",
+      "rule": "Audio isn’t mixed with images or video in one widget.",
+      "example_error": "items mix audio and images",
+      "where": "plugin"
+    },
+    {
+      "id": "code.range",
+      "types": "code",
+      "rule": "range.end ≥ range.start, and the range fits the file.",
+      "example_error": "range 40–12",
+      "where": "plugin"
+    },
+    {
+      "id": "steps.titles",
+      "types": "steps",
+      "rule": "Pipeline step titles are ≤ 16 characters (longer ones make the client draw the vertical layout).",
+      "example_error": "pipeline title “Run the integration tests” is 25 characters",
+      "where": "warn"
+    },
+    {
+      "id": "status.fix",
+      "types": "status",
+      "rule": "fix appears only on warning or critical items.",
+      "example_error": "items[0] is ok but has fix",
+      "where": "plugin"
+    },
+    {
+      "id": "choice.recommended",
+      "types": "choice",
+      "rule": "At most one recommended option; preselected only with select many; times options are in time order.",
+      "example_error": "two recommended options",
+      "where": "plugin"
+    },
+    {
+      "id": "form.secrets",
+      "types": "form",
+      "rule": "No field asks for a password, PIN, key or card number (Hermes has its own secret request).",
+      "example_error": "field “API key” asks for a secret",
+      "where": "plugin"
+    },
+    {
+      "id": "approval.expiry",
+      "types": "approval",
+      "rule": "expires_at is after as_of and, for purchases, before the moment the purchase stops being possible.",
+      "example_error": "expires_at 11:45 is after the 11:40 cancellation window",
+      "where": "warn"
+    },
+    {
+      "id": "summary.emphasis",
+      "types": "summary",
+      "rule": "A point’s emphasis is the start of its text.",
+      "example_error": "points[2].emphasis isn’t the start of its text",
+      "where": "plugin"
+    },
+    {
+      "id": "guide.start",
+      "types": "guide",
+      "rule": "start_at names one of the steps (an unknown id opens at step 1).",
+      "example_error": "start_at “prep” isn’t a step",
+      "where": "plugin"
+    },
+    {
+      "id": "compare.keys",
+      "types": "compare",
+      "rule": "values and scores are keyed by option ids; pick is an option id and, with adjustable, the top weighted total.",
+      "example_error": "criteria[1].values has key “bose” that isn’t an option",
+      "where": "plugin"
+    },
+    {
+      "id": "stack.children",
+      "types": "stack",
+      "rule": "Each child validates against its own type schema; ids are unique; sections name existing children in order; a carousel holds one type; any private child makes the stack private.",
+      "example_error": "children[2] (agenda): events[0].start is required",
+      "where": "both"
+    }
+  ]
+}

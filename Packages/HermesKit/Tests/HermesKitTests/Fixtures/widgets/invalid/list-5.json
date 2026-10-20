@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: (root): 'groups' is a required property",
+  "payload": {
+    "type": "list",
+    "v": 1,
+    "id": "w_bad03l005",
+    "title": "Trailhead launch",
+    "as_of": "2026-10-16T09:00:00-04:00",
+    "fallback_text": "Trailhead launch: price the Pro tier, paywall test.",
+    "layout": "lanes",
+    "items": [
+      {
+        "title": "Price the Pro tier"
+      },
+      {
+        "title": "Paywall test"
+      }
+    ]
+  }
+}

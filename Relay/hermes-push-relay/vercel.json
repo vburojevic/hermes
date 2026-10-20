@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": false,
+  "routes": [
+    {
+      "src": "/(health|v1/.*)",
+      "dest": "https://acrobatic-goat-299.eu-west-1.convex.site/$1",
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": { "key": "x-relay-proxy" },
+          "args": "$RELAY_PROXY_SECRET",
+          "env": ["RELAY_PROXY_SECRET"]
+        }
+      ]
+    }
+  ]
+}

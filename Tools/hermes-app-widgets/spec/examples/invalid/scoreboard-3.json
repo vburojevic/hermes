@@ -1,0 +1,37 @@
+{
+  "$comment": "Must fail validation: significance/reached: True was expected",
+  "payload": {
+    "type": "scoreboard",
+    "v": 1,
+    "id": "w_bad02s003",
+    "title": "Paywall test",
+    "as_of": "2026-10-12T09:00:00-04:00",
+    "fallback_text": "Paywall test: the new paywall won.",
+    "kind": "test",
+    "status": "final",
+    "significance": {
+      "reached": false,
+      "confidence": 0.95,
+      "note": "About 1,800 more visitors needed"
+    },
+    "sides": [
+      {
+        "name": "New paywall",
+        "score": {
+          "value": 0.046,
+          "format": "percent"
+        },
+        "detail": "640 visitors",
+        "winner": true
+      },
+      {
+        "name": "Current paywall",
+        "score": {
+          "value": 0.043,
+          "format": "percent"
+        },
+        "detail": "655 visitors"
+      }
+    ]
+  }
+}

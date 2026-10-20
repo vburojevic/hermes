@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: fields: [] should be non-empty",
+  "payload": {
+    "type": "pass",
+    "v": 1,
+    "id": "w_bad00542",
+    "title": "UA 1187",
+    "as_of": "2026-10-21T08:10:00-04:00",
+    "fallback_text": "UA 1187 boarding pass, no details.",
+    "kind": "boarding",
+    "trip": {
+      "from": {
+        "code": "EWR",
+        "name": "Newark"
+      },
+      "to": {
+        "code": "SFO",
+        "name": "San Francisco"
+      }
+    },
+    "fields": []
+  }
+}

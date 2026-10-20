@@ -1,0 +1,38 @@
+{
+  "type": "sources",
+  "v": 1,
+  "id": "w_xcode27b3",
+  "title": "Why the build fails on Xcode 27 beta 3",
+  "icon": "text.quote",
+  "as_of": "2026-10-17T11:05:00-04:00",
+  "items": [
+    {
+      "id": "relnotes",
+      "title": "Xcode 27 beta 3 release notes: Known issues",
+      "url": "https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes",
+      "kind": "docs",
+      "trust": "primary",
+      "published": "2026-10-14",
+      "used_for": "The bug and Apple’s workaround"
+    },
+    {
+      "id": "forums",
+      "title": "Linker crash with explicit modules in beta 3",
+      "url": "https://developer.apple.com/forums/thread/781204",
+      "kind": "forum",
+      "trust": "secondary",
+      "published": "2026-10-15",
+      "used_for": "Confirmation that others see it"
+    },
+    {
+      "id": "blog",
+      "title": "Swift 6.3 drops @preconcurrency imports",
+      "url": "https://swiftrocks.example.com/swift-6-3-preconcurrency",
+      "kind": "press",
+      "trust": "retracted",
+      "published": "2026-10-13",
+      "note": "Corrected by the author on 15 Oct"
+    }
+  ],
+  "fallback_text": "Sources: [1] Xcode 27 beta 3 release notes: Known issues — developer.apple.com, 14 Oct 2026 (primary source): https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes [2] Linker crash with explicit modules in beta 3 — Apple Developer Forums, 15 Oct 2026 (secondary): https://developer.apple.com/forums/thread/781204 [3] Swift 6.3 drops @preconcurrency imports — retracted by the author on 15 Oct: https://swiftrocks.example.com/swift-6-3-preconcurrency"
+}

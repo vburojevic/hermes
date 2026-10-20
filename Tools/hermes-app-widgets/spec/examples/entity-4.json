@@ -1,0 +1,76 @@
+{
+  "type": "entity",
+  "v": 1,
+  "id": "w_xm6price16",
+  "title": "Sony WH-1000XM6",
+  "subtitle": "Price drop · Northside Audio",
+  "icon": "tag",
+  "as_of": "2026-10-16T08:00:00-04:00",
+  "stale_after": 21600,
+  "kind": "product",
+  "name": "Sony WH-1000XM6",
+  "detail": "Wireless noise-cancelling headphones · black",
+  "price": {
+    "amount": {
+      "value": 349,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "was": {
+      "value": 399,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "change": {
+      "value": -0.125,
+      "format": "percent",
+      "good": "down",
+      "period": "since yesterday"
+    },
+    "history": [
+      399,
+      399,
+      399,
+      389,
+      389,
+      399,
+      399,
+      399,
+      379,
+      379,
+      399,
+      399,
+      399,
+      399,
+      349
+    ],
+    "lowest": {
+      "amount": {
+        "value": 349,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "label": "Lowest in 90 days"
+    }
+  },
+  "rating": {
+    "value": 4.7,
+    "scale": 5,
+    "count": 2140
+  },
+  "url": "https://northsideaudio.example.com/sony-wh-1000xm6",
+  "actions": [
+    {
+      "id": "open_shop",
+      "label": "Open in Shop",
+      "kind": "open",
+      "url": "https://northsideaudio.example.com/sony-wh-1000xm6",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "Northside Audio",
+    "kind": "web"
+  },
+  "fallback_text": "Sony WH-1000XM6 is $349 at Northside Audio, down from $399 yesterday (−12.5%): the lowest price in 90 days. Rated 4.7/5 (2,140 reviews)."
+}

@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: events/0: 'state' is a required property",
+  "payload": {
+    "type": "timeline",
+    "v": 1,
+    "id": "w_bad00041",
+    "title": "Package",
+    "as_of": "2026-10-16T09:14:00-04:00",
+    "fallback_text": "Package from Portland: shipped.",
+    "events": [
+      {
+        "id": "shipped",
+        "time": "2026-10-14T17:40:00-04:00",
+        "title": "Shipped"
+      }
+    ]
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "type": "guide",
+  "v": 1,
+  "id": "w_satay2bowl",
+  "title": "Chicken satay bowl",
+  "subtitle": "25 min · serves 2",
+  "icon": "fork.knife",
+  "as_of": "2026-10-16T18:20:00-04:00",
+  "source": {
+    "name": "Recipe from Green Bowl, adapted",
+    "kind": "web",
+    "url": "https://greenbowl.example.com/recipes/satay-bowl"
+  },
+  "producer": {
+    "name": "Chef Remy",
+    "bot": "chef-remy"
+  },
+  "servings": 2,
+  "needs_kind": "ingredients",
+  "start_at": "simmer",
+  "needs": [
+    {
+      "label": "Chicken thighs",
+      "amount": {
+        "value": 14,
+        "unit": "oz"
+      }
+    },
+    {
+      "label": "Jasmine rice",
+      "amount": {
+        "value": 0.75,
+        "unit": "cup"
+      }
+    },
+    {
+      "label": "Satay sauce",
+      "amount": {
+        "value": 4,
+        "unit": "tbsp"
+      }
+    },
+    {
+      "label": "Coconut milk",
+      "amount": {
+        "value": 0.5,
+        "unit": "cup"
+      }
+    },
+    {
+      "label": "Cucumber",
+      "amount": {
+        "value": 1
+      }
+    },
+    {
+      "label": "Carrot",
+      "amount": {
+        "value": 1
+      }
+    },
+    {
+      "label": "Lime",
+      "amount": {
+        "value": 0.5
+      }
+    },
+    {
+      "label": "Roasted peanuts",
+      "amount": {
+        "value": 1,
+        "unit": "oz"
+      },
+      "note": "leave out for Mia"
+    },
+    {
+      "label": "Salt",
+      "amount": {
+        "value": null,
+        "display": "to taste"
+      },
+      "scales": false
+    }
+  ],
+  "steps": [
+    {
+      "id": "rice",
+      "title": "Cook the rice in 1.5× its volume of water.",
+      "timer": 900
+    },
+    {
+      "id": "simmer",
+      "title": "Simmer the chicken in the satay sauce until it thickens.",
+      "body": "Cut the chicken into strips first. Add the coconut milk if it catches.",
+      "timer": 720,
+      "check": "The sauce coats the back of a spoon."
+    },
+    {
+      "id": "slice",
+      "title": "Slice the cucumber and carrot thinly."
+    },
+    {
+      "id": "lime",
+      "title": "Squeeze the lime over the vegetables and salt them lightly."
+    },
+    {
+      "id": "peanuts",
+      "title": "Chop the peanuts.",
+      "caution": "Mia is allergic: keep her bowl and the board separate."
+    },
+    {
+      "id": "serve",
+      "title": "Rice first, then the chicken, the vegetables and the peanuts on top."
+    }
+  ],
+  "fallback_text": "Chicken satay bowl (25 min, serves 2). You’ll need: 14 oz chicken thighs, ¾ cup jasmine rice, 4 tbsp satay sauce, ½ cup coconut milk, 1 cucumber, 1 carrot, half a lime, 1 oz roasted peanuts (leave out for Mia), salt to taste. 1. Cook the rice in 1.5× its volume of water (15 min). 2. Simmer the chicken in the satay sauce until it thickens (12 min). 3. Slice the cucumber and carrot thinly. 4. Squeeze the lime over the vegetables and salt them. 5. Chop the peanuts; keep Mia’s bowl separate. 6. Rice, chicken, vegetables, peanuts on top."
+}

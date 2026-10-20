@@ -1,0 +1,32 @@
+{
+  "$comment": "Must fail validation: items: [{'label': 'Readiness', 'value': {'value': 82}, 'max': 100}, {'label': 'Sleep', 'value': {'value': 7.2, 'unit': 'h'}, 'target': {'value': 8,",
+  "payload": {
+    "type": "meter",
+    "v": 1,
+    "id": "w_bad02m003",
+    "title": "Readiness",
+    "as_of": "2026-10-16T07:12:00-04:00",
+    "fallback_text": "Readiness 82, sleep 7 h 12.",
+    "style": "arc",
+    "items": [
+      {
+        "label": "Readiness",
+        "value": {
+          "value": 82
+        },
+        "max": 100
+      },
+      {
+        "label": "Sleep",
+        "value": {
+          "value": 7.2,
+          "unit": "h"
+        },
+        "target": {
+          "value": 8,
+          "unit": "h"
+        }
+      }
+    ]
+  }
+}

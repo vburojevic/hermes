@@ -1,0 +1,19 @@
+{
+  "type": "sources",
+  "v": 1,
+  "id": "w_aiquote111",
+  "title": "From the regulation",
+  "icon": "text.quote",
+  "as_of": "2026-10-16T09:41:00-04:00",
+  "items": [
+    {
+      "title": "EU AI Act",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",
+      "kind": "official",
+      "trust": "primary",
+      "locator": "Article 111",
+      "excerpt": "General-purpose AI models placed on the market before 2 August 2025 have until 2 August 2027 to comply."
+    }
+  ],
+  "fallback_text": "From the EU AI Act, Article 111 (primary source): “General-purpose AI models placed on the market before 2 August 2025 have until 2 August 2027 to comply.” https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689"
+}

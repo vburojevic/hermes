@@ -1,0 +1,72 @@
+{
+  "type": "weather",
+  "v": 1,
+  "id": "w_wxnyc1022",
+  "title": "New York",
+  "subtitle": "Thursday",
+  "icon": "location.fill",
+  "as_of": "2026-10-22T10:05:00-04:00",
+  "stale_after": 10800,
+  "refresh": {
+    "mode": "agent"
+  },
+  "place": {
+    "name": "New York",
+    "lat": 40.713,
+    "lon": -74.006,
+    "current": true
+  },
+  "unit": "fahrenheit",
+  "now": {
+    "temp": 58,
+    "feels": 55,
+    "high": 63,
+    "low": 48,
+    "condition": "partly-cloudy"
+  },
+  "hours": [
+    {
+      "at": "2026-10-22T10:00:00-04:00",
+      "temp": 58,
+      "condition": "partly-cloudy"
+    },
+    {
+      "at": "2026-10-22T12:00:00-04:00",
+      "temp": 61,
+      "condition": "clear"
+    },
+    {
+      "at": "2026-10-22T14:00:00-04:00",
+      "temp": 63,
+      "condition": "partly-cloudy"
+    },
+    {
+      "at": "2026-10-22T16:00:00-04:00",
+      "temp": 56,
+      "condition": "rain",
+      "precip_chance": 0.7
+    },
+    {
+      "at": "2026-10-22T18:00:00-04:00",
+      "temp": 52,
+      "condition": "rain",
+      "precip_chance": 0.6
+    },
+    {
+      "at": "2026-10-22T20:00:00-04:00",
+      "temp": 50,
+      "condition": "cloudy",
+      "night": true
+    }
+  ],
+  "tip": {
+    "text": "Rain from 4 PM. Take an umbrella for the walk home.",
+    "symbol": "umbrella.fill"
+  },
+  "source": {
+    "name": "Apple Weather",
+    "kind": "api",
+    "url": "https://weatherkit.apple.com/legal-attribution.html"
+  },
+  "fallback_text": "New York, Thursday: 58°F and partly cloudy (feels 55°), high 63°, low 48°. Rain from 4 PM (70%), 60% at 6 PM. Take an umbrella for the walk home. (Apple Weather, 10:05 AM)"
+}

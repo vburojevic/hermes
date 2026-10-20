@@ -1,0 +1,51 @@
+{
+  "type": "guide",
+  "v": 1,
+  "id": "w_core6rehab",
+  "title": "Core routine",
+  "subtitle": "Rehab · day 12",
+  "icon": "figure.run",
+  "as_of": "2026-10-16T07:30:00-04:00",
+  "sensitivity": "private",
+  "layout": "compact",
+  "start_at": "plank",
+  "steps": [
+    {
+      "id": "breath",
+      "title": "Lie on your back, knees bent, and breathe into your belly for 1 minute.",
+      "timer": 60
+    },
+    {
+      "id": "bridge",
+      "title": "Glute bridge: 10 slow lifts, hold each for 2 seconds."
+    },
+    {
+      "id": "plank",
+      "title": "Hold a plank on your forearms, body in one line.",
+      "timer": 45,
+      "caution": "Stop if your lower back hurts."
+    },
+    {
+      "id": "birddog",
+      "title": "Bird dog: 8 each side, slowly."
+    },
+    {
+      "id": "sideplank",
+      "title": "Side plank on your knees, each side.",
+      "timer": 30
+    },
+    {
+      "id": "deadbug",
+      "title": "Dead bug: 10 slow reps, lower back on the floor."
+    }
+  ],
+  "actions": [
+    {
+      "id": "log",
+      "label": "Log This Session",
+      "kind": "reply",
+      "style": "primary"
+    }
+  ],
+  "fallback_text": "Core routine (rehab, day 12). 1. Belly breathing on your back, 1 minute. 2. Glute bridge, 10 slow lifts. 3. Forearm plank, 45 seconds; stop if your lower back hurts. 4. Bird dog, 8 each side. 5. Side plank on your knees, 30 seconds each side. 6. Dead bug, 10 slow reps. Tell me when you’re done and I’ll log it."
+}

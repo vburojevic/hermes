@@ -1,0 +1,25 @@
+{
+  "$comment": "Must fail validation: events: Too many items match the given schema (expected at most 1)",
+  "payload": {
+    "type": "timeline",
+    "v": 1,
+    "id": "w_bad00049",
+    "title": "Package",
+    "as_of": "2026-10-16T09:14:00-04:00",
+    "fallback_text": "Package from Portland: in Brooklyn and out for delivery.",
+    "events": [
+      {
+        "id": "brooklyn",
+        "time": "2026-10-16T07:02:00-04:00",
+        "title": "In Brooklyn",
+        "state": "current"
+      },
+      {
+        "id": "out",
+        "time": "2026-10-16T09:12:00-04:00",
+        "title": "Out for delivery",
+        "state": "current"
+      }
+    ]
+  }
+}

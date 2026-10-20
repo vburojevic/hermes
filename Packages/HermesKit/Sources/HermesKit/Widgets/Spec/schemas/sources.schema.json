@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/sources.schema.json",
+  "title": "sources",
+  "description": "The references behind an answer, numbered to match [1] markers in the prose and tagged with how far to trust them; one source with an excerpt renders as a quote.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "layout": {
+            "const": "quote"
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "required": [
+                "excerpt"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "sources"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "The page, document or post title as published.",
+            "minLength": 1
+          },
+          "url": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Url"
+              }
+            ],
+            "description": "Where it is. The row shows the domain taken from this URL by the client (never from the payload’s words) and opens it after showing the domain."
+          },
+          "site": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The publisher, when there’s no URL or the domain doesn’t say who it is: “EU Official Journal”, “Financial Times (print)”."
+          },
+          "kind": {
+            "enum": [
+              "official",
+              "research",
+              "docs",
+              "data",
+              "press",
+              "forum",
+              "social",
+              "other"
+            ],
+            "description": "What kind of source it is. Read by VoiceOver, and a guide to `trust`: official, research, docs and data are usually primary; press secondary; forum and social unverified until something primary confirms them."
+          },
+          "trust": {
+            "enum": [
+              "primary",
+              "secondary",
+              "unverified",
+              "retracted"
+            ],
+            "description": "How far to trust it, as the row’s tag: primary (“Primary source”, green), secondary (grey), unverified (dashed outline with a question mark, never green), retracted (red; the title turns secondary). Required."
+          },
+          "published": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Date"
+              }
+            ],
+            "description": "When it was published (or last updated). Shown after the domain: “14 Oct”."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Replaces the domain line when what the source is needs saying: “A post on X, not confirmed”. The domain still shows before the link opens."
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "The passage the answer relies on, quoted exactly, never paraphrased. One source with an excerpt renders as a quote."
+          },
+          "locator": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Where in the source: “Article 111”, “p. 14”, “at 12:40”. Part of the quote’s attribution."
+          },
+          "used_for": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "What the answer took from it: “The 2027 deadline”. A caption under the row."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Up to two row actions, such as Check This on an unverified source. They send `{item: <id>}`; `id` is then required."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "trust"
+        ],
+        "description": "One reference.",
+        "dependentRequired": {
+          "actions": [
+            "id"
+          ]
+        }
+      },
+      "minItems": 0,
+      "maxItems": 20,
+      "description": "The sources, in the order the reply numbers them: [1] is the first. An empty list only to say the answer has none."
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "list",
+        "quote"
+      ],
+      "description": "auto: one item with an excerpt renders as a quote, anything else as a list. quote needs exactly one item with an excerpt.",
+      "default": "auto"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

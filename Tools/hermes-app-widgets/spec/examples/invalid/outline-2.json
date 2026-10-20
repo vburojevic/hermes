@@ -1,0 +1,17 @@
+{
+  "$comment": "Must fail validation: nodes/0/state: 'probably done' is not one of ['waiting', 'running', 'done', 'failed', 'skipped', 'blocked', 'unknown']",
+  "payload": {
+    "type": "outline",
+    "v": 1,
+    "id": "w_bad03o002",
+    "title": "Plan",
+    "as_of": "2026-10-16T15:20:00-04:00",
+    "fallback_text": "A plan with one step.",
+    "nodes": [
+      {
+        "label": "Swap production",
+        "state": "probably done"
+      }
+    ]
+  }
+}

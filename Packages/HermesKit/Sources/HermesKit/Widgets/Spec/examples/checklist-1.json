@@ -1,0 +1,93 @@
+{
+  "type": "checklist",
+  "v": 1,
+  "id": "w_shop2026w42",
+  "title": "Shopping for the week",
+  "icon": "cart.fill",
+  "as_of": "2026-10-16T17:20:00-04:00",
+  "rev": 3,
+  "groups": [
+    {
+      "id": "produce",
+      "title": "Produce"
+    },
+    {
+      "id": "dairy",
+      "title": "Dairy"
+    },
+    {
+      "id": "bakery",
+      "title": "Bakery"
+    },
+    {
+      "id": "pantry",
+      "title": "Pantry"
+    }
+  ],
+  "items": [
+    {
+      "id": "tomatoes",
+      "group": "produce",
+      "label": "Tomatoes",
+      "detail": "2 lb",
+      "checked": true
+    },
+    {
+      "id": "spinach",
+      "group": "produce",
+      "label": "Spinach",
+      "detail": "8 oz",
+      "checked": true
+    },
+    {
+      "id": "lemons",
+      "group": "produce",
+      "label": "Lemons",
+      "detail": "3"
+    },
+    {
+      "id": "coriander",
+      "group": "produce",
+      "label": "Cilantro",
+      "detail": "1 bunch"
+    },
+    {
+      "id": "yoghurt",
+      "group": "dairy",
+      "label": "Greek yogurt",
+      "detail": "32 oz",
+      "checked": true
+    },
+    {
+      "id": "feta",
+      "group": "dairy",
+      "label": "Feta",
+      "detail": "8 oz"
+    },
+    {
+      "id": "oatmilk",
+      "group": "dairy",
+      "label": "Oat milk",
+      "detail": "Half gallon"
+    },
+    {
+      "id": "sourdough",
+      "group": "bakery",
+      "label": "Sourdough loaf",
+      "detail": "1",
+      "checked": true
+    },
+    {
+      "id": "chickpeas",
+      "group": "pantry",
+      "label": "Chickpeas",
+      "detail": "2 cans"
+    }
+  ],
+  "empty_text": "Nothing on the list. Add something by asking.",
+  "source": {
+    "name": "This week’s meal plan",
+    "kind": "agent"
+  },
+  "fallback_text": "Shopping for the week (4 of 9 done). Produce: [x] Tomatoes, 2 lb; [x] Spinach, 8 oz; [ ] Lemons, 3; [ ] Cilantro, 1 bunch. Dairy: [x] Greek yogurt, 32 oz; [ ] Feta, 8 oz; [ ] Oat milk, half gallon. Bakery: [x] Sourdough loaf. Pantry: [ ] Chickpeas, 2 cans."
+}

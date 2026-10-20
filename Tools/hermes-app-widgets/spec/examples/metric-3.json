@@ -1,0 +1,21 @@
+{
+  "type": "metric",
+  "v": 1,
+  "id": "w_board412",
+  "title": "UA 1187 to San Francisco",
+  "icon": "airplane.departure",
+  "state": "ok",
+  "state_label": "On time",
+  "as_of": "2026-10-21T10:13:00-04:00",
+  "items": [
+    {
+      "label": "to boarding",
+      "value": {
+        "value": "2026-10-21T10:55:00-04:00",
+        "format": "countdown"
+      },
+      "note": "Gate C112 closes at 10:55 AM · a 9-minute walk from security"
+    }
+  ],
+  "fallback_text": "UA 1187 to San Francisco is on time. Boarding at gate C112 closes at 10:55 AM (in 42 minutes); it’s a 9-minute walk from security."
+}

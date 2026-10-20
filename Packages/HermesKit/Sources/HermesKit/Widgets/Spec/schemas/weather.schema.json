@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/weather.schema.json",
+  "title": "weather",
+  "description": "The weather for one place: now, the next hours with the chance of rain, the days ahead on a shared range scale, and one plain-language tip.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "now"
+          ]
+        },
+        {
+          "required": [
+            "hours"
+          ]
+        },
+        {
+          "required": [
+            "days"
+          ]
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {
+          "layout": {
+            "const": "compact"
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "now"
+            ]
+          },
+          {
+            "required": [
+              "days"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "weather"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "place": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "The place as people say it: New York, Lisbon, “Home”.",
+          "minLength": 1
+        },
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "current": {
+          "type": "boolean",
+          "description": "It’s the device’s current location: VoiceOver says so, and the default header glyph is the location arrow (location.fill) instead of a pin."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "description": "Where the forecast is for."
+    },
+    "unit": {
+      "enum": [
+        "celsius",
+        "fahrenheit"
+      ],
+      "description": "The temperature unit every temperature is in. The client shows ° alone and VoiceOver says the unit. Required: 14 means nothing without it."
+    },
+    "now": {
+      "type": "object",
+      "properties": {
+        "temp": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Degrees in `unit`. null when unknown: shown as —, never 0."
+        },
+        "feels": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Feels like, in `unit`. null when unknown: shown as —, never 0."
+        },
+        "high": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Today’s high. null when unknown: shown as —, never 0."
+        },
+        "low": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Today’s low. null when unknown: shown as —, never 0."
+        },
+        "condition": {
+          "enum": [
+            "clear",
+            "mostly-clear",
+            "partly-cloudy",
+            "mostly-cloudy",
+            "cloudy",
+            "fog",
+            "haze",
+            "smoke",
+            "dust",
+            "windy",
+            "drizzle",
+            "rain",
+            "heavy-rain",
+            "showers",
+            "thunderstorms",
+            "sleet",
+            "freezing-rain",
+            "hail",
+            "flurries",
+            "snow",
+            "heavy-snow",
+            "blizzard"
+          ],
+          "description": "The condition. The client draws its SF Symbol (monochrome; only precipitation glyphs are blue) and says it in words in the reader’s language. Omit when unknown: the glyph slot shows —."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "The condition in words when the default isn’t right: “Light rain, clearing”."
+        },
+        "night": {
+          "type": "boolean",
+          "description": "Draw the night glyph (moon) for clear and partly cloudy skies."
+        },
+        "precip_chance": {
+          "type": "number",
+          "description": "Chance of precipitation, 0–1 (0.7 = 70%). Shown in blue under the glyph from 0.3 up; lower chances stay quiet. Omit when unknown, never 0.",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "temp"
+      ],
+      "description": "Conditions now: the big temperature, the condition and feels-like, and today’s high and low trailing."
+    },
+    "hours": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "The hour. Shown in the place’s own offset (“16”), the first as “Now” when it’s the current hour."
+          },
+          "temp": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Degrees in `unit`. null when unknown: shown as —, never 0."
+          },
+          "condition": {
+            "enum": [
+              "clear",
+              "mostly-clear",
+              "partly-cloudy",
+              "mostly-cloudy",
+              "cloudy",
+              "fog",
+              "haze",
+              "smoke",
+              "dust",
+              "windy",
+              "drizzle",
+              "rain",
+              "heavy-rain",
+              "showers",
+              "thunderstorms",
+              "sleet",
+              "freezing-rain",
+              "hail",
+              "flurries",
+              "snow",
+              "heavy-snow",
+              "blizzard"
+            ],
+            "description": "The condition. The client draws its SF Symbol (monochrome; only precipitation glyphs are blue) and says it in words in the reader’s language. Omit when unknown: the glyph slot shows —."
+          },
+          "night": {
+            "type": "boolean"
+          },
+          "precip_chance": {
+            "type": "number",
+            "description": "Chance of precipitation, 0–1 (0.7 = 70%). Shown in blue under the glyph from 0.3 up; lower chances stay quiet. Omit when unknown, never 0.",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "at",
+          "temp"
+        ],
+        "description": "One hour in the strip."
+      },
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "The next hours, in order. The client shows as many as fit and scrolls the rest sideways."
+    },
+    "days": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Date"
+              }
+            ],
+            "description": "The day, in the place’s calendar. “Today”, then short weekday names."
+          },
+          "low": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Degrees in `unit`. null when unknown: shown as —, never 0."
+          },
+          "high": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Degrees in `unit`. null when unknown: shown as —, never 0."
+          },
+          "condition": {
+            "enum": [
+              "clear",
+              "mostly-clear",
+              "partly-cloudy",
+              "mostly-cloudy",
+              "cloudy",
+              "fog",
+              "haze",
+              "smoke",
+              "dust",
+              "windy",
+              "drizzle",
+              "rain",
+              "heavy-rain",
+              "showers",
+              "thunderstorms",
+              "sleet",
+              "freezing-rain",
+              "hail",
+              "flurries",
+              "snow",
+              "heavy-snow",
+              "blizzard"
+            ],
+            "description": "The condition. The client draws its SF Symbol (monochrome; only precipitation glyphs are blue) and says it in words in the reader’s language. Omit when unknown: the glyph slot shows —."
+          },
+          "precip_chance": {
+            "type": "number",
+            "description": "Chance of precipitation, 0–1 (0.7 = 70%). Shown in blue under the glyph from 0.3 up; lower chances stay quiet. Omit when unknown, never 0.",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "date",
+          "low",
+          "high"
+        ],
+        "description": "One day: low, a range bar, high."
+      },
+      "minItems": 1,
+      "maxItems": 10,
+      "description": "The days ahead, starting today or the first day of a trip."
+    },
+    "tip": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "One line that turns the forecast into a decision: “Rain from 4 PM. Take an umbrella for the walk home.”",
+          "minLength": 1
+        },
+        "symbol": {
+          "$ref": "common.schema.json#/$defs/Symbol"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "description": "The tip. Its glyph is blue only when it’s about precipitation (umbrella, raindrop)."
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "description": "The state colour, glyph and word of the banner."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "As issued, in plain words: “Yellow warning: thunderstorms”.",
+            "minLength": 1
+          },
+          "issuer": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Who issued it: Environment Canada, Met Office, National Weather Service.",
+            "minLength": 1
+          },
+          "from": {
+            "$ref": "common.schema.json#/$defs/Time"
+          },
+          "until": {
+            "$ref": "common.schema.json#/$defs/Time"
+          },
+          "url": {
+            "$ref": "common.schema.json#/$defs/Url"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "title",
+          "issuer"
+        ],
+        "description": "An official weather warning."
+      },
+      "maxItems": 3,
+      "description": "Official warnings, most severe first. The first is the banner; more show as “+1 more”."
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "compact"
+      ],
+      "description": "auto: now and hours when sent, days under them. compact: one line: the glyph, now’s temperature (or the first day’s high), then the first alert with its state glyph when there is one, otherwise the tip.",
+      "default": "auto"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "place",
+    "unit"
+  ],
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,14 @@
+{
+  "$comment": "Must fail validation: (root): 'rating' is a required property",
+  "payload": {
+    "type": "entity",
+    "v": 1,
+    "id": "w_bad00053",
+    "title": "New review",
+    "as_of": "2026-10-16T08:10:00-04:00",
+    "fallback_text": "New review of Trailhead: lost my whole list.",
+    "kind": "review",
+    "name": "Lost my whole list after the update",
+    "body": "I had 40 trails in my Japan list and now it shows two."
+  }
+}

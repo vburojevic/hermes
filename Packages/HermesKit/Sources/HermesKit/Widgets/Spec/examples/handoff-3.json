@@ -1,0 +1,43 @@
+{
+  "type": "handoff",
+  "v": 1,
+  "id": "w_handopsnas",
+  "title": "Handed off",
+  "icon": "person.2.fill",
+  "state": "warning",
+  "state_label": "Declined",
+  "as_of": "2026-10-16T21:06:00-04:00",
+  "producer": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "from": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "to": {
+    "name": "Ops",
+    "bot": "ops"
+  },
+  "task": {
+    "title": "to restart the backup job on the NAS",
+    "context": "The 03:00 backup failed twice with “disk busy”. Restart the job once; don’t reboot the NAS."
+  },
+  "status": {
+    "state": "declined",
+    "since": "2026-10-16T21:05:00-04:00",
+    "reason": "No SSH access to the NAS from this gateway. The key was removed on 2 Oct."
+  },
+  "chat": {
+    "session": "20261016_210400_0be9d2"
+  },
+  "actions": [
+    {
+      "id": "do_it_here",
+      "label": "Do It Here",
+      "kind": "reply",
+      "style": "secondary"
+    }
+  ],
+  "fallback_text": "Hermes asked Ops to restart the backup job on the NAS. Ops declined: no SSH access to the NAS from this gateway (the key was removed on 2 Oct). Reply “do it here” and Hermes will try from this chat."
+}

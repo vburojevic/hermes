@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: steps: [{'id': 'boil', 'title': 'Boil the egg for 7 minutes.', 'timer': 420}] is too short",
+  "payload": {
+    "type": "guide",
+    "v": 1,
+    "id": "w_bad07g001",
+    "title": "Boil an egg",
+    "as_of": "2026-10-16T08:00:00-04:00",
+    "fallback_text": "Boil the egg for 7 minutes.",
+    "steps": [
+      {
+        "id": "boil",
+        "title": "Boil the egg for 7 minutes.",
+        "timer": 420
+      }
+    ]
+  }
+}

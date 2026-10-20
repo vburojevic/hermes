@@ -1,0 +1,17 @@
+{
+  "$comment": "Must fail validation: items/0: 'id' is a required property",
+  "payload": {
+    "type": "checklist",
+    "v": 1,
+    "id": "w_bad03c001",
+    "title": "Shopping",
+    "as_of": "2026-10-16T17:20:00-04:00",
+    "fallback_text": "Shopping: tomatoes.",
+    "items": [
+      {
+        "label": "Tomatoes",
+        "checked": false
+      }
+    ]
+  }
+}

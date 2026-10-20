@@ -1,0 +1,15 @@
+{
+  "$comment": "Must fail validation: (root): {'type': 'agenda', 'v': 1, 'id': 'w_bad00051', 'title': 'Today', 'as_of': '2026-10-16T10:42:00-04:00', 'fallback_text': 'Today: nothing plan",
+  "payload": {
+    "type": "agenda",
+    "v": 1,
+    "id": "w_bad00051",
+    "title": "Today",
+    "as_of": "2026-10-16T10:42:00-04:00",
+    "fallback_text": "Today: nothing planned.",
+    "view": "day",
+    "date": "2026-10-16",
+    "span": 7,
+    "events": []
+  }
+}

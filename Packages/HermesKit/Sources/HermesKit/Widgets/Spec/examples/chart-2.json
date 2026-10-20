@@ -1,0 +1,71 @@
+{
+  "type": "chart",
+  "v": 1,
+  "id": "w_installs7d",
+  "title": "Installs",
+  "subtitle": "Trailhead · last 7 days",
+  "icon": "chart.bar.fill",
+  "as_of": "2026-10-15T09:41:00-04:00",
+  "stale_after": 86400,
+  "refresh": {
+    "mode": "agent"
+  },
+  "summary": "Installs grew through the week, to 1,204 on Wednesday, the highest day.",
+  "kind": "bar",
+  "headline": {
+    "value": {
+      "value": 6886
+    },
+    "label": "installs this week",
+    "delta": {
+      "value": 0.09,
+      "format": "percent",
+      "good": "up",
+      "period": "vs last week"
+    }
+  },
+  "x": {
+    "kind": "label",
+    "values": [
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
+      "Mon",
+      "Tue",
+      "Wed"
+    ]
+  },
+  "y": {
+    "format": "integer"
+  },
+  "series": [
+    {
+      "id": "installs",
+      "label": "Installs",
+      "values": [
+        870,
+        945,
+        910,
+        990,
+        960,
+        1007,
+        1204
+      ]
+    }
+  ],
+  "callout": {
+    "x": "Wed"
+  },
+  "actions": [
+    {
+      "id": "compare_month",
+      "label": "Compare With Last Month"
+    }
+  ],
+  "source": {
+    "name": "App Store Connect",
+    "kind": "api"
+  },
+  "fallback_text": "Trailhead installs, last 7 days: 6,886 (+9% vs last week). Thu 870, Fri 945, Sat 910, Sun 990, Mon 960, Tue 1,007, Wed 1,204 (the highest)."
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/media.schema.json",
+  "title": "media",
+  "description": "Images, a video or a voice note in the reply: one item large with its caption, a grid or carousel of up to twelve, or an audio player with a waveform.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "media"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "media": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Media"
+              }
+            ],
+            "description": "The file: `alt` is required. For video, `thumb` is the poster and `duration` its length; for audio, `duration`."
+          },
+          "caption": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Shown under the item: what it is and why it’s here. “Chicken satay bowl, Green Bowl. Photo from their menu.”"
+          },
+          "credit": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Where it comes from when it isn’t the person’s: “Photo: StreetEasy”, “© Green Bowl”."
+          },
+          "at": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "When it was taken or recorded."
+          },
+          "waveform": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "minItems": 16,
+            "maxItems": 120,
+            "description": "For audio: amplitude samples 0–1, evenly spaced, drawn as bars that fill as it plays. Without it the client draws a plain bar, never a made-up wave."
+          },
+          "transcript": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "For audio and video: what is said, as text under the player (folded after four lines)."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "media"
+        ],
+        "description": "One image, video or audio file with its caption."
+      },
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "The media, in the order to show. Images and videos can mix; audio items are shown as players, one under another, and don’t mix with images."
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "single",
+        "grid",
+        "carousel"
+      ],
+      "description": "auto: one item → single, two or more → grid, audio → players. carousel: one at a time with page dots and a caption per item.",
+      "default": "auto"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

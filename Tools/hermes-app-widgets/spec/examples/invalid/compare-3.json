@@ -1,0 +1,38 @@
+{
+  "$comment": "Must fail validation: (root): 'decided_by' is a dependency of 'pick'",
+  "payload": {
+    "type": "compare",
+    "v": 1,
+    "id": "w_bad08010",
+    "title": "Headphones",
+    "as_of": "2026-10-16T09:12:00-04:00",
+    "fallback_text": "Sony XM6 is the pick.",
+    "pick": "sony-xm6",
+    "options": [
+      {
+        "id": "sony-xm6",
+        "name": "Sony XM6"
+      },
+      {
+        "id": "bose-qc",
+        "name": "Bose QC Ultra"
+      }
+    ],
+    "criteria": [
+      {
+        "id": "battery",
+        "label": "Battery",
+        "values": {
+          "sony-xm6": {
+            "value": 40,
+            "unit": "h"
+          },
+          "bose-qc": {
+            "value": 24,
+            "unit": "h"
+          }
+        }
+      }
+    ]
+  }
+}

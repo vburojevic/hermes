@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/list.input.schema.json",
+  "title": "list (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Rows of things, each with a leading visual, a title, a subtitle and a trailing value or tag: plain, ranked, grouped into a digest, or in lanes.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "layout": {
+            "const": "ranked"
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "items": {
+              "required": [
+                "rank"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "layout": {
+            "const": "lanes"
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "required": [
+          "groups"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "list"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "leading": {
+            "$ref": "../common.schema.json#/$defs/Leading"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The row title: a ticket subject, a keyword, an address, a finding.",
+            "minLength": 1
+          },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the title: who, where, which app. “Marta K. · Trailhead Pro”."
+          },
+          "at": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "When it happened. The client appends a relative time to the subtitle (“2 h ago”) and keeps it current."
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "The trailing value: a price, a count, a duration."
+          },
+          "previous": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "The value before, shown small and struck through under value (a price drop: $1,240,000 over $1,198,000)."
+          },
+          "delta": {
+            "$ref": "../common.schema.json#/$defs/Delta"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "../common.schema.json#/$defs/Tag"
+            },
+            "maxItems": 2,
+            "description": "Up to two trailing tags: Urgent, Waiting on you, Gone, a severity."
+          },
+          "rank": {
+            "type": "integer",
+            "description": "Position for layout: ranked, drawn first in the row.",
+            "minimum": 1
+          },
+          "movement": {
+            "type": "object",
+            "properties": {
+              "previous": {
+                "type": "integer",
+                "description": "The rank last time. The client shows the change (▲ 4 for 7 → 3) and adds “was 7” to the subtitle.",
+                "minimum": 1
+              },
+              "new": {
+                "type": "boolean",
+                "description": "New in the ranking since last time: a New badge instead of an arrow."
+              },
+              "good": {
+                "enum": [
+                  "up",
+                  "down",
+                  "neutral"
+                ],
+                "description": "Which way is good. up (towards 1) for search ranks and charts; down for a list of worst offenders (slowest endpoints). The arrow’s direction comes from the ranks, its colour from good.",
+                "default": "up"
+              }
+            },
+            "additionalProperties": false,
+            "description": "How a ranked row moved. Needs previous or new.",
+            "anyOf": [
+              {
+                "required": [
+                  "previous"
+                ]
+              },
+              {
+                "required": [
+                  "new"
+                ]
+              }
+            ]
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/State"
+              }
+            ],
+            "description": "The row’s own state when it isn’t ok: a state glyph at the trailing edge when no tag says it. unverified for a row with unknown values."
+          },
+          "group": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Id"
+              }
+            ],
+            "description": "The id of the group the row belongs to. Rows without a group go in an untitled first group."
+          },
+          "url": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Url"
+              }
+            ],
+            "description": "Tapping the row opens it after showing where it goes: a ticket, a listing, hermes-file:src/Sync.swift#L42 for a finding."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "../common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Row actions (≤ 2). They send their id with {item: <item id>}, so the item needs an id."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "description": "One row.",
+        "if": {
+          "required": [
+            "actions"
+          ]
+        },
+        "then": {
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "minItems": 0,
+      "maxItems": 50,
+      "description": "The rows, in the order to show them: problems first, then by importance. Send the whole set up to 50; the client shows the first ones."
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "The group heading: Price drops, New, Gone, To do.",
+            "minLength": 1
+          },
+          "count": {
+            "type": "integer",
+            "description": "The group’s full size at the source when it is more than the rows sent. Otherwise the client counts the rows.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title"
+        ],
+        "description": "A titled group of rows (a section; a lane in layout: lanes)."
+      },
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "Group headings in order. Rows refer to them with group."
+    },
+    "counts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "What is counted, after the number: “new”, “price drops”, “gone”.",
+            "minLength": 1
+          },
+          "value": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "enum": [
+              "neutral",
+              "ok",
+              "info",
+              "warning",
+              "critical",
+              "unverified",
+              "new",
+              "removed"
+            ],
+            "description": "The chip’s look: new is ink, ok green, neutral grey.",
+            "default": "neutral"
+          },
+          "group": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Id"
+              }
+            ],
+            "description": "The group this chip stands for. With filter: true, tapping the chip shows only that group. The tool checks that value matches the group’s size."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ],
+        "description": "One chip in the counts line: “3 new”."
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "The counts line above the rows."
+    },
+    "layout": {
+      "enum": [
+        "rows",
+        "ranked",
+        "lanes"
+      ],
+      "description": "rows: the default. ranked: rank first, movement trailing (every row needs rank). lanes: groups side by side on wide screens, grouped rows on iPhone.",
+      "default": "rows"
+    },
+    "filter": {
+      "type": "boolean",
+      "description": "Local filter chips (from counts, else from groups and tags). Filtering never messages the agent.",
+      "default": false
+    },
+    "noun": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "The word after the count in the header meta and Show all: “open” → “14 open”, “Show all 14 open”."
+    },
+    "total": {
+      "type": "integer",
+      "description": "How many exist at the source when it is more than the rows sent (212 search results, 50 sent). The meta says “50 of 212”.",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

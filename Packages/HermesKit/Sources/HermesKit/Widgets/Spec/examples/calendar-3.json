@@ -1,0 +1,186 @@
+{
+  "type": "calendar",
+  "v": 1,
+  "id": "w_commits5w",
+  "title": "Coding activity",
+  "subtitle": "Last 5 weeks",
+  "icon": "chevron.left.forwardslash.chevron.right",
+  "as_of": "2026-10-16T18:00:00-04:00",
+  "view": "weeks",
+  "style": "intensity",
+  "start": "2026-09-14",
+  "end": "2026-10-18",
+  "week_start": "monday",
+  "marks": [
+    {
+      "date": "2026-09-14",
+      "level": 0.06,
+      "note": "1 commit"
+    },
+    {
+      "date": "2026-09-15",
+      "level": 0.38,
+      "note": "6 commits"
+    },
+    {
+      "date": "2026-09-16",
+      "level": 0.25,
+      "note": "4 commits"
+    },
+    {
+      "date": "2026-09-17",
+      "level": 0.56,
+      "note": "9 commits"
+    },
+    {
+      "date": "2026-09-18",
+      "level": 0.88,
+      "note": "14 commits"
+    },
+    {
+      "date": "2026-09-19",
+      "level": 0.38,
+      "note": "6 commits"
+    },
+    {
+      "date": "2026-09-20",
+      "level": 0.0,
+      "note": "No commits"
+    },
+    {
+      "date": "2026-09-21",
+      "level": 0.19,
+      "note": "3 commits"
+    },
+    {
+      "date": "2026-09-22",
+      "level": 0.62,
+      "note": "10 commits"
+    },
+    {
+      "date": "2026-09-23",
+      "level": 0.81,
+      "note": "13 commits"
+    },
+    {
+      "date": "2026-09-24",
+      "level": 0.94,
+      "note": "15 commits"
+    },
+    {
+      "date": "2026-09-25",
+      "level": 0.44,
+      "note": "7 commits"
+    },
+    {
+      "date": "2026-09-26",
+      "level": 0.25,
+      "note": "4 commits"
+    },
+    {
+      "date": "2026-09-27",
+      "level": 0.06,
+      "note": "1 commit"
+    },
+    {
+      "date": "2026-09-28",
+      "level": 0.44,
+      "note": "7 commits"
+    },
+    {
+      "date": "2026-09-29",
+      "level": 1.0,
+      "note": "16 commits"
+    },
+    {
+      "date": "2026-09-30",
+      "level": 0.69,
+      "note": "11 commits"
+    },
+    {
+      "date": "2026-10-01",
+      "level": 0.88,
+      "note": "14 commits"
+    },
+    {
+      "date": "2026-10-02",
+      "level": 0.94,
+      "note": "15 commits"
+    },
+    {
+      "date": "2026-10-03",
+      "level": 0.62,
+      "note": "10 commits"
+    },
+    {
+      "date": "2026-10-04",
+      "level": 0.19,
+      "note": "3 commits"
+    },
+    {
+      "date": "2026-10-05",
+      "level": 0.0,
+      "note": "No commits"
+    },
+    {
+      "date": "2026-10-06",
+      "level": 0.25,
+      "note": "4 commits"
+    },
+    {
+      "date": "2026-10-07",
+      "level": 0.44,
+      "note": "7 commits"
+    },
+    {
+      "date": "2026-10-08",
+      "level": 0.62,
+      "note": "10 commits"
+    },
+    {
+      "date": "2026-10-09",
+      "level": 1.0,
+      "note": "16 commits"
+    },
+    {
+      "date": "2026-10-10",
+      "level": 0.38,
+      "note": "6 commits"
+    },
+    {
+      "date": "2026-10-11",
+      "level": 0.19,
+      "note": "3 commits"
+    },
+    {
+      "date": "2026-10-12",
+      "level": 0.69,
+      "note": "11 commits"
+    },
+    {
+      "date": "2026-10-13",
+      "level": 0.94,
+      "note": "15 commits"
+    },
+    {
+      "date": "2026-10-14",
+      "level": 1.0,
+      "note": "16 commits"
+    },
+    {
+      "date": "2026-10-15",
+      "level": 0.44,
+      "note": "7 commits"
+    },
+    {
+      "date": "2026-10-16",
+      "level": 0.25,
+      "note": "4 commits"
+    }
+  ],
+  "source": {
+    "name": "git log, 4 repositories",
+    "kind": "tool"
+  },
+  "fallback_text": "Coding activity, last 5 weeks: 268 commits. Busiest days 29 September, 9 October and 14 October (16 commits each); no commits on 20 September and 5 October."
+}

@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: sides: [{'name': 'Kansas City Chiefs', 'score': {'value': 24}}] is too short",
+  "payload": {
+    "type": "scoreboard",
+    "v": 1,
+    "id": "w_bad02s001",
+    "title": "Chiefs",
+    "as_of": "2026-10-17T20:28:00-04:00",
+    "fallback_text": "Kansas City Chiefs 24, live.",
+    "status": "live",
+    "sides": [
+      {
+        "name": "Kansas City Chiefs",
+        "score": {
+          "value": 24
+        }
+      }
+    ]
+  }
+}

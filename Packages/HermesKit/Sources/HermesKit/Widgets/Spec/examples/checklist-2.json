@@ -1,0 +1,64 @@
+{
+  "type": "checklist",
+  "v": 1,
+  "id": "w_meds20261016",
+  "rev": 4,
+  "title": "Today’s medication",
+  "icon": "pills.fill",
+  "as_of": "2026-10-16T08:05:00-04:00",
+  "stale_after": 21600,
+  "sensitivity": "private",
+  "progress": "count",
+  "items": [
+    {
+      "id": "metformin_am",
+      "label": "Metformin 500 mg",
+      "detail": "08:00 with breakfast",
+      "checked": true,
+      "tags": [
+        {
+          "label": "Taken 08:04",
+          "state": "ok"
+        }
+      ],
+      "evidence": {
+        "kind": "data",
+        "label": "Logged in Apple Health",
+        "at": "2026-10-16T08:04:00-04:00"
+      }
+    },
+    {
+      "id": "vitamin_d",
+      "label": "Vitamin D 1000 IU",
+      "detail": "08:00",
+      "checked": true,
+      "tags": [
+        {
+          "label": "Taken 08:04",
+          "state": "ok"
+        }
+      ]
+    },
+    {
+      "id": "ibuprofen",
+      "label": "Ibuprofen 400 mg",
+      "detail": "13:00, if the knee hurts",
+      "tags": [
+        {
+          "label": "Optional"
+        }
+      ]
+    },
+    {
+      "id": "metformin_pm",
+      "label": "Metformin 500 mg",
+      "detail": "20:00 with dinner",
+      "tags": [
+        {
+          "label": "Tonight"
+        }
+      ]
+    }
+  ],
+  "fallback_text": "Today’s medication (2 of 4): [x] Metformin 500 mg, 08:00 with breakfast — taken 08:04; [x] Vitamin D 1000 IU, 08:00 — taken 08:04; [ ] Ibuprofen 400 mg, 13:00 if the knee hurts (optional); [ ] Metformin 500 mg, 20:00 with dinner."
+}

@@ -1,0 +1,75 @@
+{
+  "type": "agenda",
+  "v": 1,
+  "id": "w_agendaWork19",
+  "title": "Monday at work",
+  "subtitle": "Monday, Oct 19 · work calendar only",
+  "icon": "calendar",
+  "state": "warning",
+  "state_label": "1 conflict",
+  "as_of": "2026-10-16T18:05:00-04:00",
+  "view": "day",
+  "date": "2026-10-19",
+  "complete": false,
+  "banner": {
+    "state": "info",
+    "text": "Only your work calendar: Hermes can’t see your personal one, so free time isn’t shown."
+  },
+  "events": [
+    {
+      "id": "retro",
+      "start": "2026-10-19T10:00:00-04:00",
+      "end": "2026-10-19T11:00:00-04:00",
+      "title": "Sprint retro",
+      "people": [
+        {
+          "name": "Ada"
+        },
+        {
+          "name": "Leo"
+        },
+        {
+          "name": "Nina"
+        }
+      ]
+    },
+    {
+      "id": "vendor",
+      "start": "2026-10-19T10:30:00-04:00",
+      "end": "2026-10-19T11:00:00-04:00",
+      "title": "RevenueCat call",
+      "state": "invited",
+      "place": {
+        "name": "Google Meet",
+        "url": "https://meet.google.com/abc-defg-hij"
+      },
+      "actions": [
+        {
+          "id": "accept",
+          "label": "Accept"
+        },
+        {
+          "id": "decline",
+          "label": "Decline"
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "start": "2026-10-19T15:00:00-04:00",
+      "end": "2026-10-19T15:30:00-04:00",
+      "title": "Trailhead 1.4 release check",
+      "tags": [
+        {
+          "label": "Moved from 2 PM",
+          "state": "info"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "name": "Google Calendar · Work",
+    "kind": "api"
+  },
+  "fallback_text": "Monday, October 19, work calendar only. 10–11 AM Sprint retro with Ada, Leo and Nina. 10:30–11 AM RevenueCat call (Google Meet), not answered yet: it overlaps the retro. Reply “accept” or “decline”. 3–3:30 PM Trailhead 1.4 release check (moved from 2 PM)."
+}

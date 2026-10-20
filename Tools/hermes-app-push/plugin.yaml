@@ -1,0 +1,43 @@
+name: hermes-app-push
+label: Hermes app push
+version: 1.3.2
+manifest_version: 2
+kind: standalone
+description: >
+  Push notifications for the Hermes iPhone, iPad and Mac app: approvals, questions, password
+  prompts, finished replies, scheduled tasks, background work and group chats. Each notice is
+  encrypted for the device and sent through the Caffeinated Code push relay to Apple; the relay
+  never sees the content. Answers go back over the normal gateway protocol.
+author: Caffeinated Code
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call
+  - on_session_end
+  - pre_tool_call
+  - pre_approval_request
+  - post_approval_response
+  - on_human_input_request
+  - on_human_input_resolved
+  - on_room_member_activity
+  - kanban_task_completed
+  - kanban_task_blocked
+config_schema:
+  relay_url:
+    type: string
+    description: Push relay URL (defaults to the Caffeinated Code relay).
+  gateway_name:
+    type: string
+    description: Name shown in notifications (defaults to this computer's name).
+  card_poll_seconds:
+    type: float
+    default: 5
+    description: Seconds between looks for Board cards ready for review or stopped while a card is running (1-300).
+  card_idle_poll_seconds:
+    type: float
+    default: 30
+    description: The longest wait between those looks while the boards are quiet (up to 600).
+  tidy_poll_seconds:
+    type: float
+    default: 30
+    description: Seconds between looks for a finished skills tidy (5-3600).
+tags: [notifications, ios, macos]

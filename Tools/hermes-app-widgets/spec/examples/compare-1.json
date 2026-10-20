@@ -1,0 +1,144 @@
+{
+  "type": "compare",
+  "v": 1,
+  "id": "w_cmpheadph1",
+  "title": "Headphones for travel",
+  "subtitle": "Under $600 · 3 options",
+  "icon": "star.fill",
+  "as_of": "2026-10-16T09:12:00-04:00",
+  "stale_after": 604800,
+  "options": [
+    {
+      "id": "sony-xm6",
+      "name": "Sony XM6",
+      "price": {
+        "value": 399,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "pros": [
+        "40 h battery",
+        "Folds flat"
+      ],
+      "cons": [
+        "Plasticky"
+      ],
+      "url": "https://www.sony.com/"
+    },
+    {
+      "id": "bose-qc",
+      "name": "Bose QC Ultra",
+      "price": {
+        "value": 429,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "pros": [
+        "Most comfortable"
+      ],
+      "cons": [
+        "24 h battery"
+      ]
+    },
+    {
+      "id": "airpods-max",
+      "name": "AirPods Max 2",
+      "price": {
+        "value": 549,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "pros": [
+        "Best with iPhone"
+      ],
+      "cons": [
+        "Heavy",
+        "Pricey"
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "price",
+      "label": "Price",
+      "values": {
+        "sony-xm6": {
+          "value": 399,
+          "format": "currency",
+          "currency": "USD"
+        },
+        "bose-qc": {
+          "value": 429,
+          "format": "currency",
+          "currency": "USD"
+        },
+        "airpods-max": {
+          "value": 549,
+          "format": "currency",
+          "currency": "USD"
+        }
+      }
+    },
+    {
+      "id": "battery",
+      "label": "Battery",
+      "values": {
+        "sony-xm6": {
+          "value": 40,
+          "unit": "h"
+        },
+        "bose-qc": {
+          "value": 24,
+          "unit": "h"
+        },
+        "airpods-max": {
+          "value": 20,
+          "unit": "h"
+        }
+      },
+      "best": [
+        "sony-xm6"
+      ],
+      "evidence": {
+        "kind": "test",
+        "label": "rtings.com battery test, Sept 2026",
+        "url": "https://www.rtings.com/"
+      }
+    },
+    {
+      "id": "anc",
+      "label": "Noise cancelling",
+      "values": {
+        "sony-xm6": "Best",
+        "bose-qc": "Best",
+        "airpods-max": "Very good"
+      }
+    },
+    {
+      "id": "weight",
+      "label": "Weight",
+      "values": {
+        "sony-xm6": {
+          "value": 8.8,
+          "unit": "oz"
+        },
+        "bose-qc": {
+          "value": 9,
+          "unit": "oz"
+        },
+        "airpods-max": {
+          "value": 13.6,
+          "unit": "oz"
+        }
+      }
+    }
+  ],
+  "pick": "sony-xm6",
+  "decided_by": "the same noise cancelling for less, with twice the battery. Battery decided it.",
+  "source": {
+    "name": "rtings.com, Wirecutter, Apple",
+    "kind": "web",
+    "detail": "Oct 2026"
+  },
+  "fallback_text": "Headphones for travel (under $600): Sony XM6 $399, battery 40 h, noise cancelling best, 8.8 oz. Bose QC Ultra $429, 24 h, best, 9 oz. AirPods Max 2 $549, 20 h, very good, 13.6 oz. Pick: Sony XM6, the same noise cancelling for less, with twice the battery."
+}

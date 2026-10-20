@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/details.input.schema.json",
+  "title": "details (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Labelled values about one thing — an invoice, a booking, a machine’s specs — optionally in titled sections, with mono values and local Copy.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "details"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "A section heading: Flight, Hotel, Payment."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "description": "What the value is: Amount, Client, Due, IBAN, Booking.",
+                  "minLength": 1
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 280
+                    },
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "../common.schema.json#/$defs/Quantity"
+                    }
+                  ],
+                  "description": "Text, a Quantity (money, a date, a size), or null when unknown (shown as —, never 0)."
+                },
+                "detail": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "A second line under the value: “EWR → SFO · Tue, Oct 20”, “3 nights”."
+                },
+                "state": {
+                  "enum": [
+                    "neutral",
+                    "ok",
+                    "info",
+                    "warning",
+                    "critical",
+                    "unverified",
+                    "new",
+                    "removed"
+                  ],
+                  "description": "Draws the value as a tag in this state, with its glyph: Unpaid (neutral), Overdue (warning), Confirmed (ok)."
+                },
+                "emphasis": {
+                  "type": "boolean",
+                  "description": "The one value that matters (an invoice’s amount): larger and in ink. At most one per widget.",
+                  "default": false
+                },
+                "mono": {
+                  "type": "boolean",
+                  "description": "Monospaced, grouped for reading: IBANs, booking codes, serial numbers, IP addresses.",
+                  "default": false
+                },
+                "copy": {
+                  "type": "boolean",
+                  "description": "A Copy button after the value. Copying is local.",
+                  "default": false
+                },
+                "masked": {
+                  "type": "boolean",
+                  "description": "The value is already masked by the agent (“•• 4242”). The payload never holds the full secret; masked values can’t be copied.",
+                  "default": false
+                },
+                "url": {
+                  "allOf": [
+                    {
+                      "$ref": "../common.schema.json#/$defs/Url"
+                    }
+                  ],
+                  "description": "Makes the value a link: the client shows where it goes, then opens it."
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "value"
+              ],
+              "description": "One labelled value.",
+              "if": {
+                "properties": {
+                  "masked": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "masked"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "pattern": "•"
+                  },
+                  "copy": {
+                    "const": false
+                  }
+                }
+              }
+            },
+            "minItems": 1,
+            "maxItems": 12
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "fields"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 6,
+      "description": "Sections in order. Leave title out for a single plain list."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "sections"
+  ],
+  "unevaluatedProperties": false
+}

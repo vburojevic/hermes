@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: (root): 'trip' is a required property",
+  "payload": {
+    "type": "pass",
+    "v": 1,
+    "id": "w_bad00545",
+    "title": "UA 1187",
+    "as_of": "2026-10-21T08:10:00-04:00",
+    "fallback_text": "UA 1187 boarding pass, gate C112.",
+    "kind": "boarding",
+    "fields": [
+      {
+        "label": "GATE",
+        "value": "C112"
+      }
+    ],
+    "code": {
+      "format": "aztec",
+      "value": "M1RIVERA/ALEX         EQX7P2L EWRSFOUA 1187 294Y014A0042 100"
+    }
+  }
+}

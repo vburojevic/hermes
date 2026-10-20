@@ -1,0 +1,80 @@
+{
+  "type": "route",
+  "v": 1,
+  "id": "w_airport0915",
+  "title": "To the airport",
+  "subtitle": "For UA 1187 · leave by 8:50 AM",
+  "icon": "airplane",
+  "state": "warning",
+  "as_of": "2026-10-21T08:41:00-04:00",
+  "stale_after": 300,
+  "refresh": {
+    "mode": "agent"
+  },
+  "from": {
+    "name": "Home",
+    "time": "2026-10-21T08:50:00-04:00"
+  },
+  "to": {
+    "name": "Newark Airport",
+    "time": "2026-10-21T09:47:00-04:00"
+  },
+  "mode": "transit",
+  "duration": 3420,
+  "distance": 17500,
+  "leave_by": "2026-10-21T08:50:00-04:00",
+  "status": {
+    "state": "warning",
+    "label": "+10 min"
+  },
+  "alerts": [
+    {
+      "state": "warning",
+      "text": "The airport bus is 10 min late: traffic in the Lincoln Tunnel."
+    }
+  ],
+  "legs": [
+    {
+      "mode": "walk",
+      "label": "Walk to the bus station",
+      "duration": 600,
+      "distance": 800
+    },
+    {
+      "mode": "wait",
+      "label": "Wait at stand 2",
+      "duration": 300,
+      "platform": "2"
+    },
+    {
+      "mode": "coach",
+      "label": "Airport bus to Newark Airport",
+      "line": "Airport bus",
+      "duration": 2520,
+      "depart": "2026-10-21T09:05:00-04:00",
+      "arrive": "2026-10-21T09:47:00-04:00",
+      "every": 1800,
+      "delay": 600,
+      "live": true,
+      "note": "$19.50 on board, card or cash"
+    }
+  ],
+  "source": {
+    "name": "Newark Airport Express live",
+    "kind": "api"
+  },
+  "actions": [
+    {
+      "id": "maps",
+      "label": "Open in Maps",
+      "kind": "open",
+      "style": "primary",
+      "url": "https://maps.apple.com/?saddr=Current%20Location&daddr=Newark%20Airport&dirflg=r"
+    },
+    {
+      "id": "taxi",
+      "label": "Compare a Taxi"
+    }
+  ],
+  "fallback_text": "To the airport for UA 1187: the airport bus is 10 min late (traffic in the Lincoln Tunnel). Leave by 8:50 AM: walk 10 min to the bus station, stand 2; the bus leaves 9:05 and arrives 9:47 (57 min in all)."
+}

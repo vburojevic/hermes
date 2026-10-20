@@ -1,0 +1,525 @@
+{
+ "generated_at": "2026-10-19T06:00:00+00:00",
+ "entries": [
+  {
+   "name": "blender",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "648a152088e4fd082a7f8e3b243aba2fb7ac42d6",
+   "subdir": "blender",
+   "description": "Build, light and render scenes in Blender. Official Blender Lab MCP server over stdio, with a Blender workflow skill. Disclosure \u2014 tools execute arbitrary Python in Blender with your privileges; first start downloads the pinned Blender Lab MCP server and its Python dependencies. Server discovery does not prove scene readiness.",
+   "title": "Blender",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "desktop",
+   "version": "0.2",
+   "platforms": [
+    "windows",
+    "macos",
+    "linux"
+   ],
+   "onboarding": true,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   },
+   "known_issues": [
+    "First start downloads Python packages and can take a few minutes. Blender's MCP add-on is installed separately."
+   ]
+  },
+  {
+   "name": "xcode",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "995f38db68c457cc9890bd84a5159162185435fa",
+   "subdir": "xcode",
+   "description": "Build, test and read Xcode projects open on this Mac. Disclosure \u2014 tools run xcodebuild and read build logs on this machine; nothing leaves the Mac.",
+   "title": "Xcode",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "desktop",
+   "version": "1.4",
+   "platforms": [
+    "macos"
+   ],
+   "onboarding": true,
+   "capabilities": {
+    "provides_tools": [
+     "build_scheme",
+     "run_tests",
+     "read_build_log"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "figma-desktop",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "464fdc17218a44ba3d96e6bf5760fe74e82e8cc2",
+   "subdir": "figma-desktop",
+   "description": "Read and edit the open Figma file. Disclosure: reads the open document through Figma's local MCP endpoint; edits only on request.",
+   "title": "Figma Desktop",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "desktop",
+   "version": "1.0.0",
+   "platforms": [
+    "macos",
+    "windows"
+   ],
+   "onboarding": true,
+   "capabilities": {
+    "provides_tools": [
+     "get_selection",
+     "get_node",
+     "set_text"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "obsidian",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "0f29c65530ff3f1a49e4139c32592a55c9fc5bdc",
+   "subdir": "obsidian",
+   "description": "Search and write notes in your vault. Disclosure \u2014 reads and writes Markdown files in the vault you choose.",
+   "title": "Obsidian",
+   "maintainer": "obsidian-hermes",
+   "tier": "community",
+   "category": "memory",
+   "version": "1.0.0",
+   "platforms": [
+    "macos",
+    "linux"
+   ],
+   "onboarding": true,
+   "capabilities": {
+    "provides_tools": [
+     "search_notes",
+     "read_note",
+     "write_note"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "touchdesigner",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "9a2aed05e47d3b6e5a37beed342d817698c0eb06",
+   "subdir": "touchdesigner",
+   "description": "Drive TouchDesigner networks from Hermes. Disclosure \u2014 tools change the open project.",
+   "title": "TouchDesigner",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "desktop",
+   "version": "1.0.0",
+   "platforms": [
+    "macos",
+    "windows"
+   ],
+   "onboarding": true,
+   "capabilities": {
+    "provides_tools": [
+     "td_get",
+     "td_set"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "homeassistant",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "bbc90aea15c4428be33bfb70f0463f38b650a8b8",
+   "subdir": "homeassistant",
+   "description": "Your home's devices and events. Needs a token. Disclosure \u2014 reads states and calls services on your Home Assistant; nothing else leaves the network.",
+   "title": "homeassistant",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "automation",
+   "version": "2.1",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "hass_states",
+     "hass_call"
+    ],
+    "provides_hooks": [
+     "pre_tool_call"
+    ],
+    "provides_middleware": [],
+    "requires_env": [
+     "HASS_TOKEN"
+    ]
+   }
+  },
+  {
+   "name": "langfuse",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "e78d152e08470a11ccb283feca6960275052201f",
+   "subdir": "langfuse",
+   "description": "Traces every turn. Sends each model call and tool call to your Langfuse project. Disclosure \u2014 sends prompts, replies and tool calls to the Langfuse host you configure.",
+   "title": "Langfuse",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "models",
+   "version": "2.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [
+     "pre_llm_call",
+     "post_llm_call",
+     "post_tool_call"
+    ],
+    "provides_middleware": [],
+    "requires_env": [
+     "HERMES_LANGFUSE_PUBLIC_KEY",
+     "HERMES_LANGFUSE_SECRET_KEY"
+    ]
+   }
+  },
+  {
+   "name": "spotify",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "c9c63a35f68d48d8ffc889fd66735e03bfcf9142",
+   "subdir": "spotify",
+   "description": "Play, queue and search your music. Disclosure \u2014 controls playback on your Spotify account.",
+   "title": "Spotify",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "tools",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "play",
+     "pause",
+     "queue",
+     "search",
+     "now_playing",
+     "next",
+     "previous"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": [
+     "SPOTIFY_CLIENT_ID"
+    ]
+   }
+  },
+  {
+   "name": "approval-ledger",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "b0525fc47bf0dbed4636e02f533bca71ac22717f",
+   "subdir": "approval-ledger",
+   "description": "A local log of every approval and how you answered. Disclosure \u2014 Writes decision metadata (session id, rule, answer, timings; no command) to plugin-data/approval-ledger; observer only, cannot answer an approval; no network.",
+   "title": "approval-ledger",
+   "maintainer": "ledger-labs",
+   "tier": "community",
+   "category": "tools",
+   "version": "0.4",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [
+     "pre_approval_request",
+     "post_approval_response"
+    ],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "supermemory",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "f51a581b359822c361199a5b877419ce0cd19678",
+   "subdir": "supermemory",
+   "description": "Long-term memory Hermes can search. Needs an API key. Disclosure \u2014 sends memories to supermemory.ai.",
+   "title": "Supermemory",
+   "maintainer": "supermemory",
+   "tier": "community",
+   "category": "memory",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "remember",
+     "recall"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": [
+     "SUPERMEMORY_API_KEY"
+    ]
+   }
+  },
+  {
+   "name": "davinci-resolve",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "2caa7c0f2c2b4338a9cc0092ee66b8c8a501e6c5",
+   "subdir": "davinci-resolve",
+   "description": "Edit timelines in DaVinci Resolve. Disclosure \u2014 tools change the open project.",
+   "title": "DaVinci Resolve",
+   "maintainer": "resolve-mcp",
+   "tier": "community",
+   "category": "desktop",
+   "version": "1.1",
+   "platforms": [
+    "macos",
+    "windows",
+    "linux"
+   ],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "resolve_0",
+     "resolve_1",
+     "resolve_2",
+     "resolve_3",
+     "resolve_4",
+     "resolve_5",
+     "resolve_6",
+     "resolve_7",
+     "resolve_8",
+     "resolve_9",
+     "resolve_10",
+     "resolve_11",
+     "resolve_12",
+     "resolve_13"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "obsidian-memory",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "230dd671e70eb4007306fe19118817a8070e6c7c",
+   "subdir": "obsidian-memory",
+   "description": "Notes from your vault as Hermes's memory. Disclosure \u2014 reads the vault you choose.",
+   "title": "Obsidian Memory",
+   "maintainer": "obsidian-hermes",
+   "tier": "community",
+   "category": "memory",
+   "version": "0.6",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "nvidia-app",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "56cc6480013f373ed6f10b6dc73473691d2194e4",
+   "subdir": "nvidia-app",
+   "description": "NVIDIA App control through its local MCP server. Requires NVIDIA App 11.0 or newer on Windows. Disclosure: the tools read and change NVIDIA App settings on this machine; nothing leaves loopback.",
+   "title": "NVIDIA App",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "tools",
+   "version": "0.1.0",
+   "platforms": [
+    "windows"
+   ],
+   "onboarding": true,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "memory-palace",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "974d1bae29020bba66252a9eb29a56c0d0803fcb",
+   "subdir": "memory-palace",
+   "description": "A memory provider with spaced recall. Disclosure \u2014 keeps memories in a local SQLite file.",
+   "title": "Memory Palace",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "memory",
+   "version": "0.3",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [],
+    "provides_middleware": [
+     "memory_palace_mw"
+    ],
+    "requires_env": []
+   },
+   "requires_hermes": ">=0.30.0"
+  },
+  {
+   "name": "openrouter-picker",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "b44458066d19bb92cc1ba6a8894183abfc67a598",
+   "subdir": "openrouter-picker",
+   "description": "Pick OpenRouter models per chat. Disclosure \u2014 reads the OpenRouter model list.",
+   "title": "OpenRouter Picker",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "models",
+   "version": "1.2",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [
+     "transform_api_error_classification"
+    ],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "github-issues",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "36b139d00afaa53d82cc7b6685b227f8627ccc80",
+   "subdir": "github-issues",
+   "description": "Read and file issues in your repositories. Disclosure \u2014 uses your GitHub token.",
+   "title": "GitHub Issues",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "web",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "list_issues",
+     "create_issue",
+     "comment"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": [
+     "GITHUB_TOKEN"
+    ]
+   }
+  },
+  {
+   "name": "web-clipper",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "6b5c6b79fcc45ccad456af5abb1cd55de855ac2b",
+   "subdir": "web-clipper",
+   "description": "Save pages to a folder as Markdown. Disclosure \u2014 fetches pages you name.",
+   "title": "Web Clipper",
+   "maintainer": "clipper",
+   "tier": "community",
+   "category": "web",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "clip"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "voice-notes",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "f84c146926674f4682e2e7c533f269fb02c0225d",
+   "subdir": "voice-notes",
+   "description": "Transcribe voice notes in a folder. Disclosure \u2014 reads audio files you choose.",
+   "title": "Voice Notes",
+   "maintainer": "voicey",
+   "tier": "community",
+   "category": "voice",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "transcribe_folder"
+    ],
+    "provides_hooks": [
+     "pre_transcription"
+    ],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "cron-plus",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "459cb1e923b3d1c9e115bf2d439e81c09312a5dc",
+   "subdir": "cron-plus",
+   "description": "More schedule shapes for routines. Disclosure \u2014 adds schedules only.",
+   "title": "Cron Plus",
+   "maintainer": "cronplus",
+   "tier": "community",
+   "category": "automation",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [
+     "schedule"
+    ],
+    "provides_hooks": [],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  },
+  {
+   "name": "slack-bridge",
+   "repo": "https://github.com/NousResearch/hermes-official-plugins",
+   "sha": "78447d04a3993fa480cc5ec4b857834d0e013182",
+   "subdir": "slack-bridge",
+   "description": "Answer in a Slack workspace. Disclosure \u2014 sends replies to Slack.",
+   "title": "Slack Bridge",
+   "maintainer": "NousResearch",
+   "tier": "official",
+   "category": "platform",
+   "version": "1.0.0",
+   "platforms": [],
+   "onboarding": false,
+   "capabilities": {
+    "provides_tools": [],
+    "provides_hooks": [
+     "pre_gateway_dispatch"
+    ],
+    "provides_middleware": [],
+    "requires_env": []
+   }
+  }
+ ],
+ "removed": [
+  {
+   "name": "agent-ledger",
+   "repo": "https://github.com/ledger-labs/agent-ledger",
+   "reason": "It sent approval commands to a third-party server.",
+   "date": "2026-10-02"
+  },
+  {
+   "name": "or-picker",
+   "reason": "Folded into openrouter-picker. Installing the provider alone left the picker broken. Install openrouter-picker.",
+   "date": "2026-09-28"
+  }
+ ]
+}

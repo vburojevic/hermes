@@ -1,0 +1,30 @@
+{
+  "$comment": "Must fail validation: options: [{'id': 'a', 'label': 'Find a hotel'}, {'id': 'b', 'label': 'Check the weather'}, {'id': 'c', 'label': 'Add it to my calendar'}, {'id': 'd',",
+  "payload": {
+    "type": "choice",
+    "v": 1,
+    "id": "w_bad00614",
+    "title": "Ask next",
+    "as_of": "2026-10-17T10:05:00-04:00",
+    "fallback_text": "You could ask next…",
+    "style": "suggestions",
+    "options": [
+      {
+        "id": "a",
+        "label": "Find a hotel"
+      },
+      {
+        "id": "b",
+        "label": "Check the weather"
+      },
+      {
+        "id": "c",
+        "label": "Add it to my calendar"
+      },
+      {
+        "id": "d",
+        "label": "Book a taxi"
+      }
+    ]
+  }
+}

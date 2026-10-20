@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: items/0/value/value: '$1,840' is not of type 'number', 'null'",
+  "payload": {
+    "type": "meter",
+    "v": 1,
+    "id": "w_bad02m002",
+    "title": "Budget",
+    "as_of": "2026-10-19T08:00:00-04:00",
+    "fallback_text": "Budget: $1,840 of $2,000.",
+    "items": [
+      {
+        "label": "Spent",
+        "value": {
+          "value": "$1,840"
+        },
+        "target": {
+          "value": 2000
+        }
+      }
+    ]
+  }
+}

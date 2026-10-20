@@ -1,0 +1,19 @@
+{
+  "$comment": "Must fail validation: steps/0/progress: 64 is greater than the maximum of 1",
+  "payload": {
+    "type": "steps",
+    "v": 1,
+    "id": "w_bad00604",
+    "title": "Setup",
+    "as_of": "2026-10-17T10:04:00-04:00",
+    "fallback_text": "Installing, 64%",
+    "steps": [
+      {
+        "id": "deps",
+        "title": "Install dependencies",
+        "state": "running",
+        "progress": 64
+      }
+    ]
+  }
+}

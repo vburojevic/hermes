@@ -1,0 +1,29 @@
+{
+  "type": "code",
+  "v": 1,
+  "id": "w_synctest33",
+  "title": "SyncTests",
+  "subtitle": "1 of 14 failed on Studio Mac",
+  "icon": "hammer",
+  "state": "critical",
+  "state_label": "Failed",
+  "as_of": "2026-10-17T15:20:16-04:00",
+  "kind": "output",
+  "language": "text",
+  "command": "swift test --filter SyncTests",
+  "text": "Test Suite 'SyncTests' started at 2026-10-17 15:20:03.112\nTest Case 'SyncTests.testResumeAfterSleep' passed (0.212 seconds)\nSync/ReconnectTests.swift:48: error: SyncTests.testBackoffCaps : XCTAssertEqual failed: (\"8.0\") is not equal to (\"5.0\")\nTest Case 'SyncTests.testBackoffCaps' failed (0.004 seconds)\nExecuted 14 tests, with 1 failure (0 unexpected) in 1.873 (1.881) seconds",
+  "result": {
+    "state": "critical",
+    "label": "Failed · exit 1 · 12.4 s",
+    "exit_code": 1,
+    "duration": 12.4
+  },
+  "actions": [
+    {
+      "id": "fix",
+      "label": "Fix It",
+      "style": "primary"
+    }
+  ],
+  "fallback_text": "SyncTests failed on Studio Mac (swift test --filter SyncTests, exit 1, 12.4 s): 1 of 14 tests failed. testBackoffCaps at Sync/ReconnectTests.swift:48: expected 5.0, got 8.0 (the backoff isn’t capped yet). Reply “fix” to have Hermes fix it."
+}

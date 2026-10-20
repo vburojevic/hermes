@@ -1,0 +1,15 @@
+{
+  "$comment": "Must fail validation: span: 31 is greater than the maximum of 14",
+  "payload": {
+    "type": "agenda",
+    "v": 1,
+    "id": "w_bad00044",
+    "title": "This month",
+    "as_of": "2026-10-16T10:42:00-04:00",
+    "fallback_text": "This month: nothing.",
+    "view": "days",
+    "date": "2026-10-01",
+    "span": 31,
+    "events": []
+  }
+}

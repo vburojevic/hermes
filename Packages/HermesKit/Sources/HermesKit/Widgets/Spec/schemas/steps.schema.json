@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/steps.schema.json",
+  "title": "steps",
+  "description": "Progress through ordered stages — waiting, running (with its own progress), done, failed, skipped, blocked, unknown — with durations and a result line.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "pipeline"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "steps": {
+            "minItems": 2,
+            "maxItems": 6
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "steps": {
+            "contains": {
+              "properties": {
+                "state": {
+                  "const": "failed"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      },
+      "then": {
+        "required": [
+          "result"
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": [
+          "steps"
+        ],
+        "properties": {
+          "steps": {
+            "contains": {
+              "properties": {
+                "state": {
+                  "const": "running"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "minContains": 2
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "steps"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The stage, as a short action or noun: “Install dependencies”, “Test”, “Customs”. ≤ 16 characters in a pipeline.",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "running",
+              "done",
+              "failed",
+              "skipped",
+              "blocked",
+              "unknown"
+            ],
+            "description": "The shared progress vocabulary (also `outline`). waiting (hollow circle: not started), running (ink ring, bold), done (green check), failed (red ✕), skipped (grey dash), blocked (orange hand: can’t go on until someone acts; `detail` says what it waits for), unknown (dashed question mark: nobody knows the outcome; `detail` says the last thing known)."
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the title: “about 2 min left”, “npm ERR! 404 @trailhead/ui”, “Import duty of $12.40 to pay”, “No report since 10:14”. Required for blocked and unknown."
+          },
+          "duration": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Seconds"
+              }
+            ],
+            "description": "How long the step took (done, failed). Leave it out for steps that haven’t finished."
+          },
+          "progress": {
+            "type": "number",
+            "description": "For the running step: 0–1. Leave it out when unknown: the client draws an indeterminate bar, never a guessed percentage.",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "evidence": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Evidence"
+              }
+            ],
+            "description": "How the outcome is known: the test report, the log, the tracking page. A claim reads “Said by …” and the step is never shown as checked on a claim alone."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Row actions (“Retry”, “Show the Log”); they send their id with `{item: <step id>}`."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "state"
+        ],
+        "description": "One stage.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "blocked",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "required": [
+                "detail"
+              ]
+            }
+          }
+        ],
+        "dependentSchemas": {
+          "progress": {
+            "properties": {
+              "state": {
+                "const": "running"
+              }
+            }
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 20,
+      "description": "The stages, in order."
+    },
+    "kind": {
+      "enum": [
+        "vertical",
+        "pipeline",
+        "compact"
+      ],
+      "description": "vertical: one row per step. pipeline: 2–6 stages as chips in a row. compact: one line and a segmented bar.",
+      "default": "vertical"
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "ok",
+            "info",
+            "warning",
+            "critical",
+            "unverified"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "One sentence: what failed, or what came out.",
+          "minLength": 1
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "The specifics: failing test names, the error."
+        },
+        "detail_style": {
+          "enum": [
+            "text",
+            "code"
+          ],
+          "description": "code sets the detail in mono.",
+          "default": "text"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "text"
+      ],
+      "description": "The outcome in one line, under the steps. Required in a pipeline that failed."
+    },
+    "started_at": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/Time"
+        }
+      ],
+      "description": "When the job started; the footer says “Started 10:02 by <producer>”."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "steps"
+  ],
+  "unevaluatedProperties": false
+}

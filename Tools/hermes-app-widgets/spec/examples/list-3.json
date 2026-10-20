@@ -1,0 +1,94 @@
+{
+  "type": "list",
+  "v": 1,
+  "id": "w_inbox0930a",
+  "title": "Support inbox",
+  "icon": "tray.full.fill",
+  "as_of": "2026-10-16T09:30:00-04:00",
+  "stale_after": 3600,
+  "refresh": {
+    "mode": "agent"
+  },
+  "noun": "open",
+  "items": [
+    {
+      "id": "t4821",
+      "leading": {
+        "kind": "avatar",
+        "initials": "MK"
+      },
+      "title": "Refund for a double charge",
+      "subtitle": "Marta K. · Trailhead Pro",
+      "at": "2026-10-16T07:31:00-04:00",
+      "tags": [
+        {
+          "label": "Urgent",
+          "state": "critical"
+        }
+      ],
+      "url": "https://secure.helpscout.net/conversation/4821",
+      "actions": [
+        {
+          "id": "draft_reply",
+          "label": "Draft a Reply"
+        }
+      ]
+    },
+    {
+      "id": "t4817",
+      "leading": {
+        "kind": "avatar",
+        "initials": "JP"
+      },
+      "title": "Sync stops after the iOS update",
+      "subtitle": "Jonas P. · iPhone",
+      "at": "2026-10-16T04:12:00-04:00",
+      "tags": [
+        {
+          "label": "Waiting on you",
+          "state": "warning"
+        }
+      ],
+      "url": "https://secure.helpscout.net/conversation/4817",
+      "actions": [
+        {
+          "id": "draft_reply",
+          "label": "Draft a Reply"
+        }
+      ]
+    },
+    {
+      "id": "t4809",
+      "leading": {
+        "kind": "avatar",
+        "initials": "SL"
+      },
+      "title": "Feature request: dark widgets",
+      "subtitle": "Sara L. · iPad",
+      "at": "2026-10-15T16:40:00-04:00",
+      "tags": [
+        {
+          "label": "New",
+          "state": "new"
+        }
+      ],
+      "url": "https://secure.helpscout.net/conversation/4809",
+      "actions": [
+        {
+          "id": "draft_reply",
+          "label": "Draft a Reply"
+        },
+        {
+          "id": "add_to_board",
+          "label": "Add to the Board"
+        }
+      ]
+    }
+  ],
+  "empty_text": "No open tickets. Inbox zero.",
+  "source": {
+    "name": "Help Scout",
+    "kind": "api"
+  },
+  "fallback_text": "Support inbox, 3 open: Refund for a double charge — Marta K., Trailhead Pro, 7:31 AM (urgent); Sync stops after the iOS update — Jonas P., iPhone, 4:12 AM (waiting on you); Feature request: dark widgets — Sara L., iPad, yesterday 4:40 PM (new)."
+}

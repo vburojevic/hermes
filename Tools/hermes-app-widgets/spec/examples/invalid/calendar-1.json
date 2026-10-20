@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: marks/0/level: 1.4 is greater than the maximum of 1",
+  "payload": {
+    "type": "calendar",
+    "v": 1,
+    "id": "w_bad02k001",
+    "title": "Workouts",
+    "as_of": "2026-10-16T18:00:00-04:00",
+    "fallback_text": "Workouts this week.",
+    "view": "weeks",
+    "style": "intensity",
+    "start": "2026-10-12",
+    "end": "2026-10-18",
+    "marks": [
+      {
+        "date": "2026-10-12",
+        "level": 1.4
+      }
+    ]
+  }
+}

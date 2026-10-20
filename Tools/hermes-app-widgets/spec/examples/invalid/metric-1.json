@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: (root): Unevaluated properties are not allowed ('sensitivty' was unexpected)",
+  "payload": {
+    "type": "metric",
+    "v": 1,
+    "id": "w_bad00009",
+    "title": "Steps",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "Steps: 8,200 today.",
+    "sensitivty": "private",
+    "items": [
+      {
+        "label": "Steps",
+        "value": {
+          "value": 8200
+        }
+      }
+    ]
+  }
+}

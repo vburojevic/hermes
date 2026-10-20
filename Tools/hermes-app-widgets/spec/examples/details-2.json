@@ -1,0 +1,65 @@
+{
+  "type": "details",
+  "v": 1,
+  "id": "w_london2010",
+  "title": "San Francisco trip",
+  "subtitle": "Oct 20–23",
+  "icon": "suitcase.fill",
+  "as_of": "2026-10-16T19:00:00-04:00",
+  "stale_after": 21600,
+  "sections": [
+    {
+      "title": "Flight",
+      "fields": [
+        {
+          "label": "UA 1187",
+          "value": "EWR → SFO",
+          "detail": "Tue, Oct 20"
+        },
+        {
+          "label": "Departs",
+          "value": {
+            "value": "2026-10-20T10:55:00-04:00",
+            "format": "time"
+          },
+          "detail": "Terminal C"
+        },
+        {
+          "label": "Booking",
+          "value": "QX7P2L",
+          "mono": true,
+          "copy": true
+        },
+        {
+          "label": "Seat",
+          "value": "Not chosen yet",
+          "detail": "Online check-in opens Mon 10:55 AM"
+        }
+      ]
+    },
+    {
+      "title": "Hotel",
+      "fields": [
+        {
+          "label": "Hotel Juniper, Union Square",
+          "value": "3 nights",
+          "url": "https://hoteljuniper.example.com/union-square"
+        },
+        {
+          "label": "Check-in",
+          "value": "From 3 PM"
+        },
+        {
+          "label": "Paid with",
+          "value": "Visa •• 4242",
+          "masked": true
+        }
+      ]
+    }
+  ],
+  "source": {
+    "name": "United, Booking.com",
+    "kind": "api"
+  },
+  "fallback_text": "San Francisco trip, Oct 20–23. Flight UA 1187 EWR → SFO on Tue, Oct 20, departs 10:55 AM from Terminal C, booking QX7P2L, seat not chosen yet (online check-in opens Mon 10:55 AM). Hotel: Hotel Juniper, Union Square, 3 nights, check-in from 3 PM, paid with Visa ending 4242."
+}

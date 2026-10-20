@@ -1,0 +1,38 @@
+{
+  "$comment": "Must fail validation: controls/0: 'options' is a required property; controls/1/value: 'on' is not of type 'boolean', 'null'; controls/1: False schema does not allow [{'id': 'on', 'label': 'On'}, {'id': 'off', 'label': 'Off'}]",
+  "payload": {
+    "type": "control",
+    "v": 1,
+    "id": "w_bad07c003",
+    "title": "Living room",
+    "as_of": "2026-10-16T19:42:00-04:00",
+    "fallback_text": "Living room lights, scene Relax.",
+    "device": {
+      "name": "Ceiling lights"
+    },
+    "controls": [
+      {
+        "id": "scene",
+        "kind": "scenes",
+        "label": "Scene",
+        "value": "relax"
+      },
+      {
+        "id": "power",
+        "kind": "switch",
+        "label": "Power",
+        "value": "on",
+        "options": [
+          {
+            "id": "on",
+            "label": "On"
+          },
+          {
+            "id": "off",
+            "label": "Off"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: story: 'why' is a required property",
+  "payload": {
+    "type": "summary",
+    "v": 1,
+    "id": "w_bad07s002",
+    "title": "News",
+    "as_of": "2026-10-16T08:10:00-04:00",
+    "fallback_text": "Apple may cut fees.",
+    "kind": "story",
+    "story": {
+      "status": "rumor",
+      "headline": "Apple may cut fees",
+      "sources": [
+        {
+          "name": "Bloomberg"
+        }
+      ]
+    }
+  }
+}

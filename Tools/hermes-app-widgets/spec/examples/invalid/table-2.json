@@ -1,0 +1,42 @@
+{
+  "$comment": "Must fail validation: columns: [{'key': 'c0', 'label': 'C0'}, {'key': 'c1', 'label': 'C1'}, {'key': 'c2', 'label': 'C2'}, {'key': 'c3', 'label': 'C3'}, {'key': 'c4', 'labe",
+  "payload": {
+    "type": "table",
+    "v": 1,
+    "id": "w_bad03t002",
+    "title": "Too wide",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "Seven columns of numbers.",
+    "columns": [
+      {
+        "key": "c0",
+        "label": "C0"
+      },
+      {
+        "key": "c1",
+        "label": "C1"
+      },
+      {
+        "key": "c2",
+        "label": "C2"
+      },
+      {
+        "key": "c3",
+        "label": "C3"
+      },
+      {
+        "key": "c4",
+        "label": "C4"
+      },
+      {
+        "key": "c5",
+        "label": "C5"
+      },
+      {
+        "key": "c6",
+        "label": "C6"
+      }
+    ],
+    "rows": []
+  }
+}

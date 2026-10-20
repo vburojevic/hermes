@@ -1,0 +1,59 @@
+{
+  "type": "receipt",
+  "v": 1,
+  "id": "w_rcptpost441",
+  "title": "Scheduled",
+  "subtitle": "Hermes · 4:40 PM",
+  "icon": "bot:hermes",
+  "state": "ok",
+  "as_of": "2026-10-16T16:40:00-04:00",
+  "producer": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "in_reply_to": "w_launchpost7",
+  "headline": "Launch post scheduled",
+  "detail": "Goes out on X on Thursday at 9 AM",
+  "facts": [
+    {
+      "label": "Account",
+      "value": {
+        "value": "@trailheadapp",
+        "format": "text"
+      }
+    },
+    {
+      "label": "Goes out",
+      "value": {
+        "value": "2026-10-22T09:00:00-04:00",
+        "format": "datetime"
+      }
+    },
+    {
+      "label": "Reach",
+      "value": {
+        "value": "Public · 2.4k followers",
+        "format": "text"
+      }
+    }
+  ],
+  "undo": {
+    "label": "You can unschedule it until it goes out",
+    "until": "2026-10-22T09:00:00-04:00"
+  },
+  "confirmation": {
+    "kind": "link",
+    "label": "Scheduled post in Typefully",
+    "url": "https://typefully.example.com/trailheadapp/scheduled",
+    "at": "2026-10-16T16:39:55-04:00"
+  },
+  "actions": [
+    {
+      "id": "open_post",
+      "label": "Open in Typefully",
+      "kind": "open",
+      "url": "https://typefully.example.com/trailheadapp/scheduled"
+    }
+  ],
+  "fallback_text": "Launch post scheduled: it goes out publicly on X from @trailheadapp (2.4k followers) on Thursday, October 22 at 9 AM. You can unschedule it until then: reply “undo”."
+}

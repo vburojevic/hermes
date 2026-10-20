@@ -1,0 +1,42 @@
+{
+  "type": "sources",
+  "v": 1,
+  "id": "w_euaiact5",
+  "title": "Sources",
+  "icon": "text.quote",
+  "as_of": "2026-10-16T09:41:00-04:00",
+  "items": [
+    {
+      "id": "eurlex",
+      "title": "EU AI Act: implementing guidelines",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",
+      "kind": "official",
+      "trust": "primary",
+      "published": "2026-10-14",
+      "used_for": "The deadlines and who they apply to"
+    },
+    {
+      "id": "verge",
+      "title": "What the new AI rules mean for apps",
+      "url": "https://www.theverge.com/2026/10/15/eu-ai-act-apps",
+      "kind": "press",
+      "trust": "secondary",
+      "published": "2026-10-15"
+    },
+    {
+      "id": "xpost",
+      "title": "Apple to delay AI features in the EU",
+      "url": "https://x.com/example/status/1846001",
+      "kind": "social",
+      "trust": "unverified",
+      "note": "A post on X, not confirmed",
+      "actions": [
+        {
+          "id": "check",
+          "label": "Check This"
+        }
+      ]
+    }
+  ],
+  "fallback_text": "Sources: [1] EU AI Act: implementing guidelines — eur-lex.europa.eu, 14 Oct 2026 (primary source): https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689 [2] What the new AI rules mean for apps — theverge.com, 15 Oct 2026 (secondary): https://www.theverge.com/2026/10/15/eu-ai-act-apps [3] Apple to delay AI features in the EU — a post on X, not confirmed (unverified)."
+}

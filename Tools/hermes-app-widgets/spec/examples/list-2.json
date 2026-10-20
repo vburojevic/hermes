@@ -1,0 +1,58 @@
+{
+  "type": "list",
+  "v": 1,
+  "id": "w_kwmovers1016",
+  "title": "Keyword movers",
+  "subtitle": "Since yesterday",
+  "icon": "chart.line.uptrend.xyaxis",
+  "as_of": "2026-10-16T06:00:00-04:00",
+  "stale_after": 86400,
+  "layout": "ranked",
+  "items": [
+    {
+      "rank": 3,
+      "movement": {
+        "previous": 7
+      },
+      "title": "hiking app",
+      "subtitle": "Trailhead · US"
+    },
+    {
+      "rank": 5,
+      "movement": {
+        "previous": 4
+      },
+      "title": "trail maps",
+      "subtitle": "Trailhead · US"
+    },
+    {
+      "rank": 8,
+      "movement": {
+        "new": true
+      },
+      "title": "offline hiking maps",
+      "subtitle": "Trailhead · US"
+    },
+    {
+      "rank": 12,
+      "movement": {
+        "previous": 19
+      },
+      "title": "hiking trails near me",
+      "subtitle": "Trailhead · UK"
+    },
+    {
+      "rank": 31,
+      "movement": {
+        "previous": 22
+      },
+      "title": "trail running",
+      "subtitle": "Trailhead · CA"
+    }
+  ],
+  "source": {
+    "name": "App Store search ranks",
+    "kind": "api"
+  },
+  "fallback_text": "Keyword movers since yesterday: 3. hiking app (Trailhead, US) up 4 from 7; 5. trail maps (Trailhead, US) down 1 from 4; 8. offline hiking maps (Trailhead, US) new; 12. hiking trails near me (Trailhead, UK) up 7 from 19; 31. trail running (Trailhead, CA) down 9 from 22."
+}

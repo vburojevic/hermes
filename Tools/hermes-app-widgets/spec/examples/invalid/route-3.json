@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: from: 'lat' is a required property; from: 'lon' is a required property",
+  "payload": {
+    "type": "route",
+    "v": 1,
+    "id": "w_bad00533",
+    "title": "To Prospect Park West",
+    "as_of": "2026-10-24T09:30:00-04:00",
+    "fallback_text": "To Prospect Park West: 12 min by car.",
+    "from": {
+      "name": "Home"
+    },
+    "to": {
+      "name": "Prospect Park West, park view",
+      "lat": 40.6687,
+      "lon": -73.9733
+    },
+    "mode": "drive",
+    "duration": 720,
+    "map": {}
+  }
+}

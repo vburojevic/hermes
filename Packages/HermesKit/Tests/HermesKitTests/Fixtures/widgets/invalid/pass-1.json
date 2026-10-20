@@ -1,0 +1,29 @@
+{
+  "$comment": "Must fail validation: pkpass: 'https://example.com/UA1187.pkpass' does not match '^hermes-file:.+\\\\.pkpass$'",
+  "payload": {
+    "type": "pass",
+    "v": 1,
+    "id": "w_bad00541",
+    "title": "UA 1187",
+    "as_of": "2026-10-21T08:10:00-04:00",
+    "fallback_text": "UA 1187 boarding pass, gate C112.",
+    "kind": "boarding",
+    "trip": {
+      "from": {
+        "code": "EWR",
+        "name": "Newark"
+      },
+      "to": {
+        "code": "SFO",
+        "name": "San Francisco"
+      }
+    },
+    "fields": [
+      {
+        "label": "GATE",
+        "value": "C112"
+      }
+    ],
+    "pkpass": "https://example.com/UA1187.pkpass"
+  }
+}

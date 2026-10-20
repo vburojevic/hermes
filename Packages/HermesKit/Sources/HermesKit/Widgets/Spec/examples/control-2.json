@@ -1,0 +1,59 @@
+{
+  "type": "control",
+  "v": 1,
+  "id": "w_thermo2hall",
+  "title": "Thermostat",
+  "subtitle": "Hallway · Netatmo",
+  "icon": "thermometer.medium",
+  "as_of": "2026-10-16T07:05:00-04:00",
+  "stale_after": 300,
+  "source": {
+    "name": "Netatmo",
+    "kind": "device"
+  },
+  "device": {
+    "name": "Thermostat",
+    "room": "Hallway",
+    "status": "heating",
+    "active": true,
+    "symbol": "thermometer.medium"
+  },
+  "controls": [
+    {
+      "id": "target",
+      "kind": "stepper",
+      "label": "Target temperature",
+      "value": 21.5,
+      "min": 7,
+      "max": 30,
+      "step": 0.5,
+      "unit": "°",
+      "reading": {
+        "value": 19.8,
+        "unit": "°",
+        "precision": 1
+      }
+    },
+    {
+      "id": "mode",
+      "kind": "segmented",
+      "label": "Mode",
+      "value": "heat",
+      "options": [
+        {
+          "id": "heat",
+          "label": "Heat"
+        },
+        {
+          "id": "eco",
+          "label": "Eco"
+        },
+        {
+          "id": "off",
+          "label": "Off"
+        }
+      ]
+    }
+  ],
+  "fallback_text": "Hallway thermostat: set to 21.5°, it’s 19.8° now and heating. Mode: Heat (Eco and Off are the others). Tell me a temperature or a mode to change it."
+}

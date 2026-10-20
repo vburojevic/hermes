@@ -1,0 +1,80 @@
+{
+  "type": "table",
+  "v": 1,
+  "id": "w_cov8f3a21c",
+  "title": "Coverage by file",
+  "subtitle": "HermesKit · lowest first",
+  "icon": "checklist",
+  "as_of": "2026-10-16T14:02:00-04:00",
+  "state": "warning",
+  "state_label": "2 below 70%",
+  "columns": [
+    {
+      "key": "file",
+      "label": "File",
+      "mono": true,
+      "width": "wide"
+    },
+    {
+      "key": "lines",
+      "label": "Lines",
+      "format": "percent",
+      "precision": 0
+    },
+    {
+      "key": "uncovered",
+      "label": "Uncovered",
+      "format": "integer"
+    },
+    {
+      "key": "change",
+      "label": "Change",
+      "format": "delta",
+      "delta_format": "points",
+      "good": "up"
+    }
+  ],
+  "rows": [
+    {
+      "file": "Sync/Reconnect.swift",
+      "lines": {
+        "value": 0.52,
+        "state": "warning"
+      },
+      "uncovered": 48,
+      "change": -0.08
+    },
+    {
+      "file": "Sync/Backoff.swift",
+      "lines": {
+        "value": 0.64,
+        "state": "warning"
+      },
+      "uncovered": 12,
+      "change": null
+    },
+    {
+      "file": "Chat/Composer.swift",
+      "lines": 0.81,
+      "uncovered": 37,
+      "change": 0.02
+    },
+    {
+      "file": "Widgets/Payload.swift",
+      "lines": 0.93,
+      "uncovered": 9,
+      "change": 0.05
+    }
+  ],
+  "total": {
+    "file": "All files",
+    "lines": 0.81,
+    "uncovered": 412,
+    "change": -0.01
+  },
+  "source": {
+    "name": "coverage/lcov.info",
+    "kind": "file"
+  },
+  "fallback_text": "Coverage by file in HermesKit, lowest first: Sync/Reconnect.swift 52% (48 lines uncovered, −8 points); Sync/Backoff.swift 64% (12 uncovered, new file); Chat/Composer.swift 81% (37 uncovered, +2); Widgets/Payload.swift 93% (9 uncovered, +5). All files: 81%, 412 lines uncovered (−1 point). Two files are below 70%."
+}

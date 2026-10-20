@@ -1,0 +1,43 @@
+{
+  "$comment": "Must fail validation: fields: [{'id': 'f0', 'kind': 'text', 'label': 'Question 0'}, {'id': 'f1', 'kind': 'text', 'label': 'Question 1'}, {'id': 'f2', 'kind': 'text', 'lab",
+  "payload": {
+    "type": "form",
+    "v": 1,
+    "id": "w_bad00610",
+    "title": "Trip",
+    "as_of": "2026-10-17T10:58:00-04:00",
+    "fallback_text": "Tell me about the trip",
+    "fields": [
+      {
+        "id": "f0",
+        "kind": "text",
+        "label": "Question 0"
+      },
+      {
+        "id": "f1",
+        "kind": "text",
+        "label": "Question 1"
+      },
+      {
+        "id": "f2",
+        "kind": "text",
+        "label": "Question 2"
+      },
+      {
+        "id": "f3",
+        "kind": "text",
+        "label": "Question 3"
+      },
+      {
+        "id": "f4",
+        "kind": "text",
+        "label": "Question 4"
+      },
+      {
+        "id": "f5",
+        "kind": "text",
+        "label": "Question 5"
+      }
+    ]
+  }
+}

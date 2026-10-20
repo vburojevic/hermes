@@ -1,0 +1,47 @@
+{
+  "type": "meter",
+  "v": 1,
+  "id": "w_ready1016",
+  "title": "Readiness",
+  "icon": "gauge.with.dots.needle.67percent",
+  "as_of": "2026-10-16T07:12:00-04:00",
+  "stale_after": 43200,
+  "sensitivity": "private",
+  "style": "arc",
+  "items": [
+    {
+      "id": "readiness",
+      "label": "Readiness",
+      "value": {
+        "value": 82
+      },
+      "max": 100
+    }
+  ],
+  "zones": [
+    {
+      "from": 0,
+      "to": 40,
+      "state": "critical",
+      "label": "Low"
+    },
+    {
+      "from": 40,
+      "to": 70,
+      "state": "warning",
+      "label": "Fair"
+    },
+    {
+      "from": 70,
+      "state": "ok",
+      "label": "Good"
+    }
+  ],
+  "headline": "Ready for intervals",
+  "note": "Slept 7 h 12, HRV above your usual, resting HR normal.",
+  "source": {
+    "name": "Apple Health",
+    "kind": "device"
+  },
+  "fallback_text": "Readiness 82 of 100 (Good): ready for intervals. Slept 7 h 12, HRV above your usual, resting heart rate normal."
+}

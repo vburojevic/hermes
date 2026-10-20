@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/agenda.schema.json",
+  "title": "agenda",
+  "description": "A schedule: one day as blocks with free time and the now line, or the days ahead as one line each.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "view": {
+            "const": "day"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "span"
+          ]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "agenda"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "view": {
+      "enum": [
+        "day",
+        "days"
+      ],
+      "description": "day: one day as blocks. days: one line per day (the week ahead).",
+      "default": "day"
+    },
+    "date": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/Date"
+        }
+      ],
+      "description": "The day (view day) or the first day (view days)."
+    },
+    "span": {
+      "type": "integer",
+      "description": "Days in view days, from `date`: 5 for a working week, 7 for the week ahead. Only with view days.",
+      "minimum": 2,
+      "maximum": 14,
+      "default": 7
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              },
+              {
+                "$ref": "common.schema.json#/$defs/Date"
+              }
+            ],
+            "description": "A date-time; a date for all-day events."
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              },
+              {
+                "$ref": "common.schema.json#/$defs/Date"
+              }
+            ],
+            "description": "A date-time; for all-day events the last day (inclusive). Leave it out when unknown: the client shows only the start and never invents a length."
+          },
+          "all_day": {
+            "type": "boolean",
+            "description": "An all-day item: a birthday, a holiday, a trip day. Shown above the timed events with an “All day” chip.",
+            "default": false
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "place": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 80,
+                "description": "Where, in a few words: “EWR Terminal C”, “200 W 57th St”, “Zoom”.",
+                "minLength": 1
+              },
+              "address": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "The street address when it isn’t the name."
+              },
+              "lat": {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "lon": {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "url": {
+                "allOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/Url"
+                  }
+                ],
+                "description": "A call link (Zoom, Meet, FaceTime web) or the place’s page. Join / Open shows the domain first."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "description": "A place. With lat and lon the row’s menu offers Directions (opens Maps on this device); with url, Join or Open.",
+            "dependentRequired": {
+              "lat": [
+                "lon"
+              ],
+              "lon": [
+                "lat"
+              ]
+            }
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Person"
+            },
+            "maxItems": 12,
+            "description": "Who else is there: “With Ada and Ops”. The person themself is left out."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The rest of the second line: “leave by 10:40”, “bring the lease”."
+          },
+          "state": {
+            "enum": [
+              "confirmed",
+              "tentative",
+              "invited",
+              "cancelled"
+            ],
+            "description": "confirmed: a solid ink bar. tentative: a hollow bar and “Maybe”. invited: a hollow bar and “Not answered”. cancelled: grey, struck through, “Cancelled”.",
+            "default": "confirmed"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Tag"
+            },
+            "maxItems": 2,
+            "description": "Flags on the block’s trailing edge: “Leave by 10:40” (warning), “Moved” (info)."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Up to two buttons on the row. A reply action sends its id with `{item: <id>}`."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "start",
+          "title"
+        ],
+        "description": "One calendar event.",
+        "if": {
+          "properties": {
+            "all_day": {
+              "const": true
+            }
+          },
+          "required": [
+            "all_day"
+          ]
+        },
+        "then": {
+          "properties": {
+            "start": {
+              "$ref": "common.schema.json#/$defs/Date"
+            },
+            "end": {
+              "$ref": "common.schema.json#/$defs/Date"
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "start": {
+              "$ref": "common.schema.json#/$defs/Time"
+            },
+            "end": {
+              "$ref": "common.schema.json#/$defs/Time"
+            }
+          }
+        }
+      },
+      "minItems": 0,
+      "maxItems": 50,
+      "description": "Every event in the range, in any order; the client sorts them. Send all of them in view days too: the counts are computed from this list."
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "true only when the events come from every calendar the person uses. Only then does the client draw free blocks and say “Free all day”; otherwise a gap is just a gap.",
+      "default": false
+    },
+    "hours": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "maxLength": 5,
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "end": {
+          "type": "string",
+          "maxLength": 5,
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "description": "The working or waking window. Free blocks are always drawn between events; with hours, also from its start to the first event and from the last event to its end."
+    },
+    "day_notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "$ref": "common.schema.json#/$defs/Date"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "date",
+          "note"
+        ]
+      },
+      "maxItems": 14,
+      "description": "One short line for a day, shown instead of its count in view days and under the header in view day: “Travel day”, “Office closed”."
+    },
+    "time_zone": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "IANA zone to show every time in: Europe/London for a trip. Without it each time shows in its own offset, the wall-clock time where it happens (as in `timeline`)."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "date",
+    "events"
+  ],
+  "unevaluatedProperties": false
+}

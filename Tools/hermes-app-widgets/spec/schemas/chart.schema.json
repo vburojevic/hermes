@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/chart.schema.json",
+  "title": "chart",
+  "description": "A series over time, a few bars to compare, or the parts of a whole, in ink and greys, with the number that matters said in words.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "share"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "parts"
+        ]
+      },
+      "else": {
+        "required": [
+          "x",
+          "series"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "bar",
+              "stacked"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "x": {
+            "properties": {
+              "values": {
+                "maxItems": 14
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "chart"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "kind": {
+      "enum": [
+        "line",
+        "area",
+        "bar",
+        "stacked",
+        "share"
+      ],
+      "description": "line and area: a series over x. bar: one bar per x. stacked: up to three series stacked per x. share: one 100% bar from `parts`.",
+      "default": "line"
+    },
+    "headline": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "$ref": "common.schema.json#/$defs/Quantity"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "What the number is: “bpm resting, today”, “installs this week”, “spent in October”."
+        },
+        "delta": {
+          "$ref": "common.schema.json#/$defs/Delta"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "description": "The one number above the plot, so the chart is never the only place it is said."
+    },
+    "x": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "date",
+            "time",
+            "label"
+          ],
+          "description": "date: ISO dates (one per day, week or month). time: RFC 3339 times. label: plain names (Thu, iOS, Trailhead).",
+          "default": "label"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1
+          },
+          "minItems": 2,
+          "maxItems": 120,
+          "description": "The x positions, oldest first for dates and times."
+        },
+        "unit": {
+          "enum": [
+            "hour",
+            "day",
+            "week",
+            "month",
+            "year"
+          ],
+          "description": "For date and time: the step, so the client labels ticks well (Oct 4, Week 41, Mar)."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "values"
+      ],
+      "description": "The x axis. The client picks the tick labels and says Today for today’s date."
+    },
+    "y": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "number",
+            "integer",
+            "percent",
+            "currency",
+            "duration",
+            "bytes"
+          ],
+          "description": "How values are formatted on the axis, the callout and while scrubbing.",
+          "default": "number"
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "bpm, kg, ms."
+        },
+        "currency": {
+          "type": "string",
+          "maxLength": 3,
+          "pattern": "^[A-Z]{3}$"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "min": {
+          "type": "number",
+          "description": "Axis start. Defaults to a rounded value below the data. Bars always start at 0."
+        },
+        "max": {
+          "type": "number",
+          "description": "Axis end."
+        }
+      },
+      "additionalProperties": false,
+      "description": "How to read and format the values. Bars show no y axis; their values appear on the callout and while scrubbing."
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "The legend name: Resting HR, Installs, This year.",
+            "minLength": 1
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 120,
+            "description": "One value per x, in the same order. null is a gap (no reading): a break in the line or a missing bar, never 0."
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "info",
+              "warning",
+              "critical"
+            ],
+            "description": "Only when the series itself means a state (Over budget, Failing builds): it takes the state colour instead of its grey, with a glyph in the legend."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "values"
+        ],
+        "description": "One series. The first is ink, the second `text-secondary`, the third `text-tertiary`."
+      },
+      "minItems": 1,
+      "maxItems": 3,
+      "description": "Up to three series, each with exactly one value per x."
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Groceries, Eating out, Everything else.",
+            "minLength": 1
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "properties": {
+              "value": {
+                "type": "number"
+              }
+            },
+            "description": "The part’s amount. The client computes the percentages from the total."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "minItems": 2,
+      "maxItems": 4,
+      "description": "For share: the parts of the whole, largest first, the catch-all (“Everything else”) last. Drawn ink, `text-secondary`, `text-tertiary`, then `control-fill`."
+    },
+    "baseline": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "number"
+        },
+        "to": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "“Your usual 52–58”."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "description": "A band behind the line in `control-fill`: the person’s usual range from their own history, never a population norm."
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "“Goal 10,000”, “$40 a day”."
+        },
+        "over": {
+          "enum": [
+            "warning",
+            "critical"
+          ],
+          "description": "Values above the rule take this state colour (spending over a daily budget). Omit when going over is fine (a step goal)."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "description": "A dashed horizontal rule: a goal or a limit."
+    },
+    "callout": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "The x value it points at: one of `x.values`.",
+          "minLength": 1
+        },
+        "series": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 24,
+          "description": "The text in the ink pill: “61 today”. Omit to show the formatted value."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "x"
+      ],
+      "description": "The one point or bar that matters: an ink pill on a line; on bars, that bar is ink and the rest grey."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 280,
+      "description": "One or two sentences under the plot. Health: an observation against the person’s own baseline with a gentle next step, never a diagnosis."
+    },
+    "stats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "“Open”, “High”, “Low”, “Volume”; “Min”, “Average”, “Max”.",
+            "minLength": 1
+          },
+          "value": {
+            "$ref": "common.schema.json#/$defs/Quantity"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "Up to four small facts in one row under the plot (a market quote’s Open / High / Low / Volume). Each reads “label value”."
+    }
+  },
+  "required": [
+    "type",
+    "v"
+  ],
+  "unevaluatedProperties": false
+}

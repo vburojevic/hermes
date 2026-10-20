@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: (root): 'parts' is a required property",
+  "payload": {
+    "type": "chart",
+    "v": 1,
+    "id": "w_bad02c003",
+    "title": "Spending by category",
+    "as_of": "2026-10-19T08:00:00-04:00",
+    "fallback_text": "$1,083 spent in October.",
+    "kind": "share",
+    "headline": {
+      "value": {
+        "value": 1083,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "label": "spent in October"
+    }
+  }
+}

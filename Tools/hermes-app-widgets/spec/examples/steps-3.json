@@ -1,0 +1,62 @@
+{
+  "type": "steps",
+  "v": 1,
+  "id": "w_lampOrd4471",
+  "title": "Desk lamp",
+  "subtitle": "Order 4471 · DHL",
+  "icon": "shippingbox.fill",
+  "state": "warning",
+  "state_label": "Needs you",
+  "as_of": "2026-10-17T08:30:00-04:00",
+  "stale_after": 21600,
+  "refresh": {
+    "mode": "agent"
+  },
+  "steps": [
+    {
+      "id": "ordered",
+      "title": "Ordered",
+      "state": "done",
+      "detail": "Tue, Oct 13"
+    },
+    {
+      "id": "shipped",
+      "title": "Shipped from London",
+      "state": "done",
+      "detail": "Wed, Oct 14",
+      "evidence": {
+        "kind": "link",
+        "label": "DHL tracking JD014600006281",
+        "url": "https://www.dhl.com/us-en/home/tracking.html?tracking-id=JD014600006281"
+      }
+    },
+    {
+      "id": "customs",
+      "title": "Customs",
+      "state": "blocked",
+      "detail": "Import duty of $12.40 to pay before delivery"
+    },
+    {
+      "id": "out",
+      "title": "Out for delivery",
+      "state": "waiting"
+    },
+    {
+      "id": "delivered",
+      "title": "Delivered",
+      "state": "waiting"
+    }
+  ],
+  "actions": [
+    {
+      "id": "pay_vat",
+      "label": "Pay the Duty",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "DHL",
+    "kind": "api"
+  },
+  "fallback_text": "Desk lamp (order 4471, DHL): ordered Tue, Oct 13, shipped from London Wed, Oct 14. It’s held at customs until $12.40 of import duty is paid; then it goes out for delivery. Reply “pay the duty” and I’ll ask you to approve the payment."
+}

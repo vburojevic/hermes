@@ -1,0 +1,109 @@
+{
+  "type": "calendar",
+  "v": 1,
+  "id": "w_knee1014",
+  "title": "Knee exercises",
+  "subtitle": "Twice a day, from your physio plan",
+  "icon": "figure.walk",
+  "as_of": "2026-10-14T12:30:00-04:00",
+  "stale_after": 21600,
+  "sensitivity": "private",
+  "view": "weeks",
+  "style": "check",
+  "start": "2026-09-21",
+  "end": "2026-10-18",
+  "week_start": "monday",
+  "streak": {
+    "current": 16,
+    "best": 21
+  },
+  "marks": [
+    {
+      "date": "2026-09-21"
+    },
+    {
+      "date": "2026-09-22"
+    },
+    {
+      "date": "2026-09-23",
+      "status": "missed"
+    },
+    {
+      "date": "2026-09-24"
+    },
+    {
+      "date": "2026-09-25"
+    },
+    {
+      "date": "2026-09-26"
+    },
+    {
+      "date": "2026-09-27",
+      "status": "missed"
+    },
+    {
+      "date": "2026-09-28"
+    },
+    {
+      "date": "2026-09-29"
+    },
+    {
+      "date": "2026-09-30"
+    },
+    {
+      "date": "2026-10-01"
+    },
+    {
+      "date": "2026-10-02"
+    },
+    {
+      "date": "2026-10-03"
+    },
+    {
+      "date": "2026-10-04"
+    },
+    {
+      "date": "2026-10-05"
+    },
+    {
+      "date": "2026-10-06"
+    },
+    {
+      "date": "2026-10-07"
+    },
+    {
+      "date": "2026-10-08"
+    },
+    {
+      "date": "2026-10-09"
+    },
+    {
+      "date": "2026-10-10"
+    },
+    {
+      "date": "2026-10-11"
+    },
+    {
+      "date": "2026-10-12"
+    },
+    {
+      "date": "2026-10-13"
+    },
+    {
+      "date": "2026-10-14",
+      "status": "partial",
+      "note": "1 of 2 sessions: the evening set is still to do"
+    }
+  ],
+  "actions": [
+    {
+      "id": "log_today",
+      "label": "Log Today’s Session"
+    }
+  ],
+  "source": {
+    "name": "Your exercise log",
+    "kind": "agent"
+  },
+  "fallback_text": "Knee exercises (twice a day): 16-day streak, best 21. Missed 23 and 27 September; every day since 28 September done; today 1 of 2 sessions, the evening set is still to do."
+}

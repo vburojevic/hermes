@@ -1,0 +1,45 @@
+{
+  "type": "choice",
+  "v": 1,
+  "id": "w_5thst412v",
+  "title": "Viewing at 412 5th St",
+  "subtitle": "Times Dana offered · 45 min each",
+  "icon": "calendar",
+  "as_of": "2026-10-17T09:30:00-04:00",
+  "expires_at": "2026-10-17T20:00:00-04:00",
+  "question": "When should Dana show you the apartment?",
+  "style": "times",
+  "options": [
+    {
+      "id": "sat1000",
+      "label": "Sat, Oct 17, 10 AM",
+      "at": "2026-10-17T10:00:00-04:00"
+    },
+    {
+      "id": "sat1130",
+      "label": "Sat, Oct 17, 11:30 AM",
+      "at": "2026-10-17T11:30:00-04:00"
+    },
+    {
+      "id": "sat1400",
+      "label": "Sat, Oct 17, 2 PM",
+      "at": "2026-10-17T14:00:00-04:00"
+    },
+    {
+      "id": "mon1730",
+      "label": "Mon, Oct 19, 5:30 PM",
+      "at": "2026-10-19T17:30:00-04:00"
+    },
+    {
+      "id": "mon1830",
+      "label": "Mon, Oct 19, 6:30 PM",
+      "at": "2026-10-19T18:30:00-04:00"
+    }
+  ],
+  "decline_label": "None of these work",
+  "source": {
+    "name": "Dana Cole, Brownstone Realty",
+    "kind": "human"
+  },
+  "fallback_text": "When should Dana show you the apartment at 412 5th St (45 minutes)? Saturday, Oct 17 at 10 AM, 11:30 AM or 2 PM; Monday, Oct 19 at 5:30 or 6:30 PM. She needs an answer by 8 PM today. Reply with a time, or “none of these work”."
+}

@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/control.input.schema.json",
+  "title": "control (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Live controls for one smart-home device: switch, slider, stepper, scenes or modes, where every change is a request shown pending until the device reports back.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "control"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "device": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "The device or group: Ceiling lights, Thermostat, Office heater.",
+          "minLength": 1
+        },
+        "room": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Where it is: Living room, Hallway."
+        },
+        "reachable": {
+          "type": "boolean",
+          "description": "false when the hub can’t reach the device: every control is disabled and the banner says when it was last seen.",
+          "default": true
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "What the device reports, in words: “On · 2 lamps”, “heating”, “Offline since 06:12”."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "The device is running right now (lights on, heating). Its glyph and status are drawn in the active colour, always with the word in `status`.",
+          "default": false
+        },
+        "symbol": {
+          "$ref": "../common.schema.json#/$defs/Symbol"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "description": "The one device (or group) these controls drive."
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "kind": {
+            "enum": [
+              "switch",
+              "slider",
+              "stepper",
+              "scenes",
+              "segmented"
+            ],
+            "description": "switch: on / off. slider: a range (brightness, volume, blinds). stepper: − value + (a target temperature). scenes: tiles with a glyph, one active. segmented: a few modes in one row."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "What it changes: Power, Brightness, Target, Scene, Mode. Read by VoiceOver even where it isn’t drawn (the switch on the device row).",
+            "minLength": 1
+          },
+          "value": {
+            "type": [
+              "number",
+              "boolean",
+              "string",
+              "null"
+            ],
+            "description": "The value the device last reported, never the requested one: true / false for switch, a number for slider and stepper, an option id for scenes and segmented (null: no scene active). null when the device didn’t report: drawn as — or an empty track, never a guess."
+          },
+          "min": {
+            "type": "number",
+            "description": "slider, stepper (required there): the lowest value."
+          },
+          "max": {
+            "type": "number",
+            "description": "slider, stepper (required there): the highest value."
+          },
+          "step": {
+            "type": "number",
+            "description": "slider, stepper: the increment (0.5 for a thermostat).",
+            "exclusiveMinimum": 0
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 8,
+            "description": "After the value: %, °, °C, dB."
+          },
+          "reading": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "slider, stepper: what the device measures now, under the target (“Now 19.8°”). value null when the sensor hasn’t reported."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "../common.schema.json#/$defs/Id"
+                },
+                "label": {
+                  "$ref": "../common.schema.json#/$defs/Label"
+                },
+                "symbol": {
+                  "$ref": "../common.schema.json#/$defs/Symbol"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "label"
+              ],
+              "description": "A scene or mode."
+            },
+            "minItems": 2,
+            "maxItems": 8,
+            "description": "Required for scenes (2–8, with glyphs) and segmented (2–4); not allowed on the other kinds."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "value"
+        ],
+        "description": "One control. A change sends `set`; the value changes only when the device reports it.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "switch"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "min": false,
+                "max": false,
+                "step": false,
+                "unit": false,
+                "reading": false,
+                "options": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "slider",
+                    "stepper"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "required": [
+                "min",
+                "max"
+              ],
+              "properties": {
+                "value": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "options": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "scenes",
+                    "segmented"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "required": [
+                "options"
+              ],
+              "properties": {
+                "value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "min": false,
+                "max": false,
+                "step": false,
+                "unit": false,
+                "reading": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "segmented"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "maxItems": 4
+                }
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "The controls, top to bottom. The first switch sits on the device row."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "device",
+    "controls"
+  ],
+  "unevaluatedProperties": false
+}

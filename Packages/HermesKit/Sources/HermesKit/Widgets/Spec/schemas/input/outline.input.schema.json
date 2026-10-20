@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/outline.input.schema.json",
+  "title": "outline (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. A tree up to four levels deep: a plan with progress, a structure, or files with what changed; branches fold.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "outline"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "mode": {
+      "enum": [
+        "tree",
+        "files"
+      ],
+      "description": "tree: a plan or structure. files: folders and files with change tags and hermes-file links.",
+      "default": "tree"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The node: a step, a part, a folder or file name.",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the label: “Running now · 12 of 48 tables”."
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "running",
+              "done",
+              "failed",
+              "skipped",
+              "blocked",
+              "unknown"
+            ],
+            "description": "Progress state (the same words as `steps`), drawn as a glyph: waiting ○, running ◐ (ink), done ✓ (green), failed ✕ (red), skipped –, blocked ! (orange, waiting on someone), unknown ? (dashed). Omit for a plain structure."
+          },
+          "glyph": {
+            "$ref": "../common.schema.json#/$defs/Symbol"
+          },
+          "change": {
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed"
+            ],
+            "description": "For mode files: a letter tag A, M, D, R (green, orange, red, blue; read as the word)."
+          },
+          "url": {
+            "$ref": "../common.schema.json#/$defs/Url"
+          },
+          "folded": {
+            "type": "boolean",
+            "description": "Starts folded. Branches whose nodes are all done fold by default.",
+            "default": false
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "../common.schema.json#/$defs/Id"
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "The node: a step, a part, a folder or file name.",
+                  "minLength": 1
+                },
+                "detail": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "One line under the label: “Running now · 12 of 48 tables”."
+                },
+                "state": {
+                  "enum": [
+                    "waiting",
+                    "running",
+                    "done",
+                    "failed",
+                    "skipped",
+                    "blocked",
+                    "unknown"
+                  ],
+                  "description": "Progress state (the same words as `steps`), drawn as a glyph: waiting ○, running ◐ (ink), done ✓ (green), failed ✕ (red), skipped –, blocked ! (orange, waiting on someone), unknown ? (dashed). Omit for a plain structure."
+                },
+                "glyph": {
+                  "$ref": "../common.schema.json#/$defs/Symbol"
+                },
+                "change": {
+                  "enum": [
+                    "added",
+                    "modified",
+                    "deleted",
+                    "renamed"
+                  ],
+                  "description": "For mode files: a letter tag A, M, D, R (green, orange, red, blue; read as the word)."
+                },
+                "url": {
+                  "$ref": "../common.schema.json#/$defs/Url"
+                },
+                "folded": {
+                  "type": "boolean",
+                  "description": "Starts folded. Branches whose nodes are all done fold by default.",
+                  "default": false
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "../common.schema.json#/$defs/Id"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "The node: a step, a part, a folder or file name.",
+                        "minLength": 1
+                      },
+                      "detail": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "One line under the label: “Running now · 12 of 48 tables”."
+                      },
+                      "state": {
+                        "enum": [
+                          "waiting",
+                          "running",
+                          "done",
+                          "failed",
+                          "skipped",
+                          "blocked",
+                          "unknown"
+                        ],
+                        "description": "Progress state (the same words as `steps`), drawn as a glyph: waiting ○, running ◐ (ink), done ✓ (green), failed ✕ (red), skipped –, blocked ! (orange, waiting on someone), unknown ? (dashed). Omit for a plain structure."
+                      },
+                      "glyph": {
+                        "$ref": "../common.schema.json#/$defs/Symbol"
+                      },
+                      "change": {
+                        "enum": [
+                          "added",
+                          "modified",
+                          "deleted",
+                          "renamed"
+                        ],
+                        "description": "For mode files: a letter tag A, M, D, R (green, orange, red, blue; read as the word)."
+                      },
+                      "url": {
+                        "$ref": "../common.schema.json#/$defs/Url"
+                      },
+                      "folded": {
+                        "type": "boolean",
+                        "description": "Starts folded. Branches whose nodes are all done fold by default.",
+                        "default": false
+                      },
+                      "children": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "$ref": "../common.schema.json#/$defs/Id"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120,
+                              "description": "The node: a step, a part, a folder or file name.",
+                              "minLength": 1
+                            },
+                            "detail": {
+                              "type": "string",
+                              "maxLength": 120,
+                              "description": "One line under the label: “Running now · 12 of 48 tables”."
+                            },
+                            "state": {
+                              "enum": [
+                                "waiting",
+                                "running",
+                                "done",
+                                "failed",
+                                "skipped",
+                                "blocked",
+                                "unknown"
+                              ],
+                              "description": "Progress state (the same words as `steps`), drawn as a glyph: waiting ○, running ◐ (ink), done ✓ (green), failed ✕ (red), skipped –, blocked ! (orange, waiting on someone), unknown ? (dashed). Omit for a plain structure."
+                            },
+                            "glyph": {
+                              "$ref": "../common.schema.json#/$defs/Symbol"
+                            },
+                            "change": {
+                              "enum": [
+                                "added",
+                                "modified",
+                                "deleted",
+                                "renamed"
+                              ],
+                              "description": "For mode files: a letter tag A, M, D, R (green, orange, red, blue; read as the word)."
+                            },
+                            "url": {
+                              "$ref": "../common.schema.json#/$defs/Url"
+                            },
+                            "folded": {
+                              "type": "boolean",
+                              "description": "Starts folded. Branches whose nodes are all done fold by default.",
+                              "default": false
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "label"
+                          ]
+                        },
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "description": "Child nodes (up to depth 4)."
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "label"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "description": "Child nodes (up to depth 4)."
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "label"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Child nodes (up to depth 4)."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label"
+        ],
+        "description": "A node in the tree."
+      },
+      "minItems": 0,
+      "maxItems": 30,
+      "description": "Top-level nodes. Depth ≤ 4 and ≤ 60 nodes in all."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "nodes"
+  ],
+  "unevaluatedProperties": false
+}

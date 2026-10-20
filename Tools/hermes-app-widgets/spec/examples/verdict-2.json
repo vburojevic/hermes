@@ -1,0 +1,61 @@
+{
+  "type": "verdict",
+  "v": 1,
+  "id": "w_allergen7a2",
+  "title": "Allergens",
+  "subtitle": "Chicken satay bowl · for Maya",
+  "icon": "fork.knife",
+  "state": "unverified",
+  "as_of": "2026-10-16T11:02:00-04:00",
+  "stale_after": 14400,
+  "sensitivity": "private",
+  "banner": {
+    "state": "unverified",
+    "text": "2 ingredients have no allergen data, so this can’t be called safe."
+  },
+  "kind": "safety",
+  "outcome": {
+    "state": "unverified",
+    "label": "Not verified",
+    "reason": "Don’t serve it to Maya until someone checks the sauce and dressing."
+  },
+  "criteria": [
+    {
+      "id": "peanuts",
+      "label": "Peanuts",
+      "state": "unverified",
+      "value": "No data for “satay sauce”"
+    },
+    {
+      "id": "tree-nuts",
+      "label": "Tree nuts",
+      "state": "ok",
+      "value": "Not present",
+      "evidence": {
+        "kind": "link",
+        "label": "Ingredient list on the menu",
+        "url": "https://greenbowl.example.com/menu/satay-bowl"
+      }
+    },
+    {
+      "id": "sesame",
+      "label": "Sesame",
+      "state": "unverified",
+      "value": "No data for “house dressing”"
+    }
+  ],
+  "would_change": "Green Bowl confirming what goes into the satay sauce and the house dressing.",
+  "actions": [
+    {
+      "id": "find_safe",
+      "label": "Find a Safe Dish",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "Green Bowl’s menu",
+    "kind": "web",
+    "url": "https://greenbowl.example.com/menu"
+  },
+  "fallback_text": "Not verified: don’t serve the chicken satay bowl to Maya until someone checks the sauce and dressing. 2 ingredients have no allergen data. Peanuts: no data for “satay sauce”. Tree nuts: not present (ingredient list on the menu). Sesame: no data for “house dressing”."
+}

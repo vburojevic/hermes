@@ -1,0 +1,64 @@
+{
+  "type": "details",
+  "v": 1,
+  "id": "w_inv0042a",
+  "title": "Invoice INV-0042",
+  "subtitle": "Sent Oct 1",
+  "icon": "doc.fill",
+  "as_of": "2026-10-16T09:00:00-04:00",
+  "stale_after": 86400,
+  "sections": [
+    {
+      "fields": [
+        {
+          "label": "Amount",
+          "value": {
+            "value": 2400,
+            "format": "currency",
+            "currency": "USD",
+            "precision": 2
+          },
+          "emphasis": true
+        },
+        {
+          "label": "Client",
+          "value": "Bluefin Studio LLC"
+        },
+        {
+          "label": "Due",
+          "value": {
+            "value": "2026-10-20T00:00:00-04:00",
+            "format": "relative"
+          },
+          "detail": "Tue, Oct 20",
+          "state": "warning"
+        },
+        {
+          "label": "Status",
+          "value": "Unpaid",
+          "state": "neutral"
+        },
+        {
+          "label": "Pay to",
+          "value": "Chase checking •• 4410",
+          "mono": true,
+          "copy": true
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "send_reminder",
+      "label": "Send a Reminder",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "Invoices folder",
+    "kind": "file",
+    "url": "hermes-file:invoices/0042.pdf",
+    "detail": "invoices/0042.pdf"
+  },
+  "fallback_text": "Invoice INV-0042 (sent Oct 1) to Bluefin Studio LLC: $2,400.00, due Tue, Oct 20 (in 4 days), unpaid. Pay to Chase checking •• 4410. Reply “send a reminder” and I’ll draft one for you to approve."
+}

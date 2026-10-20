@@ -1,0 +1,84 @@
+{
+  "type": "table",
+  "v": 1,
+  "id": "w_budget202610",
+  "title": "October budget",
+  "subtitle": "Spent so far · 16 of 31 days",
+  "icon": "chart.pie.fill",
+  "as_of": "2026-10-16T20:00:00-04:00",
+  "sensitivity": "private",
+  "state": "unverified",
+  "state_label": "1 unknown",
+  "banner": {
+    "state": "unverified",
+    "text": "Kids’ activities is unknown: the Amex card hasn’t synced since Oct 12, so there’s no total yet."
+  },
+  "columns": [
+    {
+      "key": "category",
+      "label": "Category"
+    },
+    {
+      "key": "spent",
+      "label": "Spent",
+      "format": "currency",
+      "currency": "USD",
+      "precision": 0
+    },
+    {
+      "key": "budget",
+      "label": "Budget",
+      "format": "currency",
+      "currency": "USD",
+      "precision": 0
+    },
+    {
+      "key": "left",
+      "label": "Left",
+      "format": "currency",
+      "currency": "USD",
+      "precision": 0
+    }
+  ],
+  "rows": [
+    {
+      "category": "Eating out",
+      "spent": 312,
+      "budget": 250,
+      "left": {
+        "value": -62,
+        "state": "critical"
+      }
+    },
+    {
+      "category": "Groceries",
+      "spent": 286,
+      "budget": 500,
+      "left": 214
+    },
+    {
+      "category": "Transport",
+      "spent": 74,
+      "budget": 120,
+      "left": 46
+    },
+    {
+      "category": "Kids’ activities",
+      "spent": null,
+      "budget": 180,
+      "left": null
+    }
+  ],
+  "total": {
+    "category": "Total",
+    "spent": null,
+    "budget": 1050,
+    "left": null
+  },
+  "source": {
+    "name": "Chase, Amex",
+    "kind": "api",
+    "detail": "The Amex card hasn’t synced since Oct 12"
+  },
+  "fallback_text": "October budget, 16 of 31 days: Eating out $312 of $250 ($62 over); Groceries $286 of $500 ($214 left); Transport $74 of $120 ($46 left); Kids’ activities unknown of $180 (the Amex card hasn’t synced since Oct 12). The total can’t be worked out until it does."
+}

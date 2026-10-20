@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: hours/0/precip_chance: 70 is greater than the maximum of 1",
+  "payload": {
+    "type": "weather",
+    "v": 1,
+    "id": "w_bad00522",
+    "title": "New York",
+    "as_of": "2026-10-22T10:05:00-04:00",
+    "fallback_text": "New York: rain at 4 PM, 70%.",
+    "place": {
+      "name": "New York"
+    },
+    "unit": "fahrenheit",
+    "hours": [
+      {
+        "at": "2026-10-22T16:00:00-04:00",
+        "temp": 56,
+        "condition": "rain",
+        "precip_chance": 70
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$comment": "Must fail validation: items: [] should be non-empty",
+  "payload": {
+    "type": "metric",
+    "v": 1,
+    "id": "w_bad00001",
+    "title": "x",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "x",
+    "items": []
+  }
+}

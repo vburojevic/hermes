@@ -1,0 +1,559 @@
+import Foundation
+
+/// One inbound frame on the `/api/ws` JSON-RPC gateway (`hermes serve`).
+public enum GatewayFrame: Sendable, Equatable {
+    /// `{"method":"event","params":{"type","session_id","seq","payload"}}`
+    case event(GatewayEvent)
+    /// A server→client request (approval, clarify, sudo, secret…), answered by id.
+    case request(GatewayServerRequest)
+    /// A response to one of our requests.
+    case response(id: String, result: JSONValue?, error: GatewayRPCError?)
+
+    /// Classifies one text frame. Returns `nil` for anything that isn't a JSON-RPC object.
+    public static func parse(_ text: String) -> GatewayFrame? {
+        guard let json = JSONValue.parse(text), case .object(let object) = json else { return nil }
+        let method = object["method"]?.stringValue
+        let id = object["id"].flatMap(Self.idString)
+        if method == "event", let params = object["params"] {
+            return .event(GatewayEvent(params: params))
+        }
+        if let method, let id {
+            return .request(GatewayServerRequest(id: id, method: method, params: object["params"] ?? .object([:])))
+        }
+        if let id {
+            let error = object["error"].map(GatewayRPCError.init(json:))
+            return .response(id: id, result: object["result"], error: error)
+        }
+        return nil
+    }
+
+    static func idString(_ value: JSONValue) -> String? {
+        switch value {
+        case .string(let text): text
+        case .number(let number): String(Int64(number))
+        default: nil
+        }
+    }
+}
+
+public struct GatewayEvent: Sendable, Equatable {
+    public var type: String
+    /// Runtime session id (8 hex). Empty for session-less broadcasts.
+    public var sessionID: String
+    public var seq: Int?
+    public var payload: JSONValue
+
+    public init(type: String, sessionID: String, seq: Int?, payload: JSONValue) {
+        self.type = type
+        self.sessionID = sessionID
+        self.seq = seq
+        self.payload = payload
+    }
+
+    init(params: JSONValue) {
+        type = params["type"]?.stringValue ?? ""
+        sessionID = params["session_id"]?.stringValue ?? ""
+        seq = params["seq"]?.truncatedIntValue
+        payload = params["payload"] ?? .object([:])
+    }
+}
+
+public struct GatewayServerRequest: Sendable, Equatable {
+    public var id: String
+    public var method: String
+    public var params: JSONValue
+
+    public var sessionID: String { params["session_id"]?.stringValue ?? "" }
+
+    public init(id: String, method: String, params: JSONValue) {
+        self.id = id
+        self.method = method
+        self.params = params
+    }
+}
+
+public struct GatewayRPCError: Error, Sendable, Equatable, LocalizedError {
+    public var code: Int
+    public var message: String
+    public var data: JSONValue?
+
+    init(json: JSONValue) {
+        code = json["code"]?.truncatedIntValue ?? -1
+        message = json["message"]?.stringValue ?? "Request failed"
+        data = json["data"]
+    }
+
+    public init(code: Int, message: String, data: JSONValue? = nil) {
+        self.code = code
+        self.message = message
+        self.data = data
+    }
+
+    public var errorDescription: String? {
+        switch code {
+        case 4009: "This Bot is still busy with its last message. Try again when it's done."
+        case 4062: "A Bot with that name already exists."
+        case 4064: "That bot doesn't exist on this Hermes backend."
+        case 4090:
+            // Hermes says why in `data.reason`; the message is its own.
+            switch refusalReason {
+            case "SESSION_NOT_OWNED": "Another Hermes process is answering in this chat right now (another Bot's message, or a routine). Send again when it's done."
+            case "SESSION_COORDINATION_UNAVAILABLE": "Hermes can't tell who's using this chat right now. Try again in a moment."
+            default: "Hermes is running as many chats at once as it's set to allow. Try again when one finishes."
+            }
+        case 5035: "Hermes is restarting. Reconnecting…"
+        case -32601: HermesVersionGap.message
+        default: message
+        }
+    }
+
+    /// Why Hermes refused a turn (4090): `SESSION_NOT_OWNED`, `MAX_CONCURRENT_SESSIONS`,
+    /// `SESSION_COORDINATION_UNAVAILABLE`.
+    public var refusalReason: String? { data?["reason"]?.stringValue }
+
+    /// The chat is held by another Hermes process (a Bot's one-shot `hermes chat` answering
+    /// another Bot, a routine): Hermes takes one writer per chat, so this send waits its turn.
+    public var isHeldElsewhere: Bool { code == 4090 && refusalReason == "SESSION_NOT_OWNED" }
+
+    /// The runtime session id is stale; re-resume by the stored id.
+    public var isSessionNotFound: Bool { code == 4001 }
+}
+
+/// A JSON-RPC 2.0 client for the Hermes backend gateway socket (`/api/ws`), the
+/// transport Hermes Desktop uses for chat, profiles (Bots) and routines.
+///
+/// One socket serves every profile: per-request `profile` params pick the Bot.
+public actor GatewaySocket {
+    public enum Message: Sendable {
+        case frame(GatewayFrame)
+        case closed((any Error)?)
+    }
+
+    public enum Failure: Error, LocalizedError, Equatable {
+        case notConnected
+        case handshakeTimedOut
+        case closed(String)
+        case timedOut(method: String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .notConnected: "Not connected to the Hermes backend."
+            case .handshakeTimedOut: "The Hermes backend didn't answer. Check the address and that `hermes serve` is running."
+            case .closed(let reason): reason
+            case .timedOut(let method): "Hermes didn't answer \(method) in time."
+            }
+        }
+    }
+
+    private let url: URL
+    private let session: URLSession
+    /// A session made for this socket alone, closed with it.
+    private let ownsSession: Bool
+    /// Closed for good: a socket is opened once (its own session is gone with it).
+    private var isFinished = false
+    private var task: URLSessionWebSocketTask?
+    private var receiveTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
+    private var pending: [String: CheckedContinuation<JSONValue, any Error>] = [:]
+    private var subscribers: [UUID: AsyncStream<Message>.Continuation] = [:]
+    private var readyContinuation: CheckedContinuation<Void, any Error>?
+    private var isReady = false
+    private var nextID = 0
+    private var lastInbound = Date()
+    /// The backend answers `gateway.ping` (it said `heartbeat` in `gateway.ready`).
+    private var serverHeartbeat = false
+    public private(set) var isOpen = false
+    /// Identifies the backend process; a change means event watermarks are void.
+    public private(set) var replayEpoch: String?
+    /// Asked when the socket has heard nothing past `staleAfter`: true keeps it open, because the
+    /// backend's machine still answers (Hermes's gateway, the process Telegram rides on), so the
+    /// dashboard's event loop is frozen, not the link dead. Up to `longestStall`.
+    private var stillThere: (@Sendable () async -> Bool)?
+    /// Quiet past `staleAfter`, kept open by `stillThere`: the backend is stalled.
+    public private(set) var isStalled = false
+
+    /// Keeps a quiet socket open while `check` says the backend's machine answers.
+    public func keepOpenWhile(_ check: @escaping @Sendable () async -> Bool) {
+        stillThere = check
+    }
+
+    /// - Parameter session: by default the socket has a session of its own, so its upgrade never
+    ///   rides a pooled connection the system closed while the app was suspended.
+    public init(url: URL, session: URLSession? = nil) {
+        self.url = url
+        ownsSession = session == nil
+        // Redirects only on the same server: the socket's URL carries its token.
+        self.session = session ?? URLSession(configuration: Self.sessionConfiguration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
+    }
+
+    private static var sessionConfiguration: URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
+    }
+
+    /// Opens the socket, waits for `gateway.ready`, and opts into server requests
+    /// (without `client.capabilities` approvals are never delivered).
+    public func connect() async throws {
+        guard task == nil else { return }
+        guard !isFinished else { throw Failure.closed("Disconnected from the Hermes backend.") }
+        var upgrade = URLRequest(url: url)
+        upgrade.timeoutInterval = 15
+        let task = session.webSocketTask(with: upgrade)
+        task.maximumMessageSize = 64 * 1024 * 1024
+        self.task = task
+        task.resume()
+        receiveTask = Task { [weak self] in await self?.receiveLoop() }
+
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { try await self.waitForReady() }
+                group.addTask {
+                    // A backend that accepted the socket is there, just busy: a loaded machine took
+                    // over 12 s to say ready, and each retry asked it for the same work again.
+                    try await Task.sleep(for: .seconds(Self.readyTimeout))
+                    throw Failure.handshakeTimedOut
+                }
+                defer { group.cancelAll() }
+                try await group.next()
+            }
+            isOpen = true
+            _ = try await request("client.capabilities", ["server_requests": .bool(true)])
+        } catch {
+            // A socket that never got going must not keep its receive loop or heartbeat.
+            shutdown(error: error)
+            throw error
+        }
+    }
+
+    private func waitForReady() async throws {
+        // `gateway.ready` may already have arrived before anyone waited for it.
+        guard !isReady else { return }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    readyContinuation = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelReadyWait() }
+        }
+    }
+
+    private func cancelReadyWait() {
+        readyContinuation?.resume(throwing: CancellationError())
+        readyContinuation = nil
+    }
+
+    /// Every frame and the final close, for as long as the caller iterates.
+    public func messages() -> AsyncStream<Message> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Message>.makeStream(bufferingPolicy: .unbounded)
+        guard task != nil else {
+            // Already closed: say so at once rather than leaving the caller waiting forever.
+            continuation.yield(.closed(Failure.closed("Disconnected from the Hermes backend.")))
+            continuation.finish()
+            return stream
+        }
+        subscribers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeSubscriber(id) }
+        }
+        return stream
+    }
+
+    private func removeSubscriber(_ id: UUID) {
+        subscribers[id] = nil
+    }
+
+    /// Sends a request and waits for its response.
+    public func request(_ method: String, _ params: [String: JSONValue] = [:], timeout: Duration = .seconds(120)) async throws -> JSONValue {
+        guard let task else { throw Failure.notConnected }
+        nextID += 1
+        let id = "r\(nextID)"
+        let frame: JSONValue = .object([
+            "jsonrpc": .string("2.0"), "id": .string(id), "method": .string(method), "params": .object(params),
+        ])
+        let text = String(decoding: try JSONEncoder().encode(frame), as: UTF8.self)
+
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            await self?.fail(id: id, with: Failure.timedOut(method: method))
+        }
+        defer { timeoutTask.cancel() }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue, any Error>) in
+                pending[id] = continuation
+                task.send(.string(text)) { error in
+                    guard let error else { return }
+                    Task { await self.fail(id: id, with: error) }
+                }
+            }
+        } onCancel: {
+            Task { await self.fail(id: id, with: CancellationError()) }
+        }
+    }
+
+    /// Answers a server→client request (approval, clarify, …). Returns whether the answer was
+    /// written to an open socket (Hermes acknowledges nothing: `AnswerLedger`).
+    @discardableResult
+    public func respond(to requestID: String, result: JSONValue) async -> Bool {
+        await sendRaw(.object(["jsonrpc": .string("2.0"), "id": .string(requestID), "result": result]))
+    }
+
+    /// Declines a server request we can't handle (desktop-only bridges and the like).
+    public func decline(_ requestID: String, code: Int = -32601, message: String = "Not supported by this client") async {
+        await sendRaw(.object([
+            "jsonrpc": .string("2.0"), "id": .string(requestID),
+            "error": .object(["code": .number(Double(code)), "message": .string(message)]),
+        ]))
+    }
+
+    public func close() {
+        shutdown(error: nil)
+    }
+
+    // MARK: - Internals
+
+    @discardableResult
+    private func sendRaw(_ frame: JSONValue) async -> Bool {
+        guard let task, let data = try? JSONEncoder().encode(frame) else { return false }
+        do {
+            try await task.send(.string(String(decoding: data, as: UTF8.self)))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func fail(id: String, with error: any Error) {
+        pending.removeValue(forKey: id)?.resume(throwing: error)
+    }
+
+    private func receiveLoop() async {
+        while let task = self.task {
+            do {
+                let message = try await task.receive()
+                heard()
+                let text: String? = switch message {
+                case .string(let text): text
+                case .data(let data): String(data: data, encoding: .utf8)
+                @unknown default: nil
+                }
+                // A frame may carry several newline-delimited objects; most carry one, parsed as
+                // is rather than split and copied.
+                guard let text else { continue }
+                if !text.utf8.contains(UInt8(ascii: "\n")) {
+                    if let frame = GatewayFrame.parse(text) { handle(frame) }
+                    continue
+                }
+                for line in text.split(whereSeparator: \.isNewline) {
+                    if let frame = GatewayFrame.parse(String(line)) {
+                        handle(frame)
+                    }
+                }
+            } catch {
+                shutdown(error: closeReason(for: error))
+                return
+            }
+        }
+    }
+
+    private func closeReason(for error: any Error) -> any Error {
+        guard let task else { return error }
+        switch task.closeCode.rawValue {
+        case 4401: return Failure.closed("The Hermes backend rejected the sign-in. Sign in again in Settings.")
+        case 4403: return Failure.closed("The Hermes backend refused this connection (host or origin not allowed).")
+        default: return error
+        }
+    }
+
+    private func handle(_ frame: GatewayFrame) {
+        switch frame {
+        case .event(let event):
+            if event.type == "gateway.ready" {
+                replayEpoch = event.payload["replay_epoch"]?.stringValue
+                serverHeartbeat = event.payload["heartbeat"]?.boolValue == true
+                startHeartbeat()
+                isReady = true
+                readyContinuation?.resume()
+                readyContinuation = nil
+                return
+            }
+        case .response(let id, let result, let error):
+            if let continuation = pending.removeValue(forKey: id) {
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: result ?? .null)
+                }
+            }
+            return
+        case .request:
+            break
+        }
+        for subscriber in subscribers.values {
+            subscriber.yield(.frame(frame))
+        }
+    }
+
+    /// Keeps the link proven: a quiet socket is pinged every 10 s, and one that has heard nothing
+    /// for 75 s is closed so the roster reconnects, instead of waiting on a connection a network
+    /// change or a sleep already killed (those are probed straight away). Not sooner: a backend on
+    /// a busy Mac goes quiet for a minute or more and then carries on, and closing it then only
+    /// queued a reconnect behind the same stall. Uses `gateway.ping` when the backend offers it (it also
+    /// keeps the backend's side of the session alive), else a WebSocket ping.
+    private func startHeartbeat() {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { [weak self] in
+            var beat = 0
+            while !Task.isCancelled {
+                let asleep = ContinuousClock.now
+                try? await Task.sleep(for: .seconds(Self.heartbeatInterval))
+                guard let self, !Task.isCancelled else { return }
+                beat += 1
+                // Woke far later than asked: the app was suspended or the Mac slept. The silence is
+                // ours, not the backend's, so ask the link once (a failed probe closes it) rather
+                // than calling it stale for the time nobody was listening.
+                if ContinuousClock.now - asleep > .seconds(Self.heartbeatInterval * 3) {
+                    _ = await self.probe(timeout: .seconds(5))
+                    continue
+                }
+                if await self.isStale() {
+                    if await self.waitsOutStall() { continue }
+                    await self.shutdown(error: Failure.closed("Lost the connection to the Hermes backend."))
+                    return
+                }
+                // Recent traffic (a roster poll, a streaming turn) already proves the link.
+                guard await self.isQuiet() else { continue }
+                await self.ping(beat: beat)
+            }
+        }
+    }
+
+    static let heartbeatInterval: Double = 10
+    /// How long an opened socket may take to say `gateway.ready` (a busy Mac's backend can take most
+    /// of a minute). One that can't connect at all fails sooner: the upgrade request times out after
+    /// 15 s and closes the wait.
+    static let readyTimeout: Double = 60
+    static let staleAfter: Double = 75
+    /// The longest a quiet socket is kept for a backend that's stalled (Hermes's dashboard was seen
+    /// frozen for 349 s). A new socket couldn't get in any sooner: it waits on the same loop.
+    static let longestStall: Double = 600
+
+    /// Stale, but its machine still answers: keep the socket and keep pinging (the backend reads
+    /// them all when it wakes and answers), up to `longestStall`.
+    private func waitsOutStall() async -> Bool {
+        guard let stillThere, Date().timeIntervalSince(lastInbound) < Self.longestStall else { return false }
+        let there = await stillThere()
+        guard isOpen else { return false }
+        isStalled = there
+        if there { await ping(beat: 0) }
+        return there
+    }
+
+    private func ping(beat: Int) async {
+        if serverHeartbeat {
+            await sendRaw(.object([
+                "jsonrpc": .string("2.0"), "id": .string("heartbeat-\(beat)"),
+                "method": .string("gateway.ping"), "params": .object([:]),
+            ]))
+        } else if let task {
+            task.sendPing { [weak self] error in
+                guard error == nil else { return }
+                Task { await self?.heard() }
+            }
+        }
+    }
+
+    private func heard() {
+        lastInbound = .now
+        isStalled = false
+    }
+
+    /// Whether the link answers right now: a WebSocket ping that must come back within `timeout`.
+    /// After a wake or a network change a socket can look open long after its connection died;
+    /// a failed probe closes it, so whoever reads `messages()` sees the close and reconnects.
+    /// - Parameter closesOnFailure: false leaves an unanswered socket open, for a caller that
+    ///   replaces it itself (and doesn't want its close read as a drop).
+    public func probe(timeout: Duration = .seconds(4), closesOnFailure: Bool = true) async -> Bool {
+        guard let task, isOpen else { return false }
+        let answered = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let once = ResumeOnce(continuation)
+            task.sendPing { error in once.resume(error == nil) }
+            Task {
+                try? await Task.sleep(for: timeout)
+                once.resume(false)
+            }
+        }
+        guard self.task === task else { return false }
+        if answered {
+            heard()
+        } else if closesOnFailure {
+            shutdown(error: Failure.closed("Lost the connection to the Hermes backend."))
+        }
+        return answered
+    }
+
+    /// Open, and heard from within the last `seconds` (any frame or heartbeat answer).
+    public func heard(within seconds: Double) -> Bool {
+        isOpen && Date().timeIntervalSince(lastInbound) < seconds
+    }
+
+    private func isQuiet() -> Bool {
+        Date().timeIntervalSince(lastInbound) >= Self.heartbeatInterval - 1
+    }
+
+    private func isStale() -> Bool {
+        Date().timeIntervalSince(lastInbound) > Self.staleAfter
+    }
+
+    private func shutdown(error: (any Error)?) {
+        if !isFinished {
+            isFinished = true
+            if ownsSession { session.finishTasksAndInvalidate() }
+        }
+        guard task != nil || readyContinuation != nil else { return }
+        isOpen = false
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+        receiveTask?.cancel()
+        receiveTask = nil
+        let failure = error ?? Failure.closed("Disconnected from the Hermes backend.")
+        readyContinuation?.resume(throwing: failure)
+        readyContinuation = nil
+        for continuation in pending.values {
+            continuation.resume(throwing: failure)
+        }
+        pending.removeAll()
+        for subscriber in subscribers.values {
+            subscriber.yield(.closed(error))
+            subscriber.finish()
+        }
+        subscribers.removeAll()
+    }
+}
+
+/// Resumes a continuation once, whichever of a ping's answer and its deadline comes first.
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ value: Bool) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: value)
+    }
+}

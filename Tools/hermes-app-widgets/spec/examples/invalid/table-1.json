@@ -1,0 +1,28 @@
+{
+  "$comment": "Must fail validation: columns/1: 'good' is a required property",
+  "payload": {
+    "type": "table",
+    "v": 1,
+    "id": "w_bad03t001",
+    "title": "Costs",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "Costs: hosting $120, up 10%.",
+    "columns": [
+      {
+        "key": "item",
+        "label": "Item"
+      },
+      {
+        "key": "change",
+        "label": "Change",
+        "format": "delta"
+      }
+    ],
+    "rows": [
+      {
+        "item": "Hosting",
+        "change": 0.1
+      }
+    ]
+  }
+}

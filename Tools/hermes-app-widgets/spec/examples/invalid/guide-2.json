@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: steps/0: 'id' is a required property; steps/1: 'id' is a required property",
+  "payload": {
+    "type": "guide",
+    "v": 1,
+    "id": "w_bad07g002",
+    "title": "Pancakes",
+    "as_of": "2026-10-16T08:00:00-04:00",
+    "fallback_text": "Mix, then fry.",
+    "steps": [
+      {
+        "title": "Mix the batter."
+      },
+      {
+        "title": "Fry each pancake for a minute a side.",
+        "timer": 60
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: cards/0: 'back' is a required property",
+  "payload": {
+    "type": "flashcard",
+    "v": 1,
+    "id": "w_bad08005",
+    "title": "Spanish · shopping",
+    "as_of": "2026-10-16T08:05:00-04:00",
+    "fallback_text": "How do you say “receipt”?",
+    "cards": [
+      {
+        "id": "recibo",
+        "front": "How do you say “receipt”?"
+      }
+    ],
+    "progress": {
+      "done": 0,
+      "total": 20
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$comment": "Must fail validation: (root): 'severity' is a required property",
+  "payload": {
+    "type": "alert",
+    "v": 1,
+    "id": "w_bad00605",
+    "title": "Checkout is down",
+    "as_of": "2026-10-17T14:20:00-04:00",
+    "fallback_text": "Checkout is down",
+    "headline": "Checkout returns errors for everyone."
+  }
+}

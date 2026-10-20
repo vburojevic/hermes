@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: subject: 'message' is a required property",
+  "payload": {
+    "type": "approval",
+    "v": 1,
+    "id": "w_bad00005",
+    "title": "Message to Mom",
+    "as_of": "2026-10-16T18:02:00-04:00",
+    "expires_at": "2026-10-17T12:00:00-04:00",
+    "fallback_text": "A message to Mom, not sent.",
+    "subject": {
+      "kind": "message",
+      "verb": "Send"
+    },
+    "consequences": {
+      "affects": [
+        "Mom"
+      ],
+      "reversible": "no"
+    }
+  }
+}

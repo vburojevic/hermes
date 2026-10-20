@@ -1,0 +1,52 @@
+{
+  "type": "verdict",
+  "v": 1,
+  "id": "w_dbpick2026",
+  "title": "Database for Trailhead",
+  "subtitle": "Compared 4 options",
+  "icon": "checkmark.seal.fill",
+  "as_of": "2026-10-16T15:20:00-04:00",
+  "kind": "decision",
+  "confidence": "medium",
+  "outcome": {
+    "state": "ok",
+    "label": "Postgres with Litestream",
+    "reason": "Cheapest to run and simplest to restore for one app server."
+  },
+  "criteria": [
+    {
+      "id": "cost",
+      "label": "Monthly cost",
+      "state": "ok",
+      "value": "$0 extra",
+      "evidence": {
+        "kind": "data",
+        "label": "Runs on the current DigitalOcean droplet"
+      }
+    },
+    {
+      "id": "restore",
+      "label": "Restore time",
+      "state": "ok",
+      "value": "Under 1 min",
+      "evidence": {
+        "kind": "test",
+        "label": "Restore drill on staging: 41 s",
+        "at": "2026-10-16T14:58:00-04:00"
+      }
+    },
+    {
+      "id": "multi-region",
+      "label": "Multi-region writes",
+      "state": "neutral",
+      "value": "No"
+    }
+  ],
+  "would_change": "Needing writes from two regions, or more than one app server.",
+  "source": {
+    "name": "3 sources",
+    "kind": "web",
+    "detail": "benchmarks from Oct 2026"
+  },
+  "fallback_text": "Database for Trailhead (4 options compared): Postgres with Litestream, medium confidence. Cheapest to run and simplest to restore for one app server. Monthly cost: $0 extra (runs on the current DigitalOcean droplet). Restore time: under 1 minute (restore drill on staging: 41 s). Multi-region writes: no. Would change if you needed writes from two regions, or more than one app server."
+}

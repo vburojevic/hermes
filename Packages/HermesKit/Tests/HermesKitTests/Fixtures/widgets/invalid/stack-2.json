@@ -1,0 +1,40 @@
+{
+  "$comment": "Must fail validation: children/1/type: 'stack' should not be valid under {'const': 'stack'}",
+  "payload": {
+    "type": "stack",
+    "v": 1,
+    "id": "w_bad08008",
+    "title": "Weekly",
+    "as_of": "2026-10-16T07:00:00-04:00",
+    "fallback_text": "Weekly report, nested.",
+    "children": [
+      {
+        "type": "metric",
+        "v": 1,
+        "id": "w_bad08008a",
+        "title": "Revenue",
+        "as_of": "2026-10-16T07:00:00-04:00",
+        "fallback_text": "Revenue: $3,410 this week.",
+        "items": [
+          {
+            "label": "Revenue",
+            "value": {
+              "value": 3410,
+              "format": "currency",
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      {
+        "type": "stack",
+        "v": 1,
+        "id": "w_bad08008b",
+        "title": "More",
+        "as_of": "2026-10-16T07:00:00-04:00",
+        "fallback_text": "Two more widgets.",
+        "children": []
+      }
+    ]
+  }
+}

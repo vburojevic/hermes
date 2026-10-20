@@ -1,0 +1,112 @@
+{
+  "type": "compare",
+  "v": 1,
+  "id": "w_cmphosting",
+  "title": "Where to host the push relay",
+  "subtitle": "EU only · 3 options",
+  "icon": "server.rack",
+  "as_of": "2026-10-16T15:40:00-04:00",
+  "layout": "cards",
+  "banner": {
+    "state": "unverified",
+    "text": "Render’s latency to APNs wasn’t measured: its test machine was down."
+  },
+  "options": [
+    {
+      "id": "hetzner",
+      "name": "DigitalOcean Droplet",
+      "price": {
+        "value": 6,
+        "format": "currency",
+        "currency": "USD",
+        "display": "$6 a month"
+      },
+      "pros": [
+        "Cheapest",
+        "Frankfurt region",
+        "You already have an account"
+      ],
+      "cons": [
+        "You patch the OS"
+      ],
+      "url": "https://www.digitalocean.com/pricing/droplets"
+    },
+    {
+      "id": "fly",
+      "name": "Fly.io",
+      "price": {
+        "value": 14,
+        "format": "currency",
+        "currency": "USD",
+        "display": "≈ $14 a month"
+      },
+      "pros": [
+        "Deploys from the repo",
+        "Frankfurt region"
+      ],
+      "cons": [
+        "Price depends on traffic"
+      ]
+    },
+    {
+      "id": "render",
+      "name": "Render",
+      "price": {
+        "value": 19,
+        "format": "currency",
+        "currency": "USD",
+        "display": "$19 a month"
+      },
+      "pros": [
+        "Managed TLS and logs"
+      ],
+      "cons": [
+        "Cold starts on the cheap plan",
+        "Frankfurt only on paid plans"
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "latency",
+      "label": "Latency to APNs",
+      "values": {
+        "hetzner": {
+          "value": 38,
+          "unit": "ms"
+        },
+        "fly": {
+          "value": 31,
+          "unit": "ms"
+        },
+        "render": {
+          "value": null
+        }
+      },
+      "best": [
+        "fly"
+      ],
+      "evidence": {
+        "kind": "test",
+        "label": "Ping from a test machine, 20 runs, Oct 16",
+        "at": "2026-10-16T15:20:00-04:00"
+      }
+    },
+    {
+      "id": "ops",
+      "label": "Upkeep",
+      "values": {
+        "hetzner": "Monthly",
+        "fly": "None",
+        "render": "None"
+      }
+    }
+  ],
+  "pick": "hetzner",
+  "decided_by": "latency is close enough and it costs half; patching the OS is one monthly job Ops already runs.",
+  "source": {
+    "name": "DigitalOcean, Fly.io and Render pricing pages",
+    "kind": "web"
+  },
+  "fallback_text": "Where to host the push relay (EU only): DigitalOcean Droplet $6 a month, 38 ms to APNs, you patch the OS monthly. Fly.io about $14 a month, 31 ms (fastest), deploys from the repo. Render $19 a month, latency not measured, cold starts on the cheap plan. Pick: DigitalOcean, close enough on latency at half the cost."
+}

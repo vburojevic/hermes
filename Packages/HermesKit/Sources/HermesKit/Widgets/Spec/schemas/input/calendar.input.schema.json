@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/calendar.input.schema.json",
+  "title": "calendar (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Days with marks: a habit’s weeks with a streak, a month with dated dots, or activity per day as intensity.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "calendar"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "view": {
+      "enum": [
+        "weeks",
+        "month"
+      ],
+      "description": "weeks: rows of seven days from `start` to `end` (one row is a single week). month: the month that contains `start`.",
+      "default": "weeks"
+    },
+    "style": {
+      "enum": [
+        "check",
+        "dot",
+        "intensity"
+      ],
+      "description": "How marks are drawn: check (done, partial, missed), dot (labelled dots with a legend), intensity (`level` in five ink steps). Default: check for weeks, dot for month."
+    },
+    "start": {
+      "$ref": "../common.schema.json#/$defs/Date"
+    },
+    "end": {
+      "$ref": "../common.schema.json#/$defs/Date"
+    },
+    "week_start": {
+      "enum": [
+        "monday",
+        "sunday",
+        "locale"
+      ],
+      "description": "The first column.",
+      "default": "locale"
+    },
+    "marks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "$ref": "../common.schema.json#/$defs/Date"
+          },
+          "status": {
+            "enum": [
+              "done",
+              "partial",
+              "missed"
+            ],
+            "description": "For check: done is an ink tile with a check; partial an ink outline with a grey check (“1 of 2 sessions”); missed a grey tile. A past day without a mark is “no record”, never missed.",
+            "default": "done"
+          },
+          "level": {
+            "type": "number",
+            "description": "For intensity: 0–1. 0 is a real zero (nothing happened); the client puts the rest in four ink steps. Leave an unknown day out.",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "For dot: the kind of mark, listed in the legend: Plans, Bill due, Deadline."
+          },
+          "state": {
+            "enum": [
+              "neutral",
+              "info",
+              "warning",
+              "critical"
+            ],
+            "description": "For dot: a state colour only when the mark means one (warning: something due; critical: a deadline). neutral is ink.",
+            "default": "neutral"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "What the day holds, read by VoiceOver and shown when the day is tapped: “Dentist, 10:30”, “1 of 2 sessions”, “14 commits”."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "date"
+        ],
+        "description": "One day’s mark. One per day for check and intensity; up to three per day for dot."
+      },
+      "minItems": 0,
+      "maxItems": 400,
+      "description": "The marked days, in any order. Days without a mark are drawn empty."
+    },
+    "streak": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "type": "integer",
+          "description": "Days (or weeks) in a row, counted by the producer under the plan’s rules.",
+          "minimum": 0
+        },
+        "best": {
+          "type": "integer",
+          "description": "The longest streak so far.",
+          "minimum": 0
+        },
+        "unit": {
+          "enum": [
+            "day",
+            "week"
+          ],
+          "default": "day"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 24,
+          "description": "Overrides the words after the number: “day streak”, “weeks in a row”."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "current"
+      ],
+      "description": "The streak counter above the grid: “16 day streak · Best 21”. Sent by the producer; the client never computes it."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "start",
+    "end",
+    "marks"
+  ],
+  "unevaluatedProperties": false
+}

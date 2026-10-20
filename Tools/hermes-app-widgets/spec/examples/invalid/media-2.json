@@ -1,0 +1,12 @@
+{
+  "$comment": "Must fail validation: items: [] should be non-empty",
+  "payload": {
+    "type": "media",
+    "v": 1,
+    "id": "w_bad00048",
+    "title": "Photos",
+    "as_of": "2026-10-16T11:05:00-04:00",
+    "fallback_text": "No photos to show for this listing.",
+    "items": []
+  }
+}

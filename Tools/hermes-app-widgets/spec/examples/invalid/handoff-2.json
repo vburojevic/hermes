@@ -1,0 +1,25 @@
+{
+  "$comment": "Must fail validation: status: 'reason' is a required property",
+  "payload": {
+    "type": "handoff",
+    "v": 1,
+    "id": "w_bad08004",
+    "title": "Handed off",
+    "as_of": "2026-10-16T21:06:00-04:00",
+    "fallback_text": "Ops declined.",
+    "from": {
+      "name": "Hermes",
+      "bot": "hermes"
+    },
+    "to": {
+      "name": "Ops",
+      "bot": "ops"
+    },
+    "task": {
+      "title": "to restart the backup job"
+    },
+    "status": {
+      "state": "declined"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "alert",
+  "v": 1,
+  "id": "w_dstEnds26",
+  "title": "Daylight saving ends",
+  "icon": "info.circle.fill",
+  "as_of": "2026-10-28T08:00:00-04:00",
+  "severity": "info",
+  "headline": "Clocks go back an hour on Sunday at 2 AM. Your 7 AM routines will run at the new 7 AM.",
+  "fallback_text": "Daylight saving ends: clocks go back an hour on Sunday at 2 AM. Your 7 AM routines will run at the new 7 AM."
+}

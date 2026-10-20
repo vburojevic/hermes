@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: steps/1: 'detail' is a required property",
+  "payload": {
+    "type": "steps",
+    "v": 1,
+    "id": "w_bad00618",
+    "title": "Nightly backup",
+    "as_of": "2026-10-17T10:20:00-04:00",
+    "fallback_text": "Nightly backup: upload status not known",
+    "steps": [
+      {
+        "id": "snapshot",
+        "title": "Snapshot",
+        "state": "done"
+      },
+      {
+        "id": "upload",
+        "title": "Upload to B2",
+        "state": "unknown"
+      }
+    ]
+  }
+}

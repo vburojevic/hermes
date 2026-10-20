@@ -1,0 +1,48 @@
+{
+  "$comment": "Must fail validation: series: [{'label': 'App Store', 'values': [1, 2]}, {'label': 'Google Play', 'values': [1, 2]}, {'label': 'Paddle', 'values': [1, 2]}, {'label': 'Str",
+  "payload": {
+    "type": "chart",
+    "v": 1,
+    "id": "w_bad02c001",
+    "title": "Revenue",
+    "as_of": "2026-10-15T09:41:00-04:00",
+    "fallback_text": "Revenue by store this week.",
+    "kind": "line",
+    "x": {
+      "values": [
+        "Mon",
+        "Tue"
+      ]
+    },
+    "series": [
+      {
+        "label": "App Store",
+        "values": [
+          1,
+          2
+        ]
+      },
+      {
+        "label": "Google Play",
+        "values": [
+          1,
+          2
+        ]
+      },
+      {
+        "label": "Paddle",
+        "values": [
+          1,
+          2
+        ]
+      },
+      {
+        "label": "Stripe",
+        "values": [
+          1,
+          2
+        ]
+      }
+    ]
+  }
+}

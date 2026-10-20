@@ -1,0 +1,65 @@
+{
+  "type": "verdict",
+  "v": 1,
+  "id": "w_listing26b",
+  "title": "App Store listing",
+  "subtitle": "Trailhead · English (US)",
+  "icon": "star.fill",
+  "as_of": "2026-10-16T16:05:00-04:00",
+  "kind": "score",
+  "confidence": "high",
+  "outcome": {
+    "state": "ok",
+    "label": "Strong listing, weak screenshots",
+    "grade": "B+",
+    "score": {
+      "value": 78,
+      "max": 100
+    }
+  },
+  "criteria": [
+    {
+      "id": "title",
+      "label": "Title and subtitle",
+      "state": "ok",
+      "score": {
+        "value": 9,
+        "max": 10
+      }
+    },
+    {
+      "id": "keywords",
+      "label": "Keywords",
+      "state": "ok",
+      "score": {
+        "value": 8,
+        "max": 10
+      }
+    },
+    {
+      "id": "screenshots",
+      "label": "Screenshots",
+      "state": "warning",
+      "score": {
+        "value": 5,
+        "max": 10
+      },
+      "note": "Captions too small to read in search results"
+    },
+    {
+      "id": "ratings",
+      "label": "Ratings",
+      "state": "ok",
+      "score": {
+        "value": 9,
+        "max": 10
+      },
+      "evidence": {
+        "kind": "data",
+        "label": "4.8 from 1,212 ratings, App Store Connect"
+      }
+    }
+  ],
+  "would_change": "Large captions on the first two screenshots: about 8 points.",
+  "fallback_text": "Trailhead’s App Store listing (English, US): B+, 78 of 100. Strong listing, weak screenshots. Title and subtitle 9/10, keywords 8/10, screenshots 5/10 (captions too small to read in search results), ratings 9/10 (4.8 from 1,212). Large captions on the first two screenshots would add about 8 points."
+}

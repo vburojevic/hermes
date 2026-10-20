@@ -1,0 +1,43 @@
+{
+  "type": "pass",
+  "v": 1,
+  "id": "w_amtickets8",
+  "title": "Concert ticket",
+  "icon": "ticket.fill",
+  "as_of": "2026-11-01T12:00:00-05:00",
+  "expires_at": "2026-11-09T01:00:00-05:00",
+  "sensitivity": "private",
+  "kind": "ticket",
+  "admits": 2,
+  "event": {
+    "name": "Arctic Monkeys",
+    "venue": "Barclays Center",
+    "starts": "2026-11-08T20:30:00-05:00",
+    "doors": "2026-11-08T19:00:00-05:00"
+  },
+  "fields": [
+    {
+      "label": "SECTION",
+      "value": "B4"
+    },
+    {
+      "label": "ROW",
+      "value": "12"
+    },
+    {
+      "label": "SEAT",
+      "value": "7, 8"
+    }
+  ],
+  "holder": "Alex Rivera",
+  "reference": {
+    "label": "Order",
+    "value": "EN-2291-4471"
+  },
+  "code": {
+    "format": "code128",
+    "value": "4471229100780812",
+    "text": "4471 2291 0078 0812"
+  },
+  "fallback_text": "Concert ticket, 2 people: Arctic Monkeys at Barclays Center on Sunday, November 8, doors 7 PM. Section B4, row 12, seats 7 and 8. Order EN-2291-4471. The barcode is in the Hermes app."
+}

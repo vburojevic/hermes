@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/guide.input.schema.json",
+  "title": "guide (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Steps the person follows at their own pace, with what they’ll need first, a timer on the steps that have one, and Back / Next on the device.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "dependentRequired": {
+        "servings": [
+          "needs"
+        ],
+        "needs_kind": [
+          "needs"
+        ]
+      },
+      "description": "Servings and the needs row only make sense with a needs list."
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "guide"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "The instruction, one or two lines: “Simmer the chicken in the satay sauce until it thickens.”",
+            "minLength": 1
+          },
+          "body": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/RichText"
+              }
+            ],
+            "description": "More detail, shown on the current step only."
+          },
+          "timer": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Seconds"
+              }
+            ],
+            "description": "A timer for this step: 720 → “12:00 Start”. Runs on the device; a notification when it’s done."
+          },
+          "image": {
+            "$ref": "../common.schema.json#/$defs/Media"
+          },
+          "check": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "How to tell the step is done: “The sauce coats the back of a spoon.”"
+          },
+          "caution": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "A safety line with a warning glyph: “Stop if your lower back hurts”, “Unplug it first”."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title"
+        ],
+        "description": "One step."
+      },
+      "minItems": 2,
+      "maxItems": 20,
+      "description": "The steps in order."
+    },
+    "needs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "What: “Chicken thighs”, “Phillips screwdriver”, “Yoga mat”.",
+            "minLength": 1
+          },
+          "amount": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "How much: {value: 400, unit: g}. Unknown or not measured: value null with display “to taste”, never an invented number."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "“or firm tofu”, “at room temperature”."
+          },
+          "scales": {
+            "type": "boolean",
+            "description": "Scales with servings. false for things that don’t (a tin, salt to taste).",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label"
+        ],
+        "description": "One thing you need before you start."
+      },
+      "minItems": 1,
+      "maxItems": 30,
+      "description": "What you need before you start, in the order you’ll use it."
+    },
+    "needs_kind": {
+      "enum": [
+        "ingredients",
+        "equipment",
+        "items"
+      ],
+      "description": "What the needs row calls them: “You’ll need 9 ingredients”.",
+      "default": "items"
+    },
+    "servings": {
+      "type": "integer",
+      "description": "The servings the amounts are written for. When set, the needs list has a local − / + stepper that scales every amount with `scales` true.",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "start_at": {
+      "allOf": [
+        {
+          "$ref": "../common.schema.json#/$defs/Id"
+        }
+      ],
+      "description": "The step to open at, when the agent knows where the person is (“the rice is on”). After that the current step is local."
+    },
+    "layout": {
+      "enum": [
+        "full",
+        "compact"
+      ],
+      "description": "full: needs and every step. compact: only the current step with progress dots.",
+      "default": "full"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "steps"
+  ],
+  "unevaluatedProperties": false
+}

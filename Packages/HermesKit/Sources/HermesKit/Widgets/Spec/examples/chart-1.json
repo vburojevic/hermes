@@ -1,0 +1,83 @@
+{
+  "type": "chart",
+  "v": 1,
+  "id": "w_resthr1016",
+  "title": "Resting heart rate",
+  "subtitle": "Last 14 days",
+  "icon": "heart.fill",
+  "as_of": "2026-10-16T07:12:00-04:00",
+  "stale_after": 86400,
+  "sensitivity": "private",
+  "summary": "Resting heart rate rose above your usual 52–58 over the last 3 days, to 61 today.",
+  "kind": "line",
+  "headline": {
+    "value": {
+      "value": 61,
+      "unit": "bpm"
+    },
+    "label": "resting, today"
+  },
+  "x": {
+    "kind": "date",
+    "unit": "day",
+    "values": [
+      "2026-10-03",
+      "2026-10-04",
+      "2026-10-05",
+      "2026-10-06",
+      "2026-10-07",
+      "2026-10-08",
+      "2026-10-09",
+      "2026-10-10",
+      "2026-10-11",
+      "2026-10-12",
+      "2026-10-13",
+      "2026-10-14",
+      "2026-10-15",
+      "2026-10-16"
+    ]
+  },
+  "y": {
+    "format": "integer",
+    "unit": "bpm",
+    "min": 48,
+    "max": 64
+  },
+  "series": [
+    {
+      "id": "rhr",
+      "label": "Resting HR",
+      "values": [
+        54,
+        55,
+        53,
+        56,
+        55,
+        54,
+        56,
+        57,
+        55,
+        54,
+        null,
+        59,
+        60,
+        61
+      ]
+    }
+  ],
+  "baseline": {
+    "from": 52,
+    "to": 58,
+    "label": "Your usual 52–58"
+  },
+  "callout": {
+    "x": "2026-10-16",
+    "label": "61 today"
+  },
+  "note": "Above your usual range for 3 days. That often follows short sleep or a stressful stretch; an early night and an easy day may help. It’s an observation, not a diagnosis.",
+  "source": {
+    "name": "Apple Health",
+    "kind": "device"
+  },
+  "fallback_text": "Resting heart rate: 61 bpm today, above your usual range (52–58) for the last 3 days, after 10 days inside it (no reading on 13 October). That often follows short sleep or a stressful stretch; an early night and an easy day may help. It’s an observation, not a diagnosis."
+}

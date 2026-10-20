@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/scoreboard.input.schema.json",
+  "title": "scoreboard (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Two to four sides with scores and a status: a match, a race, a poll or an A/B test.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "sides": {
+            "contains": {
+              "properties": {
+                "winner": {
+                  "const": true
+                }
+              },
+              "required": [
+                "winner"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sides"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "final"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "test"
+          },
+          "sides": {
+            "contains": {
+              "properties": {
+                "winner": {
+                  "const": true
+                }
+              },
+              "required": [
+                "winner"
+              ]
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "sides"
+        ]
+      },
+      "then": {
+        "required": [
+          "significance"
+        ],
+        "properties": {
+          "significance": {
+            "properties": {
+              "reached": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "scoreboard"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "kind": {
+      "enum": [
+        "match",
+        "race",
+        "poll",
+        "test"
+      ],
+      "description": "What is being scored. It sets the status words: Live / Final for a match or race, Open / Closed for a poll, Running / Finished for a test.",
+      "default": "match"
+    },
+    "status": {
+      "enum": [
+        "scheduled",
+        "live",
+        "final",
+        "postponed"
+      ],
+      "description": "scheduled: not started (the empty state, with `starts_at`). live: the one red dot. final: the result stands."
+    },
+    "period": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "Where it is: “72′”, “Q3 4:12”, “Lap 41/57”, “Day 9 of 14”."
+    },
+    "starts_at": {
+      "$ref": "../common.schema.json#/$defs/Time"
+    },
+    "ends_at": {
+      "$ref": "../common.schema.json#/$defs/Time"
+    },
+    "competition": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "“NFL · Week 7”, “Trial starts”."
+    },
+    "better": {
+      "enum": [
+        "higher",
+        "lower"
+      ],
+      "description": "Which score leads: lower for golf, race times, cost per install.",
+      "default": "higher"
+    },
+    "sides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Kansas City Chiefs, New paywall, Green Bowl.",
+            "minLength": 1
+          },
+          "initials": {
+            "type": "string",
+            "maxLength": 3,
+            "description": "The badge when there is no logo or face: KC, A, B."
+          },
+          "bot": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "A Bot handle, when the side is one of the user’s Bots: its face is the badge."
+          },
+          "logo": {
+            "$ref": "../common.schema.json#/$defs/Media"
+          },
+          "score": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "description": "Goals, points, a rate (`format: percent`), votes. null before it starts or when unknown: shown as —, never 0."
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the name: scorers, “2,412 visitors”, “Mom, Maya, Eli”."
+          },
+          "delta": {
+            "$ref": "../common.schema.json#/$defs/Delta"
+          },
+          "winner": {
+            "type": "boolean",
+            "description": "Only when the result is final, and for a test only when `significance.reached` is true. At most one side."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "score"
+        ],
+        "description": "One side: a team, a variant, an option, a runner."
+      },
+      "minItems": 2,
+      "maxItems": 4,
+      "description": "The sides in the order to show them (usually home first, or the leader first). At most one winner.",
+      "contains": {
+        "properties": {
+          "winner": {
+            "const": true
+          }
+        },
+        "required": [
+          "winner"
+        ]
+      },
+      "minContains": 0,
+      "maxContains": 1
+    },
+    "significance": {
+      "type": "object",
+      "properties": {
+        "reached": {
+          "type": "boolean",
+          "description": "Whether the difference is significant at the test’s threshold."
+        },
+        "confidence": {
+          "type": "number",
+          "description": "The confidence level the test uses: 0.95.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "metric": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "What was compared: “trial start rate”."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "“About 1,800 more visitors needed”."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reached"
+      ],
+      "description": "For a test: whether the difference is real. Without `reached: true` no side is the winner, however far it leads."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "One quiet line under the sides: “Half time 1–0”, “6 of 8 voted”."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "status",
+    "sides"
+  ],
+  "unevaluatedProperties": false
+}

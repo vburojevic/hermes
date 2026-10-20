@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/route.schema.json",
+  "title": "route",
+  "description": "How to get from A to B: total time and arrival, the legs as a bar and as steps, live delays, when to leave, and Open in Maps.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "required": [
+          "map"
+        ]
+      },
+      "then": {
+        "properties": {
+          "from": {
+            "required": [
+              "lat",
+              "lon"
+            ]
+          },
+          "to": {
+            "required": [
+              "lat",
+              "lon"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "flight"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "flight"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "route"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "from": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "As the person says it: Home, the dentist, Newark Airport.",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "time": {
+          "allOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Time"
+            }
+          ],
+          "description": "from: when to set off; to: when you arrive, or must be there. Shown as “10:16 → 10:40” in the place’s own offset."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "description": "One end of the route."
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "As the person says it: Home, the dentist, Newark Airport.",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "time": {
+          "allOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Time"
+            }
+          ],
+          "description": "from: when to set off; to: when you arrive, or must be there. Shown as “10:16 → 10:40” in the place’s own offset."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "description": "One end of the route."
+    },
+    "mode": {
+      "enum": [
+        "walk",
+        "bike",
+        "drive",
+        "transit",
+        "flight"
+      ],
+      "description": "The overall mode. transit routes include their walks and waits as legs. flight: a flight’s status, with `flight`."
+    },
+    "flight": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "“UA 1187”.",
+          "minLength": 2
+        },
+        "airline": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "aircraft": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "“Boeing 737 MAX 9”."
+        },
+        "depart": {
+          "type": "object",
+          "properties": {
+            "airport": {
+              "type": "string",
+              "maxLength": 3,
+              "description": "IATA code.",
+              "minLength": 3,
+              "pattern": "^[A-Z]{3}$"
+            },
+            "city": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "terminal": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "gate": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "scheduled": {
+              "$ref": "common.schema.json#/$defs/Time"
+            },
+            "estimated": {
+              "$ref": "common.schema.json#/$defs/Time"
+            },
+            "actual": {
+              "$ref": "common.schema.json#/$defs/Time"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "airport",
+            "scheduled"
+          ]
+        },
+        "arrive": {
+          "type": "object",
+          "properties": {
+            "airport": {
+              "type": "string",
+              "maxLength": 3,
+              "description": "IATA code.",
+              "minLength": 3,
+              "pattern": "^[A-Z]{3}$"
+            },
+            "city": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "terminal": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "gate": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "baggage": {
+              "type": "string",
+              "maxLength": 8,
+              "description": "Belt."
+            },
+            "scheduled": {
+              "$ref": "common.schema.json#/$defs/Time"
+            },
+            "estimated": {
+              "$ref": "common.schema.json#/$defs/Time"
+            },
+            "actual": {
+              "$ref": "common.schema.json#/$defs/Time"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "airport",
+            "scheduled"
+          ]
+        },
+        "state": {
+          "enum": [
+            "scheduled",
+            "boarding",
+            "departed",
+            "in_air",
+            "landed",
+            "arrived",
+            "delayed",
+            "cancelled",
+            "diverted"
+          ],
+          "description": "Where the flight is. The client derives the tag word and colour: delayed is orange, cancelled and diverted red."
+        },
+        "progress": {
+          "type": "number",
+          "description": "0–1 while in the air: the plane along the line.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "“Gate changed from B9”, “Departure +20 min”."
+          },
+          "maxItems": 3,
+          "description": "What changed since the last update, newest first."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "depart",
+        "arrive",
+        "state"
+      ],
+      "description": "A flight’s status: the two airports with terminals and gates, scheduled and estimated times, progress in the air."
+    },
+    "duration": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/Seconds"
+        }
+      ],
+      "description": "The total door-to-door time."
+    },
+    "distance": {
+      "type": "number",
+      "description": "Total metres. The client shows km or mi for the reader’s locale.",
+      "minimum": 0
+    },
+    "leave_by": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/Time"
+        }
+      ],
+      "description": "The latest time to set off to arrive by `to.time`. Shown in the subtitle when `subtitle` isn’t set; becomes “Leave now” at the time and “You may be late” after it, on its own."
+    },
+    "legs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": [
+              "walk",
+              "bike",
+              "drive",
+              "taxi",
+              "bus",
+              "tram",
+              "train",
+              "subway",
+              "ferry",
+              "coach",
+              "wait"
+            ],
+            "description": "The leg’s mode and glyph. Walks, rides and waits are grey in the leg bar; transit is ink."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The step’s title: “Walk to Union Sq station”, “Q train toward 96 St”, “Wait at the stop”.",
+            "minLength": 1
+          },
+          "line": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "A transit line’s short name, shown in the leg bar: “Q train”, “S1”, “290”."
+          },
+          "duration": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Seconds"
+              }
+            ],
+            "description": "How long the leg takes. Sets its width in the leg bar."
+          },
+          "distance": {
+            "type": "number",
+            "description": "Metres. The client shows km or mi for the reader’s locale.",
+            "minimum": 0
+          },
+          "depart": {
+            "$ref": "common.schema.json#/$defs/Time"
+          },
+          "arrive": {
+            "$ref": "common.schema.json#/$defs/Time"
+          },
+          "stops": {
+            "type": "integer",
+            "description": "Stops on a transit leg.",
+            "minimum": 1
+          },
+          "every": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Seconds"
+              }
+            ],
+            "description": "How often the line runs: “every 6 min”."
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "Platform, track or stand."
+          },
+          "delay": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Seconds"
+              }
+            ],
+            "description": "How late it’s running against the timetable, from live data: “+5 min” in orange on the step and the bar. `depart` and `arrive` already include it. 0 means confirmed on time; omit when unknown."
+          },
+          "live": {
+            "type": "boolean",
+            "description": "The times come from live departures. Without it the step says “scheduled”."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One more line for the step: “Step-free”, “Board at the front”."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "label",
+          "duration"
+        ],
+        "description": "One leg: a walk, a ride, a wait. Each is a step row and a segment of the leg bar."
+      },
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "The legs in order. Omit for a single-mode walk, ride or drive."
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "ok",
+            "warning",
+            "critical",
+            "unverified"
+          ],
+          "description": "ok: on time from live data; warning: delayed; critical: disrupted or cancelled; unverified: no live data (timetable only)."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 24,
+          "description": "The tag’s word: “On time”, “+10 min”, “Disrupted”, “Not live”.",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "label"
+      ],
+      "description": "The live status tag in the summary line."
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line: “Q train running local until 2 PM”.",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "text"
+        ]
+      },
+      "maxItems": 3,
+      "description": "Disruptions on the way, as the card banner."
+    },
+    "map": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "minItems": 2,
+          "maxItems": 500,
+          "description": "The path as [lat, lon] points, start to end."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Draw a static map snapshot on this device (`routeMap`, MKMapSnapshotter) instead of the leg bar. Without a path it shows only the two pins, never a straight line pretending to be the route. Needs lat and lon on from and to."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "from",
+    "to",
+    "mode",
+    "duration"
+  ],
+  "unevaluatedProperties": false
+}

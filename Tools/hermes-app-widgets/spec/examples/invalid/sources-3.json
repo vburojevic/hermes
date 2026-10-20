@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: items/0: 'id' is a dependency of 'actions'",
+  "payload": {
+    "type": "sources",
+    "v": 1,
+    "id": "w_bad00513",
+    "title": "Sources",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "Sources: [1] Apple to delay AI features in the EU (unverified).",
+    "items": [
+      {
+        "title": "Apple to delay AI features in the EU",
+        "trust": "unverified",
+        "actions": [
+          {
+            "id": "check",
+            "label": "Check This"
+          }
+        ]
+      }
+    ]
+  }
+}

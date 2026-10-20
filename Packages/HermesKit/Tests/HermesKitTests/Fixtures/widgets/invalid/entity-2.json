@@ -1,0 +1,17 @@
+{
+  "$comment": "Must fail validation: pull_request: 'checks' is a required property",
+  "payload": {
+    "type": "entity",
+    "v": 1,
+    "id": "w_bad00046",
+    "title": "Pull request",
+    "as_of": "2026-10-16T16:05:00-04:00",
+    "fallback_text": "PR #212 is green, ready to merge.",
+    "kind": "pull_request",
+    "name": "Reconnect the socket",
+    "pull_request": {
+      "repo": "alexr/hermes",
+      "number": 212
+    }
+  }
+}

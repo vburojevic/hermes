@@ -1,0 +1,62 @@
+{
+  "type": "pass",
+  "v": 1,
+  "id": "w_ua1187pass",
+  "title": "UA 1187 · United",
+  "icon": "airplane.departure",
+  "state": "ok",
+  "state_label": "On time",
+  "as_of": "2026-10-21T08:10:00-04:00",
+  "expires_at": "2026-10-21T11:30:00-04:00",
+  "sensitivity": "private",
+  "refresh": {
+    "mode": "agent"
+  },
+  "kind": "boarding",
+  "trip": {
+    "from": {
+      "code": "EWR",
+      "name": "Newark",
+      "time": "2026-10-21T10:55:00-04:00"
+    },
+    "to": {
+      "code": "SFO",
+      "name": "San Francisco",
+      "time": "2026-10-21T14:20:00-07:00"
+    }
+  },
+  "fields": [
+    {
+      "label": "GATE",
+      "value": "C112"
+    },
+    {
+      "label": "SEAT",
+      "value": "14A"
+    },
+    {
+      "label": "BOARDING",
+      "value": "10:25 AM"
+    },
+    {
+      "label": "GROUP",
+      "value": "2"
+    }
+  ],
+  "holder": "ALEX RIVERA",
+  "reference": {
+    "label": "Booking",
+    "value": "QX7P2L"
+  },
+  "code": {
+    "format": "aztec",
+    "value": "M1RIVERA/ALEX         EQX7P2L EWRSFOUA 1187 294Y014A0042 100"
+  },
+  "pkpass": "hermes-file:Travel/UA1187-2026-10-21.pkpass",
+  "note": "Show this at security and the gate.",
+  "source": {
+    "name": "United",
+    "kind": "api"
+  },
+  "fallback_text": "UA 1187 · United, on time: Newark (EWR) 10:55 AM → San Francisco (SFO) 2:20 PM. Gate C112, seat 14A, boarding 10:25 AM, group 2. Alex Rivera, booking QX7P2L. The boarding pass is in the Hermes app; add it to Wallet from there."
+}

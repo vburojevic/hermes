@@ -1,0 +1,33 @@
+{
+  "$comment": "Must fail validation: points: [{'text': 'One'}, {'text': 'Two'}, {'text': 'Three'}, {'text': 'Four'}, {'text': 'Five'}, {'text': 'Six'}] is too long",
+  "payload": {
+    "type": "summary",
+    "v": 1,
+    "id": "w_bad07s001",
+    "title": "Today",
+    "as_of": "2026-10-16T07:00:00-04:00",
+    "fallback_text": "Six things today.",
+    "kind": "brief",
+    "tldr": "Busy day.",
+    "points": [
+      {
+        "text": "One"
+      },
+      {
+        "text": "Two"
+      },
+      {
+        "text": "Three"
+      },
+      {
+        "text": "Four"
+      },
+      {
+        "text": "Five"
+      },
+      {
+        "text": "Six"
+      }
+    ]
+  }
+}

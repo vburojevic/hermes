@@ -1,0 +1,67 @@
+{
+  "type": "approval",
+  "v": 1,
+  "id": "w_lunch1011",
+  "title": "Order lunch?",
+  "subtitle": "Chef Remy wants to buy this for you",
+  "icon": "bot:chef-remy",
+  "state": "warning",
+  "state_label": "Needs your OK",
+  "as_of": "2026-10-16T11:12:00-04:00",
+  "expires_at": "2026-10-16T11:30:00-04:00",
+  "producer": {
+    "name": "Chef Remy",
+    "bot": "chef-remy"
+  },
+  "subject": {
+    "kind": "purchase",
+    "verb": "Order",
+    "summary": "Green Bowl · 2 items",
+    "amount": {
+      "value": 14.5,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "items": [
+      {
+        "label": "Chicken satay bowl",
+        "value": {
+          "value": 11,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      {
+        "label": "Lemonade",
+        "value": {
+          "value": 3.5,
+          "format": "currency",
+          "currency": "USD"
+        }
+      }
+    ]
+  },
+  "consequences": {
+    "affects": [
+      "You: delivered to the office at 12:30 PM"
+    ],
+    "cost": {
+      "amount": {
+        "value": 14.5,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "method": "Visa •• 4242"
+    },
+    "reversible": "until",
+    "reversible_until": "2026-10-16T11:40:00-04:00",
+    "undo_note": "Can be cancelled until 11:40 AM, then final"
+  },
+  "answers": {
+    "approve": "Order now",
+    "edit": "Change items or time",
+    "reject": "Nothing is ordered"
+  },
+  "authentication": "required",
+  "fallback_text": "Lunch order, needs your OK: Green Bowl, chicken satay bowl and lemonade, $14.50 from Visa •• 4242, delivered to the office at 12:30 PM. It can be cancelled until 11:40 AM, then it’s final. This request expires at 11:30 AM. Reply “approve”, “edit” or “reject”."
+}

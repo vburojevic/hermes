@@ -1,0 +1,89 @@
+{
+  "type": "agenda",
+  "v": 1,
+  "id": "w_week1923oct",
+  "title": "The week ahead",
+  "subtitle": "Oct 19–23",
+  "icon": "calendar.badge.clock",
+  "as_of": "2026-10-18T19:00:00-04:00",
+  "view": "days",
+  "date": "2026-10-19",
+  "span": 5,
+  "complete": true,
+  "events": [
+    {
+      "id": "standup19",
+      "start": "2026-10-19T09:00:00-04:00",
+      "end": "2026-10-19T09:30:00-04:00",
+      "title": "Stand-up"
+    },
+    {
+      "id": "design19",
+      "start": "2026-10-19T13:00:00-04:00",
+      "end": "2026-10-19T14:00:00-04:00",
+      "title": "Design crit",
+      "people": [
+        {
+          "name": "Ada"
+        }
+      ]
+    },
+    {
+      "id": "gym19",
+      "start": "2026-10-19T18:30:00-04:00",
+      "end": "2026-10-19T19:30:00-04:00",
+      "title": "Gym, legs"
+    },
+    {
+      "id": "ua1187",
+      "start": "2026-10-20T10:55:00-04:00",
+      "end": "2026-10-20T14:20:00-07:00",
+      "title": "UA 1187 to San Francisco",
+      "place": {
+        "name": "Newark Airport"
+      }
+    },
+    {
+      "id": "hoxton",
+      "start": "2026-10-20T15:00:00-07:00",
+      "title": "Check in, Hotel Juniper",
+      "place": {
+        "name": "Hotel Juniper, Union Square"
+      }
+    },
+    {
+      "id": "workshop",
+      "start": "2026-10-21T10:00:00-07:00",
+      "end": "2026-10-21T16:00:00-07:00",
+      "title": "Workshop, SoMa"
+    },
+    {
+      "id": "dinner21",
+      "start": "2026-10-21T19:30:00-07:00",
+      "title": "Dinner with Jordan",
+      "state": "tentative",
+      "people": [
+        {
+          "name": "Jordan"
+        }
+      ]
+    },
+    {
+      "id": "ba860",
+      "start": "2026-10-23T12:20:00-07:00",
+      "end": "2026-10-23T20:45:00-04:00",
+      "title": "UA 1290 home"
+    }
+  ],
+  "day_notes": [
+    {
+      "date": "2026-10-20",
+      "note": "Travel day"
+    }
+  ],
+  "source": {
+    "name": "Calendar",
+    "kind": "api"
+  },
+  "fallback_text": "The week ahead, October 19–23. Mon: 9 AM Stand-up, 3 events. Tue (travel day): 10:55 AM UA 1187 to San Francisco, then check-in at Hotel Juniper at 3 PM. Wed: 10 AM–4 PM Workshop, SoMa; dinner with Jordan at 7:30 PM (maybe). Thu: nothing planned, free all day. Fri: 12:20 PM UA 1290 home."
+}

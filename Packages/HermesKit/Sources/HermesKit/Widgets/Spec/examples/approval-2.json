@@ -1,0 +1,41 @@
+{
+  "type": "approval",
+  "v": 1,
+  "id": "w_mumdraft9",
+  "title": "Message to Mom",
+  "subtitle": "Hermes drafted this for you",
+  "icon": "bot:hermes",
+  "state": "warning",
+  "state_label": "Not sent",
+  "as_of": "2026-10-16T18:02:00-04:00",
+  "expires_at": "2026-10-17T12:00:00-04:00",
+  "sensitivity": "private",
+  "subject": {
+    "kind": "message",
+    "verb": "Send",
+    "message": {
+      "to": {
+        "name": "Mom",
+        "initials": "M"
+      },
+      "channel": "WhatsApp",
+      "address": "(212) 555-01••",
+      "language": "es",
+      "text": "¡Hola, mamá! Llegamos el domingo como a la una, nosotros llevamos el pastel. ¿Hace falta comprar algo más?",
+      "translation": "Hi Mom! We’re coming Sunday around 1 PM, we’ll bring the cake. Do we need to buy anything else?"
+    }
+  },
+  "consequences": {
+    "affects": [
+      "Mom, on WhatsApp, from your number"
+    ],
+    "reversible": "no",
+    "undo_note": "Can be deleted for everyone, but not unread"
+  },
+  "answers": {
+    "approve": "To Mom, now",
+    "edit": "Change the words",
+    "reject": "Nothing is sent"
+  },
+  "fallback_text": "Draft to Mom on WhatsApp (not sent): “¡Hola, mamá! Llegamos el domingo como a la una, nosotros llevamos el pastel. ¿Hace falta comprar algo más?” (Hi Mom! We’re coming Sunday around 1 PM, we’ll bring the cake. Do we need to buy anything else?) Reply “approve” to send it, “edit” or “reject”."
+}

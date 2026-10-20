@@ -1,0 +1,64 @@
+{
+  "type": "form",
+  "v": 1,
+  "id": "w_taxiRcpt9",
+  "title": "Taxi receipt",
+  "subtitle": "From the photo you sent at 6:40 PM",
+  "icon": "creditcard.fill",
+  "as_of": "2026-10-16T18:41:00-04:00",
+  "sensitivity": "private",
+  "intro": "I read these from the receipt. Check them before I add the expense.",
+  "fields": [
+    {
+      "id": "amount",
+      "kind": "number",
+      "label": "Amount",
+      "required": true,
+      "default": 23.4,
+      "min": 0,
+      "currency": "USD"
+    },
+    {
+      "id": "date",
+      "kind": "date",
+      "label": "Date",
+      "required": true,
+      "default": "2026-10-16"
+    },
+    {
+      "id": "category",
+      "kind": "choice",
+      "label": "Category",
+      "required": true,
+      "default": "travel",
+      "options": [
+        {
+          "id": "travel",
+          "label": "Travel"
+        },
+        {
+          "id": "meals",
+          "label": "Meals"
+        },
+        {
+          "id": "office",
+          "label": "Office"
+        }
+      ]
+    },
+    {
+      "id": "billable",
+      "kind": "toggle",
+      "label": "Bill to the client",
+      "default": false
+    },
+    {
+      "id": "note",
+      "kind": "text",
+      "label": "Note",
+      "placeholder": "Airport to the hotel"
+    }
+  ],
+  "submit_label": "Add Expense",
+  "fallback_text": "Taxi receipt from your photo: $23.40 on Oct 16, category Travel, not billed to the client. Reply with any corrections, or “add” to add the expense."
+}

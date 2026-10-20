@@ -1,0 +1,45 @@
+{
+  "type": "approval",
+  "v": 1,
+  "id": "w_lunch1011",
+  "rev": 3,
+  "title": "Order lunch",
+  "subtitle": "Approved by you at 11:13 AM",
+  "icon": "bot:chef-remy",
+  "state": "ok",
+  "state_label": "Ordered",
+  "as_of": "2026-10-16T11:13:20-04:00",
+  "expires_at": "2026-10-16T11:30:00-04:00",
+  "subject": {
+    "kind": "purchase",
+    "verb": "Order",
+    "summary": "Green Bowl · 2 items",
+    "amount": {
+      "value": 14.5,
+      "format": "currency",
+      "currency": "USD"
+    }
+  },
+  "consequences": {
+    "affects": [
+      "You: delivered to the office at 12:30 PM"
+    ],
+    "cost": {
+      "amount": {
+        "value": 14.5,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    "reversible": "until",
+    "reversible_until": "2026-10-16T11:40:00-04:00"
+  },
+  "resolution": {
+    "action": "approve",
+    "state": "done",
+    "at": "2026-10-16T11:13:20-04:00",
+    "by": "you",
+    "message": "Ordered · arrives 12:30 PM"
+  },
+  "fallback_text": "Lunch ordered from Green Bowl ($14.50), arriving at 12:30 PM. The receipt below has Undo until 11:40 AM."
+}

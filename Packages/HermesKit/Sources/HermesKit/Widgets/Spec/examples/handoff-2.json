@@ -1,0 +1,39 @@
+{
+  "type": "handoff",
+  "v": 1,
+  "id": "w_handada13",
+  "rev": 5,
+  "title": "Handed off",
+  "icon": "person.2.fill",
+  "state": "ok",
+  "state_label": "Done",
+  "as_of": "2026-10-16T10:02:00-04:00",
+  "producer": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "from": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "to": {
+    "name": "Ada",
+    "bot": "ada"
+  },
+  "task": {
+    "title": "to draft the 1.3 release notes"
+  },
+  "status": {
+    "state": "done",
+    "since": "2026-10-16T10:02:00-04:00",
+    "result": {
+      "summary": "Release notes for 1.3 · 412 words · 3 sections",
+      "url": "hermes-file:docs/release-notes-1.3.md",
+      "label": "Read the Draft"
+    }
+  },
+  "chat": {
+    "session": "20261016_091200_a7f3c1"
+  },
+  "fallback_text": "Ada finished the 1.3 release notes (412 words, 3 sections): docs/release-notes-1.3.md. Nothing is published until you say so."
+}

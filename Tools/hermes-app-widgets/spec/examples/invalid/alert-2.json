@@ -1,0 +1,40 @@
+{
+  "$comment": "Must fail validation: timeline: [{'at': '2026-10-17T14:00:00-04:00', 'text': 'Update 0'}, {'at': '2026-10-17T14:01:00-04:00', 'text': 'Update 1'}, {'at': '2026-10-17T14:02:",
+  "payload": {
+    "type": "alert",
+    "v": 1,
+    "id": "w_bad00606",
+    "title": "Checkout is down",
+    "as_of": "2026-10-17T14:20:00-04:00",
+    "fallback_text": "Checkout is down",
+    "severity": "critical",
+    "headline": "Checkout returns errors.",
+    "next": "Switch provider.",
+    "timeline": [
+      {
+        "at": "2026-10-17T14:00:00-04:00",
+        "text": "Update 0"
+      },
+      {
+        "at": "2026-10-17T14:01:00-04:00",
+        "text": "Update 1"
+      },
+      {
+        "at": "2026-10-17T14:02:00-04:00",
+        "text": "Update 2"
+      },
+      {
+        "at": "2026-10-17T14:03:00-04:00",
+        "text": "Update 3"
+      },
+      {
+        "at": "2026-10-17T14:04:00-04:00",
+        "text": "Update 4"
+      },
+      {
+        "at": "2026-10-17T14:05:00-04:00",
+        "text": "Update 5"
+      }
+    ]
+  }
+}

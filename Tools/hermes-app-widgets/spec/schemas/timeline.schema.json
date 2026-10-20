@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/timeline.schema.json",
+  "title": "timeline",
+  "description": "Events in order on a rail: a package on its way, a history, an incident log, a day of travel, with the current event ringed.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "properties": {
+        "events": {
+          "contains": {
+            "properties": {
+              "state": {
+                "const": "current"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "minContains": 0,
+          "maxContains": 1
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "incident"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "events": {
+            "items": {
+              "properties": {
+                "time": {
+                  "$ref": "common.schema.json#/$defs/Time"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "events": {
+            "maxItems": 0
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "then": {
+        "required": [
+          "empty_text"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "timeline"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              },
+              {
+                "$ref": "common.schema.json#/$defs/Date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it happened or is expected. A date-time when it is known to the minute; a date when only the day is known (shown as the day, never as 00:00); null when nobody knows yet (shown as —)."
+          },
+          "end": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "The end of a window: a delivery slot, a stay, a meeting. Shown as a range: “Expected 1–3 PM”."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "What happened or will happen, in a few words: “Shipped”, “Rolled back to 1.3.1”, “UA 1187 to San Francisco”.",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the title: “UPS 1Z999AA10123456784 · from Portland”, “EWR C → SFO T3 · gate C112”."
+          },
+          "state": {
+            "enum": [
+              "done",
+              "current",
+              "upcoming",
+              "info",
+              "warning",
+              "critical",
+              "unverified",
+              "cancelled"
+            ],
+            "description": "The dot. done: a green check (it happened). current: the ringed ink dot, the one “now” (at most one per timeline). upcoming: a hollow circle (expected). info / warning / critical: the state glyph in its colour, for incident logs and problems on the way (a customs hold, a delay). unverified: a dashed ring with a question mark (reported, not confirmed). cancelled: a grey dash and a struck-through title."
+          },
+          "glyph": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Symbol"
+              }
+            ],
+            "description": "A small symbol before the title for the kind of step: airplane, tram.fill, bed.double.fill, shippingbox.fill. The dot still carries the state."
+          },
+          "place": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 80,
+                "description": "Where, in a few words: “EWR Terminal C”, “200 W 57th St”, “Zoom”.",
+                "minLength": 1
+              },
+              "address": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "The street address when it isn’t the name."
+              },
+              "lat": {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "lon": {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "url": {
+                "allOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/Url"
+                  }
+                ],
+                "description": "A call link (Zoom, Meet, FaceTime web) or the place’s page. Join / Open shows the domain first."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "description": "A place. With lat and lon the row’s menu offers Directions (opens Maps on this device); with url, Join or Open.",
+            "dependentRequired": {
+              "lat": [
+                "lon"
+              ],
+              "lon": [
+                "lat"
+              ]
+            }
+          },
+          "who": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Person"
+              }
+            ],
+            "description": "Who did it or who it waits on: the on-call engineer, the courier, a Bot. Shown at the end of the detail line; required reading in incident logs."
+          },
+          "evidence": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Evidence"
+              }
+            ],
+            "description": "How the event is known: the deploy log, the carrier’s scan, “Said by the seller”. A caption line under the detail with a small glyph."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Up to two buttons on the row. A reply action sends its id with `{item: <id>}`."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "time",
+          "title",
+          "state"
+        ],
+        "description": "One event. The client never changes its state by itself."
+      },
+      "minItems": 0,
+      "maxItems": 30,
+      "description": "The events, oldest first. Empty only with the envelope’s `empty_text` (nothing has happened yet)."
+    },
+    "direction": {
+      "enum": [
+        "past",
+        "future"
+      ],
+      "description": "past: tracking and history; the time column is relative (Today, Tue, 12 Oct) and Show all folds the oldest. future: an itinerary; clock times in each place’s local time, a day caption when the day changes, Show all folds the latest, and a thin “Now” tick between events when none is current.",
+      "default": "past"
+    },
+    "kind": {
+      "enum": [
+        "general",
+        "incident"
+      ],
+      "description": "incident: exact clock times on every row (with the date when the log crosses midnight), `who` on each row, state colours as severity. Put the outage’s length in the subtitle: “Checkout outage · 28 min”.",
+      "default": "general"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "events"
+  ],
+  "unevaluatedProperties": false
+}

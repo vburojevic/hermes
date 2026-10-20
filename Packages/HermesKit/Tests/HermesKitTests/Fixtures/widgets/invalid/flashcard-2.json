@@ -1,0 +1,26 @@
+{
+  "$comment": "Must fail validation: cards/0/intervals: 'easy' is a required property; cards/0/intervals: 'hard' is a required property",
+  "payload": {
+    "type": "flashcard",
+    "v": 1,
+    "id": "w_bad08006",
+    "title": "Spanish · shopping",
+    "as_of": "2026-10-16T08:05:00-04:00",
+    "fallback_text": "How do you say “receipt”?",
+    "cards": [
+      {
+        "id": "recibo",
+        "front": "How do you say “receipt”?",
+        "back": "el recibo",
+        "intervals": {
+          "again": "1 min",
+          "good": "1 day"
+        }
+      }
+    ],
+    "progress": {
+      "done": 0,
+      "total": 20
+    }
+  }
+}

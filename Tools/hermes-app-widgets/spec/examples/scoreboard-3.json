@@ -1,0 +1,48 @@
+{
+  "type": "scoreboard",
+  "v": 1,
+  "id": "w_lunchpoll3",
+  "title": "Where for Sunday lunch?",
+  "subtitle": "Family chat poll",
+  "icon": "fork.knife",
+  "as_of": "2026-10-16T19:20:00-04:00",
+  "sensitivity": "private",
+  "kind": "poll",
+  "status": "live",
+  "period": "Closes Sat 12 PM",
+  "ends_at": "2026-10-17T12:00:00-04:00",
+  "sides": [
+    {
+      "id": "greenbowl",
+      "name": "Green Bowl",
+      "initials": "GB",
+      "score": {
+        "value": 3,
+        "unit": "votes"
+      },
+      "detail": "Mom, Maya, Eli"
+    },
+    {
+      "id": "sals",
+      "name": "Sal’s Pizzeria",
+      "initials": "SP",
+      "score": {
+        "value": 2,
+        "unit": "votes"
+      },
+      "detail": "Dad, Nora"
+    },
+    {
+      "id": "home",
+      "name": "At home",
+      "initials": "H",
+      "score": {
+        "value": 1,
+        "unit": "votes"
+      },
+      "detail": "Leo"
+    }
+  ],
+  "note": "6 of 8 voted",
+  "fallback_text": "Sunday lunch poll, open until Saturday 12 PM (6 of 8 voted): Green Bowl 3 (Mom, Maya, Eli), Sal’s Pizzeria 2 (Dad, Nora), at home 1 (Leo)."
+}

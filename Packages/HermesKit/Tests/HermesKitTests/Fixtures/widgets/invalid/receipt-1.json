@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: (root): 'confirmation' is a required property",
+  "payload": {
+    "type": "receipt",
+    "v": 1,
+    "id": "w_bad07r001",
+    "title": "Done",
+    "as_of": "2026-10-16T11:13:20-04:00",
+    "fallback_text": "Lunch ordered from Green Bowl.",
+    "headline": "Lunch ordered",
+    "facts": [
+      {
+        "label": "From",
+        "value": {
+          "value": "Green Bowl",
+          "format": "text"
+        }
+      }
+    ]
+  }
+}

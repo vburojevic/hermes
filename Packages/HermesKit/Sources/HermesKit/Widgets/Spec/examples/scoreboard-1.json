@@ -1,0 +1,44 @@
+{
+  "type": "scoreboard",
+  "v": 1,
+  "id": "w_kcbuf1018",
+  "title": "Chiefs at Bills",
+  "icon": "sportscourt.fill",
+  "as_of": "2026-10-18T15:10:00-04:00",
+  "stale_after": 300,
+  "refresh": {
+    "mode": "agent"
+  },
+  "kind": "match",
+  "status": "live",
+  "period": "Q3 8:14",
+  "competition": "NFL · Week 7",
+  "starts_at": "2026-10-18T13:00:00-04:00",
+  "sides": [
+    {
+      "id": "chiefs",
+      "name": "Kansas City Chiefs",
+      "initials": "KC",
+      "score": {
+        "value": 24
+      },
+      "detail": "Mahomes 2 TD passes"
+    },
+    {
+      "id": "bills",
+      "name": "Buffalo Bills",
+      "initials": "BUF",
+      "score": {
+        "value": 17
+      },
+      "detail": "Allen 2 TD runs"
+    }
+  ],
+  "note": "Halftime 14–10",
+  "source": {
+    "name": "Live scores",
+    "kind": "api",
+    "detail": "updates every minute"
+  },
+  "fallback_text": "Kansas City Chiefs 24–17 Buffalo Bills, live in Q3 8:14 (NFL, Week 7). Mahomes 2 TD passes; Allen 2 TD runs. Halftime 14–10."
+}

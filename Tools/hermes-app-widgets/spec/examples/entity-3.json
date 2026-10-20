@@ -1,0 +1,44 @@
+{
+  "type": "entity",
+  "v": 1,
+  "id": "w_revMilaR13",
+  "title": "New review",
+  "subtitle": "Trailhead · App Store",
+  "icon": "star.leadinghalf.filled",
+  "state": "warning",
+  "state_label": "2 stars",
+  "as_of": "2026-10-16T08:10:00-04:00",
+  "kind": "review",
+  "rating": {
+    "value": 2,
+    "scale": 5
+  },
+  "eyebrow": "Mila_R · Trailhead 1.3 · today",
+  "name": "Lost my whole list after the update",
+  "body": "I had 40 trails in my Japan list and now it shows two. I like the app but this is a dealbreaker unless I get my list back.",
+  "tags": [
+    {
+      "label": "Data loss",
+      "state": "critical"
+    },
+    {
+      "label": "United States"
+    }
+  ],
+  "actions": [
+    {
+      "id": "ignore",
+      "label": "Ignore"
+    },
+    {
+      "id": "draft_reply",
+      "label": "Draft a Reply",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "App Store Connect",
+    "kind": "api"
+  },
+  "fallback_text": "New 2-star App Store review of Trailhead 1.3 from Mila_R (United States), today: “Lost my whole list after the update. I had 40 trails in my Japan list and now it shows two. I like the app but this is a dealbreaker unless I get my list back.” Looks like data loss. Reply “draft a reply” or “ignore”."
+}

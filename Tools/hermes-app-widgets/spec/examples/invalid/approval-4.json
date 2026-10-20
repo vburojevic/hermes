@@ -1,0 +1,28 @@
+{
+  "$comment": "Must fail validation: (root): 'expires_at' is a required property; consequences: 'reversible_until' is a required property",
+  "payload": {
+    "type": "approval",
+    "v": 1,
+    "id": "w_bad00006",
+    "title": "Order lunch?",
+    "as_of": "2026-10-16T11:12:00-04:00",
+    "fallback_text": "Lunch order, needs your OK.",
+    "subject": {
+      "kind": "purchase",
+      "verb": "Order"
+    },
+    "consequences": {
+      "affects": [
+        "You"
+      ],
+      "cost": {
+        "amount": {
+          "value": 14.5,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      "reversible": "until"
+    }
+  }
+}

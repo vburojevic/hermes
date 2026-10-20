@@ -1,0 +1,28 @@
+{
+  "type": "summary",
+  "v": 1,
+  "id": "w_newsrumor22",
+  "title": "News",
+  "icon": "newspaper.fill",
+  "as_of": "2026-10-16T08:10:00-04:00",
+  "kind": "story",
+  "story": {
+    "status": "rumor",
+    "topic": "Apple",
+    "headline": "Apple may cut the Small Business commission to 10%, a report says",
+    "body": "Bloomberg cites two people familiar with the plans; Apple hasn’t commented. The change would start in 2027.",
+    "why": "Trailhead is in the Small Business Program. If it happens, you’d keep about $340 more a month at September’s revenue. Nothing to do yet.",
+    "published": "2026-10-16T06:05:00-04:00",
+    "sources": [
+      {
+        "name": "Bloomberg",
+        "url": "https://www.bloomberg.com/news/articles/apple-app-store-small-business"
+      },
+      {
+        "name": "MacRumors",
+        "url": "https://www.macrumors.com/2026/10/16/app-store-commission-report/"
+      }
+    ]
+  },
+  "fallback_text": "[Rumor] Apple may cut the Small Business commission to 10%, a report says (Bloomberg, two unnamed sources; Apple hasn’t commented). Why it matters: Trailhead is in the program; you’d keep about $340 more a month at September’s revenue. Nothing to do yet."
+}

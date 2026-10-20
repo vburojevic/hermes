@@ -1,0 +1,14 @@
+{
+  "$comment": "Must fail validation: language: 'diff' does not match '^(?!(diff|patch)$)[a-z0-9+#.-]{1,24}$'",
+  "payload": {
+    "type": "code",
+    "v": 1,
+    "id": "w_bad00501",
+    "title": "Patch",
+    "as_of": "2026-10-17T06:12:00-04:00",
+    "fallback_text": "A patch for Reconnect.swift.",
+    "kind": "snippet",
+    "language": "diff",
+    "text": "- min(8, x)\n+ min(5, x)"
+  }
+}

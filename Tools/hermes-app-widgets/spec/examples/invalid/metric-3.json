@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: items/0/delta: 'good' is a required property",
+  "payload": {
+    "type": "metric",
+    "v": 1,
+    "id": "w_bad00002",
+    "title": "x",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "x",
+    "items": [
+      {
+        "label": "Cost",
+        "value": {
+          "value": 3
+        },
+        "delta": {
+          "value": 1
+        }
+      }
+    ]
+  }
+}

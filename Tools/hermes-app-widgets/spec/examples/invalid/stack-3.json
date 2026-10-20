@@ -1,0 +1,48 @@
+{
+  "$comment": "Must fail validation: children/1: 'summary' is a required property",
+  "payload": {
+    "type": "stack",
+    "v": 1,
+    "id": "w_bad08013",
+    "title": "Evening report",
+    "layout": "collapsed",
+    "as_of": "2026-10-16T21:00:00-04:00",
+    "fallback_text": "Evening report: backups OK, deploys healthy.",
+    "children": [
+      {
+        "type": "metric",
+        "v": 1,
+        "id": "w_bad08013a",
+        "title": "Backups",
+        "summary": "Last night 03:00 · 212 GB",
+        "as_of": "2026-10-16T21:00:00-04:00",
+        "fallback_text": "Backups: last night at 03:00, 212 GB.",
+        "items": [
+          {
+            "label": "Size",
+            "value": {
+              "value": 212,
+              "unit": "GB"
+            }
+          }
+        ]
+      },
+      {
+        "type": "timeline",
+        "v": 1,
+        "id": "w_bad08013b",
+        "title": "Deploys",
+        "as_of": "2026-10-16T21:00:00-04:00",
+        "fallback_text": "Deploys today: push-relay 0.9.2, healthy.",
+        "events": [
+          {
+            "id": "relay",
+            "time": "2026-10-16T11:20:00-04:00",
+            "title": "push-relay 0.9.2",
+            "state": "done"
+          }
+        ]
+      }
+    ]
+  }
+}

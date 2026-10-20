@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Hermes Agent gateways are self-hosted: on localhost, a LAN, a tailnet or a
+		     reverse proxy. Users type the URL of their own server, which is often plain
+		     HTTP on a private network; the app warns when that crosses the internet. -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Pairing codes: hermesapp://connect?… opens Hermes to connect to a gateway. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>co.caffeinatedcode.hermes.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(HERMES_URL_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- Sparkle (the Mac DMG's updater; iOS ignores these). Background checks notify; the
+	     person chooses to install. Values come from build settings in project.yml. -->
+	<key>SUFeedURL</key>
+	<string>$(HERMES_APPCAST_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(HERMES_SPARKLE_PUBLIC_KEY)</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<!-- Push notifications (docs/notifications.md): wake for withdrawals and chats to keep current
+	     (and refresh them now and then without a push), Bot messages as communication
+	     notifications, Live Activities, and the group and Keychain group the extensions share
+	     (values from build settings in project.yml). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>co.caffeinatedcode.hermes.refresh</string>
+	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>HermesAppGroup</key>
+	<string>$(HERMES_APP_GROUP)</string>
+	<key>HermesKeychainGroup</key>
+	<string>$(HERMES_KEYCHAIN_PREFIX)$(HERMES_KEYCHAIN_GROUP)</string>
+</dict>
+</plist>

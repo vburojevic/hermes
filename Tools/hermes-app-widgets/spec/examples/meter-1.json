@@ -1,0 +1,58 @@
+{
+  "type": "meter",
+  "v": 1,
+  "id": "w_budgetoct26",
+  "title": "October budget",
+  "icon": "creditcard.fill",
+  "state": "warning",
+  "state_label": "92%",
+  "as_of": "2026-10-19T08:00:00-04:00",
+  "stale_after": 86400,
+  "refresh": {
+    "mode": "agent"
+  },
+  "sensitivity": "private",
+  "style": "bar",
+  "items": [
+    {
+      "id": "spent",
+      "label": "Spent in October",
+      "value": {
+        "value": 1840,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "target": {
+        "value": 2000,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "remaining": true,
+      "note": "12 days to go"
+    }
+  ],
+  "zones": [
+    {
+      "from": 1800,
+      "to": 2000,
+      "state": "warning",
+      "label": "Nearly spent"
+    },
+    {
+      "from": 2000,
+      "state": "critical",
+      "label": "Over budget"
+    }
+  ],
+  "actions": [
+    {
+      "id": "show_transactions",
+      "label": "Show Transactions"
+    }
+  ],
+  "source": {
+    "name": "Chase, via Plaid",
+    "kind": "api"
+  },
+  "fallback_text": "October budget: $1,840 of $2,000 spent (92%, nearly spent). $160 left with 12 days to go."
+}

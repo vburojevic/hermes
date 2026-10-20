@@ -1,0 +1,52 @@
+{
+  "type": "weather",
+  "v": 1,
+  "id": "w_wxnyc4day",
+  "title": "New York · 4 days",
+  "icon": "calendar",
+  "as_of": "2026-10-22T07:00:00-04:00",
+  "stale_after": 21600,
+  "place": {
+    "name": "New York",
+    "lat": 40.713,
+    "lon": -74.006
+  },
+  "unit": "fahrenheit",
+  "days": [
+    {
+      "date": "2026-10-22",
+      "low": 48,
+      "high": 63,
+      "condition": "partly-cloudy"
+    },
+    {
+      "date": "2026-10-23",
+      "low": 46,
+      "high": 54,
+      "condition": "rain",
+      "precip_chance": 0.8
+    },
+    {
+      "date": "2026-10-24",
+      "low": 45,
+      "high": 64,
+      "condition": "clear"
+    },
+    {
+      "date": "2026-10-25",
+      "low": 50,
+      "high": 68,
+      "condition": "clear"
+    }
+  ],
+  "tip": {
+    "text": "Saturday morning is the dry, cool slot for the long run.",
+    "symbol": "figure.run"
+  },
+  "source": {
+    "name": "Apple Weather",
+    "kind": "api",
+    "url": "https://weatherkit.apple.com/legal-attribution.html"
+  },
+  "fallback_text": "New York, next 4 days: today 48–63°F, partly cloudy; Fri 46–54°F, rain 80%; Sat 45–64°F, clear; Sun 50–68°F, clear. Saturday morning is the dry, cool slot for the long run."
+}

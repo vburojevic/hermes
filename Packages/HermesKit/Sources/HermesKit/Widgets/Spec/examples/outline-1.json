@@ -1,0 +1,82 @@
+{
+  "type": "outline",
+  "v": 1,
+  "id": "w_pgmigrate7",
+  "rev": 5,
+  "title": "Postgres migration",
+  "icon": "list.bullet.rectangle",
+  "as_of": "2026-10-16T15:20:00-04:00",
+  "stale_after": 1800,
+  "nodes": [
+    {
+      "id": "move",
+      "label": "Move the database",
+      "state": "done",
+      "folded": true,
+      "children": [
+        {
+          "id": "snapshot",
+          "label": "Take a snapshot of production",
+          "state": "done"
+        },
+        {
+          "id": "provision",
+          "label": "Provision the new host",
+          "state": "done"
+        }
+      ]
+    },
+    {
+      "id": "switch",
+      "label": "Switch the app over",
+      "state": "running",
+      "children": [
+        {
+          "id": "staging",
+          "label": "Point staging at the new host",
+          "state": "done"
+        },
+        {
+          "id": "copy",
+          "label": "Run the migration on a copy",
+          "state": "running",
+          "detail": "Running now · 12 of 48 tables"
+        },
+        {
+          "id": "swap",
+          "label": "Swap production",
+          "state": "blocked",
+          "detail": "Needs your OK: about 2 minutes of read-only mode"
+        }
+      ]
+    },
+    {
+      "id": "cleanup",
+      "label": "Clean up",
+      "state": "waiting",
+      "folded": true,
+      "children": [
+        {
+          "id": "oldhost",
+          "label": "Delete the old host",
+          "state": "waiting"
+        },
+        {
+          "id": "dns",
+          "label": "Remove the old DNS record",
+          "state": "waiting"
+        },
+        {
+          "id": "backups",
+          "label": "Check last night’s backup restored",
+          "state": "unknown"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "name": "Hermes",
+    "kind": "agent"
+  },
+  "fallback_text": "Postgres migration, 3 of 8 done. [x] Move the database (snapshot taken, new host provisioned). [~] Switch the app over: [x] staging points at the new host; [~] running the migration on a copy (12 of 48 tables); [!] swapping production needs your OK (about 2 minutes read-only). [ ] Clean up: delete the old host; remove the old DNS record; check last night’s backup restored (not checked yet)."
+}

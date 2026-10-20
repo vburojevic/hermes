@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/summary.input.schema.json",
+  "title": "summary (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. The TL;DR: one line that matters, up to five points with a state dot, and the one thing to do first; or a news story with why it matters; or a team standup.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "brief"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "tldr"
+        ],
+        "properties": {
+          "story": false,
+          "people": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "story"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "story"
+        ],
+        "properties": {
+          "points": false,
+          "people": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "standup"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "people"
+        ],
+        "properties": {
+          "story": false,
+          "points": false
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "summary"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "kind": {
+      "enum": [
+        "brief",
+        "story",
+        "standup"
+      ],
+      "description": "brief: tldr, points, do first. story: a news story (`story`). standup: `people`."
+    },
+    "tldr": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "kind brief: the one line that matters. With no points it is drawn as the empty state (“Nothing new since yesterday.”).",
+      "minLength": 1
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "The point, one or two lines: “Dentist at 11 AM, leave at 10:40”.",
+            "minLength": 1
+          },
+          "emphasis": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "The first words of `text` set in semibold: “Dentist at 11 AM”. Must be a prefix of `text`."
+          },
+          "state": {
+            "enum": [
+              "neutral",
+              "ok",
+              "info",
+              "warning",
+              "critical",
+              "unverified",
+              "quiet"
+            ],
+            "description": "The dot: neutral is ink, quiet is grey (background facts like the weather), unverified a dashed ring; the others their state colour.",
+            "default": "neutral"
+          },
+          "evidence": {
+            "$ref": "../common.schema.json#/$defs/Evidence"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "description": "One point. A claim in the evidence reads “Said by …”."
+      },
+      "minItems": 0,
+      "maxItems": 5,
+      "description": "kind brief: what’s behind the TL;DR, most important first. Empty only for the empty state."
+    },
+    "do_first": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "The one thing to do first, and why it’s easy: “Renew the passport. The form is filled in; it takes 5 minutes.”",
+          "minLength": 1
+        },
+        "action": {
+          "$ref": "../common.schema.json#/$defs/Action"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "description": "One thing, never a list. Its action is drawn as the card’s primary button."
+    },
+    "story": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "confirmed",
+            "rumor"
+          ],
+          "description": "confirmed: the primary source (the company, the court, the official record) says so, or two independent outlets with their own reporting. Anything else is a rumor, however credible the outlet: say who reports it in `body`."
+        },
+        "topic": {
+          "type": "string",
+          "maxLength": 24,
+          "description": "A neutral tag: Policy, Apple, Markets."
+        },
+        "headline": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "The story in one line. A rumour is worded as one: “Apple may…, a report says”.",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 280,
+          "description": "Two lines: what happened, who says so."
+        },
+        "why": {
+          "type": "string",
+          "maxLength": 280,
+          "description": "Why it matters for this reader, specifically: their apps, money, plans. Not a general take.",
+          "minLength": 1
+        },
+        "published": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              "url": {
+                "$ref": "../common.schema.json#/$defs/Url"
+              },
+              "primary": {
+                "type": "boolean",
+                "description": "The original: the company’s post, the ruling, the official journal.",
+                "default": false
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 8,
+          "description": "Where it’s reported. Counted in the meta line (“3 sources · 2 h ago”); Show the Sources lists them."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "headline",
+        "why",
+        "sources"
+      ],
+      "description": "For kind story."
+    },
+    "people": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "../common.schema.json#/$defs/Person"
+          },
+          "done": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "“Release notes draft”. Shown as “Done: …”."
+          },
+          "today": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "“App Store text for 1.3”. Shown as “Today: …”."
+          },
+          "blocked": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "What blocks them: “Waiting on Stripe’s report”. Shown with the Blocked tag."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "When there is no update: “No update yet”, “Off today”. Shown in grey."
+          },
+          "evidence": {
+            "$ref": "../common.schema.json#/$defs/Evidence"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "person"
+        ],
+        "description": "One member’s update, in their own words. With no done, today, blocked or note it reads “No update yet”."
+      },
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "kind standup: one row per person or Bot, in the team’s order; blocked members first when it matters."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "kind"
+  ],
+  "unevaluatedProperties": false
+}

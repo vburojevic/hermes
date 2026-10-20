@@ -1,0 +1,30 @@
+name: hermes-app-widgets
+label: Hermes app widgets
+version: 1.2.2
+manifest_version: 2
+kind: standalone
+description: >
+  Widgets for the Hermes iPhone, iPad and Mac app: agents send numbers, lists, schedules, statuses,
+  choices and approvals as cards the app draws, with a plain-text version on every other platform.
+  Payloads are validated against the widget schemas, stored per gateway, and answered through a
+  claim step so nothing happens twice.
+author: Caffeinated Code
+provides_tools:
+  - widget
+  - widget_examples
+provides_hooks:
+  - pre_llm_call
+  - transform_llm_output
+  - pre_gateway_dispatch
+  - subagent_start
+config_schema:
+  app_platforms:
+    type: list
+    description: Session platforms that are always the Hermes app (for gateways the app reaches without Bot Mode), e.g. [api_server].
+  store_media:
+    type: bool
+    description: Fetch and store remote widget images on the gateway (off until the app can load stored copies).
+  text_answers:
+    type: bool
+    description: On messaging platforms, turn a plain answer to the one open widget into its action (default on).
+tags: [widgets, ios, macos]

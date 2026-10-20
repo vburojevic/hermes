@@ -1,0 +1,234 @@
+{
+  "type": "stack",
+  "v": 1,
+  "id": "w_flats1016night",
+  "title": "Tonight’s new apartments",
+  "subtitle": "3 new · 10 PM",
+  "icon": "bot:scout",
+  "as_of": "2026-10-16T22:00:00-04:00",
+  "producer": {
+    "name": "Scout",
+    "bot": "scout"
+  },
+  "layout": "carousel",
+  "tag": "Digest",
+  "schedule": {
+    "label": "Every night at 10 PM",
+    "task": "flat-watch"
+  },
+  "children": [
+    {
+      "type": "entity",
+      "v": 1,
+      "id": "w_5thst412n",
+      "title": "Listing",
+      "subtitle": "Matches “2 bd under $1.25M”",
+      "icon": "house.fill",
+      "as_of": "2026-10-16T22:00:00-04:00",
+      "stale_after": 86400,
+      "kind": "listing",
+      "visual": {
+        "kind": "image",
+        "media": {
+          "src": "https://img.example.com/listing/41234567/1.jpg",
+          "alt": "Living room with a green sofa, a big window and wooden floors"
+        }
+      },
+      "eyebrow": "For sale · Park Slope, Brooklyn",
+      "name": "412 5th St, Apt 3R",
+      "url": "https://listings.example.com/412-5th-st-apt-3r",
+      "price": {
+        "amount": {
+          "value": 1198000,
+          "format": "currency",
+          "currency": "USD"
+        },
+        "was": {
+          "value": 1240000,
+          "format": "currency",
+          "currency": "USD"
+        },
+        "change": {
+          "value": -0.034,
+          "format": "percent",
+          "good": "down"
+        }
+      },
+      "attributes": [
+        {
+          "label": "Bedrooms",
+          "value": "2 bd",
+          "glyph": "bed.double.fill"
+        },
+        {
+          "label": "Floor area",
+          "value": "950 sq ft"
+        },
+        {
+          "label": "Balcony"
+        },
+        {
+          "label": "Elevator"
+        }
+      ],
+      "tags": [
+        {
+          "label": "Price drop",
+          "state": "ok"
+        },
+        {
+          "label": "Viewing Sat",
+          "state": "info"
+        }
+      ],
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save"
+        },
+        {
+          "id": "book_viewing",
+          "label": "Book a Viewing",
+          "style": "primary"
+        }
+      ],
+      "source": {
+        "name": "StreetEasy",
+        "kind": "web",
+        "detail": "listed 9 days ago"
+      },
+      "fallback_text": "412 5th St, Apt 3R (Park Slope): $1,198,000, was $1,240,000. 2 bedrooms, 950 sq ft, balcony, elevator. Viewing Saturday."
+    },
+    {
+      "type": "entity",
+      "v": 1,
+      "id": "w_garfield58n",
+      "title": "Listing",
+      "subtitle": "Matches “2 bd under $1.25M”",
+      "icon": "house.fill",
+      "as_of": "2026-10-16T22:00:00-04:00",
+      "stale_after": 86400,
+      "kind": "listing",
+      "visual": {
+        "kind": "image",
+        "media": {
+          "src": "https://img.example.com/listing/41239876/1.jpg",
+          "alt": "A bright kitchen with white cabinets and a window onto a courtyard"
+        }
+      },
+      "eyebrow": "For sale · Park Slope, Brooklyn",
+      "name": "58 Garfield Pl, 2nd floor",
+      "url": "https://listings.example.com/58-garfield-pl-41239876",
+      "price": {
+        "amount": {
+          "value": 1225000,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      "attributes": [
+        {
+          "label": "Bedrooms",
+          "value": "2 bd",
+          "glyph": "bed.double.fill"
+        },
+        {
+          "label": "Floor area",
+          "value": "920 sq ft"
+        },
+        {
+          "label": "Courtyard"
+        }
+      ],
+      "tags": [
+        {
+          "label": "New",
+          "state": "new"
+        }
+      ],
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save"
+        },
+        {
+          "id": "book_viewing",
+          "label": "Book a Viewing",
+          "style": "primary"
+        }
+      ],
+      "source": {
+        "name": "StreetEasy",
+        "kind": "web",
+        "detail": "listed today"
+      },
+      "fallback_text": "58 Garfield Pl, 2nd floor: $1,225,000. 2 bedrooms, 920 sq ft, courtyard. Listed today."
+    },
+    {
+      "type": "entity",
+      "v": 1,
+      "id": "w_carroll7n",
+      "title": "Listing",
+      "subtitle": "Matches “2 bd under $1.25M”",
+      "icon": "house.fill",
+      "as_of": "2026-10-16T22:00:00-04:00",
+      "stale_after": 86400,
+      "kind": "listing",
+      "visual": {
+        "kind": "image",
+        "media": {
+          "src": "https://img.example.com/listing/9981234/1.jpg",
+          "alt": "A living room with a corner sofa and a balcony door"
+        }
+      },
+      "eyebrow": "For sale · Gowanus, Brooklyn",
+      "name": "7 Carroll St, 4th floor",
+      "url": "https://listings.example.com/7-carroll-st-9981234",
+      "price": {
+        "amount": {
+          "value": 1165000,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      "attributes": [
+        {
+          "label": "Bedrooms",
+          "value": "2 bd",
+          "glyph": "bed.double.fill"
+        },
+        {
+          "label": "Floor area",
+          "value": "880 sq ft"
+        },
+        {
+          "label": "Balcony"
+        }
+      ],
+      "tags": [
+        {
+          "label": "No elevator",
+          "state": "warning"
+        }
+      ],
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save"
+        },
+        {
+          "id": "book_viewing",
+          "label": "Book a Viewing",
+          "style": "primary"
+        }
+      ],
+      "source": {
+        "name": "Zillow",
+        "kind": "web",
+        "detail": "listed today"
+      },
+      "fallback_text": "7 Carroll St, 4th floor (Gowanus): $1,165,000. 2 bedrooms, 880 sq ft, balcony, no elevator."
+    }
+  ],
+  "fallback_text": "Tonight’s new apartments (Scout, every night at 10 PM): 3 new.\n\n412 5th St, Apt 3R (Park Slope): $1,198,000, was $1,240,000. 2 bedrooms, 950 sq ft, balcony, elevator. Viewing Saturday.\n\n58 Garfield Pl, 2nd floor: $1,225,000. 2 bedrooms, 920 sq ft, courtyard. Listed today.\n\n7 Carroll St, 4th floor (Gowanus): $1,165,000. 2 bedrooms, 880 sq ft, balcony, no elevator."
+}

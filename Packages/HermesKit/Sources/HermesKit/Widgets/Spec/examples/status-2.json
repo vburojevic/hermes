@@ -1,0 +1,79 @@
+{
+  "type": "status",
+  "v": 1,
+  "id": "w_homelab6x",
+  "title": "Homelab",
+  "icon": "server.rack",
+  "state": "critical",
+  "state_label": "1 down",
+  "as_of": "2026-10-17T09:40:00-04:00",
+  "stale_after": 900,
+  "refresh": {
+    "mode": "agent"
+  },
+  "items": [
+    {
+      "id": "cron",
+      "name": "Cron",
+      "state": "critical",
+      "detail": "2 jobs failed",
+      "since": "2026-10-17T06:00:00-04:00",
+      "evidence": {
+        "kind": "file",
+        "label": "cron.log: the 03:00 and 06:00 runs exited 1",
+        "url": "hermes-file:logs/cron.log"
+      },
+      "actions": [
+        {
+          "id": "show_cron_log",
+          "label": "Show the Log"
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "name": "Worker",
+      "state": "warning",
+      "detail": "Queue 1.2k",
+      "since": "2026-10-17T08:55:00-04:00"
+    },
+    {
+      "id": "api",
+      "name": "API",
+      "state": "ok",
+      "detail": "42 ms p95"
+    },
+    {
+      "id": "web",
+      "name": "Web",
+      "state": "ok",
+      "detail": "Up 31 d"
+    },
+    {
+      "id": "postgres",
+      "name": "Postgres",
+      "state": "ok",
+      "detail": "12% CPU"
+    },
+    {
+      "id": "backups",
+      "name": "Backups",
+      "state": "unverified",
+      "detail": "Last report Tue 03:00",
+      "evidence": {
+        "kind": "claim",
+        "label": "Synology’s email, Tue 03:04",
+        "at": "2026-10-14T03:04:00-04:00"
+      }
+    }
+  ],
+  "banner": {
+    "state": "unverified",
+    "text": "Backups haven’t reported since Tuesday, so they can’t be called healthy."
+  },
+  "source": {
+    "name": "Uptime Kuma",
+    "kind": "api"
+  },
+  "fallback_text": "Homelab: 3 of 6 healthy, 1 down. Cron is down: 2 jobs failed (the 03:00 and 06:00 runs). Worker needs attention: the queue is at 1.2k since 08:55. Backups not checked: the last report was Synology’s email on Tuesday at 03:04. API (42 ms p95), Web (up 31 days) and Postgres (12% CPU) are healthy."
+}

@@ -1,0 +1,647 @@
+import Foundation
+import HermesKit
+import HermesPush
+import os
+
+/// What's new in one gateway's chats, Bots and group chats (`docs/inbox.md` §1): each row's
+/// badge, the read marks shared with other devices, mutes, and where each chat was left.
+///
+/// Chats are keyed by session (its stable key), Bots as `bot:<name>`, group chats as
+/// `group:<id>`. Read marks come from Hermes' dashboard rows (`last_read_at`) when Bot Mode is
+/// linked; a gateway without them keeps a watermark on this device, as `BotRoster` does, and
+/// then read state doesn't sync. Counts are the app's own, cached so the list draws at once.
+@Observable
+final class UnreadStore {
+    /// What each row shows. Only rows with something to show have an entry.
+    private(set) var badges: [String: UnreadBadge] = [:]
+    private(set) var mutes: MuteList
+    /// Each row's last message, as far as this launch has seen it. Kept in memory only: Hermes'
+    /// list rows carry the first message, never the last.
+    private(set) var lastLines: [String: LastLine] = [:]
+
+    @ObservationIgnored weak var workspace: BotWorkspace?
+    @ObservationIgnored private let gatewayID: UUID
+    @ObservationIgnored private var cache: Cache
+    /// Hermes keeps read marks for this gateway's chats (its dashboard answered).
+    @ObservationIgnored private var hasGatewayMarks = false
+    /// Marks and counts this device just changed, until Hermes' rows catch up (a list fetched
+    /// before the edit landed must not undo it).
+    @ObservationIgnored private var pending: [String: (mark: ReadMark, at: Date)] = [:]
+    /// Chats whose mark is on its way to the gateway: theirs holds until the call is back (a busy
+    /// Mac takes far longer than the 10 s a mark otherwise holds), so a list read meanwhile
+    /// doesn't bring the badge back.
+    @ObservationIgnored private var sending: [String: Int] = [:]
+    @ObservationIgnored private var countedAt: [String: Date] = [:]
+    @ObservationIgnored private var counting: Set<String> = []
+    @ObservationIgnored private var countRetry: Task<Void, Never>?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var muteTimer: Task<Void, Never>?
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var listRefresh: Task<Void, Never>?
+    @ObservationIgnored private var listRefreshedAt = Date.distantPast
+    /// Chats whose last line was asked for, at the activity it was asked at.
+    @ObservationIgnored private var lineAsked: [String: Date] = [:]
+    @ObservationIgnored private var lineFetches = 0
+    /// How far each chat being opened was read, taken just before opening marks anything read.
+    @ObservationIgnored private var openings: [String: Opening] = [:]
+
+    /// Where a chat with something new was read up to when it opened (`docs/inbox.md` §4).
+    struct Opening: Equatable {
+        /// Hermes' read mark, when it's a time.
+        var since: Date?
+        /// The last row this device showed.
+        var seenThrough: String?
+    }
+    @ObservationIgnored private lazy var recheck = ReadRecheck { [weak self] now in self?.fetchMarks(now: now) }
+
+    init(gatewayID: UUID) {
+        self.gatewayID = gatewayID
+        #if DEBUG
+        // `-HERMES_RESET_INBOX YES`: start from nothing (UI tests).
+        if UserDefaults.standard.bool(forKey: "HERMES_RESET_INBOX") {
+            UserDefaults.standard.removeObject(forKey: Self.cacheKey(gatewayID))
+        }
+        #endif
+        let cache = (UserDefaults.standard.data(forKey: Self.cacheKey(gatewayID))).flatMap { try? JSONDecoder().decode(Cache.self, from: $0) } ?? Cache()
+        self.cache = cache
+        var mutes = cache.mutes
+        mutes.prune()
+        self.mutes = mutes
+        hasGatewayMarks = !cache.marks.isEmpty
+    }
+
+    /// Everything kept on the device, per gateway. Never message text: ids, times and counts.
+    private struct Cache: Codable {
+        struct Count: Codable, Equatable {
+            var value: Int
+            /// The chat's activity and read mark it was counted at.
+            var lastActive: Double
+            var since: Double
+        }
+
+        var counts: [String: Count] = [:]
+        /// Hermes' marks as last fetched, so the list draws them before the first fetch.
+        var marks: [String: ReadMark] = [:]
+        /// A gateway without read marks: the activity seen when each chat was last read here.
+        var watermarks: [String: Double] = [:]
+        var mutes = MuteList()
+        /// The last row shown on this device, per chat (the New Messages line resumes after it).
+        var seen: [String: String] = [:]
+        /// The row at the top of a chat left scrolled up.
+        var scroll: [String: String] = [:]
+    }
+
+    private static func cacheKey(_ id: UUID) -> String { "inbox.\(id.uuidString)" }
+
+    // MARK: Keys
+
+    static func botKey(_ name: String) -> String { "bot:\(name)" }
+    static func groupKey(_ id: String) -> String { "group:\(id)" }
+
+    /// The chat on screen: never unread, and read as it's shown.
+    var openKey: String? {
+        switch workspace?.selection {
+        case .session(let key): key
+        case .bot(let name): Self.botKey(name)
+        case .group(let id): Self.groupKey(id)
+        default: nil
+        }
+    }
+
+    // MARK: Reading
+
+    func badge(for key: String) -> UnreadBadge {
+        badges[key] ?? .none
+    }
+
+    func isMuted(_ key: String) -> Bool {
+        mutes.isMuted(key)
+    }
+
+    /// Hermes' read mark for a chat as this device knows it, for the New Messages line. Without
+    /// Hermes' marks, this device's (a watermark of 0 is marked unread).
+    func readMark(for key: String) -> ReadMark? {
+        if let pending = pending[key] { return pending.mark }
+        if hasGatewayMarks, let mark = cache.marks[key] { return mark }
+        return cache.watermarks[key].map { $0 == 0 ? .markedUnread : .readUntil(Date(timeIntervalSince1970: $0)) }
+    }
+
+    /// Unread chats (not messages) that aren't muted, leaving out the open one.
+    func unreadChats(in keys: some Sequence<String>) -> Int {
+        let open = openKey
+        return keys.reduce(0) { total, key in
+            key != open && badge(for: key).isUnread && !mutes.isMuted(key) ? total + 1 : total
+        }
+    }
+
+    /// Every unread, unmuted chat, Bot and group chat but the open one (the drawer button).
+    var unreadElsewhere: Int {
+        unreadChats(in: badges.keys)
+    }
+
+    /// Unread Bots and group chats (the Bots segment), or chats (the Chats segment).
+    func unreadCount(inBots: Bool) -> Int {
+        unreadChats(in: badges.keys.filter { ($0.hasPrefix("bot:") || $0.hasPrefix("group:")) == inBots })
+    }
+
+    // MARK: Updating
+
+    /// The chat list, Hermes' marks, the open chat or a count moved: every badge again.
+    func update() {
+        guard let workspace else { return }
+        let open = openKey
+        var next: [String: UnreadBadge] = [:]
+        var marksSeeded = false
+        for session in workspace.sessions {
+            let key = session.stableID
+            guard key != open, let active = session.lastActive else { continue }
+            guard let mark = readMark(for: key) ?? (hasGatewayMarks ? .untracked : nil) else {
+                // First sight on a gateway without marks: what's there is read.
+                cache.watermarks[key] = active.timeIntervalSince1970
+                marksSeeded = true
+                continue
+            }
+            if let badge = badge(for: key, mark: mark, lastActive: active, session: session) { next[key] = badge }
+        }
+        if let roster = workspace.roster {
+            for name in roster.unread where Self.botKey(name) != open {
+                if roster.markedUnread.contains(name) {
+                    next[Self.botKey(name)] = .dot
+                } else if let badge = botBadge(name, roster: roster) {
+                    next[Self.botKey(name)] = badge
+                }
+            }
+            for (id, count) in roster.groupRooms.unreadCounts where Self.groupKey(id) != open && count > 0 {
+                next[Self.groupKey(id)] = .count(count)
+            }
+        }
+        if next != badges {
+            badges = next
+            #if HERMES_PUSH
+            // The app icon (or Dock) badge counts them when the person chose Unread Chats.
+            PushCenter.shared.unreadChanged(unreadChats(in: next.keys), gateway: gatewayID)
+            #endif
+        }
+        if marksSeeded { scheduleSave() }
+    }
+
+    private func badge(for key: String, mark: ReadMark, lastActive: Date, session: HermesSession) -> UnreadBadge? {
+        switch mark {
+        case .untracked:
+            return nil
+        case .markedUnread:
+            return .dot
+        case .readUntil(let read):
+            guard mark.isUnread(lastActive: lastActive) else { return nil }
+            let cached = cache.counts[key]
+            let fresh = cached.map { $0.since == read.timeIntervalSince1970 && $0.lastActive >= lastActive.timeIntervalSince1970 } ?? false
+            if !fresh, !isRunning(key) { scheduleCount(key) { [weak self] in try await self?.countChat(session, since: read) } }
+            // Until it's counted again, the last count stands (no flicker as replies land).
+            guard let value = cached?.value, value > 0 else { return nil }
+            return .count(value)
+        }
+    }
+
+    private func botBadge(_ name: String, roster: BotRoster) -> UnreadBadge? {
+        let key = Self.botKey(name)
+        guard let bot = roster.bot(named: name), let active = bot.lastActive, let chat = bot.canonicalSession else { return nil }
+        let since = roster.readPoint(name) ?? .distantPast
+        let cached = cache.counts[key]
+        let fresh = cached.map { $0.since == since.timeIntervalSince1970 && $0.lastActive >= active.timeIntervalSince1970 } ?? false
+        if !fresh, !isRunning(key) {
+            scheduleCount(key) { [weak self] in
+                guard let client = self?.workspace?.roster?.boardClient else { return nil }
+                let transcript = try await client.transcript(storedSessionID: chat.resolvedID, profile: name, limit: 100)
+                let tally = await Self.tally(transcript.messages, hidesSilence: true, after: since)
+                self?.noteLastLine(key, tally.lastLine)
+                return Cache.Count(value: tally.count, lastActive: active.timeIntervalSince1970, since: since.timeIntervalSince1970)
+            }
+        }
+        guard let value = cached?.value, value > 0 else { return nil }
+        return .count(value)
+    }
+
+    private func countChat(_ session: HermesSession, since: Date) async throws -> Cache.Count? {
+        guard let client = workspace?.client, let active = session.lastActive else { return nil }
+        let transcript = try await client.transcript(sessionID: session.id, limit: 100)
+        let tally = await Self.tally(transcript.messages, hidesSilence: false, after: since)
+        workspace?.activity.lastTurn(of: session.stableID, failed: tally.failedTurn)
+        noteLastLine(session.stableID, tally.lastLine)
+        return Cache.Count(value: tally.count, lastActive: active.timeIntervalSince1970, since: since.timeIntervalSince1970)
+    }
+
+    /// A chat whose turn is still running: only replies that end a turn count, so it's counted
+    /// once it stops, not with every heartbeat that moves its row while it streams.
+    private func isRunning(_ key: String) -> Bool {
+        workspace?.activity.line(for: key)?.isLive == true
+    }
+
+    /// What a count needs from a chat's newest rows. Built off the main actor: 100 rows of
+    /// transcript take a few milliseconds, and came up every 2 s for each chat that changed.
+    private struct Tally: Sendable {
+        let count: Int
+        let lastLine: LastLine?
+        /// The `failed_turn` notice the chat ends on, if it does.
+        let failedTurn: String?
+    }
+
+    @concurrent
+    private nonisolated static func tally(_ messages: [SessionMessage], hidesSilence: Bool, after since: Date) async -> Tally {
+        let items = TranscriptBuilder.build(messages, hidesSilence: hidesSilence)
+        let failed: String? = if case .notice(let notice)? = items.last, notice.kind == "failed_turn" { notice.text } else { nil }
+        return Tally(count: UnreadCounter.count(items, after: since), lastLine: LastLine.of(items), failedTurn: failed)
+    }
+
+    /// Counts a row again, at most every 2 s (`docs/inbox.md` §1 Counting).
+    private func scheduleCount(_ key: String, _ count: @escaping () async throws -> Cache.Count?) {
+        guard !counting.contains(key) else { return }
+        let wait = 2 - Date.now.timeIntervalSince(countedAt[key] ?? .distantPast)
+        guard wait <= 0 else {
+            retryCountsSoon(after: wait)
+            return
+        }
+        counting.insert(key)
+        countedAt[key] = .now
+        Task { [weak self] in
+            let result = try? await count()
+            guard let self else { return }
+            self.counting.remove(key)
+            guard let result else { return }
+            if self.cache.counts[key] != result {
+                self.cache.counts[key] = result
+                self.scheduleSave()
+            }
+            self.update()
+        }
+    }
+
+    private func retryCountsSoon(after wait: TimeInterval) {
+        guard countRetry == nil else { return }
+        countRetry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait + 0.05))
+            guard let self, !Task.isCancelled else { return }
+            self.countRetry = nil
+            self.update()
+        }
+    }
+
+    // MARK: Last lines
+
+    func noteLastLine(_ key: String, _ line: LastLine?) {
+        guard let line, lastLines[key] != line else { return }
+        lastLines[key] = line
+    }
+
+    /// A row came on screen without its last message: the chat's newest few rows, once per
+    /// activity, a few at a time.
+    func needsLastLine(_ session: HermesSession) {
+        let key = session.stableID
+        guard let active = session.lastActive, lineAsked[key].map({ $0 < active }) ?? true, lineFetches < 4,
+              let client = workspace?.client else { return }
+        lineAsked[key] = active
+        lineFetches += 1
+        Task { [weak self] in
+            let transcript = try? await client.transcript(sessionID: session.id, limit: 8)
+            guard let self else { return }
+            self.lineFetches -= 1
+            if let transcript { self.noteLastLine(key, LastLine.of(TranscriptBuilder.build(transcript.messages))) }
+        }
+    }
+
+    // MARK: Read and unread
+
+    /// Read now, on every device: the chat was opened (or its newest message was on screen for a
+    /// second), or Mark as Read.
+    func markRead(_ key: String) {
+        if key.hasPrefix("bot:") {
+            workspace?.roster?.markRead(String(key.dropFirst(4)))
+            return
+        }
+        if key.hasPrefix("group:") {
+            workspace?.roster?.groupRooms.markRead(String(key.dropFirst(6)))
+            update()
+            return
+        }
+        guard let session = workspace?.session(forKey: key), let active = session.lastActive else { return }
+        let wasUnread = readMark(for: key).map { $0 == .markedUnread || $0.isUnread(lastActive: active) } ?? true
+        cache.watermarks[key] = active.timeIntervalSince1970
+        if hasGatewayMarks { pending[key] = (.readUntil(active), .now) }
+        scheduleSave()
+        update()
+        guard wasUnread else { return }
+        Task { await self.setUnread(false, session: session) }
+    }
+
+    /// Mark as Unread (`docs/inbox.md` §4): the dot on every device, until opened.
+    func markUnread(_ key: String) {
+        if key.hasPrefix("bot:") {
+            let name = String(key.dropFirst(4))
+            Task { try? await self.workspace?.roster?.markUnread(name) }
+            return
+        }
+        guard let session = workspace?.session(forKey: key) else { return }
+        if hasGatewayMarks {
+            pending[key] = (.markedUnread, .now)
+        } else {
+            cache.watermarks[key] = 0
+            scheduleSave()
+        }
+        update()
+        Task { await self.setUnread(true, session: session) }
+    }
+
+    /// Mark All as Read: every badge clears at once; the gateway hears of them 4 calls at a time.
+    func markAllRead(_ keys: [String]) async {
+        let unread = keys.filter { badge(for: $0).isUnread }
+        var sessions: [HermesSession] = []
+        for key in unread {
+            if key.hasPrefix("bot:") || key.hasPrefix("group:") {
+                markRead(key)
+                continue
+            }
+            guard let session = workspace?.session(forKey: key), let active = session.lastActive else { continue }
+            cache.watermarks[key] = active.timeIntervalSince1970
+            if hasGatewayMarks { pending[key] = (.readUntil(active), .now) }
+            sending[key, default: 0] += 1
+            sessions.append(session)
+        }
+        update()
+        scheduleSave()
+        for start in stride(from: 0, to: sessions.count, by: 4) {
+            await withTaskGroup(of: Void.self) { group in
+                for session in sessions[start..<min(start + 4, sessions.count)] {
+                    group.addTask { await self.setUnread(false, session: session, counted: true) }
+                }
+            }
+        }
+    }
+
+    /// The gateway's API server takes `unread` (Hermes 0.22); an older one refuses the field and
+    /// the dashboard takes it instead.
+    /// - Parameter counted: `markAllRead` has counted it in `sending` already.
+    private func setUnread(_ unread: Bool, session: HermesSession, counted: Bool = false) async {
+        let key = session.stableID
+        if !counted { sending[key, default: 0] += 1 }
+        defer {
+            sending[key, default: 1] -= 1
+            if sending[key] == 0 { sending[key] = nil }
+            // The 10 s a mark holds start now.
+            if pending[key] != nil { pending[key]?.at = .now }
+        }
+        guard let workspace else { return }
+        do {
+            guard let client = workspace.client else { return }
+            _ = try await client.setSessionFlags(id: session.id, unread: unread)
+        } catch HermesError.server(status: 400, _, _) {
+            guard let backend = workspace.roster?.boardClient else { return }
+            do {
+                if unread {
+                    try await backend.markUnread(storedSessionID: session.id, profile: workspace.bot.profileName)
+                } else {
+                    try await backend.markRead(storedSessionID: session.id, profile: workspace.bot.profileName)
+                }
+            } catch {
+                ConnectionLog.logger.notice("inbox: couldn't share a read mark: \(String(describing: type(of: error)), privacy: .public)")
+            }
+        } catch {
+            ConnectionLog.logger.notice("inbox: couldn't share a read mark: \(String(describing: type(of: error)), privacy: .public)")
+        }
+    }
+
+    // MARK: Hermes' marks
+
+    /// The chat list or the Bots' sessions moved (`sessions.changed`), or the app came to the
+    /// front: marks may have moved on another device.
+    func sessionsMayHaveMoved() {
+        recheck.mayHaveMoved()
+    }
+
+    /// Bot Mode came online: Hermes' marks, and the list kept fresh while the app runs.
+    func connected() {
+        fetchMarks(now: true)
+        startPolling()
+    }
+
+    func disconnected() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
+    func tearDown() {
+        disconnected()
+        recheck.cancel()
+        countRetry?.cancel()
+        muteTimer?.cancel()
+        listRefresh?.cancel()
+        saveTask?.cancel()
+        save()
+    }
+
+    /// Between change events, unread chats are asked about with the Bots' backoff (every 60 s at
+    /// most while the Mac app is behind other apps).
+    private func startPolling() {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let interval: Double = AppPresence.isInBack ? 60 : 15
+                try? await Task.sleep(for: .seconds(interval), tolerance: .seconds(interval * 0.2))
+                guard let self, !Task.isCancelled else { return }
+                if self.badges.keys.contains(where: { !$0.hasPrefix("bot:") && !$0.hasPrefix("group:") }) {
+                    self.fetchMarks(now: false)
+                }
+            }
+        }
+    }
+
+    /// Hermes' marks for the newest chats (the dashboard's rows), and the chat list itself when
+    /// something moved.
+    private func fetchMarks(now: Bool) {
+        guard let workspace, let backend = workspace.roster?.boardClient, recheck.isDue("chats", now: now) else { return }
+        if now { refreshListSoon() }
+        Task { [weak self] in
+            defer { self?.recheck.answered("chats") }
+            guard let rows = try? await backend.recentSessions(limit: 100, profile: workspace.bot.profileName) else { return }
+            self?.adopt(rows)
+        }
+    }
+
+    private func adopt(_ rows: [HermesSession]) {
+        var marks: [String: ReadMark] = [:]
+        for row in rows {
+            marks[row.stableID] = row.readMark ?? .untracked
+        }
+        // A dashboard without read marks (older Hermes): the device keeps them.
+        guard rows.contains(where: { $0.readMark != nil }) else { return }
+        // A mark this device just set holds until Hermes' agrees, or for 10 s.
+        for (key, edit) in pending {
+            let agrees: Bool = switch (edit.mark, marks[key]) {
+            case (.markedUnread, .markedUnread?): true
+            case (.readUntil(let mine), .readUntil(let theirs)?): theirs.timeIntervalSince(mine) > -1
+            default: false
+            }
+            if agrees || (sending[key] == nil && Date.now.timeIntervalSince(edit.at) > 10) { pending[key] = nil }
+        }
+        hasGatewayMarks = true
+        recheck.keep(badges.isEmpty ? [] : ["chats"])
+        if marks != cache.marks {
+            cache.marks = marks
+            scheduleSave()
+        }
+        update()
+    }
+
+    /// The chat list again after a change event: rows move to the top as they get activity. At
+    /// most every 3 s.
+    private func refreshListSoon() {
+        guard listRefresh == nil else { return }
+        let wait = max(0, 3 - Date.now.timeIntervalSince(listRefreshedAt))
+        listRefresh = Task { [weak self] in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            guard let self, !Task.isCancelled else { return }
+            self.listRefreshedAt = .now
+            await self.workspace?.refreshSessions()
+            self.listRefresh = nil
+        }
+    }
+
+    // MARK: Mute
+
+    func mute(_ key: String, for duration: MuteList.Duration) {
+        mutes.mute(key, for: duration)
+        cache.mutes = mutes
+        scheduleSave()
+        scheduleMuteEnd()
+        sharePushMutes()
+    }
+
+    func unmute(_ key: String) {
+        mutes.unmute(key)
+        cache.mutes = mutes
+        scheduleSave()
+        sharePushMutes()
+    }
+
+    /// The Notification Service reads the mutes (it delivers muted chats quietly). A notice names
+    /// a chat by its live session id, which compression moves on from the key kept here.
+    private func sharePushMutes() {
+        var ends = mutes.ends
+        for (key, end) in mutes.ends {
+            if let session = workspace?.session(forKey: key), session.id != key { ends[session.id] = end }
+        }
+        PushShared.current.setMutes(ends, gateway: gatewayID)
+    }
+
+    /// Redraws when the next mute ends.
+    private func scheduleMuteEnd() {
+        muteTimer?.cancel()
+        guard let end = mutes.nextEnd() else { return }
+        muteTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(1, end.timeIntervalSinceNow + 0.5)))
+            guard let self, !Task.isCancelled else { return }
+            var mutes = self.mutes
+            if mutes.prune() {
+                self.mutes = mutes
+                self.cache.mutes = mutes
+                self.scheduleSave()
+                self.sharePushMutes()
+            }
+            self.scheduleMuteEnd()
+        }
+    }
+
+    // MARK: Opening a chat
+
+    /// A chat is about to open: how far it was read, if there's something new in it. Bots are
+    /// marked read as they open, so this comes first.
+    func noteOpening(_ key: String) {
+        openings[key] = nil
+        if key.hasPrefix("bot:") {
+            let name = String(key.dropFirst(4))
+            guard let roster = workspace?.roster, roster.unread.contains(name), !roster.markedUnread.contains(name) else { return }
+            openings[key] = Opening(since: roster.readPoint(name), seenThrough: cache.seen[key])
+            return
+        }
+        guard let session = workspace?.session(forKey: key), let mark = readMark(for: key) else { return }
+        switch mark {
+        case .readUntil(let read) where mark.isUnread(lastActive: session.lastActive):
+            openings[key] = Opening(since: read, seenThrough: cache.seen[key])
+        case .markedUnread where cache.seen[key] != nil:
+            openings[key] = Opening(since: nil, seenThrough: cache.seen[key])
+        default:
+            break
+        }
+    }
+
+    /// The opening noted for a chat, once: the transcript places its New Messages line by it.
+    func takeOpening(_ key: String) -> Opening? {
+        defer { openings[key] = nil }
+        return openings[key]
+    }
+
+    /// The opening for a chat. The app opened straight into it before Hermes' marks (Bot Mode)
+    /// or the chat list had ever come in: wait for them, up to 2.5 s.
+    func opening(for key: String) async -> Opening? {
+        if let noted = takeOpening(key) { return noted }
+        guard !key.hasPrefix("bot:"), let workspace else { return nil }
+        var waited = 0
+        while waited < 2500, !Task.isCancelled,
+              (workspace.bot.backend != nil && !hasGatewayMarks) || workspace.sessions.isEmpty {
+            try? await Task.sleep(for: .milliseconds(100))
+            waited += 100
+        }
+        noteOpening(key)
+        return takeOpening(key)
+    }
+
+    // MARK: Where a chat was left
+
+    /// The last row shown on this device (the New Messages line resumes after it).
+    func seenThrough(_ key: String) -> String? {
+        cache.seen[key]
+    }
+
+    func setSeenThrough(_ key: String, rowID: String) {
+        guard cache.seen[key] != rowID else { return }
+        cache.seen[key] = rowID
+        scheduleSave()
+    }
+
+    /// The row at the top of a chat left scrolled up; nil at the bottom.
+    func scrollRow(_ key: String) -> String? {
+        cache.scroll[key]
+    }
+
+    func setScrollRow(_ key: String, rowID: String?) {
+        guard cache.scroll[key] != rowID else { return }
+        cache.scroll[key] = rowID
+        scheduleSave()
+    }
+
+    // MARK: Saving
+
+    private func scheduleSave() {
+        guard saveTask == nil else { return }
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled else { return }
+            self.saveTask = nil
+            self.save()
+        }
+    }
+
+    private func save() {
+        // Only chats still in the list (and every Bot, group and mute) are kept.
+        if let workspace, !workspace.sessions.isEmpty {
+            let keys = Set(workspace.sessions.map(\.stableID))
+            func keep(_ key: String) -> Bool { keys.contains(key) || key.contains(":") }
+            cache.counts = cache.counts.filter { keep($0.key) }
+            cache.marks = cache.marks.filter { keep($0.key) }
+            cache.watermarks = cache.watermarks.filter { keep($0.key) }
+            cache.seen = cache.seen.filter { keep($0.key) }
+            cache.scroll = cache.scroll.filter { keep($0.key) }
+        }
+        if let data = try? JSONEncoder().encode(cache) {
+            UserDefaults.standard.set(data, forKey: Self.cacheKey(gatewayID))
+        }
+    }
+}

@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/verdict.schema.json",
+  "title": "verdict",
+  "description": "A judgement with its reasons: a pick between options, an is-it-safe check, or a scorecard, with every criterion and how it is known.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "criteria": {
+            "contains": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unverified",
+                    "critical"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          }
+        },
+        "required": [
+          "criteria"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "ok"
+                }
+              }
+            }
+          },
+          "state": {
+            "not": {
+              "const": "ok"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "safety"
+          },
+          "criteria": {
+            "contains": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "critical"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "criteria"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "state": {
+                "const": "critical"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "safety"
+          },
+          "criteria": {
+            "contains": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unverified"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "criteria"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "critical",
+                  "unverified"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "safety"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "confidence"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "score"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "required": [
+              "score"
+            ]
+          },
+          "criteria": {
+            "items": {
+              "required": [
+                "score"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "ok"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "not": {
+              "const": "ok"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "verdict"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "kind": {
+      "enum": [
+        "decision",
+        "safety",
+        "score"
+      ],
+      "description": "decision: a pick between options. safety: is it safe for someone (allergens, compatibility); green only when everything declared is known and clear. score: a scorecard with a grade.",
+      "default": "decision"
+    },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "ok",
+            "info",
+            "warning",
+            "critical",
+            "unverified",
+            "pending"
+          ],
+          "description": "The verdict’s state. ok is refused while any criterion is unverified or critical. Safety: critical when anything declared is present, unverified when anything is unknown. pending: still checking."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "The verdict in a few words: “Safe for Maya”, “Contains peanuts”, “Not verified”, “Postgres with Litestream”, “Strong listing, weak screenshots”.",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "One sentence: why, or what to do. “No peanuts, tree nuts or sesame in any of its 9 ingredients.”"
+        },
+        "score": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "max"
+          ],
+          "description": "Points: “9 / 10”, “78 / 100”."
+        },
+        "grade": {
+          "type": "string",
+          "maxLength": 4,
+          "description": "Scorecard: the grade in the ink tile: B+, A, 4/5."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "label"
+      ],
+      "description": "The conclusion, shown as the hero."
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "What was checked: Peanuts, Monthly cost, Screenshots.",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "neutral",
+              "info",
+              "warning",
+              "critical",
+              "unverified"
+            ],
+            "description": "How it came out. neutral: true but not decisive (“Multi-region writes: No”). unverified: no data, or no way to check: never ok by default."
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "The finding in a few words: “Not present”, “$0 extra”, “In the satay sauce”, “No data for “house dressing””. Omit rather than guess."
+          },
+          "score": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "number",
+                "minimum": 0
+              },
+              "max": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "max"
+            ],
+            "description": "Points: “9 / 10”, “78 / 100”."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the row when there is more to say: “Text too small in search results”."
+          },
+          "evidence": {
+            "$ref": "common.schema.json#/$defs/Evidence"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "state"
+        ],
+        "description": "One thing that was checked, with how it is known."
+      },
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "What decided it, in reading order. Safety: one per declared item (each allergen the person listed), clear ones included."
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "description": "How sure Hermes is, for a decision or a score. Safety has none: each item is known or it isn’t."
+    },
+    "would_change": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "What would change the verdict: “Needing writes from two regions, or more than one app server.”"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "kind",
+    "outcome",
+    "criteria"
+  ],
+  "unevaluatedProperties": false
+}

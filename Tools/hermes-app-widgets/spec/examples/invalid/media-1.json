@@ -1,0 +1,19 @@
+{
+  "$comment": "Must fail validation: items/0/media: 'alt' is a required property",
+  "payload": {
+    "type": "media",
+    "v": 1,
+    "id": "w_bad00047",
+    "title": "Lunch",
+    "as_of": "2026-10-16T11:05:00-04:00",
+    "fallback_text": "Today’s lunch special: chicken satay bowl.",
+    "items": [
+      {
+        "media": {
+          "src": "https://greenbowl.example.com/menu/special.jpg"
+        },
+        "caption": "Chicken satay bowl"
+      }
+    ]
+  }
+}

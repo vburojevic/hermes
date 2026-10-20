@@ -1,0 +1,15 @@
+{
+  "$comment": "Must fail validation: controls: [] should be non-empty",
+  "payload": {
+    "type": "control",
+    "v": 1,
+    "id": "w_bad07c002",
+    "title": "Bedroom",
+    "as_of": "2026-10-16T22:10:00-04:00",
+    "fallback_text": "Bedroom lamp is on.",
+    "device": {
+      "name": "Bedroom lamp"
+    },
+    "controls": []
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "type": "metric",
+  "v": 1,
+  "id": "w_rev2026a1",
+  "title": "Sales",
+  "subtitle": "Your Etsy shop",
+  "icon": "chart.line.uptrend.xyaxis",
+  "as_of": "2026-10-16T09:41:00-04:00",
+  "stale_after": 3600,
+  "refresh": {
+    "mode": "agent"
+  },
+  "items": [
+    {
+      "label": "Sales so far today",
+      "value": {
+        "value": 1284,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "delta": {
+        "value": 0.12,
+        "format": "percent",
+        "good": "up",
+        "period": "vs last Tuesday"
+      },
+      "spark": [
+        820,
+        940,
+        880,
+        1010,
+        990,
+        1120,
+        1060,
+        1180,
+        1150,
+        1240,
+        1210,
+        1284
+      ]
+    }
+  ],
+  "source": {
+    "name": "Etsy",
+    "kind": "api"
+  },
+  "fallback_text": "Sales: $1,284 so far today (+12% vs last Tuesday)."
+}

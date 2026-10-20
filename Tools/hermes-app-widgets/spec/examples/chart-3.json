@@ -1,0 +1,58 @@
+{
+  "type": "chart",
+  "v": 1,
+  "id": "w_spendoct26",
+  "title": "Spending by category",
+  "icon": "chart.pie.fill",
+  "as_of": "2026-10-19T08:00:00-04:00",
+  "stale_after": 86400,
+  "sensitivity": "private",
+  "kind": "share",
+  "headline": {
+    "value": {
+      "value": 1083,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "label": "spent in October"
+  },
+  "parts": [
+    {
+      "label": "Groceries",
+      "value": {
+        "value": 412,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    {
+      "label": "Eating out",
+      "value": {
+        "value": 238,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    {
+      "label": "Transport",
+      "value": {
+        "value": 152,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    {
+      "label": "Everything else",
+      "value": {
+        "value": 281,
+        "format": "currency",
+        "currency": "USD"
+      }
+    }
+  ],
+  "source": {
+    "name": "Chase, via Plaid",
+    "kind": "api"
+  },
+  "fallback_text": "$1,083 spent in October so far: groceries $412 (38%), eating out $238 (22%), transport $152 (14%), everything else $281 (26%)."
+}

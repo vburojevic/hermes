@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: items/0: 'id' is a required property",
+  "payload": {
+    "type": "list",
+    "v": 1,
+    "id": "w_bad03l001",
+    "title": "Support inbox",
+    "as_of": "2026-10-16T09:30:00-04:00",
+    "fallback_text": "Support inbox: one ticket.",
+    "items": [
+      {
+        "title": "Refund for a double charge",
+        "actions": [
+          {
+            "id": "draft_reply",
+            "label": "Draft a Reply"
+          }
+        ]
+      }
+    ]
+  }
+}

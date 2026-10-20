@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: events/0/time: '2026-10-16' does not match '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$'; events/0/time: '2026-10-16' is not a 'date-time'",
+  "payload": {
+    "type": "timeline",
+    "v": 1,
+    "id": "w_bad00050",
+    "title": "What happened",
+    "as_of": "2026-10-16T14:40:00-04:00",
+    "fallback_text": "Checkout outage on Friday, recovered.",
+    "kind": "incident",
+    "events": [
+      {
+        "id": "start",
+        "time": "2026-10-16",
+        "title": "Checkout errors start",
+        "state": "critical"
+      }
+    ]
+  }
+}

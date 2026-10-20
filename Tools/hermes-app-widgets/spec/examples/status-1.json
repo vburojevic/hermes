@@ -1,0 +1,79 @@
+{
+  "type": "status",
+  "v": 1,
+  "id": "w_studioMac9",
+  "title": "Studio Mac",
+  "subtitle": "Mac mini · macOS 27.1",
+  "icon": "desktopcomputer",
+  "state": "warning",
+  "state_label": "Disk 88%",
+  "as_of": "2026-10-17T09:40:00-04:00",
+  "stale_after": 3600,
+  "refresh": {
+    "mode": "agent"
+  },
+  "items": [
+    {
+      "id": "studio-mac",
+      "name": "Studio Mac",
+      "state": "warning",
+      "headline": "Needs attention",
+      "detail": "Disk is 88% full; everything else is normal.",
+      "metrics": [
+        {
+          "label": "CPU",
+          "value": {
+            "value": 0.12,
+            "format": "percent",
+            "precision": 0
+          }
+        },
+        {
+          "label": "Memory",
+          "value": {
+            "value": 0.61,
+            "format": "percent",
+            "precision": 0
+          }
+        },
+        {
+          "label": "Disk",
+          "value": {
+            "value": 0.88,
+            "format": "percent",
+            "precision": 0
+          },
+          "state": "warning"
+        },
+        {
+          "label": "Up",
+          "value": {
+            "value": 1036800,
+            "format": "duration"
+          }
+        }
+      ],
+      "fix": "Delete APFS snapshots older than 30 days to free about 212 GB.",
+      "evidence": {
+        "kind": "data",
+        "label": "df -h and tmutil listlocalsnapshots, 09:40"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "not_now",
+      "label": "Not Now"
+    },
+    {
+      "id": "clean_snapshots",
+      "label": "Clean Up Snapshots",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "Hermes on Studio Mac",
+    "kind": "agent"
+  },
+  "fallback_text": "Studio Mac needs attention: the disk is 88% full; everything else is normal (CPU 12%, memory 61%, up 12 days). One thing to fix: delete APFS snapshots older than 30 days to free about 212 GB. Reply “clean up snapshots” or “not now”."
+}

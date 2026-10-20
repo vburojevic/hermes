@@ -1,0 +1,26 @@
+{
+  "$comment": "Must fail validation: (root): 'result' is a required property",
+  "payload": {
+    "type": "steps",
+    "v": 1,
+    "id": "w_bad00612",
+    "title": "CI · hermes-app",
+    "as_of": "2026-10-17T15:21:00-04:00",
+    "fallback_text": "CI failed at Test",
+    "kind": "pipeline",
+    "steps": [
+      {
+        "id": "build",
+        "title": "Build",
+        "state": "done",
+        "duration": 48
+      },
+      {
+        "id": "test",
+        "title": "Test",
+        "state": "failed",
+        "duration": 130
+      }
+    ]
+  }
+}

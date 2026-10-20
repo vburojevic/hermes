@@ -1,0 +1,16 @@
+{
+  "$comment": "Must fail validation: (root): 'next_due' is a required property",
+  "payload": {
+    "type": "flashcard",
+    "v": 1,
+    "id": "w_bad08012",
+    "title": "Spanish · shopping",
+    "as_of": "2026-10-17T07:00:00-04:00",
+    "fallback_text": "Spanish · shopping: nothing to review.",
+    "cards": [],
+    "progress": {
+      "done": 0,
+      "total": 0
+    }
+  }
+}

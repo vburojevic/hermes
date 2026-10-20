@@ -1,0 +1,85 @@
+{
+  "type": "entity",
+  "v": 1,
+  "id": "w_5thst412x",
+  "title": "Listing",
+  "subtitle": "Matches “2 bd under $1.25M”",
+  "icon": "house.fill",
+  "as_of": "2026-10-16T07:30:00-04:00",
+  "stale_after": 86400,
+  "kind": "listing",
+  "visual": {
+    "kind": "image",
+    "media": {
+      "src": "https://img.example.com/listing/41234567/1.jpg",
+      "alt": "Living room with a green sofa, a big window and wooden floors",
+      "width": 1200,
+      "height": 800
+    }
+  },
+  "eyebrow": "For sale · Park Slope, Brooklyn",
+  "name": "412 5th St, Apt 3R",
+  "url": "https://listings.example.com/412-5th-st-apt-3r",
+  "price": {
+    "amount": {
+      "value": 1198000,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "was": {
+      "value": 1240000,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "change": {
+      "value": -0.034,
+      "format": "percent",
+      "good": "down",
+      "period": "since last week"
+    }
+  },
+  "attributes": [
+    {
+      "label": "Bedrooms",
+      "value": "2 bd",
+      "glyph": "bed.double.fill"
+    },
+    {
+      "label": "Floor area",
+      "value": "950 sq ft"
+    },
+    {
+      "label": "Balcony"
+    },
+    {
+      "label": "Elevator"
+    }
+  ],
+  "tags": [
+    {
+      "label": "Price drop",
+      "state": "ok"
+    },
+    {
+      "label": "Viewing Sat",
+      "state": "info"
+    }
+  ],
+  "actions": [
+    {
+      "id": "save",
+      "label": "Save"
+    },
+    {
+      "id": "book_viewing",
+      "label": "Book a Viewing",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "StreetEasy",
+    "kind": "web",
+    "detail": "listed 9 days ago"
+  },
+  "fallback_text": "Listing: 412 5th St, Apt 3R — for sale, Park Slope, Brooklyn. $1,198,000 (was $1,240,000, −3.4% since last week). 2 bedrooms, 950 sq ft, balcony, elevator. Price drop; viewing Saturday. StreetEasy, listed 9 days ago: https://listings.example.com/412-5th-st-apt-3r"
+}

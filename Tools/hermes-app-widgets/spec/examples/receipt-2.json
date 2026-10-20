@@ -1,0 +1,56 @@
+{
+  "type": "receipt",
+  "v": 1,
+  "id": "w_rcptlunch01",
+  "rev": 2,
+  "title": "Undone",
+  "subtitle": "Chef Remy · 11:16 AM",
+  "icon": "bot:chef-remy",
+  "state": "info",
+  "state_label": "Undone",
+  "as_of": "2026-10-16T11:16:05-04:00",
+  "sensitivity": "private",
+  "producer": {
+    "name": "Chef Remy",
+    "bot": "chef-remy"
+  },
+  "in_reply_to": "w_lunch1011",
+  "headline": "Lunch ordered",
+  "facts": [
+    {
+      "label": "Order",
+      "value": {
+        "value": "#GB-2291",
+        "format": "text"
+      },
+      "copy": true
+    }
+  ],
+  "undone": {
+    "headline": "Order cancelled",
+    "detail": "$14.50 refunded to Visa •• 4242 in 3–5 days",
+    "refund": {
+      "amount": {
+        "value": 14.5,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "to": "Visa •• 4242",
+      "when": "in 3–5 days"
+    }
+  },
+  "confirmation": {
+    "kind": "data",
+    "label": "Green Bowl cancellation",
+    "url": "https://greenbowl.example.com/orders/GB-2291",
+    "at": "2026-10-16T11:16:02-04:00"
+  },
+  "resolution": {
+    "action": "undo",
+    "state": "done",
+    "at": "2026-10-16T11:16:05-04:00",
+    "by": "you",
+    "message": "Order cancelled · refund in 3–5 days"
+  },
+  "fallback_text": "Order cancelled: the Green Bowl lunch (#GB-2291) won’t be delivered, and $14.50 is refunded to Visa •• 4242 in 3–5 days."
+}

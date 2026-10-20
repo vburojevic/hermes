@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: rows/0: {'label': 'Price', 'delta': {'value': -0.034, 'good': 'down'}} is not valid under any of the given schemas",
+  "payload": {
+    "type": "diff",
+    "v": 1,
+    "id": "w_bad03f001",
+    "title": "Changed",
+    "as_of": "2026-10-16T22:00:00-04:00",
+    "fallback_text": "Price changed somehow.",
+    "mode": "values",
+    "rows": [
+      {
+        "label": "Price",
+        "delta": {
+          "value": -0.034,
+          "good": "down"
+        }
+      }
+    ]
+  }
+}

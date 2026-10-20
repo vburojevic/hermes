@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: (root): 'unit' is a required property",
+  "payload": {
+    "type": "weather",
+    "v": 1,
+    "id": "w_bad00521",
+    "title": "New York",
+    "as_of": "2026-10-22T10:05:00-04:00",
+    "fallback_text": "New York: 58 degrees, partly cloudy.",
+    "place": {
+      "name": "New York"
+    },
+    "now": {
+      "temp": 58,
+      "condition": "partly-cloudy"
+    }
+  }
+}

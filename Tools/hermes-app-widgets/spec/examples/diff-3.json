@@ -1,0 +1,52 @@
+{
+  "type": "diff",
+  "v": 1,
+  "id": "w_ua1187moved",
+  "title": "UA 1187 moved",
+  "subtitle": "Tue, Oct 20 · Newark → San Francisco",
+  "icon": "airplane.departure",
+  "state": "unverified",
+  "state_label": "Gate not set",
+  "as_of": "2026-10-19T18:30:00-04:00",
+  "stale_after": 1800,
+  "mode": "values",
+  "rows": [
+    {
+      "label": "Departs",
+      "before": {
+        "value": "2026-10-20T10:55:00-04:00",
+        "format": "time"
+      },
+      "after": {
+        "value": "2026-10-20T11:40:00-04:00",
+        "format": "time"
+      },
+      "tag": {
+        "label": "45 min later",
+        "state": "warning"
+      }
+    },
+    {
+      "label": "Gate",
+      "before": "C112",
+      "after": null,
+      "note": "The new gate is announced about 90 minutes before departure"
+    },
+    {
+      "label": "Arrives",
+      "before": {
+        "value": "2026-10-20T14:20:00-07:00",
+        "format": "time"
+      },
+      "after": {
+        "value": "2026-10-20T15:05:00-07:00",
+        "format": "time"
+      }
+    }
+  ],
+  "source": {
+    "name": "United",
+    "kind": "api"
+  },
+  "fallback_text": "UA 1187 on Tue, Oct 20 moved 45 minutes later: departs 11:40 AM instead of 10:55 AM, arrives in San Francisco 3:05 PM instead of 2:20 PM. The gate was C112; the new gate isn’t known yet (it’s announced about 90 minutes before departure)."
+}

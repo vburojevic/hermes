@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/code.input.schema.json",
+  "title": "code (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. A block of code, a log or command output in monospace, with copy, folding, and an optional result of running it.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "oneOf": [
+        {
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "required": [
+            "lines"
+          ]
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "log"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "lines"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "lines"
+          ]
+        }
+      }
+    },
+    {
+      "dependentRequired": {
+        "range": [
+          "path"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "code"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "kind": {
+      "enum": [
+        "snippet",
+        "log",
+        "output"
+      ],
+      "description": "snippet: code with line numbers and syntax colour; log: lines with times and levels; output: what a command printed."
+    },
+    "language": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "Syntax colour and the label on the block: swift, python, typescript, shell, json, sql, yaml, text. Not diff or patch: those go to the diff card or `diff`.",
+      "pattern": "^(?!(diff|patch)$)[a-z0-9+#.-]{1,24}$"
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 20000,
+      "description": "kind snippet and output: the code or output as plain text with \\n line breaks. A log sends `lines` instead.",
+      "minLength": 1
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "When it was written. Shown as the time of day (14:02:14) in the log’s own offset."
+          },
+          "level": {
+            "enum": [
+              "trace",
+              "debug",
+              "info",
+              "notice",
+              "warning",
+              "error",
+              "critical"
+            ],
+            "description": "The level, always shown as a word (INFO, WARN, ERROR). warning is orange, error and critical red; the others are secondary text. Omit when the line has none."
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "Which process or service wrote it, when the log mixes several: api, worker, cron."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "The line as written, without its time and level.",
+            "minLength": 1
+          },
+          "repeat": {
+            "type": "integer",
+            "description": "The same line came this many times in a row. Shown once with “×12” (a folded repeat); a tap expands it on this device.",
+            "minimum": 2
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "description": "One log line."
+      },
+      "minItems": 1,
+      "maxItems": 200,
+      "description": "kind log: the lines, oldest first. The block opens at the tail."
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "debug": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "kind log: how many lines of each level the covered stretch of the log had (the title says which: “last 15 minutes”), including lines not sent. Drives the badge and the chips. Omitted: the client counts the lines it has."
+    },
+    "omitted": {
+      "type": "integer",
+      "description": "kind log: lines before the first one sent, which the producer left out (the log parser sends the last 200). Shown as “1,840 earlier lines not sent”, with Open File when `path` is set.",
+      "minimum": 1
+    },
+    "filter": {
+      "type": "boolean",
+      "description": "kind log: show level chips (All · Errors · Warnings) that filter the lines on this device. Nothing is sent.",
+      "default": true
+    },
+    "path": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "A workspace-relative path on the gateway the code comes from or is meant for: Sync/Reconnect.swift. A tap opens it (hermes-file:) in the Inspector on iPad and Mac, Quick Look on iPhone, at `range`.",
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$)).+$"
+    },
+    "range": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "start"
+      ],
+      "description": "The lines of `path` the snippet shows; the gutter numbers start at start. Omit for a suggestion that isn’t in the file yet (numbers start at 1)."
+    },
+    "command": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "kind output: the command that printed it, shown first after a $. Never with secrets: the plugin redacts and rejects them."
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "ok",
+            "warning",
+            "critical"
+          ],
+          "description": "ok: it ran and did what was expected (exit 0); warning: it ran, with warnings; critical: it failed or threw. Drawn as the state glyph before the label."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "The result line: “Ran in 0.4 s”, “Failed · exit 1 · 12.4 s”. The client builds it from exit_code and duration when it’s omitted."
+        },
+        "exit_code": {
+          "type": "integer",
+          "description": "The process exit code, when there is one."
+        },
+        "duration": {
+          "allOf": [
+            {
+              "$ref": "../common.schema.json#/$defs/Seconds"
+            }
+          ],
+          "description": "How long it ran."
+        },
+        "output": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "What it printed or returned, shown after the label in monospace: “0.25 0.5 1 2 4 5”. Longer output is its own code widget with kind output."
+        },
+        "ran_at": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        },
+        "where": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Where it ran, when that matters: “on Studio Mac”, “in a sandbox”."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "description": "The result of really running the code. Omit it when the code wasn’t run: never a guessed output."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "kind"
+  ],
+  "unevaluatedProperties": false
+}

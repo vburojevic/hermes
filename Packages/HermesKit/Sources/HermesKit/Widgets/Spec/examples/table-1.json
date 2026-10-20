@@ -1,0 +1,75 @@
+{
+  "type": "table",
+  "v": 1,
+  "id": "w_portfolio42",
+  "title": "Portfolio this week",
+  "subtitle": "vs last week",
+  "icon": "chart.bar.fill",
+  "as_of": "2026-10-16T09:41:00-04:00",
+  "stale_after": 86400,
+  "sortable": true,
+  "noun": "holdings",
+  "columns": [
+    {
+      "key": "app",
+      "label": "Holding"
+    },
+    {
+      "key": "installs",
+      "label": "Shares",
+      "format": "integer"
+    },
+    {
+      "key": "revenue",
+      "label": "Value",
+      "format": "currency",
+      "currency": "USD",
+      "precision": 0
+    },
+    {
+      "key": "change",
+      "label": "Change",
+      "format": "delta",
+      "delta_format": "percent",
+      "good": "up",
+      "width": "narrow"
+    }
+  ],
+  "rows": [
+    {
+      "app": "AAPL",
+      "installs": 60,
+      "revenue": 14820,
+      "change": 0.04
+    },
+    {
+      "app": "MSFT",
+      "installs": 30,
+      "revenue": 13560,
+      "change": -0.02
+    },
+    {
+      "app": "VOO",
+      "installs": 12,
+      "revenue": 6720,
+      "change": 0
+    },
+    {
+      "app": "NVDA",
+      "installs": 70,
+      "revenue": 13110,
+      "change": 0.06
+    }
+  ],
+  "total": {
+    "app": "Total",
+    "installs": 172,
+    "revenue": 48210,
+    "change": 0.02
+  },
+  "source": {
+    "name": "Fidelity",
+    "kind": "api"
+  },
+  "fallback_text": "Portfolio this week (vs last week): AAPL 60 shares, $14,820 (+4%); MSFT 30 shares, $13,560 (−2%); VOO 12 shares, $6,720 (no change); NVDA 70 shares, $13,110 (+6%). Total: 172 shares, $48,210 (+2%)."
+}

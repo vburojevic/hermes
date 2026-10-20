@@ -1,0 +1,1639 @@
+{
+  "$comment": "Generated from the spec model with the schemas and examples. Drives the plugin prompt table, widget_examples and the app renderer registry test.",
+  "version": 1,
+  "types": [
+    {
+      "type": "metric",
+      "v": 1,
+      "family": "Numbers",
+      "cue": "1–6 key numbers with changes",
+      "summary": "Labelled numbers: one renders as a hero, two to six as a row or grid, up to six small ones in a strip.",
+      "input_schema": "schemas/input/metric.input.schema.json",
+      "schema": "schemas/metric.schema.json",
+      "examples": [
+        "examples/metric-1.json",
+        "examples/metric-2.json",
+        "examples/metric-3.json"
+      ],
+      "design": {
+        "file": "widgets/numbers.elyx",
+        "exports": [
+          "metric",
+          "metricRow",
+          "metricGrid",
+          "metricStrip",
+          "metricCountdown",
+          "metricLoading",
+          "metricStale",
+          "metricError",
+          "metricEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "1–6 items. Labels ≤ 40 characters; notes ≤ 120.",
+        "Sparklines: 2–60 points.",
+        "Values must be numbers (or times for countdown); use `display` only when formatting can’t express it."
+      ],
+      "fallback": "One line per item: `<label>: <value><unit> (<delta> <period>)`. Example: “Sales: $1,284 so far today (+12% vs last Tuesday).”",
+      "use": [
+        "One to six key numbers with deltas: daily revenue, installs, steps vs goal.",
+        "A countdown to a time: boarding, a deadline, an auction end.",
+        "A strip of small facts: last night’s sleep, HRV and resting heart rate."
+      ],
+      "avoid": [
+        "A single number inside a sentence: write it in the prose.",
+        "A series over time worth reading: use `chart` (a sparkline in `metric` is decoration, not data).",
+        "Progress toward a target where the gap matters: use `meter`.",
+        "More than six numbers: use `table`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "meter",
+      "v": 1,
+      "family": "Numbers",
+      "cue": "a value against a target or range",
+      "summary": "A value within a range or against a target: one bar, a bar per item, nested rings, or an arc with zones.",
+      "input_schema": "schemas/input/meter.input.schema.json",
+      "schema": "schemas/meter.schema.json",
+      "examples": [
+        "examples/meter-1.json",
+        "examples/meter-2.json",
+        "examples/meter-3.json"
+      ],
+      "design": {
+        "file": "widgets/numbers.elyx",
+        "exports": [
+          "meter",
+          "meterRing",
+          "meterArc",
+          "meterBars",
+          "meterOver",
+          "meterLoading",
+          "meterStale",
+          "meterError",
+          "meterEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "bar: 0–8 items (one renders as a hero); ring: 1–3; arc: exactly 1.",
+        "Every item needs `max` or `target`: a number without a scale is a `metric`.",
+        "Labels ≤ 40 characters, notes ≤ 120, headline ≤ 60, widget note ≤ 200; ≤ 5 zones.",
+        "Values are numbers or null. Percentages are fractions (0.91 with `format: percent` and `max: 1`)."
+      ],
+      "fallback": "One line per item: `<label>: <value> of <target> (<percent>), <zone or what’s left>`, then the headline and note. Example: “October budget: $1,840 of $2,000 spent (92%, nearly spent). $160 left with 12 days to go.” An unknown value is written “unknown” with the reason, never 0.",
+      "use": [
+        "A budget, quota or cap: $1,840 of $2,000 spent in October, API calls this month, ad spend against its limit.",
+        "Goals for the day as nested rings: steps, active minutes and stand hours; treadmill minutes and steps.",
+        "A score inside named zones on an arc: readiness 82 (Good) from sleep and recovery.",
+        "Several values against their own targets, one bar each: protein, fibre and sugar for the day; disks on Studio Mac.",
+        "Test coverage against the project’s target: the `coverage` parser (lcov, Cobertura, coverage.py, Go) fills one item per metric (lines, branches) with `format: percent` and `max: 1`; the target comes from the tool call."
+      ],
+      "avoid": [
+        "A number with no target or range: use `metric`.",
+        "How a value moved over time, even against a goal: use `chart` with a `target` rule.",
+        "More than 8 values, or values someone will want to sort: use `table`.",
+        "A pass / fail judgement with reasons (is it safe, which is better): use `verdict`.",
+        "Progress through the stages of a job (3 of 5 done): use `steps`. Coverage that meets its target with nothing to act on deserves one sentence, not a widget."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "chart",
+      "v": 1,
+      "family": "Numbers",
+      "cue": "a series over time, a breakdown",
+      "summary": "A series over time, a few bars to compare, or the parts of a whole, in ink and greys, with the number that matters said in words.",
+      "input_schema": "schemas/input/chart.input.schema.json",
+      "schema": "schemas/chart.schema.json",
+      "examples": [
+        "examples/chart-1.json",
+        "examples/chart-2.json",
+        "examples/chart-3.json",
+        "examples/chart-4.json"
+      ],
+      "design": {
+        "file": "widgets/numbers.elyx",
+        "exports": [
+          "chart",
+          "chartBar",
+          "chartShare",
+          "chartMarket",
+          "chartLoading",
+          "chartStale",
+          "chartError",
+          "chartEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonChart",
+      "limits": [
+        "≤ 3 series, each with exactly as many values as `x.values`.",
+        "line and area: 2–120 points; bar and stacked: 2–14 bars (group days by week beyond two weeks); share: 2–4 parts.",
+        "One baseline, one target, one callout. Labels ≤ 40 characters, callout ≤ 24, note ≤ 280.",
+        "Values are numbers or null: never strings, never 0 for missing."
+      ],
+      "fallback": "The headline, the shape in one sentence, the key values, then the note. Example: “Resting heart rate: 61 bpm today, above your usual range (52–58) for the last 3 days after two weeks inside it. That often follows short sleep or a stressful stretch; an early night may help. It’s an observation, not a diagnosis.” For share, one line per part with its value and percentage.",
+      "use": [
+        "A health or fitness trend against the person’s own baseline: resting heart rate for 14 days, sleep, weight, with a note that observes and suggests a gentle next step.",
+        "Daily or weekly counts with the one that matters called out: installs this week, revenue per day, commits.",
+        "Up to three series compared: this year vs last, iOS vs Android, planned vs actual (stacked when they add up).",
+        "A breakdown of a whole: spending by category, storage by kind, traffic by source (`kind: share`).",
+        "Numbers that already sit in a file: the `csv` parser (also `tsv`, `jsonl`) fills `x` and up to three `series` from the columns the call names."
+      ],
+      "avoid": [
+        "One to six current numbers: use `metric` (its sparkline is decoration, not data).",
+        "A value against a target right now: use `meter`.",
+        "Exact values someone will read or sort: use `table`.",
+        "Days with marks (habits, streaks, activity per day): use `calendar`.",
+        "More than three series, or a pie: split the question, or use `table`. Never a pie on a phone."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "calendar",
+      "v": 1,
+      "family": "Numbers",
+      "cue": "days with marks: habits, streaks",
+      "summary": "Days with marks: a habit’s weeks with a streak, a month with dated dots, or activity per day as intensity.",
+      "input_schema": "schemas/input/calendar.input.schema.json",
+      "schema": "schemas/calendar.schema.json",
+      "examples": [
+        "examples/calendar-1.json",
+        "examples/calendar-2.json",
+        "examples/calendar-3.json"
+      ],
+      "design": {
+        "file": "widgets/numbers.elyx",
+        "exports": [
+          "calendar",
+          "calendarMonth",
+          "calendarIntensity",
+          "calendarLoading",
+          "calendarStale",
+          "calendarError",
+          "calendarEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonGrid",
+      "limits": [
+        "weeks: 1–12 weeks; month: one month. ≤ 400 marks: one per day for check and intensity, ≤ 3 per day for dot.",
+        "Dot labels ≤ 24 characters, at most four different labels (the legend fits one line); notes ≤ 80.",
+        "`level` is 0–1; `streak.current` and `streak.best` are whole numbers."
+      ],
+      "fallback": "The streak, then one line per week or the list of marked days. Example: “Knee exercises: 16-day streak (best 21). Missed 23 and 27 September; every day since 28 September done; today 1 of 2 sessions.” Month: “October: dentist Oct 8, 10:30 AM; electricity bill due Oct 20 ($64); tax return deadline Oct 21.” Intensity: the busiest and quietest days with their counts.",
+      "use": [
+        "A habit or plan with a streak: knee exercises twice a day, medication taken, a language lesson, a daily walk.",
+        "A month with dated things: plans, bills due, deadlines, school holidays.",
+        "Activity per day as intensity: commits, workouts, words written, energy used at home.",
+        "Rehab or training adherence over several weeks, with today’s partial progress."
+      ],
+      "avoid": [
+        "A schedule with times and places: use `agenda` (the `ics` parser fills it).",
+        "Daily numbers whose exact values matter: use `chart` (bars) or `table`.",
+        "Today’s to-dos: use `checklist`.",
+        "A single streak number with no days to show: use `metric`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "verdict",
+      "v": 1,
+      "family": "Numbers",
+      "cue": "a decision or a safety check",
+      "summary": "A judgement with its reasons: a pick between options, an is-it-safe check, or a scorecard, with every criterion and how it is known.",
+      "input_schema": "schemas/input/verdict.input.schema.json",
+      "schema": "schemas/verdict.schema.json",
+      "examples": [
+        "examples/verdict-1.json",
+        "examples/verdict-2.json",
+        "examples/verdict-3.json",
+        "examples/verdict-4.json"
+      ],
+      "design": {
+        "file": "widgets/numbers.elyx",
+        "exports": [
+          "verdict",
+          "verdictSafe",
+          "verdictContains",
+          "verdictUnverified",
+          "verdictScore",
+          "verdictLoading",
+          "verdictStale",
+          "verdictError",
+          "verdictEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–12 criteria. Labels and values ≤ 40 characters, notes ≤ 120; outcome label ≤ 60, reason ≤ 200, would_change ≤ 200.",
+        "`outcome.state: ok` (and the envelope `state: ok`) is invalid with any criterion `unverified` or `critical`.",
+        "score: `outcome.score` and a `score` on every criterion. safety: one criterion per declared item and no `confidence`; critical when any is critical, else unverified when any is unverified."
+      ],
+      "fallback": "The outcome first, then every criterion with its value and how it is known, then what would change it. Example: “Not verified: don’t serve the chicken satay bowl to Maya until someone checks the sauce and dressing. Peanuts: no data for “satay sauce”. Tree nuts: not present (ingredient list on the menu). Sesame: no data for “house dressing”.” Never shorten a safety fallback to the outcome alone.",
+      "use": [
+        "Allergen and diet checks: a dish against everyone’s declared allergens, one criterion per allergen, with where each answer came from.",
+        "A recommendation after research: the database for an app, the flight to book, the laptop to buy, with confidence and what would change the pick.",
+        "A scorecard: an App Store listing, a pull request against the team’s checklist, a flat against the person’s must-haves.",
+        "Compatibility checks: does this charger work with the laptop, does the plugin support the gateway’s version."
+      ],
+      "avoid": [
+        "Options side by side for the person to weigh: use `compare` (weights re-rank on the device).",
+        "The status of systems or jobs: use `status`. A CI run where everything passed: one sentence, no widget.",
+        "A single number against a target: use `meter`.",
+        "An opinion with nothing checkable behind it: write it in prose (“I think…”)."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "scoreboard",
+      "v": 1,
+      "family": "Numbers",
+      "cue": "sides with scores: match, poll, A/B",
+      "summary": "Two to four sides with scores and a status: a match, a race, a poll or an A/B test.",
+      "input_schema": "schemas/input/scoreboard.input.schema.json",
+      "schema": "schemas/scoreboard.schema.json",
+      "examples": [
+        "examples/scoreboard-1.json",
+        "examples/scoreboard-2.json",
+        "examples/scoreboard-3.json"
+      ],
+      "design": {
+        "file": "widgets/numbers.elyx",
+        "exports": [
+          "scoreboard",
+          "scoreboardTest",
+          "scoreboardLoading",
+          "scoreboardStale",
+          "scoreboardError",
+          "scoreboardEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "2–4 sides. Names ≤ 60 characters, details ≤ 120, period ≤ 24, note ≤ 120.",
+        "At most one winner, only when final; a test needs `significance.reached: true` for one.",
+        "Scores are numbers or null (a rate is a fraction with `format: percent`)."
+      ],
+      "fallback": "Status and period, the sides with their scores, then the details. Example: “Kansas City Chiefs 24–17 Buffalo Bills, live in Q3 8:14 (NFL, Week 7). Mahomes 2 TD passes; Allen 2 TD runs. Halftime 14–10.” A test: “Paywall test (trial starts), finished: new paywall 5.1% of 2,412 visitors vs current 4.2% of 2,388, +0.9 points, significant at 95% confidence.”",
+      "use": [
+        "A live or final score: football with the minute, basketball with the quarter and clock.",
+        "An A/B test: the rate per variant, visitors, the change in points, and whether it is significant.",
+        "A poll’s standing: votes per option in a group chat, while open and once closed.",
+        "A race between up to four: a sales contest, Bots on a benchmark, the top four of a Grand Prix."
+      ],
+      "avoid": [
+        "A league table or more than four sides: use `table`.",
+        "Options with criteria to weigh: use `compare`, or `verdict` for a pick.",
+        "Asking people to vote: use `choice`, then show the standing here.",
+        "How a score moved over time: use `chart`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "list",
+      "v": 1,
+      "family": "Collections",
+      "cue": "rows: tickets, ranks, a digest",
+      "summary": "Rows of things, each with a leading visual, a title, a subtitle and a trailing value or tag: plain, ranked, grouped into a digest, or in lanes.",
+      "input_schema": "schemas/input/list.input.schema.json",
+      "schema": "schemas/list.schema.json",
+      "examples": [
+        "examples/list-1.json",
+        "examples/list-2.json",
+        "examples/list-3.json"
+      ],
+      "design": {
+        "file": "widgets/collections.elyx",
+        "exports": [
+          "list",
+          "listRanked",
+          "listDigest",
+          "listLanes",
+          "listLoading",
+          "listStale",
+          "listError",
+          "listEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "0–50 rows (an empty list should carry `empty_text`); the client shows the first 5, then Show all.",
+        "Titles ≤ 120 characters (two lines), subtitles ≤ 120 (one line); ≤ 2 tags and ≤ 2 actions per row.",
+        "≤ 8 groups, ≤ 4 count chips. Lanes: 2–4 groups read well; more scroll sideways."
+      ],
+      "fallback": "The title and counts, then one line per row, problems first, under group headings: `<title> — <subtitle>: <value> (was <previous>, <delta>) [tags]`. Example: “Apartments in Brooklyn, tonight: 3 new, 2 price drops, 1 gone. Price drops: 412 5th St, Apt 3R — $1,198,000 (was $1,240,000, −3.4%); 88 Berkeley Pl — $869,000 (was $899,000, −3.3%). New: Prospect Park West, park view — $1,650,000 … Gone: 211 7th Ave (was $975,000).” Ranked: “3. hiking app (▲ 4, was 7)”.",
+      "use": [
+        "A set of similar things to scan: open tickets, posts in the queue, scheduled jobs (failures first).",
+        "Ranks and how they moved: keyword positions, a leaderboard, a research shortlist.",
+        "A digest of changes since last time, grouped with counts: New 3, Price drops 2, Gone 1.",
+        "Stages side by side (`layout: lanes`): a launch board, a sales pipeline.",
+        "Linter and analyser findings: the `sarif` parser fills `items` (one per finding, worst first, `subtitle` “file:line · rule”, a severity tag: error → critical, warning → warning, note → info, `url` to the file); `csv` fills rows from a sheet."
+      ],
+      "avoid": [
+        "Things the person ticks off: use `checklist`.",
+        "Several numbers per row that are worth comparing across rows: use `table`.",
+        "Events in time order with times: use `timeline` (or `agenda` for a day).",
+        "One thing in depth (a listing, a product): use `entity`; its labelled facts: `details`.",
+        "Pull request reviews, a failing run’s jobs: use `steps` for the run, the app’s DiffCard for code."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "checklist",
+      "v": 1,
+      "family": "Collections",
+      "cue": "things to tick",
+      "summary": "Items the person ticks off, optionally grouped with progress; a tick is a request the agent confirms.",
+      "input_schema": "schemas/input/checklist.input.schema.json",
+      "schema": "schemas/checklist.schema.json",
+      "examples": [
+        "examples/checklist-1.json",
+        "examples/checklist-2.json",
+        "examples/checklist-3.json"
+      ],
+      "design": {
+        "file": "widgets/collections.elyx",
+        "exports": [
+          "checklist",
+          "checklistMeds",
+          "checklistTasks",
+          "checklistPending",
+          "checklistLoading",
+          "checklistStale",
+          "checklistError",
+          "checklistEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "0–50 items (an empty list should carry `empty_text`); ≤ 12 groups.",
+        "Labels ≤ 120 characters, detail ≤ 120; ≤ 2 tags and ≤ 2 actions per item.",
+        "The client shows the first two groups (or 8 items), then Show more."
+      ],
+      "fallback": "The title and progress, then one line per item with a box: `[x]` or `[ ]`, the label, detail and tags, grouped under headings. Example: “Shopping for the week (4 of 9): Produce — [x] Tomatoes, 2 lb; [x] Spinach, 8 oz; [ ] Lemons, 3; [ ] Cilantro, 1 bunch. Dairy — [x] Greek yogurt, 32 oz; [ ] Feta, 8 oz; [ ] Oat milk, half gallon …” Platforms without widgets let the person reply “got lemons”.",
+      "use": [
+        "A shopping list grouped by aisle, from the week’s meal plan.",
+        "Today’s medication, private, with times and “Taken 08:04”.",
+        "Overdue and due-soon tasks with who they’re for, late first.",
+        "Chores by person or room; a packing list by bag; a release checklist where each ticked item says how it is known (`evidence`)."
+      ],
+      "avoid": [
+        "Progress through stages the agent runs (setup, a deploy, an order): use `steps`.",
+        "Rows to read, not tick: use `list`.",
+        "One question with a few answers: use `choice`; several answers to send together: `form`.",
+        "A plan with nested parts: use `outline`.",
+        "Scheduled reminders with times through the day: use `agenda`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "table",
+      "v": 1,
+      "family": "Collections",
+      "cue": "a small grid of values",
+      "summary": "A small grid of values: rows of things by a few columns of numbers, with an optional total, sortable on the device.",
+      "input_schema": "schemas/input/table.input.schema.json",
+      "schema": "schemas/table.schema.json",
+      "examples": [
+        "examples/table-1.json",
+        "examples/table-2.json",
+        "examples/table-3.json"
+      ],
+      "design": {
+        "file": "widgets/collections.elyx",
+        "exports": [
+          "table",
+          "tableReflow",
+          "tableLoading",
+          "tableStale",
+          "tableError",
+          "tableEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–6 columns (≤ 4 recommended on iPhone), 0–50 rows.",
+        "Column labels ≤ 24 characters; text cells ≤ 120.",
+        "The client shows the first 8 rows (2 blocks when reflowed), then Show all."
+      ],
+      "fallback": "The title, then one line per row: `<first cell>: <label> <value>, …`, then the total. Example: “Portfolio this week (vs last week): AAPL: 60 shares, $14,820 value (+4%); MSFT: 30 shares, $13,560 (−2%); VOO: 12, $6,720 (no change); NVDA: 70, $13,110 (+6%). Total: 172 shares, $48,210 (+2%).” Never a Markdown table: it doesn’t survive notifications.",
+      "use": [
+        "Per-app numbers with changes: installs, revenue, change vs last week, and a total.",
+        "Coverage per file from the `coverage` parser (lcov, Cobertura, coverage.py); any sheet from `csv` / `tsv` / `jsonl` (`columns` picks and orders).",
+        "Spending per category against a budget; energy per room; a standings table.",
+        "Specs of 2–4 options side by side, when there is no pick to make."
+      ],
+      "avoid": [
+        "One to six headline numbers: use `metric`.",
+        "A series over time: use `chart`.",
+        "Options to choose between with criteria and a pick: use `compare`.",
+        "Labelled facts about one thing: use `details`.",
+        "More than 6 columns or 50 rows: show the part that matters (a `table` of the top 10, `metric` for the totals) and attach the file; the Inspector opens CSVs."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "details",
+      "v": 1,
+      "family": "Collections",
+      "cue": "labelled fields: invoice, booking",
+      "summary": "Labelled values about one thing — an invoice, a booking, a machine’s specs — optionally in titled sections, with mono values and local Copy.",
+      "input_schema": "schemas/input/details.input.schema.json",
+      "schema": "schemas/details.schema.json",
+      "examples": [
+        "examples/details-1.json",
+        "examples/details-2.json",
+        "examples/details-3.json"
+      ],
+      "design": {
+        "file": "widgets/collections.elyx",
+        "exports": [
+          "details",
+          "detailsSections",
+          "detailsLoading",
+          "detailsStale",
+          "detailsError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–6 sections, 1–12 fields each; ≤ 24 fields in all reads well.",
+        "Labels ≤ 40 characters; text values ≤ 280; detail ≤ 120.",
+        "One `emphasis` per widget."
+      ],
+      "fallback": "The title, then one `<label>: <value>` per field, sections as headings. Example: “Invoice INV-0042, sent Oct 1: Amount $2,400.00; Client Bluefin Studio LLC; Due Tue, Oct 20 (in 4 days); Status unpaid; Pay to Chase checking •• 4410.” Masked values stay masked in the fallback.",
+      "use": [
+        "An invoice or receipt: amount, client, due, status, bank details.",
+        "A booking: flight, departure, booking code, hotel, check-in.",
+        "Specs and status of one thing: a machine, a device, a subscription, a parcel.",
+        "The fields of a record the agent found: a support ticket, a company, a contact."
+      ],
+      "avoid": [
+        "One thing with a photo, a rating and actions (a listing, a place): use `entity`.",
+        "The same fields for several things: use `table`.",
+        "Before and after of the same fields: use `diff`.",
+        "A boarding pass or ticket to scan: use `pass`.",
+        "Passwords, API keys or full card numbers: never in a widget; the app’s secure request handles secrets."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "outline",
+      "v": 1,
+      "family": "Collections",
+      "cue": "a tree: plan, structure, files",
+      "summary": "A tree up to four levels deep: a plan with progress, a structure, or files with what changed; branches fold.",
+      "input_schema": "schemas/input/outline.input.schema.json",
+      "schema": "schemas/outline.schema.json",
+      "examples": [
+        "examples/outline-1.json",
+        "examples/outline-2.json"
+      ],
+      "design": {
+        "file": "widgets/collections.elyx",
+        "exports": [
+          "outline",
+          "outlineFiles",
+          "outlineLoading",
+          "outlineStale",
+          "outlineError",
+          "outlineEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "Depth ≤ 4; ≤ 30 top-level nodes, ≤ 20 children per node, ≤ 60 nodes in all.",
+        "Labels ≤ 120 characters; detail ≤ 120.",
+        "The client shows the first 12 visible rows, then Show all."
+      ],
+      "fallback": "The title and progress, then one line per node, indented two spaces per level, with the state as a word or a mark (`[x]` done, `[~]` running, `[ ]` waiting, `[!]` failed or blocked, `[?]` unknown). Example: “Postgres migration (3 of 8): [x] Move the database; [~] Switch the app over — [x] Point staging at the new host; [~] Run the migration on a copy (running now, 12 of 48 tables); [ ] Swap production; [ ] Clean up.” Files: “Changed files (3): Sources/Sync/Reconnect.swift (modified), Sources/Sync/Backoff.swift (added), Package.swift (modified).”",
+      "use": [
+        "A plan with phases and steps and where it is: a migration, a move, a launch.",
+        "Files a change touched, by folder, with A / M / D / R tags and links that open them (mode files).",
+        "A structure: the sections of a report, a site map, the parts of a project.",
+        "A breakdown the person explores: a budget by area, a course syllabus."
+      ],
+      "avoid": [
+        "A flat set of steps in order, live: use `steps`.",
+        "Items the person ticks off: use `checklist`.",
+        "The code changes themselves: the app’s DiffCard (or `code` for a snippet).",
+        "A flat set of things: use `list`; events in time: `timeline`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "diff",
+      "v": 1,
+      "family": "Collections",
+      "cue": "before and after",
+      "summary": "What changed: fields before and after (a listing’s price, a flight’s time), or a passage of text with removed and added words marked.",
+      "input_schema": "schemas/input/diff.input.schema.json",
+      "schema": "schemas/diff.schema.json",
+      "examples": [
+        "examples/diff-1.json",
+        "examples/diff-2.json",
+        "examples/diff-3.json"
+      ],
+      "design": {
+        "file": "widgets/collections.elyx",
+        "exports": [
+          "diff",
+          "diffText",
+          "diffLoading",
+          "diffStale",
+          "diffError",
+          "diffEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "Values: 0–20 rows (an empty diff should carry `empty_text`); labels ≤ 40, values ≤ 280 characters.",
+        "Text: before and after ≤ 4,000 characters each; send the changed passage, not the whole document.",
+        "For code use DiffCard."
+      ],
+      "fallback": "Values: the title, then `<label>: <before> → <after> (<delta>)` per row. Example: “412 5th St changed since 10 PM yesterday: Price $1,240,000 → $1,198,000 (−3.4%); Status For sale → Under offer; Viewing not offered → Sat 10 AM–12 PM.” Text: “Suggested edit to README, Sync section. Before: “…” After: “…””.",
+      "use": [
+        "A watched thing that changed: a listing (price, status, viewing), a product’s price, a contract’s terms.",
+        "A schedule change: a flight’s departure and gate, a delivery window.",
+        "A suggested edit to prose: a README section, an email, a bio (mode text).",
+        "Settings before and after a change the agent made (with a `receipt` if it can be undone)."
+      ],
+      "avoid": [
+        "Code changes: the app’s DiffCard (or `code` for a snippet); never a text diff of code.",
+        "Many things that changed a little: use `list` with `previous` and `delta` (a digest).",
+        "A change waiting for the person’s OK: use `approval` (with `subject.change`).",
+        "A number and how it moved over time: use `metric` or `chart`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "timeline",
+      "v": 1,
+      "family": "Time",
+      "cue": "events in order: tracking, incident",
+      "summary": "Events in order on a rail: a package on its way, a history, an incident log, a day of travel, with the current event ringed.",
+      "input_schema": "schemas/input/timeline.input.schema.json",
+      "schema": "schemas/timeline.schema.json",
+      "examples": [
+        "examples/timeline-1.json",
+        "examples/timeline-2.json",
+        "examples/timeline-3.json"
+      ],
+      "design": {
+        "file": "widgets/time.elyx",
+        "exports": [
+          "timeline",
+          "timelineItinerary",
+          "timelineIncident",
+          "timelineNow",
+          "timelineLoading",
+          "timelineStale",
+          "timelineError",
+          "timelineEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "0–30 events; 6 show when there are more than 8, the rest behind Show all. At most one `current`.",
+        "Title ≤ 80 characters, detail ≤ 120; ≤ 2 actions per event.",
+        "`kind: incident` needs a date-time on every event (no day-only or unknown times); an empty `events` needs the envelope’s `empty_text`. Both, and the single `current`, are checked by the schema."
+      ],
+      "fallback": "One line per event, in order: `<time> — <title> (<detail>)`, with the state as a word when it isn’t done (“now”, “expected”, “failed”). Example: “Package from Portland, arrives today. Tue — Ordered (wall light, order 4471). Wed — Shipped (UPS 1Z999AA10123456784, from Portland). 9:12 AM — now: in Brooklyn, out for delivery (14 stops before you). Today 1–3 PM — expected: delivered.”",
+      "use": [
+        "Package and order tracking: ordered, shipped, out for delivery, the expected window.",
+        "A day of travel (`direction: future`): leave home, the flight, the train, the hotel check-in.",
+        "An incident log (`kind: incident`): errors start, someone paged, a rollback, recovered, each with its exact time and who.",
+        "A history: an app review’s path through App Review, a ticket’s life, a property’s price changes."
+      ],
+      "avoid": [
+        "Progress through fixed stages where the gaps matter more than the times (a CI run, a multi-step task): use `steps`.",
+        "A day’s or week’s schedule with spans and free time: use `agenda`.",
+        "The incident itself, with impact and the next step: use `alert` (link this timeline from it or stack the two).",
+        "A boarding pass or ticket to show at a gate: use `pass`; directions from A to B: use `route`.",
+        "A delivered parcel: one sentence, not a widget."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "agenda",
+      "v": 1,
+      "family": "Time",
+      "cue": "a day’s or week’s schedule",
+      "summary": "A schedule: one day as blocks with free time and the now line, or the days ahead as one line each.",
+      "input_schema": "schemas/input/agenda.input.schema.json",
+      "schema": "schemas/agenda.schema.json",
+      "examples": [
+        "examples/agenda-1.json",
+        "examples/agenda-2.json",
+        "examples/agenda-3.json"
+      ],
+      "design": {
+        "file": "widgets/time.elyx",
+        "exports": [
+          "agenda",
+          "agendaWeek",
+          "agendaLoading",
+          "agendaStale",
+          "agendaError",
+          "agendaEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "0–50 events; view days spans 2–14 days. Up to 3 all-day items show, the rest as “+2 all-day”.",
+        "Title ≤ 80, note ≤ 80, day notes ≤ 40; ≤ 2 tags and ≤ 2 actions per event; ≤ 12 people (the line names two and “+3”).",
+        "Times in RFC 3339 with offsets; dates for all-day items only."
+      ],
+      "fallback": "The date, then one line per item in time order: `<start>–<end> <title> (<place>, with <people>; <note>)`, all-day items first, free time as “Free <from>–<to>” when complete, the flag in words. Example: “Friday, October 16. All day: Mom’s birthday. 9–9:30 AM Stand-up (Zoom). Free 9:30–11 AM. 11 AM–12 PM Dentist (200 W 57th St; leave by 10:40). Free 12–2 PM. 2–3:30 PM Paywall review, with Ada and Ops.”",
+      "use": [
+        "Today’s schedule in a morning brief, with the next thing to leave for flagged.",
+        "The week ahead (`view: days`): the first event and a count per day, travel days called out.",
+        "A day the agent planned or changed (moved a meeting, found an hour), the changed block tagged.",
+        "From an .ics file: `from_file` with `parser: ics` fills `events` (DTSTART / DTEND → start / end, DATE values → all_day, SUMMARY → title, LOCATION → place, ATTENDEE CN → people, STATUS and PARTSTAT → state), expanding repeats within the range."
+      ],
+      "avoid": [
+        "Events in sequence where the times are history, not a schedule (a parcel, an incident, a travel day as legs): use `timeline`.",
+        "Days with marks (habits, streaks, a month of workouts): use `calendar`.",
+        "Proposed times for the person to pick: use `choice` with `style: times`.",
+        "One event with its details and RSVP: use `entity` (`kind: event`)."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "entity",
+      "v": 1,
+      "family": "Things",
+      "cue": "one thing: listing, place, PR, file",
+      "summary": "One thing — a listing, product, person, place, event, file, link, review or pull request — as a card with its visual, the facts that matter and what to do next.",
+      "input_schema": "schemas/input/entity.input.schema.json",
+      "schema": "schemas/entity.schema.json",
+      "examples": [
+        "examples/entity-1.json",
+        "examples/entity-2.json",
+        "examples/entity-3.json",
+        "examples/entity-4.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "entity",
+          "entityPerson",
+          "entityPlace",
+          "entityEvent",
+          "entityFile",
+          "entityLink",
+          "entityReview",
+          "entityPullRequest",
+          "entityProduct",
+          "entityLoading",
+          "entityStale",
+          "entityError",
+          "entityEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonMedia",
+      "limits": [
+        "One thing per widget. Name ≤ 120, eyebrow ≤ 80, detail ≤ 160, note ≤ 120, body ≤ 600.",
+        "≤ 8 attributes, ≤ 4 tags, ≤ 12 people (five faces show, then “+7”), ≤ 4 buttons with one primary.",
+        "One visual; images ≤ 10 MB when fetched by the gateway.",
+        "Each recipe needs its block (checked by the schema): listing and product → `price`; place → `place`; event → `when`; file → `file` and `url`; link → `url`; review → `rating` and `body`; pull_request → `pull_request`. A rating above its `scale` is invalid (checked by the plugin)."
+      ],
+      "fallback": "The kind and name, then the facts in the order shown, then the link: `<kind>: <name> — <eyebrow>. <price> (was <was>). <attributes>. <tags>. <url>`. Example: “Listing: 412 5th St, Apt 3R — for sale, Park Slope, Brooklyn. $1,198,000 (was $1,240,000, −3.4%). 2 bedrooms, 950 sq ft, balcony, elevator. Price drop; viewing Saturday. StreetEasy, listed 9 days ago: https://listings.example.com/412-5th-st-apt-3r”.",
+      "use": [
+        "Things to buy or rent (`listing`, `product`): a photo on top, the price with what it was, attribute chips (2 bd, 950 sq ft), tags (Price drop), Save / Book a Viewing.",
+        "People and places (`person`, `place`): an avatar or map snapshot, the role or distance, reach buttons and Directions drawn from `contact` and `place`.",
+        "Things in time and files (`event`, `file`, `link`): a date tile with RSVP, a file that opens in the Inspector, a link with its real domain and a thumbnail.",
+        "Work items (`review`, `pull_request`): an App Store review with stars and Draft a Reply; a pull request with checks, reviews, +/− and Merge as a request."
+      ],
+      "avoid": [
+        "Several things of the same kind (tonight’s listings, the open pull requests): use `list` (with leading visuals); two to four to choose between: use `compare`.",
+        "Many labelled fields (an invoice, a booking’s details): use `details`.",
+        "A gallery or a voice note: use `media`.",
+        "A boarding pass or ticket to scan: use `pass`; a schedule: use `agenda`.",
+        "The health of a service or a CI run: use `status` or `steps`; a green pull request that merged needs one sentence, not a card."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "media",
+      "v": 1,
+      "family": "Things",
+      "cue": "images, a gallery, a voice note",
+      "summary": "Images, a video or a voice note in the reply: one item large with its caption, a grid or carousel of up to twelve, or an audio player with a waveform.",
+      "input_schema": "schemas/input/media.input.schema.json",
+      "schema": "schemas/media.schema.json",
+      "examples": [
+        "examples/media-1.json",
+        "examples/media-2.json",
+        "examples/media-3.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "media",
+          "mediaGrid",
+          "mediaAudio",
+          "mediaLoading",
+          "mediaStale",
+          "mediaError",
+          "mediaEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonMedia",
+      "limits": [
+        "1–12 items; the grid shows four tiles, the carousel all twelve. More than twelve: an `open` action to the full gallery.",
+        "alt ≤ 200 (required on every item), caption ≤ 200, credit ≤ 80, transcript ≤ 4,000.",
+        "Images and videos ≤ 10 MB each when fetched by the gateway; waveform 16–120 samples."
+      ],
+      "fallback": "One line per item: `<caption or alt> (<photo | video, 0:34 | audio, 1:42>)`, then the transcript for audio. Remote links stay out unless the person needs them. Example: “412 5th St, 12 photos: living room with a green sofa; the bedroom; the kitchen; the view from the balcony over 5th Avenue… (12 photos).” For a voice note: “Voice note from Maya (1:42): “Hi, I’m running late…””",
+      "use": [
+        "One image with a caption: today’s lunch special, a screenshot of the bug, a generated image.",
+        "Photos of one thing (`layout: grid` or `carousel`): a listing’s rooms, a product from every side.",
+        "A voice note or a recording (`kind: audio`) with its waveform, duration and transcript.",
+        "A short video with its poster: a screen recording of the fix, a clip from a camera."
+      ],
+      "avoid": [
+        "One thing with a photo and facts (price, rooms, rating): use `entity`; the photo is its visual.",
+        "A chart drawn as an image: use `chart`, so the numbers are data and VoiceOver can read them.",
+        "A file to open or download (a PDF, a ZIP): use `entity` with `kind: file`.",
+        "Code or a log as a screenshot: use `code`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "code",
+      "v": 1,
+      "family": "Things",
+      "cue": "code, a log, command output",
+      "summary": "A block of code, a log or command output in monospace, with copy, folding, and an optional result of running it.",
+      "input_schema": "schemas/input/code.input.schema.json",
+      "schema": "schemas/code.schema.json",
+      "examples": [
+        "examples/code-1.json",
+        "examples/code-2.json",
+        "examples/code-3.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "code",
+          "codeLog",
+          "codeLogFiltered",
+          "codeLoading",
+          "codeStale",
+          "codeError"
+        ]
+      },
+      "skeleton": "Parts.skeletonCode",
+      "limits": [
+        "`text` ≤ 20,000 characters; `lines` 1–200, each ≤ 2,000 characters; the whole payload ≤ 64 KB.",
+        "`result.output` ≤ 4,000 characters; `command` ≤ 500.",
+        "The client folds after 12 lines (5 for a log in compact density); nothing is truncated silently.",
+        "Exactly one of `text` and `lines`."
+      ],
+      "fallback": "The title, the code in a fenced block with its language (the one place Markdown is allowed in fallback_text, so other platforms keep it monospace), then the result on its own line. A log: the counts, then the last lines as `time LEVEL text`, repeats as “(×12)”, and where the full log is. Example: “Backoff for reconnects (Swift, for Sync/Reconnect.swift):\\n```swift\\nfunc backoff(_ n: Int) -> Double {\\n  min(5, 0.25 * pow(2, Double(n)))\\n}\\n```\\nRan in 0.4 s: 0.25 0.5 1 2 4 5.”",
+      "use": [
+        "A suggested snippet with what it returned when Hermes ran it: “Ran in 0.4 s · 0.25 0.5 1 2 4 5”.",
+        "The tail of a log around a problem: levels, counts, repeats folded. The `log` parser fills it from a file (`lines`, `counts`, `omitted`).",
+        "What a failing command or test printed, with its exit code. The `junit` parser puts each failure (test, message, file:line) in `lines` at level error.",
+        "A few lines of a gateway file (`path` and `range`), opened in the Inspector with a tap."
+      ],
+      "avoid": [
+        "A code diff or Hermes’s own file changes: the app’s diff card and the Changes tab; before and after text is `diff`.",
+        "A run that fully passed: one sentence (“All 214 tests passed in 38 s”), no widget.",
+        "Pass and fail counts or stages of a pipeline: `steps` (with `code` for the failures) or `metric`.",
+        "A whole file or a very long log: point to it with `entity` (file) and open it in the Inspector.",
+        "One command or value inside a sentence: inline `code` in the prose."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "sources",
+      "v": 1,
+      "family": "Things",
+      "cue": "references, a quote",
+      "summary": "The references behind an answer, numbered to match [1] markers in the prose and tagged with how far to trust them; one source with an excerpt renders as a quote.",
+      "input_schema": "schemas/input/sources.input.schema.json",
+      "schema": "schemas/sources.schema.json",
+      "examples": [
+        "examples/sources-1.json",
+        "examples/sources-2.json",
+        "examples/sources-3.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "sources",
+          "sourcesQuote",
+          "sourcesLoading",
+          "sourcesStale",
+          "sourcesError",
+          "sourcesEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "0–20 sources; a reply rarely needs more than 6.",
+        "Titles ≤ 160 characters, excerpts ≤ 500, `used_for` ≤ 120, notes ≤ 80.",
+        "Quote layout: exactly one source, with an excerpt (in the schema).",
+        "Every URL is https:// or hermes-file:."
+      ],
+      "fallback": "One line per source, numbered as in the prose: `[n] <title> — <domain or site>, <date> (<trust>): <url>`. A quote: the excerpt in quotation marks, then the attribution and the link. Example: “Sources: [1] EU AI Act: implementing guidelines — eur-lex.europa.eu, 14 Oct 2026 (primary source): https://eur-lex.europa.eu/… [2] What the new AI rules mean for apps — theverge.com, 15 Oct 2026 (secondary): https://www.theverge.com/… [3] Apple to delay AI features in the EU — a post on X, not confirmed (unverified).”",
+      "use": [
+        "The sources behind a research answer or a ranked verdict, numbered to match [1], [2] in the reply.",
+        "A news story with “why it matters”, where a rumour must stay tagged unverified next to the confirmed report.",
+        "The exact words of a rule, a contract clause or a release note, as a quote with its locator.",
+        "An option comparison’s evidence, under a `compare`."
+      ],
+      "avoid": [
+        "One link worth opening on its own (an article, a product page): `entity` (link).",
+        "A news story told as a story, with “why it matters”: `summary` (story recipe), with `sources` under it.",
+        "Evidence for one row of a checklist, verdict or steps: that row’s `evidence` caption.",
+        "Search results to pick from: `list` (or `choice` when one is to be picked)."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "weather",
+      "v": 1,
+      "family": "Things",
+      "cue": "weather",
+      "summary": "The weather for one place: now, the next hours with the chance of rain, the days ahead on a shared range scale, and one plain-language tip.",
+      "input_schema": "schemas/input/weather.input.schema.json",
+      "schema": "schemas/weather.schema.json",
+      "examples": [
+        "examples/weather-1.json",
+        "examples/weather-2.json",
+        "examples/weather-3.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "weather",
+          "weatherDays",
+          "weatherCompact",
+          "weatherAlert",
+          "weatherLoading",
+          "weatherStale",
+          "weatherError"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "≤ 12 hours, ≤ 10 days, ≤ 3 alerts.",
+        "Tip ≤ 120 characters; alert titles ≤ 80.",
+        "One place per widget: several places are several compact widgets in a `stack`.",
+        "Chances are 0–1; temperatures are numbers in `unit` or null."
+      ],
+      "fallback": "The place and day, now with the unit, high and low, the hours worth knowing (rain), the days as `Fri 46–54°F, rain 80%`, then the tip and any alert. Example: “New York, Thursday: 58°F and partly cloudy (feels 55°), high 63°, low 48°. Rain from 4 PM (70%), 60% at 6 PM. Take an umbrella for the walk home. (Apple Weather, 10:05 AM)”",
+      "use": [
+        "The morning brief: now, the next hours and a tip (“Rain from 4 PM. Take an umbrella for the walk home.”), compact inside the stack.",
+        "The days ahead for planning: a trip, a weekend run, a garden job.",
+        "A trip day in an itinerary: compact, one line per destination.",
+        "An official warning (wind, storms, heat) as the banner on top."
+      ],
+      "avoid": [
+        "“It’s 14° and sunny”: one sentence, no widget.",
+        "A weather series worth reading as data (rain over a month, temperature against last year): `chart`.",
+        "Indoor climate or a thermostat: `control` or `status`.",
+        "Several places compared on one number: `table`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "route",
+      "v": 1,
+      "family": "Things",
+      "cue": "getting from A to B",
+      "summary": "How to get from A to B: total time and arrival, the legs as a bar and as steps, live delays, when to leave, and Open in Maps.",
+      "input_schema": "schemas/input/route.input.schema.json",
+      "schema": "schemas/route.schema.json",
+      "examples": [
+        "examples/route-1.json",
+        "examples/route-2.json",
+        "examples/route-3.json",
+        "examples/route-4.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "route",
+          "routeMap",
+          "routeFlight",
+          "routeLoading",
+          "routeStale",
+          "routeError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–12 legs; ≤ 3 alerts; ≤ 500 path points.",
+        "Labels ≤ 80 characters; line names ≤ 16.",
+        "`map` needs lat and lon on `from` and `to` (in the schema).",
+        "Distances in metres, durations in seconds: the client formats them."
+      ],
+      "fallback": "The destination, when to leave, the total time and arrival, the live status, then the legs in one line each and the Maps link. Example: “To the dentist: leave home at 10:16 AM, 24 min, arrive 10:40 AM. On time (MTA live, 10:12 AM). Walk 0.2 mi to Union Sq station (4 min); Q train toward 96 St at 10:20, 3 stops; walk 0.4 mi to 200 W 57th St (8 min). Maps: https://maps.apple.com/?…”",
+      "use": [
+        "Leaving for an appointment from the agenda: “Leave at 10:16 for the dentist; the Q train is on time.”",
+        "Local logistics: a school pickup, a viewing across town, the airport run with a delay.",
+        "A drive with a map snapshot and the distance.",
+        "A walking or cycling route for a run or a commute."
+      ],
+      "avoid": [
+        "Turn-by-turn navigation: Open in Maps (an `open` action).",
+        "A multi-stop day or an itinerary: `timeline`, with a `route` for the next leg only.",
+        "A place on its own (address, opening hours, Directions): `entity` (place).",
+        "A delivery’s progress: `timeline` or `steps`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "pass",
+      "v": 1,
+      "family": "Things",
+      "cue": "boarding pass, ticket, membership",
+      "summary": "A boarding pass, ticket, membership card or coupon: big glanceable fields, a scannable code drawn on the device, live status, and Add to Wallet when the producer has a .pkpass.",
+      "input_schema": "schemas/input/pass.input.schema.json",
+      "schema": "schemas/pass.schema.json",
+      "examples": [
+        "examples/pass-1.json",
+        "examples/pass-2.json",
+        "examples/pass-3.json"
+      ],
+      "design": {
+        "file": "widgets/things.elyx",
+        "exports": [
+          "pass",
+          "passTicket",
+          "passGateChange",
+          "passLoading",
+          "passStale",
+          "passError"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "1–8 fields; labels ≤ 16 characters, values ≤ 24. A boarding pass needs `trip`.",
+        "One code per pass; value ≤ 2,000 characters.",
+        "`pkpass` is a hermes-file: path ending in .pkpass; remote passes aren’t fetched.",
+        "No secrets beyond what the pass shows: no passport numbers, PINs, full card numbers or account passwords in any field."
+      ],
+      "fallback": "The pass in one or two lines with every field and the status, never the code’s value: `<title>, <status>: <from> <time> → <to> <time>. Gate …, seat …, boarding …, group …. <holder>, booking <ref>.` Example: “UA 1187 · United, on time: Newark (EWR) 10:55 AM → San Francisco (SFO) 2:20 PM. Gate C112, seat 14A, boarding 10:25 AM, group 2. Alex Rivera, booking QX7P2L. The pass is in the Hermes app and Wallet.”",
+      "use": [
+        "A boarding pass on the day of the flight, updated when the gate changes.",
+        "Event or train tickets, with a barcode and the number of admissions.",
+        "A gym membership or library card with the member number as a code.",
+        "A coupon or voucher with its code, until it expires (`expires_at`)."
+      ],
+      "avoid": [
+        "The booking or itinerary itself (times, confirmation, baggage): `details` or `timeline`.",
+        "Buying a ticket or changing a seat: `approval`.",
+        "The time to boarding as a countdown: `metric` (format countdown).",
+        "A door code, a one-time password or any other secret: never in a payload; the app’s secure request handles secrets."
+      ],
+      "defaults": {
+        "sensitivity": "private"
+      }
+    },
+    {
+      "type": "status",
+      "v": 1,
+      "family": "Status",
+      "cue": "health of one thing or many",
+      "summary": "The health of one thing or many: one item renders as a hero with its numbers and the one thing to fix, many as a matrix with problems first.",
+      "input_schema": "schemas/input/status.input.schema.json",
+      "schema": "schemas/status.schema.json",
+      "examples": [
+        "examples/status-1.json",
+        "examples/status-2.json",
+        "examples/status-3.json"
+      ],
+      "design": {
+        "file": "widgets/status.elyx",
+        "exports": [
+          "status",
+          "statusMatrix",
+          "statusDeploy",
+          "statusLoading",
+          "statusStale",
+          "statusError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–24 items; the matrix shows 8, then Show all. Names ≤ 60 characters; details ≤ 120; `fix` ≤ 160.",
+        "≤ 4 metrics per item, labels ≤ 16 characters.",
+        "`layout: compact` takes exactly one item; ≤ 2 row actions per item; one primary action per widget."
+      ],
+      "fallback": "Hero: `<name>: <headline>. <detail> (<metrics>). One thing to fix: <fix>.` Matrix: the count, then problems first, one sentence each, then the healthy ones in one sentence. Example: “Homelab: 3 of 6 healthy, 1 down. Cron is down: 2 jobs failed (03:00 and 06:00). Worker needs attention: queue at 1.2k. Backups not checked: last report Tuesday 03:00. API, Web and Postgres are healthy.”",
+      "use": [
+        "A machine’s status: the state in words, CPU, memory, disk, uptime, and the one thing to fix.",
+        "System health for many services or scheduled jobs: failures first, each with one line.",
+        "A deploy or a device after a change: one healthy line (`layout: compact`).",
+        "Smart-home or backup checks, where some items can only be “not checked” or claimed by another system."
+      ],
+      "avoid": [
+        "Progress through stages (a CI run, a setup, an order): use `steps`.",
+        "Something that must not be missed, with a timeline and a next step: use `alert`.",
+        "A single number with a target: use `meter`; numbers with deltas: use `metric`.",
+        "Everything is fine and nobody asked: one sentence (“All six services are up.”), no widget. A compact status only after a change the person cares about."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "steps",
+      "v": 1,
+      "family": "Status",
+      "cue": "progress through stages",
+      "summary": "Progress through ordered stages — waiting, running (with its own progress), done, failed, skipped, blocked, unknown — with durations and a result line.",
+      "input_schema": "schemas/input/steps.input.schema.json",
+      "schema": "schemas/steps.schema.json",
+      "examples": [
+        "examples/steps-1.json",
+        "examples/steps-2.json",
+        "examples/steps-3.json"
+      ],
+      "design": {
+        "file": "widgets/status.elyx",
+        "exports": [
+          "steps",
+          "stepsPipeline",
+          "stepsCompact",
+          "stepsLoading",
+          "stepsStale",
+          "stepsError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–20 steps (pipeline 2–6, titles ≤ 16 characters, or the client draws it vertical). Titles ≤ 80; details ≤ 120.",
+        "`progress` only on the running step, 0–1. One running step at a time.",
+        "Result text ≤ 120, detail ≤ 200. ≤ 2 row actions per step."
+      ],
+      "fallback": "Title and where it stands, then the steps in order with their state and duration, then the result. Example: “CI for hermes-app on main (a1f9c2e) failed. Build passed in 48 s; Test failed after 2 min 10 s: 2 tests failed in SnapshotTests (testDarkContrastPaywall, testListEmpty); Deploy was skipped.”",
+      "use": [
+        "Multi-step agent progress: “Setting up Trailhead, step 3 of 5”, updated as each stage finishes.",
+        "A CI or release run (`kind: pipeline`): Build, Test, Deploy, with the failed stage marked. The `gh-run` parser fills it from `gh run view --json …,jobs`; `junit` fills one step per suite (failed first) and the result line.",
+        "Order stages: ordered, shipped, customs, out for delivery, delivered, with the stage that needs the person marked blocked.",
+        "A long task inside a stack or a report: `kind: compact`."
+      ],
+      "avoid": [
+        "A fully passing run nobody is waiting on: one sentence (“CI passed on main in 3 min.”), no widget.",
+        "Steps the person follows themselves (a recipe, a setup they do): use `guide`.",
+        "Things to tick off in any order: use `checklist`. Dated events that already happened: use `timeline`.",
+        "The health of things rather than progress: use `status`; a failure that must not be missed, with impact and a next step: use `alert`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "alert",
+      "v": 1,
+      "family": "Status",
+      "cue": "must not be missed; an incident",
+      "summary": "Something that must not be missed — a failed payment, an outage, a change that affects the person — as a tinted card with what happened and what to do first.",
+      "input_schema": "schemas/input/alert.input.schema.json",
+      "schema": "schemas/alert.schema.json",
+      "examples": [
+        "examples/alert-1.json",
+        "examples/alert-2.json",
+        "examples/alert-3.json"
+      ],
+      "design": {
+        "file": "widgets/status.elyx",
+        "exports": [
+          "alert",
+          "alertIncident",
+          "alertInfo",
+          "alertLoading",
+          "alertStale",
+          "alertError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "Headline ≤ 200 characters; next ≤ 140; impact ≤ 40.",
+        "Timeline ≤ 5 lines of ≤ 100 characters.",
+        "One alert per reply; ≤ 2 buttons on the row."
+      ],
+      "fallback": "Severity and status first, then the headline, the facts, the timeline and the next step: “Critical, ongoing: Trailhead checkout is down. Orders since 2:02 PM are failing; impact: all checkouts; status: investigating. 2:02 PM 5xx on /api/checkout; 2:06 PM ops paged; 2:15 PM Stripe reports a partial outage. Next: switch checkout to the backup provider (needs your OK).”",
+      "use": [
+        "A payment failed and a service will stop: what, until when, and the next step.",
+        "An incident: checkout down, a server unreachable, backups failing for days, with impact, status and a short timeline.",
+        "A change the person would otherwise be surprised by (info): clocks going back, a routine moved, an account about to expire."
+      ],
+      "avoid": [
+        "Routine news, a daily report or anything promotional: use `summary` or prose. Never marketing.",
+        "The health of things that are fine or merely watched: use `status`.",
+        "A failed run with its stages: use `steps` (with the result line).",
+        "Asking permission to act: use `approval`; a question: use `choice`. More than one alert in a reply: lead with the worst, put the rest in a `status`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "choice",
+      "v": 1,
+      "family": "Asking",
+      "cue": "one question, set answers; follow-ups",
+      "summary": "One question with set answers — a list, buttons, chips, a rating, times to pick, or several to tick — answered with one tap; plus suggested follow-ups the person can send as their own words.",
+      "input_schema": "schemas/input/choice.input.schema.json",
+      "schema": "schemas/choice.schema.json",
+      "examples": [
+        "examples/choice-1.json",
+        "examples/choice-2.json",
+        "examples/choice-3.json"
+      ],
+      "design": {
+        "file": "widgets/asking.elyx",
+        "exports": [
+          "choice",
+          "choiceButtons",
+          "choiceChips",
+          "choiceMulti",
+          "choiceRating",
+          "choiceTimes",
+          "choiceSuggestions",
+          "choiceAnswered",
+          "choiceUnanswered",
+          "choiceLoading",
+          "choiceStale",
+          "choiceError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "Options: buttons 2–3, list and chips ≤ 8, times ≤ 12 slots over ≤ 4 days, rating 5 (stars, scale) or 2 (thumbs), suggestions ≤ 3.",
+        "Labels ≤ 24 for buttons and chips, ≤ 80 otherwise; suggestion labels ≤ 80 and written as the person would say them. Details ≤ 120; the question ≤ 160.",
+        "At most one `recommended`. `select: many` only with list or chips; `preselected` only with many."
+      ],
+      "fallback": "The question, then the options numbered with their details (the recommended one marked), then how to answer in words. Example: “Which flight should I book for Tuesday? 1) UA 1187, 10:55 AM → 2:20 PM, nonstop, $286 (recommended). 2) DL 1213, 7:00 AM → 12:35 PM via Atlanta, $242. 3) B6 915, 1:20 PM → 4:45 PM, nonstop, $321. Reply with the flight.” Suggestions: “You could ask next: “…”, “…” or “…”.”",
+      "use": [
+        "Pick one of a few options found for you: flights, flats to view, a restaurant, with the recommended one marked.",
+        "Pick a time from slots someone offered (`style: times`), with “None of these work”.",
+        "Tick several (`select: many`): which apps a weekly report covers; a plan to approve step by step, with every step preselected.",
+        "Quick feedback (`style: rating`); a yes / no / later question (`buttons` or `chips`).",
+        "Up to three follow-ups after a reply when the next step is genuinely open (`style: suggestions`)."
+      ],
+      "avoid": [
+        "Anything that buys, sends, publishes, deletes or spends: use `approval`. Choosing a flight is a `choice`; buying it is an `approval` after.",
+        "More than one question, or answers the person must type: use `form`.",
+        "Options that need side-by-side criteria and scores: use `compare` (its `answer` picks one).",
+        "An open question with no set answers: ask it in prose. Suggestions as a menu of everything the agent can do: no; at most three real next steps."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "form",
+      "v": 1,
+      "family": "Asking",
+      "cue": "2–5 things to fill in",
+      "summary": "A few things the agent needs filled in — text, numbers, dates, times, a menu, a switch — prefilled where it can, sent in one go.",
+      "input_schema": "schemas/input/form.input.schema.json",
+      "schema": "schemas/form.schema.json",
+      "examples": [
+        "examples/form-1.json",
+        "examples/form-2.json",
+        "examples/form-3.json"
+      ],
+      "design": {
+        "file": "widgets/asking.elyx",
+        "exports": [
+          "form",
+          "formSent",
+          "formLoading",
+          "formStale",
+          "formError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "1–5 fields; labels ≤ 40 characters; placeholders ≤ 60; help ≤ 120.",
+        "Choice fields 2–12 options. Text ≤ 200 characters by default, long text ≤ 2,000.",
+        "No password, PIN, key or card-number fields: the plugin rejects labels that ask for secrets."
+      ],
+      "fallback": "What the agent needs, one item per field with the prefilled value as a question, then how to answer: “To search for a lake house in Tahoe I need: who’s coming (4 adults, 2 kids?), arrival date (Fri, Oct 30?), budget per night ($250–350?), and anything else that matters. Reply with your answers.” Sent: the values as one sentence and the resolution.",
+      "use": [
+        "A clarification before a search: who’s coming, dates, a budget.",
+        "Checking what the agent read from a photo or an email before it files it: an expense from a receipt, an appointment from a letter.",
+        "A short request the agent will act on: a lunch preference, a meeting length and time.",
+        "A setup detail for a scheduled task: what time, how often, where to send it."
+      ],
+      "avoid": [
+        "One question with set answers: use `choice`.",
+        "Passwords, API keys, card numbers or any secret: never in a form; Hermes asks with its own secure request.",
+        "Anything that buys, sends or spends: the form gathers details, then the agent sends an `approval`.",
+        "More than five fields or a long questionnaire: ask the most important things first, or ask in prose."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "approval",
+      "v": 1,
+      "family": "Asking",
+      "cue": "permission for a real-world action",
+      "summary": "The agent asks permission for a real-world action — send, buy, publish, delete, spend, book — with every consequence spelled out and the answers as tiles.",
+      "input_schema": "schemas/input/approval.input.schema.json",
+      "schema": "schemas/approval.schema.json",
+      "examples": [
+        "examples/approval-1.json",
+        "examples/approval-2.json",
+        "examples/approval-3.json"
+      ],
+      "design": {
+        "file": "widgets/asking.elyx",
+        "exports": [
+          "approval",
+          "approvalPending",
+          "approvalDone",
+          "approvalExpired",
+          "approvalDraft",
+          "approvalSpend"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "One subject per approval; ≤ 12 line items; message text ≤ 4,000 characters.",
+        "`expires_at` is required for purchase, spend and booking (the client rejects an open-ended money approval).",
+        "`consequences.affects` and `consequences.reversible` are required; `cost` is required whenever money moves."
+      ],
+      "fallback": "Starts with the question, then every consequence and how to answer: “Lunch order, needs your OK: Green Bowl, chicken bowl and lemonade, $14.50, delivered at 12:30 PM. Paying can’t be undone after 11:40 AM. This request expires at 11:30 AM. Reply “approve”, “edit” or “reject”.” The agent must accept those words as answers on platforms without widgets.",
+      "use": [
+        "Buying: a lunch order, a ticket, a renewal.",
+        "Sending a message or email for the person (a draft).",
+        "Publishing: a post, a release, a reply to a review.",
+        "Spending: an ad budget, a top-up. Deleting: files, backups, accounts."
+      ],
+      "avoid": [
+        "Commands Hermes wants to run on the computer: those use the app’s own command approval (it docks above the composer), not a widget.",
+        "A plain question with no real-world effect: use `choice`.",
+        "Confirming something already done: use `receipt`.",
+        "Several unrelated actions: one approval per action."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "receipt",
+      "v": 1,
+      "family": "Asking",
+      "cue": "proof of what was done, with undo",
+      "summary": "Proof that something was done: what, the key facts, the confirmation, and Undo while it’s still possible.",
+      "input_schema": "schemas/input/receipt.input.schema.json",
+      "schema": "schemas/receipt.schema.json",
+      "examples": [
+        "examples/receipt-1.json",
+        "examples/receipt-2.json",
+        "examples/receipt-3.json"
+      ],
+      "design": {
+        "file": "widgets/asking.elyx",
+        "exports": [
+          "receipt",
+          "receiptUndone",
+          "receiptLoading",
+          "receiptStale",
+          "receiptError"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "Headline ≤ 60 characters, detail ≤ 120. 1–6 facts (labels ≤ 40, details ≤ 60).",
+        "At most one Undo, and none once `undone` is set (checked by the schema). `confirmation` is required and not a claim.",
+        "Masked payment and account details only (“Visa •• 4242”); never a full number, a password or a key. Money receipts are `sensitivity: private`."
+      ],
+      "fallback": "The headline, the facts in one sentence, then the undo line with the word to reply: “Lunch ordered from Green Bowl: $14.50 paid with Visa •• 4242, order #GB-2291, arriving at the office at 12:30 PM. You can cancel until 11:40 AM: reply “undo”.” After an undo: “Order cancelled: $14.50 refunded to Visa •• 4242 in 3–5 days.”",
+      "use": [
+        "After an approval was carried out: “Lunch ordered”, “Table booked”, “Message sent to Mom” (set `in_reply_to` to the approval’s id).",
+        "Something with a reference to keep: an order or booking number, a ticket, an invoice paid.",
+        "Anything the provider lets you take back for a while: a scheduled post, an order before the kitchen starts, a calendar invite before it’s seen.",
+        "The result of an undo: the same widget updated (`rev` + 1) with `undone`."
+      ],
+      "avoid": [
+        "Asking before acting: use `approval`. A receipt is only for what already happened.",
+        "An action that is still in progress or unconfirmed (“Order sent, waiting for the restaurant”): use `steps` with the step pending, or say it in prose.",
+        "Routine actions with nothing to keep or undo (“Added milk to the list”): one sentence, no widget.",
+        "Long specs or booking details with many fields: use `details`; a travel booking with a boarding pass uses `pass`.",
+        "Commands Hermes ran on the computer: the transcript’s own tool steps show them, not a receipt."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "control",
+      "v": 1,
+      "family": "Asking",
+      "cue": "live device controls",
+      "summary": "Live controls for one smart-home device: switch, slider, stepper, scenes or modes, where every change is a request shown pending until the device reports back.",
+      "input_schema": "schemas/input/control.input.schema.json",
+      "schema": "schemas/control.schema.json",
+      "examples": [
+        "examples/control-1.json",
+        "examples/control-2.json",
+        "examples/control-3.json"
+      ],
+      "design": {
+        "file": "widgets/asking.elyx",
+        "exports": [
+          "control",
+          "controlPending",
+          "controlThermostat",
+          "controlLoading",
+          "controlStale",
+          "controlError"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "One device or group per widget; 1–4 controls; scenes 2–8 options, segmented 2–4.",
+        "Per kind (checked by the schema): switch takes a boolean and nothing else; slider and stepper need `min` and `max` and take a number; scenes and segmented need `options` and take an option id. Every value may be null (unknown).",
+        "Labels ≤ 40 characters; device status ≤ 60.",
+        "No `lock` or `alarm` kinds exist: security devices are always an `approval`."
+      ],
+      "fallback": "The device, its state and each control’s value in one sentence, then what the person can ask: “Ceiling lights in the living room: on, brightness 60%, scene Relax. Tell me to change the brightness or the scene, or to turn them off.” Unknown values are said as unknown (“brightness unknown: the bridge isn’t answering”).",
+      "use": [
+        "Lights in a room: power, brightness and scenes (“Relax”, “Movie”).",
+        "A thermostat: target temperature with the current reading, and modes (Heat, Eco, Off).",
+        "A plug, a fan, blinds, a speaker’s volume: one switch or slider with the device’s status."
+      ],
+      "avoid": [
+        "Locks, alarms, garage doors, gates, cameras or anything that lets people in or turns protection off: never as a control. Each change is an `approval` (verb Unlock, Disarm; authentication required).",
+        "Reading a device without changing it (energy use, temperature over a week): use `metric` or `chart`.",
+        "Changing many devices at once or on a schedule (“turn everything off at 23:00”): use `choice` to confirm, then a `receipt`; a recurring routine is a Task.",
+        "Anything that spends or orders (a top-up, a filter delivery): use `approval`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "summary",
+      "v": 1,
+      "family": "Content",
+      "cue": "TL;DR with a do-first; news; standup",
+      "summary": "The TL;DR: one line that matters, up to five points with a state dot, and the one thing to do first; or a news story with why it matters; or a team standup.",
+      "input_schema": "schemas/input/summary.input.schema.json",
+      "schema": "schemas/summary.schema.json",
+      "examples": [
+        "examples/summary-1.json",
+        "examples/summary-2.json",
+        "examples/summary-3.json"
+      ],
+      "design": {
+        "file": "widgets/content.elyx",
+        "exports": [
+          "summary",
+          "summaryStory",
+          "summaryStandup",
+          "summaryLoading",
+          "summaryStale",
+          "summaryError",
+          "summaryEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "TL;DR ≤ 160 characters (required for brief). 0–5 points, each ≤ 160, emphasis ≤ 60 and a prefix of the text. One do first.",
+        "Story: headline ≤ 120, body and why ≤ 280, 1–8 sources.",
+        "Standup: 1–8 members; each line ≤ 160."
+      ],
+      "fallback": "Brief: the TL;DR, then one line per point, then “Do first: …”. Example: “A light day: two meetings, rain after 4, and the passport renewal is now 3 days late. Dentist at 11 AM, leave at 10:40. Sales up 12% yesterday, $1,284 so far today. 3 support tickets waiting, 1 urgent. Rain from 4 PM. Do first: renew the passport; the form is filled in.” Story: “[Rumor] <headline> (<who reports it>). Why it matters: …” Standup: “Ops: done rolled back checkout; today post-mortem; blocked on Stripe’s report.”",
+      "use": [
+        "A morning brief or the top of a scheduled report: “A light day: two meetings, rain after 4, and the passport renewal is now 3 days late.”",
+        "A news story or a daily news brief item, tagged confirmed or rumour, with why it matters for the person’s apps, money or plans.",
+        "A team or Bot standup: done, today, blocked, per member.",
+        "Appointment preparation (calm, `sensitivity: private`): the TL;DR (“Dr Patel at 10:30 tomorrow”), points led by “Ask:” and “Bring:”, do first “Leave at 10:05”."
+      ],
+      "avoid": [
+        "A list to work through or tick off: use `list` or `checklist`. Points are what matters, not everything.",
+        "Numbers worth reading as numbers: use `metric` (a summary point can mention one).",
+        "Several news stories with links to read: use `sources` or a `stack` of stories; a research verdict with criteria uses `verdict`.",
+        "A quiet day with nothing to say: one sentence, or the empty state in a scheduled report. Everything fine deserves one line, not a widget.",
+        "Status of systems or jobs: use `status`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "guide",
+      "v": 1,
+      "family": "Content",
+      "cue": "steps to follow: recipe, setup",
+      "summary": "Steps the person follows at their own pace, with what they’ll need first, a timer on the steps that have one, and Back / Next on the device.",
+      "input_schema": "schemas/input/guide.input.schema.json",
+      "schema": "schemas/guide.schema.json",
+      "examples": [
+        "examples/guide-1.json",
+        "examples/guide-2.json",
+        "examples/guide-3.json"
+      ],
+      "design": {
+        "file": "widgets/content.elyx",
+        "exports": [
+          "guide",
+          "guideCompact",
+          "guideLoading",
+          "guideStale",
+          "guideError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "2–20 steps; titles ≤ 160 characters, bodies ≤ 1,200, check and caution ≤ 120.",
+        "Up to 30 needs; one image per step.",
+        "Timers are seconds on the device; a reply carries only the step id."
+      ],
+      "fallback": "The title and serving line, the needs as a list with amounts, then the numbered steps with timers in brackets: “Chicken satay bowl (25 min, serves 2). You’ll need: 14 oz chicken thighs, ¾ cup rice, 4 tbsp satay sauce, 1 cucumber… 1. Cook the rice in 1.5× its volume of water. 2. Simmer the chicken in the satay sauce until it thickens (12 min). 3. Slice the cucumber and carrot thinly.”",
+      "use": [
+        "A recipe: ingredients with amounts (scaled locally when `servings` is given), steps with timers.",
+        "Setup instructions: pairing a bridge, moving a router, installing a printer driver, with a photo where a part is hard to find.",
+        "An exercise routine or rehab session: one movement per step with a hold timer and a caution line (`layout: compact` fits a phone on the floor)."
+      ],
+      "avoid": [
+        "Work the agent is doing (a deploy, a migration): use `steps`; a guide is for the person to follow.",
+        "Things to tick off in any order (packing, a shopping list): use `checklist`.",
+        "One or two instructions: write them in the prose.",
+        "A schedule of sessions over a week: use `agenda`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "compare",
+      "v": 1,
+      "family": "Content",
+      "cue": "2–4 options side by side",
+      "summary": "Two to four options side by side on the same criteria, the recommended one outlined in ink, and what decided it in one sentence; the weights can be the person’s own.",
+      "input_schema": "schemas/input/compare.input.schema.json",
+      "schema": "schemas/compare.schema.json",
+      "examples": [
+        "examples/compare-1.json",
+        "examples/compare-2.json",
+        "examples/compare-3.json"
+      ],
+      "design": {
+        "file": "widgets/content.elyx",
+        "exports": [
+          "compare",
+          "compareCards",
+          "compareWeighted",
+          "compareLoading",
+          "compareStale",
+          "compareError"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "2–4 options; 1–8 criteria; ≤ 4 pros and ≤ 4 cons per option, ≤ 60 characters each.",
+        "Weights are integers 0–5; scores integers 1–5.",
+        "Names ≤ 40 characters, values as text ≤ 40, `decided_by` ≤ 160.",
+        "One image per option; images only when every option has one (grid)."
+      ],
+      "fallback": "The question, then one line per option with its values in criterion order, then the pick and why: “Headphones for travel (under $600): Sony XM6 $399, battery 40 h, noise cancelling best, 8.8 oz. Bose QC Ultra $429, 24 h, best, 9 oz. AirPods Max 2 $549, 20 h, very good, 13.6 oz. Pick: Sony XM6, the same noise cancelling for less, with twice the battery.” With `choose`, end with how to answer in words: “Reply with the one you want.”",
+      "use": [
+        "Buying one of a few products: headphones under $600, a stroller, a laptop.",
+        "Choosing a service or approach: where to host the push relay, which CI runner, Postgres or SQLite for an app.",
+        "Two or three flats or flights when the person must trade price against commute or time.",
+        "A personal decision where the weights are the person’s: set `adjustable` and `choose`."
+      ],
+      "avoid": [
+        "One option, or one thing described in detail: use `entity`.",
+        "A decision with a confidence and criteria that pass or fail (is this safe, is this ready): use `verdict`.",
+        "More than four options, or many attributes per item: use `table` (with `sortable`).",
+        "Sides with scores in a match, a poll or an A/B test: use `scoreboard`.",
+        "A plain question with set answers and no data to weigh: use `choice`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "handoff",
+      "v": 1,
+      "family": "Content",
+      "cue": "work handed to another Bot",
+      "summary": "Who handed what to whom and how it’s going: one Bot asks another (or a person) to do part of the work, and the result comes back here.",
+      "input_schema": "schemas/input/handoff.input.schema.json",
+      "schema": "schemas/handoff.schema.json",
+      "examples": [
+        "examples/handoff-1.json",
+        "examples/handoff-2.json",
+        "examples/handoff-3.json"
+      ],
+      "design": {
+        "file": "widgets/content.elyx",
+        "exports": [
+          "handoff",
+          "handoffDone",
+          "handoffLoading",
+          "handoffStale",
+          "handoffError"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "One handoff per card; task title ≤ 80 characters, brief ≤ 400.",
+        "Activity ≤ 80 characters; result summary ≤ 120; decline reason ≤ 160.",
+        "`chat` only for a Bot on the same gateway."
+      ],
+      "fallback": "Who asked whom for what, the brief, then where it stands: “Hermes asked Ada to draft the 1.3 release notes: “Draft release notes from the 23 merged PRs, grouped like last time. Check with the user before publishing.” Ada is writing (2 of 4 sections).” When done: “Ada finished the 1.3 release notes (412 words, 3 sections): release-notes-1.3.md.” When declined, the reason.",
+      "use": [
+        "Hermes hands a task to one of the person’s Bots and wants to show it’s in hand: “Hermes asked Ada to draft the 1.3 release notes”.",
+        "A Bot passes something to another Bot that owns it: Scout sends a flat to the Bot that books viewings.",
+        "The result of a handoff came back: “Ada finished · Release notes for 1.3”, with Read the Draft.",
+        "A Bot declined (no access, out of scope) and the person should know who has it now."
+      ],
+      "avoid": [
+        "Helpers (sub-agents) inside one turn: those are the app’s team card (`Subagents.teamCard`), not a widget.",
+        "A multi-step job one agent runs itself: use `steps`.",
+        "Asking the person to do something: use `choice`, `form` or `checklist` (a handoff to a person is for work they take away, not a question).",
+        "A finished job with nothing to open: write one sentence, or use `receipt` if it can be undone."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "flashcard",
+      "v": 1,
+      "family": "Content",
+      "cue": "learning cards",
+      "summary": "A review session of flashcards: the question, revealed on tap on the device, then how well you knew it; the ratings go to the agent in one message at the end, and it schedules the next review.",
+      "input_schema": "schemas/input/flashcard.input.schema.json",
+      "schema": "schemas/flashcard.schema.json",
+      "examples": [
+        "examples/flashcard-1.json",
+        "examples/flashcard-2.json",
+        "examples/flashcard-3.json"
+      ],
+      "design": {
+        "file": "widgets/content.elyx",
+        "exports": [
+          "flashcard",
+          "flashcardBack",
+          "flashcardLoading",
+          "flashcardStale",
+          "flashcardError",
+          "flashcardEmpty"
+        ]
+      },
+      "skeleton": "Parts.skeletonValue",
+      "limits": [
+        "0–20 cards per payload; a longer session comes in batches (`progress.total`), one `rate` per batch.",
+        "Front and back ≤ 200 characters; example ≤ 200; hint ≤ 120; interval labels ≤ 12.",
+        "One media per card."
+      ],
+      "fallback": "The deck, the progress, then the first card’s question and how to answer in words: “Spanish · shopping, 6 cards (6 due today). Card 1: How do you say “receipt”? Reply with the answer, then again, hard, good or easy.” Never include the back: without widgets the person answers in words and the agent checks the answer, and a preview must not give it away.",
+      "use": [
+        "Daily review of a deck the agent keeps: “Spanish · shopping, 12 due today”.",
+        "Cards Hermes made from something the person read or saved: a chapter, a talk, an article.",
+        "Image cards: road signs for a driving test, bones, plants, kanji.",
+        "Quick self-tests before an exam or an interview.",
+        "A deck in a file: `from_file` with `parser: csv` or `tsv` (an Anki or spreadsheet export; columns `front`, `back`, optional `example` and `hint`) fills `cards`; `json` with a `map` works for the agent’s own deck file. The agent still sets `intervals` from its scheduler."
+      ],
+      "avoid": [
+        "A quiz question with set answers where one is right: use `choice`.",
+        "Steps to follow: use `guide`.",
+        "Reading material or a summary to remember: use `summary` (or `outline`).",
+        "A list of words with translations to look at, not test: use `table` or `list`."
+      ],
+      "defaults": {}
+    },
+    {
+      "type": "stack",
+      "v": 1,
+      "family": "Composition",
+      "cue": "a scheduled report of several widgets",
+      "summary": "Several widgets sent as one: a scheduled report or brief with a header line (who and when), its widgets in order, in sections that fold, as rows, a carousel or a grid.",
+      "input_schema": "schemas/input/stack.input.schema.json",
+      "schema": "schemas/stack.schema.json",
+      "examples": [
+        "examples/stack-1.json",
+        "examples/stack-2.json",
+        "examples/stack-3.json"
+      ],
+      "design": {
+        "file": "widgets/composition.elyx",
+        "exports": [
+          "stack",
+          "stackCollapsed",
+          "stackCarousel",
+          "stackGrid",
+          "stackLoading"
+        ]
+      },
+      "skeleton": "Parts.skeletonRows",
+      "limits": [
+        "2–8 children; never a stack inside a stack. A stack counts as one of the three directives per reply.",
+        "≤ 4 sections; section labels ≤ 40 characters; tag ≤ 16.",
+        "The whole payload, children included, ≤ 64 KB; the stack’s `fallback_text` ≤ 4,000 characters, each child’s ≤ 2,000.",
+        "Carousel: 2–8 children of one type."
+      ],
+      "fallback": "The header line, then each child’s `fallback_text` in order, one paragraph each, a section’s label leading its first paragraph (“Today: …”): “Morning brief (Hermes, daily at 7 AM, Friday, Oct 16). A light day: … Today: 9–9:30 AM Stand-up … Needs doing: Overdue: renew the passport … Yesterday: installs 1,204 (+12%) …”. The stack’s `fallback_text` may run to 4,000 characters (each child’s own stays ≤ 2,000), so every child’s text fits whole.",
+      "use": [
+        "A scheduled brief: “Morning brief · Daily at 7 AM”: summary with the one thing to do first, the agenda, overdue tasks, yesterday’s numbers.",
+        "A report that should open folded: the evening homelab report (`layout: collapsed`), problems first, each row unfolding in place.",
+        "Several things of one type to swipe through: tonight’s new flats, three meal options (`layout: carousel` of `entity`).",
+        "A dashboard-like weekly report on iPad and Mac: revenue, budget, installs, keyword movers (`layout: grid`)."
+      ],
+      "avoid": [
+        "A normal reply: send one to three separate widgets, each after its sentence.",
+        "Many items of one kind in rows: use `list` (or `table`); a stack of eight `entity` cards is a list with images.",
+        "Steps of one job: use `steps`; a digest of changes: use `list` with groups and summary counts.",
+        "A report with nothing to say (“all quiet”): one sentence, no stack.",
+        "Another stack inside a stack: never; flatten it."
+      ],
+      "defaults": {}
+    }
+  ]
+}

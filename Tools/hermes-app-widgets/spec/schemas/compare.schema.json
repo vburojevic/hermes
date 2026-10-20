@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/compare.schema.json",
+  "title": "compare",
+  "description": "Two to four options side by side on the same criteria, the recommended one outlined in ink, and what decided it in one sentence; the weights can be the person’s own.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "dependentRequired": {
+        "pick": [
+          "decided_by"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "adjustable"
+        ],
+        "properties": {
+          "adjustable": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "criteria"
+        ],
+        "properties": {
+          "criteria": {
+            "contains": {
+              "required": [
+                "weight",
+                "scores"
+              ],
+              "properties": {
+                "weight": {
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "criteria"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "options": {
+            "items": {
+              "anyOf": [
+                {
+                  "required": [
+                    "pros"
+                  ]
+                },
+                {
+                  "required": [
+                    "cons"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "layout"
+        ],
+        "properties": {
+          "layout": {
+            "const": "cards"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "options": {
+            "items": {
+              "anyOf": [
+                {
+                  "required": [
+                    "pros"
+                  ]
+                },
+                {
+                  "required": [
+                    "cons"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "compare"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "The option as people say it: “Sony XM6”, “DigitalOcean Droplet”, “Apartment in Gowanus”. The column header in the grid, the card title on cards.",
+            "minLength": 1
+          },
+          "image": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Media"
+              }
+            ],
+            "description": "A product shot or photo. Grid: a 44 pt thumbnail above the name, drawn only when every option has one. Cards: the top of the card. Fetched by the gateway like every remote image."
+          },
+          "price": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "The headline price: large under the name on cards, and in the fallback. The grid shows price only as a criterion (so it can carry a weight); repeat it there when it should be a row."
+          },
+          "pros": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 60,
+              "minLength": 1
+            },
+            "maxItems": 4,
+            "description": "Up to four plus points, a few words each: “40 h battery”, “Folds flat”. Drawn on cards after a plus glyph."
+          },
+          "cons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 60,
+              "minLength": 1
+            },
+            "maxItems": 4,
+            "description": "Up to four minus points: “Plasticky”, “24 h battery”. Drawn on cards after a minus glyph (shape, never colour alone)."
+          },
+          "url": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Url"
+              }
+            ],
+            "description": "The product or listing page, opened from the link glyph after the name (the domain shows first)."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ],
+        "description": "One option."
+      },
+      "minItems": 2,
+      "maxItems": 4,
+      "description": "The options, in the order the agent ranks them or the order the person named them. 2–4."
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "What is compared: Price, Battery, Noise cancelling, Commute to work.",
+            "minLength": 1
+          },
+          "values": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_.-]{0,39}$"
+            },
+            "minProperties": 2,
+            "maxProperties": 4,
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/Quantity"
+                },
+                {
+                  "type": "string",
+                  "maxLength": 40,
+                  "description": "A word when the value is a judgement: “Best”, “Very good”, “Yes”.",
+                  "minLength": 1
+                }
+              ]
+            },
+            "description": "The value for each option, keyed by option id: a Quantity (formatted by the client, tabular figures) or a word. Every option needs a key; an unknown value is `{\"value\": null}` (shown as —, read as “unknown”), never a guess."
+          },
+          "best": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "The options that win on this criterion. Their value is semibold and read as “best”. Omit when nothing stands out or it is a matter of taste."
+          },
+          "weight": {
+            "type": "integer",
+            "description": "How much the criterion counts, 0–5 (0: shown, not counted). Needs `scores`. With `adjustable`, the starting value of the stepper.",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "scores": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_.-]{0,39}$"
+            },
+            "minProperties": 2,
+            "maxProperties": 4,
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "description": "A score from 1 to 5 for each option on this criterion (5 is best), keyed by option id. Needs `weight`. The client needs a score for every option; an option the agent can’t score means the criterion gets no weight."
+          },
+          "evidence": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Evidence"
+              }
+            ],
+            "description": "How the values are known: “rtings.com battery test, Sept 2026”. A caption under the label with a small glyph; a `claim` (“Sony says 40 h”) reads “Said by …”."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "values"
+        ],
+        "description": "One row of the comparison: the same question asked of every option.",
+        "dependentRequired": {
+          "weight": [
+            "scores"
+          ],
+          "scores": [
+            "weight"
+          ]
+        }
+      },
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "The rows, most important first. Optional only for a cards comparison where every option has pros or cons."
+    },
+    "pick": {
+      "allOf": [
+        {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      ],
+      "description": "The recommended option’s id: outlined in ink with a Pick badge. Omit when there is no clear winner (nothing is outlined). With `adjustable`, it must be the option with the highest weighted score at the sent weights."
+    },
+    "decided_by": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "One sentence on what decided it, written to follow the option’s name and a colon (the client puts the name in front, in bold): “the same noise cancelling for less, with twice the battery. Battery decided it.” Required with `pick`; without one, what the choice hinges on, as a full sentence.",
+      "minLength": 1
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "grid",
+        "cards"
+      ],
+      "description": "auto: the grid on the iPhone column; cards on a wide column (≥ 560 pt) when every option has pros or cons, else the grid. `adjustable` always draws the grid.",
+      "default": "auto"
+    },
+    "adjustable": {
+      "type": "boolean",
+      "description": "The person can change each criterion’s weight on the device (0–5). Scores re-rank locally, the outline and the Go with button follow the top score, and Reset Weights restores the sent weights. Needs at least one criterion with `weight` and `scores`.",
+      "default": false
+    },
+    "choose": {
+      "type": "boolean",
+      "description": "Show Go with <the top option> as the primary button. It sends `answer`. Use when the agent will act on the choice (book it, order it, draft the purchase for approval).",
+      "default": false
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "options"
+  ],
+  "unevaluatedProperties": false
+}

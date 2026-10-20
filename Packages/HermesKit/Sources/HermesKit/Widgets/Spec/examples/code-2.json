@@ -1,0 +1,67 @@
+{
+  "type": "code",
+  "v": 1,
+  "id": "w_apilog0214",
+  "title": "api · last 15 minutes",
+  "subtitle": "2 errors in the last minute",
+  "icon": "terminal",
+  "state": "critical",
+  "state_label": "2 errors",
+  "as_of": "2026-10-17T14:02:30-04:00",
+  "stale_after": 900,
+  "refresh": {
+    "mode": "agent"
+  },
+  "kind": "log",
+  "path": "logs/api.log",
+  "omitted": 1840,
+  "counts": {
+    "error": 2,
+    "warning": 1,
+    "info": 139
+  },
+  "lines": [
+    {
+      "at": "2026-10-17T14:01:40-04:00",
+      "level": "info",
+      "text": "GET /health 200 3ms",
+      "repeat": 12
+    },
+    {
+      "at": "2026-10-17T14:02:11-04:00",
+      "level": "info",
+      "text": "GET /api/orders 200 41ms"
+    },
+    {
+      "at": "2026-10-17T14:02:14-04:00",
+      "level": "error",
+      "text": "POST /checkout 502"
+    },
+    {
+      "at": "2026-10-17T14:02:14-04:00",
+      "level": "error",
+      "text": "stripe: conn reset"
+    },
+    {
+      "at": "2026-10-17T14:02:19-04:00",
+      "level": "warning",
+      "text": "retry checkout 2/3"
+    },
+    {
+      "at": "2026-10-17T14:02:25-04:00",
+      "level": "info",
+      "text": "GET /health 200 4ms"
+    }
+  ],
+  "source": {
+    "name": "logs/api.log",
+    "kind": "file"
+  },
+  "actions": [
+    {
+      "id": "explain",
+      "label": "Find the Cause"
+    }
+  ],
+  "fallback_text": "api log, last 15 minutes: 2 errors, 1 warning.\n14:02:14 ERROR POST /checkout 502\n14:02:14 ERROR stripe: conn reset\n14:02:19 WARN retry checkout 2/3\n14:02:25 INFO GET /health 200 4ms\nFull log: logs/api.log (1,840 earlier lines not shown)."
+}

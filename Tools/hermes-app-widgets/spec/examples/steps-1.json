@@ -1,0 +1,45 @@
+{
+  "type": "steps",
+  "v": 1,
+  "id": "w_setupPk01",
+  "title": "Setting up Trailhead",
+  "icon": "list.bullet.rectangle",
+  "as_of": "2026-10-17T10:04:12-04:00",
+  "stale_after": 600,
+  "producer": {
+    "name": "Hermes"
+  },
+  "started_at": "2026-10-17T10:02:00-04:00",
+  "steps": [
+    {
+      "id": "clone",
+      "title": "Clone the repository",
+      "state": "done",
+      "duration": 4
+    },
+    {
+      "id": "read",
+      "title": "Read the codebase",
+      "state": "done",
+      "duration": 31
+    },
+    {
+      "id": "deps",
+      "title": "Install dependencies",
+      "state": "running",
+      "progress": 0.64,
+      "detail": "about 2 min left"
+    },
+    {
+      "id": "tests",
+      "title": "Run the tests",
+      "state": "waiting"
+    },
+    {
+      "id": "pr",
+      "title": "Open a pull request",
+      "state": "waiting"
+    }
+  ],
+  "fallback_text": "Setting up Trailhead, step 3 of 5. Done: cloned the repository (4 s), read the codebase (31 s). Now: installing dependencies, 64%, about 2 minutes left. Next: run the tests, then open a pull request."
+}

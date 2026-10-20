@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>HermesMockGateway</key>
+	<string>$(HERMES_MOCK_GATEWAY)</string>
+	<key>HermesMockBackend</key>
+	<string>$(HERMES_MOCK_BACKEND)</string>
+	<key>HermesVoiceClips</key>
+	<string>$(HERMES_VOICE_CLIPS)</string>
+</dict>
+</plist>

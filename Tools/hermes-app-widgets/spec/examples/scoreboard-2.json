@@ -1,0 +1,53 @@
+{
+  "type": "scoreboard",
+  "v": 1,
+  "id": "w_paywall0b2",
+  "title": "Paywall test",
+  "subtitle": "Trailhead · trial starts",
+  "icon": "chart.bar.fill",
+  "as_of": "2026-10-16T09:00:00-04:00",
+  "kind": "test",
+  "status": "final",
+  "competition": "Trial starts",
+  "significance": {
+    "reached": true,
+    "confidence": 0.95,
+    "metric": "trial start rate"
+  },
+  "sides": [
+    {
+      "id": "b",
+      "name": "New paywall",
+      "initials": "B",
+      "score": {
+        "value": 0.051,
+        "format": "percent",
+        "precision": 1
+      },
+      "detail": "2,412 visitors",
+      "delta": {
+        "value": 0.9,
+        "format": "points",
+        "good": "up",
+        "period": "vs current"
+      },
+      "winner": true
+    },
+    {
+      "id": "a",
+      "name": "Current paywall",
+      "initials": "A",
+      "score": {
+        "value": 0.042,
+        "format": "percent",
+        "precision": 1
+      },
+      "detail": "2,388 visitors"
+    }
+  ],
+  "source": {
+    "name": "RevenueCat Experiments",
+    "kind": "api"
+  },
+  "fallback_text": "Paywall test (Trailhead, trial starts), finished: new paywall 5.1% of 2,412 visitors vs current paywall 4.2% of 2,388, +0.9 points, significant at 95% confidence."
+}

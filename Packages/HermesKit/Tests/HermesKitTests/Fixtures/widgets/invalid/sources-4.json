@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: items/1: 'excerpt' is a required property; items: [{'title': 'EU AI Act', 'trust': 'primary', 'excerpt': 'General-purpose AI models placed on the market before 2 August 2025 have until 2 Aug",
+  "payload": {
+    "type": "sources",
+    "v": 1,
+    "id": "w_bad00514",
+    "title": "From the regulation",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "From the EU AI Act and The Verge.",
+    "layout": "quote",
+    "items": [
+      {
+        "title": "EU AI Act",
+        "trust": "primary",
+        "excerpt": "General-purpose AI models placed on the market before 2 August 2025 have until 2 August 2027 to comply."
+      },
+      {
+        "title": "What the new AI rules mean for apps",
+        "trust": "secondary"
+      }
+    ]
+  }
+}

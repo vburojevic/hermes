@@ -1,0 +1,61 @@
+{
+  "type": "checklist",
+  "v": 1,
+  "id": "w_overdue1016",
+  "title": "Overdue and due soon",
+  "icon": "checklist",
+  "as_of": "2026-10-16T07:00:00-04:00",
+  "stale_after": 43200,
+  "progress": "open",
+  "items": [
+    {
+      "id": "passport",
+      "label": "Renew the passport",
+      "due": "2026-10-13",
+      "assignee": {
+        "name": "Maya",
+        "initials": "M"
+      },
+      "actions": [
+        {
+          "id": "snooze",
+          "label": "Snooze a Week"
+        }
+      ]
+    },
+    {
+      "id": "electricity",
+      "label": "Pay the electricity bill",
+      "detail": "$64.20",
+      "due": "2026-10-15",
+      "actions": [
+        {
+          "id": "snooze",
+          "label": "Snooze a Week"
+        }
+      ]
+    },
+    {
+      "id": "car_service",
+      "label": "Book the car service",
+      "due": "2026-10-19"
+    },
+    {
+      "id": "library",
+      "label": "Return library books",
+      "detail": "Done this morning",
+      "checked": true,
+      "evidence": {
+        "kind": "claim",
+        "label": "Maya · family chat",
+        "at": "2026-10-16T06:40:00-04:00"
+      }
+    }
+  ],
+  "empty_text": "Nothing overdue.",
+  "source": {
+    "name": "Reminders, Things",
+    "kind": "api"
+  },
+  "fallback_text": "Overdue and due soon, 3 open: [ ] Renew the passport (Maya) — was due Tuesday, 3 days late; [ ] Pay the electricity bill, $64.20 — was due yesterday, 1 day late; [ ] Book the car service — due Monday; [x] Return library books — done this morning (said by Maya in the family chat)."
+}

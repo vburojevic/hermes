@@ -1,0 +1,58 @@
+{
+  "type": "form",
+  "v": 1,
+  "id": "w_tahoe30x",
+  "title": "Lake house in Tahoe",
+  "icon": "house.fill",
+  "as_of": "2026-10-17T10:58:00-04:00",
+  "intro": "A few details so I can search properly.",
+  "fields": [
+    {
+      "id": "who",
+      "kind": "text",
+      "label": "Who’s coming",
+      "required": true,
+      "default": "4 adults, 2 kids"
+    },
+    {
+      "id": "arrive",
+      "kind": "date",
+      "label": "Arrive",
+      "required": true,
+      "default": "2026-10-30",
+      "min": "2026-10-17"
+    },
+    {
+      "id": "budget",
+      "kind": "choice",
+      "label": "Budget per night",
+      "required": true,
+      "default": "b150",
+      "options": [
+        {
+          "id": "b100",
+          "label": "Up to $250"
+        },
+        {
+          "id": "b150",
+          "label": "$250–350"
+        },
+        {
+          "id": "b200",
+          "label": "$350–500"
+        },
+        {
+          "id": "any",
+          "label": "Any"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "kind": "long_text",
+      "label": "Anything else",
+      "placeholder": "Near the lake, with parking"
+    }
+  ],
+  "fallback_text": "To search for a lake house in Tahoe I need: who’s coming (4 adults, 2 kids?), the arrival date (Fri, Oct 30?), the budget per night ($250–350?), and anything else that matters. Reply with your answers."
+}

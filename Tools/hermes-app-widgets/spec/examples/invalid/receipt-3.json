@@ -1,0 +1,24 @@
+{
+  "$comment": "Must fail validation: (root): {'type': 'receipt', 'v': 1, 'id': 'w_bad07r003', 'rev': 2, 'title': 'Undone', 'as_of': '2026-10-16T11:16:05-04:00', 'fallback_text': 'Order ",
+  "payload": {
+    "type": "receipt",
+    "v": 1,
+    "id": "w_bad07r003",
+    "rev": 2,
+    "title": "Undone",
+    "as_of": "2026-10-16T11:16:05-04:00",
+    "fallback_text": "Order cancelled, $14.50 refunded.",
+    "headline": "Lunch ordered",
+    "confirmation": {
+      "kind": "data",
+      "label": "Green Bowl cancellation"
+    },
+    "undone": {
+      "headline": "Order cancelled"
+    },
+    "undo": {
+      "label": "You can cancel until 11:40 AM",
+      "until": "2026-10-16T11:40:00-04:00"
+    }
+  }
+}

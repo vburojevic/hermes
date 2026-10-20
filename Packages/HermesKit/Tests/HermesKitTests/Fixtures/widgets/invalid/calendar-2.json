@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: marks/0/date: 'Oct 8' does not match '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; marks/0/date: 'Oct 8' is not a 'date'",
+  "payload": {
+    "type": "calendar",
+    "v": 1,
+    "id": "w_bad02k002",
+    "title": "October",
+    "as_of": "2026-10-17T08:00:00-04:00",
+    "fallback_text": "October: dentist on the 8th.",
+    "view": "month",
+    "start": "2026-10-01",
+    "end": "2026-10-31",
+    "marks": [
+      {
+        "date": "Oct 8",
+        "label": "Plans"
+      }
+    ]
+  }
+}

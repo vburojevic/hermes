@@ -1,0 +1,31 @@
+{
+  "$comment": "Must fail validation: children: [{'type': 'metric', 'v': 1, 'id': 'w_bad08007a', 'title': 'Revenue', 'as_of': '2026-10-16T07:00:00-04:00', 'fallback_text': 'Revenue: $1,284",
+  "payload": {
+    "type": "stack",
+    "v": 1,
+    "id": "w_bad08007",
+    "title": "Morning brief",
+    "as_of": "2026-10-16T07:00:00-04:00",
+    "fallback_text": "Morning brief: revenue $1,284 so far today.",
+    "children": [
+      {
+        "type": "metric",
+        "v": 1,
+        "id": "w_bad08007a",
+        "title": "Revenue",
+        "as_of": "2026-10-16T07:00:00-04:00",
+        "fallback_text": "Revenue: $1,284 so far today.",
+        "items": [
+          {
+            "label": "Revenue",
+            "value": {
+              "value": 1284,
+              "format": "currency",
+              "currency": "USD"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

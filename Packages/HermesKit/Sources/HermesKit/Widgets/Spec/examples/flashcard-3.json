@@ -1,0 +1,28 @@
+{
+  "type": "flashcard",
+  "v": 1,
+  "id": "w_flashes1016",
+  "rev": 2,
+  "title": "Spanish · shopping",
+  "subtitle": "Review",
+  "icon": "graduationcap.fill",
+  "state": "ok",
+  "state_label": "Done",
+  "as_of": "2026-10-16T08:12:00-04:00",
+  "cards": [],
+  "progress": {
+    "done": 6,
+    "total": 6,
+    "due_today": 0
+  },
+  "next_due": "2026-10-17T07:00:00-04:00",
+  "empty_text": "Done for today: 6 cards, 5 good or easy. Next cards are due tomorrow.",
+  "resolution": {
+    "action": "rate",
+    "state": "done",
+    "at": "2026-10-16T08:12:00-04:00",
+    "by": "you",
+    "message": "6 ratings saved · next review tomorrow"
+  },
+  "fallback_text": "Spanish · shopping: done for today, 6 cards (1 again, 4 good, 1 easy). Next cards are due tomorrow."
+}

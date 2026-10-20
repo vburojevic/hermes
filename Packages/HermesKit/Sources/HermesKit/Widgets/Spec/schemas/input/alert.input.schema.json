@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/alert.input.schema.json",
+  "title": "alert (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Something that must not be missed — a failed payment, an outage, a change that affects the person — as a tinted card with what happened and what to do first.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "severity": {
+            "enum": [
+              "warning",
+              "critical"
+            ]
+          }
+        },
+        "required": [
+          "severity"
+        ]
+      },
+      "then": {
+        "required": [
+          "next"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "alert"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "critical"
+      ],
+      "description": "info: worth knowing, nothing to do. warning: needs the person soon. critical: broken now, or will be within hours."
+    },
+    "headline": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "What happened, one or two sentences: “The card ending 4242 was declined for the DigitalOcean invoice ($38.20).”",
+      "minLength": 1
+    },
+    "impact": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Who or what it affects, a short phrase for the facts well: “All checkouts”, “Your DigitalOcean server”. Unknown is “Not known yet”, never a guess."
+    },
+    "next": {
+      "type": "string",
+      "maxLength": 140,
+      "description": "The one thing to do first, one line: “Update the card in DigitalOcean’s console.” Required for warning and critical."
+    },
+    "started_at": {
+      "allOf": [
+        {
+          "$ref": "../common.schema.json#/$defs/Time"
+        }
+      ],
+      "description": "When it started; shown relative (“18 min ago”) while ongoing."
+    },
+    "ended_at": {
+      "allOf": [
+        {
+          "$ref": "../common.schema.json#/$defs/Time"
+        }
+      ],
+      "description": "When it ended; the Started cell becomes “Lasted 43 min”."
+    },
+    "status": {
+      "enum": [
+        "investigating",
+        "identified",
+        "monitoring",
+        "resolved"
+      ],
+      "description": "Incident status, shown in the facts well. resolved removes the tint and turns the badge to ok."
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "$ref": "../common.schema.json#/$defs/Time"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "at",
+          "text"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "A short timeline, oldest first. Keep the newest five."
+    },
+    "acknowledged": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Who: “you”, “Maya”.",
+          "minLength": 1
+        },
+        "at": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "by",
+        "at"
+      ],
+      "description": "Someone is on it. Set by the agent in an update."
+    },
+    "evidence": {
+      "allOf": [
+        {
+          "$ref": "../common.schema.json#/$defs/Evidence"
+        }
+      ],
+      "description": "How it is known: the monitor, the email, the error count. A claim (“Stripe’s status page”) reads “Said by …”."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "severity",
+    "headline"
+  ],
+  "unevaluatedProperties": false
+}

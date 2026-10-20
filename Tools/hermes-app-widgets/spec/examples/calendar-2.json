@@ -1,0 +1,48 @@
+{
+  "type": "calendar",
+  "v": 1,
+  "id": "w_october26",
+  "title": "October",
+  "subtitle": "6 marked days",
+  "icon": "calendar",
+  "as_of": "2026-10-17T08:00:00-04:00",
+  "sensitivity": "private",
+  "view": "month",
+  "start": "2026-10-01",
+  "end": "2026-10-31",
+  "marks": [
+    {
+      "date": "2026-10-03",
+      "label": "Plans",
+      "note": "Maya’s birthday lunch, 1 PM"
+    },
+    {
+      "date": "2026-10-08",
+      "label": "Plans",
+      "note": "Dentist, 10:30 AM"
+    },
+    {
+      "date": "2026-10-20",
+      "label": "Bill due",
+      "state": "warning",
+      "note": "Electricity, $64"
+    },
+    {
+      "date": "2026-10-21",
+      "label": "Deadline",
+      "state": "critical",
+      "note": "Tax return, by midnight"
+    },
+    {
+      "date": "2026-10-24",
+      "label": "Plans",
+      "note": "Prospect Park 10K, 9 AM"
+    },
+    {
+      "date": "2026-10-28",
+      "label": "Plans",
+      "note": "Parent-teacher conference, 6 PM"
+    }
+  ],
+  "fallback_text": "October: Maya’s birthday lunch Oct 3, 1 PM; dentist Oct 8, 10:30 AM; electricity bill due Oct 20 ($64); tax return deadline Oct 21, by midnight; Prospect Park 10K Oct 24, 9 AM; parent-teacher conference Oct 28, 6 PM."
+}

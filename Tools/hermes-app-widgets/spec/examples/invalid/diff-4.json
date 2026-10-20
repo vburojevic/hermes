@@ -1,0 +1,19 @@
+{
+  "$comment": "Must fail validation: (root): 'text' is a required property",
+  "payload": {
+    "type": "diff",
+    "v": 1,
+    "id": "w_bad03f004",
+    "title": "README: Sync section",
+    "as_of": "2026-10-16T16:40:00-04:00",
+    "fallback_text": "A suggested edit to the README.",
+    "mode": "text",
+    "rows": [
+      {
+        "label": "Sync",
+        "before": "every 15 minutes",
+        "after": "reconnects on wake"
+      }
+    ]
+  }
+}

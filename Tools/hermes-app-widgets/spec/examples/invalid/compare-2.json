@@ -1,0 +1,39 @@
+{
+  "$comment": "Must fail validation: criteria/0: 'scores' is a dependency of 'weight'; criteria: [{'id': 'battery', 'label': 'Battery', 'weight': 4, 'values': {'sony-xm6': {'value': 40, 'unit': 'h'}, 'bose-qc': {'value': 24, 'unit': 'h'}",
+  "payload": {
+    "type": "compare",
+    "v": 1,
+    "id": "w_bad08002",
+    "title": "Headphones",
+    "as_of": "2026-10-16T09:12:00-04:00",
+    "fallback_text": "Sony or Bose.",
+    "adjustable": true,
+    "options": [
+      {
+        "id": "sony-xm6",
+        "name": "Sony XM6"
+      },
+      {
+        "id": "bose-qc",
+        "name": "Bose QC Ultra"
+      }
+    ],
+    "criteria": [
+      {
+        "id": "battery",
+        "label": "Battery",
+        "weight": 4,
+        "values": {
+          "sony-xm6": {
+            "value": 40,
+            "unit": "h"
+          },
+          "bose-qc": {
+            "value": 24,
+            "unit": "h"
+          }
+        }
+      }
+    ]
+  }
+}

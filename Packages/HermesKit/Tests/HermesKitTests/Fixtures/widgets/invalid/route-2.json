@@ -1,0 +1,20 @@
+{
+  "$comment": "Must fail validation: legs: [] should be non-empty",
+  "payload": {
+    "type": "route",
+    "v": 1,
+    "id": "w_bad00532",
+    "title": "To the dentist",
+    "as_of": "2026-10-21T10:12:00-04:00",
+    "fallback_text": "To the dentist: 24 min by subway.",
+    "from": {
+      "name": "Home"
+    },
+    "to": {
+      "name": "Dentist"
+    },
+    "mode": "transit",
+    "duration": 1440,
+    "legs": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$comment": "Must fail validation: (root): 'tldr' is a required property",
+  "payload": {
+    "type": "summary",
+    "v": 1,
+    "id": "w_bad07s004",
+    "title": "Friday",
+    "as_of": "2026-10-16T07:00:00-04:00",
+    "fallback_text": "Dentist at 11:00.",
+    "kind": "brief",
+    "points": [
+      {
+        "text": "Dentist at 11:00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "type": "choice",
+  "v": 1,
+  "id": "w_flights21",
+  "title": "Flights to San Francisco",
+  "subtitle": "Tue, Oct 21 · 1 adult",
+  "icon": "airplane.departure",
+  "as_of": "2026-10-17T10:02:00-04:00",
+  "stale_after": 3600,
+  "question": "Which flight should I book for Tuesday?",
+  "style": "list",
+  "options": [
+    {
+      "id": "ua1187",
+      "label": "UA 1187 · 10:55 AM → 2:20 PM",
+      "detail": "Nonstop · $286 · lands in time for check-in",
+      "recommended": true
+    },
+    {
+      "id": "lh1415",
+      "label": "DL 1213 · 7:00 AM → 12:35 PM",
+      "detail": "Via Atlanta · $242 · leave home at 5:30 AM"
+    },
+    {
+      "id": "ba861",
+      "label": "B6 915 · 1:20 PM → 4:45 PM",
+      "detail": "Nonstop · $321"
+    }
+  ],
+  "note": "Something else? Just reply in the chat.",
+  "source": {
+    "name": "Google Flights",
+    "kind": "web"
+  },
+  "fallback_text": "Which flight should I book for Tuesday, Oct 21 (1 adult)? 1) UA 1187, 10:55 AM → 2:20 PM, nonstop, $286, lands in time for check-in (recommended). 2) DL 1213, 7:00 AM → 12:35 PM via Atlanta, $242, leave home at 5:30 AM. 3) B6 915, 1:20 PM → 4:45 PM, nonstop, $321. Reply with the flight."
+}

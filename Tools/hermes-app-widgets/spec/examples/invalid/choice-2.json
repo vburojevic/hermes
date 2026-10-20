@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: options/0/label: 'Find me a hotel near the office that has a gym, late check-in, free cancellation and a desk in the room' is too long",
+  "payload": {
+    "type": "choice",
+    "v": 1,
+    "id": "w_bad00608",
+    "title": "Ask next",
+    "as_of": "2026-10-17T10:05:00-04:00",
+    "fallback_text": "You could ask next…",
+    "style": "suggestions",
+    "options": [
+      {
+        "id": "hotel",
+        "label": "Find me a hotel near the office that has a gym, late check-in, free cancellation and a desk in the room"
+      }
+    ]
+  }
+}

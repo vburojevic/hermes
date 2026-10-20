@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: outcome/state: 'critical' was expected; outcome/state: 'ok' should not be valid under {'const': 'ok'}",
+  "payload": {
+    "type": "verdict",
+    "v": 1,
+    "id": "w_bad02v002",
+    "title": "Allergens",
+    "as_of": "2026-10-16T11:02:00-04:00",
+    "fallback_text": "Chicken satay bowl: safe for Maya.",
+    "kind": "safety",
+    "outcome": {
+      "state": "ok",
+      "label": "Safe for Maya"
+    },
+    "criteria": [
+      {
+        "label": "Peanuts",
+        "state": "critical",
+        "value": "In the satay sauce"
+      }
+    ]
+  }
+}

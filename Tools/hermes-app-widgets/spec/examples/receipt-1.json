@@ -1,0 +1,55 @@
+{
+  "type": "receipt",
+  "v": 1,
+  "id": "w_rcptlunch01",
+  "title": "Done",
+  "subtitle": "Chef Remy · 11:13 AM",
+  "icon": "bot:chef-remy",
+  "state": "ok",
+  "as_of": "2026-10-16T11:13:20-04:00",
+  "sensitivity": "private",
+  "producer": {
+    "name": "Chef Remy",
+    "bot": "chef-remy"
+  },
+  "in_reply_to": "w_lunch1011",
+  "headline": "Lunch ordered",
+  "detail": "Arrives at the office at 12:30 PM",
+  "facts": [
+    {
+      "label": "From",
+      "value": {
+        "value": "Green Bowl",
+        "format": "text"
+      }
+    },
+    {
+      "label": "Paid",
+      "value": {
+        "value": 14.5,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "detail": "Visa •• 4242"
+    },
+    {
+      "label": "Order",
+      "value": {
+        "value": "#GB-2291",
+        "format": "text"
+      },
+      "copy": true
+    }
+  ],
+  "undo": {
+    "label": "You can cancel until 11:40 AM",
+    "until": "2026-10-16T11:40:00-04:00"
+  },
+  "confirmation": {
+    "kind": "data",
+    "label": "Green Bowl order confirmation",
+    "url": "https://greenbowl.example.com/orders/GB-2291",
+    "at": "2026-10-16T11:13:18-04:00"
+  },
+  "fallback_text": "Lunch ordered from Green Bowl: $14.50 paid with Visa •• 4242, order #GB-2291, arriving at the office at 12:30 PM. You can cancel until 11:40 AM: reply “undo”."
+}

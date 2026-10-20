@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: controls/0/kind: 'lock' is not one of ['switch', 'slider', 'stepper', 'scenes', 'segmented']",
+  "payload": {
+    "type": "control",
+    "v": 1,
+    "id": "w_bad07c001",
+    "title": "Front door",
+    "as_of": "2026-10-16T22:10:00-04:00",
+    "fallback_text": "The front door is locked.",
+    "device": {
+      "name": "Front door lock"
+    },
+    "controls": [
+      {
+        "id": "lock",
+        "kind": "lock",
+        "label": "Lock",
+        "value": true
+      }
+    ]
+  }
+}

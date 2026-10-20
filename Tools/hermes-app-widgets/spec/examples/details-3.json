@@ -1,0 +1,78 @@
+{
+  "type": "details",
+  "v": 1,
+  "id": "w_studiomac1",
+  "title": "Studio Mac",
+  "subtitle": "Mac mini · always on",
+  "icon": "cpu",
+  "as_of": "2026-10-16T09:12:00-04:00",
+  "stale_after": 3600,
+  "refresh": {
+    "mode": "agent"
+  },
+  "sections": [
+    {
+      "title": "Hardware",
+      "fields": [
+        {
+          "label": "Chip",
+          "value": "Apple M4 Pro"
+        },
+        {
+          "label": "Memory",
+          "value": {
+            "value": 68719476736,
+            "format": "bytes"
+          }
+        },
+        {
+          "label": "Free disk",
+          "value": {
+            "value": 193273528320,
+            "format": "bytes"
+          },
+          "state": "ok"
+        },
+        {
+          "label": "Serial",
+          "value": "•••• 7QX2",
+          "masked": true,
+          "mono": true
+        }
+      ]
+    },
+    {
+      "title": "Software",
+      "fields": [
+        {
+          "label": "macOS",
+          "value": "27.0 (27A5280e)",
+          "mono": true
+        },
+        {
+          "label": "Hermes Agent",
+          "value": "0.14.2",
+          "mono": true
+        },
+        {
+          "label": "Up for",
+          "value": {
+            "value": 1123200,
+            "format": "duration"
+          }
+        },
+        {
+          "label": "Tailscale address",
+          "value": "100.84.12.7",
+          "mono": true,
+          "copy": true
+        }
+      ]
+    }
+  ],
+  "source": {
+    "name": "studio-mac",
+    "kind": "device"
+  },
+  "fallback_text": "Studio Mac (Mac mini, always on): Apple M4 Pro, 64 GB memory, 180 GB disk free; serial ending 7QX2. macOS 27.0 (27A5280e), Hermes Agent 0.14.2, up for 13 days. Tailscale address 100.84.12.7."
+}

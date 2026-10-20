@@ -1,0 +1,254 @@
+{
+  "type": "stack",
+  "v": 1,
+  "id": "w_mb1016brief",
+  "title": "Morning brief",
+  "subtitle": "Daily at 7 AM · Friday, Oct 16",
+  "icon": "bot:hermes",
+  "as_of": "2026-10-16T07:00:00-04:00",
+  "producer": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "supersedes": "w_mb1015brief",
+  "sensitivity": "private",
+  "schedule": {
+    "label": "Daily at 7 AM",
+    "task": "morning-brief"
+  },
+  "tag": "Scheduled",
+  "children": [
+    {
+      "type": "summary",
+      "v": 1,
+      "id": "w_mb1016sum",
+      "title": "At a glance",
+      "icon": "sun.horizon.fill",
+      "as_of": "2026-10-16T07:00:00-04:00",
+      "sensitivity": "private",
+      "kind": "brief",
+      "tldr": "A light day: two meetings, rain after 4, and the passport renewal is now 3 days late.",
+      "points": [
+        {
+          "text": "Dentist at 11 AM, leave at 10:40",
+          "emphasis": "Dentist at 11 AM"
+        },
+        {
+          "text": "Sales up 12% yesterday, $1,284 so far today",
+          "emphasis": "Sales up 12%",
+          "state": "ok"
+        },
+        {
+          "text": "3 support tickets waiting, 1 urgent",
+          "emphasis": "3 support tickets",
+          "state": "warning"
+        },
+        {
+          "text": "Rain from 4 PM; take an umbrella",
+          "state": "quiet"
+        }
+      ],
+      "do_first": {
+        "text": "Renew the passport. The form is filled in; it takes 5 minutes.",
+        "action": {
+          "id": "open_form",
+          "label": "Open the Form",
+          "kind": "open",
+          "style": "primary",
+          "url": "hermes-file:Documents/passport-renewal.pdf"
+        }
+      },
+      "fallback_text": "A light day: two meetings, rain after 4, and the passport renewal is now 3 days late. Dentist at 11 AM (leave at 10:40). Sales up 12% yesterday, $1,284 so far today. 3 support tickets waiting, 1 urgent. Rain from 4 PM. Do first: renew the passport; the form is filled in."
+    },
+    {
+      "type": "agenda",
+      "v": 1,
+      "id": "w_mb1016agd",
+      "title": "Today",
+      "subtitle": "Friday, Oct 16 · 3 events",
+      "icon": "calendar",
+      "as_of": "2026-10-16T07:00:00-04:00",
+      "stale_after": 3600,
+      "date": "2026-10-16",
+      "complete": true,
+      "events": [
+        {
+          "id": "birthday",
+          "start": "2026-10-16",
+          "all_day": true,
+          "title": "Mom’s birthday"
+        },
+        {
+          "id": "standup",
+          "start": "2026-10-16T09:00:00-04:00",
+          "end": "2026-10-16T09:30:00-04:00",
+          "title": "Stand-up",
+          "place": {
+            "name": "Zoom"
+          }
+        },
+        {
+          "id": "dentist",
+          "start": "2026-10-16T11:00:00-04:00",
+          "end": "2026-10-16T12:00:00-04:00",
+          "title": "Dentist",
+          "place": {
+            "name": "200 W 57th St"
+          },
+          "note": "leave at 10:40",
+          "tags": [
+            {
+              "label": "Leave by 10:40",
+              "state": "warning"
+            }
+          ]
+        },
+        {
+          "id": "paywall",
+          "start": "2026-10-16T14:00:00-04:00",
+          "end": "2026-10-16T15:30:00-04:00",
+          "title": "Paywall review",
+          "people": [
+            {
+              "name": "Ada",
+              "bot": "ada"
+            },
+            {
+              "name": "Ops",
+              "bot": "ops"
+            }
+          ]
+        }
+      ],
+      "source": {
+        "name": "Calendar",
+        "kind": "device"
+      },
+      "fallback_text": "Friday, October 16. All day: Mom’s birthday. 9–9:30 AM Stand-up (Zoom). 11 AM–12 PM Dentist (200 W 57th St; leave by 10:40). 2–3:30 PM Paywall review, with Ada and Ops."
+    },
+    {
+      "type": "checklist",
+      "v": 1,
+      "id": "w_mb1016chk",
+      "title": "Overdue and due soon",
+      "icon": "checklist",
+      "state_label": "3 open",
+      "as_of": "2026-10-16T07:00:00-04:00",
+      "items": [
+        {
+          "id": "passport",
+          "label": "Renew the passport",
+          "detail": "Was due Monday · Maya",
+          "tags": [
+            {
+              "label": "3 days late",
+              "state": "warning"
+            }
+          ]
+        },
+        {
+          "id": "electricity",
+          "label": "Pay the electricity bill",
+          "detail": "Was due yesterday · $64.20",
+          "tags": [
+            {
+              "label": "1 day late",
+              "state": "warning"
+            }
+          ]
+        },
+        {
+          "id": "car-service",
+          "label": "Book the car service",
+          "detail": "Due Friday",
+          "tags": [
+            {
+              "label": "Fri"
+            }
+          ]
+        },
+        {
+          "id": "library",
+          "label": "Return library books",
+          "detail": "Done this morning",
+          "checked": true
+        }
+      ],
+      "source": {
+        "name": "Reminders, Things",
+        "kind": "api"
+      },
+      "fallback_text": "Overdue and due soon (3 open): renew the passport (3 days late), pay the electricity bill ($64.20, 1 day late), book the car service (due Friday). Done: return library books."
+    },
+    {
+      "type": "metric",
+      "v": 1,
+      "id": "w_mb1016num",
+      "title": "This week",
+      "subtitle": "Trailhead · vs last week",
+      "icon": "chart.bar.fill",
+      "as_of": "2026-10-16T07:00:00-04:00",
+      "items": [
+        {
+          "label": "Installs",
+          "value": {
+            "value": 1204
+          },
+          "delta": {
+            "value": 0.12,
+            "good": "up"
+          }
+        },
+        {
+          "label": "Revenue",
+          "value": {
+            "value": 3410,
+            "format": "currency",
+            "currency": "USD"
+          },
+          "delta": {
+            "value": 0.08,
+            "good": "up"
+          }
+        },
+        {
+          "label": "Refunds",
+          "value": {
+            "value": 6
+          },
+          "delta": {
+            "value": -3,
+            "format": "number",
+            "good": "down"
+          }
+        }
+      ],
+      "source": {
+        "name": "App Store Connect, Paddle",
+        "kind": "api"
+      },
+      "fallback_text": "This week (Trailhead, vs last week): installs 1,204 (+12%), revenue $3,410 (+8%), refunds 6 (−3)."
+    }
+  ],
+  "sections": [
+    {
+      "label": "Today",
+      "children": [
+        "w_mb1016agd"
+      ]
+    },
+    {
+      "label": "Needs doing",
+      "children": [
+        "w_mb1016chk"
+      ]
+    },
+    {
+      "label": "Yesterday",
+      "children": [
+        "w_mb1016num"
+      ]
+    }
+  ],
+  "fallback_text": "Morning brief (Hermes, daily at 7 AM, Friday, Oct 16). A light day: two meetings, rain after 4, and the passport renewal is now 3 days late. Sales up 12% yesterday; 3 support tickets waiting, 1 urgent. Do first: renew the passport; the form is filled in.\n\nToday: All day: Mom’s birthday. 9–9:30 AM Stand-up (Zoom). 11 AM–12 PM Dentist (200 W 57th St; leave by 10:40). 2–3:30 PM Paywall review, with Ada and Ops.\n\nNeeds doing: renew the passport (3 days late), pay the electricity bill ($64.20, 1 day late), book the car service (due Friday). Done: return library books.\n\nYesterday: this week on Trailhead, installs 1,204 (+12%), revenue $3,410 (+8%), refunds 6 (−3)."
+}

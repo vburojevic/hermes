@@ -1,0 +1,62 @@
+{
+  "type": "media",
+  "v": 1,
+  "id": "w_voiceMaya0916",
+  "title": "Voice note from Maya",
+  "icon": "waveform",
+  "as_of": "2026-10-16T09:16:00-04:00",
+  "sensitivity": "private",
+  "items": [
+    {
+      "media": {
+        "src": "hermes-file:inbox/whatsapp/maya-2026-10-16-0912.m4a",
+        "alt": "Voice note from Maya, 1 minute 42 seconds",
+        "kind": "audio",
+        "duration": 102
+      },
+      "at": "2026-10-16T09:12:00-04:00",
+      "waveform": [
+        0.2,
+        0.35,
+        0.6,
+        0.8,
+        0.55,
+        0.9,
+        0.7,
+        0.4,
+        0.65,
+        0.85,
+        0.95,
+        0.6,
+        0.3,
+        0.5,
+        0.75,
+        0.6,
+        0.45,
+        0.7,
+        0.8,
+        0.5,
+        0.35,
+        0.6,
+        0.7,
+        0.4,
+        0.55,
+        0.65,
+        0.5,
+        0.3,
+        0.45,
+        0.6,
+        0.4,
+        0.25
+      ],
+      "transcript": "Hi, it’s me. I’m running about twenty minutes late, the Q train is stuck at DeKalb. Can you tell the dentist? And don’t forget we said we’d call Mom for her birthday tonight, around eight."
+    }
+  ],
+  "actions": [
+    {
+      "id": "tell_dentist",
+      "label": "Tell the Dentist"
+    }
+  ],
+  "fallback_text": "Voice note from Maya at 9:12 AM (1:42): “Hi, it’s me. I’m running about twenty minutes late, the Q train is stuck at DeKalb. Can you tell the dentist? And don’t forget we said we’d call Mom for her birthday tonight, around eight.”"
+}

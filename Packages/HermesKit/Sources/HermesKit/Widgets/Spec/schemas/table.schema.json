@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/table.schema.json",
+  "title": "table",
+  "description": "A small grid of values: rows of things by a few columns of numbers, with an optional total, sortable on the device.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "table"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "The column heading: App, Installs, Revenue, Change.",
+            "minLength": 1
+          },
+          "format": {
+            "enum": [
+              "number",
+              "integer",
+              "percent",
+              "currency",
+              "duration",
+              "countdown",
+              "date",
+              "time",
+              "datetime",
+              "relative",
+              "bytes",
+              "text",
+              "delta"
+            ],
+            "description": "How the column’s values are formatted. delta: a signed change with an arrow, coloured by good.",
+            "default": "text"
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 3,
+            "description": "ISO 4217 for format currency (or a delta in currency).",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "Unit after each value: ms, GB, kWh."
+          },
+          "precision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "delta_format": {
+            "enum": [
+              "percent",
+              "number",
+              "currency",
+              "points"
+            ],
+            "description": "For format delta: how the change is shown.",
+            "default": "percent"
+          },
+          "good": {
+            "enum": [
+              "up",
+              "down",
+              "neutral"
+            ],
+            "description": "For format delta: which direction is good. Required for delta columns, so a cost going up is never green."
+          },
+          "align": {
+            "enum": [
+              "start",
+              "end",
+              "center"
+            ],
+            "description": "Defaults to end for numbers, start for text."
+          },
+          "mono": {
+            "type": "boolean",
+            "description": "Monospaced text: file paths, ids, hashes.",
+            "default": false
+          },
+          "width": {
+            "enum": [
+              "narrow",
+              "auto",
+              "wide"
+            ],
+            "description": "A width hint. The first column takes the rest.",
+            "default": "auto"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "label"
+        ],
+        "description": "One column.",
+        "if": {
+          "properties": {
+            "format": {
+              "const": "delta"
+            }
+          },
+          "required": [
+            "format"
+          ]
+        },
+        "then": {
+          "required": [
+            "good"
+          ]
+        }
+      },
+      "minItems": 1,
+      "maxItems": 6,
+      "description": "The columns in order. The first names the row. Up to 4 fit on an iPhone; more reflow."
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": [
+                    "number",
+                    "string",
+                    "null"
+                  ],
+                  "description": "The raw value in the column’s format; null when unknown (shown as —)."
+                },
+                "display": {
+                  "type": "string",
+                  "maxLength": 32,
+                  "description": "A pre-formatted string when the format can’t say it."
+                },
+                "state": {
+                  "enum": [
+                    "neutral",
+                    "ok",
+                    "info",
+                    "warning",
+                    "critical",
+                    "unverified",
+                    "new",
+                    "removed"
+                  ],
+                  "description": "Draws the cell as a tag in this state (glyph and word): a failing job, an overspent category."
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "value"
+              ],
+              "description": "A cell that needs more than a raw value."
+            }
+          ],
+          "description": "A raw value (number, text, or null for unknown) or a cell object."
+        },
+        "minProperties": 1,
+        "description": "One row: cells keyed by column key. Keys not in columns are rejected by the tool."
+      },
+      "minItems": 0,
+      "maxItems": 50,
+      "description": "The rows in the order to show them."
+    },
+    "total": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/Id"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "maxLength": 120
+          },
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ],
+                "description": "The raw value in the column’s format; null when unknown (shown as —)."
+              },
+              "display": {
+                "type": "string",
+                "maxLength": 32,
+                "description": "A pre-formatted string when the format can’t say it."
+              },
+              "state": {
+                "enum": [
+                  "neutral",
+                  "ok",
+                  "info",
+                  "warning",
+                  "critical",
+                  "unverified",
+                  "new",
+                  "removed"
+                ],
+                "description": "Draws the cell as a tag in this state (glyph and word): a failing job, an overspent category."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "value"
+            ],
+            "description": "A cell that needs more than a raw value."
+          }
+        ],
+        "description": "A raw value (number, text, or null for unknown) or a cell object."
+      },
+      "minProperties": 1,
+      "description": "An optional total row, keyed like the rows. Never send a total that isn’t the sum (or the stated aggregate) of the rows; leave the cell null when any value is unknown."
+    },
+    "sortable": {
+      "type": "boolean",
+      "description": "Tapping a column heading sorts on the device (again reverses). Local; the agent is never asked.",
+      "default": false
+    },
+    "noun": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "Plural for Show all: “apps” → “Show all 4 apps”."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "columns",
+    "rows"
+  ],
+  "unevaluatedProperties": false
+}

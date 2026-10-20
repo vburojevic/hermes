@@ -1,0 +1,174 @@
+{
+  "type": "stack",
+  "v": 1,
+  "id": "w_ev1016homelab",
+  "title": "Evening report",
+  "subtitle": "Daily at 9 PM · Homelab",
+  "icon": "bot:ops",
+  "as_of": "2026-10-16T21:00:00-04:00",
+  "producer": {
+    "name": "Ops",
+    "bot": "ops"
+  },
+  "layout": "collapsed",
+  "supersedes": "w_ev1015homelab",
+  "schedule": {
+    "label": "Daily at 9 PM",
+    "task": "homelab-evening"
+  },
+  "children": [
+    {
+      "type": "status",
+      "v": 1,
+      "id": "w_ev1016hosts",
+      "title": "Homelab",
+      "icon": "server.rack",
+      "state": "critical",
+      "state_label": "1 down",
+      "summary": "4 of 6 healthy · cron failed twice",
+      "as_of": "2026-10-16T21:00:00-04:00",
+      "stale_after": 900,
+      "items": [
+        {
+          "id": "pihole",
+          "name": "Pi-hole",
+          "state": "critical",
+          "detail": "No answer on port 53",
+          "since": "2026-10-16T19:42:00-04:00"
+        },
+        {
+          "id": "cron",
+          "name": "Cron on nas-01",
+          "state": "warning",
+          "detail": "backup-photos failed at 3 AM and 3 PM"
+        },
+        {
+          "id": "nas",
+          "name": "nas-01",
+          "state": "ok"
+        },
+        {
+          "id": "mini",
+          "name": "mac-mini",
+          "state": "ok"
+        },
+        {
+          "id": "router",
+          "name": "Router",
+          "state": "ok"
+        },
+        {
+          "id": "ha",
+          "name": "Home Assistant",
+          "state": "ok"
+        }
+      ],
+      "fallback_text": "Homelab: 4 of 6 healthy. Pi-hole is down since 7:42 PM (no answer on port 53). Cron on nas-01: backup-photos failed at 3 AM and 3 PM."
+    },
+    {
+      "type": "metric",
+      "v": 1,
+      "id": "w_ev1016backup",
+      "title": "Backups",
+      "icon": "externaldrive.fill",
+      "state": "ok",
+      "state_label": "OK",
+      "summary": "Last night 3 AM · 212 GB · verified",
+      "as_of": "2026-10-16T21:00:00-04:00",
+      "layout": "strip",
+      "items": [
+        {
+          "label": "Last run",
+          "value": {
+            "value": "2026-10-16T03:00:00-04:00",
+            "format": "time"
+          }
+        },
+        {
+          "label": "Size",
+          "value": {
+            "value": 212,
+            "unit": "GB"
+          }
+        },
+        {
+          "label": "Restore test",
+          "value": {
+            "value": "Passed",
+            "format": "text"
+          }
+        }
+      ],
+      "fallback_text": "Backups: last night at 3 AM, 212 GB, restore test passed."
+    },
+    {
+      "type": "approval",
+      "v": 1,
+      "id": "w_ev1016spend",
+      "title": "Pay the DigitalOcean invoice?",
+      "icon": "creditcard.fill",
+      "state": "warning",
+      "state_label": "Action",
+      "summary": "$38.20 DigitalOcean declined",
+      "as_of": "2026-10-16T21:00:00-04:00",
+      "expires_at": "2026-10-18T21:00:00-04:00",
+      "subject": {
+        "kind": "spend",
+        "verb": "Pay",
+        "summary": "DigitalOcean · October invoice, the card was declined",
+        "amount": {
+          "value": 38.2,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      "consequences": {
+        "affects": [
+          "Your DigitalOcean account: servers keep running until Oct 25"
+        ],
+        "cost": {
+          "amount": {
+            "value": 38.2,
+            "format": "currency",
+            "currency": "USD"
+          },
+          "method": "Visa •• 4242"
+        },
+        "reversible": "no"
+      },
+      "answers": {
+        "approve": "With Visa •• 4242",
+        "reject": "Nothing is paid"
+      },
+      "authentication": "required",
+      "fallback_text": "The DigitalOcean October invoice ($38.20) was declined on the old card. Pay it with Visa •• 4242? It can’t be undone; servers keep running until Oct 25. Reply “approve” or “reject”."
+    },
+    {
+      "type": "timeline",
+      "v": 1,
+      "id": "w_ev1016deploys",
+      "title": "Deploys",
+      "icon": "shippingbox.fill",
+      "summary": "2 today · both healthy",
+      "as_of": "2026-10-16T21:00:00-04:00",
+      "events": [
+        {
+          "id": "relay",
+          "time": "2026-10-16T11:20:00-04:00",
+          "title": "push-relay 0.9.2",
+          "detail": "healthy after 10 min",
+          "state": "done"
+        },
+        {
+          "id": "site",
+          "time": "2026-10-16T17:05:00-04:00",
+          "title": "hermesapp.dev",
+          "detail": "healthy after 10 min",
+          "state": "done"
+        }
+      ],
+      "fallback_text": "Deploys today: push-relay 0.9.2 at 11:20 AM and hermesapp.dev at 5:05 PM, both healthy."
+    }
+  ],
+  "fallback_text": "Evening report (Ops, daily at 9 PM, Homelab).\n\nHomelab: 4 of 6 healthy. Pi-hole is down since 7:42 PM (no answer on port 53). Cron on nas-01: backup-photos failed at 3 AM and 3 PM.\n\nBackups: last night at 3 AM, 212 GB, restore test passed.\n\nSpend: the DigitalOcean October invoice ($38.20) was declined on the old card. Pay it with Visa •• 4242? Reply “approve” or “reject”.\n\nDeploys today: push-relay 0.9.2 and hermesapp.dev, both healthy."
+}

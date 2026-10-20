@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: items/0/url: 'http://blog.example.com/post' does not match '^(https://[^\\\\s@/?#]+(/[^\\\\s]*)?|hermes-file:(?!/)(?!.*\\\\.\\\\.)[^\\\\s]+)$'",
+  "payload": {
+    "type": "sources",
+    "v": 1,
+    "id": "w_bad00512",
+    "title": "Sources",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "Sources: [1] A blog post.",
+    "items": [
+      {
+        "title": "A blog post",
+        "url": "http://blog.example.com/post",
+        "trust": "secondary"
+      }
+    ]
+  }
+}

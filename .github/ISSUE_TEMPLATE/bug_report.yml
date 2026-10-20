@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the app doesn't work as it should.
+labels: [bug, "triage:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please leave keys, addresses and anything private out of it.
+        Security problems go to support@caffeinatedcode.co instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open a chat on…
+        2. Send…
+        3. See…
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options: [iPhone, iPad, Mac]
+      multiple: true
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: The app's version (Settings → About), the OS version, and your Hermes Agent version.
+      placeholder: Hermes 1.0 (2610201548) Beta, iOS 26.5, Hermes Agent 0.21.6
+    validations:
+      required: true
+  - type: dropdown
+    id: botmode
+    attributes:
+      label: Bot Mode
+      options: ["On", "Off", Not sure]
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or a recording

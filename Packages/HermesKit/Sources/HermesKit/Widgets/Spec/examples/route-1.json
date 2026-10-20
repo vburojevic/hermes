@@ -1,0 +1,70 @@
+{
+  "type": "route",
+  "v": 1,
+  "id": "w_dentist1016",
+  "title": "To the dentist",
+  "subtitle": "From home · leave at 10:16",
+  "icon": "mappin.and.ellipse",
+  "as_of": "2026-10-21T10:12:00-04:00",
+  "stale_after": 300,
+  "refresh": {
+    "mode": "agent"
+  },
+  "from": {
+    "name": "Home",
+    "time": "2026-10-21T10:16:00-04:00"
+  },
+  "to": {
+    "name": "Dentist, 200 W 57th St",
+    "address": "200 W 57th St, New York, NY",
+    "time": "2026-10-21T10:40:00-04:00"
+  },
+  "mode": "transit",
+  "duration": 1440,
+  "distance": 3900,
+  "leave_by": "2026-10-21T10:16:00-04:00",
+  "status": {
+    "state": "ok",
+    "label": "On time"
+  },
+  "legs": [
+    {
+      "mode": "walk",
+      "label": "Walk to Union Sq station",
+      "duration": 240,
+      "distance": 350
+    },
+    {
+      "mode": "subway",
+      "label": "Q train toward 96 St",
+      "line": "Q train",
+      "duration": 720,
+      "depart": "2026-10-21T10:20:00-04:00",
+      "arrive": "2026-10-21T10:32:00-04:00",
+      "stops": 3,
+      "every": 360,
+      "delay": 0,
+      "live": true
+    },
+    {
+      "mode": "walk",
+      "label": "Walk to 200 W 57th St",
+      "duration": 480,
+      "distance": 600
+    }
+  ],
+  "source": {
+    "name": "MTA live departures",
+    "kind": "api"
+  },
+  "actions": [
+    {
+      "id": "maps",
+      "label": "Open in Maps",
+      "kind": "open",
+      "style": "primary",
+      "url": "https://maps.apple.com/?saddr=Current%20Location&daddr=200%20W%2057th%20St,%20New%20York&dirflg=r"
+    }
+  ],
+  "fallback_text": "To the dentist: leave home at 10:16 AM, 24 min, arrive 10:40 AM. On time (MTA live, 10:12 AM). Walk 0.2 mi to Union Sq station (4 min); Q train toward 96 St at 10:20, 3 stops; walk 0.4 mi to 200 W 57th St (8 min). Maps: https://maps.apple.com/?saddr=Current%20Location&daddr=200%20W%2057th%20St,%20New%20York&dirflg=r"
+}

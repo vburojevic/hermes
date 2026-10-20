@@ -1,0 +1,316 @@
+import Foundation
+@testable import HermesPush
+import Testing
+@testable import HermesKit
+
+@Suite struct PushTests {
+    /// A device key (bytes 1…32) and an envelope the plugin's `crypto.seal` made for it.
+    static let privateKey = Data(base64Encoded: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=")!
+    static let envelope = PushEnvelope(
+        epk: "E7JQxZUMtCH3lFjuAgZHouajW0VhHz9ZPr2N1Yufo3A=",
+        box: "4qADG4PH6Yaggp5kr98eGZPtYm7FHp+OLQ1mxX9J4AYelhYaLA0axm8SNghXVbPhadHxqBLYsy8yMD8awNZ/PCyC1TN5y5tM4xOmJcR+RzIIvNK8cFwK5vcmiTZH6GD5Wtk64OxHeXACRmbX9O00uMTe4wYFaqY+HJ8VZxTUJj9hRDnD6k7so9ysMbOAcXDQvRXYfaYCc0fNvBZNk8LLfJ0b+H5uzdkK6JsC5xpVRzKxtCcFegDKHqbfkAFYIuoJVsjVu8aMO37rc0Hqhyt+UYuDgzQnkMH7JoWdrG4JM7Qi2HODZvFn8+nnWf1ID309D/PQnvmVUrxf3VA5HX1IanRJwqq6WsLSpGhzz1lzI0NWdkIhnqlZClJ9NK5LFfLK0nj5X16lhmkp6sed4SjxKLs4vkIVDyFpa+FnroxVhaHcpjz4o5A4/DS9M+DUJYKL+Mko7Wfny1mIJiNlM5AzhQdGpQueLnDpwYIJ77DeAN8iY5sW1fbd9Jk4gLIpNjRaP7n2CXP7sVCwvEJuf7j53IZ+OXloFsnFFszTdNTZkscb+cyaBOEmfWyyGbfAFLS44gmcIXR912uNsj7y3TxEx9xpwR+BA9gkbIY3I+ILOkLx9BKXBhLb3LuFBvSMAQcRpoNoEXPo0D8o+enJ36DRRBF39IRW8m205oMJu+crxu07RljB3GvICbQ453DOSqVkVYA/YPDDbzco7+NsoUArNXGim4XRvToKhlDjKoIi4Vn+kYvVtrOm4BNT2XwUy0u557/EE+hTwX0Q9LZpJAQY5kzXciNVCN40E84Tve83MsU6CYFpVzOOQnSb9bBO0nB9MFoLzcUl3OcqlTJlM74RP+AV5Ef3T687TupiXpq77w4BqWc/vwqbZkp2o6R3YwT635c5hhRs06ZxCW0="
+    )
+
+    @Test func opensWhatThePluginSealed() throws {
+        let key = try PushDeviceKey(rawRepresentation: Self.privateKey)
+        #expect(key.publicKeyBase64 == "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=")
+        let notice = try key.open(PushNotice.self, from: Self.envelope)
+        #expect(notice.kind == .approval)
+        #expect(notice.requestID == "req-1")
+        #expect(notice.chatID == "20261014_x")
+        #expect(notice.command == "rm -rf ~/snapshots/2026-0[1-8]-*")
+        #expect(notice.detail == "recursive delete")
+        #expect(notice.choices == ["once", "session", "always", "deny"])
+        #expect(notice.answer == PushNotice.Answer(via: "socket", sessionID: "20261014_x"))
+        #expect(notice.gateway == PushNotice.Gateway(id: "inst_abc", name: "mac-mini"))
+        #expect(notice.open == 2 && notice.resolved == ["req-0"])
+        #expect(notice.expiresAt == Date(timeIntervalSince1970: 1_792_000_000.5))
+    }
+
+    @Test func refusesATamperedOrForeignEnvelope() throws {
+        let key = try PushDeviceKey(rawRepresentation: Self.privateKey)
+        var tampered = Self.envelope
+        var bytes = Data(base64Encoded: tampered.box)!
+        bytes[20] ^= 1
+        tampered.box = bytes.base64EncodedString()
+        #expect(throws: (any Error).self) { try key.open(tampered) }
+        #expect(throws: (any Error).self) { try PushDeviceKey().open(Self.envelope) }
+        var future = Self.envelope
+        future.v = 2
+        #expect(throws: PushCryptoError.unsupportedVersion(2)) { try key.open(future) }
+    }
+
+    @Test func sealsLikeThePlugin() throws {
+        let key = PushDeviceKey()
+        let state = TurnActivityState(phase: .needsYou, command: "git push --force", requestID: "r1")
+        let envelope = try key.seal(state)
+        #expect(envelope.v == 1 && Data(base64Encoded: envelope.epk)?.count == 32)
+        #expect(try key.open(TurnActivityState.self, from: envelope) == state)
+    }
+
+    @Test func pluginActivityStateDecodes() throws {
+        let json = #"{"phase":"working","step":"Running a command: ls","started_at":1792000000,"title":"Disk cleanup","progress":{"done":3,"total":6},"gateway":"mac-mini"}"#
+        let state = try JSONDecoder().decode(TurnActivityState.self, from: Data(json.utf8))
+        #expect(state.phase == .working && state.progress == .init(done: 3, total: 6))
+        #expect(state.startedAt == Date(timeIntervalSince1970: 1_792_000_000))
+    }
+
+    @Test func unknownKindsAndFieldsStillDecode() throws {
+        let json = #"{"kind":"holiday","id":"x","title":"Hi","body":"There","extra":{"a":1}}"#
+        let notice = try JSONDecoder().decode(PushNotice.self, from: Data(json.utf8))
+        #expect(notice.kind == .unknown && notice.title == "Hi")
+    }
+
+    /// The plugin's `sync_request`: chats that changed while the app was away, read in the background.
+    @Test func aSyncNamesTheChatsToRead() throws {
+        let json = #"{"v":1,"kind":"sync","sessions":["20261018_ops","20261018_chat"],"gateway":{"id":"inst_1","name":"Studio Mac"},"open":2,"sent_at":1792300000.5,"profile":"ops"}"#
+        let notice = try JSONDecoder().decode(PushNotice.self, from: Data(json.utf8))
+        #expect(notice.kind == .sync && notice.sessions == ["20261018_ops", "20261018_chat"])
+        #expect(notice.gateway?.id == "inst_1" && notice.open == 2 && notice.profile == "ops")
+        let again = try JSONDecoder().decode(PushNotice.self, from: JSONEncoder().encode(notice))
+        #expect(again.sessions == notice.sessions)
+    }
+
+    @Test func boardCardNoticesReadAsCards() throws {
+        let needsYou = try JSONDecoder().decode(PushNotice.self, from: Data(#"""
+        {"kind":"card_needs_you","id":"card-1","title":"Ada needs you on “Write the App Store listing”",
+         "body":"Which category: Developer Tools or Productivity?","thread":"board:hermes-app","summary":"Write the App Store listing",
+         "card_id":"t_8f31c4e8","board":"hermes-app","project_id":"p_4f2a9c1e","card_title":"Write the App Store listing","bot":"Ada",
+         "assignee":"writer","category":"CARD"}
+        """#.utf8))
+        #expect(needsYou.kind == .cardNeedsYou && needsYou.kind.isCard)
+        #expect(needsYou.cardID == "t_8f31c4e8" && needsYou.board == "hermes-app" && needsYou.projectID == "p_4f2a9c1e")
+        #expect(needsYou.chatID == nil)
+        let shown = NoticePresentation(needsYou, gatewayName: "Studio Mac", slot: 1, showDetails: .always)
+        #expect(shown.title == "Ada needs you on “Write the App Store listing”")
+        #expect(shown.body == "Which category: Developer Tools or Productivity?")
+        #expect(shown.category == .card && shown.categoryIdentifier == "CARD.1")
+        #expect(shown.interruptionLevel == .timeSensitive)
+        let hidden = NoticePresentation(needsYou, gatewayName: "Studio Mac", slot: nil, showDetails: .never)
+        #expect(hidden.body == "A card needs you on Studio Mac")
+
+        var done = needsYou
+        done.kind = .cardDone
+        done.body = "Uploaded build 2610161021."
+        let doneShown = NoticePresentation(done, gatewayName: "Studio Mac", slot: nil, showDetails: .always)
+        #expect(doneShown.title == "Done" && doneShown.subtitle == "Write the App Store listing")
+        #expect(doneShown.category == .board && doneShown.interruptionLevel == .passive && !doneShown.plays)
+        for kind in [PushNotice.Kind.cardNeedsYou, .cardReview, .cardStopped, .cardDone] {
+            var notice = needsYou
+            notice.kind = kind
+            let text = NoticePresentation(notice, gatewayName: "Studio Mac", slot: nil, showDetails: .never).body
+            #expect(!text.localizedCaseInsensitiveContains("task"))
+        }
+        // Reply answers the card; Open shows it.
+        #expect(NotificationCatalog.actions(for: .card).map(\.identifier) == [NotificationCatalog.Action.reply, NotificationCatalog.Action.open])
+        #expect(NotificationCatalog.actions(for: .board).map(\.identifier) == [NotificationCatalog.Action.open])
+    }
+
+    @Test func questionChoicesBecomeActionsOnlyWhenSimple() {
+        var notice = PushNotice(kind: .question, id: "q", questions: [.init(question: "Which?", choices: ["A", "B", "C", "D"])])
+        #expect(notice.actionChoices == ["A", "B", "C"])
+        notice.questions = [.init(question: "Which?", choices: ["A"], multiSelect: true)]
+        #expect(notice.actionChoices.isEmpty)
+        notice.questions.append(.init(question: "And?", choices: ["B"]))
+        #expect(notice.actionChoices.isEmpty)
+    }
+
+    @Test func presentationUsesTheAppsGatewayNameAndHidesDetails() throws {
+        let key = try PushDeviceKey(rawRepresentation: Self.privateKey)
+        let notice = try key.open(PushNotice.self, from: Self.envelope)
+        let shown = NoticePresentation(notice, gatewayName: "Home Server", slot: 2, showDetails: .always)
+        #expect(shown.title == "Hermes needs your OK")
+        #expect(shown.subtitle == "Disk cleanup on the NAS")
+        #expect(shown.body == "Run rm -rf ~/snapshots/2026-0[1-8]-* on Home Server?")
+        #expect(shown.categoryIdentifier == "APPROVAL.2")
+        #expect(shown.interruptionLevel == .timeSensitive)
+        // Older builds' "When Unlocked" carries the text too: the Lock Screen is iPhone's to hide.
+        let unlocked = NoticePresentation(notice, gatewayName: "Home Server", slot: 2, showDetails: .unlocked)
+        #expect(unlocked == shown && !unlocked.hidesDetails)
+        let never = NoticePresentation(notice, gatewayName: nil, slot: nil, showDetails: .never)
+        #expect(never.title == "Hermes" && never.subtitle.isEmpty)
+        #expect(never.body == "Needs your OK on mac-mini" && never.categoryIdentifier == "APPROVAL")
+        let task = NoticePresentation(PushNotice(kind: .task, id: "t", title: "Backup", body: "Done."), gatewayName: "NAS", slot: nil, showDetails: .always)
+        #expect(task.interruptionLevel == .passive && !task.plays)
+    }
+
+    @Test func thePrimaryBotsNoticeIsKnownByItsChat() {
+        let chats = ["20261017_bot_root": "default", "20261017_bot_tip": "default", "20261016_ada": "ada"]
+        let names = ["default": "C.O.R.E.", "ada": "Ada"]
+        // Hermes tags no profile on the primary Bot's chat: its session id names it.
+        var primary = PushNotice(kind: .reply, id: "r", summary: "Bot Chat", sessionID: "20261017_bot_tip")
+        primary.nameBot(chats: chats, names: names)
+        #expect(primary.profile == "default" && primary.bot == "C.O.R.E.")
+        let shown = NoticePresentation(primary, gatewayName: "Mac", slot: nil, showDetails: .always)
+        #expect(shown.title == "C.O.R.E." && shown.subtitle.isEmpty)
+        // Another Bot's notice already says who it is.
+        var tagged = PushNotice(kind: .reply, id: "r", sessionID: "20261016_ada")
+        tagged.profile = "ada"
+        tagged.nameBot(chats: chats, names: names)
+        #expect(tagged.profile == "ada" && tagged.bot == "Ada")
+        // An ordinary chat stays one, and a room's message is about the room.
+        var plain = PushNotice(kind: .reply, id: "r", summary: "Trip plan", sessionID: "20261017_trip")
+        plain.nameBot(chats: chats, names: names)
+        #expect(plain.profile == nil && plain.bot == nil)
+        var room = PushNotice(kind: .message, id: "m", thread: "20261017_bot_tip", roomID: "room1")
+        room.nameBot(chats: chats, names: names)
+        #expect(room.profile == nil)
+    }
+
+    @Test func categoriesCoverEverySlotTheContentExtensionLists() {
+        let categories = NotificationCatalog.categories(slots: [0: "Home Server", 15: "VPS"])
+        let ids = Set(categories.map(\.identifier))
+        #expect(ids.isSuperset(of: ["APPROVAL", "QUESTION", "REPLY", "MESSAGE", "TASK", "OPEN", "APPROVAL.0", "QUESTION.15"]))
+        let approval = categories.first { $0.identifier == "APPROVAL" }!
+        #expect(approval.actions.map(\.identifier) == ["approval.once", "approval.deny", "approval.more"])
+        #expect(approval.actions[0].options.contains(.authenticationRequired))
+        #expect(approval.actions[1].options.contains(.destructive))
+        #expect(!approval.actions.contains { $0.title.contains("Always") })
+        #if os(iOS)
+        #expect(categories.first { $0.identifier == "APPROVAL.0" }?.hiddenPreviewsBodyPlaceholder == "Needs your OK on Home Server")
+        #endif
+        #expect(NotificationCatalog.Category(identifier: "QUESTION.3") == .question)
+        #expect(NotificationCatalog.Action.choiceIndex("question.choice.2") == 2)
+    }
+
+    @Test func memorySavesHaveTheirOwnCategory() throws {
+        let json = """
+        {"v": 1, "kind": "approval", "id": "r1", "title": "Hermes wants to remember something", "body": "Vegetarian.",
+         "category": "MEMORY", "command": "Vegetarian; avoids flights after 21:00.",
+         "description": "Save to memory: add to user profile", "choices": ["once", "session", "deny"]}
+        """
+        let notice = try JSONDecoder().decode(PushNotice.self, from: Data(json.utf8))
+        #expect(notice.isMemorySave)
+        let shown = NoticePresentation(notice, gatewayName: "Studio Mac", slot: 1, showDetails: .always)
+        #expect(shown.title == "Hermes wants to remember something")
+        #expect(shown.body == "Vegetarian; avoids flights after 21:00.")
+        #expect(shown.categoryIdentifier == "MEMORY.1" && shown.interruptionLevel == .active)
+        let memory = NotificationCatalog.categories().first { $0.identifier == "MEMORY" }!
+        #expect(memory.actions.map(\.identifier) == ["memory.save", "memory.dontsave"])
+        #expect(memory.actions.map(\.title) == ["Save", "Don't Save"])
+        let hidden = NoticePresentation(notice, gatewayName: "Studio Mac", slot: nil, showDetails: .never)
+        #expect(hidden.body == "Wants to remember something on Studio Mac")
+
+        // An entry longer than the body shows opens the card instead of offering Save.
+        var long = notice
+        long.command = String(repeating: "Prefers metric units. ", count: 15)
+        let longShown = NoticePresentation(long, gatewayName: "Studio Mac", slot: 1, showDetails: .always)
+        #expect(longShown.title == "Hermes wants to remember something" && longShown.categoryIdentifier.hasPrefix("OPEN"))
+        #expect(NoticePresentation(long, gatewayName: "Studio Mac", slot: nil, showDetails: .never).body == "Wants to remember something on Studio Mac")
+    }
+
+    /// Allow on a notification only beside the whole command: the plugin clips at 600 with "…",
+    /// and sends none when its redactor fails.
+    @Test func aClippedOrMissingCommandOpensTheApp() throws {
+        var notice = PushNotice(kind: .approval, id: "r1", title: "Hermes needs your OK", body: "Open Hermes to answer.")
+        notice.requestID = "r1"
+        notice.command = "rm -rf ./build/cache"
+        #expect(notice.answersInBanner)
+        #expect(NoticePresentation.category(for: notice) == .approval)
+        notice.command = String(repeating: "a", count: 590) + "…"
+        #expect(!notice.answersInBanner)
+        #expect(NoticePresentation.category(for: notice) == .open)
+        notice.command = ""
+        #expect(!notice.answersInBanner)
+        notice.command = nil
+        #expect(!notice.answersInBanner)
+        notice.command = "ls"
+        notice.smartDenied = true
+        #expect(!notice.answersInBanner)
+    }
+
+    /// A notice opens with the key of the gateway it's from, which it can't then claim to be
+    /// another; a removed gateway's notices don't open at all (security scan F32, F34).
+    @Test func aNoticeIsFromTheGatewayWhoseKeyOpensIt() throws {
+        let home = PushShared.Gateway(appID: UUID(), name: "Home Server", slot: 0)
+        let studio = PushShared.Gateway(appID: UUID(), name: "Studio Mac", slot: 1)
+        let gateways = ["inst_home": home, "inst_studio": studio]
+        let homeKey = PushDeviceKey(), studioKey = PushDeviceKey(), removedKey = PushDeviceKey()
+        func notice(claiming id: String) -> PushNotice {
+            var notice = PushNotice(kind: .approval, id: "r1", title: "Hermes needs your OK", body: "Open Hermes to answer.")
+            notice.gateway = .init(id: id, name: "Home Server")
+            notice.command = "brew upgrade"
+            return notice
+        }
+        let keys = ["inst_home": homeKey, "inst_studio": studioKey]
+        let genuine = try homeKey.seal(notice(claiming: "inst_home"))
+        #expect(PushShared.open(genuine, gateways: gateways, keys: keys, legacy: nil)?.gateway == home)
+        // Studio's key, claiming to be Home: forged.
+        let posing = try studioKey.seal(notice(claiming: "inst_home"))
+        #expect(PushShared.open(posing, gateways: gateways, keys: keys, legacy: nil) == nil)
+        // A gateway removed from the app: its key is gone, so nothing opens.
+        let removed = try removedKey.seal(notice(claiming: "inst_home"))
+        #expect(PushShared.open(removed, gateways: gateways, keys: keys, legacy: nil) == nil)
+        // The shared key of older builds still opens, for a known installation only.
+        let legacy = PushDeviceKey()
+        #expect(PushShared.open(try legacy.seal(notice(claiming: "inst_studio")), gateways: gateways, keys: keys, legacy: legacy)?.gateway == studio)
+        #expect(PushShared.open(try legacy.seal(notice(claiming: "inst_gone")), gateways: gateways, keys: keys, legacy: legacy) == nil)
+    }
+
+    @Test func sharedStoreSumsOpenRequestsAndAssignsSlots() {
+        let shared = PushShared(suiteName: "push-tests-\(UUID().uuidString)")
+        let home = UUID(), vps = UUID()
+        #expect(shared.remember(installationID: "inst_a", appID: home, name: "Home").slot == 0)
+        #expect(shared.remember(installationID: "inst_b", appID: vps, name: "VPS").slot == 1)
+        #expect(shared.remember(installationID: "inst_c", appID: home, name: "Home").slot == 0)  // re-installed Hermes
+        #expect(shared.gateways["inst_a"] == nil)
+        shared.recordOpen(2, gateway: "inst_c")
+        #expect(shared.recordOpen(1, gateway: "inst_b") == 3)
+        // A gateway the app no longer knows never counts.
+        #expect(shared.recordOpen(4, gateway: "inst_gone") == 3)
+        // An older count never overwrites a newer one.
+        #expect(shared.recordOpen(5, gateway: "inst_b", at: .now.addingTimeInterval(-60)) == 3)
+        #expect(shared.recordOpen(0, gateway: "inst_c") == 1)
+        shared.forget(appID: vps)
+        #expect(shared.badge == 0)
+        var prefs = shared.preferences
+        prefs.tasks = .all
+        shared.preferences = prefs
+        #expect(shared.preferences.tasks == .all)
+        #expect(shared.deviceID == shared.deviceID && shared.deviceID.hasPrefix("dev-"))
+    }
+
+    @Test func preferencesUseThePluginsKeys() throws {
+        var prefs = PushPreferences()
+        prefs.replyAfter = 45
+        prefs.showDetails = .never
+        let json = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(prefs))
+        #expect(json["reply_after"]?.doubleValue == 45)
+        #expect(json["show_details"]?.stringValue == "never")
+        #expect(json["tasks"]?.stringValue == "all" && json["bots"]?.stringValue == "mentions")
+        #expect(json["live_activity"]?.boolValue == true)
+    }
+
+    @Test func appPushClientSpeaksCommandDispatch() async throws {
+        let calls = Calls()
+        let client = AppPushClient { method, params in
+            await calls.add(method, params)
+            if params["arg"]?.stringValue?.hasPrefix("status") == true {
+                return .object(["type": .string("plugin"), "output": .string(#"{"ok": true, "version": "1.0.0", "registered": true, "open": 3, "gateway": {"id": "inst_x", "name": "mac"}}"#)])
+            }
+            return .object(["type": .string("plugin"), "output": .string(#"{"ok": true, "gateway": {"id": "inst_x", "name": "mac"}, "relay": "ok", "version": "1.0.0"}"#)])
+        }
+        let device = AppPushClient.Device(id: "dev-1", token: "ab12", topic: "co.caffeinatedcode.hermes.dev", environment: "development",
+                                          publicKey: "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=", platform: "ios", name: "iPhone", appVersion: "1.0")
+        let registration = try await client.register(device, preferences: PushPreferences())
+        #expect(registration == .init(installationID: "inst_x", gatewayName: "mac", relay: "ok", version: "1.0.0"))
+        let status = try await client.status(deviceID: "dev-1")
+        #expect(status.registered && status.open == 3 && status.installationID == "inst_x")
+        let sent = await calls.all
+        #expect(sent.first?.0 == "command.dispatch" && sent.first?.1["name"]?.stringValue == "app-push")
+        let arg = try #require(sent.first?.1["arg"]?.stringValue)
+        #expect(arg.hasPrefix("register {"))
+        let json = try JSONDecoder().decode(JSONValue.self, from: Data(arg.dropFirst("register ".count).utf8))
+        #expect(json["device_id"]?.stringValue == "dev-1" && json["preferences"]?["tasks"]?.stringValue == "all")
+
+        let missing = AppPushClient { _, _ in throw GatewayRPCError(code: 4018, message: "not a quick/plugin/bundle/skill command: app-push") }
+        await #expect(throws: AppPushClient.Failure.notInstalled) { try await missing.status(deviceID: "dev-1") }
+        let refusing = AppPushClient { _, _ in .object(["type": .string("plugin"), "output": .string(#"{"ok": false, "error": "device not registered"}"#)]) }
+        await #expect(throws: AppPushClient.Failure.refused("device not registered")) { try await refusing.test(deviceID: "dev-1") }
+    }
+}
+
+private actor Calls {
+    var all: [(String, [String: JSONValue])] = []
+    func add(_ method: String, _ params: [String: JSONValue]) { all.append((method, params)) }
+}

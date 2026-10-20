@@ -1,0 +1,36 @@
+{
+  "type": "media",
+  "v": 1,
+  "id": "w_lunchpic16",
+  "title": "Today’s lunch special",
+  "icon": "photo",
+  "as_of": "2026-10-16T11:05:00-04:00",
+  "producer": {
+    "name": "Chef Remy",
+    "bot": "chef-remy"
+  },
+  "items": [
+    {
+      "media": {
+        "src": "https://greenbowl.example.com/menu/2026-10-16/special.jpg",
+        "alt": "A bowl of chicken satay with rice, peanut sauce, cucumber and pickled carrots",
+        "width": 1600,
+        "height": 1067
+      },
+      "caption": "Chicken satay bowl, Green Bowl. Photo from their menu.",
+      "credit": "© Green Bowl"
+    }
+  ],
+  "actions": [
+    {
+      "id": "order_this",
+      "label": "Order This",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "greenbowl.example.com",
+    "kind": "web"
+  },
+  "fallback_text": "Today’s lunch special at Green Bowl: chicken satay bowl with rice, peanut sauce, cucumber and pickled carrots (photo from their menu). Reply “order this” and Chef Remy will ask before ordering."
+}

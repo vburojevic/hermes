@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/flashcard.input.schema.json",
+  "title": "flashcard (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. A review session of flashcards: the question, revealed on tap on the device, then how well you knew it; the ratings go to the agent in one message at the end, and it schedules the next review.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "cards": {
+            "maxItems": 0
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "next_due"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "flashcard"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "front": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The question side: “How do you say “receipt”?”, “What does this sign mean?”. Large text; long fronts drop to body size.",
+            "minLength": 1
+          },
+          "back": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The answer: “el recibo”.",
+            "minLength": 1
+          },
+          "example": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "A line under the answer: an example sentence with its translation, a mnemonic: “¿Me da el recibo?” Can I have the receipt?"
+          },
+          "hint": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "A nudge shown under the question after Show Hint (local): “Starts with r, six letters”."
+          },
+          "media": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Media"
+              }
+            ],
+            "description": "An image or audio clip on the front: a road sign, a bone, a word to hear. `alt` is read before the question."
+          },
+          "front_lang": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "BCP 47 language of the front, so VoiceOver uses the right voice."
+          },
+          "back_lang": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "BCP 47 language of the back: “es”."
+          },
+          "intervals": {
+            "type": "object",
+            "properties": {
+              "again": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 1
+              },
+              "hard": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 1
+              },
+              "good": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 1
+              },
+              "easy": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "again",
+              "hard",
+              "good",
+              "easy"
+            ],
+            "description": "When the card comes back after each rating, from the agent’s scheduler: “1 min”, “10 min”, “1 day”, “4 days”. Shown under each rating. Omit to show the ratings alone."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "front",
+          "back"
+        ],
+        "description": "One card."
+      },
+      "minItems": 0,
+      "maxItems": 20,
+      "description": "The cards of this session (or of this batch of a longer one), in order. All of them are in the payload, so rating needs no round trip. Empty when nothing is due (the empty state)."
+    },
+    "progress": {
+      "type": "object",
+      "properties": {
+        "done": {
+          "type": "integer",
+          "description": "Cards rated in earlier batches of this session: 0 for a session that fits in one payload.",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "description": "Cards in the whole session: the “20” in “3 of 20”.",
+          "minimum": 0
+        },
+        "due_today": {
+          "type": "integer",
+          "description": "Cards due today in the whole deck, for the subtitle.",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "done",
+        "total"
+      ],
+      "description": "Where the session is. The client shows done + the current card’s position, of total."
+    },
+    "next_due": {
+      "allOf": [
+        {
+          "$ref": "../common.schema.json#/$defs/Time"
+        }
+      ],
+      "description": "When the next cards are due. Required when `cards` is empty. The empty state and the end of the session say it: “Next cards are due tomorrow.”"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "cards",
+    "progress"
+  ],
+  "unevaluatedProperties": false
+}

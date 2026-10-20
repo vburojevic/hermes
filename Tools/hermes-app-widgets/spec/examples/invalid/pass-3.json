@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: code/format: 'png' is not one of ['qr', 'aztec', 'pdf417', 'code128']",
+  "payload": {
+    "type": "pass",
+    "v": 1,
+    "id": "w_bad00543",
+    "title": "Gym",
+    "as_of": "2026-10-21T08:10:00-04:00",
+    "fallback_text": "Gym membership card.",
+    "kind": "membership",
+    "fields": [
+      {
+        "label": "MEMBER NO.",
+        "value": "88213"
+      }
+    ],
+    "code": {
+      "format": "png",
+      "value": "88213"
+    }
+  }
+}

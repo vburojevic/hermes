@@ -1,0 +1,19 @@
+{
+  "$comment": "Must fail validation: items/0: {'label': 'Steps', 'value': {'value': 8412}} is not valid under any of the given schemas",
+  "payload": {
+    "type": "meter",
+    "v": 1,
+    "id": "w_bad02m001",
+    "title": "Steps",
+    "as_of": "2026-10-16T18:30:00-04:00",
+    "fallback_text": "Steps: 8,412.",
+    "items": [
+      {
+        "label": "Steps",
+        "value": {
+          "value": 8412
+        }
+      }
+    ]
+  }
+}

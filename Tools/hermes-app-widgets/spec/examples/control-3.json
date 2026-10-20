@@ -1,0 +1,38 @@
+{
+  "type": "control",
+  "v": 1,
+  "id": "w_heaterplug3",
+  "rev": 2,
+  "title": "Office heater",
+  "subtitle": "Office · smart plug",
+  "icon": "powerplug.fill",
+  "state": "unverified",
+  "state_label": "Offline",
+  "as_of": "2026-10-16T09:12:40-04:00",
+  "source": {
+    "name": "Home Assistant",
+    "kind": "device"
+  },
+  "device": {
+    "name": "Office heater",
+    "room": "Office",
+    "reachable": false,
+    "status": "Offline since 06:12",
+    "symbol": "powerplug.fill"
+  },
+  "controls": [
+    {
+      "id": "power",
+      "kind": "switch",
+      "label": "Power",
+      "value": null
+    }
+  ],
+  "resolution": {
+    "action": "set",
+    "state": "failed",
+    "at": "2026-10-16T09:12:40-04:00",
+    "message": "Didn’t switch off: the plug has been offline since 06:12"
+  },
+  "fallback_text": "The office heater didn’t switch off: its smart plug has been offline since 06:12, so I can’t tell whether it’s on. Check it in the office, or unplug it."
+}

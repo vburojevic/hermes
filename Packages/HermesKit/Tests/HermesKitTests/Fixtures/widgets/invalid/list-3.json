@@ -1,0 +1,166 @@
+{
+  "$comment": "Must fail validation: items: [{'title': 'Ticket 0'}, {'title': 'Ticket 1'}, {'title': 'Ticket 2'}, {'title': 'Ticket 3'}, {'title': 'Ticket 4'}, {'title': 'Ticket 5'}, {",
+  "payload": {
+    "type": "list",
+    "v": 1,
+    "id": "w_bad03l003",
+    "title": "Every ticket",
+    "as_of": "2026-10-16T09:30:00-04:00",
+    "fallback_text": "All 51 tickets.",
+    "items": [
+      {
+        "title": "Ticket 0"
+      },
+      {
+        "title": "Ticket 1"
+      },
+      {
+        "title": "Ticket 2"
+      },
+      {
+        "title": "Ticket 3"
+      },
+      {
+        "title": "Ticket 4"
+      },
+      {
+        "title": "Ticket 5"
+      },
+      {
+        "title": "Ticket 6"
+      },
+      {
+        "title": "Ticket 7"
+      },
+      {
+        "title": "Ticket 8"
+      },
+      {
+        "title": "Ticket 9"
+      },
+      {
+        "title": "Ticket 10"
+      },
+      {
+        "title": "Ticket 11"
+      },
+      {
+        "title": "Ticket 12"
+      },
+      {
+        "title": "Ticket 13"
+      },
+      {
+        "title": "Ticket 14"
+      },
+      {
+        "title": "Ticket 15"
+      },
+      {
+        "title": "Ticket 16"
+      },
+      {
+        "title": "Ticket 17"
+      },
+      {
+        "title": "Ticket 18"
+      },
+      {
+        "title": "Ticket 19"
+      },
+      {
+        "title": "Ticket 20"
+      },
+      {
+        "title": "Ticket 21"
+      },
+      {
+        "title": "Ticket 22"
+      },
+      {
+        "title": "Ticket 23"
+      },
+      {
+        "title": "Ticket 24"
+      },
+      {
+        "title": "Ticket 25"
+      },
+      {
+        "title": "Ticket 26"
+      },
+      {
+        "title": "Ticket 27"
+      },
+      {
+        "title": "Ticket 28"
+      },
+      {
+        "title": "Ticket 29"
+      },
+      {
+        "title": "Ticket 30"
+      },
+      {
+        "title": "Ticket 31"
+      },
+      {
+        "title": "Ticket 32"
+      },
+      {
+        "title": "Ticket 33"
+      },
+      {
+        "title": "Ticket 34"
+      },
+      {
+        "title": "Ticket 35"
+      },
+      {
+        "title": "Ticket 36"
+      },
+      {
+        "title": "Ticket 37"
+      },
+      {
+        "title": "Ticket 38"
+      },
+      {
+        "title": "Ticket 39"
+      },
+      {
+        "title": "Ticket 40"
+      },
+      {
+        "title": "Ticket 41"
+      },
+      {
+        "title": "Ticket 42"
+      },
+      {
+        "title": "Ticket 43"
+      },
+      {
+        "title": "Ticket 44"
+      },
+      {
+        "title": "Ticket 45"
+      },
+      {
+        "title": "Ticket 46"
+      },
+      {
+        "title": "Ticket 47"
+      },
+      {
+        "title": "Ticket 48"
+      },
+      {
+        "title": "Ticket 49"
+      },
+      {
+        "title": "Ticket 50"
+      }
+    ]
+  }
+}

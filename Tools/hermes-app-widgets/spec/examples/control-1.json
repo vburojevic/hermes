@@ -1,0 +1,70 @@
+{
+  "type": "control",
+  "v": 1,
+  "id": "w_lights4tv1",
+  "title": "Living room",
+  "icon": "house.fill",
+  "as_of": "2026-10-16T19:42:00-04:00",
+  "stale_after": 300,
+  "refresh": {
+    "mode": "agent"
+  },
+  "source": {
+    "name": "Home · Hue bridge",
+    "kind": "device"
+  },
+  "device": {
+    "name": "Ceiling lights",
+    "room": "Living room",
+    "status": "On · 2 lamps",
+    "active": true,
+    "symbol": "lightbulb.fill"
+  },
+  "controls": [
+    {
+      "id": "power",
+      "kind": "switch",
+      "label": "Power",
+      "value": true
+    },
+    {
+      "id": "brightness",
+      "kind": "slider",
+      "label": "Brightness",
+      "value": 60,
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "unit": "%"
+    },
+    {
+      "id": "scene",
+      "kind": "scenes",
+      "label": "Scene",
+      "value": "relax",
+      "options": [
+        {
+          "id": "relax",
+          "label": "Relax",
+          "symbol": "sofa.fill"
+        },
+        {
+          "id": "focus",
+          "label": "Focus",
+          "symbol": "lightbulb.fill"
+        },
+        {
+          "id": "movie",
+          "label": "Movie",
+          "symbol": "film.fill"
+        },
+        {
+          "id": "night",
+          "label": "Night",
+          "symbol": "moon.stars.fill"
+        }
+      ]
+    }
+  ],
+  "fallback_text": "Ceiling lights in the living room: on (2 lamps), brightness 60%, scene Relax. Tell me to change the brightness or the scene, or to turn them off."
+}

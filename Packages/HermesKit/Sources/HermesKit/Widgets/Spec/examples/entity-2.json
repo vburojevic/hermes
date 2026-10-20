@@ -1,0 +1,60 @@
+{
+  "type": "entity",
+  "v": 1,
+  "id": "w_pr212hermes",
+  "title": "Pull request",
+  "icon": "arrow.triangle.branch",
+  "as_of": "2026-10-16T16:05:00-04:00",
+  "stale_after": 900,
+  "refresh": {
+    "mode": "agent"
+  },
+  "kind": "pull_request",
+  "eyebrow": "alexr/hermes #212",
+  "name": "Reconnect the socket when the Mac wakes",
+  "url": "https://github.example.com/alexr/hermes/pull/212",
+  "pull_request": {
+    "repo": "alexr/hermes",
+    "number": 212,
+    "state": "open",
+    "author": {
+      "name": "Ada",
+      "initials": "AD"
+    },
+    "base": "main",
+    "head": "ada/reconnect-on-wake",
+    "commits": 4,
+    "additions": 142,
+    "deletions": 38,
+    "checks": {
+      "state": "passed",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    "reviews": {
+      "state": "approved",
+      "approvals": 2,
+      "required": 1
+    },
+    "mergeable": "yes"
+  },
+  "actions": [
+    {
+      "id": "open_github",
+      "label": "Open on GitHub",
+      "kind": "open",
+      "url": "https://github.example.com/alexr/hermes/pull/212"
+    },
+    {
+      "id": "merge",
+      "label": "Merge",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "GitHub",
+    "kind": "api"
+  },
+  "fallback_text": "Pull request alexr/hermes #212: “Reconnect the socket when the Mac wakes”. Ada wants to merge 4 commits from ada/reconnect-on-wake into main. Checks passed (9 of 9), 2 approvals, +142 −38, can merge. Reply “merge” to ask Hermes to merge it. https://github.example.com/alexr/hermes/pull/212"
+}

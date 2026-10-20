@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: (root): 'needs' is a dependency of 'servings'",
+  "payload": {
+    "type": "guide",
+    "v": 1,
+    "id": "w_bad07g003",
+    "title": "Pancakes",
+    "as_of": "2026-10-16T08:00:00-04:00",
+    "fallback_text": "Pancakes for 4: mix, then fry.",
+    "servings": 4,
+    "steps": [
+      {
+        "id": "mix",
+        "title": "Mix the batter."
+      },
+      {
+        "id": "fry",
+        "title": "Fry each pancake for a minute a side.",
+        "timer": 60
+      }
+    ]
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "type": "verdict",
+  "v": 1,
+  "id": "w_allergen7a1",
+  "title": "Allergens",
+  "subtitle": "Chicken satay bowl · for Maya",
+  "icon": "fork.knife",
+  "state": "ok",
+  "state_label": "Safe",
+  "as_of": "2026-10-16T11:05:00-04:00",
+  "stale_after": 14400,
+  "sensitivity": "private",
+  "kind": "safety",
+  "outcome": {
+    "state": "ok",
+    "label": "Safe for Maya",
+    "reason": "No peanuts, tree nuts or sesame in any of its 9 ingredients."
+  },
+  "criteria": [
+    {
+      "id": "peanuts",
+      "label": "Peanuts",
+      "state": "ok",
+      "value": "Not present",
+      "evidence": {
+        "kind": "claim",
+        "label": "Green Bowl, by phone",
+        "at": "2026-10-16T11:05:00-04:00"
+      }
+    },
+    {
+      "id": "tree-nuts",
+      "label": "Tree nuts",
+      "state": "ok",
+      "value": "Not present",
+      "evidence": {
+        "kind": "link",
+        "label": "Ingredient list on the menu",
+        "url": "https://greenbowl.example.com/menu/satay-bowl"
+      }
+    },
+    {
+      "id": "sesame",
+      "label": "Sesame",
+      "state": "ok",
+      "value": "Not present",
+      "evidence": {
+        "kind": "link",
+        "label": "Ingredient list on the menu",
+        "url": "https://greenbowl.example.com/menu/satay-bowl"
+      }
+    }
+  ],
+  "source": {
+    "name": "Green Bowl’s menu",
+    "kind": "web",
+    "url": "https://greenbowl.example.com/menu"
+  },
+  "fallback_text": "Chicken satay bowl, for Maya: safe. No peanuts, tree nuts or sesame in any of its 9 ingredients. Peanuts: not present (said by Green Bowl, by phone, at 11:05 AM). Tree nuts: not present (ingredient list on the menu). Sesame: not present (ingredient list on the menu)."
+}

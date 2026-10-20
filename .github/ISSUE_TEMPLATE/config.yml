@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: hermesapp.dev
+    url: https://hermesapp.dev
+    about: What Hermes does, how to get the beta, and how to set it up.
+  - name: Suggest an idea
+    url: https://github.com/vburojevic/hermes/discussions/categories/ideas
+    about: Ideas start as a discussion, where others can add to them and upvote. Accepted ones become issues.
+  - name: Ask a question
+    url: https://github.com/vburojevic/hermes/discussions/categories/q-a
+    about: Setting up, connecting to your Hermes Agent, or how something works.
+  - name: Report a security problem
+    url: https://github.com/vburojevic/hermes/blob/main/SECURITY.md
+    about: Please report vulnerabilities privately, not as an issue.
+  - name: Hermes Agent itself
+    url: https://github.com/NousResearch/hermes-agent/issues
+    about: Problems with the agent, the gateway or its tools belong with Nous Research.

@@ -1,0 +1,65 @@
+{
+  "type": "pass",
+  "v": 1,
+  "id": "w_ua1187pass",
+  "rev": 2,
+  "title": "UA 1187 · United",
+  "icon": "airplane.departure",
+  "state": "warning",
+  "state_label": "Gate changed",
+  "as_of": "2026-10-21T09:58:00-04:00",
+  "expires_at": "2026-10-21T11:30:00-04:00",
+  "sensitivity": "private",
+  "refresh": {
+    "mode": "agent"
+  },
+  "kind": "boarding",
+  "trip": {
+    "from": {
+      "code": "EWR",
+      "name": "Newark",
+      "time": "2026-10-21T10:55:00-04:00"
+    },
+    "to": {
+      "code": "SFO",
+      "name": "San Francisco",
+      "time": "2026-10-21T14:20:00-07:00"
+    }
+  },
+  "fields": [
+    {
+      "label": "GATE",
+      "value": "C98",
+      "previous": "C112",
+      "state": "warning"
+    },
+    {
+      "label": "SEAT",
+      "value": "14A"
+    },
+    {
+      "label": "BOARDING",
+      "value": "10:25 AM"
+    },
+    {
+      "label": "GROUP",
+      "value": "2"
+    }
+  ],
+  "holder": "ALEX RIVERA",
+  "reference": {
+    "label": "Booking",
+    "value": "QX7P2L"
+  },
+  "code": {
+    "format": "aztec",
+    "value": "M1RIVERA/ALEX         EQX7P2L EWRSFOUA 1187 294Y014A0042 100"
+  },
+  "pkpass": "hermes-file:Travel/UA1187-2026-10-21.pkpass",
+  "note": "Gate C98 is a 9-minute walk from security.",
+  "source": {
+    "name": "United",
+    "kind": "api"
+  },
+  "fallback_text": "UA 1187 · United: the gate changed from C112 to C98 (a 9-minute walk from security). Still on time: Newark 10:55 AM → San Francisco 2:20 PM, boarding 10:25 AM, seat 14A, group 2. Booking QX7P2L."
+}

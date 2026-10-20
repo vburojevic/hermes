@@ -1,0 +1,124 @@
+{
+  "type": "compare",
+  "v": 1,
+  "id": "w_cmpheadph2",
+  "title": "Headphones for travel",
+  "subtitle": "Scored 1–5 · your weights",
+  "icon": "star.fill",
+  "as_of": "2026-10-16T09:14:00-04:00",
+  "options": [
+    {
+      "id": "sony-xm6",
+      "name": "Sony XM6"
+    },
+    {
+      "id": "bose-qc",
+      "name": "Bose QC Ultra"
+    },
+    {
+      "id": "airpods-max",
+      "name": "AirPods Max 2"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "price",
+      "label": "Price",
+      "weight": 2,
+      "values": {
+        "sony-xm6": {
+          "value": 399,
+          "format": "currency",
+          "currency": "USD"
+        },
+        "bose-qc": {
+          "value": 429,
+          "format": "currency",
+          "currency": "USD"
+        },
+        "airpods-max": {
+          "value": 549,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      "scores": {
+        "sony-xm6": 5,
+        "bose-qc": 4,
+        "airpods-max": 2
+      }
+    },
+    {
+      "id": "battery",
+      "label": "Battery",
+      "weight": 4,
+      "values": {
+        "sony-xm6": {
+          "value": 40,
+          "unit": "h"
+        },
+        "bose-qc": {
+          "value": 24,
+          "unit": "h"
+        },
+        "airpods-max": {
+          "value": 20,
+          "unit": "h"
+        }
+      },
+      "scores": {
+        "sony-xm6": 5,
+        "bose-qc": 3,
+        "airpods-max": 2
+      }
+    },
+    {
+      "id": "anc",
+      "label": "Noise cancelling",
+      "weight": 5,
+      "values": {
+        "sony-xm6": "Best",
+        "bose-qc": "Best",
+        "airpods-max": "Good"
+      },
+      "scores": {
+        "sony-xm6": 5,
+        "bose-qc": 5,
+        "airpods-max": 4
+      }
+    },
+    {
+      "id": "weight",
+      "label": "Weight",
+      "weight": 1,
+      "values": {
+        "sony-xm6": {
+          "value": 8.8,
+          "unit": "oz"
+        },
+        "bose-qc": {
+          "value": 9,
+          "unit": "oz"
+        },
+        "airpods-max": {
+          "value": 13.6,
+          "unit": "oz"
+        }
+      },
+      "scores": {
+        "sony-xm6": 4,
+        "bose-qc": 4,
+        "airpods-max": 1
+      }
+    }
+  ],
+  "pick": "sony-xm6",
+  "decided_by": "it leads on price and battery and ties on noise cancelling.",
+  "adjustable": true,
+  "choose": true,
+  "source": {
+    "name": "rtings.com, Wirecutter, Apple",
+    "kind": "web"
+  },
+  "fallback_text": "Headphones for travel, scored 1–5 with weights price 2, battery 4, noise cancelling 5, weight 1: Sony XM6 4.9 ($399, 40 h, best, 8.8 oz), Bose QC Ultra 4.1 ($429, 24 h, best, 9 oz), AirPods Max 2 2.8 ($549, 20 h, good, 13.6 oz). Pick: Sony XM6. Reply with the one you want, and any weights you’d change."
+}

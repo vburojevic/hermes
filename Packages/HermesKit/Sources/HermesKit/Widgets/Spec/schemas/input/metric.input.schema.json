@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/metric.input.schema.json",
+  "title": "metric (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Labelled numbers: one renders as a hero, two to six as a row or grid, up to six small ones in a strip.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "metric"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "What the number is: Revenue, Steps, Boarding closes.",
+            "minLength": 1
+          },
+          "value": {
+            "$ref": "../common.schema.json#/$defs/Quantity"
+          },
+          "delta": {
+            "$ref": "../common.schema.json#/$defs/Delta"
+          },
+          "target": {
+            "$ref": "../common.schema.json#/$defs/Quantity"
+          },
+          "spark": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 60,
+            "description": "Optional sparkline points, oldest first. Drawn as a line in ink; no axes."
+          },
+          "state": {
+            "$ref": "../common.schema.json#/$defs/State"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the value: “Gate C112 closes at 10:55 AM”."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ],
+        "description": "One labelled number."
+      },
+      "minItems": 1,
+      "maxItems": 6,
+      "description": "The numbers. One item renders as a hero."
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "row",
+        "grid",
+        "strip"
+      ],
+      "description": "auto: 1 → hero, 2–3 → row, 4–6 → grid. strip: compact values in one line (deltas and sparklines hidden).",
+      "default": "auto"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

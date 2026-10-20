@@ -1,0 +1,22 @@
+{
+  "$comment": "Must fail validation: consequences: 'cost' is a required property",
+  "payload": {
+    "type": "approval",
+    "v": 1,
+    "id": "w_bad00004",
+    "title": "Order lunch?",
+    "as_of": "2026-10-16T11:12:00-04:00",
+    "expires_at": "2026-10-16T11:30:00-04:00",
+    "fallback_text": "Lunch order, needs your OK.",
+    "subject": {
+      "kind": "purchase",
+      "verb": "Order"
+    },
+    "consequences": {
+      "affects": [
+        "You"
+      ],
+      "reversible": "no"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "type": "diff",
+  "v": 1,
+  "id": "w_readmesync2",
+  "title": "README: Sync section",
+  "subtitle": "Suggested edit",
+  "icon": "doc.fill",
+  "as_of": "2026-10-16T16:40:00-04:00",
+  "mode": "text",
+  "text": {
+    "before": "The app syncs every 15 minutes and stops when the Mac sleeps.",
+    "after": "The app syncs every 15 minutes. It reconnects as soon as the Mac wakes, with backoff up to 5 seconds."
+  },
+  "actions": [
+    {
+      "id": "keep_old",
+      "label": "Keep the Old Text"
+    },
+    {
+      "id": "apply_edit",
+      "label": "Apply This Edit",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "README.md",
+    "kind": "file",
+    "url": "hermes-file:README.md"
+  },
+  "fallback_text": "Suggested edit to README.md, Sync section. Before: “The app syncs every 15 minutes and stops when the Mac sleeps.” After: “The app syncs every 15 minutes. It reconnects as soon as the Mac wakes, with backoff up to 5 seconds.”"
+}

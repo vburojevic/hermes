@@ -1,0 +1,34 @@
+{
+  "$comment": "Must fail validation: sides: Too many items match the given schema (expected at most 1)",
+  "payload": {
+    "type": "scoreboard",
+    "v": 1,
+    "id": "w_bad02s002",
+    "title": "Paywall test",
+    "as_of": "2026-10-16T09:00:00-04:00",
+    "fallback_text": "Paywall test: both won.",
+    "kind": "test",
+    "status": "final",
+    "significance": {
+      "reached": true
+    },
+    "sides": [
+      {
+        "name": "New paywall",
+        "score": {
+          "value": 0.051,
+          "format": "percent"
+        },
+        "winner": true
+      },
+      {
+        "name": "Current paywall",
+        "score": {
+          "value": 0.042,
+          "format": "percent"
+        },
+        "winner": true
+      }
+    ]
+  }
+}

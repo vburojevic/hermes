@@ -1,0 +1,76 @@
+{
+  "type": "timeline",
+  "v": 1,
+  "id": "w_inc1402ck",
+  "title": "What happened",
+  "subtitle": "Checkout outage · 28 min",
+  "icon": "clock.fill",
+  "state": "ok",
+  "state_label": "Recovered",
+  "as_of": "2026-10-16T14:40:00-04:00",
+  "kind": "incident",
+  "events": [
+    {
+      "id": "start",
+      "time": "2026-10-16T14:02:00-04:00",
+      "title": "Checkout errors start",
+      "detail": "5xx on /api/checkout",
+      "state": "critical",
+      "evidence": {
+        "kind": "data",
+        "label": "Error rate 38% · Grafana",
+        "url": "https://grafana.example.com/d/checkout?from=1760616000000"
+      }
+    },
+    {
+      "id": "paged",
+      "time": "2026-10-16T14:06:00-04:00",
+      "title": "Ops paged",
+      "detail": "Ops is looking",
+      "state": "info",
+      "who": {
+        "name": "Maya Torres",
+        "role": "On call"
+      }
+    },
+    {
+      "id": "rollback",
+      "time": "2026-10-16T14:21:00-04:00",
+      "title": "Rolled back to 1.3.1",
+      "detail": "Errors falling",
+      "state": "warning",
+      "who": {
+        "name": "Ops",
+        "bot": "ops"
+      },
+      "evidence": {
+        "kind": "file",
+        "label": "deploy.log line 212",
+        "url": "hermes-file:logs/deploy.log"
+      }
+    },
+    {
+      "id": "recovered",
+      "time": "2026-10-16T14:30:00-04:00",
+      "title": "Recovered",
+      "detail": "0 errors in 10 min",
+      "state": "done",
+      "evidence": {
+        "kind": "data",
+        "label": "Error rate 0% since 2:30 PM · Grafana"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "write_postmortem",
+      "label": "Draft a Postmortem",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "Grafana, PagerDuty, deploy log",
+    "kind": "tool"
+  },
+  "fallback_text": "Checkout outage, 28 minutes, recovered. 2:02 PM — failed: checkout errors start (5xx on /api/checkout, error rate 38%). 2:06 PM — Ops paged; Maya Torres (on call) is looking. 2:21 PM — Ops rolled back to 1.3.1; errors falling. 2:30 PM — recovered: 0 errors in 10 minutes."
+}

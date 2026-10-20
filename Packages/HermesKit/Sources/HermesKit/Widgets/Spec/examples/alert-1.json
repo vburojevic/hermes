@@ -1,0 +1,36 @@
+{
+  "type": "alert",
+  "v": 1,
+  "id": "w_hetznerPay",
+  "title": "Payment failed",
+  "icon": "creditcard.fill",
+  "state": "warning",
+  "state_label": "Action needed",
+  "as_of": "2026-10-17T08:20:00-04:00",
+  "sensitivity": "private",
+  "severity": "warning",
+  "headline": "The card ending 4242 was declined for the DigitalOcean invoice ($38.20). The server stays up until Oct 31.",
+  "next": "Update the card in DigitalOcean’s console, or tell me to pay from the other card.",
+  "evidence": {
+    "kind": "data",
+    "label": "Email from DigitalOcean, 8:14 AM"
+  },
+  "actions": [
+    {
+      "id": "open_hetzner",
+      "label": "Open DigitalOcean",
+      "kind": "open",
+      "url": "https://cloud.digitalocean.com/account/billing"
+    },
+    {
+      "id": "use_other_card",
+      "label": "Use the Other Card",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "DigitalOcean billing email",
+    "kind": "tool"
+  },
+  "fallback_text": "Payment failed: the card ending 4242 was declined for the DigitalOcean invoice ($38.20). The server stays up until Oct 31. Update the card in DigitalOcean’s console, or reply “use the other card” and I’ll ask you to approve the payment."
+}

@@ -1,0 +1,101 @@
+{
+  "type": "chart",
+  "v": 1,
+  "id": "w_aapl1016q",
+  "title": "AAPL · Apple",
+  "subtitle": "Nasdaq · closed · 15 min delayed",
+  "icon": "chart.line.uptrend.xyaxis",
+  "as_of": "2026-10-16T16:00:00-04:00",
+  "stale_after": 900,
+  "kind": "line",
+  "headline": {
+    "value": {
+      "value": 242.18,
+      "format": "currency",
+      "currency": "USD"
+    },
+    "label": "at the close",
+    "delta": {
+      "value": 0.014,
+      "format": "percent",
+      "good": "up",
+      "period": "today"
+    }
+  },
+  "x": {
+    "kind": "time",
+    "values": [
+      "2026-10-16T09:30:00-04:00",
+      "2026-10-16T10:30:00-04:00",
+      "2026-10-16T11:30:00-04:00",
+      "2026-10-16T12:30:00-04:00",
+      "2026-10-16T13:30:00-04:00",
+      "2026-10-16T14:30:00-04:00",
+      "2026-10-16T15:30:00-04:00",
+      "2026-10-16T16:00:00-04:00"
+    ]
+  },
+  "y": {
+    "format": "currency",
+    "currency": "USD"
+  },
+  "series": [
+    {
+      "id": "price",
+      "label": "Price",
+      "values": [
+        239.4,
+        240.9,
+        240.1,
+        241.6,
+        243.2,
+        242.5,
+        241.8,
+        242.18
+      ]
+    }
+  ],
+  "target": {
+    "value": 238.84,
+    "label": "Prev close 238.84"
+  },
+  "stats": [
+    {
+      "label": "Open",
+      "value": {
+        "value": 239.1,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    {
+      "label": "High",
+      "value": {
+        "value": 243.9,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    {
+      "label": "Low",
+      "value": {
+        "value": 238.7,
+        "format": "currency",
+        "currency": "USD"
+      }
+    },
+    {
+      "label": "Volume",
+      "value": {
+        "value": 41200000,
+        "format": "number",
+        "display": "41.2M"
+      }
+    }
+  ],
+  "source": {
+    "name": "Market data, 15 min delayed",
+    "kind": "api"
+  },
+  "fallback_text": "Apple (AAPL) closed at $242.18 on Fri, Oct 16, up 1.4% (previous close $238.84). Open $239.10, high $243.90, low $238.70, volume 41.2M. Prices delayed 15 minutes."
+}

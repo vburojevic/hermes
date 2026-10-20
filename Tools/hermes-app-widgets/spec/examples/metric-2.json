@@ -1,0 +1,45 @@
+{
+  "type": "metric",
+  "v": 1,
+  "id": "w_week77b2",
+  "title": "This week",
+  "subtitle": "Trailhead · vs last week",
+  "icon": "chart.bar.fill",
+  "as_of": "2026-10-16T09:41:00-04:00",
+  "items": [
+    {
+      "label": "Installs",
+      "value": {
+        "value": 1204
+      },
+      "delta": {
+        "value": 0.12,
+        "good": "up"
+      }
+    },
+    {
+      "label": "Revenue",
+      "value": {
+        "value": 3410,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "delta": {
+        "value": 0.08,
+        "good": "up"
+      }
+    },
+    {
+      "label": "Refunds",
+      "value": {
+        "value": 6
+      },
+      "delta": {
+        "value": -3,
+        "format": "number",
+        "good": "down"
+      }
+    }
+  ],
+  "fallback_text": "This week (Trailhead, vs last week): installs 1,204 (+12%), revenue $3,410 (+8%), refunds 6 (−3)."
+}

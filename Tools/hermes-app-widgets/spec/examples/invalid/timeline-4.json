@@ -1,0 +1,12 @@
+{
+  "$comment": "Must fail validation: (root): 'empty_text' is a required property",
+  "payload": {
+    "type": "timeline",
+    "v": 1,
+    "id": "w_bad00054",
+    "title": "Package from Portland",
+    "as_of": "2026-10-16T09:14:00-04:00",
+    "fallback_text": "Package from Portland: no updates yet.",
+    "events": []
+  }
+}

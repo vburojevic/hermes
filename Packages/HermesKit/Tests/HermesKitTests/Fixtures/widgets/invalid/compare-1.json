@@ -1,0 +1,33 @@
+{
+  "$comment": "Must fail validation: options: [{'id': 'sony-xm6', 'name': 'Sony XM6'}] is too short",
+  "payload": {
+    "type": "compare",
+    "v": 1,
+    "id": "w_bad08001",
+    "title": "Which one?",
+    "as_of": "2026-10-16T09:12:00-04:00",
+    "fallback_text": "Only the Sony XM6 at $399.",
+    "options": [
+      {
+        "id": "sony-xm6",
+        "name": "Sony XM6"
+      }
+    ],
+    "criteria": [
+      {
+        "id": "price",
+        "label": "Price",
+        "values": {
+          "sony-xm6": {
+            "value": 399,
+            "format": "currency",
+            "currency": "USD"
+          },
+          "other": {
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

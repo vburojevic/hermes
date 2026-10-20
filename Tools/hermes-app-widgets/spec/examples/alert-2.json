@@ -1,0 +1,58 @@
+{
+  "type": "alert",
+  "v": 1,
+  "id": "w_checkout17",
+  "title": "Checkout is down",
+  "subtitle": "Trailhead · production",
+  "icon": "exclamationmark.triangle.fill",
+  "state": "critical",
+  "state_label": "Ongoing",
+  "as_of": "2026-10-17T14:20:00-04:00",
+  "stale_after": 900,
+  "severity": "critical",
+  "headline": "Checkout returns errors for everyone. Orders since 2:02 PM are failing.",
+  "impact": "All checkouts",
+  "started_at": "2026-10-17T14:02:00-04:00",
+  "status": "investigating",
+  "timeline": [
+    {
+      "at": "2026-10-17T14:02:00-04:00",
+      "text": "5xx on /api/checkout"
+    },
+    {
+      "at": "2026-10-17T14:06:00-04:00",
+      "text": "Ops paged, looking"
+    },
+    {
+      "at": "2026-10-17T14:15:00-04:00",
+      "text": "Stripe reports a partial outage"
+    }
+  ],
+  "next": "Switch checkout to the backup provider (needs your OK).",
+  "acknowledged": {
+    "by": "Maya",
+    "at": "2026-10-17T14:06:00-04:00"
+  },
+  "evidence": {
+    "kind": "data",
+    "label": "Sentry: 412 errors on /api/checkout since 2:02 PM"
+  },
+  "actions": [
+    {
+      "id": "open_incident",
+      "label": "Open the Incident",
+      "kind": "open",
+      "url": "https://status.example.com/incidents/2026-10-17"
+    },
+    {
+      "id": "switch_provider",
+      "label": "Switch Provider",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "Sentry, Stripe status",
+    "kind": "api"
+  },
+  "fallback_text": "Critical, ongoing: Trailhead checkout is down. Checkout returns errors for everyone; orders since 2:02 PM are failing. Impact: all checkouts. Status: investigating (Maya acknowledged at 2:06 PM). 2:02 PM 5xx on /api/checkout; 2:06 PM ops paged; 2:15 PM Stripe reports a partial outage. Next: switch checkout to the backup provider; reply “switch provider” and I’ll ask for your OK."
+}

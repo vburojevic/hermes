@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/meter.input.schema.json",
+  "title": "meter (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. A value within a range or against a target: one bar, a bar per item, nested rings, or an arc with zones.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "style": {
+            "const": "arc"
+          }
+        },
+        "required": [
+          "style"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "maxItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "style": {
+            "const": "ring"
+          }
+        },
+        "required": [
+          "style"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "maxItems": 3
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "meter"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "style": {
+      "enum": [
+        "bar",
+        "ring",
+        "arc"
+      ],
+      "description": "bar: one bar per item (one item renders as a hero). ring: 1–3 nested rings with a legend. arc: one item on an open arc with its zones.",
+      "default": "bar"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "What is measured: Spent in October, Steps, Protein, /data. Read by VoiceOver even when the title says it.",
+            "minLength": 1
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "description": "The current value. null when it couldn’t be read: an empty dashed track, — for the number, and `state: unverified`. Never 0 for unknown."
+          },
+          "target": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "properties": {
+              "value": {
+                "type": "number"
+              }
+            },
+            "description": "The goal or limit: shown as “of $2,000” or “/ 10,000”, and as a tick on the bar when it sits inside the scale."
+          },
+          "min": {
+            "type": "number",
+            "description": "Start of the scale.",
+            "default": 0
+          },
+          "max": {
+            "type": "number",
+            "description": "End of the scale, in the value’s units. Defaults to `target.value`. Set it when the target sits inside the scale (a disk at 100% with a warning zone from 90%)."
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "number",
+                  "description": "Where the zone starts, in the value’s units (included)."
+                },
+                "to": {
+                  "type": "number",
+                  "description": "Where it ends (not included). Omit for “and above”."
+                },
+                "state": {
+                  "enum": [
+                    "ok",
+                    "info",
+                    "warning",
+                    "critical"
+                  ],
+                  "description": "What being in the zone means. Bars and rings stay ink in ok and info zones; only warning and critical colour the fill. An arc tints every zone."
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 24,
+                  "description": "The zone’s name in words, under an arc and read by VoiceOver: Low, Fair, Good, Nearly full, Over budget."
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "state"
+              ],
+              "description": "A range of the scale that means a state."
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "Zones for this item only; they replace the widget’s `zones`."
+          },
+          "remaining": {
+            "type": "boolean",
+            "description": "Under a single bar, show what’s left, computed by the client from target − value: “$160 left”, or “$40 over” past the target.",
+            "default": false
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line: trailing under a single bar, or under the item’s legend entry: “12 days to go”, “Watch not synced since 14:00”."
+          },
+          "state": {
+            "$ref": "../common.schema.json#/$defs/State"
+          },
+          "mono": {
+            "type": "boolean",
+            "description": "Draw the label monospaced: paths, hosts, branch names.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ],
+        "description": "One measured value. It needs a scale: `max`, `target`, or both.",
+        "anyOf": [
+          {
+            "required": [
+              "max"
+            ]
+          },
+          {
+            "required": [
+              "target"
+            ]
+          }
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 8,
+      "description": "The values, in reading order. Empty only with the envelope’s `empty_text`."
+    },
+    "zones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "number",
+            "description": "Where the zone starts, in the value’s units (included)."
+          },
+          "to": {
+            "type": "number",
+            "description": "Where it ends (not included). Omit for “and above”."
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "info",
+              "warning",
+              "critical"
+            ],
+            "description": "What being in the zone means. Bars and rings stay ink in ok and info zones; only warning and critical colour the fill. An arc tints every zone."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "The zone’s name in words, under an arc and read by VoiceOver: Low, Fair, Good, Nearly full, Over budget."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "state"
+        ],
+        "description": "A range of the scale that means a state."
+      },
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "Zones shared by every item that has none of its own. In the value’s units."
+    },
+    "headline": {
+      "type": "string",
+      "maxLength": 60,
+      "description": "The conclusion in words, beside an arc (or under the bar or rings): “Ready for intervals”."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "One or two sentences under the headline: what it is based on. “Slept 7 h 12, HRV above your usual, resting HR normal.”"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

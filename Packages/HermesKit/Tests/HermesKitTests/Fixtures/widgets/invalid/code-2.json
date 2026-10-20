@@ -1,0 +1,17 @@
+{
+  "$comment": "Must fail validation: result: 'state' is a required property",
+  "payload": {
+    "type": "code",
+    "v": 1,
+    "id": "w_bad00502",
+    "title": "Backoff",
+    "as_of": "2026-10-17T06:12:00-04:00",
+    "fallback_text": "Backoff snippet, ran fine.",
+    "kind": "snippet",
+    "text": "backoff(3)",
+    "result": {
+      "label": "Ran in 0.4 s",
+      "output": "2"
+    }
+  }
+}

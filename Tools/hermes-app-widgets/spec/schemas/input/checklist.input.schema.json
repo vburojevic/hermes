@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/checklist.input.schema.json",
+  "title": "checklist (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Items the person ticks off, optionally grouped with progress; a tick is a request the agent confirms.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "checklist"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "What to do or get: Tomatoes, Metformin 500 mg, Renew the passport.",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the label: an amount, a time, a note. “2 lb”, “8 AM with breakfast”, “$64.20”."
+          },
+          "checked": {
+            "type": "boolean",
+            "description": "Ticked. Only the agent’s update makes it final.",
+            "default": false
+          },
+          "due": {
+            "anyOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Date"
+              },
+              {
+                "$ref": "../common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "When it is due (a date, or a time). The client adds “Due Monday” or “Was due Tuesday” to the detail line and, while unticked, a trailing tag: “Mon” (neutral) or “3 days late” (warning), kept current."
+          },
+          "assignee": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Person"
+              }
+            ],
+            "description": "Who it is for. Their first name ends the detail line (“· Maya”); a shared list shows their initials."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "../common.schema.json#/$defs/Tag"
+            },
+            "maxItems": 2,
+            "description": "Up to two trailing tags: “Taken 08:04” (ok), “Optional”, “Tonight”."
+          },
+          "evidence": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Evidence"
+              }
+            ],
+            "description": "How a ticked item is known to be done, as a caption under the row: “Logged in Apple Health 08:04”, or a claim (“Said by Maya · family chat”), which is never shown as verified."
+          },
+          "group": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Id"
+              }
+            ],
+            "description": "The group (aisle, person, room) it belongs to."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "../common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Extra row actions (Snooze, Move to Tomorrow), sent with {item: <item id>}."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label"
+        ],
+        "description": "One item to tick."
+      },
+      "minItems": 0,
+      "maxItems": 50,
+      "description": "The items in the order to show them: late first for tasks, store order for shopping. Ticked items stay where they are."
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Aisle, person or room: Produce, Maya, Kitchen.",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "Group headings in order, each with its own progress."
+    },
+    "progress": {
+      "enum": [
+        "bar",
+        "count",
+        "open",
+        "none"
+      ],
+      "description": "How the header shows progress. bar: “4 of 9” and a bar; count: “2 of 4”; open: “3 open” (what’s left); none.",
+      "default": "bar"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

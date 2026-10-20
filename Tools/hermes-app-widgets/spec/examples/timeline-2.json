@@ -1,0 +1,62 @@
+{
+  "type": "timeline",
+  "v": 1,
+  "id": "w_trip20oct",
+  "title": "Tuesday in San Francisco",
+  "subtitle": "Oct 20",
+  "icon": "suitcase.fill",
+  "as_of": "2026-10-20T10:20:00-04:00",
+  "direction": "future",
+  "events": [
+    {
+      "id": "leave",
+      "time": "2026-10-20T07:40:00-04:00",
+      "title": "Leave home",
+      "detail": "Taxi booked · 45 min to the airport",
+      "state": "done",
+      "glyph": "car.fill"
+    },
+    {
+      "id": "ua1187",
+      "time": "2026-10-20T10:55:00-04:00",
+      "title": "UA 1187 to San Francisco",
+      "detail": "EWR C → SFO T3 · gate C112",
+      "state": "current",
+      "glyph": "airplane",
+      "place": {
+        "name": "Newark Airport, Terminal C",
+        "lat": 40.6895,
+        "lon": -74.1745
+      }
+    },
+    {
+      "id": "land",
+      "time": "2026-10-20T14:20:00-07:00",
+      "title": "Land at SFO",
+      "detail": "BART to Powell St, 30 min",
+      "state": "upcoming",
+      "glyph": "tram.fill"
+    },
+    {
+      "id": "hotel",
+      "time": "2026-10-20T15:00:00-07:00",
+      "title": "Hotel Juniper, Union Square",
+      "detail": "Check-in from 3 PM · 3 nights",
+      "state": "upcoming",
+      "glyph": "bed.double.fill",
+      "place": {
+        "name": "Hotel Juniper, Union Square",
+        "address": "545 Post St, San Francisco, CA 94102",
+        "lat": 37.7881,
+        "lon": -122.4103
+      },
+      "actions": [
+        {
+          "id": "late_checkin",
+          "label": "Tell Them I’m Late"
+        }
+      ]
+    }
+  ],
+  "fallback_text": "Tuesday, October 20 in San Francisco. 7:40 AM — left home (taxi, 45 min to the airport). 10:55 AM — now: UA 1187 to San Francisco, Newark Terminal C to SFO Terminal 3, gate C112. 2:20 PM San Francisco time — expected: land at SFO, BART to Powell St (30 min). 3 PM — expected: check in at Hotel Juniper, Union Square, 3 nights."
+}

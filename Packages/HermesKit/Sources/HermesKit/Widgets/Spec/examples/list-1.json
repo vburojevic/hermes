@@ -1,0 +1,188 @@
+{
+  "type": "list",
+  "v": 1,
+  "id": "w_flatsdigest1017",
+  "title": "Apartments in Brooklyn",
+  "subtitle": "Tonight’s changes · 4 searches",
+  "icon": "house.fill",
+  "as_of": "2026-10-16T22:00:00-04:00",
+  "stale_after": 86400,
+  "supersedes": "w_flatsdigest1016",
+  "counts": [
+    {
+      "label": "new",
+      "value": 3,
+      "state": "new",
+      "group": "new"
+    },
+    {
+      "label": "price drops",
+      "value": 2,
+      "state": "ok",
+      "group": "drops"
+    },
+    {
+      "label": "gone",
+      "value": 1,
+      "group": "gone"
+    }
+  ],
+  "filter": true,
+  "groups": [
+    {
+      "id": "drops",
+      "title": "Price drops"
+    },
+    {
+      "id": "new",
+      "title": "New"
+    },
+    {
+      "id": "gone",
+      "title": "Gone"
+    }
+  ],
+  "items": [
+    {
+      "id": "fifth412",
+      "group": "drops",
+      "leading": {
+        "kind": "image",
+        "media": {
+          "src": "https://img.example.com/listing/412-5th-st-200x150.jpg",
+          "alt": "Living room with two tall windows onto 5th Avenue"
+        }
+      },
+      "title": "412 5th St, Apt 3R",
+      "subtitle": "2 bd · 950 sq ft · Park Slope",
+      "value": {
+        "value": 1198000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "previous": {
+        "value": 1240000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "delta": {
+        "value": -0.034,
+        "good": "down"
+      },
+      "url": "https://listings.example.com/412-5th-st-apt-3r",
+      "actions": [
+        {
+          "id": "viewing",
+          "label": "Book a Viewing"
+        }
+      ]
+    },
+    {
+      "id": "berkeley88",
+      "group": "drops",
+      "leading": {
+        "kind": "symbol",
+        "symbol": "house.fill"
+      },
+      "title": "88 Berkeley Pl",
+      "subtitle": "1 bd · 690 sq ft · Prospect Heights",
+      "value": {
+        "value": 869000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "previous": {
+        "value": 899000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "delta": {
+        "value": -0.033,
+        "good": "down"
+      },
+      "url": "https://listings.example.com/88-berkeley-pl"
+    },
+    {
+      "id": "ppw",
+      "group": "new",
+      "leading": {
+        "kind": "symbol",
+        "symbol": "house.fill"
+      },
+      "title": "Prospect Park West, park view",
+      "subtitle": "3 bd · 1,120 sq ft · with parking",
+      "value": {
+        "value": 1650000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "url": "https://listings.example.com/prospect-park-west"
+    },
+    {
+      "id": "windsor",
+      "group": "new",
+      "leading": {
+        "kind": "symbol",
+        "symbol": "house.fill"
+      },
+      "title": "Windsor Terrace, near the park",
+      "subtitle": "2 bd · 620 sq ft · 4th floor walk-up",
+      "value": {
+        "value": 749000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "url": "https://listings.example.com/windsor-terrace"
+    },
+    {
+      "id": "gowanus",
+      "group": "new",
+      "leading": {
+        "kind": "symbol",
+        "symbol": "house.fill"
+      },
+      "title": "Gowanus, 3rd Ave",
+      "subtitle": "3 bd · 870 sq ft · price on request",
+      "value": {
+        "value": null,
+        "format": "currency",
+        "currency": "USD"
+      },
+      "state": "unverified",
+      "url": "https://listings.example.com/gowanus-3rd-ave"
+    },
+    {
+      "id": "seventh211",
+      "group": "gone",
+      "leading": {
+        "kind": "symbol",
+        "symbol": "house.fill"
+      },
+      "title": "211 7th Ave",
+      "subtitle": "2 bd · 750 sq ft",
+      "value": {
+        "value": 975000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "tags": [
+        {
+          "label": "Gone",
+          "state": "removed"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "name": "StreetEasy, Zillow",
+    "kind": "web"
+  },
+  "fallback_text": "Apartments in Brooklyn, tonight’s changes across 4 searches: 3 new, 2 price drops, 1 gone. Price drops: 412 5th St, Apt 3R (2 bd, 950 sq ft, Park Slope) — $1,198,000, was $1,240,000 (−3.4%); 88 Berkeley Pl (1 bd, 690 sq ft, Prospect Heights) — $869,000, was $899,000 (−3.3%). New: Prospect Park West, park view (3 bd, 1,120 sq ft, parking) — $1,650,000; Windsor Terrace (2 bd, 620 sq ft, 4th floor walk-up) — $749,000; Gowanus, 3rd Ave (3 bd, 870 sq ft) — price on request. Gone: 211 7th Ave (2 bd, 750 sq ft), was $975,000."
+}

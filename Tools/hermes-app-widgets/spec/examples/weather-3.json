@@ -1,0 +1,42 @@
+{
+  "type": "weather",
+  "v": 1,
+  "id": "w_wxnyc1031",
+  "title": "New York · Saturday",
+  "icon": "mappin.and.ellipse",
+  "as_of": "2026-10-31T08:00:00-04:00",
+  "stale_after": 10800,
+  "layout": "compact",
+  "place": {
+    "name": "New York",
+    "lat": 40.713,
+    "lon": -74.006
+  },
+  "unit": "fahrenheit",
+  "now": {
+    "temp": 52,
+    "feels": 46,
+    "high": 58,
+    "low": 47,
+    "condition": "windy"
+  },
+  "alerts": [
+    {
+      "severity": "warning",
+      "title": "Wind advisory: gusts to 45 mph",
+      "issuer": "National Weather Service",
+      "from": "2026-10-31T10:00:00-04:00",
+      "until": "2026-10-31T18:00:00-04:00",
+      "url": "https://alerts.weather.gov/"
+    }
+  ],
+  "tip": {
+    "text": "Windy all day. A jacket for the ferry.",
+    "symbol": "wind"
+  },
+  "source": {
+    "name": "National Weather Service",
+    "kind": "api"
+  },
+  "fallback_text": "New York, Saturday: 52°F and windy (feels 46°), high 58°, low 47°. Wind advisory 10:00–18:00, gusts to 45 mph (National Weather Service). A jacket for the ferry."
+}

@@ -1,0 +1,60 @@
+{
+  "type": "steps",
+  "v": 1,
+  "id": "w_ciHermes88",
+  "title": "CI · hermes-app",
+  "subtitle": "main · a1f9c2e",
+  "icon": "hammer",
+  "state": "critical",
+  "state_label": "Failed",
+  "as_of": "2026-10-17T15:21:00-04:00",
+  "kind": "pipeline",
+  "steps": [
+    {
+      "id": "build",
+      "title": "Build",
+      "state": "done",
+      "duration": 48
+    },
+    {
+      "id": "test",
+      "title": "Test",
+      "state": "failed",
+      "duration": 130,
+      "evidence": {
+        "kind": "test",
+        "label": "junit.xml: 2 of 412 failed",
+        "url": "https://github.example.com/alexr/hermes/actions/runs/11873402"
+      }
+    },
+    {
+      "id": "deploy",
+      "title": "Deploy",
+      "state": "skipped"
+    }
+  ],
+  "result": {
+    "state": "critical",
+    "text": "2 tests failed in SnapshotTests",
+    "detail": "testDarkContrastPaywall · testListEmpty",
+    "detail_style": "code"
+  },
+  "actions": [
+    {
+      "id": "show_log",
+      "label": "Show the Log",
+      "kind": "open",
+      "url": "https://github.example.com/alexr/hermes/actions/runs/11873402"
+    },
+    {
+      "id": "rerun_failed",
+      "label": "Re-run Failed",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "GitHub Actions",
+    "kind": "api"
+  },
+  "fallback_text": "CI for hermes-app on main (a1f9c2e) failed. Build passed in 48 s; Test failed after 2 min 10 s: 2 tests failed in SnapshotTests (testDarkContrastPaywall, testListEmpty); Deploy was skipped. Reply “re-run failed” to run the failed jobs again."
+}

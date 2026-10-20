@@ -1,0 +1,236 @@
+{
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "The primitive.",
+      "pattern": "^[a-z][a-z-]{1,23}$"
+    },
+    "v": {
+      "type": "integer",
+      "description": "Schema major version of the primitive. Unknown majors render fallback_text.",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Header title.",
+      "minLength": 1
+    },
+    "subtitle": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "icon": {
+      "$ref": "../common.schema.json#/$defs/Symbol"
+    },
+    "state": {
+      "$ref": "../common.schema.json#/$defs/WidgetState"
+    },
+    "state_label": {
+      "type": "string",
+      "maxLength": 24,
+      "description": "The word in the state badge when the default isn’t right: “92%”, “Needs your OK”, “On time”."
+    },
+    "as_of": {
+      "$ref": "../common.schema.json#/$defs/Time"
+    },
+    "stale_after": {
+      "type": "integer",
+      "description": "Seconds after as_of when the data counts as stale.",
+      "minimum": 60
+    },
+    "expires_at": {
+      "$ref": "../common.schema.json#/$defs/Time"
+    },
+    "refresh": {
+      "$ref": "../common.schema.json#/$defs/Refresh"
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "The plain-text version: complete, readable on its own, used by every client that can’t render the widget and by Copy as Text. ≤ 2,000 characters for one widget (each type schema enforces it); ≤ 4,000 for a stack.",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "One line for VoiceOver, chat previews and notifications (unless private). Defaults to title + state."
+    },
+    "banner": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "info",
+            "warning",
+            "unverified"
+          ],
+          "default": "info"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "One line that must be read before the body: “2 ingredients have no allergen data, so this can’t be called safe.”",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "description": "The card banner (Parts.cardBanner). Stale and expired banners are drawn by the client; don’t send them."
+    },
+    "empty_text": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "The sentence shown when there is nothing to show, in the primitive’s words: “No open tickets. Inbox zero.” Defaults to the primitive’s own empty sentence."
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "../common.schema.json#/$defs/Action"
+      },
+      "maxItems": 4
+    },
+    "source": {
+      "$ref": "../common.schema.json#/$defs/Source"
+    },
+    "sensitivity": {
+      "enum": [
+        "normal",
+        "private"
+      ],
+      "description": "private: kept out of previews, notifications, Spotlight and group chats.",
+      "default": "normal"
+    },
+    "in_reply_to": {
+      "type": "string",
+      "maxLength": 43,
+      "description": "The widget this one answers (a receipt for an approval).",
+      "pattern": "^w_[A-Za-z0-9]{6,40}$"
+    },
+    "supersedes": {
+      "type": "string",
+      "maxLength": 70,
+      "description": "An older widget this one replaces: its id, or task:<task id> for the newest widget the same scheduled task sent to this chat (the plugin resolves it). The client folds the older card to one line and disables its actions.",
+      "pattern": "^(w_[A-Za-z0-9]{6,40}|task:[A-Za-z0-9_.-]{1,64})$"
+    },
+    "for": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "user": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "The gateway user id, when known."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "description": "Who may answer, in a group chat. Defaults to the chat’s owner; others see the widget read-only (“For Alex”)."
+    },
+    "resolution": {
+      "$ref": "../common.schema.json#/$defs/Resolution"
+    },
+    "locale": {
+      "type": "string",
+      "maxLength": 16,
+      "description": "BCP 47 language of the text, when it isn’t the reader’s."
+    },
+    "ref": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "A local name for a stack child, used in sections; the tool returns the id it assigned.",
+      "pattern": "^[a-z][a-z0-9_.-]{0,39}$"
+    },
+    "from_file": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "A workspace-relative path to the file a tool wrote.",
+          "minLength": 1
+        },
+        "parser": {
+          "enum": [
+            "junit",
+            "coverage",
+            "csv",
+            "tsv",
+            "jsonl",
+            "json",
+            "log",
+            "ics",
+            "sarif",
+            "gh-run"
+          ],
+          "description": "How to read it (payload-contract.md §4)."
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "minItems": 1,
+          "maxItems": 20,
+          "description": "csv / tsv / jsonl: which columns, in order."
+        },
+        "map": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(/.*)?$"
+          },
+          "description": "json: payload field → JSON Pointer in the file."
+        },
+        "level": {
+          "enum": [
+            "error",
+            "warning",
+            "info",
+            "debug"
+          ],
+          "description": "log: the lowest level to keep."
+        },
+        "since": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "parser"
+      ],
+      "description": "Fill fields from a file instead of typing them. The tool reads it, fills the fields, sets source and as_of."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "title"
+  ],
+  "description": "Fields every widget payload has.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/envelope.input.schema.json",
+  "title": "Widget envelope, as the agent sends it to the widget tool",
+  "if": {
+    "required": [
+      "from_file"
+    ]
+  },
+  "else": {
+    "required": [
+      "as_of"
+    ]
+  }
+}

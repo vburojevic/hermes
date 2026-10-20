@@ -1,0 +1,16 @@
+{
+  "$comment": "Must fail validation: confirmation/kind: 'claim' should not be valid under {'const': 'claim'}",
+  "payload": {
+    "type": "receipt",
+    "v": 1,
+    "id": "w_bad07r002",
+    "title": "Done",
+    "as_of": "2026-10-16T11:13:20-04:00",
+    "fallback_text": "Table booked at Olive & Vine.",
+    "headline": "Table for 4 booked",
+    "confirmation": {
+      "kind": "claim",
+      "label": "Chef Remy says the restaurant has it"
+    }
+  }
+}

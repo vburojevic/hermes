@@ -1,0 +1,54 @@
+{
+  "type": "summary",
+  "v": 1,
+  "id": "w_brief1016a",
+  "title": "Friday, at a glance",
+  "subtitle": "Hermes · 7:00 AM",
+  "icon": "bot:hermes",
+  "as_of": "2026-10-16T07:00:00-04:00",
+  "stale_after": 21600,
+  "sensitivity": "private",
+  "supersedes": "w_brief1015a",
+  "producer": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "kind": "brief",
+  "tldr": "A light day: two meetings, rain after 4, and the passport renewal is now 3 days late.",
+  "points": [
+    {
+      "text": "Dentist at 11 AM, leave at 10:40",
+      "emphasis": "Dentist at 11 AM"
+    },
+    {
+      "text": "Sales up 12% yesterday, $1,284 so far today",
+      "emphasis": "Sales up 12%",
+      "state": "ok",
+      "evidence": {
+        "kind": "data",
+        "label": "Etsy, 6:55 AM",
+        "at": "2026-10-16T06:55:00-04:00"
+      }
+    },
+    {
+      "text": "3 support tickets waiting, 1 urgent",
+      "emphasis": "3 support tickets",
+      "state": "warning"
+    },
+    {
+      "text": "Rain from 4 PM; take an umbrella",
+      "state": "quiet"
+    }
+  ],
+  "do_first": {
+    "text": "Renew the passport. The form is filled in; it takes 5 minutes.",
+    "action": {
+      "id": "open_form",
+      "label": "Open the Form",
+      "kind": "open",
+      "style": "primary",
+      "url": "hermes-file:Documents/passport-renewal.pdf"
+    }
+  },
+  "fallback_text": "A light day: two meetings, rain after 4, and the passport renewal is now 3 days late. Dentist at 11 AM, leave at 10:40. Sales up 12% yesterday, $1,284 so far today. 3 support tickets waiting, 1 urgent. Rain from 4 PM, take an umbrella. Do first: renew the passport; the form is filled in and takes 5 minutes."
+}

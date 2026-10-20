@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: sections/0/fields/0/copy: False was expected; sections/0/fields/0/value: '4111 1111 1111 4242' does not match '•'",
+  "payload": {
+    "type": "details",
+    "v": 1,
+    "id": "w_bad03d001",
+    "title": "Card on file",
+    "as_of": "2026-10-16T09:00:00-04:00",
+    "fallback_text": "Card on file: Visa.",
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Card",
+            "value": "4111 1111 1111 4242",
+            "masked": true,
+            "copy": true
+          }
+        ]
+      }
+    ]
+  }
+}

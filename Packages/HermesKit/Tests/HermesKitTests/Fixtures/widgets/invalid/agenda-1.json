@@ -1,0 +1,19 @@
+{
+  "$comment": "Must fail validation: events/0/start: '2026-10-16' does not match '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$'; events/0/start: '2026-10-16' is not a 'date-time'",
+  "payload": {
+    "type": "agenda",
+    "v": 1,
+    "id": "w_bad00043",
+    "title": "Today",
+    "as_of": "2026-10-16T10:42:00-04:00",
+    "fallback_text": "Today: dentist.",
+    "date": "2026-10-16",
+    "events": [
+      {
+        "id": "dentist",
+        "start": "2026-10-16",
+        "title": "Dentist"
+      }
+    ]
+  }
+}

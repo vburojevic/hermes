@@ -1,0 +1,29 @@
+{
+  "$comment": "Must fail validation: fields/0: 'state' is a dependency of 'previous'",
+  "payload": {
+    "type": "pass",
+    "v": 1,
+    "id": "w_bad00544",
+    "title": "UA 1187",
+    "as_of": "2026-10-21T09:58:00-04:00",
+    "fallback_text": "UA 1187: gate changed from C112 to C98.",
+    "kind": "boarding",
+    "trip": {
+      "from": {
+        "code": "EWR",
+        "name": "Newark"
+      },
+      "to": {
+        "code": "SFO",
+        "name": "San Francisco"
+      }
+    },
+    "fields": [
+      {
+        "label": "GATE",
+        "value": "C98",
+        "previous": "C112"
+      }
+    ]
+  }
+}

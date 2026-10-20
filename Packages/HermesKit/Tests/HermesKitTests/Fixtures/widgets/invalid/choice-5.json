@@ -1,0 +1,21 @@
+{
+  "$comment": "Must fail validation: (root): 'question' is a required property",
+  "payload": {
+    "type": "choice",
+    "v": 1,
+    "id": "w_bad00616",
+    "title": "Flights",
+    "as_of": "2026-10-17T10:02:00-04:00",
+    "fallback_text": "UA 1187 or DL 1213?",
+    "options": [
+      {
+        "id": "ua1187",
+        "label": "UA 1187"
+      },
+      {
+        "id": "lh1415",
+        "label": "DL 1213"
+      }
+    ]
+  }
+}

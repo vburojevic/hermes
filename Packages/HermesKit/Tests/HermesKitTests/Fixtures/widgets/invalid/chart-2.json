@@ -1,0 +1,30 @@
+{
+  "$comment": "Must fail validation: series/0/values/1: '—' is not of type 'number', 'null'",
+  "payload": {
+    "type": "chart",
+    "v": 1,
+    "id": "w_bad02c002",
+    "title": "Resting heart rate",
+    "as_of": "2026-10-16T07:12:00-04:00",
+    "fallback_text": "Resting heart rate, last 3 days.",
+    "kind": "line",
+    "x": {
+      "kind": "date",
+      "values": [
+        "2026-10-14",
+        "2026-10-15",
+        "2026-10-16"
+      ]
+    },
+    "series": [
+      {
+        "label": "Resting HR",
+        "values": [
+          59,
+          "—",
+          61
+        ]
+      }
+    ]
+  }
+}

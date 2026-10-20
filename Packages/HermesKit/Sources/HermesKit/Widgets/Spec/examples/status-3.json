@@ -1,0 +1,30 @@
+{
+  "type": "status",
+  "v": 1,
+  "id": "w_deployPk13",
+  "title": "Trailhead API",
+  "subtitle": "fly.io · fra",
+  "icon": "shippingbox",
+  "as_of": "2026-10-17T14:12:00-04:00",
+  "stale_after": 1800,
+  "layout": "compact",
+  "items": [
+    {
+      "id": "production",
+      "name": "Production",
+      "state": "ok",
+      "headline": "Production is healthy",
+      "detail": "1.3.2 deployed 2:02 PM · 0 errors in 10 min",
+      "since": "2026-10-17T14:02:00-04:00",
+      "evidence": {
+        "kind": "data",
+        "label": "Sentry, 2:02–2:12 PM"
+      }
+    }
+  ],
+  "source": {
+    "name": "fly.io, Sentry",
+    "kind": "api"
+  },
+  "fallback_text": "Trailhead API production is healthy: 1.3.2 was deployed at 2:02 PM, with no errors in Sentry in the 10 minutes since."
+}

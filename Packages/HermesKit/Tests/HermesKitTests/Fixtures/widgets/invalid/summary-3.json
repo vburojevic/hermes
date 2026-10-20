@@ -1,0 +1,13 @@
+{
+  "$comment": "Must fail validation: (root): 'people' is a required property",
+  "payload": {
+    "type": "summary",
+    "v": 1,
+    "id": "w_bad07s003",
+    "title": "Stand-up",
+    "as_of": "2026-10-16T09:00:00-04:00",
+    "fallback_text": "Stand-up: Ops is blocked on Stripe.",
+    "kind": "standup",
+    "tldr": "Ops is blocked on Stripe’s report."
+  }
+}

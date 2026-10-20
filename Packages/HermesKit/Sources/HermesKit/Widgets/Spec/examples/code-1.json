@@ -1,0 +1,29 @@
+{
+  "type": "code",
+  "v": 1,
+  "id": "w_backoff7c1",
+  "title": "Backoff for reconnects",
+  "subtitle": "Suggested for Sync/Reconnect.swift",
+  "icon": "chevron.left.forwardslash.chevron.right",
+  "as_of": "2026-10-17T06:12:00-04:00",
+  "kind": "snippet",
+  "language": "swift",
+  "path": "Sync/Reconnect.swift",
+  "text": "func backoff(_ n: Int) -> Double {\n  min(5, 0.25 * pow(2, Double(n)))\n}",
+  "result": {
+    "state": "ok",
+    "label": "Ran in 0.4 s",
+    "exit_code": 0,
+    "duration": 0.4,
+    "output": "0.25 0.5 1 2 4 5",
+    "where": "on Studio Mac"
+  },
+  "actions": [
+    {
+      "id": "apply",
+      "label": "Apply to File",
+      "style": "primary"
+    }
+  ],
+  "fallback_text": "Backoff for reconnects (Swift, for Sync/Reconnect.swift):\n```swift\nfunc backoff(_ n: Int) -> Double {\n  min(5, 0.25 * pow(2, Double(n)))\n}\n```\nRan in 0.4 s on Studio Mac: 0.25 0.5 1 2 4 5. Reply “apply” to put it in the file."
+}

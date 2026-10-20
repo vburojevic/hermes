@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/receipt.input.schema.json",
+  "title": "receipt (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Proof that something was done: what, the key facts, the confirmation, and Undo while it’s still possible.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "not": {
+        "required": [
+          "undo",
+          "undone"
+        ]
+      },
+      "description": "An undone receipt has no Undo: the agent removes `undo` when it sets `undone`."
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "receipt"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "headline": {
+      "type": "string",
+      "maxLength": 60,
+      "description": "What was done, verb and object in the past tense: “Lunch ordered”, “Table for 4 booked”, “Post scheduled”.",
+      "minLength": 1
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "One line under the headline: when it arrives, when it goes out, where it is."
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "What the fact is: From, Paid, Order, Arrives, Seats.",
+            "minLength": 1
+          },
+          "value": {
+            "$ref": "../common.schema.json#/$defs/Quantity"
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "After the value, joined with ·: “Visa •• 4242”. Masked, never a full card or account number."
+          },
+          "copy": {
+            "type": "boolean",
+            "description": "A reference worth copying (an order or booking number): set in mono with a Copy glyph. Copying is local.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ],
+        "description": "One key fact of what was done. Text facts use `format: text`; an unknown value is null (shown as —), never guessed."
+      },
+      "minItems": 1,
+      "maxItems": 6,
+      "description": "The key facts, in reading order: who it’s from, what was paid and how, the reference, when."
+    },
+    "undo": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "The line beside the Undo button: “You can cancel until 11:40 AM”, “You can unschedule it until it goes out”.",
+          "minLength": 1
+        },
+        "until": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "What undoing does when it isn’t a clean reversal: “A $2 cancellation fee applies”. When set, Undo asks before sending, with this line."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label"
+      ],
+      "description": "Undo while it’s possible. The button is always “Undo” and sends the built-in `undo` action. Set `until` whenever the provider gives a time; the client hides Undo at that moment by itself."
+    },
+    "undone": {
+      "type": "object",
+      "properties": {
+        "headline": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "What was reversed, past tense: “Order cancelled”, “Post unscheduled”.",
+          "minLength": 1
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "One line: what comes back and when: “$14.50 refunded to Visa •• 4242 in 3–5 days”."
+        },
+        "refund": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "$ref": "../common.schema.json#/$defs/Quantity"
+            },
+            "to": {
+              "type": "string",
+              "maxLength": 40,
+              "description": "Masked: “Visa •• 4242”."
+            },
+            "when": {
+              "type": "string",
+              "maxLength": 40,
+              "description": "“in 3–5 days”."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "amount"
+          ],
+          "description": "Money that comes back, when any. Builds the detail line when `detail` is omitted."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "headline"
+      ],
+      "description": "Set by the agent’s update after a confirmed undo. Replaces the hero; the facts and the Undo bar go."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "A quiet last line when there is no Undo and it matters why: “Non-refundable”, “Tickets are in Wallet”."
+    },
+    "confirmation": {
+      "allOf": [
+        {
+          "$ref": "../common.schema.json#/$defs/Evidence"
+        },
+        {
+          "properties": {
+            "kind": {
+              "not": {
+                "const": "claim"
+              }
+            }
+          }
+        }
+      ],
+      "description": "How the agent knows it’s done: the provider’s confirmation (an order number in an API response, a confirmation email, the booking page, the sent message). Required: a receipt is only sent after the outcome is confirmed. A `claim` (someone said so) is not enough and fails validation; say it in prose or use `steps` with the step pending."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "headline",
+    "confirmation"
+  ],
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,60 @@
+{
+  "type": "guide",
+  "v": 1,
+  "id": "w_huebridge5",
+  "title": "Set up the Hue bridge",
+  "subtitle": "About 10 minutes",
+  "icon": "lightbulb.fill",
+  "as_of": "2026-10-16T20:05:00-04:00",
+  "source": {
+    "name": "Philips Hue support",
+    "kind": "web",
+    "url": "https://www.philips-hue.com/support"
+  },
+  "needs_kind": "equipment",
+  "needs": [
+    {
+      "label": "Hue bridge and its power adapter"
+    },
+    {
+      "label": "The Ethernet cable from the box"
+    },
+    {
+      "label": "A free port on the router"
+    }
+  ],
+  "steps": [
+    {
+      "id": "plug",
+      "title": "Connect the bridge to the router with the cable, then plug in its power."
+    },
+    {
+      "id": "lights",
+      "title": "Wait for the lights on the bridge.",
+      "check": "All three lights are on and steady.",
+      "timer": 120
+    },
+    {
+      "id": "link",
+      "title": "Press the big round link button on top when I ask for it.",
+      "body": "I’ll pair Home Assistant with the bridge. After the button you have **30 seconds**.",
+      "image": {
+        "src": "https://www.philips-hue.com/content/dam/hue/bridge-link-button.jpg",
+        "alt": "The top of the Hue bridge: the round link button in the middle, three status lights at the front."
+      },
+      "timer": 30
+    },
+    {
+      "id": "name",
+      "title": "Back in Home Assistant, name the rooms as you have them now."
+    }
+  ],
+  "actions": [
+    {
+      "id": "ask",
+      "label": "Ask About This Step",
+      "kind": "reply"
+    }
+  ],
+  "fallback_text": "Set up the Hue bridge (about 10 minutes). You’ll need the bridge and its adapter, the Ethernet cable from the box and a free router port. 1. Connect the bridge to the router, then plug in its power. 2. Wait until all three lights are steady (up to 2 minutes). 3. When I ask, press the round link button on top; I then have 30 seconds to pair. 4. Name the rooms in Home Assistant."
+}

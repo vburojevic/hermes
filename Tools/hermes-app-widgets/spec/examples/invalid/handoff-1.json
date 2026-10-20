@@ -1,0 +1,25 @@
+{
+  "$comment": "Must fail validation: status: 'result' is a required property",
+  "payload": {
+    "type": "handoff",
+    "v": 1,
+    "id": "w_bad08003",
+    "title": "Handed off",
+    "as_of": "2026-10-16T10:02:00-04:00",
+    "fallback_text": "Ada finished the release notes.",
+    "from": {
+      "name": "Hermes",
+      "bot": "hermes"
+    },
+    "to": {
+      "name": "Ada",
+      "bot": "ada"
+    },
+    "task": {
+      "title": "to draft the 1.3 release notes"
+    },
+    "status": {
+      "state": "done"
+    }
+  }
+}

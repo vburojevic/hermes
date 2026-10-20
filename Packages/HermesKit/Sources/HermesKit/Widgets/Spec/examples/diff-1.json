@@ -1,0 +1,55 @@
+{
+  "type": "diff",
+  "v": 1,
+  "id": "w_5thst412d",
+  "title": "412 5th St changed",
+  "subtitle": "Since 10 PM yesterday",
+  "icon": "arrow.triangle.2.circlepath",
+  "as_of": "2026-10-16T22:00:00-04:00",
+  "stale_after": 86400,
+  "mode": "values",
+  "rows": [
+    {
+      "label": "Price",
+      "before": {
+        "value": 1240000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "after": {
+        "value": 1198000,
+        "format": "currency",
+        "currency": "USD",
+        "precision": 0
+      },
+      "delta": {
+        "value": -0.034,
+        "good": "down"
+      }
+    },
+    {
+      "label": "Status",
+      "before": "For sale",
+      "after": "Under offer"
+    },
+    {
+      "label": "Viewing",
+      "before": "Not offered",
+      "after": "Sat 10 AM–12 PM"
+    }
+  ],
+  "actions": [
+    {
+      "id": "viewing",
+      "label": "Book a Viewing",
+      "style": "primary"
+    }
+  ],
+  "source": {
+    "name": "StreetEasy",
+    "kind": "web",
+    "url": "https://listings.example.com/412-5th-st-apt-3r"
+  },
+  "fallback_text": "412 5th St changed since 10 PM yesterday: Price $1,240,000 → $1,198,000 (−3.4%); Status For sale → Under offer; Viewing not offered → Sat 10 AM–12 PM."
+}

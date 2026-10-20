@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: (root): 'duration' is a required property",
+  "payload": {
+    "type": "route",
+    "v": 1,
+    "id": "w_bad00531",
+    "title": "To the dentist",
+    "as_of": "2026-10-21T10:12:00-04:00",
+    "fallback_text": "To the dentist by subway.",
+    "from": {
+      "name": "Home"
+    },
+    "to": {
+      "name": "Dentist"
+    },
+    "mode": "transit"
+  }
+}

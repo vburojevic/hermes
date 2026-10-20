@@ -1,0 +1,30 @@
+{
+  "$comment": "Must fail validation: outcome/state: 'ok' is not one of ['critical', 'unverified']; outcome/state: 'ok' should not be valid under {'const': 'ok'}; state: 'ok' should not be valid under {'const': 'ok'}",
+  "payload": {
+    "type": "verdict",
+    "v": 1,
+    "id": "w_bad02v001",
+    "title": "Allergens",
+    "state": "ok",
+    "state_label": "Safe",
+    "as_of": "2026-10-16T11:02:00-04:00",
+    "fallback_text": "Chicken satay bowl: safe for Maya.",
+    "kind": "safety",
+    "outcome": {
+      "state": "ok",
+      "label": "Safe for Maya"
+    },
+    "criteria": [
+      {
+        "label": "Peanuts",
+        "state": "unverified",
+        "value": "No data for “satay sauce”"
+      },
+      {
+        "label": "Sesame",
+        "state": "ok",
+        "value": "Not present"
+      }
+    ]
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/diff.schema.json",
+  "title": "diff",
+  "description": "What changed: fields before and after (a listing’s price, a flight’s time), or a passage of text with removed and added words marked.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "values"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "rows"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "text"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "text"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "diff"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "mode": {
+      "enum": [
+        "values",
+        "text"
+      ],
+      "description": "values: rows of fields. text: one passage, before and after.",
+      "default": "values"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "The field that changed: Price, Status, Viewing, Departs.",
+            "minLength": 1
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 280
+              },
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "Text, a Quantity (money, a date, a size), or null when unknown (shown as —, never 0)."
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 280
+              },
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "common.schema.json#/$defs/Quantity"
+              }
+            ],
+            "description": "Text, a Quantity (money, a date, a size), or null when unknown (shown as —, never 0)."
+          },
+          "delta": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Delta"
+              }
+            ],
+            "description": "The change for numbers, trailing: arrow from the sign, colour from good (a price drop is green with good: down)."
+          },
+          "change": {
+            "enum": [
+              "changed",
+              "added",
+              "removed"
+            ],
+            "description": "changed: before → after. added: no before (a New tag). removed: no after (a Removed tag, the value struck through).",
+            "default": "changed"
+          },
+          "tag": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Tag"
+              }
+            ],
+            "description": "A tag naming the change: “Price drop” (ok), “Delayed” (warning)."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the row: “The agent says offers close Friday”."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label"
+        ],
+        "description": "One field before and after. Needs before or after.",
+        "anyOf": [
+          {
+            "required": [
+              "before"
+            ]
+          },
+          {
+            "required": [
+              "after"
+            ]
+          }
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 20,
+      "description": "For mode values: the changed fields, most important first."
+    },
+    "text": {
+      "type": "object",
+      "properties": {
+        "before": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "The passage before."
+        },
+        "after": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "The passage after."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "before",
+        "after"
+      ],
+      "description": "For mode text: the client computes the word-level changes itself, so what is marked is exactly what differs."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "mode"
+  ],
+  "unevaluatedProperties": false
+}

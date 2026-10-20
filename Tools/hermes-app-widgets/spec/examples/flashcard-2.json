@@ -1,0 +1,38 @@
+{
+  "type": "flashcard",
+  "v": 1,
+  "id": "w_flashsigns3",
+  "title": "Driving test · road signs",
+  "subtitle": "New cards · 2 today",
+  "icon": "graduationcap.fill",
+  "as_of": "2026-10-16T19:30:00-04:00",
+  "cards": [
+    {
+      "id": "no-lorries",
+      "front": "What does this sign mean?",
+      "back": "No trucks",
+      "example": "Trucks may not use this road; cars and vans may.",
+      "media": {
+        "src": "https://signs.example.com/mutcd/r5-2.png",
+        "alt": "A white square sign showing a black truck inside a red circle with a slash."
+      }
+    },
+    {
+      "id": "keep-right",
+      "front": "What does this sign mean?",
+      "back": "Keep right",
+      "example": "Pass to the right of the island or divider ahead.",
+      "media": {
+        "src": "https://signs.example.com/mutcd/r4-7.png",
+        "alt": "A white rectangle with a black arrow curving down to the right of a small island."
+      }
+    }
+  ],
+  "progress": {
+    "done": 0,
+    "total": 2,
+    "due_today": 2
+  },
+  "next_due": "2026-10-17T19:00:00-04:00",
+  "fallback_text": "Driving test · road signs, 2 new cards. Card 1: a white square sign showing a black truck inside a red circle with a slash. What does it mean? Reply with the answer, then again, hard, good or easy."
+}

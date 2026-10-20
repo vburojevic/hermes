@@ -1,0 +1,66 @@
+{
+  "type": "form",
+  "v": 1,
+  "id": "w_tahoe30x",
+  "rev": 2,
+  "title": "Lake house in Tahoe",
+  "icon": "house.fill",
+  "as_of": "2026-10-17T11:02:00-04:00",
+  "fields": [
+    {
+      "id": "who",
+      "kind": "text",
+      "label": "Who’s coming",
+      "required": true
+    },
+    {
+      "id": "arrive",
+      "kind": "date",
+      "label": "Arrive",
+      "required": true
+    },
+    {
+      "id": "budget",
+      "kind": "choice",
+      "label": "Budget per night",
+      "required": true,
+      "options": [
+        {
+          "id": "b100",
+          "label": "Up to $250"
+        },
+        {
+          "id": "b150",
+          "label": "$250–350"
+        },
+        {
+          "id": "b200",
+          "label": "$350–500"
+        },
+        {
+          "id": "any",
+          "label": "Any"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "kind": "long_text",
+      "label": "Anything else"
+    }
+  ],
+  "submitted": {
+    "who": "4 adults, 2 kids",
+    "arrive": "2026-10-30",
+    "budget": "b150",
+    "notes": "Near the lake, with parking"
+  },
+  "resolution": {
+    "action": "submit",
+    "state": "done",
+    "at": "2026-10-17T11:02:00-04:00",
+    "by": "you",
+    "message": "Sent · Hermes is searching"
+  },
+  "fallback_text": "Lake house in Tahoe, sent: 4 adults and 2 kids, arriving Fri, Oct 30, $250–350 per night, near the lake with parking. Hermes is searching."
+}

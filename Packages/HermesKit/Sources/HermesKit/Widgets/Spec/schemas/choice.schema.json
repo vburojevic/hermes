@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/choice.schema.json",
+  "title": "choice",
+  "description": "One question with set answers — a list, buttons, chips, a rating, times to pick, or several to tick — answered with one tap; plus suggested follow-ups the person can send as their own words.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "style": {
+            "const": "suggestions"
+          }
+        },
+        "required": [
+          "style"
+        ]
+      },
+      "then": {
+        "properties": {
+          "options": {
+            "maxItems": 3
+          },
+          "select": {
+            "const": "one"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "question"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "style": {
+            "const": "times"
+          }
+        },
+        "required": [
+          "style"
+        ]
+      },
+      "then": {
+        "properties": {
+          "options": {
+            "items": {
+              "required": [
+                "at"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "style": {
+            "const": "rating"
+          },
+          "rating": {
+            "const": "thumbs"
+          }
+        },
+        "required": [
+          "style",
+          "rating"
+        ]
+      },
+      "then": {
+        "properties": {
+          "options": {
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "style": {
+            "const": "rating"
+          },
+          "rating": {
+            "enum": [
+              "stars",
+              "scale"
+            ]
+          }
+        },
+        "required": [
+          "style"
+        ]
+      },
+      "then": {
+        "properties": {
+          "options": {
+            "minItems": 5,
+            "maxItems": 5
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "select": {
+            "const": "many"
+          }
+        },
+        "required": [
+          "select"
+        ]
+      },
+      "then": {
+        "properties": {
+          "style": {
+            "enum": [
+              "list",
+              "chips"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "choice"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "question": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "The question, as the agent would ask it: “Which flight should I book for Tuesday?” Required for every style except suggestions.",
+      "minLength": 1
+    },
+    "style": {
+      "enum": [
+        "list",
+        "buttons",
+        "chips",
+        "rating",
+        "times",
+        "suggestions"
+      ],
+      "description": "How the options are drawn. buttons falls back to list with more than 3 options or a label over 24 characters; chips falls back to list over 24 characters.",
+      "default": "list"
+    },
+    "select": {
+      "enum": [
+        "one",
+        "many"
+      ],
+      "description": "one: a tap answers at once. many: checkboxes and a Send button (list and chips only).",
+      "default": "one"
+    },
+    "rating": {
+      "enum": [
+        "stars",
+        "thumbs",
+        "scale"
+      ],
+      "description": "style: rating only. stars and scale take 5 options, thumbs 2, from low to high.",
+      "default": "stars"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "What the person picks. Buttons and chips ≤ 24 characters (longer labels make the client draw a list). Times: the full slot in words (“Sat, Oct 17, 11:30 AM”). Rating: the meaning of that point (“Very useful”). Suggestions: the exact message sent as the person’s own (≤ 80).",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the label (list and multi): “Nonstop · $286 · lands in time for check-in”. Unknown is said in words (“price not known yet”)."
+          },
+          "recommended": {
+            "type": "boolean",
+            "description": "The one suggested answer: a “Recommended” tag in a list, the ink chip or button. At most one; never preselected in select: one.",
+            "default": false
+          },
+          "preselected": {
+            "type": "boolean",
+            "description": "select: many only: ticked before the person changes anything. A plan to approve step by step preselects every step.",
+            "default": false
+          },
+          "at": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "style: times only: the slot’s start. The client groups slots by day in the reader’s time zone, shows the time, and disables slots already past."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label"
+        ],
+        "description": "One answer."
+      },
+      "minItems": 1,
+      "maxItems": 12,
+      "description": "The answers, in the order to show them."
+    },
+    "other": {
+      "type": "object",
+      "properties": {
+        "placeholder": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "The field’s placeholder: “Other…”, “Another app”."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Adds a one-line Other field (list, chips). With select: one, typing in it shows Send."
+    },
+    "decline_label": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "A way out under the options, as a text button: “None of these work”. Sends `answer` with `selected: []`."
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "One quiet line under the options: “Something else? Just reply in the chat.”"
+    },
+    "answer": {
+      "type": "object",
+      "properties": {
+        "selected": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "minItems": 0,
+          "maxItems": 12,
+          "description": "The option ids chosen."
+        },
+        "other": {
+          "type": "string",
+          "maxLength": 280,
+          "description": "What the person wrote in Other."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "selected"
+      ],
+      "description": "The answer as the agent received it, set in the update together with `resolution`, so every device draws the answered state."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "options"
+  ],
+  "unevaluatedProperties": false
+}

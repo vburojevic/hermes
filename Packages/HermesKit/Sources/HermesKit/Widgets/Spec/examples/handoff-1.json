@@ -1,0 +1,41 @@
+{
+  "type": "handoff",
+  "v": 1,
+  "id": "w_handada13",
+  "rev": 3,
+  "title": "Handed off",
+  "icon": "person.2.fill",
+  "state": "pending",
+  "state_label": "Working",
+  "as_of": "2026-10-16T09:31:00-04:00",
+  "stale_after": 1800,
+  "producer": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "from": {
+    "name": "Hermes",
+    "bot": "hermes"
+  },
+  "to": {
+    "name": "Ada",
+    "bot": "ada"
+  },
+  "task": {
+    "title": "to draft the 1.3 release notes",
+    "context": "Draft release notes from the 23 merged PRs, grouped like last time. Check with the user before publishing."
+  },
+  "status": {
+    "state": "working",
+    "activity": "is writing",
+    "done": 2,
+    "total": 4,
+    "unit": "sections",
+    "since": "2026-10-16T09:14:00-04:00"
+  },
+  "chat": {
+    "session": "20261016_091200_a7f3c1"
+  },
+  "sent_at": "2026-10-16T09:12:00-04:00",
+  "fallback_text": "Hermes asked Ada to draft the 1.3 release notes: “Draft release notes from the 23 merged PRs, grouped like last time. Check with the user before publishing.” Ada is writing (2 of 4 sections)."
+}

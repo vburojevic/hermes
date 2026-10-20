@@ -1,0 +1,19 @@
+{
+  "$comment": "Must fail validation: (root): {'type': 'code', 'v': 1, 'id': 'w_bad00503', 'title': 'api log', 'as_of': '2026-10-17T14:02:30-04:00', 'fallback_text': 'api log: 14:02:14 E",
+  "payload": {
+    "type": "code",
+    "v": 1,
+    "id": "w_bad00503",
+    "title": "api log",
+    "as_of": "2026-10-17T14:02:30-04:00",
+    "fallback_text": "api log: 14:02:14 ERROR POST /checkout 502.",
+    "kind": "snippet",
+    "text": "14:02:14 ERROR POST /checkout 502",
+    "lines": [
+      {
+        "level": "error",
+        "text": "POST /checkout 502"
+      }
+    ]
+  }
+}

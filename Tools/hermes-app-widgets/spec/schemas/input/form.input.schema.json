@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/form.input.schema.json",
+  "title": "form (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. A few things the agent needs filled in — text, numbers, dates, times, a menu, a switch — prefilled where it can, sent in one go.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "form"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "intro": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "One line under the header: why the agent asks."
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "long_text",
+              "number",
+              "date",
+              "time",
+              "datetime",
+              "choice",
+              "toggle",
+              "email",
+              "phone"
+            ],
+            "description": "The input. There is no password or secret kind: Hermes asks for secrets with its own secure request."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "A noun phrase: “Who’s coming”, “Arrive”, “Budget per night”.",
+            "minLength": 1
+          },
+          "placeholder": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "An example in grey, never an instruction the person must read: “Near the lake, with parking”."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "Marked with a red asterisk; Send stays off until it’s filled.",
+            "default": false
+          },
+          "default": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "description": "Prefilled value, so the person confirms rather than types: text; a number; date 2026-10-31; time 12:30; datetime RFC 3339; an option id for choice; true / false for toggle."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "../common.schema.json#/$defs/Id"
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "label"
+              ]
+            },
+            "minItems": 2,
+            "maxItems": 12,
+            "description": "kind choice: a menu (2–12 options)."
+          },
+          "min": {
+            "type": [
+              "number",
+              "string"
+            ],
+            "description": "number: the lowest value; date, time, datetime: the earliest."
+          },
+          "max": {
+            "type": [
+              "number",
+              "string"
+            ],
+            "description": "number: the highest value; date, time, datetime: the latest."
+          },
+          "max_length": {
+            "type": "integer",
+            "description": "text and long_text: at most this many characters (default 200 and 2,000).",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "kind number: shown after the value: nights, kg, people."
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 3,
+            "description": "kind number: ISO 4217 code; the field formats money.",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "help": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line under the field."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "label"
+        ],
+        "description": "One input.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "choice"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "required": [
+                "options"
+              ]
+            }
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "The inputs, in order."
+    },
+    "submit_label": {
+      "type": "string",
+      "maxLength": 20,
+      "description": "The Send button’s verb: Send, Search, Add Expense.",
+      "minLength": 1,
+      "default": "Send"
+    },
+    "submitted": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_.-]{0,39}$"
+      },
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "The values as the agent received them (field id → value), set in the update together with `resolution`, so every device draws the sent state."
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "fields"
+  ],
+  "unevaluatedProperties": false
+}

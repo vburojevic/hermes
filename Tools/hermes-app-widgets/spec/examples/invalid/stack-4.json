@@ -1,0 +1,31 @@
+{
+  "$comment": "Must fail validation: children/0: 'fallback_text' is a required property",
+  "payload": {
+    "type": "stack",
+    "v": 1,
+    "id": "w_bad08009",
+    "title": "Morning brief",
+    "as_of": "2026-10-16T07:00:00-04:00",
+    "fallback_text": "Morning brief with a child that has no fallback.",
+    "children": [
+      {
+        "type": "metric",
+        "v": 1,
+        "id": "w_bad08009a",
+        "title": "Revenue",
+        "as_of": "2026-10-16T07:00:00-04:00",
+        "items": []
+      },
+      {
+        "type": "agenda",
+        "v": 1,
+        "id": "w_bad08009b",
+        "title": "Today",
+        "as_of": "2026-10-16T07:00:00-04:00",
+        "fallback_text": "Nothing today.",
+        "date": "2026-10-16",
+        "events": []
+      }
+    ]
+  }
+}

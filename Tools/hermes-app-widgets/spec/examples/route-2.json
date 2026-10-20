@@ -1,0 +1,64 @@
+{
+  "type": "route",
+  "v": 1,
+  "id": "w_ppwview1",
+  "title": "To Prospect Park West",
+  "subtitle": "Viewing at 10 AM",
+  "icon": "car.fill",
+  "as_of": "2026-10-24T09:30:00-04:00",
+  "stale_after": 600,
+  "from": {
+    "name": "Home",
+    "lat": 40.6872,
+    "lon": -73.9418
+  },
+  "to": {
+    "name": "Prospect Park West, park view",
+    "address": "120 Prospect Park West, Brooklyn",
+    "lat": 40.6687,
+    "lon": -73.9733,
+    "time": "2026-10-24T10:00:00-04:00"
+  },
+  "mode": "drive",
+  "duration": 720,
+  "distance": 4200,
+  "leave_by": "2026-10-24T09:43:00-04:00",
+  "map": {
+    "path": [
+      [
+        40.6872,
+        -73.9418
+      ],
+      [
+        40.6838,
+        -73.9502
+      ],
+      [
+        40.6801,
+        -73.9585
+      ],
+      [
+        40.6762,
+        -73.9662
+      ],
+      [
+        40.6724,
+        -73.9712
+      ],
+      [
+        40.6687,
+        -73.9733
+      ]
+    ]
+  },
+  "actions": [
+    {
+      "id": "maps",
+      "label": "Open in Maps",
+      "kind": "open",
+      "style": "primary",
+      "url": "https://maps.apple.com/?daddr=40.6687,-73.9733&dirflg=d"
+    }
+  ],
+  "fallback_text": "To the apartment viewing at Prospect Park West, park view (120 Prospect Park West) at 10 AM: 12 min by car, 2.6 mi. Leave by 9:43 AM. Maps: https://maps.apple.com/?daddr=40.6687,-73.9733&dirflg=d"
+}

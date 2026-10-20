@@ -1,0 +1,367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/approval.schema.json",
+  "title": "approval",
+  "description": "The agent asks permission for a real-world action — send, buy, publish, delete, spend, book — with every consequence spelled out and the answers as tiles.",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "message",
+                  "post"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "then": {
+        "properties": {
+          "subject": {
+            "required": [
+              "message"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "purchase",
+                  "spend",
+                  "booking",
+                  "transfer"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "then": {
+        "properties": {
+          "consequences": {
+            "required": [
+              "cost"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "ok"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "resolution"
+        ]
+      }
+    },
+    {
+      "properties": {
+        "actions": {
+          "maxItems": 0
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "approval"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "subject": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "purchase",
+            "message",
+            "post",
+            "release",
+            "spend",
+            "delete",
+            "booking",
+            "transfer",
+            "other"
+          ],
+          "description": "What is being approved. message is the brief’s draft: a message prepared for a real person."
+        },
+        "verb": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "The action as a verb for the main tile: Order, Send, Post, Release, Raise, Delete, Book, Pay.",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "One line: “Green Bowl · 2 items”."
+        },
+        "amount": {
+          "$ref": "common.schema.json#/$defs/Quantity"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              "value": {
+                "$ref": "common.schema.json#/$defs/Quantity"
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "label"
+            ]
+          },
+          "maxItems": 12,
+          "description": "Line items (a purchase, files to delete)."
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "common.schema.json#/$defs/Person"
+            },
+            "channel": {
+              "type": "string",
+              "maxLength": 40,
+              "description": "WhatsApp, Email, iMessage, X, Reddit…"
+            },
+            "address": {
+              "type": "string",
+              "maxLength": 80,
+              "description": "Masked: “(212) 555-01••”."
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 16,
+              "description": "BCP 47"
+            },
+            "subject": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 4000,
+              "description": "The exact text that will be sent.",
+              "minLength": 1
+            },
+            "translation": {
+              "type": "string",
+              "maxLength": 4000,
+              "description": "A translation into the reader’s language when the text isn’t in it."
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/Media"
+              },
+              "maxItems": 4
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "to",
+            "channel",
+            "text"
+          ],
+          "description": "For kind message and post: exactly what goes out."
+        },
+        "change": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "$ref": "common.schema.json#/$defs/Quantity"
+            },
+            "to": {
+              "$ref": "common.schema.json#/$defs/Quantity"
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "to"
+          ],
+          "description": "For spend and settings changes: before → after."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "verb"
+      ]
+    },
+    "consequences": {
+      "type": "object",
+      "properties": {
+        "affects": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "description": "Who or what it affects, in plain words: “You (delivery to the office)”, “Mom, on WhatsApp”, “Public: 2.4k followers”. Required."
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "$ref": "common.schema.json#/$defs/Quantity"
+            },
+            "recurring": {
+              "enum": [
+                "once",
+                "daily",
+                "weekly",
+                "monthly",
+                "yearly"
+              ],
+              "default": "once"
+            },
+            "method": {
+              "type": "string",
+              "maxLength": 40,
+              "description": "How it’s paid: “Visa •• 4242”."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "amount"
+          ],
+          "description": "What it costs, if anything. Omit only when it costs nothing."
+        },
+        "reversible": {
+          "enum": [
+            "yes",
+            "until",
+            "no"
+          ],
+          "description": "Can it be undone? until: only until `reversible_until`. Required."
+        },
+        "reversible_until": {
+          "$ref": "common.schema.json#/$defs/Time"
+        },
+        "undo_note": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "How undoing works, or why it can’t: “Can be deleted for everyone, but not unread”."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "affects",
+        "reversible"
+      ],
+      "description": "The consequences, all spelled out. A payload without them is invalid.",
+      "if": {
+        "properties": {
+          "reversible": {
+            "const": "until"
+          }
+        },
+        "required": [
+          "reversible"
+        ]
+      },
+      "then": {
+        "required": [
+          "reversible_until"
+        ]
+      }
+    },
+    "answers": {
+      "type": "object",
+      "properties": {
+        "approve": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Detail under the verb tile: “Order now”, “To Mom, now”."
+        },
+        "edit": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Detail under Edit; omit to hide Edit."
+        },
+        "reject": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Detail under Reject: “Nothing is ordered”."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Scope lines under each tile. The tiles themselves are fixed: Reject, Edit, and the subject’s verb."
+    },
+    "authentication": {
+      "enum": [
+        "none",
+        "required"
+      ],
+      "description": "required: Face ID / Touch ID / passcode before the approve answer is sent. Use for money and anything irreversible.",
+      "default": "none"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "subject",
+    "consequences",
+    "expires_at"
+  ],
+  "unevaluatedProperties": false
+}

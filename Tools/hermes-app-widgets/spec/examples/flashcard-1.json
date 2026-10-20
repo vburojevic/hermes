@@ -1,0 +1,102 @@
+{
+  "type": "flashcard",
+  "v": 1,
+  "id": "w_flashes1016",
+  "title": "Spanish · shopping",
+  "subtitle": "Review · 6 due today",
+  "icon": "graduationcap.fill",
+  "as_of": "2026-10-16T08:05:00-04:00",
+  "stale_after": 57600,
+  "cards": [
+    {
+      "id": "recibo",
+      "front": "How do you say “receipt”?",
+      "back": "el recibo",
+      "example": "“¿Me da el recibo?” Can I have the receipt?",
+      "hint": "Starts with r, six letters",
+      "front_lang": "en",
+      "back_lang": "es",
+      "intervals": {
+        "again": "1 min",
+        "hard": "10 min",
+        "good": "1 day",
+        "easy": "4 days"
+      }
+    },
+    {
+      "id": "caja",
+      "front": "How do you say “checkout” (the register)?",
+      "back": "la caja",
+      "example": "“Pague en la caja.” Pay at the checkout.",
+      "front_lang": "en",
+      "back_lang": "es",
+      "intervals": {
+        "again": "1 min",
+        "hard": "10 min",
+        "good": "3 days",
+        "easy": "8 days"
+      }
+    },
+    {
+      "id": "descuento",
+      "front": "How do you say “discount”?",
+      "back": "el descuento",
+      "front_lang": "en",
+      "back_lang": "es",
+      "intervals": {
+        "again": "1 min",
+        "hard": "10 min",
+        "good": "1 day",
+        "easy": "3 days"
+      }
+    },
+    {
+      "id": "bolsa",
+      "front": "How do you ask for a bag?",
+      "back": "¿Me da una bolsa?",
+      "example": "Bags cost a few cents; say “no hace falta” if you don’t need one.",
+      "front_lang": "en",
+      "back_lang": "es",
+      "intervals": {
+        "again": "1 min",
+        "hard": "10 min",
+        "good": "2 days",
+        "easy": "6 days"
+      }
+    },
+    {
+      "id": "precio",
+      "front": "How do you ask “How much does it cost?”",
+      "back": "¿Cuánto cuesta?",
+      "front_lang": "en",
+      "back_lang": "es",
+      "intervals": {
+        "again": "1 min",
+        "hard": "1 day",
+        "good": "9 days",
+        "easy": "21 days"
+      }
+    },
+    {
+      "id": "suelto",
+      "front": "What is “suelto”?",
+      "back": "small change, coins",
+      "example": "“No tengo suelto.” I don’t have any change.",
+      "front_lang": "es",
+      "back_lang": "en",
+      "intervals": {
+        "again": "1 min",
+        "hard": "10 min",
+        "good": "1 day",
+        "easy": "4 days"
+      }
+    }
+  ],
+  "progress": {
+    "done": 0,
+    "total": 6,
+    "due_today": 6
+  },
+  "next_due": "2026-10-17T07:00:00-04:00",
+  "fallback_text": "Spanish · shopping, 6 cards (6 due today). Card 1: How do you say “receipt”? Reply with the answer, then again, hard, good or easy."
+}

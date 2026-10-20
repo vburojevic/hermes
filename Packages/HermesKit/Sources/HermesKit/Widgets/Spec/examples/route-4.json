@@ -1,0 +1,52 @@
+{
+  "type": "route",
+  "v": 1,
+  "id": "w_ua1187tue20",
+  "title": "UA 1187 to San Francisco",
+  "subtitle": "Tue, Oct 20 · United",
+  "icon": "airplane",
+  "as_of": "2026-10-20T13:21:00-04:00",
+  "stale_after": 600,
+  "from": {
+    "name": "Newark",
+    "time": "2026-10-20T10:55:00-04:00"
+  },
+  "to": {
+    "name": "San Francisco",
+    "time": "2026-10-20T14:20:00-07:00"
+  },
+  "mode": "flight",
+  "duration": 23100,
+  "status": {
+    "state": "ok",
+    "label": "In the air"
+  },
+  "flight": {
+    "number": "UA 1187",
+    "airline": "United",
+    "aircraft": "Boeing 737 MAX 9",
+    "depart": {
+      "airport": "EWR",
+      "city": "Newark",
+      "terminal": "C",
+      "gate": "C112",
+      "scheduled": "2026-10-20T10:55:00-04:00",
+      "actual": "2026-10-20T11:02:00-04:00"
+    },
+    "arrive": {
+      "airport": "SFO",
+      "city": "San Francisco",
+      "terminal": "3",
+      "scheduled": "2026-10-20T14:20:00-07:00",
+      "estimated": "2026-10-20T14:16:00-07:00",
+      "baggage": "7"
+    },
+    "state": "in_air",
+    "progress": 0.36
+  },
+  "source": {
+    "name": "Flight data",
+    "kind": "api"
+  },
+  "fallback_text": "UA 1187 Newark → San Francisco, Tue, Oct 20: in the air, left gate C112 at 11:02 AM. Landing at Terminal 3 at 2:16 PM San Francisco time, 4 minutes early; baggage belt 7."
+}

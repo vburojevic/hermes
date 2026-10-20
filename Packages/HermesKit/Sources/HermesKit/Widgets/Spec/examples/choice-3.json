@@ -1,0 +1,23 @@
+{
+  "type": "choice",
+  "v": 1,
+  "id": "w_askNext7q",
+  "title": "Ask next",
+  "as_of": "2026-10-17T10:05:00-04:00",
+  "style": "suggestions",
+  "options": [
+    {
+      "id": "hotel",
+      "label": "Find a hotel near the office"
+    },
+    {
+      "id": "weather",
+      "label": "What’s the weather in San Francisco on Tuesday?"
+    },
+    {
+      "id": "calendar",
+      "label": "Add the flight to my calendar"
+    }
+  ],
+  "fallback_text": "You could ask next: “Find a hotel near the office”, “What’s the weather in San Francisco on Tuesday?” or “Add the flight to my calendar”."
+}

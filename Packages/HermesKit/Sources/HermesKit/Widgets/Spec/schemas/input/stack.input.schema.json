@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/stack.input.schema.json",
+  "title": "stack (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. Several widgets sent as one: a scheduled report or brief with a header line (who and when), its widgets in order, in sections that fold, as rows, a carousel or a grid.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "required": [
+          "layout"
+        ],
+        "properties": {
+          "layout": {
+            "const": "collapsed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "children": {
+            "items": {
+              "required": [
+                "summary"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "stack"
+    },
+    "v": {
+      "const": 1
+    },
+    "children": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "envelope.input.schema.json"
+          }
+        ],
+        "properties": {
+          "type": {
+            "not": {
+              "const": "stack"
+            },
+            "description": "Any primitive except `stack`: a stack never holds a stack."
+          },
+          "fallback_text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "The child’s own fallback, ≤ 2,000 characters like any single widget."
+          }
+        },
+        "description": "A complete widget payload of another primitive, with its own `id`, `rev`, `as_of` and `fallback_text`. This schema checks the envelope (type, v, id, title, as_of, fallback_text and the shared fields) and refuses a nested stack; it can’t `$ref` every type by its `type` value, so the plugin validates each child against `<type>.schema.json` and the client does again when it draws it."
+      },
+      "minItems": 2,
+      "maxItems": 8,
+      "description": "The widgets: each a complete payload of another primitive (never a stack), with its own `id`. The schema checks each child’s envelope; the plugin checks each against its own type schema. In the order they are read: what to do first, problems, today, then numbers. The client never reorders them."
+    },
+    "layout": {
+      "enum": [
+        "list",
+        "collapsed",
+        "carousel",
+        "grid"
+      ],
+      "description": "list: everything open. collapsed: one row per child, unfolded on tap (long reports); every child needs `summary` for its row. carousel: children of one type, swiped. grid: two columns on wide columns, a list on iPhone.",
+      "default": "list"
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "The section line: “Today”, “Needs doing”, “Yesterday”.",
+            "minLength": 1
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 43,
+              "pattern": "^(w_[A-Za-z0-9]{6,40}|[a-z][a-z0-9_.-]{0,39})$"
+            },
+            "minItems": 1,
+            "maxItems": 8,
+            "description": "The ids of the children in this section, in order. They must follow one another in `children`."
+          },
+          "folded": {
+            "type": "boolean",
+            "description": "Start folded (the line with a chevron). The person’s unfold is kept on the device.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "children"
+        ],
+        "description": "A labelled group of children that folds."
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "Labelled groups for list, collapsed and grid. Children not in a section come first, unlabelled. Ignored by carousel."
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "How often, in words: “Daily at 07:00”, “Every weekday at 07:00”, “Mondays at 08:00”.",
+          "minLength": 1
+        },
+        "task": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The id of the Hermes Task (the gateway’s cron job) that sends this report. The widget menu gets Open Task (Tasks → that task), where the person can change or pause it.",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label"
+      ],
+      "description": "For a scheduled report: when it comes. Without a subtitle, the header says “<label> · <the as_of date>”."
+    },
+    "tag": {
+      "type": "string",
+      "maxLength": 16,
+      "description": "The small tag at the end of the header: Scheduled, Digest, Weekly. Defaults to Scheduled when `schedule` is set; none otherwise.",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "children"
+  ],
+  "unevaluatedProperties": false
+}

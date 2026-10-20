@@ -1,0 +1,18 @@
+{
+  "$comment": "Must fail validation: items/0/state: 'green' is not one of ['ok', 'info', 'warning', 'critical', 'unverified', 'stale', 'pending']",
+  "payload": {
+    "type": "status",
+    "v": 1,
+    "id": "w_bad00602",
+    "title": "Homelab",
+    "as_of": "2026-10-17T09:40:00-04:00",
+    "fallback_text": "Homelab: API is green",
+    "items": [
+      {
+        "id": "api",
+        "name": "API",
+        "state": "green"
+      }
+    ]
+  }
+}

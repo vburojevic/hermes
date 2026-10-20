@@ -1,0 +1,12 @@
+{
+  "$comment": "Must fail validation: sections: [] should be non-empty",
+  "payload": {
+    "type": "details",
+    "v": 1,
+    "id": "w_bad03d002",
+    "title": "Nothing",
+    "as_of": "2026-10-16T09:00:00-04:00",
+    "fallback_text": "There is nothing to show.",
+    "sections": []
+  }
+}

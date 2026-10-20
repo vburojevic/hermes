@@ -1,0 +1,37 @@
+{
+  "$comment": "Must fail validation: (root): 'resolution' is a required property; actions: [{'id': 'buy', 'label': 'Buy Now', 'style': 'primary'}] is expected to be empty",
+  "payload": {
+    "type": "approval",
+    "v": 1,
+    "id": "w_bad00007",
+    "title": "Order lunch?",
+    "state": "ok",
+    "as_of": "2026-10-16T11:12:00-04:00",
+    "expires_at": "2026-10-16T11:30:00-04:00",
+    "fallback_text": "Lunch order, needs your OK.",
+    "subject": {
+      "kind": "purchase",
+      "verb": "Order"
+    },
+    "consequences": {
+      "affects": [
+        "You"
+      ],
+      "cost": {
+        "amount": {
+          "value": 14.5,
+          "format": "currency",
+          "currency": "USD"
+        }
+      },
+      "reversible": "no"
+    },
+    "actions": [
+      {
+        "id": "buy",
+        "label": "Buy Now",
+        "style": "primary"
+      }
+    ]
+  }
+}

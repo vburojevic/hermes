@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/pass.input.schema.json",
+  "title": "pass (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. A boarding pass, ticket, membership card or coupon: big glanceable fields, a scannable code drawn on the device, live status, and Add to Wallet when the producer has a .pkpass.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "boarding"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "trip"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "pass"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "kind": {
+      "enum": [
+        "boarding",
+        "ticket",
+        "membership",
+        "coupon"
+      ],
+      "description": "What the pass is; picks the headline and the default glyph."
+    },
+    "trip": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 5,
+              "description": "Airport or station code: EWR, SFO."
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 60,
+              "minLength": 1
+            },
+            "time": {
+              "allOf": [
+                {
+                  "$ref": "../common.schema.json#/$defs/Time"
+                }
+              ],
+              "description": "Scheduled time, shown in its own offset (the airport’s local time)."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ]
+        },
+        "to": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 5,
+              "description": "Airport or station code: EWR, SFO."
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 60,
+              "minLength": 1
+            },
+            "time": {
+              "allOf": [
+                {
+                  "$ref": "../common.schema.json#/$defs/Time"
+                }
+              ],
+              "description": "Scheduled time, shown in its own offset (the airport’s local time)."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "plane",
+            "train",
+            "bus",
+            "ferry"
+          ],
+          "default": "plane"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "description": "For boarding passes and travel tickets: the headline codes and times."
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "venue": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "starts": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        },
+        "doors": {
+          "$ref": "../common.schema.json#/$defs/Time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "description": "For event tickets: the date tile, the name, the venue and doors."
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 16,
+            "description": "Small capitals over the value: GATE, SEAT, BOARDING, SECTION, MEMBER NO.",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "As printed on the pass: C112, 14A, 10:25 AM, “7, 8”. Times are the local time printed on the pass; the client never converts them.",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "warning",
+              "critical",
+              "unverified"
+            ],
+            "description": "Marks a field that changed or is uncertain: warning for a gate change, unverified for “gate not yet assigned”."
+          },
+          "previous": {
+            "type": "string",
+            "maxLength": 24,
+            "description": "The old value after a change, struck through before the new one: C112 → C98."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "value"
+        ],
+        "description": "One big, glanceable field.",
+        "dependentRequired": {
+          "previous": [
+            "state"
+          ]
+        }
+      },
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "The glanceable fields, most asked-for first. Four fit in a row on iPhone; more wrap."
+    },
+    "holder": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "The name as printed: ALEX RIVERA."
+    },
+    "admits": {
+      "type": "integer",
+      "description": "How many people it admits: “2 tickets” in the header when more than one.",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Booking, Order, Member."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 24,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "description": "The booking or order reference, in monospace."
+    },
+    "code": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "qr",
+            "aztec",
+            "pdf417",
+            "code128"
+          ],
+          "description": "The symbology. Drawn on this device (Core Image), never sent as an image."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "The exact data in the code, as issued (an IATA boarding pass string, a ticket number). Nothing beyond what the issuer’s pass encodes.",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "The human-readable line printed under the code, if the pass has one."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "value"
+      ],
+      "description": "The scannable code."
+    },
+    "pkpass": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "The producer’s .pkpass file in the gateway workspace: hermes-file:Travel/UA1187.pkpass. With it, Add to Wallet shows the system Add Pass sheet on this device; nothing is sent to the agent.",
+      "pattern": "^hermes-file:.+\\.pkpass$"
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "One line for the moment of use: “Show this at security and the gate.”"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "kind",
+    "fields"
+  ],
+  "unevaluatedProperties": false
+}

@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermesapp.dev/schemas/widgets/input/status.input.schema.json",
+  "title": "status (widget tool input)",
+  "description": "What the agent sends to the widget tool: the payload without id, rev and producer (the tool sets them); fallback_text optional (the tool writes it); from_file allowed. The health of one thing or many: one item renders as a hero with its numbers and the one thing to fix, many as a matrix with problems first.",
+  "allOf": [
+    {
+      "$ref": "envelope.input.schema.json"
+    },
+    {
+      "if": {
+        "properties": {
+          "layout": {
+            "enum": [
+              "hero",
+              "compact"
+            ]
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "maxItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "layout": {
+            "const": "matrix"
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "minItems": 2
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "status"
+    },
+    "v": {
+      "const": 1
+    },
+    "fallback_text": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "≤ 2,000 characters for a single widget."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "../common.schema.json#/$defs/Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "What is checked: Studio Mac, Cron, API, Production.",
+            "minLength": 1
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/State"
+              }
+            ],
+            "description": "The item’s state. Drives the glyph, the colour, the default headline and the sort order (critical, warning, unverified, stale, pending, info, ok)."
+          },
+          "headline": {
+            "type": "string",
+            "maxLength": 48,
+            "description": "The state in words for the hero and compact layouts: “Needs attention”, “Production is healthy”. Default from state: Healthy, Note, Needs attention, Down, Not checked, No recent report, Checking."
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "One line: what is wrong, or why it is fine. “2 jobs failed”, “Disk is 88% full; everything else is normal.”"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 16,
+                  "description": "Short: CPU, Memory, Disk, Up, p95.",
+                  "minLength": 1
+                },
+                "value": {
+                  "$ref": "../common.schema.json#/$defs/Quantity"
+                },
+                "state": {
+                  "$ref": "../common.schema.json#/$defs/State"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "value"
+              ],
+              "description": "A small number about the item. Shown in the hero’s well; hidden in the matrix and compact layouts (put the one that matters in `detail`)."
+            },
+            "minItems": 1,
+            "maxItems": 4,
+            "description": "Up to four small numbers (CPU, memory, disk, uptime). Unknown is `value: null`, shown as —."
+          },
+          "fix": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "The one thing to fix, for warning and critical items: “Delete APFS snapshots older than 30 days to free about 212 GB.” Shown in the hero in a tinted box."
+          },
+          "since": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Time"
+              }
+            ],
+            "description": "When it entered this state: “since 06:00”, “for 3 h”."
+          },
+          "evidence": {
+            "allOf": [
+              {
+                "$ref": "../common.schema.json#/$defs/Evidence"
+              }
+            ],
+            "description": "How the state is known: the check that ran, a log, a dashboard, or a claim (“Said by Synology’s email”)."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "../common.schema.json#/$defs/Action"
+            },
+            "maxItems": 2,
+            "description": "Row actions; they send their id with `{item: <item id>}`."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "state"
+        ],
+        "description": "One thing whose health is reported."
+      },
+      "minItems": 1,
+      "maxItems": 24,
+      "description": "The things checked. One item renders as a hero; the client sorts the rest problems first."
+    },
+    "layout": {
+      "enum": [
+        "auto",
+        "hero",
+        "matrix",
+        "compact"
+      ],
+      "description": "auto: 1 item → hero, 2+ → matrix. compact: one item in one line; the client draws the hero instead when that item isn’t ok.",
+      "default": "auto"
+    }
+  },
+  "required": [
+    "type",
+    "v",
+    "items"
+  ],
+  "unevaluatedProperties": false
+}

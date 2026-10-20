@@ -1,0 +1,52 @@
+{
+  "type": "outline",
+  "v": 1,
+  "id": "w_files7c1e9b",
+  "title": "Changed files",
+  "subtitle": "hermes-app · feature/reconnect",
+  "icon": "folder.fill",
+  "as_of": "2026-10-16T16:05:00-04:00",
+  "mode": "files",
+  "nodes": [
+    {
+      "label": "Sources",
+      "children": [
+        {
+          "label": "Sync",
+          "children": [
+            {
+              "label": "Reconnect.swift",
+              "change": "modified",
+              "url": "hermes-file:Sources/Sync/Reconnect.swift"
+            },
+            {
+              "label": "Backoff.swift",
+              "change": "added",
+              "url": "hermes-file:Sources/Sync/Backoff.swift"
+            }
+          ]
+        },
+        {
+          "label": "App",
+          "folded": true,
+          "children": [
+            {
+              "label": "LegacySocket.swift",
+              "change": "deleted"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Package.swift",
+      "change": "modified",
+      "url": "hermes-file:Package.swift"
+    }
+  ],
+  "source": {
+    "name": "git status",
+    "kind": "tool"
+  },
+  "fallback_text": "Changed files on hermes-app, feature/reconnect (4): Sources/Sync/Reconnect.swift (modified), Sources/Sync/Backoff.swift (added), Sources/App/LegacySocket.swift (deleted), Package.swift (modified)."
+}

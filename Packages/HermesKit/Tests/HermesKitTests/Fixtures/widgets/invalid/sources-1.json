@@ -1,0 +1,17 @@
+{
+  "$comment": "Must fail validation: items/0: 'trust' is a required property",
+  "payload": {
+    "type": "sources",
+    "v": 1,
+    "id": "w_bad00511",
+    "title": "Sources",
+    "as_of": "2026-10-16T09:41:00-04:00",
+    "fallback_text": "Sources: [1] Apple to delay AI features in the EU.",
+    "items": [
+      {
+        "title": "Apple to delay AI features in the EU",
+        "url": "https://x.com/example/status/1846001"
+      }
+    ]
+  }
+}

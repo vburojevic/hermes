@@ -1,0 +1,144 @@
+{
+  "type": "media",
+  "v": 1,
+  "id": "w_5thst412ph",
+  "title": "412 5th St · 12 photos",
+  "icon": "photo.on.rectangle",
+  "as_of": "2026-10-16T07:30:00-04:00",
+  "layout": "grid",
+  "items": [
+    {
+      "id": "p01",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/1.jpg",
+        "alt": "Living room with a green sofa, a big window and wooden floors",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p02",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/2.jpg",
+        "alt": "5th Avenue from the balcony: brownstones and a row of trees",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p03",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/3.jpg",
+        "alt": "Floor plan: two bedrooms around a central hall",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p04",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/4.jpg",
+        "alt": "Kitchen with white cabinets and a gas stove",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p05",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/5.jpg",
+        "alt": "Main bedroom with a double bed and a wardrobe",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p06",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/6.jpg",
+        "alt": "Second bedroom, used as a study",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p07",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/7.jpg",
+        "alt": "Home office nook, small, with a window to the courtyard",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p08",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/8.jpg",
+        "alt": "Bathroom with a bath and a washing machine",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p09",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/9.jpg",
+        "alt": "Hallway with built-in storage",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p10",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/10.jpg",
+        "alt": "Balcony with two chairs",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p11",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/11.jpg",
+        "alt": "Building entrance and the elevator",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    },
+    {
+      "id": "p12",
+      "media": {
+        "src": "https://img.example.com/listing/41234567/12.jpg",
+        "alt": "Courtyard with bike racks",
+        "width": 1200,
+        "height": 800
+      },
+      "credit": "Photo: StreetEasy"
+    }
+  ],
+  "actions": [
+    {
+      "id": "see_all",
+      "label": "Open the Listing",
+      "kind": "open",
+      "url": "https://listings.example.com/412-5th-st-apt-3r"
+    }
+  ],
+  "source": {
+    "name": "StreetEasy",
+    "kind": "web"
+  },
+  "fallback_text": "412 5th St, 12 photos: living room with a green sofa; 5th Avenue from the balcony; floor plan with two bedrooms; kitchen; main bedroom; a study; a small home office nook; bathroom with a bath; hallway storage; balcony; entrance and elevator; courtyard with bike racks. Listing: https://listings.example.com/412-5th-st-apt-3r"
+}
