@@ -29,7 +29,7 @@ Problems with Hermes Agent itself (the agent, the gateway or its tools) belong w
 Start a discussion: [Ideas](https://github.com/vburojevic/hermes/discussions/categories/ideas) for
 something you'd like Hermes to do, [Q&A](https://github.com/vburojevic/hermes/discussions/categories/q-a)
 for help. When an idea is accepted it becomes an issue, and the
-[roadmap](https://github.com/vburojevic/hermes/projects) shows what's being worked on now and next.
+[roadmap](https://github.com/users/vburojevic/projects/1) shows what's being worked on now and next.
 
 ## Making a change
 

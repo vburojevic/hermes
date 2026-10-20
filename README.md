@@ -311,7 +311,7 @@ and how to check it.
 ## Roadmap
 
 What's being built now, next and later is on the public
-[Hermes roadmap](https://github.com/vburojevic/hermes/projects). Ideas start in
+[Hermes roadmap](https://github.com/users/vburojevic/projects/1). Ideas start in
 [Discussions](https://github.com/vburojevic/hermes/discussions/categories/ideas); accepted ones become
 issues and land on the roadmap.
 
@@ -355,6 +355,6 @@ affiliated with Nous Research. Apple, iPhone, iPad, Mac and macOS are trademarks
 
 <div align="center">
 
-**[hermesapp.dev](https://hermesapp.dev)** · [TestFlight beta](https://testflight.apple.com/join/CVhbq8Ur) · [Mac builds](https://github.com/vburojevic/hermes-releases/releases) · [Releases](https://github.com/vburojevic/hermes/releases) · [Discussions](https://github.com/vburojevic/hermes/discussions) · [Roadmap](https://github.com/vburojevic/hermes/projects)
+**[hermesapp.dev](https://hermesapp.dev)** · [TestFlight beta](https://testflight.apple.com/join/CVhbq8Ur) · [Mac builds](https://github.com/vburojevic/hermes-releases/releases) · [Releases](https://github.com/vburojevic/hermes/releases) · [Discussions](https://github.com/vburojevic/hermes/discussions) · [Roadmap](https://github.com/users/vburojevic/projects/1)
 
 </div>
