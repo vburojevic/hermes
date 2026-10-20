@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610202014 (October 20, 2026)
+
+- Fixes and polish.
+
 ### Private beta
 
 Everything that changed during the private beta, day by day.
