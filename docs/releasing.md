@@ -58,9 +58,11 @@ Every release (not a dry run) records what it shipped on this repository, after 
    grouped by area, with links to TestFlight, the Mac DMG and hermesapp.dev. Subjects are written
    as release notes (AGENTS.md, Commits); docs, tests, mocks and release tooling are left out.
 3. It adds the same list to [CHANGELOG.md](../CHANGELOG.md) as the newest "Build" section under the
-   version's heading, commits it as `Changelog: Hermes 1.0 beta (2610211200)` and pushes it to
-   `main`. If `main` moved during the release, the push is refused and the script says which commit
-   to cherry-pick.
+   version's heading and commits it as `Changelog: Hermes 1.0 beta (2610211200)` with the
+   repository's identity. `main` usually moves during a release, so the commit is replayed onto the
+   newest `origin/main` in a clean temporary worktree and pushed, and fetched and replayed once more
+   if `main` moves again. If both fail (a conflict in CHANGELOG.md, say), the release still
+   succeeds and says which commit to cherry-pick.
 
 A `--mac-only` rerun (after a failed appcast) finds the release already made and skips this step,
 and so does any release while the repository is still private.

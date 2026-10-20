@@ -426,10 +426,32 @@ if [ $DRY_RUN = 0 ]; then
       --title "Hermes $VERSION$([ $BETA = 1 ] && echo ' beta') ($BUILD_NUMBER)" --notes-file "$OUT/release-notes.md"
     # The changelog commit lands after the tag, so the next release's notes skip it ("Changelog:").
     python3 -I Scripts/release_notes.py changelog "$VERSION" "$BUILD_NUMBER" "$PREVIOUS_TAG"
-    git add CHANGELOG.md
-    git commit --quiet -m "Changelog: Hermes $VERSION beta ($BUILD_NUMBER)"
-    git push --quiet origin HEAD:main \
-      || echo "source: main moved, so the CHANGELOG commit $(git rev-parse --short HEAD) wasn't pushed: cherry-pick it onto main" >&2
+    if git diff --quiet -- CHANGELOG.md; then
+      echo "source: CHANGELOG.md already has build $BUILD_NUMBER"
+    else
+      GIT_ID=(-c user.email=2234474+vburojevic@users.noreply.github.com)   # the repository's commit identity
+      git "${GIT_ID[@]}" commit --quiet -m "Changelog: Hermes $VERSION beta ($BUILD_NUMBER)" -- CHANGELOG.md
+      CHANGELOG_COMMIT="$(git rev-parse HEAD)"
+      # main usually moves during a release: replay the commit on the newest main in a clean worktree
+      # (this checkout carries the test run's Package.resolved), and try a second time if it moves again.
+      PUSHED=""
+      for attempt in 1 2; do
+        git fetch --quiet origin main
+        git worktree remove --force "$OUT/changelog-main" 2>/dev/null || true
+        git worktree add --quiet --detach "$OUT/changelog-main" origin/main
+        if git -C "$OUT/changelog-main" "${GIT_ID[@]}" cherry-pick "$CHANGELOG_COMMIT" >/dev/null 2>&1 \
+          && git -C "$OUT/changelog-main" push --quiet origin HEAD:main 2>/dev/null; then
+          PUSHED="$(git -C "$OUT/changelog-main" rev-parse --short HEAD)"
+        fi
+        git worktree remove --force "$OUT/changelog-main"
+        [ -n "$PUSHED" ] && break
+      done
+      if [ -n "$PUSHED" ]; then
+        echo "source: CHANGELOG for $BUILD_NUMBER is on main ($PUSHED)"
+      else
+        echo "source: couldn't put the CHANGELOG commit $(git rev-parse --short "$CHANGELOG_COMMIT") on main; cherry-pick it there. The release still stands." >&2
+      fi
+    fi
     echo "source: https://github.com/$SOURCE_REPO/releases/tag/$TAG"
   fi
 fi
