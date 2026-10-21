@@ -170,6 +170,9 @@ final class ConversationModel: Identifiable {
     /// The transcript load under way, if any.
     @ObservationIgnored private var fetchToken: UUID?
     private var isFetching: Bool { fetchToken != nil }
+    /// The roster said the Bot Chat moved while a fetch was out: fetch once more after it, rather
+    /// than throw away a fetch a busy Mac may be nearly done with (`botRosterChanged`).
+    @ObservationIgnored private var fetchAgain = false
     /// Sent once the transcript has loaded (a branch made by Edit and Resend).
     @ObservationIgnored private var sendOnLoad: String?
     /// Editing an earlier message (`composerEditing`): sending branches from just before it.
@@ -1018,10 +1021,14 @@ final class ConversationModel: Identifiable {
         fetchToken = token
         loadTask = Task {
             defer { if fetchToken == token { fetchToken = nil } }
-            // What this device saw last shows at once; the gateway's copy follows.
-            if opening { await showCached() }
+            // What this device saw last shows at once; the gateway's copy is asked for meanwhile,
+            // not once the kept one is on screen.
+            let kept = opening ? await keptTranscript() : nil
+            async let shown: Void = opening ? showKept(kept) : ()
             do {
-                let transcript = try await fetchLatest(sessionID)
+                let page = try await fetchLatest(sessionID, holding: kept?.messages)
+                await shown
+                let transcript = try await latest(page, overKept: kept, id: sessionID)
                 LoadTrace.mark(stableKey, "fetched \(transcript.messages.count) rows")
                 guard !Task.isCancelled else { return }
                 guard !isWorking, !isFinishing else {
@@ -1049,6 +1056,8 @@ final class ConversationModel: Identifiable {
                 }
             } catch is CancellationError {
             } catch {
+                // Offline or refused: the kept copy still goes up.
+                await shown
                 guard !Task.isCancelled else { return }
                 if retriesQuietly(after: error) { return }
                 if items.isEmpty {
@@ -1273,11 +1282,21 @@ final class ConversationModel: Identifiable {
         TranscriptCache.save(cacheKey, gateway: gateway, sessionID: sessionID, messages: rawMessages, hasEarlier: hasEarlierMessages)
     }
 
+    /// The copy of this chat the device kept (`TranscriptCache`), read off the main thread.
+    private func keptTranscript() async -> TranscriptCache.Entry? {
+        guard let cacheKey else { return nil }
+        return await TranscriptCache.load(cacheKey)
+    }
+
+    private func showCached() async {
+        await showKept(await keptTranscript())
+    }
+
     /// The transcript this device saw last, while the gateway's copy is on its way. Also under a
     /// message that went out before anything showed (`historyUnderTurn`).
-    private func showCached() async {
+    private func showKept(_ cached: TranscriptCache.Entry?) async {
         defer { cacheChecked = true }
-        guard let cacheKey, let cached = await TranscriptCache.load(cacheKey) else { return }
+        guard let cached else { return }
         let messages = turnInFlight ? historyUnderTurn(cached.messages) : cached.messages
         guard !messages.isEmpty else { return }
         let built = await Self.prepare(messages, hasEarlier: cached.hasEarlier, hidesSilence: botName != nil)
@@ -1335,11 +1354,12 @@ final class ConversationModel: Identifiable {
     /// The newest page, reaching back to the rows already held so nothing between them goes
     /// missing (a long turn can add more rows than a page). With rows held (shown, or cached),
     /// a short page first: what's new lands without the dashboard reading and sending 150 rows.
-    private func fetchLatest(_ id: String) async throws -> SessionTranscript {
-        let size = rawMessages.isEmpty ? SessionTranscript.firstPage : SessionTranscript.catchUpPage
+    private func fetchLatest(_ id: String, holding kept: [SessionMessage]? = nil) async throws -> SessionTranscript {
+        let held = rawMessages.isEmpty ? kept ?? [] : rawMessages
+        let size = held.isEmpty ? SessionTranscript.firstPage : SessionTranscript.catchUpPage
         var page = try await fetchPage(id, limit: size, offset: 0)
         var rounds = 0
-        while page.hasEarlier, let newest = rawMessages.last?.id, let first = page.messages.first?.id, first > newest, rounds < 10 {
+        while page.hasEarlier, let newest = (rawMessages.last ?? held.last)?.id, let first = page.messages.first?.id, first > newest, rounds < 10 {
             let more = try await fetchPage(id, limit: 200, offset: page.messages.count)
             page = SessionTranscript(
                 sessionID: page.sessionID,
@@ -1349,6 +1369,14 @@ final class ConversationModel: Identifiable {
             rounds += 1
         }
         return page
+    }
+
+    /// A short page fetched while the kept copy went up (`fetchLatest(holding:)`) goes in below
+    /// it. A kept copy that didn't go up after all (something else was shown first) gets a whole
+    /// first page instead.
+    private func latest(_ page: SessionTranscript, overKept kept: TranscriptCache.Entry?, id: String) async throws -> SessionTranscript {
+        guard rawMessages.isEmpty, kept?.messages.isEmpty == false, page.hasEarlier else { return page }
+        return try await fetchLatest(id)
     }
 
     /// The page before the earliest message held (scrolling up).
@@ -3681,6 +3709,7 @@ extension ConversationModel {
         guard let roster, let botName else { return }
         LoadTrace.begin(stableKey ?? "?", "bot reload (connected: \(roster.isConnected))")
         loadTask?.cancel()
+        fetchAgain = false
         let opening = items.isEmpty
         if opening { loadState = .loading }
         let connected = roster.isConnected
@@ -3688,31 +3717,46 @@ extension ConversationModel {
             roster.retryNow() // Reload means now, not after the backoff; the roster calls back once online
             // The stored chat is read all the same: it's plain HTTP, which a busy Mac answers long
             // before it gives a socket. Attaching waits for the roster's call back.
-            guard sessionID != nil || roster.bot(named: botName)?.canonicalSession != nil else {
-                if opening { Task { await showCached() } }
-                return
-            }
+            guard opening || sessionID != nil || roster.bot(named: botName)?.canonicalSession != nil else { return }
         }
         let token = UUID()
         fetchToken = token
         loadTask = Task {
             defer { if fetchToken == token { fetchToken = nil } }
-            if opening { await showCached() }
+            // The kept copy goes up while the gateway's is asked for (`reload`).
+            let kept = opening ? await keptTranscript() : nil
+            async let shown: Void = opening ? showKept(kept) : ()
             do {
-                let stored = try await roster.resolveBotChat(botName)
+                let stored: String?
+                if !roster.isConnected, roster.bot(named: botName)?.canonicalSession == nil {
+                    // Opened before the roster came (a launch, from the device): the id the chat
+                    // had, else the kept copy's. Without either, the roster calls back once online.
+                    stored = sessionID ?? kept?.sessionID
+                    guard stored != nil else {
+                        await shown
+                        return
+                    }
+                } else {
+                    stored = try await roster.resolveBotChat(botName)
+                }
                 LoadTrace.mark(stableKey, "resolved \(stored ?? "nil")")
                 if let stored {
                     if sessionID != stored {
                         sessionID = stored
                     }
-                    let transcript = try await fetchLatest(stored)
+                    let page = try await fetchLatest(stored, holding: kept?.messages)
+                    await shown
+                    let transcript = try await latest(page, overKept: kept, id: stored)
+                    LoadTrace.mark(stableKey, "fetched \(transcript.messages.count) rows")
                     guard !Task.isCancelled else { return }
                     guard !isWorking, !isFinishing else {
                         await showHistoryUnderTurn(transcript)
                         return
                     }
                     await applyLoaded(transcript)
+                    LoadTrace.mark(stableKey, "applied \(items.count) items")
                 }
+                await shown
                 let bot = roster.bot(named: botName)
                 seenActivity = bot?.activitySession?.lastActive
                 seenChat = bot?.canonicalSession.map(BotChatMark.init)
@@ -3723,10 +3767,13 @@ extension ConversationModel {
                 settleUncertainTurn()
                 if attaching, sessionID != nil, runtimeSessionID == nil, roster.isConnected {
                     _ = await attachGatewayChat()
+                    LoadTrace.mark(stableKey, "attached")
                 }
+                if fetchAgain, !Task.isCancelled { reload() }
             } catch is CancellationError {
             } catch {
                 // Offline: what the device kept stays up, and the roster reloads once it's back.
+                await shown
                 guard !Task.isCancelled, connected || roster.isConnected else { return }
                 if retriesQuietly(after: error) { return }
                 if items.isEmpty {
@@ -5062,8 +5109,13 @@ extension ConversationModel {
     func botRosterChanged(_ bot: BotProfile, previous: BotProfile?) {
         // A turn shown here, even one whose reply is in, ends with its own fetch (`applyLoaded`).
         guard loadState == .loaded, !isWorking, !isFinishing, live == nil else { return }
+        // Shown from the device's copy while the first fetch is out (a launch): that fetch isn't
+        // thrown away for the roster's news, it goes once more after (`fetchAgain`).
+        func reloadAfterAnyFetch() {
+            if isFetching { fetchAgain = true } else { reload() }
+        }
         if sessionID == nil, bot.canonicalSession != nil {
-            reload()
+            reloadAfterAnyFetch()
             return
         }
         // New messages can come without a newer activity time: Hermes' one-shot `hermes chat` (a
@@ -5074,12 +5126,12 @@ extension ConversationModel {
         seenChat = chat
         guard let active = bot.activitySession?.lastActive else { return }
         if let seen = seenActivity, active <= seen.addingTimeInterval(0.5) {
-            if chatMoved { reload() }
+            if chatMoved { reloadAfterAnyFetch() }
             return
         }
         seenActivity = active
         if chatMoved || bot.canonicalSession?.lastActive == active {
-            reload()
+            reloadAfterAnyFetch()
         }
     }
 }

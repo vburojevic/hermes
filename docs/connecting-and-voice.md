@@ -235,7 +235,15 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   launch shows it at once and the gateway's replaces it when it comes, so a busy Mac no longer
   means an empty sidebar. The model list is kept the same way (`ModelOptionsCache`), so the model
   picker opens on it instead of "Loading models…". After health and capabilities, the chat list,
-  the model list and widget support are read side by side.
+  the model list and widget support are read side by side. Each row's last message is kept too
+  (`LastLinesCache`, `docs/inbox.md` §1), so the rows read right before the gateway answers.
+- Opening a chat, the copy this device kept (`TranscriptCache`) goes up while the gateway's newest
+  rows are asked for, not before: the request leaves as soon as the copy is read from disk, with
+  a short page reaching back to its newest row, and what's new goes in below it once it's on
+  screen. A Bot Chat shown from the device's copy keeps its first fetch when the roster says the
+  chat moved meanwhile (the roster's first read after a launch always does): it fetches once more
+  after it, instead of starting again; on a busy Mac that first fetch had been running for
+  seconds.
 - Offline, it tries again after 2, 4, 8 and 16 s, then every 30 s. A missing or rejected key, or
   a gateway that's too old, waits for the person instead.
 - When the gateway is back, turns whose stream dropped re-attach to their runs (`last_seq`).
@@ -284,8 +292,9 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
 - Coming back (after more than 5 s away, or the Mac waking) the chat on screen reads what happened
   meanwhile over HTTP at once (`catchUpOnReturn`), while the socket, the roster and the chat's
   re-attach are still on their way: on a busy Mac they take seconds. A Bot Chat opened while the
-  socket is down loads the same way when its stored id is known, and attaches when the roster is
-  back.
+  socket is down loads the same way when its stored id is known (from the roster, or from the copy
+  the device kept when the chat opens before the roster does, as at a launch), and attaches when
+  the roster is back.
 - A message sent before the chat's history came (a busy Mac can take minutes over it) doesn't
   leave the chat with nothing but the message: the history goes in above it as soon as there is
   one, the device's copy or Hermes's (`showHistoryUnderTurn`), cut before that message so it never
