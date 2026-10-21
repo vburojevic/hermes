@@ -128,7 +128,12 @@ struct RootView: View {
                 #endif
             }
         }
+        #if os(iOS)
+        // On the window, not `.preferredColorScheme`: the app switcher's picture follows it then.
+        .background(WindowAppearance(style: appearance.interfaceStyle))
+        #else
         .preferredColorScheme(appearance.colorScheme)
+        #endif
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { app.didBecomeActive() }
         }

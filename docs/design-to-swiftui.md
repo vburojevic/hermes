@@ -23,6 +23,12 @@ Increase Contrast.
   `UIColor`/`NSColor` provider that switches with the appearance and Increase Contrast. A token an
   appearance doesn't override falls back to dark, then light. There are no asset-catalog colour
   sets apart from `AccentColor`.
+- Settings → Appearance (System, Light, Dark) is set on iPhone and iPad as the window's
+  `overrideUserInterfaceStyle` (`WindowAppearance`), not with `.preferredColorScheme`. iOS draws the
+  app switcher's picture of the app with the window's style. With the SwiftUI preference, an app
+  set to Dark on a phone in Light Mode (or the reverse) left a picture in the phone's appearance:
+  the switcher showed it light, and it turned dark as it opened. The Mac keeps
+  `.preferredColorScheme`. Check: `Scripts/check-switcher-snapshots.sh`.
 - Views use the names in `Theme` (`Theme.canvas`, `Theme.primaryText`, `Theme.ink`), not `Palette`
   directly. Colours that aren't design tokens live in `Theme` with the same initializer
   (`rowSelected`, `rowHover`).

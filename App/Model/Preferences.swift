@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Keys for the handful of app-wide preferences stored in `UserDefaults`.
 enum PreferenceKey {
@@ -49,4 +52,56 @@ enum AppearancePreference: String, CaseIterable, Identifiable {
         case .dark: .dark
         }
     }
+
+    #if os(iOS)
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: .unspecified
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+    #endif
 }
+
+#if os(iOS)
+/// The Appearance setting on the window itself (`docs/design-to-swiftui.md` §1). iOS draws the app
+/// switcher's picture of the app with the window's style: with only SwiftUI's
+/// `.preferredColorScheme`, an app set to Dark on a phone in Light Mode left a light picture, so
+/// the switcher showed it light and it turned dark as it opened. Sheets share the window, so they
+/// follow it too.
+struct WindowAppearance: UIViewRepresentable {
+    let style: UIUserInterfaceStyle
+
+    func makeUIView(context: Context) -> StyleView { StyleView() }
+
+    func updateUIView(_ view: StyleView, context: Context) {
+        view.style = style
+    }
+
+    final class StyleView: UIView {
+        var style = UIUserInterfaceStyle.unspecified {
+            didSet { apply() }
+        }
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            apply()
+        }
+
+        private func apply() {
+            guard let window, window.overrideUserInterfaceStyle != style else { return }
+            window.overrideUserInterfaceStyle = style
+        }
+    }
+}
+#endif
