@@ -33,11 +33,16 @@ final class GroupRooms {
     @ObservationIgnored private var seenSeq: [String: Int]
     @ObservationIgnored private var countedSeq: [String: Int] = [:]
     @ObservationIgnored private let seenKey: String
+    /// When each room was last read here (unix seconds), for its notifications.
+    @ObservationIgnored private var readTimes: [String: Double]
+    @ObservationIgnored private let readKey: String
 
     init(roster: BotRoster) {
         self.roster = roster
         seenKey = "groupSeen.\(roster.botID.uuidString)"
         seenSeq = UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Int] ?? [:]
+        readKey = "groupReadAt.\(roster.botID.uuidString)"
+        readTimes = UserDefaults.standard.dictionary(forKey: readKey) as? [String: Double] ?? [:]
     }
 
     func refresh() async {
@@ -118,12 +123,41 @@ final class GroupRooms {
     /// The room was read here: everything up to its latest event.
     func markRead(_ id: String) {
         let latest = max(room(id)?.latestSeq ?? 0, chats[id]?.latestSeq ?? 0)
+        let hadNews = latest > (seenSeq[id] ?? 0) || unreadCounts[id] != nil
         if latest > (seenSeq[id] ?? 0) {
             seenSeq[id] = latest
             UserDefaults.standard.set(seenSeq, forKey: seenKey)
         }
+        if hadNews {
+            readTimes[id] = Date.now.timeIntervalSince1970
+            UserDefaults.standard.set(readTimes, forKey: readKey)
+        }
         if unreadCounts[id] != nil { unreadCounts[id] = nil }
         if mentions[id] != nil { mentions[id] = nil }
+        // Rooms keep no read mark on the gateway: the plugin tells the other devices instead.
+        if hadNews { roster?.workspace?.unread.didRead(rooms: [id]) }
+    }
+
+    /// Rooms read on another device by then (the push plugin passes reads on: rooms have no read
+    /// mark on the gateway, `docs/notifications.md` §2 Reading): read here too, unless they moved since.
+    func readElsewhere(_ reads: [String: Date]) {
+        var changed = false
+        for (id, at) in reads where unreadCounts[id] != nil || mentions[id] != nil {
+            guard let room = room(id), (room.updatedAt ?? .distantPast) <= at.addingTimeInterval(1) else { continue }
+            seenSeq[id] = max(seenSeq[id] ?? 0, room.latestSeq ?? 0, chats[id]?.latestSeq ?? 0)
+            readTimes[id] = max(readTimes[id] ?? 0, at.timeIntervalSince1970)
+            unreadCounts[id] = nil
+            mentions[id] = nil
+            changed = true
+        }
+        guard changed else { return }
+        UserDefaults.standard.set(seenSeq, forKey: seenKey)
+        UserDefaults.standard.set(readTimes, forKey: readKey)
+    }
+
+    /// When the room was last read here: its notifications from before can go.
+    func readAt(_ id: String) -> Date? {
+        readTimes[id].map { Date(timeIntervalSince1970: $0) }
     }
 
     func room(_ id: String) -> GroupRoom? {

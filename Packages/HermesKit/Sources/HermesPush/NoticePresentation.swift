@@ -97,7 +97,7 @@ public struct NoticePresentation: Sendable, Equatable {
             title = String(localized: "Push notifications are on", bundle: .module)
             subtitle = ""
             body = gateway.map { String(localized: "\($0) can reach this device.", bundle: .module) } ?? notice.body
-        case .background, .withdraw, .sync, .unknown:
+        case .background, .withdraw, .sync, .read, .unknown:
             title = notice.title.isEmpty ? "Hermes" : notice.title
             subtitle = notice.subtitle
             body = notice.body

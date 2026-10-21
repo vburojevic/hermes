@@ -116,11 +116,11 @@ struct NotificationSettingsView: View {
 
             Section {
                 Picker(Self.badgeTitle, selection: $push.badgeMode) {
-                    Text("Needs You").tag(PushShared.BadgeMode.needsYou)
                     Text("Unread Chats").tag(PushShared.BadgeMode.unreadChats)
+                    Text("Needs You").tag(PushShared.BadgeMode.needsYou)
                 }
             } footer: {
-                Text("Needs You counts what Hermes is waiting on you for. Unread Chats adds the chats with new messages; muted ones aren’t counted.")
+                Text("Unread Chats counts the chats with new messages, muted ones left out, and what Hermes is waiting on you for. Needs You counts only what Hermes is waiting on you for.")
             }
 
             Section {

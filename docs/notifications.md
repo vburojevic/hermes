@@ -81,7 +81,8 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
 | `register` | `device_id`, `token` (APNs, hex), `topic` (bundle id), `environment` (`development` / `production`, from the provisioning profile), `public_key` (base64 X25519), `platform` (`ios` / `ipados`), `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}` (the relay installation id and the gateway's name), `relay` (`ok` or the error), `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20) | `open` (open requests) |
+| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) | `open` (open requests) |
+| `read` | `device_id` (the device that read), `chats` (session ids: each chat's id and its lineage root, a Bot Chat's stored id), `rooms` (group room ids). Plugin 1.4.0 | `ok`, `open` |
 | `activity` | `device_id`, `token` (none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` | `version`, `gateway`, `relay_error`, `devices`, `registered`, `preferences`, `open` |
 | `test` | `device_id` | sends a test notice now |
@@ -98,6 +99,9 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
   when the chat changes (the plugin forgets a report after 75 s), and `away` as it leaves, naming
   the chats to keep current meanwhile (`sync`, §2).
 - Removing a gateway from the app, or Stop Notifications on its detail page, sends `unregister`.
+- Reading a chat, a Bot or a group chat in the app (opening it, or Mark as Read) sends `read` to
+  that gateway, at most once a second with everything read meanwhile (§2, Reading). An older
+  plugin answers it with an error, which the app ignores.
 
 ### 1.3 Encryption
 
@@ -163,8 +167,9 @@ for the gateway, the per-gateway category (§2, Hidden details), the badge, and 
 Bot's profile, except the primary Bot's (the gateway's own profile): the app shares each Bot's own
 chat by session id (`PushShared.botChats`, from the roster's `canonical_session`), so that Bot's
 notices still carry its name and face (`PushNotice.nameBot`). It also clears delivered notices for
-requests answered elsewhere. If anything fails or time runs out, the notification keeps the relay's
-kind-only text, never content.
+requests answered elsewhere and for chats read since (`read`, §2 Reading), adds the notice's chat to
+the unread list and sets the badge (§2, Badge). If anything fails or time runs out, the
+notification keeps the relay's kind-only text, never content.
 
 ### 1.6 Mac
 
@@ -241,12 +246,43 @@ Rules:
   `PushCenter.presentation(for:)`), a notice for the chat on screen doesn't banner: its card docks
   above the composer, and a request goes quietly into Notification Center in case the person walks
   away. Other chats banner (`bannerInApp`); task results and tidies only go into the list.
-- **Badge** is the number of open "needs you" requests across gateways by default: each gateway's
-  latest `open` count, ignoring counts older than six hours (`PushShared.badge`). It goes down as
-  requests settle. Settings → Notifications → App Icon Badge (Dock Badge on the Mac) → Unread
-  Chats adds the unread, unmuted chats the app last counted (`PushShared.recordUnread`). The app
-  sets it whenever it runs (`setBadgeCount`, `NSApp.dockTile.badgeLabel`), so the Mac's Dock
-  shows it too (`docs/inbox.md` §5).
+- **Reading.** A chat read anywhere leaves no notifications behind for it.
+  - On the device that read it (opening it, or Mark as Read, chats, Bots and group chats alike)
+    the app removes the chat's delivered notifications at once: replies, Bot and group messages,
+    never a request still waiting for an answer, a task result or a card. It decides from what each
+    notification carries (`hermes.notice`, or the sealed envelope when the extension didn't run)
+    and removes only those sent before the chat was read (`ReadNotices`). It does the same for
+    chats read elsewhere whenever it learns of the read (`sessions.changed`, the list, coming back
+    to the app, an app refresh), and on the Mac for its own notifications.
+  - The app tells the gateway (`read`, §1.2). The plugin remembers each read for six hours and
+    lists the latest in every notice (`read: {chats, rooms}` with the times), so the service
+    extension clears those chats' notifications whenever the next one arrives.
+  - Devices that aren't in the app and were sent a reply or Bot message for a chat read since get a
+    background push (`read`, with the chats and rooms read since the device was last in front and
+    when each was read, at most 40 each, and the open count): the app removes their notifications and sets the badge. At
+    most one a device every 30 s (a read inside the window waits for it), collapse id `read`, and
+    none when the plugin sent that device nothing for those chats: iOS rations background pushes to
+    two or three an hour, and none reach an app the person force-quit. What a push doesn't reach,
+    the next notice, the next app refresh or coming back to the app catches up.
+  - A device that counts unread chats in its badge told the gateway which ones as it left
+    (`presence away` with `unread` and `muted`). The plugin keeps that set, adds the chats it
+    notifies the device about (not the muted ones), drops chats read anywhere, and when the number
+    changes while the device is away sends a badge-only push (`aps {badge}`, nothing shown, priority
+    5, collapse id `badge`, plus `badge_others`), so the Lock Screen's badge is right even when the
+    app isn't woken.
+  - Group chats have no read mark on the gateway (`docs/inbox.md` §1), so the plugin's reads are
+    how a room read on one device reaches the others: an app that hears of one (the `read` push,
+    or a notice's list, applied when it next comes to the front) marks the room read too, unless
+    it moved since.
+- **Badge** counts unread, unmuted chats, Bots and group chats plus open "needs you" requests across
+  gateways by default (Settings → Notifications → App Icon Badge, Dock Badge on the Mac → Unread
+  Chats; Needs You counts only the requests). Requests: each gateway's latest `open` count, ignoring
+  counts older than six hours. Chats: one list per gateway in the App Group (`PushShared.unread`),
+  which the app writes whenever its counts move (`UnreadStore`), the service extension adds a chat
+  to when a reply or message for it arrives (unless it's muted), and every read takes chats off.
+  The badge (`PushShared.badge`) is set by the app whenever that list or a count moves and at
+  launch (`setBadgeCount`, `NSApp.dockTile.badgeLabel`, so the Mac's Dock shows it too), by the
+  extension on every notice, and by the plugin's badge-only push (`docs/inbox.md` §5).
 - **Muted chats** are on the device (`docs/inbox.md` §1). The extension delivers their notices
   quietly (`interruptionLevel = .passive`, no sound); approvals, questions, keys and mentions in
   group chats still alert (`PushNotice.quietWhenMuted`, `muteKeys`).

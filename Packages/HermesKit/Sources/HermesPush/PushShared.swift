@@ -94,7 +94,8 @@ public final class PushShared: @unchecked Sendable {
     public func forget(appID: UUID) {
         removeDeviceKeys(appID: appID)
         gateways = gateways.filter { $0.value.appID != appID }
-        unreadChats[appID.uuidString] = nil
+        unreadLists[appID.uuidString] = nil
+        recentReads[appID.uuidString] = nil
         var counts = openCounts
         for key in counts.keys where gateways[key] == nil { counts[key] = nil }
         openCounts = counts
@@ -119,31 +120,99 @@ public final class PushShared: @unchecked Sendable {
 
     /// Settings → Notifications → App Icon Badge (`docs/notifications.md` §2, `docs/inbox.md` §5).
     public enum BadgeMode: String, Codable, Sendable, CaseIterable {
-        /// Open requests across gateways (the default).
+        /// Open requests across gateways.
         case needsYou
-        /// Those, plus unread chats; muted ones left out.
+        /// Those, plus unread chats; muted ones left out (the default).
         case unreadChats
     }
 
     public var badgeMode: BadgeMode {
-        get { decode(BadgeMode.self, "push.badgeMode") ?? .needsYou }
+        get { decode(BadgeMode.self, "push.badgeMode") ?? .unreadChats }
         set { encode(newValue, "push.badgeMode") }
     }
 
-    /// Unread, unmuted chats per gateway (the app's id), as the app last counted them.
-    private var unreadChats: [String: Int] {
-        get { decode([String: Int].self, "push.unreadChats") ?? [:] }
-        set { encode(newValue, "push.unreadChats") }
+    /// The unread, unmuted chats the badge counts, per gateway (the app's id): the app's list as it
+    /// last counted, plus chats the extension heard news for since, less chats read since.
+    private var unreadLists: [String: [UnreadChat]] {
+        get { decode([String: [UnreadChat]].self, "push.unread") ?? [:] }
+        set { encode(newValue, "push.unread") }
     }
 
-    /// Records a gateway's unread chats; returns whether the badge changed.
+    public func unread(gateway appID: UUID) -> [UnreadChat] {
+        unreadLists[appID.uuidString] ?? []
+    }
+
+    /// Chats read lately on any device, per gateway, kept six hours: an app counting from read
+    /// marks that haven't caught up yet (woken by the push that says so) doesn't count them again.
+    private var recentReads: [String: ReadMarks] {
+        get { decode([String: ReadMarks].self, "push.reads") ?? [:] }
+        set { encode(newValue, "push.reads") }
+    }
+
+    public func reads(gateway appID: UUID) -> ReadMarks {
+        recentReads[appID.uuidString] ?? ReadMarks()
+    }
+
+    /// The app counted a gateway's unread chats (`UnreadStore`); returns whether the badge changed.
     @discardableResult
-    public func recordUnread(_ count: Int, gateway appID: UUID) -> Bool {
-        var counts = unreadChats
-        guard counts[appID.uuidString] != count else { return false }
-        counts[appID.uuidString] = max(0, count)
-        unreadChats = counts
+    public func recordUnread(_ counted: [UnreadChat], gateway appID: UUID) -> Bool {
+        let read = reads(gateway: appID)
+        let chats = counted.filter { !$0.isRead(by: read) }
+        var lists = unreadLists
+        guard lists[appID.uuidString] ?? [] != chats else { return false }
+        lists[appID.uuidString] = chats
+        unreadLists = lists
         return badgeMode == .unreadChats
+    }
+
+    /// News for a chat arrived (the extension): it counts until it's read, unless it's muted or
+    /// already counted. Returns whether the badge changed.
+    @discardableResult
+    public func noteUnread(_ notice: PushNotice, gateway appID: UUID, at date: Date = .now) -> Bool {
+        guard let entry = UnreadChat(notice, at: notice.sentAt ?? date), let chat = ReadNotices.chat(of: notice),
+              !isMuted(gateway: appID, keys: notice.muteKeys + [entry.key], at: date)
+        else { return false }
+        if let read = notice.read, entry.isRead(by: read) { return false }
+        if entry.isRead(by: reads(gateway: appID)) { return false }
+        var lists = unreadLists
+        var chats = lists[appID.uuidString] ?? []
+        guard !chats.contains(where: { $0.matches(chat) }) else { return false }
+        chats.append(entry)
+        lists[appID.uuidString] = chats
+        unreadLists = lists
+        return badgeMode == .unreadChats
+    }
+
+    /// Chats read (on any device) come off the list. Returns whether the badge changed.
+    @discardableResult
+    public func noteRead(_ marks: ReadMarks, gateway appID: UUID, at date: Date = .now) -> Bool {
+        guard !marks.isEmpty else { return false }
+        var all = recentReads
+        var known = all[appID.uuidString] ?? ReadMarks()
+        let cutoff = date.addingTimeInterval(-6 * 3600)
+        known.chats = known.chats.merging(marks.chats, uniquingKeysWith: max).filter { $0.value > cutoff }
+        known.rooms = known.rooms.merging(marks.rooms, uniquingKeysWith: max).filter { $0.value > cutoff }
+        all[appID.uuidString] = known
+        recentReads = all
+        var lists = unreadLists
+        let chats = lists[appID.uuidString] ?? []
+        let left = chats.filter { !$0.isRead(by: marks) }
+        guard left.count != chats.count else { return false }
+        lists[appID.uuidString] = left
+        unreadLists = lists
+        return badgeMode == .unreadChats
+    }
+
+    /// What the other gateways add to the badge: a gateway's plugin sets the whole badge while the
+    /// app is away (`presence away` with `badge_others`).
+    public func badge(besides appID: UUID) -> Int {
+        let cutoff = Date.now.addingTimeInterval(-6 * 3600)
+        let own = gateways.filter { $0.value.appID == appID }.keys
+        let open = own.reduce(0) { total, key in
+            total + (openCounts[key].map { $0.at > cutoff ? $0.count : 0 } ?? 0)
+        }
+        let unread = badgeMode == .unreadChats ? unread(gateway: appID).count : 0
+        return max(0, badge - open - unread)
     }
 
     /// The badge: open requests across gateways, plus unread chats when the person chose so.
@@ -152,7 +221,8 @@ public final class PushShared: @unchecked Sendable {
         let known = gateways
         let open = openCounts.filter { known[$0.key] != nil && $0.value.at > cutoff }.reduce(0) { $0 + $1.value.count }
         guard badgeMode == .unreadChats else { return open }
-        return open + unreadChats.values.reduce(0, +)
+        // Every gateway's list: the Mac registers with none, and a removed gateway's list goes with it.
+        return open + unreadLists.values.reduce(0) { $0 + $1.count }
     }
 
     // MARK: Mutes

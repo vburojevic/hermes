@@ -8,6 +8,9 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         case approval, question, password, reply, task, message, background, test, withdraw
         /// Chats changed while the app was away: a background push that has the app read them.
         case sync
+        /// Chats read on another device: a background push that clears their notifications
+        /// (`docs/notifications.md` §2 Reading).
+        case read
         case taskFailed = "task_failed"
         /// Board cards (`docs/board.md` §5): a card needs you, is ready for review, stopped, is done.
         case cardNeedsYou = "card_needs_you"
@@ -147,8 +150,12 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
     // Withdrawals
     public var ids: [String]
 
-    // Chats to read now (`sync`): stored session ids.
+    // Chats to read now (`sync`), or read elsewhere (`read`): stored session ids.
     public var sessions: [String]
+    /// Group chats read elsewhere (`read`).
+    public var rooms: [String]
+    /// Chats read lately on any device, with when: their notifications can go (every notice).
+    public var read: ReadMarks?
 
     enum CodingKeys: String, CodingKey {
         case kind, id, title, body, subtitle, hidden, thread, summary, category, gateway, open, resolved
@@ -167,7 +174,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         case failed
         case roomID = "room_id"
         case memberID = "member_id"
-        case bot, profile, mention, ids, sessions
+        case bot, profile, mention, ids, sessions, rooms, read
         case cardID = "card_id"
         case board
         case projectID = "project_id"
@@ -182,7 +189,8 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         expiresAt: Date? = nil, gateway: Gateway? = nil, open: Int? = nil, resolved: [String] = [],
         command: String? = nil, detail: String? = nil, choices: [String] = [], answer: Answer? = nil,
         questions: [Question] = [], bot: String? = nil, memberID: String? = nil, roomID: String? = nil,
-        failed: Bool = false, mention: Bool = false, ids: [String] = [], sessions: [String] = []
+        failed: Bool = false, mention: Bool = false, ids: [String] = [], sessions: [String] = [],
+        rooms: [String] = [], read: ReadMarks? = nil
     ) {
         self.kind = kind
         self.id = id
@@ -211,6 +219,8 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         self.roomID = roomID
         self.ids = ids
         self.sessions = sessions
+        self.rooms = rooms
+        self.read = read
     }
 
     public init(from decoder: any Decoder) throws {
@@ -252,6 +262,9 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         mention = try c.decodeIfPresent(Bool.self, forKey: .mention) ?? false
         ids = try c.decodeIfPresent([String].self, forKey: .ids) ?? []
         sessions = try c.decodeIfPresent([String].self, forKey: .sessions) ?? []
+        rooms = try c.decodeIfPresent([String].self, forKey: .rooms) ?? []
+        // An entry this build can't read costs only that cleanup, never the notice.
+        read = try? c.decodeIfPresent(ReadMarks.self, forKey: .read)
         cardID = try c.decodeIfPresent(String.self, forKey: .cardID)
         board = try c.decodeIfPresent(String.self, forKey: .board)
         projectID = try c.decodeIfPresent(String.self, forKey: .projectID).flatMap { $0.isEmpty ? nil : $0 }
@@ -293,6 +306,8 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         if mention { try c.encode(true, forKey: .mention) }
         if !ids.isEmpty { try c.encode(ids, forKey: .ids) }
         if !sessions.isEmpty { try c.encode(sessions, forKey: .sessions) }
+        if !rooms.isEmpty { try c.encode(rooms, forKey: .rooms) }
+        try c.encodeIfPresent(read, forKey: .read)
         try c.encodeIfPresent(cardID, forKey: .cardID)
         try c.encodeIfPresent(board, forKey: .board)
         try c.encodeIfPresent(projectID, forKey: .projectID)

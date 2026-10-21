@@ -131,18 +131,50 @@ public struct AppPushClient: Sendable {
         case foreground, running, away
     }
 
+    /// Chats by session id and group chats by room id, as the plugin names them.
+    public struct ChatLists: Sendable, Hashable {
+        public var chats: [String]
+        public var rooms: [String]
+
+        public init(chats: [String] = [], rooms: [String] = []) {
+            self.chats = chats
+            self.rooms = rooms
+        }
+
+        var json: JSONValue {
+            .object(["chats": .array(chats.map(JSONValue.string)), "rooms": .array(rooms.map(JSONValue.string))])
+        }
+    }
+
     /// Where the person is: a device showing a chat gets no push for it; `live` chats are ones
     /// the app hears over its own connection and notifies about itself (the Mac).
-    /// - Parameter sync: leaving (`away`), the chats to keep current while the app is away: a turn
-    ///   ending in one wakes the app with a background push (`sync`). Older plugins ignore it.
+    /// - Parameters:
+    ///   - sync: leaving (`away`), the chats to keep current while the app is away: a turn ending
+    ///     in one wakes the app with a background push (`sync`). Older plugins ignore it.
+    ///   - unread: leaving, the chats the app icon badge counts, `muted` the muted ones and
+    ///     `badgeOthers` what other gateways add to it: the plugin keeps the badge right while the
+    ///     app is away (plugin 1.4.0).
     @discardableResult
     public func setPresence(_ presence: Presence, deviceID: String, visibleChat: String? = nil, live: [String]? = nil,
-                            sync: [String]? = nil) async throws -> Int {
+                            sync: [String]? = nil, unread: ChatLists? = nil, muted: ChatLists? = nil,
+                            badgeOthers: Int? = nil) async throws -> Int {
         var args: [String: JSONValue] = ["device_id": .string(deviceID), "state": .string(presence.rawValue)]
         if let visibleChat { args["session_id"] = .string(visibleChat) }
         if let live { args["live"] = .array(live.map(JSONValue.string)) }
         if let sync { args["sync"] = .array(sync.map(JSONValue.string)) }
+        if let unread { args["unread"] = unread.json }
+        if let muted { args["muted"] = muted.json }
+        if let badgeOthers { args["badge_others"] = .number(Double(max(0, badgeOthers))) }
         let answer = try await run("presence", args)
+        return Int(answer["open"]?.doubleValue ?? 0)
+    }
+
+    /// Chats read on this device (`docs/notifications.md` §2 Reading): the plugin clears them on
+    /// the person's other devices. Returns the open requests. Plugin 1.4.0; older ones refuse it.
+    @discardableResult
+    public func read(deviceID: String, chats: [String], rooms: [String]) async throws -> Int {
+        let answer = try await run("read", ["device_id": .string(deviceID), "chats": .array(chats.map(JSONValue.string)),
+                                            "rooms": .array(rooms.map(JSONValue.string))])
         return Int(answer["open"]?.doubleValue ?? 0)
     }
 

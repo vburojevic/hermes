@@ -6,8 +6,9 @@ import UserNotifications
 /// Opens each notice the gateway sealed for this device and fills the notification
 /// (`docs/notifications.md` §1.5): text in the device's language with the app's gateway name, the
 /// per-gateway category (so a locked phone says only "Needs your OK on Home Server"), the badge
-/// (open requests across gateways), and a Bot's face for its messages (a communication
-/// notification). It also clears notices the gateway says were answered elsewhere.
+/// (open requests and unread chats across gateways), and a Bot's face for its messages (a
+/// communication notification). It also clears notices the gateway says were answered elsewhere,
+/// and news for chats read since.
 ///
 /// If anything fails, the notification keeps the relay's kind-only text ("Hermes needs your OK ·
 /// Open Hermes to see it."), never content.
@@ -74,7 +75,17 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
         presentation.apply(to: content)
         content.userInfo.merge(PushUserInfo.values(for: notice)) { _, new in new }
         if let id = notice.gateway?.id, let open = notice.open {
-            content.badge = NSNumber(value: shared.recordOpen(open, gateway: id, at: notice.sentAt ?? .now))
+            shared.recordOpen(open, gateway: id, at: notice.sentAt ?? .now)
+        }
+        if let gateway {
+            // Chats read since, here or on another device, leave no notifications and no count
+            // behind; this notice's chat counts until it's read (`docs/notifications.md` §2 Reading).
+            if let read = notice.read, !read.isEmpty {
+                shared.noteRead(read, gateway: gateway.appID)
+                await clearRead(read, gateway: gateway.appID, shared: shared)
+            }
+            shared.noteUnread(notice, gateway: gateway.appID)
+            content.badge = NSNumber(value: shared.badge)
         }
         // A muted chat arrives quietly; what pauses Hermes or names the person still alerts
         // (`docs/inbox.md` §1 Muting).
@@ -88,6 +99,19 @@ nonisolated final class NotificationService: UNNotificationServiceExtension, @un
             return content
         }
         return (try? await communicate(notice, content: content, gateway: gateway, shared: shared)) ?? content
+    }
+
+    /// Removes delivered news (replies, messages) for chats read since it was sent.
+    static func clearRead(_ marks: ReadMarks, gateway appID: UUID, shared: PushShared) async {
+        let center = UNUserNotificationCenter.current()
+        let gone = await center.deliveredNotifications().compactMap { notification -> String? in
+            guard let opened = PushUserInfo.opened(notification.request.content.userInfo, isRemote: true, shared: shared),
+                  opened.gateway == appID,
+                  ReadNotices.isRead(opened.notice, deliveredAt: notification.date, readAt: marks.readAt)
+            else { return nil }
+            return notification.request.identifier
+        }
+        if !gone.isEmpty { center.removeDeliveredNotifications(withIdentifiers: gone) }
     }
 
     /// Removes delivered notices for requests answered elsewhere, and approvals past their deadline.

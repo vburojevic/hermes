@@ -108,6 +108,10 @@ final class PushCenter {
     @ObservationIgnored private var lastPresence: (chat: String?, at: Date)?
     @ObservationIgnored private var pendingResponses: [PushResponder.Response] = []
     @ObservationIgnored private(set) var activities: AnyObject?
+    /// Per gateway: the pending sweep of read chats' notifications, and reads on their way to the
+    /// plugin (`PushCenter+Reading`).
+    @ObservationIgnored var readSweeps: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var readReports: [UUID: ReadReport] = [:]
 
     private init() {
         preferences = PushShared.current.preferences
@@ -144,6 +148,8 @@ final class PushCenter {
             await refreshBadge()
             askIfPending()
         }
+        // Chats read elsewhere while the app was away leave nothing on the Lock Screen.
+        catchUpOnReads()
         startLoop()
         #if os(iOS)
         (activities as? TurnActivityController)?.appDidBecomeActive()
@@ -520,17 +526,22 @@ final class PushCenter {
         guard let model, deviceToken != nil else { return }
         lastPresence = nil
         let deviceID = shared.deviceID
-        let targets = model.workspaces.values.compactMap { workspace -> (BotRoster, [String])? in
+        let countsUnread = shared.badgeMode == .unreadChats
+        let targets = model.workspaces.values.compactMap { workspace -> (BotRoster, [String], AwayBadge?, Int)? in
             guard gatewayStates[workspace.id]?.isOn == true, let roster = workspace.roster else { return nil }
-            return (roster, workspace.chatsToKeepCurrent(showing: workspace.id == model.currentWorkspace?.id))
+            // What the badge counts, so the plugin keeps it right while the app is away.
+            let badge = countsUnread ? workspace.unread.badgeLists() : nil
+            return (roster, workspace.chatsToKeepCurrent(showing: workspace.id == model.currentWorkspace?.id), badge,
+                    shared.badge(besides: workspace.id))
         }
         // Background time for it, given back before it runs out even if a gateway is slow to answer.
         let activity = BackgroundActivity()
         activity.begin("Hermes presence")
         Task {
-            for (roster, chats) in targets where roster.state.isOnline {
+            for (roster, chats, badge, others) in targets where roster.state.isOnline {
                 _ = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
-                    .setPresence(.away, deviceID: deviceID, sync: chats)
+                    .setPresence(.away, deviceID: deviceID, sync: chats, unread: badge?.unread, muted: badge?.muted,
+                                 badgeOthers: badge == nil ? nil : others)
             }
             activity.end()
         }
@@ -568,8 +579,8 @@ final class PushCenter {
 
     /// A gateway's unread, unmuted chats changed (`UnreadStore`): the badge follows when it
     /// counts them.
-    func unreadChanged(_ count: Int, gateway: UUID) {
-        guard shared.recordUnread(count, gateway: gateway) else { return }
+    func unreadChanged(_ chats: [UnreadChat], gateway: UUID) {
+        guard shared.recordUnread(chats, gateway: gateway) else { return }
         Task { await applyBadge() }
     }
 
@@ -623,7 +634,7 @@ final class PushCenter {
     /// on the Lock Screen if the person walks away without answering (answering withdraws it).
     func presentation(for notice: PushNotice?) -> UNNotificationPresentationOptions {
         guard let notice else { return [.banner, .list, .sound] }
-        if notice.kind == .withdraw || notice.kind == .sync { return [] }
+        if notice.kind == .withdraw || notice.kind == .sync || notice.kind == .read { return [] }
         if isShowing(notice) {
             if let workspace = model?.currentWorkspace { catchUp(notice, in: workspace) }
             return notice.kind.needsYou ? [.list] : []

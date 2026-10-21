@@ -308,6 +308,29 @@ import Testing
         let refusing = AppPushClient { _, _ in .object(["type": .string("plugin"), "output": .string(#"{"ok": false, "error": "device not registered"}"#)]) }
         await #expect(throws: AppPushClient.Failure.refused("device not registered")) { try await refusing.test(deviceID: "dev-1") }
     }
+
+    /// `read` and the badge's lists on `presence away` (plugin 1.4.0, `docs/notifications.md` §1.2).
+    @Test func appPushClientReportsReadsAndTheBadgesChats() async throws {
+        let calls = Calls()
+        let client = AppPushClient { method, params in
+            await calls.add(method, params)
+            return .object(["type": .string("plugin"), "output": .string(#"{"ok": true, "open": 2}"#)])
+        }
+        #expect(try await client.read(deviceID: "dev-1", chats: ["s1", "s1_root"], rooms: ["room_1"]) == 2)
+        try await client.setPresence(.away, deviceID: "dev-1", sync: ["s1"], unread: .init(chats: ["s1"], rooms: ["room_1"]),
+                                     muted: .init(chats: ["s9"]), badgeOthers: 3)
+        let sent = await calls.all.compactMap { $0.1["arg"]?.stringValue }
+        func json(_ arg: String, after command: String) throws -> JSONValue {
+            try JSONDecoder().decode(JSONValue.self, from: Data(arg.dropFirst(command.count + 1).utf8))
+        }
+        let read = try json(sent[0], after: "read")
+        #expect(sent[0].hasPrefix("read {"))
+        #expect(read["chats"] == .array([.string("s1"), .string("s1_root")]) && read["rooms"] == .array([.string("room_1")]))
+        let away = try json(sent[1], after: "presence")
+        #expect(away["state"]?.stringValue == "away" && away["unread"]?["rooms"] == .array([.string("room_1")]))
+        #expect(away["muted"]?["chats"] == .array([.string("s9")]) && away["muted"]?["rooms"] == .array([]))
+        #expect(away["badge_others"]?.doubleValue == 3)
+    }
 }
 
 private actor Calls {

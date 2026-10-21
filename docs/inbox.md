@@ -37,7 +37,7 @@ again after each turn it watched end.
 | Read elsewhere | `sessions.changed` (no payload; it fires when any session column it watches moves, `last_read_at` included, at most every 2 s, and so all through a streaming turn). The app turns it into one tick for everything that follows it (project lanes, read marks, the roster, the chat list, live lines): a quarter second after the first change, then at most every 3 s while changes keep coming, every 30 s while the Mac app is behind other apps | `ReadRecheck`: ask at once, then at most every 3 s while changes keep coming; between changes every 15 s (60 s while the Mac app is behind other apps), backing off to 2 minutes while something stays unread. The chat list itself is fetched again too (at most every 3 s), so rows move to the top |
 | A mark this device just set | | Holds until Hermes' rows agree, or for 10 s, so an older page can't undo it |
 | Bots | The Bot Chat's own mark (`GET /api/sessions/{id}?profile` → `last_read_at`; `BackendClient.readMark`) | `BotRoster` as before (opening a Bot Chat marks it read), plus Mark as Unread and picking up a mark of 0 from other devices (read Bots are asked at most every 30 s) |
-| Group chats | none | Rooms have no read mark for the person. This device keeps the last event seen per room (`groupSeen.<gateway>`); a room's count is its members' messages after it (`groups.log`), refreshed when `latest_seq` moves |
+| Group chats | none | Rooms have no read mark for the person. This device keeps the last event seen per room (`groupSeen.<gateway>`); a room's count is its members' messages after it (`groups.log`), refreshed when `latest_seq` moves. A room read on another device reaches this one through the push plugin (`read`, [notifications.md](notifications.md) §2 Reading): it's read here too unless it moved since |
 
 ### Counting
 
@@ -271,11 +271,13 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   - The drawer and sidebar buttons: unread chats (not messages) elsewhere, muted and open ones
     left out (`unreadBadgeCutout`).
   - Chats / Bots: each segment shows the other mode's unread count.
-  - App icon and Dock: Settings → Notifications → App Icon Badge (Dock Badge on the Mac): Needs
-    You (default) or Unread Chats (those plus unread, unmuted chats). Set with
-    `UNUserNotificationCenter.setBadgeCount` and `NSApp.dockTile.badgeLabel` whenever the app
-    runs; between runs the Notification Service adds the last count the app saw. Open point: the
-    push plugin would have to send an unread-chats count for it to stay exact.
+  - App icon and Dock: Settings → Notifications → App Icon Badge (Dock Badge on the Mac): Unread
+    Chats (the default: open requests plus unread, unmuted chats, Bots and group chats) or Needs
+    You (the requests only). One list of the chats it counts per gateway, in the App Group: the
+    app writes it whenever its counts move, the Notification Service adds a chat as its news
+    arrives, and reads anywhere take chats off; while the app is away, the push plugin sends a
+    badge-only push when the number changes ([notifications.md](notifications.md) §2 Reading,
+    Badge). Set with `UNUserNotificationCenter.setBadgeCount` and `NSApp.dockTile.badgeLabel`.
 
 ## 6. Accessibility
 

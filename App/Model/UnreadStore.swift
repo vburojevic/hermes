@@ -175,14 +175,15 @@ final class UnreadStore {
                 next[Self.groupKey(id)] = .count(count)
             }
         }
-        if next != badges {
-            badges = next
-            #if HERMES_PUSH
-            // The app icon (or Dock) badge counts them when the person chose Unread Chats.
-            PushCenter.shared.unreadChanged(unreadChats(in: next.keys), gateway: gatewayID)
-            #endif
-        }
+        if next != badges { badges = next }
         if marksSeeded { scheduleSave() }
+        #if HERMES_PUSH
+        // The app icon (or Dock) badge counts them when the person chose Unread Chats; a mute moves
+        // it without moving a row, so it's recorded every time (unchanged costs nothing).
+        PushCenter.shared.unreadChanged(badgeChats(), gateway: gatewayID)
+        // Whatever moved may have read a chat with notifications still on the Lock Screen.
+        PushCenter.shared.readMayHaveMoved(in: workspace)
+        #endif
     }
 
     private func badge(for key: String, mark: ReadMark, lastActive: Date, session: HermesSession) -> UnreadBadge? {
@@ -308,6 +309,98 @@ final class UnreadStore {
         }
     }
 
+    // MARK: Notifications
+
+    /// How far the chat a notification is about was read, by what this device knows
+    /// (`docs/notifications.md` §2 Reading): the chat on screen while the app is in front, now; a
+    /// read chat, through its newest activity seen here and a little after (the plugin stamps a
+    /// notice just after the reply lands); an unread one, through its mark. Nil keeps it.
+    func readThrough(_ chat: ReadNotices.Chat) -> Date? {
+        guard let workspace else { return nil }
+        let slack: TimeInterval = 10
+        let open = BotRoster.isInFront ? openKey : nil
+        if let room = chat.room {
+            if Self.groupKey(room) == open { return .now }
+            guard let rooms = workspace.roster?.groupRooms, let read = rooms.readAt(room) else { return nil }
+            return rooms.unreadCounts[room] == nil ? read.addingTimeInterval(slack) : read
+        }
+        let botChats = workspace.roster?.botChats ?? [:]
+        if let roster = workspace.roster, let profile = chat.profile ?? chat.ids.lazy.compactMap({ botChats[$0] }).first {
+            if Self.botKey(profile) == open { return .now }
+            guard let point = roster.readPoint(profile) else { return nil }
+            if roster.unread.contains(profile) { return point }
+            return max(point, roster.bot(named: profile)?.lastActive ?? point).addingTimeInterval(slack)
+        }
+        guard let session = workspace.sessions.first(where: { chat.ids.contains($0.id) || chat.ids.contains($0.stableID) })
+        else { return nil }
+        let key = session.stableID
+        if key == open { return .now }
+        guard let mark = readMark(for: key), let read = mark.readUntil else { return nil }
+        if mark.isUnread(lastActive: session.lastActive) { return read }
+        return max(read, session.lastActive ?? read).addingTimeInterval(slack)
+    }
+
+    /// The chats the app icon badge counts (`PushShared.recordUnread`): unread, unmuted, not on
+    /// screen, named every way a notice may name them.
+    func badgeChats() -> [UnreadChat] {
+        guard let workspace else { return [] }
+        let open = openKey
+        let botChats = workspace.roster?.botChats ?? [:]
+        return badges.keys.sorted().compactMap { key -> UnreadChat? in
+            guard key != open, badge(for: key).isUnread, !mutes.isMuted(key) else { return nil }
+            if key.hasPrefix("bot:") {
+                let name = String(key.dropFirst(4))
+                return UnreadChat(key: key, ids: botChats.filter { $0.value == name }.keys.sorted(),
+                                  since: workspace.roster?.bot(named: name)?.lastActive ?? .now)
+            }
+            if key.hasPrefix("group:") {
+                let id = String(key.dropFirst(6))
+                return UnreadChat(key: key, room: id, since: workspace.roster?.groupRooms.room(id)?.updatedAt ?? .now)
+            }
+            guard let session = workspace.session(forKey: key) else { return nil }
+            return UnreadChat(key: key, ids: Array(Set([session.id, key])).sorted(), since: session.lastActive ?? .now)
+        }
+    }
+
+    /// What the badge counts and what's muted, as the plugin names them (`presence away`), so it
+    /// keeps the badge right while the app is away.
+    func badgeLists() -> (unread: AppPushClient.ChatLists, muted: AppPushClient.ChatLists) {
+        // The plugin counts ids: one per chat, the one its notices carry (the newest session).
+        let counted = badgeChats()
+        let unread = AppPushClient.ChatLists(
+            chats: counted.compactMap { chat -> String? in
+                guard chat.room == nil else { return nil }
+                if chat.key.hasPrefix("bot:") {
+                    return workspace?.roster?.bot(named: String(chat.key.dropFirst(4)))?.canonicalSession?.resolvedID ?? chat.ids.first
+                }
+                return workspace?.session(forKey: chat.key)?.id ?? chat.key
+            },
+            rooms: counted.compactMap(\.room)
+        )
+        var muted = AppPushClient.ChatLists()
+        let botChats = workspace?.roster?.botChats ?? [:]
+        for key in mutes.ends.keys.sorted() where mutes.isMuted(key) {
+            if key.hasPrefix("bot:") {
+                let name = String(key.dropFirst(4))
+                muted.chats += botChats.filter { $0.value == name }.keys.sorted()
+            } else if key.hasPrefix("group:") {
+                muted.rooms.append(String(key.dropFirst(6)))
+            } else {
+                muted.chats += Array(Set([key, workspace?.session(forKey: key)?.id].compactMap { $0 })).sorted()
+            }
+        }
+        return (unread, muted)
+    }
+
+    /// Read here (opened, or Mark as Read): the gateway tells the person's other devices, whose
+    /// notifications for it go (`docs/notifications.md` §2 Reading).
+    func didRead(chats: [String] = [], rooms: [String] = []) {
+        #if HERMES_PUSH
+        guard let workspace else { return }
+        PushCenter.shared.didRead(chats: chats, rooms: rooms, in: workspace)
+        #endif
+    }
+
     // MARK: Read and unread
 
     /// Read now, on every device: the chat was opened (or its newest message was on screen for a
@@ -329,6 +422,7 @@ final class UnreadStore {
         scheduleSave()
         update()
         guard wasUnread else { return }
+        didRead(chats: [session.id, key])
         Task { await self.setUnread(false, session: session) }
     }
 
@@ -367,6 +461,7 @@ final class UnreadStore {
         }
         update()
         scheduleSave()
+        didRead(chats: sessions.flatMap { Array(Set([$0.id, $0.stableID])) })
         for start in stride(from: 0, to: sessions.count, by: 4) {
             await withTaskGroup(of: Void.self) { group in
                 for session in sessions[start..<min(start + 4, sessions.count)] {
@@ -529,6 +624,10 @@ final class UnreadStore {
             if let session = workspace?.session(forKey: key), session.id != key { ends[session.id] = end }
         }
         PushShared.current.setMutes(ends, gateway: gatewayID)
+        #if HERMES_PUSH
+        // A muted chat leaves the app icon badge, an unmuted unread one comes back.
+        PushCenter.shared.unreadChanged(badgeChats(), gateway: gatewayID)
+        #endif
     }
 
     /// Redraws when the next mute ends.

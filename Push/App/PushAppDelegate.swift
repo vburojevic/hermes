@@ -28,6 +28,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             await PushCenter.shared.withdraw(notice)
         case .sync:
             await PushCenter.shared.sync(notice)
+        case .read:
+            await PushCenter.shared.read(notice)
         default:
             return .noData
         }

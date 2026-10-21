@@ -1611,6 +1611,7 @@ final class BotRoster {
                 try await self.client.markRead(storedSessionID: chat.resolvedID, profile: name)
                 // Stamped by the server after this activity; its clock, not ours, so no later.
                 self.serverRead[name] = max(self.serverRead[name] ?? 0, active)
+                self.workspace?.unread.didRead(chats: self.botChats.filter { $0.value == name }.keys.sorted())
             } catch is CancellationError {
             } catch {
                 ConnectionLog.logger.notice("bots: couldn't mark \(name, privacy: .public) read: \(error.localizedDescription, privacy: .public)")
@@ -1640,7 +1641,7 @@ final class BotRoster {
 
     /// The person is looking at the app. A Mac often keeps a Bot Chat open all day: that counts as
     /// read here, but only what was on screen while Hermes was in front is read on other devices.
-    private static var isInFront: Bool {
+    static var isInFront: Bool {
         #if os(iOS)
         UIApplication.shared.applicationState == .active
         #else
