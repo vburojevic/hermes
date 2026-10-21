@@ -29,14 +29,14 @@ import time
 B = None  # backend.py globals
 LOCK = threading.RLock()
 SHA = re.compile(r"^[0-9a-fA-F]{40}$")
-PUBLISHED = "b50747597265863e279f6829a28404caf57395a2"
+PUBLISHED = "9f2ea4494544138da89549cc993a3a1bc7f45068"
 
 PUSH_HOOKS = ["pre_llm_call", "post_llm_call", "on_session_end", "pre_tool_call", "pre_approval_request",
               "post_approval_response", "on_human_input_request", "on_human_input_resolved", "on_room_member_activity",
               "kanban_task_completed", "kanban_task_blocked"]
 APPS = {
     "hermes-app-push": {
-        "repo": "vburojevic/hermes-app-push", "version": "1.3.2", "published": PUBLISHED,
+        "repo": "vburojevic/hermes-app-push", "version": "1.4.0", "published": PUBLISHED,
         # What Hermes says it switched on (hermes_cli/plugins_activation.py): hooks and the command at once.
         "activation": {"activated_now": {"hooks": PUSH_HOOKS, "gateway_commands": ["app-push"]}, "deferred": {}, "live_now": {}},
         "description": "Push notifications for the Hermes iPhone, iPad and Mac app: approvals, questions, password "

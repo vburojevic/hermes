@@ -45,16 +45,18 @@ extension AppPlugin {
         public init() {}
     }
 
-    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.3.2 is 1.3.1 from the
+    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.0 passes reads on
+    /// to the person's other devices (`read`, read pushes, badge-only pushes) with the same access;
+    /// 1.3.2 is 1.3.1 from the
     /// repository rewritten to one commit (no personal data in its history), same access; 1.3.1 reads reply,
     /// room and cron text in one pass (patterns that stalled the gateway on crafted text) with the
     /// same access; 1.3.0 answers `/app-push host` (how the gateway's Mac schedules Hermes,
     /// Settings → Setup → Priority); 1.2.1 sent no notice for a turn that ends in "[SILENT]".
     public static let push = AppPlugin(
         name: "hermes-app-push", repo: "vburojevic/hermes-app-push",
-        ref: "b50747597265863e279f6829a28404caf57395a2", version: "1.3.2", minimumVersion: "1.3.2",
+        ref: "9f2ea4494544138da89549cc993a3a1bc7f45068", version: "1.4.0", minimumVersion: "1.4.0",
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
-                       "1.3.1": pushAccess, "1.3.2": pushAccess],
+                       "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )
