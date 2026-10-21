@@ -153,14 +153,14 @@ final class DictationController {
 
     private func handle(_ event: SpeechInput.Event) {
         switch event {
-        case .words(let final, let volatile):
+        case .words(let final, let volatile, _):
             finalized = final
             self.volatile = volatile
         case .level(let level):
             guard state == .listening else { return }
             levels.removeFirst()
             levels.append(level)
-        case .voice, .unavailable:
+        case .frames, .unavailable:
             break
         case .failed(let message):
             state = .failed(message)

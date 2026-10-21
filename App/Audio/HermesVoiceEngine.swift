@@ -3,6 +3,7 @@ import Foundation
 import HermesKit
 import HermesMarkdown
 import Observation
+import os
 
 /// Talk's own audio path (`docs/voice.md` §4.2): transcription (on the device, or the gateway's
 /// with Transcribe on: The gateway) and endpointing in, the Bot's voice out, through one engine
@@ -10,9 +11,10 @@ import Observation
 ///
 /// - The coordinator's Talk role is held from start to end, and the analyzer stays up: nothing is
 ///   rebuilt between turns, so it never goes deaf.
-/// - A turn ends after the pause setting (`Endpointer`), driven by voice activity and words, with
-///   one timer re-armed on every event.
-/// - Talking over the Bot for 250 ms, or saying "stop", fades it out within 80 ms (`BargeInDetector`).
+/// - What it hears is decided by `TalkEars`, frame by frame: the person's voice near the
+///   microphone lowers the Bot at once, their words (or a stop word) stop it, and the room's
+///   noise, a TV or the Bot's own echo do neither. A turn ends after the pause setting from the
+///   person's voice and words only (`docs/voice.md` §4.2).
 /// - Mute is the system's input mute (`AVAudioApplication`), so an AirPods stem press mutes too.
 ///   It never stops the Bot.
 @MainActor
@@ -52,8 +54,12 @@ final class HermesVoiceEngine {
     var outputLevel: Float { player?.level ?? 0 }
 
     var pause: Endpointer.Pause = .normal {
-        didSet { endpointer.pause = pause }
+        didSet { ears.endpointer.pause = pause }
     }
+
+    /// Barge-in and end-of-turn decisions with what they were decided on, never the words:
+    /// `log show --predicate 'subsystem == "co.caffeinatedcode.hermes" && category == "talk"'`.
+    static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "talk")
 
     /// A spoken turn ended: its words, and when the speech ended (system uptime).
     var onTurn: ((String, TimeInterval) -> Void)?
@@ -74,14 +80,9 @@ final class HermesVoiceEngine {
     @ObservationIgnored private var input: (any TalkTranscriber)?
     @ObservationIgnored private var contextualStrings: [String] = []
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
-    @ObservationIgnored private var endpointTimer: Task<Void, Never>?
-    @ObservationIgnored private var bargeInTimer: Task<Void, Never>?
-    @ObservationIgnored private var endpointer = Endpointer()
-    @ObservationIgnored private var bargeIn = BargeInDetector()
+    @ObservationIgnored private var ears = TalkEars()
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var prefersSpeaker = true
-    /// Words heard while the Bot spoke that didn't interrupt it ("mm-hm"): dropped when it stops.
-    @ObservationIgnored private var heardOverBot = false
     @ObservationIgnored private var endingTurn = false
     @ObservationIgnored private var cueChain: AudioPlayerChain?
 
@@ -201,6 +202,10 @@ final class HermesVoiceEngine {
             player.onSpeaking = { [weak self] speaking in self?.speakingChanged(speaking) }
             player.onFellBack = { [weak self] why in self?.onVoiceFellBack?(why) }
             player.onFinished = { [weak self] in self?.onFinishedSpeaking?() }
+            player.onSentence = { [weak self] _ in
+                guard let self else { return }
+                self.ears.botSaying(self.player?.textAround ?? "")
+            }
             self.player = player
             if let transcription {
                 let input = GatewayTranscriber(backend: transcription.backend, profile: transcription.profile)
@@ -278,8 +283,7 @@ final class HermesVoiceEngine {
         cueChain = nil
         tasks.forEach { $0.cancel() }
         tasks = []
-        endpointTimer?.cancel()
-        bargeInTimer?.cancel()
+        ears = TalkEars(pause: pause)
         if isMuted { setMuted(false) }
         let input = input
         let player = player
@@ -295,6 +299,7 @@ final class HermesVoiceEngine {
         heardFinal = ""
         heardVolatile = ""
         inputLevel = 0
+        isHearingSpeech = false
         state = .idle
     }
 
@@ -322,7 +327,7 @@ final class HermesVoiceEngine {
         try? AVAudioApplication.shared.setInputMuted(muted)
         isMuted = muted
         if muted {
-            endpointTimer?.cancel()
+            apply(ears.muted(at: ProcessInfo.processInfo.systemUptime))
             isHearingSpeech = false
             inputLevel = 0
         }
@@ -349,36 +354,48 @@ final class HermesVoiceEngine {
 
     private func handle(_ event: SpeechInput.Event) {
         guard !isMuted else { return }
-        let now = ProcessInfo.processInfo.systemUptime
         switch event {
-        case .words(let final, let volatile):
+        case .words(let final, let volatile, let runs):
             heardFinal = final
             heardVolatile = volatile
-            if bargeIn.isBotSpeaking {
-                heardOverBot = !heard.isEmpty
-                if bargeIn.shouldInterrupt(hearing: heard) { bargeInNow() }
-            } else {
-                endpointer.heard(heard, at: now)
-                armEndpoint()
+            apply(ears.heard(HeardWords(final: final, volatile: volatile, runs: runs), at: ProcessInfo.processInfo.systemUptime))
+        case .frames(let start, let levels):
+            // The Bot's level as the face shows it (0…1 over −50…0 dB), back in dBFS.
+            let bot = isSpeaking ? (player?.level).flatMap { $0 > 0 ? $0 * 50 - 50 : nil } : nil
+            let wasHearing = ears.isHearingPerson
+            for (index, level) in levels.enumerated() {
+                apply(ears.frame(level: level, at: start + Double(index) * 0.02, botLevel: bot))
             }
-        case .voice(.started(let at)):
-            isHearingSpeech = true
-            endpointer.speechStarted(at: at)
-            endpointTimer?.cancel()
-            bargeIn.speechStarted(at: at)
-            armBargeIn()
-        case .voice(.ended(let at)):
-            isHearingSpeech = false
-            endpointer.speechEnded(at: at)
-            bargeIn.speechEnded()
-            bargeInTimer?.cancel()
-            armEndpoint()
+            isHearingSpeech = ears.isHearingPerson
+            if !wasHearing, ears.isHearingPerson, !ears.isBotSpeaking {
+                Task { await input?.personStarted() }
+            }
+            (input as? SpeechInput)?.setGate(ears.gateThreshold)
         case .level(let level):
             inputLevel = level
         case .failed(let message):
             state = .failed(message)
         case .unavailable(let why):
             Task { await fallBackToDevice(why) }
+        }
+    }
+
+    /// Does what the ears decided, and logs why.
+    private func apply(_ decisions: [TalkEars.Decision]) {
+        for decision in decisions {
+            if decision.action == nil {
+                Self.logger.debug("\(decision.description, privacy: .public)")
+            } else {
+                Self.logger.info("\(decision.description, privacy: .public)")
+            }
+            switch decision.action {
+            case .duck: player?.duck(true)
+            case .restore: player?.duck(false)
+            case .bargeIn: bargeInNow()
+            case .discardHeard: Task { await input?.dropTurn() }
+            case .endTurn: Task { await endTurn() }
+            case nil: break
+            }
         }
     }
 
@@ -405,66 +422,35 @@ final class HermesVoiceEngine {
     }
 
     private func speakingChanged(_ speaking: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
         if speaking {
-            onFirstAudio?(ProcessInfo.processInfo.systemUptime)
-            bargeIn.botStarted(at: ProcessInfo.processInfo.systemUptime)
-            endpointTimer?.cancel()
-            if isHearingSpeech { armBargeIn() }
+            onFirstAudio?(now)
+            apply(ears.botStarted(at: now, saying: player?.textAround ?? ""))
         } else {
-            bargeIn.botStopped()
-            bargeInTimer?.cancel()
-            if heardOverBot {
-                // What was heard over the Bot didn't stop it: it isn't the next turn.
-                heardOverBot = false
-                Task { await input?.dropTurn() }
-                endpointer.reset()
-            }
-        }
-    }
-
-    /// One timer for the end of the turn, re-armed on every event; nothing is polled.
-    private func armEndpoint() {
-        endpointTimer?.cancel()
-        guard !bargeIn.isBotSpeaking, let deadline = endpointer.deadline else { return }
-        let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
-        endpointTimer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled else { return }
-            await self?.endTurn()
-        }
-    }
-
-    /// One timer for barge-in: when 250 ms of counted speech will have passed.
-    private func armBargeIn() {
-        bargeInTimer?.cancel()
-        guard let deadline = bargeIn.interruptDeadline else { return }
-        let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
-        bargeInTimer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let self, self.isHearingSpeech else { return }
-            if self.bargeIn.shouldInterrupt(at: ProcessInfo.processInfo.systemUptime) { self.bargeInNow() }
+            // Words heard over the Bot that didn't stop it ("mm-hm") are dropped; what someone
+            // stopping it says is their turn.
+            apply(ears.botStopped(at: now))
         }
     }
 
     private func bargeInNow() {
-        heardOverBot = false
-        bargeInTimer?.cancel()
         Task {
             await player?.stop(fade: true)
             onBargeIn?()
-            // What they're saying now is their next turn.
-            endpointer.heard(heard, at: ProcessInfo.processInfo.systemUptime)
-            armEndpoint()
         }
     }
 
     private func endTurn() async {
-        guard !endingTurn, let input else { return }
+        guard !endingTurn else { return }
+        guard let input else {
+            ears.turnEnded(at: ProcessInfo.processInfo.systemUptime, sent: false)
+            return
+        }
         endingTurn = true
         defer { endingTurn = false }
-        let endedAt = endpointer.lastActivity ?? ProcessInfo.processInfo.systemUptime
+        let endedAt = ears.endpointer.lastActivity ?? ProcessInfo.processInfo.systemUptime
         let words = await input.endTurn()
-        endpointer.reset()
+        ears.turnEnded(at: ProcessInfo.processInfo.systemUptime, sent: !words.isEmpty)
         heardFinal = ""
         heardVolatile = ""
         guard !words.isEmpty else { return }

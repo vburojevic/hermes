@@ -12,11 +12,14 @@ import Speech
 ///   skill names so they're spelled right.
 /// - One analyzer for as long as it runs: Talk ends a turn with `endTurn()` and keeps listening,
 ///   nothing is rebuilt between turns.
-/// - The same microphone buffers give the level (about 20 a second) and voice activity
-///   (`VoiceActivityDetector`), which barge-in and endpointing use before any words arrive.
+/// - The same microphone buffers give the level (about 20 a second) and 20 ms levels in dBFS
+///   (`frames`), which Talk's ears (`TalkEars`) use before any words arrive.
+/// - Talk's transcriber hears through a `NearGate`: while the Bot speaks, only sound near the
+///   microphone reaches it, so the Bot's echo or a TV never makes it late with your words.
 actor SpeechInput {
     enum Model: Sendable {
-        /// `SpeechTranscriber`, falling back to `DictationTranscriber`: conversation.
+        /// Talk: `DictationTranscriber` reporting often, with each settled word's time and
+        /// confidence (`docs/voice.md` §4.2).
         case conversation
         /// `DictationTranscriber` with punctuation and emoji: words into a field.
         case dictation
@@ -30,9 +33,11 @@ actor SpeechInput {
     }
 
     enum Event: Sendable {
-        /// Words since the last `endTurn()`: settled, then still being heard (they may change).
-        case words(final: String, volatile: String)
-        case voice(VoiceActivityDetector.Event)
+        /// Words since the last `endTurn()`: settled, then still being heard (they may change),
+        /// with each settled word's time (system uptime) for Talk.
+        case words(final: String, volatile: String, runs: [HeardWords.Run])
+        /// 20 ms levels of the microphone in dBFS, the first starting at `start` (system uptime).
+        case frames(start: TimeInterval, levels: [Float])
         /// The microphone's level, 0…1.
         case level(Float)
         /// The analyzer stopped with an error (shown, with Try Again).
@@ -73,6 +78,10 @@ actor SpeechInput {
     private var reader: Task<Void, Never>?
     private var finalized = ""
     private var volatile = ""
+    private var finalRuns: [HeardWords.Run] = []
+    private var volatileRuns: [HeardWords.Run] = []
+    /// Shared with the feed on the audio thread, which may not be made yet.
+    private let gateThreshold = OSAllocatedUnfairLock<Float?>(initialState: nil)
     /// Seconds of audio the analyzer has been given, and what's been finalised through.
     private var finalizedThrough = CMTime.zero
     private var finalizationWaiters: [(CMTime, CheckedContinuation<Void, Never>)] = []
@@ -121,7 +130,7 @@ actor SpeechInput {
         }
         #endif
         let status = await AssetInventory.status(forModules: modules)
-        logger.error("no analyzer format: \(String(describing: modules.first.map { type(of: $0) }), privacy: .public) assets \(String(describing: status), privacy: .public), SpeechTranscriber available \(SpeechTranscriber.isAvailable)")
+        logger.error("no analyzer format: \(String(describing: modules.first.map { type(of: $0) }), privacy: .public) assets \(String(describing: status), privacy: .public)")
         throw Failure.modelUnavailable
     }
 
@@ -142,22 +151,18 @@ actor SpeechInput {
     }
 
     nonisolated private static func modules(for configuration: Configuration, install: Bool = true, progress: @escaping @Sendable (Double) -> Void) async throws -> [any SpeechModule] {
-        let transcriber: any SpeechModule
-        switch configuration.model {
-        case .conversation where SpeechTranscriber.isAvailable:
-            guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: configuration.locale) else {
-                return try await modules(for: Configuration(model: .dictation, locale: configuration.locale, contextualStrings: configuration.contextualStrings), install: install, progress: progress)
-            }
-            transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
-        case .conversation, .dictation:
-            let locale = await DictationTranscriber.supportedLocale(equivalentTo: configuration.locale) ?? Locale(identifier: "en-US")
-            transcriber = DictationTranscriber(
-                locale: locale,
-                contentHints: [],
-                transcriptionOptions: configuration.model == .dictation ? [.punctuation, .emoji] : [.punctuation],
-                reportingOptions: [.volatileResults],
-                attributeOptions: []
-            )
+        let locale = await DictationTranscriber.supportedLocale(equivalentTo: configuration.locale) ?? Locale(identifier: "en-US")
+        let transcriber: DictationTranscriber = switch configuration.model {
+        case .conversation:
+            // Talk: settled often, so a word said over the Bot comes back in about 0.35 s (the
+            // general `SpeechTranscriber` reports every second, untimed), with each settled
+            // word's time and confidence for `TalkEars` (`docs/voice.md` §4.2, §12).
+            DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [.punctuation],
+                                 reportingOptions: [.volatileResults, .frequentFinalization],
+                                 attributeOptions: [.audioTimeRange, .transcriptionConfidence])
+        case .dictation:
+            DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [.punctuation, .emoji],
+                                 reportingOptions: [.volatileResults], attributeOptions: [])
         }
         let modules: [any SpeechModule] = [transcriber]
         if let request = try await AssetInventory.assetInstallationRequest(supporting: modules) {
@@ -165,12 +170,6 @@ actor SpeechInput {
             let watcher = ProgressWatcher(request.progress, report: progress)
             defer { watcher.stop() }
             try await request.downloadAndInstall()
-        }
-        if configuration.model == .conversation, transcriber is SpeechTranscriber,
-           await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) == nil {
-            // The general transcriber can't run here (some devices, the simulator): dictate instead.
-            logger.info("SpeechTranscriber has no format here; using DictationTranscriber")
-            return try await Self.modules(for: Configuration(model: .dictation, locale: configuration.locale, contextualStrings: configuration.contextualStrings), install: install, progress: progress)
         }
         return modules
     }
@@ -193,9 +192,7 @@ actor SpeechInput {
 
     nonisolated private static func finalWords(of module: (any SpeechModule)?) async throws -> String {
         var words = ""
-        if let transcriber = module as? SpeechTranscriber {
-            for try await result in transcriber.results where result.isFinal { words += String(result.text.characters) }
-        } else if let transcriber = module as? DictationTranscriber {
+        if let transcriber = module as? DictationTranscriber {
             for try await result in transcriber.results where result.isFinal { words += String(result.text.characters) }
         }
         return words
@@ -220,7 +217,8 @@ actor SpeechInput {
 
         let (inputs, inputContinuation) = AsyncStream<AnalyzerInput>.makeStream()
         let (events, eventContinuation) = AsyncStream<Event>.makeStream(bufferingPolicy: .bufferingNewest(64))
-        let feed = try await InputFeed.make(target: format, modules: modules, analyzer: inputContinuation, events: eventContinuation)
+        let feed = try await InputFeed.make(target: format, modules: modules, analyzer: inputContinuation, events: eventContinuation,
+                                            gate: configuration.model == .conversation ? gateThreshold : nil)
         try await analyzer.start(inputSequence: inputs)
 
         self.analyzer = analyzer
@@ -231,6 +229,8 @@ actor SpeechInput {
         self.graph = graph
         finalized = ""
         volatile = ""
+        finalRuns = []
+        volatileRuns = []
         reader = Task { [weak self] in await self?.read(modules) }
         do {
             consumer = try graph.addInputConsumer { buffer, time in feed.process(buffer, time: time) }
@@ -253,8 +253,15 @@ actor SpeechInput {
         let words = (finalized + volatile).trimmingCharacters(in: .whitespacesAndNewlines)
         finalized = ""
         volatile = ""
-        eventContinuation?.yield(.words(final: "", volatile: ""))
+        finalRuns = []
+        volatileRuns = []
+        eventContinuation?.yield(.words(final: "", volatile: "", runs: []))
         return words
+    }
+
+    /// Talk: what the transcriber hears while the Bot speaks (`TalkEars.gateThreshold`).
+    nonisolated func setGate(_ threshold: Float?) {
+        gateThreshold.withLock { $0 = threshold }
     }
 
     /// Ends a turn whose words won't be used (heard over the Bot without stopping it).
@@ -322,9 +329,9 @@ actor SpeechInput {
                     let wait = begin + at - ProcessInfo.processInfo.systemUptime
                     if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
                     guard !Task.isCancelled else { return }
-                    await self?.apply(text: words[...index].joined(separator: " "), isFinal: false, finalizedThrough: .invalid)
+                    await self?.apply(text: AttributedString(words[...index].joined(separator: " ")), isFinal: false, finalizedThrough: .invalid)
                 }
-                await self?.apply(text: text + " ", isFinal: true, finalizedThrough: .invalid)
+                await self?.apply(text: AttributedString(text + " "), isFinal: true, finalizedThrough: .invalid)
             }
         }
         return events
@@ -350,13 +357,9 @@ actor SpeechInput {
 
     private func read(_ modules: [any SpeechModule]) async {
         do {
-            if let transcriber = modules.first as? SpeechTranscriber {
+            if let transcriber = modules.first as? DictationTranscriber {
                 for try await result in transcriber.results {
-                    apply(text: String(result.text.characters), isFinal: result.isFinal, finalizedThrough: result.resultsFinalizationTime)
-                }
-            } else if let transcriber = modules.first as? DictationTranscriber {
-                for try await result in transcriber.results {
-                    apply(text: String(result.text.characters), isFinal: result.isFinal, finalizedThrough: result.resultsFinalizationTime)
+                    apply(text: result.text, isFinal: result.isFinal, finalizedThrough: result.resultsFinalizationTime)
                 }
             }
         } catch is CancellationError {
@@ -367,18 +370,34 @@ actor SpeechInput {
         }
     }
 
-    private func apply(text: String, isFinal: Bool, finalizedThrough time: CMTime) {
+    private func apply(text attributed: AttributedString, isFinal: Bool, finalizedThrough time: CMTime) {
+        let text = String(attributed.characters)
+        let runs = runs(of: attributed)
         if isFinal {
             finalized += text
             volatile = ""
+            finalRuns += runs
+            volatileRuns = []
         } else {
             volatile = text
+            volatileRuns = runs
         }
         if time.isValid, time > finalizedThrough { finalizedThrough = time }
-        eventContinuation?.yield(.words(final: finalized, volatile: volatile))
+        eventContinuation?.yield(.words(final: finalized, volatile: volatile, runs: finalRuns + volatileRuns))
         let ready = finalizationWaiters.filter { finalizedThrough >= $0.0 }
         finalizationWaiters.removeAll { finalizedThrough >= $0.0 }
         for (_, waiter) in ready { waiter.resume() }
+    }
+
+    /// Each run of words with its time on the microphone's clock and the transcriber's confidence,
+    /// when it gives them (Talk's settled words).
+    private func runs(of text: AttributedString) -> [HeardWords.Run] {
+        guard let feed else { return [] }
+        return text.runs.compactMap { run in
+            guard let range = run.audioTimeRange, let start = feed.uptime(atAnalyzerTime: range.start.seconds),
+                  let end = feed.uptime(atAnalyzerTime: range.end.seconds) else { return nil }
+            return HeardWords.Run(text: String(text[run.range].characters), start: start, end: end, confidence: run.transcriptionConfidence)
+        }
     }
 
     /// Waits until results finalised through `time` have arrived, at most 0.4 s (silence gives
@@ -401,49 +420,76 @@ actor SpeechInput {
 }
 
 /// Runs on the audio thread: converts microphone buffers to the analyzer's format and feeds
-/// them in, and measures level and voice activity on the way.
+/// them in, and measures their levels on the way.
 nonisolated final class InputFeed: @unchecked Sendable {
     private let target: AVAudioFormat
     private let analyzer: AsyncStream<AnalyzerInput>.Continuation
     private let events: AsyncStream<SpeechInput.Event>.Continuation
     private var converter: AVAudioConverter?
     private let modernConverter: AnyObject?
-    private var vad = VoiceActivityDetector()
     private var lastLevel: TimeInterval = 0
     private let fed = OSAllocatedUnfairLock(initialState: CMTime.zero)
+    /// When the analyzer's timeline began (system uptime), so its word times can be placed.
+    private let origin = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+    /// Talk: the analyzer hears through a `NearGate`, whose threshold Talk's ears set.
+    private let gateThreshold: OSAllocatedUnfairLock<Float?>?
+    private var gate: NearGate?
 
-    /// No analyzer to feed (the simulator's scripted words): level and voice activity only.
+    /// No analyzer to feed (the simulator's scripted words, the gateway's transcriber): levels only.
     private let scriptedOnly: Bool
 
-    private init(target: AVAudioFormat, modernConverter: AnyObject?, analyzer: AsyncStream<AnalyzerInput>.Continuation, events: AsyncStream<SpeechInput.Event>.Continuation, scriptedOnly: Bool) {
+    private init(target: AVAudioFormat, modernConverter: AnyObject?, analyzer: AsyncStream<AnalyzerInput>.Continuation,
+                 events: AsyncStream<SpeechInput.Event>.Continuation, scriptedOnly: Bool, gate: OSAllocatedUnfairLock<Float?>?) {
         self.target = target
         self.modernConverter = modernConverter
         self.scriptedOnly = scriptedOnly
         self.analyzer = analyzer
         self.events = events
+        gateThreshold = gate
+        if gate != nil { self.gate = NearGate(sampleRate: target.sampleRate) }
     }
 
-    static func make(target: AVAudioFormat, modules: [any SpeechModule], analyzer: AsyncStream<AnalyzerInput>.Continuation, events: AsyncStream<SpeechInput.Event>.Continuation) async throws -> InputFeed {
+    static func make(target: AVAudioFormat, modules: [any SpeechModule], analyzer: AsyncStream<AnalyzerInput>.Continuation,
+                     events: AsyncStream<SpeechInput.Event>.Continuation, gate: OSAllocatedUnfairLock<Float?>? = nil) async throws -> InputFeed {
         var modern: AnyObject?
-        if #available(iOS 27, macOS 27, *), !modules.isEmpty {
-            // 27 converts for the analyzer itself, keeping its timeline exact.
+        if #available(iOS 27, macOS 27, *), !modules.isEmpty, gate == nil {
+            // 27 converts for the analyzer itself, keeping its timeline exact. A gated feed
+            // converts itself, as it changes the samples on the way.
             modern = try? await AnalyzerInputConverter.converter(compatibleWith: modules)
         }
-        return InputFeed(target: target, modernConverter: modern, analyzer: analyzer, events: events, scriptedOnly: modules.isEmpty)
+        return InputFeed(target: target, modernConverter: modern, analyzer: analyzer, events: events, scriptedOnly: modules.isEmpty, gate: gate)
     }
 
     /// How much audio the analyzer has had, on its own timeline.
     var timeFed: CMTime { fed.withLock { $0 } }
 
+    /// A time on the analyzer's timeline as system uptime: when it was said.
+    func uptime(atAnalyzerTime seconds: Double) -> TimeInterval? {
+        origin.withLock { $0.map { $0 + seconds - (gateThreshold == nil ? 0 : NearGate.delay) } }
+    }
+
     func process(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
-        measure(buffer, time: time)
+        let start = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : ProcessInfo.processInfo.systemUptime
+        measure(buffer, start: start)
         guard !scriptedOnly else { return }
+        origin.withLock { origin in
+            if origin == nil { origin = start }
+        }
         if #available(iOS 27, macOS 27, *), let modern = modernConverter as? AnalyzerInputConverter {
             guard let inputs = try? modern.convert(buffer, at: nil) else { return }
             for input in inputs { yield(input, frames: input.bufferDuration) }
             return
         }
         guard let output = convert(buffer) else { return }
+        if gate != nil {
+            gate?.threshold = gateThreshold?.withLock { $0 }
+            let count = Int(output.frameLength)
+            if let samples = output.floatChannelData?[0] {
+                gate?.process(UnsafeMutableBufferPointer(start: samples, count: count))
+            } else if let samples = output.int16ChannelData?[0] {
+                gate?.process(UnsafeMutableBufferPointer(start: samples, count: count))
+            }
+        }
         yield(AnalyzerInput(buffer: output), frames: CMTime(value: CMTimeValue(output.frameLength), timescale: CMTimeScale(target.sampleRate)))
     }
 
@@ -478,22 +524,18 @@ nonisolated final class InputFeed: @unchecked Sendable {
         return output
     }
 
-    /// Level about 20 times a second, and voice activity per 20 ms.
-    private func measure(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
+    /// The meter's level about 20 times a second, and every 20 ms in dBFS for Talk's ears.
+    private func measure(_ buffer: AVAudioPCMBuffer, start: TimeInterval) {
         let rate = buffer.format.sampleRate
         let window = max(1, Int(rate / 50))
-        let start = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : ProcessInfo.processInfo.systemUptime
-        let levels = AudioLevel.windows(of: buffer, size: window)
-        for (index, level) in levels.enumerated() {
+        let decibels = AudioLevel.decibelWindows(of: buffer, size: window)
+        guard !decibels.isEmpty else { return }
+        events.yield(.frames(start: start, levels: decibels))
+        for (index, level) in decibels.enumerated() {
             let at = start + Double(index * window) / rate
-            // Back from the meter's 0…1 to linear RMS for the detector.
-            let rms = pow(10, (level * 50 - 50) / 20)
-            if let event = vad.process(rms: level <= 0 ? 0 : rms, at: at) {
-                events.yield(.voice(event))
-            }
             if at - lastLevel >= 0.05 {
                 lastLevel = at
-                events.yield(.level(level))
+                events.yield(.level(AudioLevel.normalised(decibels: level)))
             }
         }
     }

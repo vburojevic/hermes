@@ -176,7 +176,8 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 - **Transcribe on: The gateway** (`GatewayTranscriber`): the words come from the gateway's own
   provider as you speak (`WS /api/audio/transcribe-stream`). The device still hears voice activity
   and decides when a turn ends: Hermes takes one socket per utterance and never ends one itself.
-  When speech starts the socket opens with `{"sample_rate": 16000}`, then the turn streams as
+  When the person's near voice starts (`TalkEars`, so a TV never streams to a paid provider) the
+  socket opens with `{"sample_rate": 16000}`, then the turn streams as
   16 kHz int16 mono from half a second before it started; `partial` carries everything heard so
   far, and the turn's end sends `{"eos": true}` and waits up to 10 s for `final`. A turn the
   socket lost (Hermes reports provider failures only after `eos`) goes whole to
@@ -185,17 +186,41 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   device's transcriber, and the call says why. A call checks voice-config's `stt.streaming` before
   it starts, so a gateway that can't never gets the audio. Only OpenAI, xAI and ElevenLabs stream
   in Hermes, all paid; voice messages and dictation always transcribe on the device.
-- **Endpointing** (`Endpointer`): a turn ends after a silence of Short 0.6 s / Normal 0.9 s /
-  Long 1.4 s since the last speech or words, 0.4 s longer when the last word sounds unfinished
-  ("and", "so", "um"). Voice activity comes from the microphone's level on the echo-cancelled
-  input (`VoiceActivityDetector`: an adaptive noise floor, about 10 dB above it is voice, a 60 ms
-  attack and a 180 ms hangover). One timer, re-armed on every event; nothing is polled.
-- **Barge-in** (`BargeInDetector`): speech for 250 ms, outside the first 400 ms of the Bot's
-  speech, or a single "stop", "wait", "hold on", fades the Bot out over 80 ms and, when it was
-  reading the reply, stops the turn if it's still running (`session.interrupt`); the next turn
-  carries `interrupted: true`. A tap does the same. Talking over an ask (an approval, a question,
-  a step note) stops only the ask. A lone "stop" is never sent to Hermes as a message. Words heard
-  over the Bot that didn't stop it ("mm-hm") are dropped.
+- **What Talk hears** (`TalkEars`, in HermesKit): every 20 ms level of the echo-cancelled input
+  (`SpeechInput` `.frames`, dBFS), the words with their times, and the Bot's own output level.
+  Nothing is polled: the frames are the clock.
+  - **Near** is the person, not the room: louder than the noise floor (`VoiceActivityDetector`'s
+    adaptive floor), than the room's loudest moments (the `ceiling`: the 90th percentile of the
+    last ten seconds that weren't the person, each the middle of 100 ms, so a TV, music or people
+    across the room count and key clicks don't), and no more than 12 dB under the person's own
+    turns (learned from each turn sent: up quickly, down slowly). Sound that follows the Bot's own
+    level, as the room returns it, isn't near.
+  - **The gate** (`NearGate`): while the Bot speaks, the transcriber hears only near sound
+    (everything else 40 dB down, with 100 ms of lookahead so a word's soft start passes, open for
+    250 ms after). A transcriber hearing the Bot's echo or a TV takes it for one long utterance and
+    reports a word said over it seconds late; heard alone, "stop" comes back in about 0.35 s.
+- **Barge-in**: a near voice for 100 ms (steady: five of the last six frames, outside the first
+  300 ms of each stretch of the Bot's speech) lowers the Bot to 20% within 60 ms, so it yields as
+  you start. It stops (an 80 ms fade) only on the person's words: a stop phrase ("stop", "wait",
+  "hold on", "one sec"…) with 100 ms of near voice, or two words that aren't backchannels ("mm-hm",
+  "yeah", "okay"), hums or the Bot's own (its echo), with 250 ms of near voice (400 ms when the
+  words are still being heard, untimed). Words quieter than near, less sure than 0.3, or still
+  being heard from before the person's voice began don't count. Without words within 0.9 s of the
+  voice stopping (2.5 s at most) the Bot comes back up; a room that keeps doing that has to be
+  6 dB louder each time (up to 12) for 30 s. When it was reading the reply, stopping it also stops
+  the turn if it's still running (`session.interrupt`); the next turn carries `interrupted: true`.
+  A tap does the same. Talking over an ask (an approval, a question, a step note) stops only the
+  ask. A lone "stop" is never sent to Hermes as a message. Words heard over the Bot that didn't
+  stop it are dropped, and so are words heard while Hermes worked that were nobody's turn.
+- **Endpointing** (`Endpointer`, fed by `TalkEars`): a turn ends after a silence of Short 0.6 s /
+  Normal 0.9 s / Long 1.4 s since the person's last near voice or words (when the words were said,
+  not when they arrived), 0.4 s longer when the last word sounds unfinished ("and", "so", "um"). A
+  turn's voice asks less than barge-in (`turnThreshold`: never more than 6 dB under the person's
+  level), so a person in a loud room is still heard. Noise never holds a turn open: once the words
+  stop for the pause plus 0.6 s it ends, whatever the room sounds like. Noise never makes one:
+  words that were never near are dropped after 1.2 s.
+- Every decision is logged with what it was decided on, never the words (category `talk`):
+  `duck: near voice, level -23 dB, near -35 dB, floor -52 dB, person -23 dB, voice 120 ms`.
 - **Mute**: `AVAudioApplication.setInputMuted`, so the AirPods stem mutes and unmutes too. Mute
   never stops the Bot. Talking while muted shows "You're muted"
   (`setMutedSpeechActivityEventListener`).
@@ -453,15 +478,17 @@ one-time `?ticket=`; a Bot is `?profile=`.
 - Dictation shows its failures (with Try Again) and the model download's progress.
 - The Mac panel has Open Settings and Try Again; the iPad has no Earpiece control.
 - Tests: `SpokenTextTests` (the cleaner), `SpokenAnswersTests` (approval phrases, clarify
-  choices), `TurnTakingTests` (voice activity, endpointing, barge-in timing),
+  choices), `TurnTakingTests` (voice activity, endpointing), `TalkEarsTests` (barge-in and turns
+  with noise, echo, backchannels and untimed words),
   `AudioCoordinatorTests` (role changes, interruptions, routes, resets), `SpokenReplyTests`.
 
 ## 12. Acceptance checks
 
 - No two audio paths reconfigure the session at once: the coordinator's log shows one session
   change per role change.
-- "Stop" alone interrupts the Bot: the fade starts when 250 ms of speech has been heard, or as soon
-  as the word is heard.
+- Noise never stops the Bot, and the person can: the Talk noise bench (below) has no false stops,
+  and the Bot dips within about 150 ms of the person starting.
+- "Stop" alone interrupts the Bot: it dips as the word starts and stops when the word is heard.
 - The time from the end of speech to the first audio is in the log and the debug overlay: under
   1.2 s with Realtime and 2 s with Hermes Voice on a good connection.
 - A clarify question can be answered by voice; a secret is never spoken.
@@ -470,6 +497,44 @@ one-time `?ticket=`; a Bot is `?profile=`.
 - Dictation works offline and shows a failure instead of doing nothing.
 - A voice message recorded on the iPhone plays on the Mac (and the other way round), with its
   transcript; a Bot's `text_to_speech` reply plays as a strip.
+
+**The Talk noise bench** (`Tools/talk-bench`, Mac only): a call in a noisy room, heard by the
+Mac's own on-device transcriber in real time and decided by the old rule (voice activity) and by
+`TalkEars` side by side, each in its own call. Speech is the Mac's voices (`make-clips.sh`, nothing
+downloaded or committed); the rooms are synthesised at the microphone against the person at
+−24 dBFS: a quiet room, a fan (−42), a street with cars and a horn (−46 to −30), a laptop keyboard,
+music with a sung voice (−36, and −26 "loud"), a TV across the room (−40) and three people talking
+(−45). The Bot's reply comes back through the room 35 dB down. Each room gets nothing, a stop
+phrase, a sentence or a backchannel said over the Bot.
+
+```sh
+Tools/talk-bench/make-clips.sh build/talk-bench/clips
+swift build -c release --package-path Tools/talk-bench --scratch-path build/talk-bench/.build
+build/talk-bench/.build/release/talk-bench --clips build/talk-bench/clips   # --noise tv,fan --phrase stop --verbose
+```
+
+Measured 2026-10-21 (64 calls, `DictationTranscriber`):
+
+| | Before (voice activity) | `TalkEars` |
+|---|---|---|
+| False stops (nothing or "mm-hm" said) | 17 of 24 | 0 of 24 |
+| Stopped before the person spoke | 10 of 40 | 0 of 40 |
+| Interruptions caught | 27 of 40 (10 of them by noise first) | 34 of 40 |
+| Stop after the phrase ends | –740 ms median (noise, before the words) | 220 ms median, 830 ms worst |
+| The Bot yields from the phrase's start | – | 130 ms median, 400 ms worst |
+| Dips with nobody talking | – | 0 in 8 calls |
+| First turn held open past the Bot's start by noise | 17 of 64 | 1 of 64 |
+
+The misses are music as loud as the person (−26 against −24: no level tells them apart; tap to
+interrupt) and one "hold on" under the TV. `SpeechTranscriber` with the same rule: no false stops,
+35 of 40 caught, but 360 ms median and 1.9 s worst. Voice processing isn't in the loop (it runs
+only on a live microphone), so the app's input is cleaner than the bench's.
+
+**Hand checks on a real phone in a real room** (what the bench can't prove): Talk on the speaker
+with a TV on, music playing, a fan, people talking nearby and typing on a laptop beside the phone;
+the Bot keeps talking through all of it and dips at most briefly, and "stop" (said normally, from
+arm's length) cuts it every time. Then the same with AirPods, and with the phone on the table a
+metre away. The Bot never stops for its own voice at full volume on the speaker.
 
 Checked on the mock in a simulator (`-HERMES_VOICE_INPUT` clips): a spoken turn goes with its
 voice fields, an approval is asked aloud and answered by voice, the reply is read in the Bot's

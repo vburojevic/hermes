@@ -12,14 +12,20 @@ protocol TalkTranscriber: Actor {
     func dropTurn() async
     /// Stops at once, dropping what wasn't settled.
     func cancel() async
+    /// The person started talking near the microphone (`TalkEars`): a turn may begin.
+    func personStarted() async
 }
 
-extension SpeechInput: TalkTranscriber {}
+extension SpeechInput: TalkTranscriber {
+    /// The device hears everything already.
+    func personStarted() async {}
+}
 
 /// Talk's words from the gateway (`docs/voice.md` §4.2, Transcribe on: The gateway). The device
 /// still hears when the person speaks and decides when a turn ends; each turn streams to
 /// `transcribe-stream` from half a second before they started, one socket per turn, as Hermes
-/// wants it.
+/// wants it. A turn opens only for the person's voice near the microphone (`TalkEars`), so a TV or
+/// a fan never streams the room to a paid provider.
 ///
 /// - A turn the gateway couldn't finish live goes to `POST /api/audio/transcribe` whole, as Hermes
 ///   Desktop does.
@@ -69,14 +75,13 @@ actor GatewayTranscriber: TalkTranscriber {
         self.profile = profile
     }
 
-    /// Starts listening on `graph`'s microphone: level and voice activity from the device, words
-    /// from the gateway.
+    /// Starts listening on `graph`'s microphone: levels from the device, words from the gateway.
     func start(on graph: AudioGraph) async throws -> AsyncStream<SpeechInput.Event> {
         let (activity, activityContinuation) = AsyncStream<SpeechInput.Event>.makeStream(bufferingPolicy: .bufferingNewest(64))
         let (events, eventContinuation) = AsyncStream<SpeechInput.Event>.makeStream(bufferingPolicy: .bufferingNewest(64))
         let (_, analyzer) = AsyncStream<AnalyzerInput>.makeStream()
         analyzer.finish()
-        // No analyzer to feed: the feed only measures level and voice activity.
+        // No analyzer to feed: the feed only measures levels.
         let feed = try await InputFeed.make(target: PCM16Converter.format, modules: [], analyzer: analyzer, events: activityContinuation)
         let (audio, audioContinuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingNewest(512))
         let converter = PCM16Converter()
@@ -118,13 +123,13 @@ actor GatewayTranscriber: TalkTranscriber {
             }
         }
         closeTurn()
-        events?.yield(.words(final: "", volatile: ""))
+        events?.yield(.words(final: "", volatile: "", runs: []))
         return words.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func dropTurn() async {
         closeTurn()
-        events?.yield(.words(final: "", volatile: ""))
+        events?.yield(.words(final: "", volatile: "", runs: []))
     }
 
     func cancel() async {
@@ -141,7 +146,10 @@ actor GatewayTranscriber: TalkTranscriber {
 
     private func handle(_ event: SpeechInput.Event) {
         events?.yield(event)
-        if case .voice(.started) = event, case .idle = turn, !gaveUp {
+    }
+
+    func personStarted() async {
+        if case .idle = turn, !gaveUp {
             // Connecting mustn't hold up the voice activity endpointing waits for.
             turn = .opening
             turnAudio = recent
@@ -226,7 +234,7 @@ actor GatewayTranscriber: TalkTranscriber {
         guard isCurrent(stream) else { return }
         switch event {
         case .partial(let text):
-            events?.yield(.words(final: "", volatile: text))
+            events?.yield(.words(final: "", volatile: text, runs: []))
         case .final, .failed:
             outcome = event
             if case .failed(let message) = event, Self.isUnavailable(message) {

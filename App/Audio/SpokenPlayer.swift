@@ -93,6 +93,8 @@ final class SpokenPlayer {
     private(set) var queued: [SpokenSentence] = []
     /// When the first audio of the current run started playing (for the latency overlay).
     private(set) var startedAt: Date?
+    /// Lowered while Talk checks whether the person is talking over it (`TalkEars`).
+    private(set) var isDucked = false
 
     var rate: Float = 1 {
         didSet { chain?.rate = rate }
@@ -118,6 +120,9 @@ final class SpokenPlayer {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var inputDone = false
     @ObservationIgnored private let converter = PCMConverter()
+    @ObservationIgnored private var ramp: Task<Void, Never>?
+    /// About −14 dB: clearly yielding, still there if it was only the room.
+    static let duckedVolume: Float = 0.2
     /// Sentences fetched ahead of the one playing.
     private let lookahead = 2
     static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)!
@@ -155,6 +160,32 @@ final class SpokenPlayer {
         isPaused = false
     }
 
+    /// Lowers the voice at once while Talk listens for words (`TalkEars`), or brings it back.
+    func duck(_ on: Bool) {
+        guard on != isDucked else { return }
+        isDucked = on
+        ramp?.cancel()
+        guard let chain else { return }
+        let from = chain.volume
+        let target: Float = on ? Self.duckedVolume : 1
+        // Down in 60 ms, so it yields as you start; back up gently.
+        let seconds = on ? 0.06 : 0.2
+        ramp = Task {
+            for step in 1...6 {
+                guard !Task.isCancelled else { return }
+                chain.volume = from + (target - from) * Float(step) / 6
+                try? await Task.sleep(for: .seconds(seconds / 6))
+            }
+        }
+    }
+
+    /// What it's reading and the sentences either side: what its echo could carry.
+    var textAround: String {
+        guard !queued.isEmpty else { return "" }
+        let middle = min(current ?? queued.count - 1, queued.count - 1)
+        return queued[max(0, middle - 1)...min(queued.count - 1, middle + 1)].map(\.text).joined(separator: " ")
+    }
+
     /// Stops and forgets what's queued. `fade` is barge-in's 80 ms fade.
     func stop(fade: Bool = false) async {
         generation += 1
@@ -162,11 +193,15 @@ final class SpokenPlayer {
         fetching = nil
         metering?.cancel()
         metering = nil
+        ramp?.cancel()
+        ramp = nil
         if fade, let chain, chain.isPlaying {
             await chain.fadeOut(over: 0.08)
         } else {
             chain?.stop()
         }
+        chain?.volume = 1
+        isDucked = false
         queued = []
         nextToFetch = 0
         _ = converter.flush()

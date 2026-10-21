@@ -413,12 +413,12 @@ final class VoiceRecorder {
 
     private func handle(_ event: SpeechInput.Event) {
         switch event {
-        case .words(let final, let volatile):
+        case .words(let final, let volatile, _):
             finalized = final
             self.volatile = volatile
         case .failed(let message):
             Self.logger.error("voice message transcriber stopped: \(message, privacy: .public)")
-        case .level, .voice, .unavailable:
+        case .level, .frames, .unavailable:
             break
         }
     }

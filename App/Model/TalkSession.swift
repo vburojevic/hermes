@@ -565,7 +565,7 @@ final class TalkSession: Identifiable, TalkDisplay {
     /// GPT-Live asked Hermes to act: what the person said becomes a turn (a newer request
     /// supersedes one still running), and its progress and reply go back to the voice.
     private func delegated(_ id: String, prompt: String, context: String) {
-        if BargeInDetector.isStopPhrase(prompt), prompt.split(separator: " ").count <= 2 {
+        if TalkEars.isStopPhrase(prompt), prompt.split(separator: " ").count <= 2 {
             TalkCenter.shared.end()
             return
         }
@@ -655,7 +655,7 @@ final class TalkSession: Identifiable, TalkDisplay {
             say(String(localized: "I need you to type that. It's on the card."))
             return
         }
-        if BargeInDetector.isStopPhrase(words), words.split(separator: " ").count <= 3 {
+        if TalkEars.isStopPhrase(words), words.split(separator: " ").count <= 3 {
             // "Stop" is said to the call, not to Hermes: it stopped the voice already, and it
             // stops a turn still working. It isn't sent as a message.
             if conversation.isWorking, conversation.pendingApproval == nil { conversation.stop() }

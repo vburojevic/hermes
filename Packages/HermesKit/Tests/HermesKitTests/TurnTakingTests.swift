@@ -2,16 +2,8 @@ import Foundation
 import Testing
 @testable import HermesKit
 
-@Suite("Turn-taking: voice activity, endpointing, barge-in")
+@Suite("Turn-taking: voice activity and endpointing")
 struct TurnTakingTests {
-    private func fire(_ detector: inout BargeInDetector, at time: TimeInterval) -> Bool {
-        detector.shouldInterrupt(at: time)
-    }
-
-    private func fire(_ detector: inout BargeInDetector, hearing words: String) -> Bool {
-        detector.shouldInterrupt(hearing: words)
-    }
-
     /// 20 ms frames: `quiet` then `loud` then `quiet` again, as (rms, time).
     private func frames(_ pattern: [(rms: Float, seconds: Double)], start: TimeInterval = 0) -> [(Float, TimeInterval)] {
         var result: [(Float, TimeInterval)] = []
@@ -103,56 +95,5 @@ struct TurnTakingTests {
         #expect(abs((endpointer.deadline ?? 0) - 2.0) < 0.0001)
         endpointer.reset()
         #expect(endpointer.deadline == nil)
-    }
-
-    @Test func talkingOverTheBotStopsItAfter250Milliseconds() {
-        var bargeIn = BargeInDetector()
-        bargeIn.botStarted(at: 10)
-        bargeIn.speechStarted(at: 11)
-        #expect(!fire(&bargeIn, at: 11.24))
-        #expect(fire(&bargeIn, at: 11.25))
-        // Once: the next frames don't fire again.
-        #expect(!fire(&bargeIn, at: 11.3))
-    }
-
-    @Test func theFirst400MillisecondsOfTheBotDontCount() {
-        var bargeIn = BargeInDetector()
-        bargeIn.botStarted(at: 10)
-        // Speech "heard" as the Bot starts is the echo canceller settling.
-        bargeIn.speechStarted(at: 10.05)
-        #expect(!fire(&bargeIn, at: 10.3))
-        #expect(!fire(&bargeIn, at: 10.64))
-        #expect(fire(&bargeIn, at: 10.65))
-    }
-
-    @Test func noBargeInWhileTheBotIsQuietOrAfterSpeechEnds() {
-        var bargeIn = BargeInDetector()
-        bargeIn.speechStarted(at: 0)
-        #expect(!fire(&bargeIn, at: 5))
-        bargeIn.botStarted(at: 10)
-        bargeIn.speechStarted(at: 11)
-        bargeIn.speechEnded()
-        #expect(!fire(&bargeIn, at: 11.5))
-    }
-
-    @Test func aSingleStopWordIsEnough() {
-        var bargeIn = BargeInDetector()
-        bargeIn.botStarted(at: 0)
-        #expect(fire(&bargeIn, hearing: "Stop."))
-        bargeIn.botStarted(at: 5)
-        #expect(fire(&bargeIn, hearing: "hold on"))
-        bargeIn.botStarted(at: 9)
-        #expect(fire(&bargeIn, hearing: "wait wait"))
-        bargeIn.botStarted(at: 12)
-        #expect(!fire(&bargeIn, hearing: "I can wait until tomorrow for the report"))
-    }
-
-    @Test func stopPhrases() {
-        #expect(BargeInDetector.isStopPhrase("stop"))
-        #expect(BargeInDetector.isStopPhrase("Wait!"))
-        #expect(BargeInDetector.isStopPhrase("hang on a sec"))
-        #expect(BargeInDetector.isStopPhrase("one second"))
-        #expect(!BargeInDetector.isStopPhrase("hold the door"))
-        #expect(!BargeInDetector.isStopPhrase("please stop the backup job tonight"))
     }
 }

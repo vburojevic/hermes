@@ -433,8 +433,17 @@ struct LevelAccumulator {
 public enum AudioLevel {
     /// −50…0 dB mapped to 0…1.
     public static func normalised(rms: Float) -> Float {
-        let decibels = 20 * log10(max(rms, 0.000_01))
-        return max(0, min(1, (decibels + 50) / 50))
+        normalised(decibels: 20 * log10(max(rms, 0.000_01)))
+    }
+
+    public static func normalised(decibels: Float) -> Float {
+        max(0, min(1, (decibels + 50) / 50))
+    }
+
+    /// RMS per `size` frames of the first channel in dBFS, down to −120: Talk's ears tell the
+    /// quiet of a room from the quiet of a pause.
+    public static func decibelWindows(of buffer: AVAudioPCMBuffer, size: Int) -> [Float] {
+        powerWindows(of: buffer, size: size).map { 10 * log10(max($0, 1e-12)) }
     }
 
     /// RMS of the whole first channel.
@@ -444,6 +453,11 @@ public enum AudioLevel {
 
     /// RMS per `size` frames of the first channel, for float or int16 audio.
     public static func windows(of buffer: AVAudioPCMBuffer, size: Int) -> [Float] {
+        powerWindows(of: buffer, size: size).map { normalised(rms: $0.squareRoot()) }
+    }
+
+    /// Mean power per `size` frames of the first channel.
+    private static func powerWindows(of buffer: AVAudioPCMBuffer, size: Int) -> [Float] {
         let count = Int(buffer.frameLength)
         guard count > 0, size > 0 else { return [] }
         var result: [Float] = []
@@ -460,7 +474,7 @@ public enum AudioLevel {
                     sum += value * value
                 }
             }
-            result.append(normalised(rms: (sum / Float(end - start)).squareRoot()))
+            result.append(sum / Float(end - start))
             start = end
         }
         return result
