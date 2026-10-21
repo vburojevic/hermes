@@ -45,7 +45,8 @@ extension AppPlugin {
         public init() {}
     }
 
-    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.0 passes reads on
+    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.1 clips notices by
+    /// bytes, so a long command in any script still fits the relay, same access; 1.4.0 passes reads on
     /// to the person's other devices (`read`, read pushes, badge-only pushes) with the same access;
     /// 1.3.2 is 1.3.1 from the
     /// repository rewritten to one commit (no personal data in its history), same access; 1.3.1 reads reply,
@@ -54,9 +55,9 @@ extension AppPlugin {
     /// Settings → Setup → Priority); 1.2.1 sent no notice for a turn that ends in "[SILENT]".
     public static let push = AppPlugin(
         name: "hermes-app-push", repo: "vburojevic/hermes-app-push",
-        ref: "9f2ea4494544138da89549cc993a3a1bc7f45068", version: "1.4.0", minimumVersion: "1.4.0",
+        ref: "50d597591c81faa28f519cef2c2feee766fdd293", version: "1.4.1", minimumVersion: "1.4.1",
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
-                       "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess],
+                       "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )
