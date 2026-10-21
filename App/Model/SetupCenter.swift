@@ -45,6 +45,8 @@ final class SetupCenter {
         var taskProblems: [CronJob] = []
         var hostPriority: GatewaySetupFacts.HostPriority?
         var hostIsThisMac = false
+        var vaultSources: [VaultSource]?
+        var vaultMissing = false
     }
 
     init(workspace: BotWorkspace) {
@@ -78,6 +80,8 @@ final class SetupCenter {
         facts.botCount = workspace.roster?.profiles.count ?? 0
         facts.board = reads.board
         facts.taskProblems = reads.taskProblems
+        facts.vaultSources = reads.vaultSources
+        facts.vaultMissing = reads.vaultMissing
         if let projects = workspace.projects, projects.hasLoaded, !projects.isAvailable { facts.projectsMissing = true }
         return facts
     }
@@ -108,6 +112,7 @@ final class SetupCenter {
         let facts = facts
         return [
             GatewaySetup.memory(facts),
+            GatewaySetup.passwords(facts),
             GatewaySetup.search(facts),
             GatewaySetup.checkpoints(facts),
             GatewaySetup.tasks(facts),
@@ -274,7 +279,7 @@ final class SetupCenter {
     private(set) var pending: Set<Read> = []
 
     enum Read: Hashable {
-        case status, config, update, board, memory, curator, setup, groups, widgets, models, jobs, plugins, host
+        case status, config, update, board, memory, curator, setup, groups, widgets, models, jobs, plugins, host, vault
     }
 
     /// Statuses that wait on each read while it's out.
@@ -285,6 +290,7 @@ final class SetupCenter {
         .host: [GatewaySetup.ID.priority],
         .board: [GatewaySetup.ID.board],
         .memory: [GatewaySetup.ID.memory],
+        .vault: [GatewaySetup.ID.passwords],
         .curator: [GatewaySetup.ID.learned],
         .setup: [GatewaySetup.ID.models],
         .groups: [GatewaySetup.ID.groupChats],
@@ -361,6 +367,28 @@ final class SetupCenter {
                 Task { self.reads.board = await self.read(.board) { try? await client.boardAvailability() } },
                 Task { self.reads.memory = await self.read(.memory) { try? await client.memoryStatus(profile: profile) } },
                 Task { self.reads.curator = await self.read(.curator) { try? await client.curatorStatus(profile: profile) } },
+                Task {
+                    // Passwords (`docs/web.md` §3): an older Hermes answers "unknown method".
+                    let sources: Result<[VaultSource], any Error>? = await self.read(.vault) {
+                        do {
+                            return .success(try await VaultClient(profile: profile) { method, params in
+                                try await roster.request(method, params, timeout: .seconds(20))
+                            }.sources())
+                        } catch {
+                            return .failure(error)
+                        }
+                    }
+                    switch sources {
+                    case .success(let sources)?:
+                        self.reads.vaultSources = sources
+                        self.reads.vaultMissing = false
+                    case .failure(let error)?:
+                        self.reads.vaultSources = nil
+                        self.reads.vaultMissing = HermesVersionGap.isMissing(error)
+                    case nil:
+                        self.reads.vaultSources = nil
+                    }
+                },
                 Task {
                     let setup = await self.read(.setup) {
                         try? await roster.request("setup.status", profile.map { ["profile": .string($0)] } ?? [:], timeout: .seconds(20))

@@ -21,6 +21,8 @@ struct SettingsView: View {
     @State private var opensMemory = DebugFlags.memory != nil
     /// `-HERMES_SETTINGS_SETUP …` opens Setup (screenshots).
     @State private var opensSetup = DebugFlags.setup != nil
+    /// `-HERMES_PASSWORDS …` opens Passwords (screenshots).
+    @State private var opensPasswords = DebugFlags.passwords != nil
     /// A voice fallback note's Set Up… opens Voice & Audio.
     @State private var opensVoice = false
 
@@ -70,6 +72,7 @@ struct SettingsView: View {
                         SetupSettingsRow(workspace: workspace)
                         AppsAndToolsSettingsRow(model: workspace.appsAndTools)
                         MemorySettingsRow(workspace: workspace)
+                        PasswordsSettingsRow(workspace: workspace)
                     }
                 }
 
@@ -147,6 +150,9 @@ struct SettingsView: View {
             }
             .navigationDestination(isPresented: $opensMemory) {
                 if let workspace = app.currentWorkspace { DebugMemoryPage(workspace: workspace) }
+            }
+            .navigationDestination(isPresented: $opensPasswords) {
+                if let workspace = app.currentWorkspace { DebugPasswordsPage(workspace: workspace) }
             }
             .navigationDestination(isPresented: $opensSetup) {
                 if let workspace = app.currentWorkspace { SetupOverviewView(workspace: workspace) }

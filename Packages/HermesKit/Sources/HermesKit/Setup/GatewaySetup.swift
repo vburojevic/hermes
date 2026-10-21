@@ -87,6 +87,10 @@ public struct GatewaySetupFacts: Sendable, Equatable {
     public var projectsMissing = false
     /// Scheduled tasks whose last run failed, didn't start, or whose results didn't arrive.
     public var taskProblems: [CronJob] = []
+    /// `vault.sources`: where Hermes finds logins (`docs/web.md` §3).
+    public var vaultSources: [VaultSource]?
+    /// `vault.sources` answered "unknown method" (a Hermes from before Passwords).
+    public var vaultMissing = false
 
     public init(gatewayName: String, gatewayOnline: Bool, botMode: BotMode) {
         self.gatewayName = gatewayName

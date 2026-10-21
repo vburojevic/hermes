@@ -164,10 +164,10 @@ struct RootView: View {
         .task { fillDebugPasteboard() }
         #endif
         #if os(macOS)
-        // `-HERMES_APPS_TOOLS …` / `-HERMES_MEMORY …` / `-HERMES_SETTINGS_SETUP …`: the Settings
-        // window on that tab (screenshots).
+        // `-HERMES_APPS_TOOLS …` / `-HERMES_MEMORY …` / `-HERMES_SETTINGS_SETUP …` /
+        // `-HERMES_PASSWORDS …`: the Settings window on that tab (screenshots).
         .task {
-            guard DebugFlags.appsAndTools != nil || DebugFlags.memory != nil || DebugFlags.setup != nil else { return }
+            guard DebugFlags.appsAndTools != nil || DebugFlags.memory != nil || DebugFlags.setup != nil || DebugFlags.passwords != nil else { return }
             try? await Task.sleep(for: .seconds(2))
             openSettings()
         }

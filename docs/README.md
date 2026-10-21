@@ -41,6 +41,7 @@ it behaves on iPhone, iPad and Mac, and how to check it. Code comments cite them
 | [checkpoints.md](checkpoints.md) | Undo and checkpoints: the undo bar, review, the timeline, restoring files, turning checkpoints on |
 | [connections.md](connections.md) | Apps and Tools: connected apps and accounts, tool permissions, MCP servers, plugins, built-in toolsets |
 | [memory.md](memory.md) | What Hermes remembers: About You and Hermes's Notes, Ask Before Saving, the review queue, providers |
+| [web.md](web.md) | Hermes on the web: Passwords (Hermes's vault, 1Password, Bitwarden), where Hermes browses, signing in and card fills in a chat, and browsing in the app |
 | [learned.md](learned.md) | What Hermes Learned: the skills it wrote, the map of how they connect, and the curator's tidying |
 | [notifications.md](notifications.md) | Push notifications: the gateway plugin, the relay and encryption, answering from the Lock Screen, Live Activities (installing the plugin: [plugins.md](plugins.md)) |
 | [widgets.md](widgets.md) | Agent widgets: directives and payloads, reading them failing closed, the store, answering, approvals, privacy, the cards and the gallery |

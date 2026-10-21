@@ -2078,6 +2078,11 @@ def main():
     _processes = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_processes)
     _processes.install(globals(), gateway if args.gateway_port else None, chats if args.gateway_port else None)
+    # Passwords (docs/web.md §3): the vault.* methods on the socket.
+    _spec = _util.spec_from_file_location("mock_vault", _pathlib.Path(__file__).resolve().parent / "vault.py")
+    _vault = _util.module_from_spec(_spec)
+    _spec.loader.exec_module(_vault)
+    _vault.install(globals())
     _spec = _util.spec_from_file_location("mock_push", _pathlib.Path(__file__).resolve().parent / "push.py")
     _push = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_push)

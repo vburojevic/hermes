@@ -119,6 +119,7 @@ struct SetupOverviewView: View {
         case GatewaySetup.ID.priority: "gauge.with.dots.needle.67percent"
         case GatewaySetup.ID.models: "cpu"
         case GatewaySetup.ID.memory: "brain"
+        case GatewaySetup.ID.passwords: "key"
         case GatewaySetup.ID.search: "magnifyingglass"
         case GatewaySetup.ID.checkpoints: "arrow.uturn.backward"
         case GatewaySetup.ID.tasks: "clock"
@@ -166,6 +167,15 @@ private struct SetupFeaturePage: View {
                         }
                         #else
                         MemorySettingsRow(workspace: workspace)
+                        #endif
+                    }
+                    if status.id == GatewaySetup.ID.passwords, workspace.roster?.isConnected == true {
+                        #if os(macOS)
+                        Button("Open the Passwords Tab") {
+                            UserDefaults.standard.set("passwords", forKey: MacSettingsView.paneKey)
+                        }
+                        #else
+                        PasswordsSettingsRow(workspace: workspace)
                         #endif
                     }
                     #if os(macOS)

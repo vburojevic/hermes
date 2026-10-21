@@ -480,6 +480,19 @@ whether they carried `persist_on_release: true`, on which Hermes version (a new 
   the release with the fix and the gateway is older, Update Hermes… (§4.2) and its command join
   it. No source-patch steps: the app doesn't suggest editing Hermes.
 
+### 4.19 Passwords
+
+`vault.sources` on Bot Mode's socket ([web.md](web.md) §1). Needs Bot Mode. Hermes's own vault
+always works, so Passwords is Ready once Bot Mode is up: the detail names the sources in use
+("Hermes vault and 1Password"). A manager whose CLI isn't on the gateway (`installed: false`) adds
+its step without counting as something to set up: "To use your Bitwarden logins, install its CLI
+(bw) on Studio Mac, then sign in to it there once:" `npm install -g @bitwarden/cli` (1Password:
+`brew install 1password-cli`). A Hermes from before Passwords (-32601) is Not set up with "Needs a
+newer Hermes Agent on Studio Mac." and `hermes update`. The page itself opens from the row
+(Passwords on iPhone and iPad, Open the Passwords Tab on the Mac). Docs:
+`user-guide/features/credential-vault`. Mock: `POST /api/mock/vault {"bitwarden": "unlocked"}`,
+`{"onepassword": "missing"}`, `{"older": true}` ([web.md](web.md) §10).
+
 ## 5. Mocks and launch flags
 
 `Tools/mock-hermes/setup.py` serves each "not set up" state: start the backend with `--setup

@@ -4,7 +4,7 @@ import HermesMacSupport
 import SwiftUI
 
 /// Settings on the Mac (`screens/mac/settings.elyx`): General, Gateways, Setup, Apps & Tools,
-/// Memory, Chat, Voice & Audio, Developer and Notifications. Each pane sets its width, never
+/// Passwords, Memory, Chat, Voice & Audio, Developer and Notifications. Each pane sets its width, never
 /// narrower than all the tabs need (`SettingsTabsFit`); the window follows the selected one.
 struct MacSettingsView: View {
     let updater: Updater
@@ -14,7 +14,7 @@ struct MacSettingsView: View {
     static var tabTitles: [String] {
         var titles = [
             String(localized: "General"), String(localized: "Gateways"), String(localized: "Setup"),
-            String(localized: "Apps & Tools"), String(localized: "Memory"), String(localized: "Chat"),
+            String(localized: "Apps & Tools"), String(localized: "Passwords"), String(localized: "Memory"), String(localized: "Chat"),
             String(localized: "Voice & Audio"), String(localized: "Developer"),
         ]
         #if HERMES_PUSH
@@ -49,6 +49,10 @@ struct MacSettingsView: View {
                 MacAppsAndToolsPane()
                     .frame(width: width(880), height: 580)
             }
+            Tab("Passwords", systemImage: "key", value: "passwords") {
+                MacPasswordsPane()
+                    .frame(width: width(880), height: 600)
+            }
             Tab("Memory", systemImage: "brain", value: "memory") {
                 MacMemoryPane()
                     .frame(width: width(880), height: 600)
@@ -78,6 +82,7 @@ struct MacSettingsView: View {
             if DebugFlags.appsAndTools != nil { pane = "apps" }
             if DebugFlags.memory != nil { pane = "memory" }
             if DebugFlags.setup != nil { pane = "setup" }
+            if DebugFlags.passwords != nil { pane = "passwords" }
         }
     }
 }

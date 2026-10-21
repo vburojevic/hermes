@@ -293,6 +293,15 @@ first while Ask Before Saving is on), "in a task" stages the save for review, "f
 Debug flags, with `-HERMES_OPEN settings`: `-HERMES_MEMORY about|notes|options|edit:<n>|reset|bot:<profile>`
 (on the Mac it opens Settings → Memory).
 
+And Passwords (`Tools/mock-hermes/vault.py`, [web.md](web.md) §10), shaped like Hermes's `vault.*`
+methods: Hermes's vault (Vercel, Example Cloud with an authenticator key, the Personal Visa test
+card, Home), 1Password locked (GitHub, Linear, Amazon) and Bitwarden not installed. A master
+password with "wrong" in it fails, one with "slow" times out after 20 s, any other unlocks. `POST
+/api/mock/vault` shortens the idle lock (`{"idle": 60}`), sets a manager's state (`{"bitwarden":
+"unlocked"}`), plays an older Hermes (`{"older": true}`) or resets (`{"reset": true}`). Debug flags,
+with `-HERMES_OPEN settings` on iPhone and iPad: `-HERMES_PASSWORDS YES|add:login|add:payment|add:address|unlock:<source>|item:<id>`
+(on the Mac it opens Settings → Passwords).
+
 A message with "key expired" fails its turn on Anthropic's key (Add Key… in the chat; the mock's
 `model.save_key` takes it), "signed out" on OpenAI Codex's sign-in.
 
