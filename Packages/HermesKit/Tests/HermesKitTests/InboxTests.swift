@@ -288,6 +288,89 @@ struct InboxTests {
         #expect(flat.hasPrefix("Line 1 of the log Line 2 of the log"))
     }
 
+    @Test func anOpenChatsLineFollowsTheReplyBeforeHermesStoresIt() {
+        // The screenshot's case: the message is stored, the reply ended in the chat, Hermes hasn't stored it yet.
+        let stored = [Self.reply("t0", from: 0, to: 5, answer: "Earlier."), Self.you("m1", at: 10)]
+        let ended = Self.reply("t1", from: 10, to: 140, answer: "Primary default switched to **DeepSeek**.")
+        #expect(LastLine.of(stored) == LastLine(speaker: .you, text: "question"))
+        #expect(LastLine.of(stored, then: [ended]) == LastLine(speaker: .hermes, text: "Primary default switched to DeepSeek."))
+        // The message on its way, before Hermes has it.
+        #expect(LastLine.of([Self.reply("t0", from: 0, to: 5)], then: [Self.you("m2", at: 20)]) == LastLine(speaker: .you, text: "question"))
+        // A reply with no words yet leaves the message.
+        let silent = TranscriptItem.assistant(AssistantTurn(id: "t2", answer: "", state: .complete))
+        #expect(LastLine.of(stored, then: [silent]) == LastLine(speaker: .you, text: "question"))
+    }
+
+    @Test func anOpenChatsLineStandsForItsNewestRow() {
+        // The copy kept on the device stands for when its rows were written, not for now: it
+        // mustn't put back a line older than one read from the gateway since.
+        let stored = [Self.reply("t0", from: 0, to: 5), Self.you("m1", at: 10), .notice(Notice(id: "n", kind: "model_switch", text: "x"))]
+        #expect(LastLine.asOf(stored, then: [], now: Self.t(500)) == Self.t(10))
+        #expect(LastLine.asOf([Self.reply("t0", from: 0, to: 5)], then: [], now: Self.t(500)) == Self.t(5))
+        // What isn't stored yet is now.
+        #expect(LastLine.asOf(stored, then: [Self.reply("t1", from: 10, to: 40)], now: Self.t(500)) == Self.t(500))
+        #expect(LastLine.asOf([.notice(Notice(id: "n", kind: "model_switch", text: "x"))], then: []) == nil)
+        var book = LastLineBook()
+        book.note("chat:a", LastLine(speaker: .hermes, text: "Fresh from the gateway."), asOf: Self.t(60))
+        book.note("chat:a", LastLine.of(stored, then: []), asOf: LastLine.asOf(stored, then: [])!)
+        #expect(book["chat:a"] == LastLine(speaker: .hermes, text: "Fresh from the gateway."))
+    }
+
+    @Test func aLineReadEarlierNeverReplacesOneReadLater() {
+        var book = LastLineBook()
+        let reply = LastLine(speaker: .hermes, text: "Switched.")
+        let message = LastLine(speaker: .you, text: "Ok lets switch")
+        // The open chat showed the reply at 100; a read asked for at 90 comes back after it.
+        var changed = book.note("bot:core", reply, asOf: Self.t(100))
+        #expect(changed)
+        changed = book.note("bot:core", message, asOf: Self.t(90))
+        #expect(!changed)
+        #expect(book["bot:core"] == reply)
+        // A read at a later activity takes over; the same line again changes nothing on screen.
+        changed = book.note("bot:core", message, asOf: Self.t(120))
+        #expect(changed)
+        changed = book.note("bot:core", message, asOf: Self.t(130))
+        #expect(!changed)
+        changed = book.note("bot:core", nil, asOf: Self.t(200))
+        #expect(!changed)
+        #expect(book["bot:core"] == message)
+    }
+
+    @Test func aRowWhoseChatMovedOnIsReadAgain() {
+        var book = LastLineBook()
+        #expect(book.isStale("chat:a", activity: Self.t(10)))
+        #expect(book.isStale("chat:a", activity: nil))
+        book.note("chat:a", LastLine(speaker: .hermes, text: "Done."), asOf: Self.t(10))
+        #expect(!book.isStale("chat:a", activity: Self.t(10)))
+        // The gateway stamps a row a moment after the open chat showed it.
+        #expect(!book.isStale("chat:a", activity: Self.t(10.8)))
+        #expect(book.isStale("chat:a", activity: Self.t(12)))
+        #expect(!book.isStale("chat:a", activity: nil))
+    }
+
+    @Test func linesKeptOnTheDeviceGiveWayToNewerReads() throws {
+        var kept = LastLineBook()
+        kept.note("bot:core", LastLine(speaker: .you, text: "Old"), asOf: Self.t(10))
+        kept.note("bot:ada", LastLine(speaker: .named("Ops"), text: "Backup done"), asOf: Self.t(50))
+        let decoded = try JSONDecoder().decode(LastLineBook.self, from: JSONEncoder().encode(kept))
+        #expect(decoded == kept)
+        var book = LastLineBook()
+        book.note("bot:core", LastLine(speaker: .hermes, text: "New"), asOf: Self.t(20))
+        book.merge(decoded)
+        #expect(book["bot:core"] == LastLine(speaker: .hermes, text: "New"))
+        #expect(book["bot:ada"] == LastLine(speaker: .named("Ops"), text: "Backup done"))
+    }
+
+    @Test func theBookKeepsTheNewestLines() {
+        var book = LastLineBook()
+        for index in 0..<(LastLineBook.capacity + 10) {
+            book.note("chat:\(index)", LastLine(speaker: .hermes, text: "\(index)"), asOf: Self.t(Double(index)))
+        }
+        #expect(book.entries.count <= LastLineBook.capacity)
+        #expect(book["chat:\(LastLineBook.capacity + 9)"] != nil)
+        #expect(book["chat:0"] == nil)
+    }
+
     @Test func botFacesFollowTheirState() {
         func mood(_ line: ActivityLine?, replied: Bool = false, muted: Bool = false, otherwise: FaceMood = .idle) -> FaceMood {
             ActivityLine.faceMood(for: line, justReplied: replied, muted: muted, otherwise: otherwise)

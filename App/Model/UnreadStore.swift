@@ -15,9 +15,13 @@ final class UnreadStore {
     /// What each row shows. Only rows with something to show have an entry.
     private(set) var badges: [String: UnreadBadge] = [:]
     private(set) var mutes: MuteList
-    /// Each row's last message, as far as this launch has seen it. Kept in memory only: Hermes'
-    /// list rows carry the first message, never the last.
+    /// Each row's last message, as the rows read it: only a line that changed redraws them.
+    /// Hermes' list rows carry the first message, never the last, so the app reads it itself
+    /// (`book`).
     private(set) var lastLines: [String: LastLine] = [:]
+    /// The lines with the chat activity each was read at, kept on the device (`docs/inbox.md` §2).
+    @ObservationIgnored private var book = LastLineBook()
+    @ObservationIgnored private var bookSave: Task<Void, Never>?
 
     @ObservationIgnored weak var workspace: BotWorkspace?
     @ObservationIgnored private let gatewayID: UUID
@@ -75,6 +79,7 @@ final class UnreadStore {
         mutes.prune()
         self.mutes = mutes
         hasGatewayMarks = !cache.marks.isEmpty
+        restoreLastLines()
     }
 
     /// Everything kept on the device, per gateway. Never message text: ids, times and counts.
@@ -184,6 +189,7 @@ final class UnreadStore {
         }
         if next != badges { badges = next }
         if marksSeeded { scheduleSave() }
+        readStaleLines()
         #if HERMES_PUSH
         // The app icon (or Dock) badge counts them when the person chose Unread Chats; a mute moves
         // it without moving a row, so it's recorded every time (unchanged costs nothing).
@@ -221,7 +227,7 @@ final class UnreadStore {
                 guard let client = self?.workspace?.roster?.boardClient else { return nil }
                 let transcript = try await client.transcript(storedSessionID: chat.resolvedID, profile: name, limit: 100)
                 let tally = await Self.tally(transcript.messages, hidesSilence: true, after: since)
-                self?.noteLastLine(key, tally.lastLine)
+                self?.noteLastLine(key, tally.lastLine, asOf: chat.lastActive ?? active)
                 return Cache.Count(value: tally.count, lastActive: active.timeIntervalSince1970, since: since.timeIntervalSince1970)
             }
         }
@@ -234,7 +240,7 @@ final class UnreadStore {
         let transcript = try await client.transcript(sessionID: session.id, limit: 100)
         let tally = await Self.tally(transcript.messages, hidesSilence: false, after: since)
         workspace?.activity.lastTurn(of: session.stableID, failed: tally.failedTurn)
-        noteLastLine(session.stableID, tally.lastLine)
+        noteLastLine(session.stableID, tally.lastLine, asOf: active)
         return Cache.Count(value: tally.count, lastActive: active.timeIntervalSince1970, since: since.timeIntervalSince1970)
     }
 
@@ -295,24 +301,99 @@ final class UnreadStore {
 
     // MARK: Last lines
 
-    func noteLastLine(_ key: String, _ line: LastLine?) {
-        guard let line, lastLines[key] != line else { return }
-        lastLines[key] = line
+    /// The lines this device kept, shown at once; the rows whose chat moved on since are read again.
+    private func restoreLastLines() {
+        Task { [weak self, gatewayID] in
+            guard let kept = await LastLinesCache.load(gatewayID), let self else { return }
+            self.book.merge(kept)
+            let lines = self.book.entries.mapValues(\.line)
+            if lines != self.lastLines { self.lastLines = lines }
+            LaunchTrace.mark("kept last lines shown (\(lines.count))", id: "kept last lines")
+            self.readStaleLines()
+        }
     }
 
-    /// A row came on screen without its last message: the chat's newest few rows, once per
-    /// activity, a few at a time.
+    /// A row's last message, read at the chat's activity `asOf` (the open chat's: when it showed).
+    /// An older read than the line there changes nothing (`LastLineBook`).
+    func noteLastLine(_ key: String, _ line: LastLine?, asOf: Date) {
+        let before = book.entries[key]
+        let changed = book.note(key, line, asOf: asOf)
+        guard book.entries[key] != before else { return }
+        if changed, let line {
+            lastLines[key] = line
+            LaunchTrace.mark("last line \(key) (\(lastLines.count) rows have one)", id: "line \(key)")
+            LoadTrace.mark(key, "row's last line now \(line.speaker), \(line.text.count) characters")
+        }
+        guard bookSave == nil else { return }
+        bookSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            self.bookSave = nil
+            LastLinesCache.save(self.gatewayID, book: self.book)
+        }
+    }
+
+    /// Rows whose chat moved on since their last line was read, or that have none: their newest
+    /// few rows, the Bots and the most recent chats first (the rest as they come on screen,
+    /// `needsLastLine`). A chat in the middle of a turn shows what it's doing instead, and is read
+    /// once it stops.
+    func readStaleLines() {
+        guard let workspace, lineFetches < lineFetchLimit else { return }
+        if let roster = workspace.roster {
+            for bot in roster.visibleBots {
+                let key = Self.botKey(bot.name)
+                guard !isRunning(key), book.isStale(key, activity: bot.canonicalSession?.lastActive ?? bot.lastActive) else { continue }
+                needsBotLine(bot)
+            }
+        }
+        for session in workspace.sessions.prefix(Self.linesReadAhead) {
+            let key = session.stableID
+            guard !isRunning(key), book.isStale(key, activity: session.lastActive) else { continue }
+            needsLastLine(session)
+        }
+    }
+
+    /// The chats near the top whose last lines are read before they come on screen.
+    private static let linesReadAhead = 20
+    /// Reads at a time: one while the gateway's Mac is busy, so they don't hold up the open chat.
+    private var lineFetchLimit: Int {
+        workspace?.isBusy == true || workspace?.roster?.isBusy == true ? 1 : 4
+    }
+
+    /// A row came on screen without its last message, or its chat moved on: the chat's newest few
+    /// rows, once per activity, a few at a time.
     func needsLastLine(_ session: HermesSession) {
-        let key = session.stableID
-        guard let active = session.lastActive, lineAsked[key].map({ $0 < active }) ?? true, lineFetches < 4,
-              let client = workspace?.client else { return }
-        lineAsked[key] = active
+        guard let client = workspace?.client else { return }
+        readLine(session.stableID, activity: session.lastActive) {
+            let transcript = try await client.transcript(sessionID: session.id, limit: 8)
+            return LastLine.of(TranscriptBuilder.build(transcript.messages))
+        }
+    }
+
+    private func needsBotLine(_ bot: BotProfile) {
+        guard let chat = bot.canonicalSession, let client = workspace?.roster?.boardClient else { return }
+        readLine(Self.botKey(bot.name), activity: chat.lastActive ?? bot.lastActive) {
+            let transcript = try await client.transcript(storedSessionID: chat.resolvedID, profile: bot.name, limit: 8)
+            return LastLine.of(TranscriptBuilder.build(transcript.messages, hidesSilence: true))
+        }
+    }
+
+    private func readLine(_ key: String, activity: Date?, _ read: @escaping () async throws -> LastLine?) {
+        guard let activity, lineAsked[key].map({ $0 < activity }) ?? true, lineFetches < lineFetchLimit else { return }
+        lineAsked[key] = activity
         lineFetches += 1
         Task { [weak self] in
-            let transcript = try? await client.transcript(sessionID: session.id, limit: 8)
-            guard let self else { return }
-            self.lineFetches -= 1
-            if let transcript { self.noteLastLine(key, LastLine.of(TranscriptBuilder.build(transcript.messages))) }
+            do {
+                let line = try await read()
+                guard let self else { return }
+                self.lineFetches -= 1
+                self.noteLastLine(key, line, asOf: activity)
+                self.readStaleLines()
+            } catch {
+                // Asked again at the next change to the lists, not straight away.
+                self?.lineFetches -= 1
+                self?.lineAsked[key] = nil
+            }
         }
     }
 

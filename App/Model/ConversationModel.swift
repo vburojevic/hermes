@@ -27,17 +27,19 @@ final class ConversationModel: Identifiable {
 
     private(set) var items: [TranscriptItem] = [] {
         didSet {
-            itemsVersion &+= 1
+            lastLineVersion &+= 1
             syncDerivedState()
             refreshWidgetFacts()
         }
     }
-    /// Counts changes to `items`: what's worked out from them (the chat list's last line) is
-    /// worked out again only when they moved.
-    @ObservationIgnored private(set) var itemsVersion = 0
+    /// Counts changes to what the chat list's last line is read from (`rowLastLine`): the rows,
+    /// the message on its way and a turn that ended. It's worked out again only when they moved.
+    @ObservationIgnored private(set) var lastLineVersion = 0
+    @ObservationIgnored private var announcedLineVersion = 0
+    @ObservationIgnored private var lineSawFinishedTurn = false
     private(set) var loadState: LoadState = .idle
     /// The user message of the turn in flight, shown until the server transcript has it.
-    private(set) var pendingUser: UserEntry? { didSet { syncDerivedState(); refreshWidgetFacts() } }
+    private(set) var pendingUser: UserEntry? { didSet { lastLineVersion &+= 1; syncDerivedState(); refreshWidgetFacts() } }
     /// What the chat's rows say about its widgets: answers, questions moved past (`docs/widgets.md` §5).
     private(set) var widgetFacts = WidgetChatFacts()
     @ObservationIgnored fileprivate var widgetHostStorage: WidgetHost?
@@ -870,6 +872,15 @@ final class ConversationModel: Identifiable {
     /// What the transcript handed its rows last as what they can name (`ReferenceContext`).
     @ObservationIgnored private var lastReferences: ReferenceContext?
 
+    /// The chat list's last line for this chat (`docs/inbox.md` §2): its rows, then what isn't
+    /// stored yet, the message on its way and a reply that ended; with the activity it stands for.
+    var rowLastLine: (line: LastLine?, asOf: Date) {
+        var tail: [TranscriptItem] = []
+        if let pendingUser { tail.append(.user(pendingUser)) }
+        if let turn = liveStorage, turn.isFinished { tail.append(.assistant(turn.turn)) }
+        return (LastLine.of(items, then: tail), LastLine.asOf(items, then: tail) ?? .now)
+    }
+
     /// `fresh`, or the equal one handed out before. The environment tells values apart by their
     /// contents, not `==`: a fresh one, its sets just rebuilt, redrew every reply that reads it.
     func stableReferences(_ fresh: ReferenceContext) -> ReferenceContext {
@@ -881,9 +892,21 @@ final class ConversationModel: Identifiable {
     private func syncDerivedState() {
         let wasWorking = isWorking
         let hadApproval = pendingApproval != nil
+        let finished = liveStorage?.isFinished ?? false
+        if finished != lineSawFinishedTurn {
+            lineSawFinishedTurn = finished
+            lastLineVersion &+= 1
+            if finished { LoadTrace.mark(stableKey, "reply ended") }
+        }
         defer {
-            // The chat lists' activity line follows the turn (`docs/inbox.md` §2).
-            if isWorking != wasWorking || (pendingApproval != nil) != hadApproval { workspace?.activity.conversationChanged() }
+            // The chat lists' activity line follows the turn, and their last line the chat
+            // (`docs/inbox.md` §2).
+            if isWorking != wasWorking || (pendingApproval != nil) != hadApproval {
+                workspace?.activity.conversationChanged()
+            } else if !isWorking, lastLineVersion != announcedLineVersion {
+                workspace?.activity.lastLineMoved()
+            }
+            announcedLineVersion = lastLineVersion
         }
         let empty = items.isEmpty && pendingUser == nil && live == nil
         if empty != isEmpty { isEmpty = empty }

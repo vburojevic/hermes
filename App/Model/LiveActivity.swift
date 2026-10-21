@@ -40,6 +40,7 @@ final class LiveActivity {
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     /// Which version of each attached chat's rows its last line was read from (`refresh`).
     @ObservationIgnored private var lastLineVersions: [String: Int] = [:]
+    @ObservationIgnored private var lineRefresh: Task<Void, Never>?
     @ObservationIgnored private var pollSoon: Task<Void, Never>?
     @ObservationIgnored private var lastListRefresh = Date.distantPast
     #if os(macOS)
@@ -113,9 +114,11 @@ final class LiveActivity {
         pollTask?.cancel()
         tickTask?.cancel()
         pollSoon?.cancel()
+        lineRefresh?.cancel()
         pollTask = nil
         tickTask = nil
         pollSoon = nil
+        lineRefresh = nil
         #if os(macOS)
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
@@ -168,6 +171,17 @@ final class LiveActivity {
         }
     }
 
+    /// An idle attached chat's last line moved: a reply stored, a message sent, a turn that ended.
+    /// Once for everything that moved in the same pass (a reload sets the rows and the turn).
+    func lastLineMoved() {
+        guard lineRefresh == nil else { return }
+        lineRefresh = Task { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            self.lineRefresh = nil
+            self.refresh()
+        }
+    }
+
     /// The roster found a Bot answering another Bot where no events reach the app, or that turn
     /// ended (`BotRoster.runningElsewhere`).
     func elsewhereChanged() {
@@ -211,11 +225,13 @@ final class LiveActivity {
         let attachedKeys = Set(attached.map(\.0))
         lastLineVersions = lastLineVersions.filter { attachedKeys.contains($0.key) }
         for (key, conversation) in attached {
-            // Four times a second while any chat works: an idle chat's last line only when its
-            // rows changed, not flattened again from its last reply every time.
-            if !conversation.isWorking, conversation.loadState == .loaded, lastLineVersions[key] != conversation.itemsVersion {
-                lastLineVersions[key] = conversation.itemsVersion
-                workspace.unread.noteLastLine(key, LastLine.of(conversation.items))
+            // Four times a second while any chat works: an idle chat's last line only when what
+            // it's read from moved, not flattened again from its last reply every time. The reply
+            // that just ended counts before Hermes stores it (`rowLastLine`).
+            if !conversation.isWorking, conversation.loadState == .loaded, lastLineVersions[key] != conversation.lastLineVersion {
+                lastLineVersions[key] = conversation.lastLineVersion
+                let (line, asOf) = conversation.rowLastLine
+                workspace.unread.noteLastLine(key, line, asOf: asOf)
             }
             if let line = Self.line(for: conversation) {
                 next[key] = line

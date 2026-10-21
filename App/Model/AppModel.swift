@@ -157,6 +157,7 @@ final class AppModel {
         TranscriptCache.removeAll(gateway: botID)
         RosterCache.remove(botID)
         SessionsCache.remove(botID)
+        LastLinesCache.remove(botID)
         ModelOptionsCache.remove(botID)
         // Its Inspector tabs, and its Preview pages' cookies and storage.
         let inspectorKeys = ["inspector.pins.\(botID.uuidString)", "inspector.tabs.\(botID.uuidString)."]

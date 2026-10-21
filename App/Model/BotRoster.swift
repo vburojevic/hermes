@@ -1545,6 +1545,8 @@ final class BotRoster {
         if working != workingNames { workingNames = working }
         readElsewhere(fresh, now: now)
         updateUnread()
+        // A Bot whose chat moved on has its row's last line read again (`LastLineBook`).
+        workspace?.unread.readStaleLines()
         loadPhotos()
         for bot in fresh {
             guard let conversation = conversations[bot.name] else { continue }

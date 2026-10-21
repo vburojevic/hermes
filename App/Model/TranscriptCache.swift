@@ -183,3 +183,38 @@ nonisolated enum ModelOptionsCache {
         writes.async { try? FileManager.default.removeItem(at: url) }
     }
 }
+
+/// Each row's last message for each gateway (`LastLineBook`), kept the same way: a launch shows
+/// the chats' and Bots' last messages at once, not their first one (Hermes' list rows carry the
+/// first) until the newest rows of each are read again.
+nonisolated enum LastLinesCache {
+    private static func file(_ gateway: UUID) -> URL? {
+        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appending(path: "LastLines", directoryHint: .isDirectory)
+            .appending(path: "\(gateway.uuidString).json")
+    }
+
+    private static let writes = DispatchQueue(label: "co.caffeinatedcode.hermes.last-lines-cache", qos: .utility)
+
+    static func load(_ gateway: UUID) async -> LastLineBook? {
+        guard let url = file(gateway) else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(LastLineBook.self, from: data)
+        }.value
+    }
+
+    static func save(_ gateway: UUID, book: LastLineBook) {
+        guard let url = file(gateway) else { return }
+        writes.async {
+            guard let data = try? JSONEncoder().encode(book) else { return }
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    static func remove(_ gateway: UUID) {
+        guard let url = file(gateway) else { return }
+        writes.async { try? FileManager.default.removeItem(at: url) }
+    }
+}

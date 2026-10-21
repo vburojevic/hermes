@@ -2,8 +2,8 @@ import Foundation
 
 /// A row's second line when nothing is happening (`docs/inbox.md` §2): the last message, one
 /// line, with who said it when it wasn't Hermes ("You:", a Bot's name).
-public struct LastLine: Hashable, Sendable {
-    public enum Speaker: Hashable, Sendable {
+public struct LastLine: Hashable, Sendable, Codable {
+    public enum Speaker: Hashable, Sendable, Codable {
         case hermes
         case you
         /// A Bot in the chat, or a routine.
@@ -38,6 +38,28 @@ public struct LastLine: Hashable, Sendable {
                 return LastLine(speaker: .you, text: "/" + command.name + (command.argument.map { " " + $0 } ?? ""))
             case .notice:
                 continue
+            }
+        }
+        return nil
+    }
+
+    /// An open chat's last line: its rows, then what isn't stored yet (`tail`, oldest first): the
+    /// message on its way and a reply that just ended. The reply is in the chat before Hermes
+    /// stores it, and the row follows the chat.
+    public static func of(_ items: [TranscriptItem], then tail: [TranscriptItem]) -> LastLine? {
+        of(tail) ?? of(items)
+    }
+
+    /// The chat activity such a line stands for (`LastLineBook`): now when `tail` holds what isn't
+    /// stored yet, else the newest stored row's time, so a chat showing the copy this device kept
+    /// doesn't put back a line older than one already read from the gateway. Nil when no row says.
+    public static func asOf(_ items: [TranscriptItem], then tail: [TranscriptItem], now: Date = .now) -> Date? {
+        if !tail.isEmpty { return now }
+        for item in items.reversed() {
+            switch item {
+            case .user(let entry): if let time = entry.timestamp { return time }
+            case .assistant(let turn): if let time = turn.finishedAt ?? turn.startedAt { return time }
+            case .notice, .command: continue
             }
         }
         return nil

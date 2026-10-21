@@ -457,6 +457,7 @@ final class BotWorkspace: Identifiable {
         sessions = []
         SessionsCache.remove(id)
         ModelOptionsCache.remove(id)
+        LastLinesCache.remove(id)
         nextSessionOffset = 0
         modelOptions = nil
         connection = .idle

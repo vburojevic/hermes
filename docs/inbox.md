@@ -76,9 +76,23 @@ For 1 Week, Until I Turn It Back On. A swipe mutes until turned back on.
 
 Per chat: the last row it showed (`seenThrough`, for the New Messages line next time) and, when a
 chat was left scrolled up, the row at the top (it opens there next time unless there's something
-new). Each chat's last message is kept in memory only: Hermes' list rows carry the first message,
-so the app fetches a chat's newest 8 rows when its row first shows without one (4 at a time,
-once per activity).
+new). Each row's last message (`LastLineBook`): Hermes' list rows carry the first message, so
+the app reads the last one itself and keeps it on the device (`LastLinesCache`, in Caches with the
+transcripts), with the chat activity it was read at. A launch shows them before the gateway
+answers.
+
+- **The chats the app follows** (open, or opened this launch): the line follows the chat as it
+  changes, the reply that just ended included, before Hermes stores it (`rowLastLine`: the rows,
+  then the message on its way and the finished turn). It moves when the turn ends or the rows
+  reload, not on each word. It stands for now while something isn't stored yet, else for its
+  newest row's time, so the copy kept on the device never puts back an older line.
+- **The others**: when a row's activity (the list's `last_active`, a Bot's chat's) moves past
+  the activity its line was read at, by more than a second, the chat's newest 8 rows are read
+  again: the Bots and the 20 newest chats as soon as the lists move, rows further down as they
+  come on screen, 4 reads at a time (1 while the Mac is busy), once per activity. A chat in a
+  turn shows its activity line and is read when it stops.
+- A line read at an earlier activity never replaces one read at a later activity: reads come
+  back in any order, and one asked for before the reply landed mustn't bring back the message.
 
 ## 2. The rows
 
@@ -317,13 +331,19 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
 - A muted chat shows a grey count, isn't in the badges, and its pushes are quiet; approvals in it
   still alert.
 - Rows move to the top when they get activity; pinned rows stay on top.
+- A reply in the open chat shows on its row within a second of ending, a Bot's included, and
+  stays when Hermes stores it; a reply in another chat (`POST /api/mock/room-say`, a routine, a
+  reply read on another device) shows on its row within a second of the list moving. A cold launch
+  shows the last messages from the device before the gateway answers (`-HERMES_LAUNCH_LOG YES`:
+  "kept last lines shown").
 - The drawer button's count is the unread, unmuted chats other than the open one.
 - Reduce Motion: no shimmer or slide. Light, dark and Increase Contrast match the renders.
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
   actions open all scroll the chat and the drawer; a swipe left on a reply still replies, and one
   right from the edge still opens the drawer.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
-  reads, pill priority, activity, quotes, row times, Bot faces, group mentions), `SidewaysSwipeTests`
+  reads, pill priority, activity, quotes, row times, Bot faces, group mentions, last lines and the
+  `LastLineBook`), `SidewaysSwipeTests`
   (which drags a row's swipe takes).
 
 ## 8. Setup
