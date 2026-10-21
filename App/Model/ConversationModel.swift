@@ -477,6 +477,8 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var catchUpBuffer: [GatewayEvent]?
     /// The re-attach after a reconnect, and the runtime id it can replay missed events from.
     @ObservationIgnored private var reattachTask: Task<Void, Never>?
+    /// A pending check of which requests Hermes still waits on (`RequestSync`).
+    @ObservationIgnored private var requestSyncTask: Task<Void, Never>?
     /// Fetching the chat again until it shows how a turn it lost track of ended (`recoverSoon`).
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
     /// A send whose answer was lost is being looked into (`arrival`): it re-attaches the chat
@@ -3777,6 +3779,8 @@ extension ConversationModel {
             if let pending = snapshot["pending_connection"], let connection = HermesRequest.connection(from: pending) {
                 receive(connection)
             }
+            // Cards answered on another device, or past their deadline, while this one was away.
+            if let open = RequestSync.openIDs(snapshot["open_requests"]) { takeDownEndedRequests(open: open) }
             if case .array(let requests)? = snapshot["open_requests"] {
                 settleAnswers(open: requests.compactMap { $0["id"]?.stringValue }, roster: roster)
                 for request in requests {
@@ -4185,6 +4189,11 @@ extension ConversationModel {
         if event.type == "tool.complete", let raw = event.payload["inline_diff"]?.stringValue, let diff = InlineDiff.unified(raw) {
             inspectorStore?.filesChanged(paths: Self.diffPaths(diff))
         }
+        // Hermes tells no one else when a device answers a request: while a card is up and the
+        // chat moves on, ask which requests it still waits on (`RequestSync`).
+        if !shownRequestCards.isEmpty, !["request.cancel", "connection.request", "connection.update"].contains(event.type) {
+            scheduleRequestSync()
+        }
         switch event.type {
         case "request.cancel":
             let id = event.payload["id"]?.stringValue
@@ -4414,6 +4423,11 @@ extension ConversationModel {
             // A password or key is never kept for later: with no socket to take it now, the card
             // comes back to be answered again.
             Task {
+                // Never sent to a request Hermes stopped waiting on.
+                guard await stillWaitsOn(request.id) else {
+                    addReceipt(String(localized: "Not sent · already answered on another device"), symbol: "info.circle")
+                    return
+                }
                 guard await !roster.respond(to: request.id, result: result) else { return }
                 if !requests.contains(where: { $0.id == request.id }) { moveCards { requests.append(request) } }
                 banner = .invalidResponse(String(localized: "\(gatewayName) isn't connected, so that didn't go. Answer again when it's back."))
@@ -4510,6 +4524,55 @@ extension ConversationModel {
             DispatchQueue.main.async { [weak self] in self?.showNextApproval() }
         }
         if matched, let receipt { addReceipt(receipt.0, symbol: receipt.1) }
+    }
+
+    /// The request cards up in this chat that Hermes lists in `open_requests` (connection requests
+    /// are tracked by their own operation, not here).
+    private var shownRequestCards: [RequestSync.Card] {
+        let cards = requests.filter { if case .connection = $0.kind { false } else { true } }
+            .map { RequestSync.Card(id: $0.id, deadline: $0.deadline) }
+        let approvals = ([pendingApproval].compactMap { $0 } + waitingApprovals).compactMap(\.gatewayRequestID)
+        return cards + approvals.map { RequestSync.Card(id: $0) }
+    }
+
+    /// Takes down the cards for requests Hermes no longer waits on: answered on another device,
+    /// or past their deadline (`docs/quick-actions.md` §1).
+    private func takeDownEndedRequests(open: Set<String>) {
+        let ended = RequestSync.ended(shown: shownRequestCards, open: open, answeredHere: Set(answers.entries.map(\.id)))
+        for (id, ending) in ended {
+            let isApproval = pendingApproval?.gatewayRequestID == id || waitingApprovals.contains { $0.gatewayRequestID == id }
+            // The turn stops waiting for the approval on its card too.
+            if let shown = pendingApproval, shown.gatewayRequestID == id { apply(.approvalResolved(requestID: shown.requestID)) }
+            withdrawRequest(id: id, method: isApproval ? "approval" : nil, reason: ending == .timedOut ? "timeout" : "resolved")
+        }
+    }
+
+    private func scheduleRequestSync() {
+        guard requestSyncTask == nil else { return }
+        requestSyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard let self else { return }
+            if let open = await self.openRequestIDs() { self.takeDownEndedRequests(open: open) }
+            self.requestSyncTask = nil
+        }
+    }
+
+    /// The requests Hermes still waits on in this chat (`session.events.since` lists them; it only
+    /// reads), or nil when it can't be asked.
+    private func openRequestIDs() async -> Set<String>? {
+        guard let roster = gatewayRoster, let runtime = runtimeSessionID,
+              let result = try? await roster.request("session.events.since", [
+                  "session_id": .string(runtime), "last_seen": .number(Double(lastAppliedSeq ?? 0)),
+              ]) else { return nil }
+        return RequestSync.openIDs(result["open_requests"])
+    }
+
+    /// Whether Hermes still waits on request `id`; true when it can't be asked (the answer then
+    /// goes as before, kept until an attach shows how it went).
+    private func stillWaitsOn(_ id: String) async -> Bool {
+        guard let open = await openRequestIDs() else { return true }
+        if !open.contains(id) { takeDownEndedRequests(open: open) }
+        return open.contains(id)
     }
 
     private func updateConnection(_ payload: JSONValue) {
@@ -4699,6 +4762,12 @@ extension ConversationModel {
     private func sendAnswer(_ result: JSONValue, to id: String, about summary: String, roster: BotRoster) {
         answers.record(id: id, result: result, summary: summary)
         Task {
+            // Hermes drops an answer to a request it no longer waits on without a word.
+            guard await stillWaitsOn(id) else {
+                answers.forget(id)
+                addReceipt(String(localized: "Not sent · already answered on another device"), symbol: "info.circle")
+                return
+            }
             let sent = await roster.respond(to: id, result: result)
             answers.finishSending(id, sent: sent)
             if !sent, answers.holds(id) {

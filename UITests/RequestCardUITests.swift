@@ -33,7 +33,48 @@ final class RequestCardUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["requestCard"].waitForNonExistence(timeout: 10), "the card stayed")
     }
 
+    /// Answered on another device (`docs/quick-actions.md` §1): Hermes tells no one else, so this
+    /// device finds out as the chat moves on, takes the card down and says so.
+    @MainActor
+    func testACardAnsweredElsewhereGoes() async throws {
+        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
+        XCTAssertTrue(element(app, "label BEGINSWITH 'Question 1 of 2'").waitForExistence(timeout: 60), "no clarify card")
+        try await answerElsewhere("clarify")
+        XCTAssertTrue(app.descendants(matching: .any)["requestCard"].waitForNonExistence(timeout: 10), "the card stayed")
+        XCTAssertTrue(element(app, "label CONTAINS 'Answered on another device'").waitForExistence(timeout: 5), "no receipt")
+    }
+
+    /// Away while another device answered: coming back, the card is gone.
+    @MainActor
+    func testACardAnsweredWhileAwayIsGoneOnReturn() async throws {
+        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
+        XCTAssertTrue(element(app, "label BEGINSWITH 'Question 1 of 2'").waitForExistence(timeout: 60), "no clarify card")
+        XCUIDevice.shared.press(.home)
+        try await Task.sleep(for: .seconds(20))
+        try await answerElsewhere("clarify")
+        try await Task.sleep(for: .seconds(3))
+        app.activate()
+        XCTAssertTrue(app.descendants(matching: .any)["requestCard"].waitForNonExistence(timeout: 15), "the card was still there on return")
+    }
+
     // MARK: Helpers
+
+    /// `POST /api/mock/answer-elsewhere` on the mock backend, with the dashboard's session token.
+    private func answerElsewhere(_ method: String) async throws {
+        let backend = URL(string: (Bundle(for: RequestCardUITests.self).object(forInfoDictionaryKey: "HermesMockBackend") as? String)
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "http://127.0.0.1:19119")!
+        let (page, _) = try await URLSession.shared.data(from: backend)
+        let html = String(decoding: page, as: UTF8.self)
+        guard let start = html.range(of: "__HERMES_SESSION_TOKEN__=\"")?.upperBound,
+              let end = html[start...].firstIndex(of: "\"") else { throw URLError(.userAuthenticationRequired) }
+        var request = URLRequest(url: backend.appending(path: "api/mock/answer-elsewhere"))
+        request.httpMethod = "POST"
+        request.setValue(String(html[start..<end]), forHTTPHeaderField: "X-Hermes-Session-Token")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["method": method])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, "the mock had no open \(method) (restart it after pulling)")
+    }
 
     /// Every part of the card, and the composer under it, inside the window (half a point's grace
     /// for rounding), with a screenshot to look at.

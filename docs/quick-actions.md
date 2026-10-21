@@ -50,6 +50,15 @@ the design's component names, used in code comments.
 
 - After a reconnect, `session.resume` brings back the chat's open requests (`open_requests`) and
   any pending connection (`pending_connection`), so their cards return.
+- Answered on another device: Hermes settles a request with the first answer from any client and
+  tells the others nothing (no `request.cancel`; a later answer to that id is dropped without a
+  word). So each device asks itself (`RequestSync`): when it attaches or comes back, while a card is
+  up and the chat moves on (`session.events.since` lists `open_requests` and changes nothing), and
+  just before sending an answer. A card Hermes no longer lists goes with "Answered on another
+  device", or "Hermes stopped waiting · no answer in time" past its deadline; an answer, password
+  or key for it is not sent, and the chat says "Not sent · already answered on another device".
+  Questions, approvals, secrets, sudo and the vault prompts all work this way. The mock settles one
+  as another device would with `POST /api/mock/answer-elsewhere {"method"}`.
 
 ## 2. Request to card
 
@@ -232,6 +241,9 @@ yes such as "yes", "go ahead", "run it"), "allow in this chat", or "deny" (any n
 - Tiles shown match the `choices` and `allow_*` flags exactly.
 - A withdrawn request clears only its own card.
 - Answers go to the request the person saw, by id, never to "whatever is pending now".
+- A question answered on the iPhone leaves the Mac within a second of the turn moving on, and the
+  other way round; a device that was asleep or in the background takes the card down when it comes
+  back; a card answered on both sends only the first answer (`POST /api/mock/answer-elsewhere`).
 - With the mock backend's sockets cut (`POST /api/mock/drop-sockets {"outage": 10}`) just before
   Allow Once on an "approve" card, the receipt says the answer goes when the Mac is back, and the
   command runs once the socket is back, without the card showing again.

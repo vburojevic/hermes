@@ -1786,6 +1786,23 @@ class Handler(BaseHTTPRequestHandler):
             for peer in peers:
                 peer.cut()
             return self.send_json(200, {"ok": True, "dropped": len(peers)})
+        if url.path == "/api/mock/answer-elsewhere":
+            # Mock-only: another device answers the newest open request (of `method`, if given) the way
+            # Hermes settles it: no event to the clients still showing its card (`RequestSync`).
+            with LOCK:
+                wanted = body.get("method")
+                rid = next((r for r in reversed(list(PENDING)) if not wanted or PENDING[r]["frame"]["method"] == wanted), None)
+                entry = PENDING.pop(rid, None) if rid else None
+            if entry is None:
+                return self.send_json(404, {"detail": "No open request"})
+            method = entry["frame"]["method"]
+            questions = entry["frame"]["params"].get("questions") or []
+            default = ({"choice": "once", "all": False} if method == "approval" else
+                       {"answers": {q.get("qid", ""): (q.get("choices") or ["Yes"])[0] for q in questions}} if method == "clarify" else
+                       {"value": ""})
+            entry["result"] = body.get("result") or default
+            entry["event"].set()
+            return self.send_json(200, {"ok": True, "id": rid, "method": method})
         if url.path == "/api/mock/lose-answer":
             # Mock-only: the next request for `method` loses its answer and the socket is cut, after
             # the request ran (`taken: true`) or before (`taken: false`). An unanswered send.
@@ -1886,6 +1903,9 @@ class Handler(BaseHTTPRequestHandler):
                         entry["result"] = None
                         entry["event"].set()
                 else:
+                    # Like Hermes' `resolve_response`: the first answer settles the request and nobody
+                    # else is told; a later answer to the same id is dropped without a word.
+                    PENDING.pop(rid, None)
                     entry["result"] = frame.get("result")
                     entry["event"].set()
             return
