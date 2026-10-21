@@ -211,6 +211,8 @@ each after `=== <name> started <time> [<action id>] ===`. The app runs two of th
 - **Polling**: every 2 s (Hermes's dashboard: 1.5 s; Telegram: new lines every 4 s). A restart
   that stops answering for 10 minutes, or reads not running with no exit code for 90 s, says
   so and stops following.
+- **Priority afterwards**: both jobs write the gateway's launchd plist again without
+  `ProcessType`, so on a Mac each result can end with Hermes at background priority (§4.17).
 
 `ActionLog`, `ActionStatus`, `ActionRunState` and `GatewayJob` (HermesKit) hold these rules.
 
@@ -432,11 +434,14 @@ Each row in Settings → Setup opens Voice & Audio; Talk, the Listen player and 
 ### 4.17 Priority (the gateway's Mac)
 
 On macOS, launchd runs a LaunchAgent with no `ProcessType` as a background job (`launchctl print`
-says "spawn type = background"): the system throttles its CPU and I/O, so when the Mac is busy
-Hermes answers late or not at all while the person's apps carry on (`man launchd.plist`,
-ProcessType). `Interactive` gives a job the limits apps have, none. Hermes writes its gateway
-plist without one, and writes it again (still without) on `hermes gateway start`, `restart`,
-`install` and `hermes update`; it never writes a dashboard's plist.
+says "spawn type = daemon"; older notes say "background"): the system throttles its CPU and I/O,
+so when the Mac is busy Hermes answers late or not at all while the person's apps carry on (`man
+launchd.plist`, ProcessType). `Interactive` gives a job the limits apps have, none. Hermes writes
+its gateway plist without one, and writes it again (still without) on `hermes gateway start`,
+`restart`, `install` and `hermes update`, whenever the file differs from the one it generates
+(`refresh_launchd_plist_if_needed`, which compares all of it but `PATH`); it never writes a
+dashboard's plist. The gateway itself (`hermes gateway run`) and `launchctl kickstart` leave the
+file alone. So the app's own Update Hermes and /restart reset it, and say so (below).
 
 - **Read:** `/app-push host` (push plugin 1.3.0, `hostinfo.report`) lists Hermes's launchd jobs on
   the gateway's Mac: its gateways (`ai.hermes.gateway*`), the `ai.hermes.*` jobs that run a
@@ -444,7 +449,11 @@ plist without one, and writes it again (still without) on `hermes gateway start`
   (`XPC_SERVICE_NAME`). For each: the plist's ProcessType, the spawn type launchd loaded it with,
   its pid and priority. It runs in the dashboard (the command goes through Bot Mode), so it reports
   the whole Mac, not its own process. A job is throttled when it's loaded as anything but
-  interactive.
+  interactive, or when its plist no longer says Interactive: launchd keeps running a job as it
+  loaded it, and Hermes's update reloads the gateway only once the old one has drained
+  ("reload deferred to a transient launchd job"), so right after an update the gateway still
+  runs at full priority while its next start won't (`losesPriorityAtNextStart`: "From its next
+  start, macOS runs Hermes…", "It runs at full priority until then.").
 - **States:** Ready on other systems and when every job is interactive. Partly set up while a job
   is throttled ("macOS runs Hermes on <gateway> as a background job, so when the Mac is busy it
   answers late or not at all"), with one Terminal step per job (`plutil -replace ProcessType
@@ -458,8 +467,28 @@ plist without one, and writes it again (still without) on `hermes gateway start`
   gateway's address resolving to one of this Mac's addresses does, and the app reads the jobs
   itself (`LocalLaunchJobs.report`). Each throttled job gets `ProcessType Interactive` (inserted as
   text, so Hermes's comments stay) and is reloaded with `bootout` and `bootstrap` (`kickstart`
-  doesn't read the plist again), dashboards first and the gateway last. Only `ai.hermes.*` jobs
-  whose plist is in `~/Library/LaunchAgents` are touched, whatever the report says.
+  doesn't read the plist again), dashboards first and the gateway last. A job that still runs at
+  full priority only gets the plist (its Terminal step too): nothing restarts. Only `ai.hermes.*`
+  jobs whose plist is in `~/Library/LaunchAgents` are touched, whatever the report says.
+- **After the app's own update or restart** (Settings → Setup, /update, /restart; §4.2a): once
+  it's done (any end but a failed update), the app reads `/app-push host` again as soon as Bot
+  Mode is back, every 10 s for up to two minutes while the dashboard restarts. When the gateway is
+  throttled, the result says so under how it ended (`PriorityResetView`, in Setup and on the chat
+  card): "Updating reset Hermes to background priority" ("Restarting reset…"; "Hermes still runs
+  at background priority" when the read before the run already said so), what that means, and
+  Run at Full Priority… with the same confirmation on the gateway's own Mac, otherwise the same
+  Terminal steps as the Priority row. It follows the reads, so the fix takes it away.
+- **The update's confirmation** says it up front on a Mac gateway (a report from `darwin` with a
+  gateway job): "Updating resets Hermes to background priority on <gateway>. The app offers to
+  restore it when it's done." (`GatewaySetup.updateConfirmation`).
+- **Beside Settings, on the Mac** (`macPriorityNotice`): while the gateway runs throttled (or will
+  from its next start) and Bot Mode is online, a small card at the bottom of the sidebar, above
+  the status and the Settings button: "Hermes runs at background priority", "When <gateway> is
+  busy, Hermes answers late or not at all.", Run at Full Priority… (this Mac) or Show Steps (opens
+  Settings → Setup), and Not Now. Not Now puts it away on this Mac until a read sees the gateway at
+  full priority again, so it comes back only after something resets it, never on a timer. The Mac
+  reads `/app-push host` when Bot Mode connects (at most hourly), so the card doesn't wait for
+  Settings. The iPhone and iPad keep it to Setup and the job results: they can't fix it.
 
 ### 4.18 Bot-to-Bot replies
 
@@ -519,6 +548,7 @@ cloud · Browserbase"); the row opens the Browser page (Open Apps & Tools on the
 | `update-fails`, `update-owes`, `update-refused`, `update-slow` | the update exits 1 on a merge conflict; a partial run owes a plugin reinstall; Hermes runs from the desktop app bundle and refuses; the same run over 36 s (screenshots under load) |
 | (always, `app_plugins.py`) | /restart runs about 5 s of `hermes gateway restart` lines, then exit 0; `POST /api/mock/restart {"fails": true}` makes the next ones exit 1 |
 | `throttled`, `throttled-here` | `/app-push host` reports the gateway and dashboard as background jobs, on another Mac; or on this Mac (its machine id), with plists in `build/mock-launch-agents` that Run at Full Priority edits under `-HERMES_LAUNCH_AGENTS_DIR` |
+| `priority-here` | the same Mac at full priority. On any darwin host (all but `host-linux`), a good update (6 s in) or restart (when it's done) takes `ProcessType` out of the gateway's plist, as Hermes does; the report keeps the gateway loaded interactive for 20 s more (the deferred reload), then from the plist |
 | `host-linux`, `push-old` | the gateway runs on Linux; the push plugin is older than `host` |
 | (processes mock) | "trailhead" in a chat starts a delivery to Ada; `POST /api/mock/processes/deliveries {persist}` makes later ones protected or not (default not, like Hermes 0.22), for §4.18 |
 | `docker` | `terminal.backend: docker` |

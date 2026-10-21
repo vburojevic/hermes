@@ -483,6 +483,7 @@ final class BotRoster {
                 workspace?.projects.connected()
                 workspace?.unread.connected()
                 workspace?.plugins.connected()
+                workspace?.setup.connected()
                 groupRooms.connected()
                 workspace?.widgets.socketConnected()
             }

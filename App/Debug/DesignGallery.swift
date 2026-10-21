@@ -29,6 +29,7 @@ struct DesignGallery: View {
         case let page where page.hasPrefix("talk"): TalkPage(start: Int(page.dropFirst(5)) ?? 0)
         case "voice": VoiceMessagesPage()
         case "indicators": IndicatorsPage()
+        case let page where page.hasPrefix("priority"): PriorityPage(page: page)
         default: Text("Unknown gallery page \(page)")
         }
     }

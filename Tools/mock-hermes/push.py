@@ -260,17 +260,39 @@ def cmd_status(args):
                 "preferences": device["preferences"] if device else None, "open": len(STATE["requests"])}
 
 
+# Hermes writes the gateway's plist again without ProcessType on every update and restart
+# (gateway_launchd.refresh_launchd_plist_if_needed), and launchd keeps running the job as it loaded
+# it until the deferred reload, RELOAD_AFTER seconds later. setup.py and app_plugins.py call
+# reset_priority when a good run gets that far; set_states clears it.
+PRIORITY = {"reset_at": None, "stripped": None}
+RELOAD_AFTER = 20
+
+
+def reset_priority(at):
+    with LOCK:
+        PRIORITY.update(reset_at=at, stripped=None)
+
+
 def cmd_host(args):
     """``/app-push host`` (plugin ``hostinfo.report``): Hermes's launchd jobs on the gateway's Mac,
-    shaped by setup.py's states. ``throttled-here`` reports this Mac's machine id and plists in
-    build/mock-launch-agents, and reads them back, so the Mac app's fix shows up as interactive."""
+    shaped by setup.py's states. ``throttled-here`` and ``priority-here`` report this Mac's machine
+    id and plists in build/mock-launch-agents (written throttled, or Interactive), and read them
+    back, so the Mac app's fix shows up as interactive. After an update or restart (PRIORITY) the
+    gateway's plist has lost ProcessType, and from RELOAD_AFTER on launchd runs it that way."""
     states = B.get("MOCK_SETUP_STATES") or set()
     if "push-old" in states:
         raise ValueError("unknown command 'host'")
     if "host-linux" in states:
         return {"ok": True, "version": "mock", "host": {"os": "linux", "machine_id": "mock-linux", "jobs": []}}
-    here = "throttled-here" in states
-    throttled = here or "throttled" in states
+    here = "throttled-here" in states or "priority-here" in states
+    throttled = "throttled-here" in states or "throttled" in states
+    with LOCK:
+        reset_at = PRIORITY["reset_at"]
+        reset = reset_at is not None and time.time() >= reset_at
+        reloaded = reset and time.time() >= reset_at + RELOAD_AFTER
+        strip = reset and PRIORITY["stripped"] != reset_at
+        if strip:
+            PRIORITY["stripped"] = reset_at
     folder = HERE.parent.parent / "build" / "mock-launch-agents" if here else pathlib.Path("/Users/sam/Library/LaunchAgents")
     machine = "mock-machine-0001"
     if here:
@@ -286,13 +308,23 @@ def cmd_host(args):
                                                      ("ai.hermes.gateway", "gateway", ["hermes", "gateway", "run"]))):
         plist = folder / f"{label}.plist"
         process_type = None if throttled else "Interactive"
+        rewritten = reset and role == "gateway"
         if here:
             if not plist.exists():
-                plist.write_bytes(plistlib.dumps({"Label": label, "ProgramArguments": program, "RunAtLoad": True}))
+                data = {"Label": label, "ProgramArguments": program, "RunAtLoad": True}
+                plist.write_bytes(plistlib.dumps(data if throttled else {**data, "ProcessType": "Interactive"}))
+            if rewritten and strip:
+                data = plistlib.loads(plist.read_bytes())
+                data.pop("ProcessType", None)
+                plist.write_bytes(plistlib.dumps(data))
             process_type = plistlib.loads(plist.read_bytes()).get("ProcessType")
-        interactive = process_type == "Interactive"
+        elif rewritten:
+            process_type = None
+        # Until the reload, the gateway runs as it was loaded before the run.
+        loaded = process_type if not rewritten or reloaded else (None if throttled else "Interactive")
+        interactive = loaded == "Interactive"
         jobs.append({"label": label, "role": role, "plist": str(plist), "process_type": process_type,
-                     "spawn_type": "interactive" if interactive else "background", "pid": 4100 + index,
+                     "spawn_type": "interactive" if interactive else "daemon", "pid": 4100 + index + (100 if reloaded and rewritten else 0),
                      "priority": 31 if interactive else 20})
     return {"ok": True, "version": "mock", "host": {"os": "darwin", "machine_id": machine, "jobs": jobs}}
 
@@ -691,6 +723,7 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
     if kanban is not None:
         kanban.HOOKS.append(card_notice)
     backend_globals["MOCK_LEARNED_TIDIED"] = tidied_notice
+    backend_globals["MOCK_RESET_PRIORITY"] = reset_priority
 
     def dispatch(params):
         installed = backend_globals.get("APP_PLUGIN_INSTALLED")

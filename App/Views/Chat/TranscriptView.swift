@@ -1373,7 +1373,8 @@ struct TranscriptView: View {
         case .notice(let notice):
             NoticeRow(notice: notice)
         case .command(let command):
-            CommandRow(entry: command, isBotChat: conversation.isBotChat, job: conversation.job(forCommand: command.id))
+            CommandRow(entry: command, isBotChat: conversation.isBotChat, job: conversation.job(forCommand: command.id),
+                       setup: conversation.workspace?.setup)
         }
     }
 

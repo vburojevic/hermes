@@ -536,6 +536,64 @@ struct GatewayPriorityTests {
         let job = GatewayHostReport.Job(label: "ai.hermes.gateway", role: .gateway, plistPath: "/Users/sam/Library/LaunchAgents/ai.hermes.gateway.plist")
         #expect(GatewayHostReport.command(for: job) == "plutil -replace ProcessType -string Interactive ~/Library/LaunchAgents/ai.hermes.gateway.plist && launchctl bootout gui/$(id -u)/ai.hermes.gateway; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.hermes.gateway.plist")
     }
+
+    /// Right after `hermes update` the gateway still runs as launchd loaded it, while its plist no
+    /// longer says Interactive: throttled from its next start, and the plist alone fixes it.
+    @Test func aRewrittenPlistCountsBeforeTheReload() {
+        let rewritten = GatewayHostReport.Job(label: "ai.hermes.gateway", role: .gateway, plistPath: "/Users/sam/Library/LaunchAgents/ai.hermes.gateway.plist",
+                                              processType: nil, spawnType: "interactive", pid: 50, priority: 31)
+        #expect(rewritten.isThrottled)
+        #expect(rewritten.losesPriorityAtNextStart)
+        #expect(!rewritten.needsReload)
+        #expect(GatewayHostReport.command(for: rewritten) == "plutil -replace ProcessType -string Interactive ~/Library/LaunchAgents/ai.hermes.gateway.plist")
+        let status = GatewaySetup.priority(facts(.report(GatewayHostReport(os: "darwin", jobs: [rewritten, report.jobs[1]]))))
+        #expect(status.state == .limited)
+        #expect(status.detail == "From its next start, macOS runs Hermes on Studio Mac as a background job, so when the Mac is busy it will answer late or not at all.")
+        #expect(status.fallback == "It runs at full priority until then.")
+        // launchd says "daemon" for a LaunchAgent without ProcessType.
+        let daemon = GatewayHostReport.Job(label: "ai.hermes.gateway", role: .gateway, plistPath: "", spawnType: "daemon")
+        #expect(daemon.isThrottled && !daemon.losesPriorityAtNextStart)
+        let full = GatewayHostReport.Job(label: "ai.hermes.gateway", role: .gateway, plistPath: "", processType: "Interactive", spawnType: "interactive")
+        #expect(!full.isThrottled)
+    }
+
+    @Test func anUpdateThatResetsPrioritySaysSoWithTheFixOrTheSteps() throws {
+        let here = try #require(GatewaySetup.priorityReset(facts(.report(report), thisMac: true), after: .update, wasThrottled: false))
+        #expect(here.headline == "Updating reset Hermes to background priority")
+        #expect(here.detail == "macOS runs Hermes on this Mac as a background job, so when the Mac is busy it answers late or not at all.")
+        #expect(here.canFixHere)
+        #expect(here.steps.isEmpty)
+        let elsewhere = try #require(GatewaySetup.priorityReset(facts(.report(report)), after: .restart, wasThrottled: false))
+        #expect(elsewhere.headline == "Restarting reset Hermes to background priority")
+        #expect(!elsewhere.canFixHere)
+        #expect(elsewhere.steps.map(\.text) == ["For ai.hermes.gateway, in Terminal on Studio Mac:", "For ai.hermes.dashboard-proxy, in Terminal on Studio Mac:"])
+        #expect(elsewhere.steps.allSatisfy { $0.command?.hasPrefix("plutil -replace ProcessType -string Interactive") == true })
+        #expect(GatewaySetup.priorityReset(facts(.report(report)), after: .update, wasThrottled: true)?.headline == "Hermes still runs at background priority")
+        // Nothing to say at full priority, about dashboards alone (updating doesn't touch theirs), or off a Mac.
+        let dashboards = GatewayHostReport(os: "darwin", jobs: [report.jobs[1], report.jobs[2]])
+        #expect(GatewaySetup.priorityReset(facts(.report(dashboards)), after: .update, wasThrottled: false) == nil)
+        #expect(GatewaySetup.priorityReset(facts(.report(GatewayHostReport(os: "linux"))), after: .update, wasThrottled: false) == nil)
+        #expect(GatewaySetup.priorityReset(facts(.failed), after: .update, wasThrottled: false) == nil)
+    }
+
+    @Test func theMacsNoticeAndTheUpdateConfirmation() throws {
+        let notice = try #require(GatewaySetup.priorityNotice(facts(.report(report), thisMac: true)))
+        #expect(notice.headline == "Hermes runs at background priority")
+        #expect(notice.detail == "When this Mac is busy, Hermes answers late or not at all.")
+        #expect(GatewaySetup.priorityNotice(facts(.report(report)))?.detail == "When Studio Mac is busy, Hermes answers late or not at all.")
+        #expect(notice.canFixHere)
+        #expect(GatewaySetup.priorityNotice(facts(.report(report)))?.steps.count == 2)
+        var connecting = facts(.report(report), thisMac: true)
+        connecting.botMode = .connecting
+        #expect(GatewaySetup.priorityNotice(connecting) == nil)
+        #expect(GatewaySetup.priorityNotice(facts(.report(GatewayHostReport(os: "darwin", jobs: [report.jobs[1]])))) == nil)
+
+        let plain = "Hermes updates itself, then restarts once running chats and tasks finish. The app reconnects by itself."
+        #expect(GatewaySetup.updateConfirmation(facts(.report(report))) == plain + "\n\nUpdating resets Hermes to background priority on Studio Mac. The app offers to restore it when it's done.")
+        #expect(GatewaySetup.updateConfirmation(facts(.report(report), thisMac: true)).hasSuffix("on this Mac. The app offers to restore it when it's done."))
+        #expect(GatewaySetup.updateConfirmation(facts(.report(GatewayHostReport(os: "linux")))) == plain)
+        #expect(GatewaySetup.updateConfirmation(facts(nil)) == plain)
+    }
 }
 
 @Suite("Bot-to-Bot replies")

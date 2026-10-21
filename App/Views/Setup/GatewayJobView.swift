@@ -8,6 +8,8 @@ import SwiftUI
 /// /update or /restart card (`GatewayJobCard`).
 struct GatewayJobView: View {
     let job: GatewayJob
+    /// For Run at Full Priority… when the run put Hermes at background priority.
+    var setup: SetupCenter?
     /// Lines shown until Show All Lines.
     var recent = 6
 
@@ -27,6 +29,10 @@ struct GatewayJobView: View {
             }
             if let command = job.command {
                 SetupCommand(command: command)
+            }
+            if let reset = job.priorityReset {
+                PriorityResetView(notice: reset, setup: setup)
+                    .padding(.top, 2)
             }
             if !job.log.lines.isEmpty {
                 lines
@@ -118,9 +124,10 @@ struct GatewayJobView: View {
 /// how it ended. It's the same run Settings → Setup shows.
 struct GatewayJobCard: View {
     let job: GatewayJob
+    var setup: SetupCenter?
 
     var body: some View {
-        GatewayJobView(job: job)
+        GatewayJobView(job: job, setup: setup)
             .padding(14)
             .frame(maxWidth: 460, alignment: .leading)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

@@ -193,6 +193,28 @@ struct SidebarFooter: View {
     #endif
 
     var body: some View {
+        VStack(spacing: 0) {
+            #if os(macOS)
+            // Hermes at background priority on its Mac, beside Settings (`docs/setup.md` §4.17).
+            if let notice = workspace.setup.priorityNotice {
+                MacPriorityNotice(setup: workspace.setup, notice: notice)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+            }
+            #endif
+            row
+        }
+        .background {
+            if isOpaque { Theme.sidebar.ignoresSafeArea(edges: .bottom) }
+        }
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 0.5)
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: 10) {
             ConnectionStatusLabel(workspace: workspace)
             Spacer(minLength: 8)
@@ -226,14 +248,6 @@ struct SidebarFooter: View {
         .padding(.leading, 18)
         .padding(.trailing, 12)
         .padding(.vertical, 10)
-        .background {
-            if isOpaque { Theme.sidebar.ignoresSafeArea(edges: .bottom) }
-        }
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 0.5)
-        }
     }
 }
 

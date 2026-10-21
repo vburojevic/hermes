@@ -97,8 +97,9 @@ enum LocalLaunchJobs {
     }
 
     /// Run at Full Priority: each job's plist gets `ProcessType Interactive`, then launchd reloads
-    /// it (`bootout` and `bootstrap`; `kickstart` doesn't read the plist again). Dashboards first,
-    /// the gateway last. Only Hermes's own jobs in the LaunchAgents folder are touched. Returns
+    /// it (`bootout` and `bootstrap`; `kickstart` doesn't read the plist again), unless it still
+    /// runs at full priority and only its next start would lose it. Dashboards first, the gateway
+    /// last. Only Hermes's own jobs in the LaunchAgents folder are touched. Returns
     /// the labels that didn't come back.
     nonisolated static func runAtFullPriority(_ jobs: [GatewayHostReport.Job]) -> [String] {
         let folder = agentsFolder
@@ -111,6 +112,9 @@ enum LocalLaunchJobs {
                 failed.append(job.label)
                 continue
             }
+            // Still running at full priority (Hermes rewrote the plist since it started): the plist
+            // is all its next start reads, so nothing restarts.
+            if job.losesPriorityAtNextStart { continue }
             if !reload(job) { failed.append(job.label) }
         }
         return failed

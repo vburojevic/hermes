@@ -35,6 +35,9 @@ public struct GatewayJob: Sendable, Equatable {
     public var command: String?
     public var log: ActionLog
     public var started: Date
+    /// Once it's done: Hermes wrote the gateway's plist again on the way, and macOS runs it at
+    /// background priority (`docs/setup.md` §4.17).
+    public var priorityReset: PriorityNotice?
 
     public var isRunning: Bool { tone == .running }
 

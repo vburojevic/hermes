@@ -199,7 +199,7 @@ private struct SetupFeaturePage: View {
                     #endif
                     if status.id == GatewaySetup.ID.hermes || status.id == GatewaySetup.ID.botReplies,
                        let job = setup.currentJob(.update) {
-                        GatewayJobView(job: job)
+                        GatewayJobView(job: job, setup: setup)
                     }
                 }
             }
@@ -237,15 +237,12 @@ private struct SetupFeaturePage: View {
         case GatewaySetup.ID.groupChats:
             .turnOffIsolation
         case GatewaySetup.ID.priority:
-            SetupConfirmation(
-                title: String(localized: "Run Hermes at full priority?"),
-                message: String(localized: "Hermes's services on this Mac restart to run like apps do, so a busy Mac no longer slows them down. Replies in progress stop; the app reconnects by itself."),
-                action: String(localized: "Run at Full Priority")
-            )
+            .runAtFullPriority
         case GatewaySetup.ID.hermes, GatewaySetup.ID.botReplies:
+            // On a Mac it says the update resets priority, and that the app offers it back.
             SetupConfirmation(
                 title: String(localized: "Update Hermes on \(workspace.bot.name)?"),
-                message: String(localized: "Hermes updates itself, then restarts once running chats and tasks finish. The app reconnects by itself."),
+                message: GatewaySetup.updateConfirmation(setup.facts),
                 action: String(localized: "Update")
             )
         default:

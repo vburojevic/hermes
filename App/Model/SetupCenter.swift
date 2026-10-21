@@ -27,6 +27,15 @@ final class SetupCenter {
     private(set) var currentJobs: [GatewayJob.Kind: GatewayJob.Ref] = [:]
     private(set) var pastJobs: [GatewayJob.Ref: GatewayJob] = [:]
     @ObservationIgnored private var jobStarts: [GatewayJob.Kind: Date] = [:]
+    /// Runs that restarted Hermes and have read the gateway's priority since (`docs/setup.md`
+    /// §4.17): their result says when Hermes's rewritten plist put it at background priority.
+    private var priorityReadAfter: Set<GatewayJob.Ref> = []
+    /// Whether the last read before each run found the gateway at background priority already.
+    @ObservationIgnored private var throttledBefore: [GatewayJob.Ref: Bool] = [:]
+    @ObservationIgnored private var priorityRead: Task<Void, Never>?
+    /// The Mac's priority notice was put away with Not Now (`docs/setup.md` §4.17).
+    private(set) var priorityNoticeDismissed: Bool
+    @ObservationIgnored private var priorityCheckedAt: Date?
 
     @ObservationIgnored private weak var workspace: BotWorkspace?
     private static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "setup")
@@ -52,6 +61,7 @@ final class SetupCenter {
     init(workspace: BotWorkspace) {
         self.workspace = workspace
         reads = Reads()
+        priorityNoticeDismissed = UserDefaults.standard.bool(forKey: Self.noticeKey(workspace.bot.id))
     }
 
     // MARK: State
@@ -403,11 +413,7 @@ final class SetupCenter {
                 Task { await self.read(.widgets) { await workspace.widgets.checkSupport(client: workspace.client, roster: roster) } },
                 // The app's plugins in every profile (`docs/plugins.md` §2).
                 Task { await self.read(.plugins) { await workspace.plugins.check() } },
-                Task {
-                    let host = await self.read(.host) { await self.readHostPriority(roster: roster) }
-                    self.reads.hostPriority = host.priority
-                    self.reads.hostIsThisMac = host.isThisMac
-                },
+                Task { self.land(await self.read(.host) { await self.readHostPriority(roster: roster) }) },
             ]
         }
         // Voice keeps its own statuses (`docs/voice.md` §6.1), Can't check without Bot Mode.
@@ -431,6 +437,18 @@ final class SetupCenter {
         pending.remove(which)
         Self.logger.debug("setup read \(String(describing: which), privacy: .public) took \(String(describing: ContinuousClock.now - started), privacy: .public)")
         return value
+    }
+
+    /// A host read is back. Seeing the gateway at full priority again puts the Mac's notice back
+    /// in play for the next time something resets it.
+    private func land(_ host: (priority: GatewaySetupFacts.HostPriority, isThisMac: Bool)) {
+        reads.hostPriority = host.priority
+        reads.hostIsThisMac = host.isThisMac
+        priorityCheckedAt = .now
+        if case .report(let report) = host.priority, report.throttledGateway == nil, priorityNoticeDismissed {
+            priorityNoticeDismissed = false
+            UserDefaults.standard.removeObject(forKey: Self.noticeKey(workspace?.bot.id))
+        }
     }
 
     /// How the gateway's Mac schedules Hermes (`docs/setup.md` §4.17): the push plugin's
@@ -459,6 +477,68 @@ final class SetupCenter {
         #else
         return (priority, false)
         #endif
+    }
+
+    // MARK: Priority beyond Setup (`docs/setup.md` §4.17)
+
+    /// The Mac's notice beside Settings: the gateway runs at background priority, until it's set
+    /// back or the person says Not Now. Nil on other devices.
+    var priorityNotice: PriorityNotice? {
+        #if os(macOS)
+        priorityNoticeDismissed ? nil : GatewaySetup.priorityNotice(facts)
+        #else
+        nil
+        #endif
+    }
+
+    /// Not Now: the notice stays away until the gateway is seen at full priority again.
+    func dismissPriorityNotice() {
+        priorityNoticeDismissed = true
+        UserDefaults.standard.set(true, forKey: Self.noticeKey(workspace?.bot.id))
+    }
+
+    private static func noticeKey(_ gatewayID: UUID?) -> String {
+        "setup.priorityNoticeDismissed.\(gatewayID?.uuidString ?? "")"
+    }
+
+    /// Bot Mode came online: on the Mac, read how the gateway's Mac runs Hermes, at most hourly,
+    /// so the notice doesn't wait for Settings. One plugin command, no model calls.
+    func connected() {
+        #if os(macOS)
+        guard priorityRead == nil, priorityCheckedAt.map({ Date.now.timeIntervalSince($0) > 3600 }) ?? true,
+              let roster = workspace?.roster, roster.isConnected else { return }
+        priorityRead = Task { [weak self] in
+            guard let self else { return }
+            land(await read(.host) { await self.readHostPriority(roster: roster) })
+            priorityRead = nil
+        }
+        #endif
+    }
+
+    /// After an update or restart the app ran: Hermes wrote the gateway's plist again on the way,
+    /// so read how its Mac runs it once Bot Mode is back, for up to two minutes while the dashboard
+    /// restarts. The run's result then says what came of it.
+    private func readPriority(after ref: GatewayJob.Ref) {
+        priorityRead?.cancel()
+        priorityRead = Task { [weak self] in
+            for attempt in 0..<12 {
+                if attempt > 0 { try? await Task.sleep(for: .seconds(10)) }
+                guard let self, !Task.isCancelled else { return }
+                guard let roster = workspace?.roster, roster.isConnected else { continue }
+                let host = await read(.host) { await self.readHostPriority(roster: roster) }
+                guard !Task.isCancelled else { return }
+                guard case .report = host.priority else { continue }
+                land(host)
+                priorityReadAfter.insert(ref)
+                break
+            }
+            self?.priorityRead = nil
+        }
+    }
+
+    private static func gatewayThrottled(_ priority: GatewaySetupFacts.HostPriority?) -> Bool {
+        if case .report(let report)? = priority { return report.throttledGateway != nil }
+        return false
     }
 
     // MARK: Fixes (each only on the person's tap)
@@ -541,10 +621,15 @@ final class SetupCenter {
     func currentJob(_ kind: GatewayJob.Kind) -> GatewayJob? {
         let name = workspace?.bot.name ?? ""
         let started = jobStarts[kind] ?? .now
-        switch kind {
-        case .update: return updateRun.map { GatewayJob.update($0, log: updateLog, started: started, gatewayName: name) }
-        case .restart: return restartRun.map { GatewayJob.restart($0, log: restartLog, started: started, gatewayName: name) }
+        var job = switch kind {
+        case .update: updateRun.map { GatewayJob.update($0, log: updateLog, started: started, gatewayName: name) }
+        case .restart: restartRun.map { GatewayJob.restart($0, log: restartLog, started: started, gatewayName: name) }
         }
+        // Live: Run at Full Priority, or the same fix in Terminal, takes it away again.
+        if let ref = currentJobs[kind], priorityReadAfter.contains(ref) {
+            job?.priorityReset = GatewaySetup.priorityReset(facts, after: kind, wasThrottled: throttledBefore[ref] ?? false)
+        }
+        return job
     }
 
     /// Numbers a new run of `kind`, keeping the one before as it ended.
@@ -555,6 +640,7 @@ final class SetupCenter {
         let ref = GatewayJob.Ref(kind: kind, number: (currentJobs[kind]?.number ?? 0) + 1)
         currentJobs[kind] = ref
         jobStarts[kind] = .now
+        throttledBefore[ref] = Self.gatewayThrottled(reads.hostPriority)
         return ref
     }
 
@@ -578,13 +664,13 @@ final class SetupCenter {
         updateRun = .starting
         updateLog = ActionLog()
         updating = Task { [weak self] in
-            await self?.runUpdate(client)
+            await self?.runUpdate(client, ref: ref)
             self?.updating = nil
         }
         return ref
     }
 
-    private func runUpdate(_ client: BackendClient) async {
+    private func runUpdate(_ client: BackendClient, ref: GatewayJob.Ref) async {
         let actionID: String?
         do {
             switch try await client.startHermesUpdate() {
@@ -623,11 +709,14 @@ final class SetupCenter {
                 unknownSince = since
                 if since.duration(to: .now) > Self.unknownAfter {
                     updateRun = .finished(.unknown)
+                    readPriority(after: ref)
                     return
                 }
             case let outcome?:
                 updateRun = .finished(outcome)
                 await check()
+                // Hermes restarted on the way unless the update stopped before it.
+                if case .failed = outcome {} else { readPriority(after: ref) }
                 return
             }
         }
@@ -644,13 +733,13 @@ final class SetupCenter {
         restartRun = .starting
         restartLog = ActionLog()
         restarting = Task { [weak self] in
-            await self?.runRestart(client)
+            await self?.runRestart(client, ref: ref)
             self?.restarting = nil
         }
         return ref
     }
 
-    private func runRestart(_ client: BackendClient) async {
+    private func runRestart(_ client: BackendClient, ref: GatewayJob.Ref) async {
         do {
             try await client.restartGateway()
         } catch {
@@ -678,6 +767,7 @@ final class SetupCenter {
             case 0?:
                 restartRun = .succeeded
                 await check()
+                readPriority(after: ref)
                 return
             case let code?:
                 restartRun = .failed(exitCode: code)
@@ -699,6 +789,8 @@ final class SetupCenter {
         updating = nil
         restarting?.cancel()
         restarting = nil
+        priorityRead?.cancel()
+        priorityRead = nil
         checking?.cancel()
     }
 

@@ -34,7 +34,9 @@ screenshots under load). The update-* states imply `update`.
 throttled (macOS runs the gateway and dashboard as background jobs; `/app-push host`, push.py),
 throttled-here (the same on this very Mac: the report carries this Mac's machine id and plists in
 build/mock-launch-agents, so the Mac app's Run at Full Priority edits those with
-`-HERMES_LAUNCH_AGENTS_DIR`), host-linux, push-old (a push plugin older than `host`).
+`-HERMES_LAUNCH_AGENTS_DIR`), priority-here (the same Mac at full priority, until an update or
+restart writes the gateway's plist again without it, as Hermes does), host-linux, push-old (a push
+plugin older than `host`).
 """
 
 import copy
@@ -52,7 +54,7 @@ STATES = set()
 ALL_STATES = {"board-off", "board-missing", "tidying-off", "tidying-paused", "turn-isolation", "no-driver",
               "gateway-stopped", "update", "docker", "memory-provider", "search-index", "delivery-failed", "missed-run",
               "apps-off", "apps-not-included", "update-fails", "update-owes", "update-refused", "update-slow",
-              "throttled", "throttled-here", "host-linux", "push-old"}
+              "throttled", "throttled-here", "priority-here", "host-linux", "push-old"}
 BRIEF = {}  # the morning briefing as seeded, to put back
 
 # What a PUT changed, over the states' defaults.
@@ -120,6 +122,8 @@ def set_states(states):
         STATES.update(s for s in states if s in ALL_STATES)
         CONFIG.clear()
         UPDATE.update(action_id=None, started=None, version="0.21.6")
+        if B.get("MOCK_RESET_PRIORITY"):
+            B["MOCK_RESET_PRIORITY"](None)
         # Run at Full Priority's plists start over (push.py writes them again when asked).
         shutil.rmtree(MOCK_AGENTS, ignore_errors=True)
         B["STATUS_EXTRA"].pop("version", None)
@@ -213,6 +217,9 @@ def install(backend_globals, gateway_module, states=()):
                 return 200, {"ok": True, "pid": 4242, "name": "hermes-update", "already_running": True,
                              "action_id": UPDATE["action_id"]}
             UPDATE.update(action_id=secrets.token_hex(16), started=time.time())
+            # The fleet restart writes the gateway's plist again (push.py), as the dashboard restarts.
+            if "update-fails" not in STATES and B.get("MOCK_RESET_PRIORITY"):
+                B["MOCK_RESET_PRIORITY"](UPDATE["started"] + 6 * pace())
             return 200, {"ok": True, "pid": 4242, "name": "hermes-update", "action_id": UPDATE["action_id"]}
 
     def update_status(query, body):

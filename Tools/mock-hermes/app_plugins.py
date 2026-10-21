@@ -188,6 +188,9 @@ def install(backend_globals, mode="current", gateway_module=None):
             if RESTART["started"]:
                 RESTART["log"] += restart_lines(RESTART_SECONDS)
             RESTART["started"] = time.time()
+            # `hermes gateway restart` writes the gateway's plist again without ProcessType (push.py).
+            if not RESTART["fails"] and B.get("MOCK_RESET_PRIORITY"):
+                B["MOCK_RESET_PRIORITY"](RESTART["started"] + RESTART_SECONDS)
         if gateway_module is not None:
             gateway_module.RUNTIME["pid"] = 40000 + count  # the restarted gateway is a new process
         print("[mock-backend] gateway restart", flush=True)

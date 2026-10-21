@@ -348,8 +348,11 @@ screenshot (`App/Support/MacDebugDriver.swift`); `tabs` logs how many Settings t
 many. Capture with `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts
 the Settings tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR
 <folder>` points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only
-logs its `launchctl` calls (`HERMES_LAUNCHCTL …`); the mock's `throttled-here` state uses
-`build/mock-launch-agents`.
+logs its `launchctl` calls (`HERMES_LAUNCHCTL …`); the mock's `throttled-here` and `priority-here`
+states use `build/mock-launch-agents`. The main window's bars (the sidebar's footer, the composer)
+don't draw in an off-Space capture, so `-HERMES_GALLERY priority` shows the footer with its priority
+notice and the update's result for the connected gateway; `priority:update` updates Hermes first,
+and `priority:update:fix` then runs Run at Full Priority (docs/setup.md §4.17).
 
 A Mac window that isn't on screen (the screen locked, another Space, behind other windows) lays
 out differently: AppKit solves its split view's constraints from each column's minimum size, and a

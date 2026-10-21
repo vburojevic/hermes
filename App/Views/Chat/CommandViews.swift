@@ -68,6 +68,7 @@ struct CommandRow: View {
     var isBotChat = false
     /// /update's or /restart's job, which the card follows instead of the outcome.
     var job: GatewayJob?
+    var setup: SetupCenter?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -79,7 +80,7 @@ struct CommandRow: View {
     @ViewBuilder
     private var outcome: some View {
         if let job {
-            GatewayJobCard(job: job)
+            GatewayJobCard(job: job, setup: setup)
         } else {
             plainOutcome
         }
