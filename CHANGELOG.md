@@ -31,6 +31,17 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610210539 (October 21, 2026)
+
+- **Relay:** accepts badge-only pushes, so a gateway can set the app icon's count
+- **Notifications:** the push plugin passes reads on to the person's other devices, with their badge
+- **Notifications:** read chats leave nothing on the Lock Screen, and the badge counts unread chats
+- **Notifications:** an approval with a long command in any script still reaches the phone
+- **Plugins:** the app installs push 1.4.0, which passes reads on to the person's other devices
+- **Plugins:** the app installs push 1.4.1
+- **Questions:** a card of several questions fits the screen, a long earlier answer on one line
+- **Chats:** the sidebar button and a Bot's name answer a tap again
+
 ### Build 2610202014 (October 20, 2026)
 
 - Fixes and polish.
