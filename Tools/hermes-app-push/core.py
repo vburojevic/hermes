@@ -22,7 +22,7 @@ from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
 from .store import Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -577,8 +577,11 @@ class Push:
     def on_pre_approval_request(self, session_key: str = "", command: str = "", description: str = "",
                                 pattern_keys: Any = None, surface: str = "", coalesced: bool = False,
                                 **extra: Any) -> None:
-        if coalesced or not surface.startswith(("gateway", "transport")):
-            return  # followers reuse the leader's prompt; CLI/smart approvals aren't answerable from a phone
+        # Followers reuse the leader's prompt; CLI/smart approvals aren't answerable from a phone. A card
+        # fill comes through the gateway's queue under its own surface: it notifies, but only opens the chat
+        # (outside a gateway session it has no request id, below).
+        if coalesced or not (surface.startswith(("gateway", "transport")) or surface == notices.PAYMENT_SURFACE):
+            return
         entry = self._pending_approval(session_key, command)
         request_id = str((entry or {}).get("request_id") or extra.get("request_id") or "")
         if not request_id:
@@ -606,10 +609,11 @@ class Push:
         self.store.open_request(request_id, {"kind": "approval", "session": chat_session, "key": session_key,
                                              "expires_at": expires_at})
         self.deliver(notice)
-        # A flagged command's Live Activity carries no request id, so it shows no Allow on the Lock Screen.
-        flagged = bool(notice.extra.get("smart_denied"))
+        # A flagged command's or a card fill's Live Activity carries no request id, so it shows no Allow on
+        # the Lock Screen.
+        open_only = notices.opens_only(notice)
         self._activity(chat_session, {**(self._activity_state.get(chat_session) or {}), "phase": "needsYou",
-                                      "command": notice.extra["command"], "request_id": None if flagged else request_id,
+                                      "command": notice.extra["command"], "request_id": None if open_only else request_id,
                                       "expires_at": expires_at, "title": chat, "answer": answer},
                        alert=True, force=True)
 

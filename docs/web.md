@@ -313,10 +313,12 @@ Not built yet.
 - **The card fill is a generic approval** (command "Fill payment card '…' on …", pattern key
   `mcp_elicitation`); its `vault-payment` surface reaches only plugins' hooks, so the app reads the
   command (and the push notice's surface). A dedicated request kind would be safer.
-- **The push plugin's fallback notification** (shown only when the app's extension can't run) still
-  carries the approval category, and its Live Activity update carries the request id: the app opens
-  the chat for either instead of answering, but the next push plugin version should send `OPEN` and
-  no request id for `vault-payment`, as it does for flagged commands.
+- **Before push plugin 1.4.3** a card fill had no notification at all: the plugin notified only for
+  approvals on the gateway and transport surfaces, and Hermes asks for a card fill under
+  `vault-payment`. Since 1.4.3 it sends one like a flagged command's: `OPEN` in the fallback
+  notification (shown only when the app's extension can't run) and no request id in the Live
+  Activity update, so neither offers Allow (`notices.opens_only`). The app still opens the chat
+  for an Allow from an older plugin's notification.
 
 - **No card or address details in `vault.list`.** The design shows "Visa •• 4242 · expires 08/28"
   and an address's first line; Hermes keeps all of those encrypted, so the rows show the name and

@@ -24,6 +24,10 @@ from . import crypto
 APPROVAL, QUESTION, REPLY, MESSAGE, TASK, OPEN = "APPROVAL", "QUESTION", "REPLY", "MESSAGE", "TASK", "OPEN"
 CARD, BOARD = "CARD", "BOARD"  # a board card needs you (Reply, Open); a card's other news (Open)
 MEMORY = "MEMORY"  # an approval titled "Save to memory?": Save, Don't Save (docs/memory.md)
+# A card fill waiting for the person's OK (tools/browser_vault_tool.py _confirm_payment_fill): Hermes
+# asks through the gateway's approval queue under this surface, and the app answers it only on its card,
+# with Face ID (docs/web.md §4.3).
+PAYMENT_SURFACE = "vault-payment"
 
 KINDS = {
     # kind: (category, interruption level, relevance, fallback title)
@@ -390,6 +394,13 @@ def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: 
 
 # -- APNs requests ---------------------------------------------------------------------------------
 
+def opens_only(notice: Notice) -> bool:
+    """An approval answered only on its card in the app, never from a notification or the Lock Screen:
+    a command Hermes's safety check flagged, or a card fill."""
+    return notice.kind == "approval" and bool(notice.extra.get("smart_denied")
+                                              or notice.extra.get("surface") == PAYMENT_SURFACE)
+
+
 def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, resolved: list[str],
                  read: dict | None = None) -> dict:
     category, level, relevance, fallback = KINDS[notice.kind]
@@ -397,9 +408,9 @@ def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, r
         category, level, fallback = MEMORY, "active", "Hermes wants to remember something"
     if notice.kind == "widget" and notice.extra.get("widget_type") != "approval":
         level, relevance = "active", 0.8  # a question or a form waits; only approvals are time sensitive
-    if notice.kind == "approval" and notice.extra.get("smart_denied"):
-        # A command Hermes's safety check flagged is answered on its card in the app, never from a
-        # banner: even the fallback notification (before the app's extension runs) offers no Allow.
+    if opens_only(notice):
+        # Answered on its card in the app, never from a banner: even the fallback notification (before
+        # the app's extension runs) offers no Allow.
         category = OPEN
     aps: dict[str, Any] = {
         "alert": {"title": fallback, "body": "Open Hermes to see it."},

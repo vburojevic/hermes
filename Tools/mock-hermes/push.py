@@ -837,13 +837,19 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         if method == "approval":
             request_id = params.get("request_id") or f"ap_{uuid.uuid4().hex[:6]}"
             params = {**params, "request_id": request_id}
+            # The plugin hears a card fill's surface from Hermes's hook; the socket's frame doesn't carry
+            # it, so the mock knows web_turns.py's card fill by its command.
+            command = str(params.get("command", ""))
             notice = notices.approval(request_id=request_id, session_id=stored, chat=chat_title(stored),
-                                      gateway_name=GATEWAY["name"], command=params.get("command", ""),
+                                      gateway_name=GATEWAY["name"], command=command,
                                       description=params.get("description", ""),
                                       choices=params.get("choices") or ["once", "deny"], expires_at=expires,
+                                      surface="vault-payment" if command.startswith("Fill payment card '") else "",
                                       bot=bot_of(stored))
             notice.extra["answer"] = {"via": "socket", "session_id": stored}
-            state = {"phase": "needsYou", "command": notice.extra["command"], "request_id": request_id,
+            # Like the plugin: a card fill's Live Activity carries no request id (no Allow on the Lock Screen).
+            state = {"phase": "needsYou", "command": notice.extra["command"],
+                     "request_id": None if notices.opens_only(notice) else request_id,
                      "started_at": (STATE["turns"].get(sid) or {}).get("start"),
                      "expires_at": expires, "title": chat_title(stored), "answer": notice.extra["answer"]}
         elif method == "clarify":

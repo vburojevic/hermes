@@ -188,7 +188,7 @@ read them, and they reach Apple through our relay."
 
 | Hermes event | Notification | Category / actions | Interruption level | Thread | Design |
 |---|---|---|---|---|---|
-| Approval: `pre_approval_request` on the gateway or transport surface (not a coalesced follower) | "Hermes needs your OK" ("Ada needs your OK" for a Bot) · chat title · "Run `<command>` on `<gateway>`?" (one line, clipped at 80) | `APPROVAL`: Allow Once, Deny (destructive), More Options…. `OPEN` (no actions) for a command Hermes's safety check flagged (`smart_denied`), a card fill ("Fill your card on amazon.com?", surface `vault-payment` or a "Fill payment card '…'" command, [web.md](web.md) §4.3), and on the Mac for one the banner can't show whole | Time Sensitive | session | `notificationApproval`, `notificationExpanded`, `notificationActions` |
+| Approval: `pre_approval_request` on the gateway or transport surface, or a card fill's `vault-payment` (plugin 1.4.3; not a coalesced follower) | "Hermes needs your OK" ("Ada needs your OK" for a Bot) · chat title · "Run `<command>` on `<gateway>`?" (one line, clipped at 80) | `APPROVAL`: Allow Once, Deny (destructive), More Options…. `OPEN` (no actions) for a command Hermes's safety check flagged (`smart_denied`), a card fill ("Fill your card on amazon.com?", surface `vault-payment` or a "Fill payment card '…'" command, [web.md](web.md) §4.3), and on the Mac for one the banner can't show whole | Time Sensitive | session | `notificationApproval`, `notificationExpanded`, `notificationActions` |
 | "Save to memory?" (an approval whose description starts with "Save to memory", Ask Before Saving on) | "Hermes wants to remember something" · chat · the entry | `MEMORY`: Save, Don't Save | Active | session | `notificationApproval` with memory copy ([memory.md](memory.md)) |
 | Question: `on_human_input_request` `clarify` | "Hermes has a question" · chat · the first question | `QUESTION`: up to 3 choices (for a single, single-select question), Reply… | Time Sensitive | session | `notificationQuestion`, `notificationExpandedQuestion`, `notificationActionsQuestion`, `notificationReplyField` |
 | Password: `on_human_input_request` for `sudo`, secrets and other value prompts | "Hermes needs a password" · chat · "For `<command>`" for sudo (never the value) | `PASSWORD` (`OPEN` on the wire): no actions; opens the chat with its card docked | Time Sensitive | session | `notificationApproval` text variant |
@@ -319,7 +319,9 @@ Rules:
   has no expanded view, only a single line of at most 80 characters. The plugin clips a command at
   600 characters, ending the cut with "…", and sends none when its redactor can't run, so a notice
   whose command is cut or empty is never answered from the notification either. Nor is a command
-  Hermes's safety check flagged. Those open the chat, where the card shows the whole command.
+  Hermes's safety check flagged, or a card fill. Those open the chat, where the card shows the whole
+  command; the plugin sends both as `OPEN` even in the fallback notification, with no request id in
+  the Live Activity (`notices.opens_only`; a card fill since plugin 1.4.3).
 - Approval text is decoded through `VisibleText`, so invisible and reordering characters show as
   their codes (`⟨U+202E⟩`) on the notification, the expanded view and the Live Activity.
 - **More Options…** opens the chat with the approval card docked, showing every answer it allows
