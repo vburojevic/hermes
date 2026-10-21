@@ -31,6 +31,15 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610211039 (October 21, 2026)
+
+- **Passwords:** see where Hermes finds logins, unlock or lock your password managers, and add what it fills
+- **Browser:** choose where Hermes browses for new chats, with your logins only after you say so
+- **Chats:** an unread count beside a long activity line shows whole, never "…"
+- **Notifications:** the push plugin counts only chats the app lists in a sleeping iPhone's badge
+- **Unread:** the badge counts only what you can see, and reading follows what's on screen
+- **Plugins:** the app installs push 1.4.2
+
 ### Build 2610210714 (October 21, 2026)
 
 - **Mac:** a chat with a question card no longer crashes the app while its window is hidden
