@@ -45,6 +45,9 @@ struct UnreadCountBadge: View {
         Text(UnreadCounter.label(count))
             .font(InboxMetrics.badgeFont)
             .monospacedDigit()
+            // Never squeezed by the row's line beside it into "…": "99+" at most, always whole.
+            .lineLimit(1)
+            .fixedSize()
             .contentTransition(.numericText(value: Double(count)))
             .foregroundStyle(muted ? Theme.secondaryText : Theme.inkForeground)
             .padding(.horizontal, InboxMetrics.badgeHeight * 0.3)
@@ -125,6 +128,9 @@ struct RowTrailingMarks: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: badge)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: needsYou)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: mentioned)
+        // The activity line beside it gives way, never these.
+        .fixedSize()
+        .layoutPriority(1)
     }
 }
 
