@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.0"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.1"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1436,7 +1436,8 @@ def test_the_longest_approval_and_a_full_read_list_fit_the_relay(hermes):
     content = opened(key, request)
     assert size(bare) <= size(request) <= 4096, (size(bare), size(request))
     assert notices.payload_size(request["payload"]["aps"], content) == size(request)
-    assert len(content["command"]) == 600 and content["resolved"] == resolved and content["choices"][-1] == "deny"
+    assert len(content["command"].encode()) == 600 and content["command"].endswith("…")
+    assert content["resolved"] == resolved and content["choices"][-1] == "deny"
     kept = content.get("read", {"chats": [], "rooms": []})
     assert kept["chats"] == reads["chats"][:len(kept["chats"])] and kept["rooms"] == reads["rooms"][:len(kept["rooms"])]
     assert len(kept["chats"]) + len(kept["rooms"]) >= 6, kept  # the newest reads still go with it
@@ -1455,7 +1456,59 @@ def test_the_longest_approval_and_a_full_read_list_fit_the_relay(hermes):
     # Ids at their 120-character limit: fewer reads, still under the limit.
     longest = full(lambda i: f"{i:02d}" + "c" * 118, lambda i: f"{i:02d}" + "r" * 118)
     request = notices.apns_request(device, approval, gateway, 3, resolved, longest)
-    assert size(request) <= 4096 and len(opened(key, request)["command"]) == 600
+    assert size(request) <= 4096 and len(opened(key, request)["command"].encode()) == 600
+
+
+def test_text_is_clipped_by_bytes_between_characters(hermes):
+    """The relay counts UTF-8 bytes: a character outside ASCII takes two to four, so text is clipped by
+    bytes, never through a character, and marked "…" (security scan F7: a clipped command offers no Allow)."""
+    notices = sys.modules[_core_module().__name__.rsplit(".", 1)[0] + ".notices"]
+    assert notices.clip("rm -rf ./build", 600) == "rm -rf ./build"
+    assert notices.clip("é" * 10, 9) == "ééé…" and len(notices.clip("é" * 10, 9).encode()) == 9
+    assert notices.clip("😀" * 5, 10) == "😀…"
+    assert notices.clip("ab  \n cd" + "x" * 50, 10) == "ab cdxx…"
+    for text in ("ファイル" * 300, "é" * 700, "a😀" * 400):
+        clipped = notices.clip(text, 600)
+        assert len(clipped.encode()) <= 600 and clipped.endswith("…") and text.startswith(clipped[:-1])
+    assert notices.first_lines("Fertig: " + "ü" * 600, 4, 480, breaks=True).endswith("…")
+
+
+def test_a_long_non_ascii_approval_or_question_fits_the_relay(hermes):
+    """An approval whose command, description, chat and gateway name are long and outside ASCII still
+    fits in 4096 bytes, and its clipped command is marked so it offers no Allow. So do four long
+    questions with every choice."""
+    import uuid
+    notices = sys.modules[_core_module().__name__.rsplit(".", 1)[0] + ".notices"]
+    key = _device_key()
+    device = {"token": "ab" * 32, "topic": "co.caffeinatedcode.hermes", "environment": "production",
+              "public_key": _public_key(key)}
+    gateway = {"id": "inst_" + "k" * 27, "name": "Café Ünïcode Server" * 3}
+    session = "20261021_022501_a1b2c3"
+    resolved = [uuid.uuid4().hex for _ in range(20)]
+    now = time.time()
+
+    def size(request) -> int:
+        return len(json.dumps(request["payload"], ensure_ascii=False, separators=(",", ":")).encode())
+
+    reads = {"chats": [[f"20261021_0225{i:02d}_a1b2c3", round(now - i, 3)] for i in range(12)], "rooms": []}
+    approval = notices.approval(request_id=uuid.uuid4().hex, session_id=session, chat="Ünïcödé snapshot cleanup " * 12,
+                                gateway_name=gateway["name"], command="ファイルを削除 " * 120 + "é" * 600,
+                                description="Löscht die alten Snapshots " * 20, choices=["once", "session", "always", "deny"],
+                                expires_at=now + 300, surface="gateway")
+    request = notices.apns_request(device, approval, gateway, 3, resolved, reads)
+    content = opened(key, request)
+    assert size(request) <= 4096, size(request)
+    assert content["command"].endswith("…") and len(content["command"].encode()) <= 600
+    assert content["description"] and content["body"].startswith("Run ")
+
+    questions = [{"question": "どのバックアップを残しますか? " * 30, "choices": ["最新のスナップショット " * 6] * 8,
+                  "multi_select": False} for _ in range(4)]
+    question = notices.question(request_id=uuid.uuid4().hex, session_id=session, chat="Ünïcödé snapshot cleanup " * 12,
+                                gateway_name=gateway["name"], questions=questions, prompt="", expires_at=now + 3600)
+    request = notices.apns_request(device, question, gateway, 3, resolved, reads)
+    content = opened(key, request)
+    assert size(request) <= 4096, size(request)
+    assert len(content["questions"]) >= 1 and all(q["question"] for q in content["questions"])
 
 
 def test_read_and_presence_check_their_ids(copies, tmp_path):

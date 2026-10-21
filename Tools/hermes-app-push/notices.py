@@ -99,9 +99,23 @@ def redact(text: str) -> str:
         return ""
 
 
+ELLIPSIS = "…"
+
+
 def clip(text: str, limit: int) -> str:
-    text = re.sub(r"\s+", " ", str(text or "")).strip()
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    """The text on one line in at most ``limit`` UTF-8 bytes: the relay and APNs count bytes, and a
+    character outside ASCII takes two to four."""
+    return cut(re.sub(r"\s+", " ", str(text or "")).strip(), limit)
+
+
+def cut(text: str, limit: int) -> str:
+    """``text`` in at most ``limit`` UTF-8 bytes, cut between characters and ended with "…" when cut:
+    the app reads that as clipped, and a clipped command never offers Allow (security scan F7)."""
+    data = text.encode()
+    if len(data) <= limit:
+        return text
+    kept = data[: max(0, limit - len(ELLIPSIS.encode()))].decode("utf-8", errors="ignore")
+    return kept.rstrip() + ELLIPSIS
 
 
 # Every pattern here reads reply, room and cron text the agent wrote, so none may take more than
@@ -225,8 +239,7 @@ def first_lines(markdown: str, lines: int = 2, limit: int = 240, *, breaks: bool
     rows = [clip(row, limit) for row in plain(markdown).splitlines() if row.strip()]
     if not breaks:
         return clip(" ".join(rows[:lines]), limit)
-    text = "\n".join(rows[:lines])
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+    return cut("\n".join(rows[:lines]), limit)
 
 
 def short_hash(value: str) -> str:
@@ -417,8 +430,9 @@ def payload_size(aps: dict, content: dict) -> int:
 
 
 def _fit(aps: dict, content: dict) -> None:
-    """Drops the oldest reads a notice lists until it fits the relay's limit. They're a hint the next
-    notice, an app refresh or coming back to the app also brings; the notice itself isn't."""
+    """Makes a notice fit the relay's limit. First the oldest reads it lists go: they're a hint the next
+    notice, an app refresh or coming back to the app also brings. Then its longest text is halved until
+    it fits (a long command, a description, four questions with their choices), each cut marked "…"."""
     read = content.get("read")
     while read and payload_size(aps, content) > MAX_PAYLOAD:
         kinds = [kind for kind in ("chats", "rooms") if read[kind]]
@@ -426,7 +440,38 @@ def _fit(aps: dict, content: dict) -> None:
         read[oldest].pop()
         if not read["chats"] and not read["rooms"]:
             content.pop("read")
-            return
+            break
+    while payload_size(aps, content) > MAX_PAYLOAD:
+        texts = _texts(content)
+        if not texts:
+            break
+        holder, key, size = max(texts, key=lambda text: text[2])
+        if size <= MIN_TEXT:
+            break
+        holder[key] = cut(holder[key], max(MIN_TEXT, size // 2))
+    if payload_size(aps, content) > MAX_PAYLOAD:
+        # Only the ids are left to give: the requests answered lately, then the extra questions.
+        content.pop("resolved", None)
+        if content.get("questions"):
+            content["questions"] = content["questions"][:1]
+
+
+MIN_TEXT = 24  # bytes: a cut never leaves less of a text than this
+_TRIMMABLE = ("body", "description", "command", "subtitle", "summary", "title", "card_title", "detail")
+
+
+def _texts(content: dict) -> list[tuple[Any, Any, int]]:
+    """Each text a notice carries that may be cut, as (holder, key, UTF-8 bytes): the notice's own and its
+    questions' texts and choices."""
+    texts = [(content, key, len(content[key].encode())) for key in _TRIMMABLE if isinstance(content.get(key), str)]
+    for question in content.get("questions") or []:
+        if isinstance(question, dict) and isinstance(question.get("question"), str):
+            texts.append((question, "question", len(question["question"].encode())))
+        choices = question.get("choices") if isinstance(question, dict) else None
+        for index, choice in enumerate(choices or []):
+            if isinstance(choice, str):
+                texts.append((choices, index, len(choice.encode())))
+    return [text for text in texts if text[2] > MIN_TEXT]
 
 
 def withdraw_request(device: dict, ids: list[str], gateway: dict, open_count: int) -> dict:

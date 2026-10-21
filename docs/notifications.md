@@ -218,6 +218,10 @@ Rules:
   notifications stack (`notificationStack`); the chat title is the subtitle.
 - **One per request.** `apns-collapse-id` is the request id, so a repeat replaces, never duplicates.
   Replies collapse per chat, task results per job, card news per card, tidies per profile.
+- **Size.** The relay and APNs take 4096 bytes. The plugin clips each text by UTF-8 bytes (a command
+  600, a body 400…), between characters and marked "…", so a clipped command offers no Allow (§3).
+  A notice still over the limit drops the oldest reads it lists, then halves its longest text until
+  it fits (`notices._fit`; plugin 1.4.1).
 - **Withdrawing.** When a request settles (answered anywhere, timed out, cancelled), the plugin sends
   every device a background push (`withdraw`, with the request ids and the open count). The app
   removes the delivered notifications, updates the badge and moves the Live Activity back to
