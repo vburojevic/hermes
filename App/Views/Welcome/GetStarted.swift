@@ -323,12 +323,19 @@ struct BotFaceTip: Tip {
 }
 
 extension View {
-    /// A tip over this view, put away for good by Got It.
+    /// A tip over this view, put away for good by Got It. It hangs off a clear stand-in laid over
+    /// the view, never the view itself: wrapped by `popoverTip`, the toolbar's sidebar button and
+    /// a Bot Chat's title stopped answering taps, tip shown or not.
     func hermesTip(_ tip: some Tip, arrowEdge: Edge = .top) -> some View {
-        popoverTip(tip, arrowEdge: arrowEdge) { action in
-            HermesTips.handle(action, for: tip)
+        overlay {
+            Color.clear
+                .popoverTip(tip, arrowEdge: arrowEdge) { action in
+                    HermesTips.handle(action, for: tip)
+                }
+                .tipViewStyle(HermesTipStyle())
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
-        .tipViewStyle(HermesTipStyle())
     }
 }
 

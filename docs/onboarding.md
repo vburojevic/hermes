@@ -157,7 +157,10 @@ the checklist above the composer.
   device and never synced (`UserDefaults` `welcome.name`, `welcome.checklist.done`,
   `welcome.checklist.hidden`).
 - **Tips** (`tipBubble`, TipKit): each shown once, at most one an hour, each only after the
-  person has had a reason to need it. Got It and ✕ put a tip away for good.
+  person has had a reason to need it. Got It and ✕ put a tip away for good. A tip never gets in
+  the way of what it points at: it hangs off a clear stand-in laid over the control
+  (`hermesTip`), because wrapped by the popover the toolbar's sidebar button and a Bot Chat's title
+  stopped answering taps (`ToolbarButtonsUITests`).
 
   | Tip | Shown on | After |
   |---|---|---|

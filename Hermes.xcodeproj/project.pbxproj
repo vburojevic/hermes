@@ -170,6 +170,7 @@
 		8E42EEE8EA83A2CD2ED2698C /* ProjectsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD6BD8207EE8F9466A5B0CDC /* ProjectsModel.swift */; };
 		8F16C0A0D025C8C9B126B753 /* ContentWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA76434C707E63E4F7A6DC7 /* ContentWidgets.swift */; };
 		8F1D15B20B90A1A195A6F2B7 /* ImageAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */; };
+		8F2AE4ED6EC7B2BA91EBCE9D /* ToolbarButtonsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544BA2966BE8A104F675577A /* ToolbarButtonsUITests.swift */; };
 		8FDC36B962A236B74A64FE64 /* InspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49754DAF3A39AF8263328677 /* InspectorPanel.swift */; };
 		91085A56DD3EFCAFD635893D /* CheckpointsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B7F146A3F863763C495CEF0 /* CheckpointsModel.swift */; };
 		910B30724D5821C4D20AC9B1 /* TalkShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B83C2D7B4FEAF12F2B50F155 /* TalkShortcuts.swift */; };
@@ -437,6 +438,7 @@
 		50BD332B5E6974D145FD6A19 /* VoiceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceUITests.swift; sourceTree = "<group>"; };
 		52DB9C9178484F460FCC7459 /* ListenViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenViews.swift; sourceTree = "<group>"; };
 		53191845B72BC623978DE9BC /* WidgetParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetParts.swift; sourceTree = "<group>"; };
+		544BA2966BE8A104F675577A /* ToolbarButtonsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarButtonsUITests.swift; sourceTree = "<group>"; };
 		545292D32E002C7EFDED3825 /* ListenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenPlayer.swift; sourceTree = "<group>"; };
 		546360FC569284B52DBFB34F /* MacCheckpointsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCheckpointsSheet.swift; sourceTree = "<group>"; };
 		54EC38687FB699FA4F43E751 /* ChangesTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangesTabView.swift; sourceTree = "<group>"; };
@@ -973,6 +975,7 @@
 				0B7007FFF1EBBE3208FDDC9F /* PluginsUITests.swift */,
 				7F281FE5600EDDA0A9346D0D /* ProcessesUITests.swift */,
 				15FE26933154EBF12B5A749D /* RequestCardUITests.swift */,
+				544BA2966BE8A104F675577A /* ToolbarButtonsUITests.swift */,
 				50BD332B5E6974D145FD6A19 /* VoiceUITests.swift */,
 				2BF7364666C120B869D7095D /* WidgetGalleryUITests.swift */,
 				C345608D385B87D80B70485E /* WidgetsUITests.swift */,
@@ -1603,6 +1606,7 @@
 				EB0A522033F38EFED652E5FD /* PluginsUITests.swift in Sources */,
 				88437626B47FBF14208587E1 /* ProcessesUITests.swift in Sources */,
 				1D29FFEFED30AD19557D7263 /* RequestCardUITests.swift in Sources */,
+				8F2AE4ED6EC7B2BA91EBCE9D /* ToolbarButtonsUITests.swift in Sources */,
 				C28896533AA3CF30D16E846E /* VoiceUITests.swift in Sources */,
 				CBE81E73B7A75266EABC750C /* WidgetGalleryUITests.swift in Sources */,
 				4F247949E61DBF4AE19D2193 /* WidgetsUITests.swift in Sources */,
