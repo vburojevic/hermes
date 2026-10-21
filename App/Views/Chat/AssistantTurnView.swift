@@ -1513,7 +1513,9 @@ private struct ToolDetails: View {
             let results = tool.searchResults
             if !results.isEmpty {
                 SearchResultsCard(results: results)
-            } else if output == nil, tool.displayDiff == nil, let result = tool.result?.trimmingCharacters(in: .whitespacesAndNewlines), !result.isEmpty {
+            } else if output == nil, tool.displayDiff == nil, !WebStep.hidesArguments(tool.name),
+                      let result = tool.result?.trimmingCharacters(in: .whitespacesAndNewlines), !result.isEmpty {
+                // Never for typing or Passwords: their results carry usernames (`docs/web.md` §4.1).
                 Text(String(result.prefix(600)))
                     .font(.footnote)
                     .foregroundStyle(Theme.tertiaryText)

@@ -103,7 +103,16 @@ public enum VaultCopy {
 
     /// A refused `vault.add`, in words where Hermes's reason is one the app knows.
     public static func addFailure(_ error: any Error, gatewayName: String) -> String {
-        guard let error = error as? GatewayRPCError else { return String(localized: "Couldn't reach \(gatewayName). Nothing was saved.") }
+        guard let error = error as? GatewayRPCError else {
+            // Sent, but no answer: Hermes may have saved it.
+            if case .timedOut? = error as? GatewaySocket.Failure {
+                return String(localized: "\(gatewayName) didn't answer in time. It may have saved it: check the list before adding it again.")
+            }
+            if case .closed? = error as? GatewaySocket.Failure {
+                return String(localized: "The connection to \(gatewayName) dropped. It may have saved it: check the list before adding it again.")
+            }
+            return String(localized: "Couldn't reach \(gatewayName). Nothing was saved.")
+        }
         let message = error.message.lowercased()
         if message.contains("authenticator key") || message.contains("otpauth") {
             return problem(.authenticatorKey, kind: .login)

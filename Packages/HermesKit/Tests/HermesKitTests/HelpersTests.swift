@@ -8,6 +8,26 @@ private func payload(_ text: String) -> JSONValue {
 
 @Suite("Helpers")
 struct HelpersTests {
+    /// A helper's typing and Passwords steps never show what Hermes previewed (`docs/web.md` §4.1).
+    @Test func typingStepsShowNoPreview() throws {
+        var tracker = HelperTracker()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        tracker.delegationStarted(callID: "call_1")
+        tracker.apply(type: "subagent.start", payload: payload("""
+        {"subagent_id": "sa-0-bbbb", "goal": "Sign in", "task_index": 0, "task_count": 1, "delegation_id": "deleg_1"}
+        """), now: t0)
+        tracker.apply(type: "subagent.tool", payload: payload("""
+        {"subagent_id": "sa-0-bbbb", "task_index": 0, "task_count": 1, "tool_name": "browser_type", "tool_preview": "sam@example.com"}
+        """), now: t0.addingTimeInterval(1))
+        tracker.apply(type: "subagent.complete", payload: payload("""
+        {"subagent_id": "sa-0-bbbb", "task_index": 0, "task_count": 1, "status": "completed",
+         "output_tail": [{"tool": "browser_vault", "preview": "github.com sam-k", "is_error": false}]}
+        """), now: t0.addingTimeInterval(2))
+        let helper = try #require(tracker.orderedTeams.first?.topLevel.first)
+        #expect(helper.recentTools.allSatisfy { $0.preview.isEmpty })
+        #expect(helper.outputTail.allSatisfy { $0.preview.isEmpty })
+    }
+
     /// A background delegation as Hermes sends it: the call returns, then events on the parent.
     @Test func buildsATeamFromEvents() throws {
         var tracker = HelperTracker()

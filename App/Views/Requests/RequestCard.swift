@@ -390,6 +390,8 @@ private struct CodeCard: View {
     let conversation: ConversationModel
     @State private var code = ""
     @FocusState private var focused: Bool
+    /// The digits hide as the app leaves the screen, so the app switcher's picture never shows them.
+    @Environment(\.scenePhase) private var scenePhase
 
     private let length = 6
 
@@ -417,7 +419,7 @@ private struct CodeCard: View {
                 HStack(spacing: 8) {
                     ForEach(0..<length, id: \.self) { index in
                         let characters = Array(code)
-                        Text(index < characters.count ? String(characters[index]) : "")
+                        Text(index < characters.count ? (scenePhase == .active ? String(characters[index]) : "•") : "")
                             .font(.title2.weight(.medium).monospacedDigit())
                             .foregroundStyle(Theme.primaryText)
                             .frame(maxWidth: .infinity)

@@ -256,6 +256,12 @@ struct PasswordsSetupTests {
         #expect(GatewaySetup.passwords(facts(.notLinked)).fix == .linkBotMode)
         #expect(GatewaySetup.passwords(facts()).state == .unknown)
     }
+
+    /// An add that went but got no answer may have saved: never "Nothing was saved" then.
+    @Test func aTimedOutAddMayHaveSaved() {
+        #expect(VaultCopy.addFailure(GatewaySocket.Failure.timedOut(method: "vault.add"), gatewayName: "Studio Mac").contains("may have saved"))
+        #expect(VaultCopy.addFailure(GatewaySocket.Failure.notConnected, gatewayName: "Studio Mac").contains("Nothing was saved"))
+    }
 }
 
 private actor CallLog {

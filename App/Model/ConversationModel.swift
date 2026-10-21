@@ -4567,10 +4567,19 @@ extension ConversationModel {
     func answer(_ request: HermesRequest, with result: JSONValue, receipt: String?, symbol: String = "checkmark.circle") {
         // A double tap answers once.
         guard requests.contains(where: { $0.id == request.id }) else { return }
+        guard let roster = gatewayRoster else {
+            // Nothing to send it on: the card stays to be answered.
+            banner = .invalidResponse(String(localized: "\(gatewayName) isn't connected, so that didn't go. Answer again when it's back."))
+            return
+        }
         moveCards { requests.removeAll { $0.id == request.id } }
         connectionStates[request.id] = nil
-        if let receipt { addReceipt(receipt, symbol: symbol) }
-        guard let roster = gatewayRoster else { return }
+        let carriesSecret = switch request.kind {
+        case .secret, .sudo, .vaultUnlock, .vaultSaveLogin, .vaultCode: true
+        case .clarify, .choose, .connection: false
+        }
+        // A password or code's receipt waits until it went.
+        if let receipt, !carriesSecret { addReceipt(receipt, symbol: symbol) }
         switch request.kind {
         case .clarify, .choose:
             // Kept until Hermes has it, like an approval (`AnswerLedger`).
@@ -4584,7 +4593,10 @@ extension ConversationModel {
                     addReceipt(String(localized: "Not sent · already answered on another device"), symbol: "info.circle")
                     return
                 }
-                guard await !roster.respond(to: request.id, result: result) else { return }
+                if await roster.respond(to: request.id, result: result) {
+                    if let receipt { addReceipt(receipt, symbol: symbol) }
+                    return
+                }
                 if !requests.contains(where: { $0.id == request.id }) { moveCards { requests.append(request) } }
                 banner = .invalidResponse(String(localized: "\(gatewayName) isn't connected, so that didn't go. Answer again when it's back."))
             }

@@ -100,7 +100,7 @@ public struct HelperTracker: Hashable, Sendable {
         case "subagent.tool":
             if helper.status == .queued { helper.status = .running; helper.startedAt = helper.startedAt ?? now }
             let name = payload["tool_name"]?.stringValue ?? helper.currentTool ?? "tool"
-            let preview = payload["tool_preview"]?.stringValue ?? payload["text"]?.stringValue ?? ""
+            let preview = Self.preview(payload["tool_preview"]?.stringValue ?? payload["text"]?.stringValue ?? "", tool: name)
             helper.currentTool = name
             helper.currentToolPreview = preview
             helper.recentTools.append(HelperOutputLine(tool: name, preview: preview))
@@ -129,7 +129,7 @@ public struct HelperTracker: Hashable, Sendable {
             if case .array(let tail)? = payload["output_tail"] {
                 helper.outputTail = tail.compactMap { row in
                     guard let tool = row["tool"]?.stringValue else { return nil }
-                    return HelperOutputLine(tool: tool, preview: row["preview"]?.stringValue ?? "", isError: row["is_error"]?.boolValue ?? false)
+                    return HelperOutputLine(tool: tool, preview: Self.preview(row["preview"]?.stringValue ?? "", tool: tool), isError: row["is_error"]?.boolValue ?? false)
                 }
             }
             helper.currentTool = nil
@@ -284,6 +284,12 @@ public struct HelperTracker: Hashable, Sendable {
 
     static func int(_ value: JSONValue?) -> Int? {
         value?.truncatedIntValue
+    }
+
+    /// A helper's step as Hermes previews it, except typing and Passwords, whose previews can hold
+    /// what was typed (`docs/web.md` §4.1, `WebStep.hidesArguments`).
+    static func preview(_ preview: String, tool: String) -> String {
+        WebStep.hidesArguments(tool) ? "" : preview
     }
 
     static func strings(_ value: JSONValue?) -> [String]? {

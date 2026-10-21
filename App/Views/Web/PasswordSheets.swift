@@ -332,12 +332,14 @@ private struct VaultSecretField: View {
     var prompt = ""
     var digits = false
     @State private var revealed = false
+    /// Hidden again as the app leaves the screen, so the app switcher's picture never shows it.
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         LabeledContent(title) {
             HStack(spacing: 6) {
                 Group {
-                    if revealed {
+                    if revealed, scenePhase == .active {
                         TextField(title, text: $text, prompt: Text(prompt))
                     } else {
                         SecureField(title, text: $text, prompt: Text(prompt))
@@ -359,6 +361,9 @@ private struct VaultSecretField: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(revealed ? String(localized: "Hide \(title)") : String(localized: "Show \(title)"))
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { revealed = false }
         }
     }
 }

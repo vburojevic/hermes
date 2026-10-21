@@ -174,7 +174,7 @@ public enum SpawnTree {
             helper.filesWritten = HelperTracker.strings(row["filesWritten"]) ?? []
             if case .array(let tail)? = row["outputTail"] {
                 helper.outputTail = tail.compactMap { entry in
-                    entry["tool"]?.stringValue.map { HelperOutputLine(tool: $0, preview: entry["preview"]?.stringValue ?? "", isError: entry["isError"]?.boolValue ?? false) }
+                    entry["tool"]?.stringValue.map { HelperOutputLine(tool: $0, preview: HelperTracker.preview(entry["preview"]?.stringValue ?? "", tool: $0), isError: entry["isError"]?.boolValue ?? false) }
                 }
             }
             helper.acceptingSteer = false
