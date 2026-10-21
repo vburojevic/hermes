@@ -191,8 +191,8 @@ reordering characters show as their codes (`⟨U+202E⟩`) and the person sees w
 |---|---|
 | `secretAsk` | "Saved to the gateway's .env. Never shown in chat or sent to the model." |
 | `sudoAsk` | "Used for this command only. Hermes doesn't keep it." |
-| `vaultUnlock` | "Goes straight to {name}. Only a session token stays in memory, until this chat ends." |
-| `vaultSaveLogin` | "Saved to your password manager, not to Hermes." |
+| `vaultUnlock` | "Goes straight to {name} on {gateway}. Only a session token stays, and it locks after 30 minutes idle." (Keep Locked / Unlock) |
+| `vaultSaveLogin` | "Saved encrypted in Hermes's vault on {gateway}. Hermes fills it in and never sees it." (Not Now / Save & Sign In) |
 | `connectSignIn` | "Opens {host} in your browser. Hermes never sees your password." |
 
 - Connection fields: the label is the variable name plus "required" or "optional"; `secret`

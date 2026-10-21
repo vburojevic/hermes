@@ -20,6 +20,8 @@ public enum SpokenAnswers {
         case flagged
         /// It deletes, wipes, kills or spends: nothing to take back.
         case irreversible
+        /// A card fill (`docs/web.md` §4): only on its card, with Face ID.
+        case cardFill
     }
 
     /// A yes counts only once the request has been on screen this long.
@@ -37,6 +39,7 @@ public enum SpokenAnswers {
         if saidWords.contains("always") { return .needsTap(.always) }
         let isYes = yeses.contains(said) || (said.hasPrefix("allow") && saidWords.count <= 6)
         guard isYes else { return .notUnderstood }
+        if request.isPaymentFill { return .needsTap(.cardFill) }
         if request.smartDenied { return .needsTap(.flagged) }
         if isIrreversible(request) { return .needsTap(.irreversible) }
         if shownFor < readingTime { return .tooSoon }

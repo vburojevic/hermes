@@ -132,9 +132,9 @@ final class MacNotifier {
         case UNNotificationDismissActionIdentifier:
             return
         case NotificationCatalog.Action.allowOnce, NotificationCatalog.Action.deny:
-            // A flagged command is allowed only from its card (the banner never offers it; this
-            // also covers a notification posted before that rule).
-            if response.action == NotificationCatalog.Action.allowOnce, entry?.approval?.smartDenied == true {
+            // A flagged command or a card fill is allowed only from its card (the banner never
+            // offers it; this also covers a notification posted before that rule).
+            if response.action == NotificationCatalog.Action.allowOnce, entry?.approval?.smartDenied == true || entry?.approval?.isPaymentFill == true {
                 open(notice)
             } else if let approval = entry?.approval, let conversation {
                 conversation.respond(to: approval, with: response.action == NotificationCatalog.Action.allowOnce ? .once : .deny)

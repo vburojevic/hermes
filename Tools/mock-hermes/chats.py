@@ -468,10 +468,10 @@ def run_request_turn(sid, stored, lower):
         r = ask(sid, "sudo", {"command": "sudo systemctl restart nginx"})
         answer = f"Sudo: {summarise(r)}."
     elif "unlock" in lower:
-        r = ask(sid, "vault.unlock_prompt", {"backend": "1password", "display_name": "1Password"})
+        r = ask(sid, "vault.unlock_prompt", {"backend": "onepassword", "display_name": "1Password"})
         answer = f"Vault: {summarise(r)}."
     elif "save login" in lower:
-        r = ask(sid, "vault.save_login", {"origin": "https://linear.app/login", "site": "linear.app"})
+        r = ask(sid, "vault.save_login", {"origin": "https://linear.app", "site": "linear.app"})
         answer = f"Login: {summarise(r)}."
     elif "2fa" in lower:
         r = ask(sid, "vault.code", {"site": "github.com"})

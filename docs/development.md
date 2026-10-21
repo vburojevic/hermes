@@ -310,6 +310,22 @@ making it the cloud provider. `POST /api/mock/browser {"connect": "fails"|"unrea
 the window. `-HERMES_BROWSER YES|consent` opens the Browser page (on the Mac, Apps & Tools on
 Browser).
 
+In a chat (`Tools/mock-hermes/web_turns.py`, over Bot Mode's socket): "sign in to vercel" (Hermes's
+vault and its authenticator key, no prompts), "sign in to github" (1Password locked: the unlock card,
+then a code card), "sign in to linear" (nothing saved: the save-login card), "reorder" (a card fill:
+Fill Card with Face ID) and "wrong site" (refused on gist.github.com). On a simulator, enroll Face ID
+with `xcrun simctl spawn <udid> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1` then `-p` the
+same name, and pass a prompt with `notifyutil -p com.apple.BiometricKit_Sim.pearl.match`.
+
+**The secrets search** ([web.md](web.md) §8), after a full sign-in, a 2FA code, an Add Card and a card
+fill against the mock: put every value you typed (master password, passwords, card number, the code;
+a short security code as `"cvc":"737"`) in a file outside the repo, one per line, and run
+`Scripts/dev/web-secret-search.sh --secrets <file> --udid <simulator> --mac --mock-log <mock output>
+--since 1h` (add `--bundle <id>` for a Mac build with its own bundle id). It searches the simulator's
+and this Mac's unified logs, the app's data, group containers, preferences, caches, web data and saved
+state, crash reports and the mock's output, prints where a value turned up (by line number, never the
+value) and exits 1; "Nothing found" and 0 is the pass.
+
 A message with "key expired" fails its turn on Anthropic's key (Add Key… in the chat; the mock's
 `model.save_key` takes it), "signed out" on OpenAI Codex's sign-in.
 

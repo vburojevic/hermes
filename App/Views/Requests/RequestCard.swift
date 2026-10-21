@@ -332,12 +332,13 @@ private struct VaultUnlockCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             RequestHeader(symbol: "lock.shield.fill", title: String(localized: "Unlock \(name)"), subtitle: String(localized: "\(conversation.askerName) · signing in"), deadline: request.deadline)
-            Text("\(conversation.askerName) needs your password manager to fill a login.")
+            Text("\(conversation.askerName) needs a login from \(name).")
                 .font(.subheadline)
                 .foregroundStyle(Theme.primaryText)
             MaskedField(placeholder: String(localized: "Master password"), text: $password, symbol: "lock", isPassword: true, allowsPaste: false, onSubmit: unlock)
-            FinePrint(text: String(localized: "Goes straight to \(name). Only a session token stays in memory, until this chat ends."))
-            CardFooter(secondary: String(localized: "Cancel"), onSecondary: { conversation.skip(request) }, primary: String(localized: "Unlock"), primaryEnabled: !password.isEmpty, onPrimary: unlock)
+                .privacySensitive()
+            FinePrint(text: String(localized: "Goes straight to \(name) on \(conversation.gatewayName). Only a session token stays, and it locks after 30 minutes idle."))
+            CardFooter(secondary: String(localized: "Keep Locked"), onSecondary: { conversation.skip(request) }, primary: String(localized: "Unlock"), primaryEnabled: !password.isEmpty, onPrimary: unlock)
         }
     }
 
@@ -368,12 +369,14 @@ private struct SaveLoginCard: View {
             }
             PlainField(placeholder: String(localized: "Email or username"), text: $username, symbol: "person", contentType: .username)
             MaskedField(placeholder: String(localized: "Password"), text: $password, symbol: "lock", isPassword: true, allowsPaste: false)
-            FinePrint(text: String(localized: "Saved to your password manager, not to Hermes."))
-            CardFooter(secondary: String(localized: "Not Now"), onSecondary: { conversation.skip(request) }, primary: String(localized: "Save & Fill"), primaryEnabled: !username.isEmpty && !password.isEmpty) {
+                .privacySensitive()
+            FinePrint(text: String(localized: "Saved encrypted in Hermes's vault on \(conversation.gatewayName). Hermes fills it in and never sees it."))
+            CardFooter(secondary: String(localized: "Not Now"), onSecondary: { conversation.skip(request) }, primary: String(localized: "Save & Sign In"), primaryEnabled: !username.isEmpty && !password.isEmpty) {
                 let login: JSONValue = .object(["identifier": .string(username), "password": .string(password)])
                 let json = (try? JSONEncoder().encode(login)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
                 conversation.answer(request, with: .object(["value": .string(json)]), receipt: String(localized: "Saved a login for \(site)"), symbol: "person.badge.key")
                 password = ""
+                username = ""
             }
         }
     }

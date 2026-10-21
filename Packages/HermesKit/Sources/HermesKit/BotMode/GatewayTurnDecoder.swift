@@ -39,8 +39,11 @@ public enum GatewayTurnDecoder {
             events = risk.isQuiet ? [] : [.toolRisk(id: payload["tool_id"]?.stringValue, name: name, risk: risk)]
         case "tool.start":
             let name = payload["name"]?.stringValue ?? "tool"
-            let preview = nonEmpty(payload["preview"]?.stringValue) ?? nonEmpty(payload["context"]?.stringValue)
-                ?? ToolDescriptor.argumentPreview(name: name, arguments: payload["args"])
+            // Hermes's own preview of typing into a page carries the text: those steps use ours.
+            let preview = WebStep.hidesArguments(name)
+                ? ToolDescriptor.argumentPreview(name: name, arguments: payload["args"])
+                : nonEmpty(payload["preview"]?.stringValue) ?? nonEmpty(payload["context"]?.stringValue)
+                    ?? ToolDescriptor.argumentPreview(name: name, arguments: payload["args"])
             events = name.hasPrefix("_") ? [] : [.toolStarted(id: payload["tool_id"]?.stringValue, name: name, preview: preview, at: nil)]
         case "tool.complete":
             let name = payload["name"]?.stringValue ?? "tool"

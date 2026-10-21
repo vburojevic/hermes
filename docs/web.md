@@ -165,8 +165,72 @@ app's fields, Hermes's names (`PAYMENT_FIELDS`, `ADDRESS_FIELDS`):
 
 ## 4. In a chat
 
-Not built yet (the next piece): `signInStep`, the corrected `vaultUnlock` / `vaultSaveLogin` copy,
-`approvalPayment` with Face ID, and errors in words.
+### 4.1 Steps
+
+Browser and Passwords steps read as what happened, from the call's arguments and Hermes's JSON
+result (`WebStep`, HermesKit; `ToolStepLine` in the transcript). Never a username, password or code:
+`browser_type` shows no text, and `browser_vault`'s arguments and results never carry a secret.
+
+| Call | Running | Done | Second line |
+|---|---|---|---|
+| `browser_navigate {url}` | Opening vercel.com | Opened vercel.com | `vercel.com/login` (no query), monospaced |
+| `browser_type {ref, text}` | Typing into the page | Typed into the page | – |
+| `browser_exec {code}` (Browser Use) | the script's first `# comment`, capitalized | the same | – |
+| `browser_vault list` | Looking up your logins | Looked up your logins | – |
+| `browser_vault fill` (a login, `signInStep`) | Signing in | Signed in to vercel.com | "Your login from 1Password · Hermes never saw the password" (`backend`: Hermes's vault, 1Password, Bitwarden) |
+| `browser_vault fill` (a card) | Signing in | Filled your card on amazon.com | "Hermes never saw the number" |
+| `browser_vault fill` (an address) | Signing in | Filled your address on amazon.com | "From Hermes's vault" |
+| `browser_vault enter_code` | Entering the 2FA code | Entered the 2FA code | From 1Password / From your authenticator key / From you (`source`) |
+| `browser_vault save_login` | Asking you to save a login | Saved a login for linear.app | "In Hermes's vault · Hermes never saw the password" |
+| `browser_vault unlock {backend}` | Unlocking 1Password | Unlocked 1Password | – |
+
+**Errors, in words** (`error_type` in the result):
+
+| `error_type` | Words |
+|---|---|
+| `origin_mismatch` | "Your login is for github.com, not this page." (the item's origins from Hermes's refusal; the step's title becomes "Didn't sign in") |
+| `unlock_required`, `unlock_cancelled`, `unlock_failed` | "1Password is locked." |
+| `no_code_field` (passkey, security key, app approval) | "Finish signing in on your device." |
+| `save_declined`, `payment_declined` | a quiet note: "Not filled." (`code_declined`: "No code entered.") |
+| `human_has_control` | "You're in control of the browser; Hermes is waiting." |
+| `supervisor_required` (the app's browser) | "Passwords can't fill a page in this app's browser. It's your turn to sign in." |
+| `origin_changed` | "The page changed before Hermes could fill it. Nothing was written." |
+| `no_origin` | "It has no site saved with it, so Hermes can't fill it anywhere." |
+
+### 4.2 Requests
+
+The docked glass cards ([quick-actions.md](quick-actions.md)), from the backend socket's server
+requests (`tui_gateway/agent_callbacks.py`, `contracts/server_requests.py`). The API server installs
+no prompt callbacks (headless), so these come only in chats that run over Bot Mode's socket.
+
+| Request | Card | Answer |
+|---|---|---|
+| `vault.unlock_prompt {backend, display_name}` | `vaultUnlock`: "Unlock 1Password", the master password (`MaskedField`, no paste), "Goes straight to 1Password on Studio Mac. Only a session token stays, and it locks after 30 minutes idle." **Keep Locked** / **Unlock** | `{value}`; Keep Locked answers `""`. 120 s |
+| `vault.save_login {origin, site}` | `vaultSaveLogin`: "Save a login for linear.app", the origin, username, password. "Saved encrypted in Hermes's vault on Studio Mac. Hermes fills it in and never sees it." **Not Now** / **Save & Sign In** | `{value: "{\"identifier\":…,\"password\":…}"}`; Not Now answers `""`. 180 s |
+| `vault.code {site, hint}` | `codeAsk`: six boxes, Paste Code, one-time-code AutoFill | `{value}`. 180 s |
+| `approval` whose command is "Fill payment card '<label>' on <origin>" | `approvalPayment` (`PaymentApprovalCard`): "Fill your card on amazon.com?", the card's name and the page, "The number and CVC never enter the chat. Approve only if you mean to pay here. Hermes asks every time." **Don't Fill** / **Fill Card** | Fill Card asks for Face ID, Touch ID or the passcode (`OwnerCheck`, `.deviceOwnerAuthentication`; a device with none can't answer), then `once`; Don't Fill answers `deny`. No Always, no … menu |
+
+A card fill is recognized by its command (`PaymentFill`, HermesPush): Hermes sends it as a generic
+approval with `pattern_key: mcp_elicitation`, and its `vault-payment` surface reaches only plugins'
+hooks (§9). Anything that starts the same way gets the card fill's stricter card, which costs
+nothing; a real card fill never gets less. It's never answered from the dock's quick buttons, a
+batch ("Allow all"), Talk, a notification or the Lock Screen.
+
+What the person types into these cards goes into the one answer and is cleared from the card at
+once. A password or code is never kept for later (unlike approvals and questions, which wait in
+`AnswerLedger` for a reconnect): with no socket to take it at that moment, the card comes back to be
+answered again.
+
+### 4.3 Notifications
+
+- A card fill (`NoticePresentation`; `PushNotice.isPaymentFill`: the notice's `surface` is
+  `vault-payment`, which the push plugin hears, or its command reads as one): "Fill your card on
+  amazon.com?" · "Open the chat to decide. Fill Card asks for Face ID.", Time Sensitive, category
+  `OPEN` with no actions: it only opens the chat. `answersInBanner` is false for it on every
+  platform; Allow from an older notification opens the chat instead (`PushResponder`,
+  `MacNotifier`); the Live Activity and the Dynamic Island show no Allow for it.
+- Unlock and code requests read "Hermes needs a password", without the site when details are
+  hidden (`kind: password`).
 
 ## 5. Browser
 
@@ -245,6 +309,14 @@ Not built yet.
   2FA" and each source row's state.
 
 ## 9. Open points
+
+- **The card fill is a generic approval** (command "Fill payment card '…' on …", pattern key
+  `mcp_elicitation`); its `vault-payment` surface reaches only plugins' hooks, so the app reads the
+  command (and the push notice's surface). A dedicated request kind would be safer.
+- **The push plugin's fallback notification** (shown only when the app's extension can't run) still
+  carries the approval category, and its Live Activity update carries the request id: the app opens
+  the chat for either instead of answering, but the next push plugin version should send `OPEN` and
+  no request id for `vault-payment`, as it does for flagged commands.
 
 - **No card or address details in `vault.list`.** The design shows "Visa •• 4242 · expires 08/28"
   and an address's first line; Hermes keeps all of those encrypted, so the rows show the name and

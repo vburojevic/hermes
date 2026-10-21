@@ -295,6 +295,7 @@
 		F0A3477C00DA2A76F45FA06D /* StatusWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB30525D8A95CBD738F107D3 /* StatusWidgets.swift */; };
 		F109AA3D6EB3110B99205458 /* FileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 800A1DDDF79BE426877E7DB1 /* FileModels.swift */; };
 		F2F8579E495B07941AF6A40A /* ArtifactViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEB322F91E634BC83629682A /* ArtifactViews.swift */; };
+		F4BC175775974706D1F2D325 /* PaymentApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4195B5E81707A9DCBD12F7 /* PaymentApprovalCard.swift */; };
 		F51BE6C1A76C75CDE795DB3D /* MemoryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84164182BC8A67B056F80BA /* MemoryModel.swift */; };
 		F62D0A56E57E187470CCC1A2 /* BotChatViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194CF757A863916B13EA8DC4 /* BotChatViews.swift */; };
 		F75384FF7ACBD0911C2B5251 /* Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177942A1E815274590668D2B /* Formatting.swift */; };
@@ -637,6 +638,7 @@
 		FA4160B308F62A2D92BE857D /* LocalLaunchJobs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLaunchJobs.swift; sourceTree = "<group>"; };
 		FB30525D8A95CBD738F107D3 /* StatusWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusWidgets.swift; sourceTree = "<group>"; };
 		FB4F106CAC359F3400EEB893 /* WidgetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetHost.swift; sourceTree = "<group>"; };
+		FC4195B5E81707A9DCBD12F7 /* PaymentApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentApprovalCard.swift; sourceTree = "<group>"; };
 		FC7D3D22448CFD97B34941B6 /* WidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetStore.swift; sourceTree = "<group>"; };
 		FD59462F69EA19F6D1F33B36 /* MemoryEditViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryEditViews.swift; sourceTree = "<group>"; };
 		FDA560652E7CA4E7461704C2 /* AppPluginConsentCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPluginConsentCard.swift; sourceTree = "<group>"; };
@@ -878,6 +880,7 @@
 				B6CE9610C52E4823749DE17A /* MacPasswordsPane.swift */,
 				7D7E80DB8957C3B24D843B94 /* PasswordSheets.swift */,
 				586A0BAE9D4272606905DC02 /* PasswordsView.swift */,
+				FC4195B5E81707A9DCBD12F7 /* PaymentApprovalCard.swift */,
 				56BD38901E3A17519EA63810 /* WebDebug.swift */,
 			);
 			path = Web;
@@ -1791,6 +1794,7 @@
 				9B24D5CA3BE33803AEFA1A84 /* PasswordSheets.swift in Sources */,
 				5F50F927A4CF9A8F85DBE3D6 /* PasswordsModel.swift in Sources */,
 				72EE68A045774B55861CC181 /* PasswordsView.swift in Sources */,
+				F4BC175775974706D1F2D325 /* PaymentApprovalCard.swift in Sources */,
 				9790C1B520CFAEA47DF74211 /* PillTextView.swift in Sources */,
 				F7BF6DE45240EED5C5B70469 /* Platform.swift in Sources */,
 				EDB5720A2D6021DF4E9C21DE /* PluginCatalogViews.swift in Sources */,

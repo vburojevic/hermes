@@ -2108,6 +2108,12 @@ def main():
     _browser = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_browser)
     _browser.install(globals())
+    if args.gateway_port:
+        # Signing in, 2FA and card fills in a chat (docs/web.md §4), on the vault above.
+        _spec = _util.spec_from_file_location("mock_web_turns", _pathlib.Path(__file__).resolve().parent / "web_turns.py")
+        _web_turns = _util.module_from_spec(_spec)
+        _spec.loader.exec_module(_web_turns)
+        _web_turns.install(globals(), gateway, chats, _vault)
     _spec = _util.spec_from_file_location("mock_push", _pathlib.Path(__file__).resolve().parent / "push.py")
     _push = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_push)

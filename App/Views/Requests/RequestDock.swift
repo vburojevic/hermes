@@ -75,15 +75,17 @@ struct NeedsYouDock: View {
     }
 
     /// Deny and Allow right here only for one short command shown whole; anything longer (or
-    /// flagged, or one of several) opens the card to be read first.
+    /// flagged, a card fill, or one of several) opens the card to be read first.
     private var answersHere: Bool {
-        guard let approval = conversation.pendingApproval, conversation.waitingApprovals.isEmpty, !approval.smartDenied else { return false }
+        guard let approval = conversation.pendingApproval, conversation.waitingApprovals.isEmpty, !approval.smartDenied,
+              !approval.isPaymentFill else { return false }
         return VisibleText.fitsAtAGlance(approval.isMemorySave ? approval.memoryText : approval.summary, limit: 44)
     }
 
     private var subject: String {
         if let approval = conversation.pendingApproval {
             if approval.isMemorySave { return approval.memoryText }
+            if let fill = approval.paymentFill { return String(localized: "Fill your card on \(fill.site)?") }
             let more = conversation.waitingApprovals.count
             return more > 0 ? String(localized: "\(more + 1) commands") : approval.summary
         }

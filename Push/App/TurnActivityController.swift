@@ -152,8 +152,9 @@ final class TurnActivityController {
             // gateway's pushes carry it on from there.
             step: LiveActivity.line(for: conversation)?.text ?? conversation.liveStatus ?? String(localized: "Working"), startedAt: startedAt, title: title,
             command: conversation.pendingApproval?.command,
-            // A flagged command is answered in the app, on its card, never from the Lock Screen.
-            requestID: conversation.pendingApproval.flatMap { $0.smartDenied ? nil : $0.requestID }
+            // A flagged command or a card fill is answered in the app, on its card, never from the
+            // Lock Screen.
+            requestID: conversation.pendingApproval.flatMap { $0.smartDenied || $0.isPaymentFill ? nil : $0.requestID }
         )
         do {
             let activity = try Activity.request(

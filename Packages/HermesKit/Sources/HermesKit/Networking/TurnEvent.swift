@@ -74,7 +74,9 @@ public enum RunEventDecoder {
             events = text.isEmpty ? [] : [.commentary(text, alreadyStreamed: payload["already_streamed"]?.boolValue ?? false)]
         case "tool.started":
             let tool = payload["tool"]?.stringValue ?? "tool"
-            events = tool.hasPrefix("_") ? [] : [.toolStarted(id: nil, name: tool, preview: nonEmpty(payload["preview"]?.stringValue), at: at)]
+            // Hermes's preview of typing into a page carries the text (`docs/web.md` §4).
+            let preview = WebStep.hidesArguments(tool) ? nil : nonEmpty(payload["preview"]?.stringValue)
+            events = tool.hasPrefix("_") ? [] : [.toolStarted(id: nil, name: tool, preview: preview, at: at)]
         case "tool.completed":
             let tool = payload["tool"]?.stringValue ?? "tool"
             events = tool.hasPrefix("_") ? [] : [.toolFinished(
@@ -142,7 +144,7 @@ public enum SessionStreamDecoder {
         case "tool.started":
             let tool = payload["tool_name"]?.stringValue ?? "tool"
             if !tool.hasPrefix("_") {
-                events = [.toolStarted(id: nil, name: tool, preview: nonEmpty(payload["preview"]?.stringValue), at: at)]
+                events = [.toolStarted(id: nil, name: tool, preview: WebStep.hidesArguments(tool) ? nil : nonEmpty(payload["preview"]?.stringValue), at: at)]
             }
         case "tool.completed", "tool.failed":
             let tool = payload["tool_name"]?.stringValue ?? "tool"

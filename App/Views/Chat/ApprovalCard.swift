@@ -36,7 +36,7 @@ struct ApprovalCard: View {
     /// a memory save: those are read and answered one at a time.
     private var isBatch: Bool {
         !waiting.isEmpty && !reviewingEach && onChoiceForAll != nil
-            && all.allSatisfy { !$0.smartDenied && !$0.isMemorySave && Self.showsWholeInBatch($0.summary) }
+            && all.allSatisfy { !$0.smartDenied && !$0.isMemorySave && !$0.isPaymentFill && Self.showsWholeInBatch($0.summary) }
     }
 
     static func showsWholeInBatch(_ command: String) -> Bool {
@@ -45,7 +45,10 @@ struct ApprovalCard: View {
 
     var body: some View {
         Group {
-            if approval.isMemorySave {
+            if approval.isPaymentFill {
+                // A card fill: its own card, Face ID first, never Always (`docs/web.md` §4).
+                PaymentApprovalCard(approval: approval, asker: asker, onChoice: onChoice)
+            } else if approval.isMemorySave {
                 // Ask Before Saving: Don't Save / Save / Save All in This Chat (`memorySaveAsk`).
                 MemorySaveAsk(approval: approval, asker: asker, onChoice: onChoice)
             } else if isBatch {

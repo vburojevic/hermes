@@ -35,6 +35,12 @@ public struct NoticePresentation: Sendable, Equatable {
         var chat = notice.summary.isEmpty ? notice.subtitle : notice.summary
         if let bot = notice.bot, chat == bot || chat == "Bot Chat" { chat = "" }
         switch notice.kind {
+        case .approval where notice.isPaymentFill:
+            // "Fill your card on amazon.com?": opens the chat, whose card asks for Face ID.
+            title = PaymentFill(command: notice.command).map { String(localized: "Fill your card on \($0.site)?", bundle: .module) }
+                ?? String(localized: "Hermes wants to fill your card", bundle: .module)
+            subtitle = chat
+            body = String(localized: "Open the chat to decide. Fill Card asks for Face ID.", bundle: .module)
         case .approval where notice.isMemorySave:
             // "Hermes wants to remember something" · the entry: the one memory text a push carries.
             title = notice.bot.map { String(localized: "\($0) wants to remember something", bundle: .module) } ?? String(localized: "Hermes wants to remember something", bundle: .module)
@@ -195,12 +201,18 @@ extension PushNotice {
 }
 
 extension PushNotice {
+    /// A card fill waiting for the person's OK (`PaymentFill`).
+    public var isPaymentFill: Bool {
+        kind == .approval && (surface == PaymentFill.surface || PaymentFill.isPaymentFill(command))
+    }
+
     /// Whether Allow is offered right on the notification. Never for a command the safety check
-    /// flagged, and only for one the notice carries whole (`carriesWholeCommand`). On the Mac,
+    /// flagged or a card fill, and only for one the notice carries whole (`carriesWholeCommand`). On the Mac,
     /// which has no expanded view, only for one the banner shows whole (`Run … on Studio Mac?`
     /// clips at 80); an iPhone's expanded view shows the whole command the notice carries.
     public var answersInBanner: Bool {
-        guard !smartDenied, carriesWholeCommand else { return false }
+        // A card fill is answered only on its card, with Face ID (`docs/web.md` §4).
+        guard !smartDenied, !isPaymentFill, carriesWholeCommand else { return false }
         #if os(macOS)
         return VisibleText.fitsAtAGlance(command, limit: 80)
         #else

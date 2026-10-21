@@ -57,9 +57,9 @@ enum PushResponder {
              NotificationCatalog.Action.memorySave, NotificationCatalog.Action.memoryDontSave:
             let allows = action == NotificationCatalog.Action.allowOnce || action == NotificationCatalog.Action.memorySave
             // Allow goes only to what the notification showed: never a command Hermes's safety check
-            // flagged, never one shown as the bare fallback (the extension didn't run). Those open
-            // the chat, where the card shows it whole.
-            if allows, notice.smartDenied || Self.fallbackBodies.contains(response.shownBody) {
+            // flagged or a card fill, never one shown as the bare fallback (the extension didn't
+            // run). Those open the chat, where the card shows it whole (and asks for Face ID).
+            if allows, notice.smartDenied || notice.isPaymentFill || Self.fallbackBodies.contains(response.shownBody) {
                 center.open(notice)
                 return
             }

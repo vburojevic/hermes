@@ -440,7 +440,8 @@ final class TalkSession: Identifiable, TalkDisplay {
     /// can't be undone ask for Face ID first (`docs/voice.md` §4.3).
     func respond(_ choice: ApprovalChoice) {
         guard let approval = conversation.pendingApproval else { return }
-        let risky = choice != .deny && (choice == .always || approval.smartDenied || SpokenAnswers.isIrreversible(approval))
+        // A card fill's own card asked for Face ID already (`PaymentApprovalCard`).
+        let risky = choice != .deny && !approval.isPaymentFill && (choice == .always || approval.smartDenied || SpokenAnswers.isIrreversible(approval))
         Task {
             if risky, !(await Self.confirmWithOwner(String(localized: "Allow \(speakerName) to go ahead"))) { return }
             approvalHint = nil
@@ -809,6 +810,8 @@ final class TalkSession: Identifiable, TalkDisplay {
             approvalHint = String(localized: "Hermes flagged this command. Tap Run Once Anyway on the card if you trust it, or say “deny”.")
         case .needsTap(.irreversible):
             approvalHint = String(localized: "This can't be undone, so it needs a tap and Face ID. Or say “deny”.")
+        case .needsTap(.cardFill):
+            approvalHint = String(localized: "Filling your card needs Fill Card on the card and Face ID. Or say “don't fill”.")
         case .tooSoon:
             approvalHint = String(localized: "Take a moment to read it, then say “allow once” or “deny”.")
         case .notUnderstood:

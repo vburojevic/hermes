@@ -91,6 +91,9 @@ public struct ToolDescriptor: Hashable, Sendable {
     /// The most telling argument of a call, for one-line display.
     public static func argumentPreview(name: String, arguments: JSONValue?) -> String? {
         guard let arguments else { return nil }
+        // What's typed into a page (often a username) and the vault's handles never show
+        // (`docs/web.md` §4): only the element typed into.
+        if WebStep.hidesArguments(name) { return name == "browser_type" ? arguments["ref"]?.stringValue : nil }
         let preferredKeys = [
             "command", "query", "q", "url", "path", "file_path", "pattern", "goal", "prompt", "code", "name", "text", "message",
         ]

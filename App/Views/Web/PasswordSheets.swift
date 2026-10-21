@@ -200,7 +200,7 @@ struct PasswordAddSheet: View {
                     .listRowInsets(EdgeInsets())
                 }
                 Section {
-                    field("Website", text: $draft.website, prompt: "github.com", url: true)
+                    field("Website", text: $draft.website, prompt: draft.kind == .login ? "github.com" : "amazon.com", url: true)
                     switch draft.kind {
                     case .login:
                         field("Username", text: $draft.username, prompt: String(localized: "Email or username"))

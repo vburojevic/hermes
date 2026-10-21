@@ -135,8 +135,9 @@ struct TurnActivityView: View {
                         Image(systemName: "hand.raised.fill")
                             .foregroundStyle(Palette.warning)
                     }
-                    // Allow here only beside a command shown whole; a longer one opens the app.
-                    if let requestID = state.requestID, VisibleText.fitsAtAGlance(command, limit: 50) {
+                    // Allow here only beside a command shown whole; a longer one, or a card fill
+                    // (Face ID on its card, `docs/web.md` §4), opens the app.
+                    if let requestID = state.requestID, VisibleText.fitsAtAGlance(command, limit: 50), !PaymentFill.isPaymentFill(command) {
                         AnswerButtons(attributes: attributes, requestID: requestID, onDark: false)
                     }
                 } else if let question = state.question {
@@ -310,7 +311,7 @@ struct IslandDetail: View {
                         .font(.system(.subheadline, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(2)
-                    if let requestID = state.requestID, VisibleText.fitsAtAGlance(command, limit: 50) {
+                    if let requestID = state.requestID, VisibleText.fitsAtAGlance(command, limit: 50), !PaymentFill.isPaymentFill(command) {
                         AnswerButtons(attributes: attributes, requestID: requestID, onDark: true)
                     }
                 } else if let question = state.question {

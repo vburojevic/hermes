@@ -3540,6 +3540,9 @@ final class ConversationModel: Identifiable {
     }
 
     func respond(to approval: ApprovalRequest, with choice: ApprovalChoice, quietly: Bool = false) {
+        // A card fill is answered once or not at all: Hermes remembers nothing for cards, and no
+        // card offers more (`docs/web.md` §4).
+        if approval.isPaymentFill, choice == .session || choice == .always { return }
         WelcomeProgress.shared.mark(.runCommand)
         if !quietly { addApprovalReceipt(for: approval, choice: choice) }
         defer { showNextApproval() }
@@ -4558,6 +4561,12 @@ extension ConversationModel {
             case .session: addReceipt(String(localized: "Saving to memory in this chat · \(approval.memoryText)"), symbol: "brain")
             default: addReceipt(String(localized: "Saved to memory · \(approval.memoryText)"), symbol: "brain")
             }
+            return
+        }
+        if let fill = approval.paymentFill {
+            // "Filled your card on amazon.com" / "Not filled": the card's name, never its number.
+            addReceipt(choice == .deny ? String(localized: "Not filled · \(fill.label) on \(fill.site)") : String(localized: "Fill allowed · \(fill.label) on \(fill.site)"),
+                       symbol: choice == .deny ? "xmark.circle" : "creditcard")
             return
         }
         let subject = count > 1 ? String(localized: "\(count) commands") : approval.summary

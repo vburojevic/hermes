@@ -117,6 +117,8 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
     public var detail: String?
     public var choices: [String]
     public var smartDenied: Bool
+    /// Where Hermes asked from: `vault-payment` for a card fill (`docs/web.md` §4).
+    public var surface: String?
     public var answer: Answer?
 
     // Questions
@@ -167,6 +169,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         case detail = "description"
         case choices
         case smartDenied = "smart_denied"
+        case surface
         case answer, questions
         case turnID = "turn_id"
         case seconds
@@ -249,6 +252,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         detail = VisibleText.of(try c.decodeIfPresent(String.self, forKey: .detail))
         choices = try c.decodeIfPresent([String].self, forKey: .choices) ?? []
         smartDenied = try c.decodeIfPresent(Bool.self, forKey: .smartDenied) ?? false
+        surface = try? c.decodeIfPresent(String.self, forKey: .surface)
         answer = try c.decodeIfPresent(Answer.self, forKey: .answer)
         questions = try c.decodeIfPresent([Question].self, forKey: .questions) ?? []
         turnID = try c.decodeIfPresent(String.self, forKey: .turnID)
@@ -293,6 +297,7 @@ public struct PushNotice: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(detail, forKey: .detail)
         if !choices.isEmpty { try c.encode(choices, forKey: .choices) }
         if smartDenied { try c.encode(true, forKey: .smartDenied) }
+        try c.encodeIfPresent(surface, forKey: .surface)
         try c.encodeIfPresent(answer, forKey: .answer)
         if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
         try c.encodeIfPresent(turnID, forKey: .turnID)

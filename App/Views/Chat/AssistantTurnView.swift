@@ -884,6 +884,11 @@ private struct StepTimeline: View {
             case .tool(let tool) where tool.startedProcessID != nil:
                 flush()
                 entries.append(.process(tool, id: tool.startedProcessID ?? ""))
+            case .tool(let tool) where tool.name == "browser_vault":
+                // Signing in, a code, a card: each says what happened, never folded into a run
+                // (`docs/web.md` §4).
+                flush()
+                entries.append(.step(step))
             case .tool(let tool):
                 if let last = pending.last, ToolRunLine.kind(of: last.name) != ToolRunLine.kind(of: tool.name) {
                     flush()
@@ -1212,23 +1217,37 @@ private struct ToolStepLine: View {
 
     private var descriptor: ToolDescriptor { ToolDescriptor.describe(tool.name) }
     private var isSearch: Bool { !tool.searchResults.isEmpty || tool.name == "web_search" }
+    /// Browser and Passwords steps say the site and where a login came from (`docs/web.md` §4).
+    private var web: WebStep? { WebStep.describe(name: tool.name, arguments: tool.arguments, result: tool.result, isRunning: tool.status == .running) }
 
     private var title: String {
+        if let web { return web.title }
         switch tool.status {
-        case .running: descriptor.activeTitle
-        case .succeeded: descriptor.doneTitle
-        case .failed: tool.name == "terminal" ? String(localized: "Command failed") : descriptor.doneTitle
+        case .running: return descriptor.activeTitle
+        case .succeeded: return descriptor.doneTitle
+        case .failed: return tool.name == "terminal" ? String(localized: "Command failed") : descriptor.doneTitle
         }
     }
 
+    /// A "no" from the person (not filled, not saved) is a quiet note, not a failure.
+    private var status: ToolActivity.Status {
+        web?.declined == true ? .succeeded : tool.status
+    }
+
     var body: some View {
+        let web = web
         StepLine(
-            symbol: descriptor.symbol, status: tool.status, title: title,
-            preview: oneLine(tool.preview), monospacedPreview: !isSearch,
-            trailing: tool.status == .running ? nil : durationText, trailingIsAlert: tool.status == .failed,
+            symbol: web?.symbol ?? descriptor.symbol, status: status, title: title,
+            preview: web.map { $0.preview } ?? oneLine(tool.preview), monospacedPreview: web.map(\.previewIsAddress) ?? !isSearch,
+            trailing: tool.status == .running ? nil : durationText, trailingIsAlert: status == .failed,
             runningSince: tool.status == .running ? tool.startedAt : nil, isLast: isLast, compact: compact, hasDetails: tool.hasDetails, disclosureKey: "step:\(tool.id)"
         ) {
-            if tool.status == .failed, let line = failureLine {
+            if let failure = web?.failure {
+                Text(failure)
+                    .font(.footnote)
+                    .foregroundStyle(web?.declined == true ? Theme.secondaryText : Theme.danger)
+                    .lineLimit(3)
+            } else if tool.status == .failed, let line = failureLine {
                 Text(line)
                     .font(.footnote)
                     .foregroundStyle(Theme.danger)
