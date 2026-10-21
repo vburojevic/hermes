@@ -332,7 +332,8 @@ private struct TalkBottom: View {
             )
         case .approval:
             if let approval = session.pendingApproval {
-                ApprovalCard(approval: approval, asker: session.speakerName) { choice in session.respond(choice) }
+                ApprovalCard(approval: approval, asker: session.speakerName) { choice in session.respond(choice, to: approval) }
+                    .id(approval.id)
                     .padding(14)
                     .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.composer))
             }
@@ -590,7 +591,8 @@ struct TalkPanel: View {
         switch session.phase {
         case .approval:
             if let approval = session.pendingApproval {
-                ApprovalCard(approval: approval, asker: session.speakerName) { choice in session.respond(choice) }
+                ApprovalCard(approval: approval, asker: session.speakerName) { choice in session.respond(choice, to: approval) }
+                    .id(approval.id)
             }
         case .needsTyping:
             if let request = session.pendingRequest, let chat = session.chat {

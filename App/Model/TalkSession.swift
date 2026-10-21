@@ -436,14 +436,17 @@ final class TalkSession: Identifiable, TalkDisplay {
         }
     }
 
-    /// An answer tapped on the approval card. Always Allow, a flagged command and anything that
-    /// can't be undone ask for Face ID first (`docs/voice.md` §4.3).
-    func respond(_ choice: ApprovalChoice) {
-        guard let approval = conversation.pendingApproval else { return }
+    /// An answer tapped on the approval card, for the request that card showed. Always Allow, a
+    /// flagged command and anything that can't be undone ask for Face ID first (`docs/voice.md` §4.3).
+    func respond(_ choice: ApprovalChoice, to approval: ApprovalRequest) {
+        guard conversation.pendingApproval?.id == approval.id else { return }
         // A card fill's own card asked for Face ID already (`PaymentApprovalCard`).
         let risky = choice != .deny && !approval.isPaymentFill && (choice == .always || approval.smartDenied || SpokenAnswers.isIrreversible(approval))
         Task {
             if risky, !(await Self.confirmWithOwner(String(localized: "Allow \(speakerName) to go ahead"))) { return }
+            // Face ID takes a moment: the request may have been answered elsewhere, or another
+            // taken its place. The answer goes to the one the card showed, or nowhere.
+            guard conversation.pendingApproval?.id == approval.id else { return }
             approvalHint = nil
             approvalsAnswered += 1
             conversation.respond(to: approval, with: choice)
@@ -1026,7 +1029,7 @@ protocol TalkDisplay: AnyObject, Observable {
     func toggleMute()
     func interrupt()
     func retry()
-    func respond(_ choice: ApprovalChoice)
+    func respond(_ choice: ApprovalChoice, to approval: ApprovalRequest)
 }
 
 struct TalkLine: Identifiable, Hashable {

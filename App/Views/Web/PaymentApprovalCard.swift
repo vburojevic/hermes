@@ -50,7 +50,7 @@ struct PaymentApprovalCard: View {
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            CardFooter(secondary: String(localized: "Don't Fill"), onSecondary: { onChoice(.deny) },
+            CardFooter(secondary: String(localized: "Don't Fill"), onSecondary: { if !isConfirming { onChoice(.deny) } },
                        primary: String(localized: "Fill Card"), primaryEnabled: !isConfirming, onPrimary: confirm)
                 .accessibilityHint(Text("Fill Card asks for Face ID or Touch ID first"))
         }
@@ -65,6 +65,7 @@ struct PaymentApprovalCard: View {
     }
 
     private func confirm() {
+        guard !isConfirming else { return }
         isConfirming = true
         problem = nil
         let reason = fill.map { String(localized: "Fill \($0.label) on \($0.site)") } ?? String(localized: "Fill your card")

@@ -41,7 +41,7 @@ final class TalkStage: TalkDisplay {
     func toggleMute() { isMuted.toggle() }
     func interrupt() {}
     func retry() {}
-    func respond(_ choice: ApprovalChoice) {}
+    func respond(_ choice: ApprovalChoice, to approval: ApprovalRequest) {}
 
     /// The states in `screens/iphone/talk.elyx`.
     static var all: [TalkStage] {

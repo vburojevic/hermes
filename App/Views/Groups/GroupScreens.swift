@@ -277,6 +277,7 @@ struct GroupChatScreen: View {
                 ApprovalCard(approval: approval.request, asker: name(approval.memberID)) { choice in
                     chat.respond(choice, requestID: approval.requestID)
                 }
+                .id(approval.requestID)
                 .transition(.opacity)
             } else if chat.retryTask != nil {
                 HStack {

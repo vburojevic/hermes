@@ -256,12 +256,17 @@ struct ChatScreen: View {
                     explain: { conversation.deny(approval, saying: String(localized: "Explain what this command does and why you need it.")) },
                     denyWithNote: { conversation.deny(approval, saying: $0) },
                     allowEverything: {
+                        // Never for a card fill or a flagged command: those are answered on their
+                        // own card (an alert left up as the request changed lands here too).
+                        guard !approval.isPaymentFill, !approval.smartDenied else { return }
                         conversation.setAllowsEverything(true)
                         conversation.respond(to: approval, with: .once, quietly: true)
                     },
                     showPermissions: { showsPermissions = true }
                 ) : nil
             )
+            // A new request gets a new card: no alert or Face ID prompt carries over to it.
+            .id(approval.id)
             .sheet(isPresented: $showsPermissions) {
                 ChatPermissionsSheet(conversation: conversation)
             }
