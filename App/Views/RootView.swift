@@ -662,6 +662,14 @@ struct MainView: View {
         } detail: {
             NavigationStack {
                 DetailView(workspace: workspace, onToggleSidebar: sidebarButton)
+                    #if os(macOS)
+                    // The column fills its room, and its minimum never comes from what it shows. A
+                    // chat's minimum counted its question card at its narrowest, picks as tall as
+                    // their text, far taller than the window; while the window wasn't on screen
+                    // (locked, another Space, behind other windows) AppKit re-solved the column's
+                    // constraints until it gave up and threw (`docs/development.md`).
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                    #endif
             }
         }
         .navigationSplitViewStyle(.balanced)

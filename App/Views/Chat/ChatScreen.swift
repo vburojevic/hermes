@@ -124,6 +124,14 @@ struct ChatScreen: View {
         .environment(\.helperNavigator, helperNavigator)
         .environment(\.inspectorModel, conversation.inspector)
         .modifier(HelperPresentation(conversation: conversation, workspace: workspace, navigator: helperNavigator))
+        #if os(macOS)
+        // The Inspector makes the chat a split view column, sized by AppKit from the chat's
+        // minimum. A question card counts at its narrowest, picks as tall as their text, so with
+        // one up that minimum passed the window's height: the chat was laid out taller than its
+        // window, and while the window wasn't on screen AppKit kept re-solving it until it threw
+        // (`docs/development.md`). The chat takes the room it's given.
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        #endif
         // The Inspector: tabs for what the chat shows, beside it or in a sheet.
         .modifier(InspectorPresentation(conversation: conversation, workspace: workspace, usesPanel: usesInspectorPanel))
         #if os(iOS)
