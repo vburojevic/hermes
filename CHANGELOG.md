@@ -31,6 +31,26 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610211907 (October 21, 2026)
+
+- **Chat:** signing in says where your login came from, and a card fill needs your OK with Face ID
+- **Chat:** a chat opened at launch shows its newest messages sooner, without waiting for the Bots' connection
+- **Setup:** when an update or restart puts Hermes back at background priority, the app says so and offers to undo it
+- **Notifications:** a card fill's notification only opens the chat, even before the app fills it in
+- **Notifications:** older app builds can't allow a card fill from its notification either
+- **Notifications:** Allow from a Live Activity or a banner answers only what this device showed
+- **Plugins:** the app installs push 1.4.3
+- **Plugins:** the app installs push 1.4.4
+- **Appearance:** the app switcher shows Hermes in the appearance it opens in
+- **Requests:** a question or approval answered on another device leaves this one too
+- **Chats:** a row's last line follows its chat as a reply ends, and a launch shows every row's last message at once
+- **Bot Chats:** a message sent while another Bot or a routine is using the chat waits in Up Next and says why
+- **Browser:** Hermes can browse in this app, where you watch it, take over, and sign in yourself
+- **Approvals:** an answer goes to the request its card showed, and Allow Everything never fills a card
+- **Passwords:** secrets stay out of steps, helpers and the app switcher, and a card stays up until its answer goes
+- **Preview:** a NAT64 address of a page on your network asks first too
+- **Tools:** the secrets search fails closed and covers the Mac's own folders
+
 ### Build 2610211039 (October 21, 2026)
 
 - **Passwords:** see where Hermes finds logins, unlock or lock your password managers, and add what it fills
