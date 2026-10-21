@@ -64,6 +64,27 @@ final class VoiceUITests: XCTestCase {
         app.buttons["End call"].tap()
     }
 
+    /// "Stop" said over a long reply stops it (`TalkEars`): the Bot dips as the word starts, stops
+    /// when it's heard, and the rest of the reply is never asked of the gateway's voice.
+    @MainActor
+    func testTalkStopCutsALongReply() async throws {
+        let app = launch([
+            "-HERMES_TALK_TO", "researcher",
+            "-HERMES_VOICE_INPUT", mock.clip("essay", at: 2) + "," + mock.clip("stop", at: 12),
+        ])
+        XCTAssertTrue(app.buttons["End call"].waitForExistence(timeout: 60), "no call")
+        try await eventually(timeout: 60) {
+            try await self.mock.audio().spoken.contains { $0.contains("Swift 6") }
+        }
+        // Long enough for the whole reply to have been read, had it not been stopped.
+        try await Task.sleep(for: .seconds(40))
+        let audio = try await mock.audio()
+        XCTAssertTrue(audio.turns.contains("Write me a short essay about backups."), "the turn wasn't a voice turn: \(audio.turns)")
+        XCTAssertFalse(audio.spoken.contains { $0.contains("report the warning count") }, "the reply was read to its end")
+        XCTAssertFalse(audio.turns.contains { $0.lowercased().hasPrefix("stop") }, "“stop” was sent to Hermes")
+        app.buttons["End call"].tap()
+    }
+
     /// Transcribe on: The gateway: a turn's words come from `transcribe-stream` (16 kHz, one socket
     /// per turn); when the provider drops a turn, it goes to `POST /api/audio/transcribe` whole.
     @MainActor
