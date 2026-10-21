@@ -83,6 +83,7 @@ struct MacSettingsView: View {
             if DebugFlags.memory != nil { pane = "memory" }
             if DebugFlags.setup != nil { pane = "setup" }
             if DebugFlags.passwords != nil { pane = "passwords" }
+            if DebugFlags.browser != nil { pane = "apps" }
         }
     }
 }

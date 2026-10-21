@@ -58,8 +58,12 @@ Code: `VaultSource`, `VaultItem`, `VaultOrigin`, `VaultDraft`, `VaultClient`, `V
   (`macSettingsPasswords`): search, sources, logins, then cards and addresses on the left, the chosen
   item on the right. Add (+) and Lock All sit under the list, since a Settings tab has no toolbar of
   its own.
-- **Settings → Setup** lists Passwords ([setup.md](setup.md) §4.19).
-- **Needs Bot Mode.** Without it, or while it can't connect, the page is `BotModeSetupMessage`
+- **Browser:** Settings → Hermes on <gateway> → **Browser**, after Passwords ("A clean browser on
+  Studio Mac"); Apps and Tools → Built-in shows the same row under the Browser toolset. On the Mac
+  it's an item of its own in Apps & Tools, under Built-in (`macSettingsBrowser`), with "And
+  Passwords" under it, which opens the Passwords tab.
+- **Settings → Setup** lists Passwords and Browser ([setup.md](setup.md) §4.19, §4.20).
+- **Needs Bot Mode.** Without it, or while it can't connect, each page is `BotModeSetupMessage`
   with Link Bot Mode… or Sign In…. An older Hermes shows "Needs a newer Hermes Agent" with
   `hermes update`.
 
@@ -166,7 +170,57 @@ Not built yet (the next piece): `signInStep`, the corrected `vaultUnlock` / `vau
 
 ## 5. Browser
 
-Not built yet.
+Calls (`BrowserSettings`, `BrowserConnection`, `BrowserPlace` in HermesKit, `BrowserSettingsModel`
+in the app):
+
+| Need | Call | Notes |
+|---|---|---|
+| What's set | `GET /api/config?profile=` | `browser.cloud_provider` (absent until chosen: Hermes then picks a cloud provider it has a key for), `use_real_profile`, `engine`, `auto_local_for_private_urls`, `record_sessions`, `extension_control.enabled`, `security.website_blocklist {enabled, domains}` |
+| Change it | `PUT /api/config {config, profile}` | Deep-merged; a list (the blocked domains) replaces the one in config, so the whole list goes. `config.set` has no browser keys |
+| A window, the engine | `browser.manage {action: status \| connect \| disconnect \| use, enabled?, profile}` | `status` → `{connected, url, browser_use}`, no network. `connect` launches or attaches a visible Chromium (default `http://127.0.0.1:9222`) and answers `{connected, url, messages}`; 5031 when the address can't be reached. `use {enabled}` writes `browser.backend` (`browser-use` / `off`) |
+| A cloud provider | `GET /api/tools/toolsets/browser/config`, `PUT …/env`, `PUT …/provider` | The Apps and Tools key sheet (`ToolsetKeySheet`, [setup.md](setup.md) §4.5); the provider write sets `browser.cloud_provider` |
+
+The page (`browserPage`, `browserPageMore`): "Where Hermes browses", four places, each a
+`browserOption` row with its glyph, what it means for the person's logins, tags, and a check on the
+one in use. Hermes's own order decides which is in use: an attached window, then a cloud provider,
+then the copied profile, else a clean browser (`BrowserPlace.current`).
+
+| Place | Means | Sets |
+|---|---|---|
+| **A clean browser on Studio Mac** (Default · Free · Not visible) | Starts fresh every time; signs in with the logins in Passwords | `cloud_provider: local`, `use_real_profile: false` (written, so Hermes doesn't pick a cloud provider by itself) |
+| **With your logins on Studio Mac** (Your logins · Chrome, Edge or Brave) | A copy of the person's Chrome, Edge or Brave profile, cookies and logins; their own profile is never opened | `cloud_provider: local`, `use_real_profile: true`, after the consent |
+| **A window on Studio Mac** (Visible on Studio Mac) | A Chrome window the person can watch on that Mac; what they sign in to there stays | `browser.manage connect`. Hermes keeps it in its process, so it lasts until Hermes restarts; the status says so |
+| **In the cloud** (Needs a plan or key) | For sites that block automation | The provider sheet; once a provider is saved, `use_real_profile: false` (Hermes deletes the copy) and a window is let go. With a provider set up already, picking it uses that one at once; while it's in use, the row opens the sheet to change provider. Cancel changes nothing |
+
+Choosing a clean browser or your logins lets go of an attached window first (`disconnect`). A row
+being changed shows a `Spinner` in place of its check; the others wait. The footer: "Applies to new
+chats. The chats you have open keep the browser they started with." After a change the Now section
+says it again.
+
+**The consent** (`browserProfileConsent`), the first time "With your logins" is picked on this
+device for this gateway, as a partial sheet: "Stay signed in to your sites.", "Your cookies and
+logins are copied into a snapshot on Studio Mac.", "Your own Chrome profile is never opened.",
+"Nothing leaves Studio Mac. Turning this off deletes the copy.", and that it needs Chrome, Edge,
+Brave or Chromium as the default browser there (Firefox and beta versions are refused). **Not Now**
+/ **Use My Profile**. The answer is kept in UserDefaults per gateway (it holds no secret).
+
+**Now:** Using (the place, "In the cloud · Browserbase"), Engine (Browser Use or Built-in tools, a
+menu → `browser.manage use`), Status ("Ready", or "Attached to the window at 127.0.0.1:9222 until
+Hermes restarts"). The footer, unless it's the window: "Hermes browses out of sight; you'll see
+each step in the chat."
+
+**Advanced:** Fast text-only browser (`engine: lightpanda`, else `auto`; "Lightpanda: quicker, but
+no screenshots"), Local browser for private addresses (`auto_local_for_private_urls`), Record
+browser sessions (`record_sessions`, videos on the gateway), Blocked sites (the count, or Off) →
+a page with Block these sites (`enabled`), the domains (remove with ⊖) and Add a site; a site is
+kept as Hermes matches it (`BrowserSettings.blockedDomain`: the host, lowercased, without `www.`;
+`*.` wildcards as typed). Footer: "Hermes never opens a blocked site, and always refuses addresses
+that would expose a key or a cloud server's metadata."
+
+A change that fails says so in an alert, in words; a failed connect adds what Hermes said while it
+looked for a browser. Every change reads the page again, so what's shown is the gateway's.
+
+Not built yet: **In this app** (§6) and Clear Browsing Data, which come with the in-app browser.
 
 ## 6. Browsing in this app
 
@@ -202,6 +256,15 @@ Not built yet.
   to protect it with the macOS Keychain or a passphrase.
 
 ## 10. Mocks and flags
+
+`Tools/mock-hermes/browser.py` answers `browser.manage` and adds the `browser` and
+`security.website_blocklist` sections to `GET`/`PUT /api/config`; saving Browserbase's keys in the
+cloud sheet sets `cloud_provider: browserbase`. Connect takes about 2 s. `POST /api/mock/browser`
+`{"connect": "fails"}` answers like a gateway without Chrome (connected false, Hermes's hint
+lines), `{"connect": "unreachable"}` with 5031, `{"older": true}` with -32601, `{"reset": true}`
+puts the defaults back. `-HERMES_BROWSER YES` opens Browser (iPhone and iPad with `-HERMES_OPEN
+settings`; the Mac opens Settings → Apps & Tools on Browser); `-HERMES_BROWSER consent` shows the
+profile consent.
 
 `Tools/mock-hermes/vault.py` (in the combined backend) answers every `vault.*` call like Hermes,
 refusals included. Demo data is Sam's: Hermes's vault holds Vercel, Example Cloud (with an

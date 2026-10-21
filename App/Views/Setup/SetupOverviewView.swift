@@ -120,6 +120,7 @@ struct SetupOverviewView: View {
         case GatewaySetup.ID.models: "cpu"
         case GatewaySetup.ID.memory: "brain"
         case GatewaySetup.ID.passwords: "key"
+        case GatewaySetup.ID.browser: "safari"
         case GatewaySetup.ID.search: "magnifyingglass"
         case GatewaySetup.ID.checkpoints: "arrow.uturn.backward"
         case GatewaySetup.ID.tasks: "clock"
@@ -176,6 +177,15 @@ private struct SetupFeaturePage: View {
                         }
                         #else
                         PasswordsSettingsRow(workspace: workspace)
+                        #endif
+                    }
+                    if status.id == GatewaySetup.ID.browser, workspace.roster?.isConnected == true {
+                        #if os(macOS)
+                        Button("Open Apps & Tools") {
+                            UserDefaults.standard.set("apps", forKey: MacSettingsView.paneKey)
+                        }
+                        #else
+                        BrowserSettingsRow(workspace: workspace)
                         #endif
                     }
                     #if os(macOS)

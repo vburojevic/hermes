@@ -4,10 +4,12 @@ import Foundation
 
 extension GatewaySetup.ID {
     public static let passwords = "passwords"
+    public static let browser = "browser"
 }
 
 extension GatewaySetup.Docs {
     public static let passwords = HermesDocs.page("user-guide/features/credential-vault")
+    public static let browser = HermesDocs.page("user-guide/features/browser")
 }
 
 extension GatewaySetup {
@@ -37,5 +39,24 @@ extension GatewaySetup {
             detail: inUse.formatted(.list(type: .and)),
             steps: steps, docs: Docs.passwords
         )
+    }
+
+    /// Browser: where Hermes browses is chosen on Bot Mode's backend (`PUT /api/config`), so it
+    /// needs Bot Mode; once read, the place new chats use is the detail.
+    public static func browser(_ facts: GatewaySetupFacts) -> SetupStatus {
+        let title = String(localized: "Browser")
+        guard facts.botModeOnline else { return needsBotMode(id: ID.browser, title: title, facts) }
+        guard let config = facts.config else {
+            return .unknown(id: ID.browser, title: title, reason: String(localized: "Hermes didn't send its settings."))
+        }
+        let settings = BrowserSettings(config: config)
+        let detail: String = if let cloud = settings.cloud {
+            String(localized: "In the cloud · \(BrowserSettings.cloudName(cloud))")
+        } else if settings.useRealProfile {
+            String(localized: "With your logins on \(facts.gatewayName)")
+        } else {
+            String(localized: "A browser on \(facts.gatewayName)")
+        }
+        return SetupStatus(id: ID.browser, state: .ready, title: title, detail: detail, docs: Docs.browser)
     }
 }

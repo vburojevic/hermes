@@ -113,6 +113,7 @@ final class SetupCenter {
         return [
             GatewaySetup.memory(facts),
             GatewaySetup.passwords(facts),
+            GatewaySetup.browser(facts),
             GatewaySetup.search(facts),
             GatewaySetup.checkpoints(facts),
             GatewaySetup.tasks(facts),
@@ -285,7 +286,7 @@ final class SetupCenter {
     /// Statuses that wait on each read while it's out.
     private static let waiting: [Read: Set<String>] = [
         .status: [GatewaySetup.ID.hermes, GatewaySetup.ID.tasks, GatewaySetup.ID.search, GatewaySetup.ID.board],
-        .config: [GatewaySetup.ID.checkpoints, GatewaySetup.ID.groupChats],
+        .config: [GatewaySetup.ID.checkpoints, GatewaySetup.ID.groupChats, GatewaySetup.ID.browser],
         .update: [GatewaySetup.ID.hermes],
         .host: [GatewaySetup.ID.priority],
         .board: [GatewaySetup.ID.board],

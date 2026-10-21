@@ -493,6 +493,14 @@ newer Hermes Agent on Studio Mac." and `hermes update`. The page itself opens fr
 `user-guide/features/credential-vault`. Mock: `POST /api/mock/vault {"bitwarden": "unlocked"}`,
 `{"onepassword": "missing"}`, `{"older": true}` ([web.md](web.md) §10).
 
+### 4.20 Browser
+
+`GET /api/config` (the `.config` read) and Bot Mode ([web.md](web.md) §5): where Hermes browses is
+read and written on the backend, so Browser needs Bot Mode. Once read it's Ready, with the place
+new chats use as the detail ("A browser on Studio Mac", "With your logins on Studio Mac", "In the
+cloud · Browserbase"); the row opens the Browser page (Open Apps & Tools on the Mac). Docs:
+`user-guide/features/browser`.
+
 ## 5. Mocks and launch flags
 
 `Tools/mock-hermes/setup.py` serves each "not set up" state: start the backend with `--setup

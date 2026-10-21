@@ -9,7 +9,8 @@ import AppKit
 /// `-HERMES_MAC_DRIVE "wait 9; press Developer; wait 3; tap 150 190; wait 3; click top-button"`.
 /// Steps: `wait <seconds>`; `press <label>` (a toolbar item); `tap <x> <y>` (points from the
 /// Settings window's top left: a screenshot's pixels halved); `click top-button` (the topmost
-/// AppKit button, which on a pushed page is its back button); `key cmd+[`; `tabs` (Settings tabs
+/// AppKit button, which on a pushed page is its back button); `key cmd+[`, `key return` (a sheet's
+/// default button); `tabs` (Settings tabs
 /// shown and clipped); `dump`, `views` and `toolbar` (the accessibility, content and toolbar view
 /// trees, with frames). Each step logs `HERMES_MAC_DRIVE` with
 /// its result and the Settings window's title, which is the page it shows.
@@ -149,14 +150,17 @@ enum MacDebugDriver {
     }
 
     private static func key(_ combo: String) -> String {
-        guard combo == "cmd+[" else { return "only cmd+[ is supported" }
-        guard let window = settingsWindow,
-              let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: .command,
+        guard combo == "cmd+[" || combo == "return" else { return "only cmd+[ and return are supported" }
+        // Return goes to a sheet over Settings when there is one: its default button.
+        guard let settings = settingsWindow else { return "no Settings window" }
+        let window = combo == "return" ? (settings.attachedSheet ?? settings) : settings
+        let (flags, characters, code): (NSEvent.ModifierFlags, String, UInt16) = combo == "return" ? ([], "\r", 36) : (.command, "[", 33)
+        guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags,
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                characters: "[", charactersIgnoringModifiers: "[", isARepeat: false, keyCode: 33
+                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
               )
-        else { return "no Settings window" }
+        else { return "no event" }
         return window.performKeyEquivalent(with: event) ? "handled" : "not handled"
     }
 

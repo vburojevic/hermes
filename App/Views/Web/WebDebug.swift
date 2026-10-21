@@ -13,6 +13,31 @@ extension DebugFlags {
     }
 }
 
+extension DebugFlags {
+    /// `-HERMES_BROWSER YES|consent` opens the Browser page, and on it the profile consent
+    /// (`docs/development.md`).
+    static var browser: String? {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "HERMES_BROWSER")
+        #else
+        nil
+        #endif
+    }
+}
+
+/// `-HERMES_BROWSER …`: the Browser page with a model of its own (screenshots).
+struct DebugBrowserPage: View {
+    @State private var model: BrowserSettingsModel
+
+    init(workspace: BotWorkspace) {
+        _model = State(initialValue: BrowserSettingsModel(workspace: workspace))
+    }
+
+    var body: some View {
+        BrowserSettingsView(model: model)
+    }
+}
+
 /// `-HERMES_PASSWORDS …`: Passwords with a model of its own (screenshots).
 struct DebugPasswordsPage: View {
     @State private var model: PasswordsModel

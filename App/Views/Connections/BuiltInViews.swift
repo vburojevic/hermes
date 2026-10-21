@@ -125,6 +125,13 @@ struct BuiltInTabSections: View {
                 Task { await model.setToolset(toolset, enabled: on) }
             }
         }
+        #if os(iOS)
+        // Where Hermes browses (`docs/web.md` §2): the same page as Settings → Browser. The Mac lists
+        // it in the Apps & Tools sidebar.
+        if toolset.name == "browser", toolset.enabled, let workspace = model.workspace {
+            BrowserSettingsRow(workspace: workspace)
+        }
+        #endif
         if toolset.enabled, model.toolsetsWithoutKeys.contains(toolset.name), model.isOnline {
             // Hermes takes the key over REST (`docs/setup.md` §4.5).
             Button("Add a Key for \(BuiltInToolsetInfo.info(toolset.name, gateway: model.gatewayName)?.title ?? toolset.name)…") {

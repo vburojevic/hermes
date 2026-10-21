@@ -23,12 +23,18 @@ private struct MacAppsAndToolsContent: View {
 
     enum Selection: Hashable {
         case app(String), server(String), plugin(String), builtIn, add
+        /// Built-in → Browser: where Hermes browses (`docs/web.md` §5).
+        case browser
+        /// "And Passwords": opens the Passwords tab.
+        case passwords
         /// Suggested at the head of the Plugins list (`macPluginsSuggested`).
         case suggested
     }
 
     @State private var selection: Selection?
     @State private var installingFromGit = false
+    /// The Browser item's page model, made with the pane and kept while it's open.
+    @State private var browserModel: BrowserSettingsModel?
 
     /// `-HERMES_APPS_TOOLS apps:github|mcp:sentry|plugins:xcode|builtin|add` (screenshots).
     private static var debugSelection: Selection? {
@@ -36,6 +42,7 @@ private struct MacAppsAndToolsContent: View {
         let parts = route.split(separator: ":", maxSplits: 1).map(String.init)
         let item = parts.count > 1 ? parts[1] : nil
         switch (parts[0], item) {
+        case ("builtin", "browser"?): return .browser
         case ("builtin", _): return .builtIn
         case (_, "add"?): return .add
         case ("mcp", let name?): return .server(name)
@@ -57,13 +64,27 @@ private struct MacAppsAndToolsContent: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task(id: model.isOnline) {
+            if browserModel == nil, let workspace = model.workspace {
+                let created = BrowserSettingsModel(workspace: workspace)
+                browserModel = created
+                Task { await created.load() }
+            }
             if model.isOnline { await model.load() }
-            if selection == nil { selection = Self.debugSelection ?? model.apps.first.map { .app($0.id) } ?? .builtIn }
+            if selection == nil {
+                selection = (DebugFlags.browser != nil ? .browser : nil) ?? Self.debugSelection ?? model.apps.first.map { .app($0.id) } ?? .builtIn
+            }
             // `-HERMES_APPS_TOOLS plugins:review:<name>|app:<name>|catalog|hidden`: that page in the Suggested pane.
             if let route = DebugFlags.appsAndTools, route.hasPrefix("plugins:"),
                let page = AppsAndToolsView.debugPluginRoute(String(route.dropFirst("plugins:".count))) {
                 selection = .suggested
                 model.route = page
+            }
+        }
+        .onChange(of: selection) {
+            // "And Passwords" is a way to the Passwords tab, not a page here.
+            if selection == .passwords {
+                selection = .browser
+                UserDefaults.standard.set("passwords", forKey: MacSettingsView.paneKey)
             }
         }
         .modifier(AppsAndToolsAlerts(model: model))
@@ -129,6 +150,16 @@ private struct MacAppsAndToolsContent: View {
                     GlyphTile(symbol: "terminal", ink: true, size: 24)
                 }
                 .tag(Selection.builtIn)
+                ToolsListRow(title: String(localized: "Browser"), detail: browserModel?.summary ?? String(localized: "Where Hermes browses"), needsAttention: false) {
+                    GlyphTile(symbol: "safari", ink: true, size: 24)
+                }
+                .tag(Selection.browser)
+            }
+            Section("And Passwords") {
+                ToolsListRow(title: String(localized: "Passwords"), detail: String(localized: "Settings → Passwords"), needsAttention: false) {
+                    GlyphTile(symbol: "key.fill", ink: true, size: 24)
+                }
+                .tag(Selection.passwords)
             }
             Label("Add App, MCP Server or Plugin…", systemImage: "plus")
                 .foregroundStyle(Theme.secondaryText)
@@ -156,6 +187,12 @@ private struct MacAppsAndToolsContent: View {
                     .task(id: model.isOnline) { await hub.loadForHub() }
                     .onDisappear { hub.hubClosed() }
             }
+        case .browser?:
+            if let browserModel {
+                BrowserSettingsView(model: browserModel)
+            }
+        case .passwords?:
+            ContentUnavailableView("Passwords", systemImage: "key", description: Text("Passwords has its own tab in Settings."))
         case .builtIn?:
             Form { BuiltInTabSections(model: model) }
                 .formStyle(.grouped)

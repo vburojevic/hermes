@@ -302,6 +302,12 @@ password with "wrong" in it fails, one with "slow" times out after 20 s, any oth
 with `-HERMES_OPEN settings` on iPhone and iPad: `-HERMES_PASSWORDS YES|add:login|add:payment|add:address|unlock:<source>|item:<id>`
 (on the Mac it opens Settings → Passwords).
 
+And where Hermes browses (`Tools/mock-hermes/browser.py`, [web.md](web.md) §10): `browser.manage`
+(a window attaches after about 2 s), the browser and blocked-sites config, and Browserbase's keys
+making it the cloud provider. `POST /api/mock/browser {"connect": "fails"|"unreachable"}` breaks
+the window. `-HERMES_BROWSER YES|consent` opens the Browser page (on the Mac, Apps & Tools on
+Browser).
+
 A message with "key expired" fails its turn on Anthropic's key (Add Key… in the chat; the mock's
 `model.save_key` takes it), "signed out" on OpenAI Codex's sign-in.
 

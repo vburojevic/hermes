@@ -2083,6 +2083,12 @@ def main():
     _vault = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_vault)
     _vault.install(globals())
+    # Where Hermes browses (docs/web.md §5): browser.manage and the browser config, after every
+    # module whose /api/config it wraps.
+    _spec = _util.spec_from_file_location("mock_browser", _pathlib.Path(__file__).resolve().parent / "browser.py")
+    _browser = _util.module_from_spec(_spec)
+    _spec.loader.exec_module(_browser)
+    _browser.install(globals())
     _spec = _util.spec_from_file_location("mock_push", _pathlib.Path(__file__).resolve().parent / "push.py")
     _push = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_push)
