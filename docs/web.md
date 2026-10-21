@@ -317,8 +317,11 @@ Not built yet.
   approvals on the gateway and transport surfaces, and Hermes asks for a card fill under
   `vault-payment`. Since 1.4.3 it sends one like a flagged command's: `OPEN` in the fallback
   notification (shown only when the app's extension can't run) and no request id in the Live
-  Activity update, so neither offers Allow (`notices.opens_only`). The app still opens the chat
-  for an Allow from an older plugin's notification.
+  Activity update, so neither offers Allow (`notices.opens_only`). Since 1.4.4 it also seals a card
+  fill as `smart_denied`: app builds from before card fills knew nothing of them, and would have
+  shown one with Allow (their extension swaps `OPEN` for `APPROVAL` when the command is whole);
+  `smart_denied` is what they refuse. The app still opens the chat for an Allow from an older
+  plugin's notification.
 
 - **No card or address details in `vault.list`.** The design shows "Visa •• 4242 · expires 08/28"
   and an address's first line; Hermes keeps all of those encrypted, so the rows show the name and

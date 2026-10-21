@@ -321,7 +321,8 @@ Rules:
   whose command is cut or empty is never answered from the notification either. Nor is a command
   Hermes's safety check flagged, or a card fill. Those open the chat, where the card shows the whole
   command; the plugin sends both as `OPEN` even in the fallback notification, with no request id in
-  the Live Activity (`notices.opens_only`; a card fill since plugin 1.4.3).
+  the Live Activity (`notices.opens_only`; a card fill since plugin 1.4.3). From 1.4.4 a card fill
+  is sealed as `smart_denied` too, so app builds from before card fills refuse its Allow as well.
 - Approval text is decoded through `VisibleText`, so invisible and reordering characters show as
   their codes (`⟨U+202E⟩`) on the notification, the expanded view and the Live Activity.
 - **More Options…** opens the chat with the approval card docked, showing every answer it allows

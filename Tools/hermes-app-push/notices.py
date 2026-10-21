@@ -257,6 +257,9 @@ def approval(*, request_id: str, session_id: str, chat: str, gateway_name: str, 
              surface: str = "", bot: str = "") -> Notice:
     command = clip(redact(command), MAX_COMMAND)
     description = clip(redact(description), 200)
+    # A card fill also goes out flagged: app builds from before card fills knew only `smart_denied`,
+    # and refuse Allow from a banner and the Lock Screen for it.
+    smart_denied = smart_denied or surface == PAYMENT_SURFACE
     if description.startswith("Save to memory"):
         # The memory tool asking before it saves: the entry is the one memory text a push carries.
         return Notice(

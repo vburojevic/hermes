@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.3"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.4"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -302,7 +302,8 @@ def test_a_flagged_command_is_never_offered_allow_outside_the_app(hermes):
 
 def test_a_card_fill_only_opens_the_chat(hermes):
     """A card fill (surface vault-payment) notifies like a flagged command: OPEN even before the app's
-    extension fills it in, and a Live Activity with no request id. The app answers it only on its card."""
+    extension fills it in, and a Live Activity with no request id. It's sealed as flagged too, so app
+    builds from before card fills refuse Allow from the banner. The app answers it only on its card."""
     _, handler = hermes
     key, token = make_device(handler, "payment")
     from tools import approval
@@ -320,7 +321,7 @@ def test_a_card_fill_only_opens_the_chat(hermes):
     worker.start()
     push = wait_for(lambda: next(iter(pushes_for(token, "alert")), None))
     content = opened(key, push)
-    assert content["surface"] == "vault-payment" and not content["smart_denied"]
+    assert content["surface"] == "vault-payment" and content["smart_denied"] is True
     assert push["payload"]["aps"]["category"] == "OPEN"
     activity = wait_for(lambda: next((p for p in pushes_for(activity_token, "liveactivity")
                                       if p["payload"]["aps"]["content-state"]["phase"] == "needsYou"), None))

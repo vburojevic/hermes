@@ -97,4 +97,20 @@ struct WebStepTests {
         #expect(request.isPaymentFill)
         #expect(request.paymentFill?.label == "Personal Visa")
     }
+
+    /// Push plugin 1.4.4 seals a card fill as flagged too, for app builds from before card fills:
+    /// this one still shows it as the card fill, and never answers it from the banner.
+    @Test func aCardFillSealedAsFlaggedStillReadsAsTheCardFill() throws {
+        let notice = try JSONDecoder().decode(PushNotice.self, from: Data("""
+        {"kind": "approval", "id": "r1", "request_id": "r1", "session_id": "s1", "summary": "Reorder cat food",
+         "command": "Fill payment card 'Personal Visa' on https://www.amazon.com", "choices": ["once", "deny"],
+         "smart_denied": true, "surface": "vault-payment"}
+        """.utf8))
+        #expect(notice.isPaymentFill && notice.smartDenied)
+        #expect(!notice.answersInBanner)
+        let shown = NoticePresentation(notice, gatewayName: "Studio Mac", slot: nil, showDetails: .always)
+        #expect(shown.title == "Fill your card on amazon.com?")
+        #expect(shown.body == "Open the chat to decide. Fill Card asks for Face ID.")
+        #expect(shown.categoryIdentifier == "OPEN")
+    }
 }
