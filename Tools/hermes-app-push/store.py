@@ -296,10 +296,12 @@ class Store:
             (state["read_pushes"].get(device_id) or {}).pop("pending", None)
         self.update(change)
 
-    def set_badge(self, device_id: str, unread: dict | None, muted: dict | None, others: int = 0) -> None:
-        """Leaving the app, a device that counts unread chats in its badge names them (``unread``) and the
-        muted ones, and what the person's other gateways add to its badge (``others``); it showed the open
-        requests plus those. None: it doesn't count them."""
+    def set_badge(self, device_id: str, unread: dict | None, muted: dict | None, others: int = 0,
+                  listed: dict | None = None) -> None:
+        """Leaving the app, a device that counts unread chats in its badge names them (``unread``), the muted
+        ones, every chat its list shows (``listed``: only those may count) and what the person's other
+        gateways add to its badge (``others``); it showed the open requests plus those. None: it doesn't
+        count them."""
         def change(state: dict) -> None:
             if unread is None:
                 state["badges"].pop(device_id, None)
@@ -308,7 +310,8 @@ class Store:
             record = {"chats": list(unread["chats"]), "rooms": list(unread["rooms"]),
                       "muted_chats": list((muted or {}).get("chats") or []),
                       "muted_rooms": list((muted or {}).get("rooms") or []), "others": max(0, int(others)),
-                      "at": time.time()}
+                      "listed_chats": list((listed or {}).get("chats") or []),
+                      "listed_rooms": list((listed or {}).get("rooms") or []), "at": time.time()}
             record["shown"] = _badge(state, record)
             state["badges"][device_id] = record
         self.update(change)
@@ -326,6 +329,10 @@ class Store:
                 _keep_newest(sent, DELIVERED_MAX)
                 record = state["badges"].get(device_id)
                 if record is None or key in record.get(f"muted_{kind}", []) or key in record.get(kind, []):
+                    continue
+                # Only a chat the app lists counts: a routine's run, a Bot-to-Bot one-shot chat or a helper's
+                # session is news the person can't open, and counted for ever (a badge of 120 for 2 unread).
+                if key not in record.get(f"listed_{kind}", []):
                     continue
                 record[kind] = (record.get(kind, []) + [key])[-UNREAD_MAX:]
                 moved.append(device_id)

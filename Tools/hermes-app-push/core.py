@@ -22,7 +22,7 @@ from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
 from .store import Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -48,6 +48,7 @@ TIDY_POLL_SECONDS = 30.0       # how often it looks for a finished tidy (the cur
 ROOM_MESSAGE_SETTLE = 5.0      # a Bot's streamed message counts as finished after this quiet time
 PUSH_DEBOUNCE = 3.0            # a read or badge push waits this long, so a burst of reads goes as one
 MAX_PRESENCE_IDS = 200         # chats (and rooms) a device may name as unread or muted when it leaves
+MAX_LISTED_IDS = 600           # chats (and rooms) its list shows, when it leaves
 MAX_READ_IDS = 50              # chats (and rooms) one ``read`` may name
 # Surfaces whose replies the app reports. A messaging platform's own app already notifies, and cron
 # results come through the delivery platform.
@@ -171,7 +172,8 @@ class Push:
             unread = _id_sets(args.get("unread"))
             others = args.get("badge_others")
             others = min(int(others), 9999) if isinstance(others, (int, float)) and not isinstance(others, bool) and others > 0 else 0
-            self.store.set_badge(device_id, unread, _id_sets(args.get("muted")) if unread is not None else None, others)
+            self.store.set_badge(device_id, unread, _id_sets(args.get("muted")) if unread is not None else None, others,
+                                 _id_sets(args.get("listed"), MAX_LISTED_IDS))
         self._release_held(device_id, state, session, live)
         return {"ok": True, "open": len(self.store.open_requests())}
 
@@ -904,14 +906,14 @@ def _ids(value: Any, key: str, limit: int) -> list[str]:
     return list(dict.fromkeys(v[:120] for v in value if isinstance(v, str) and v))[:limit]
 
 
-def _id_sets(value: Any) -> dict | None:
-    """``{chats, rooms}`` as ``presence`` takes it (``unread``, ``muted``); None when it isn't one."""
+def _id_sets(value: Any, limit: int = 0) -> dict | None:
+    """``{chats, rooms}`` as ``presence`` takes it (``unread``, ``muted``, ``listed``); None when it isn't one."""
     if not isinstance(value, dict):
         return None
     sets = {}
     for kind in ("chats", "rooms"):
         try:
-            sets[kind] = _ids(value.get(kind), kind, MAX_PRESENCE_IDS)
+            sets[kind] = _ids(value.get(kind), kind, limit or MAX_PRESENCE_IDS)
         except PushError:
             sets[kind] = []
     return sets

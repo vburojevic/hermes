@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.1"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.2"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1303,7 +1303,8 @@ def test_the_badge_follows_reads_and_new_replies(reading):
     unread, still_unread, muted, fresh = ("20261021_badge_a", "20261021_badge_b", "20261021_badge_muted",
                                           "20261021_badge_fresh")
     presence(handler, "badge-phone", state="away", unread={"chats": [unread, still_unread], "rooms": ["room-badge"]},
-             muted={"chats": [muted], "rooms": []})
+             muted={"chats": [muted], "rooms": []},
+             listed={"chats": [unread, still_unread, muted, fresh], "rooms": ["room-badge"]})
     presence(handler, "plain-phone", state="away")  # it doesn't count unread chats: no record, no badge pushes
     state = push.store.read()
     record = state["badges"]["dev-badge-phone"]
@@ -1321,10 +1322,14 @@ def test_the_badge_follows_reads_and_new_replies(reading):
     assert (first["push_type"], first["priority"], first["collapse_id"]) == ("alert", 5, "badge")
     assert time.time() < first["expiration"] <= time.time() + 3601
 
-    # A reply in a new chat: one more. A muted chat's reply counts nothing.
+    # A reply in a chat the app lists: one more. A muted chat's reply counts nothing, and neither do
+    # replies in chats the app doesn't list (a routine's runs, Bot-to-Bot one-shot chats: each a new
+    # session, which once took a badge to 120 for 2 unread chats).
     finish_turn(plugins, fresh, "badge-1")
     finish_turn(plugins, muted, "badge-2")
-    wait_for(lambda: len(notices_for(key, token)) == 2)
+    for n in range(6):
+        finish_turn(plugins, f"20261021_oneshot_{n}", f"badge-oneshot-{n}")
+    wait_for(lambda: len(notices_for(key, token)) == 8)
     later.run()
     second = wait_for(lambda: badges_for(token)[1:] and badges_for(token)[1])
     assert second["payload"] == {"aps": {"badge": shown}}

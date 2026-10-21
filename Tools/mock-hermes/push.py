@@ -162,6 +162,8 @@ def cmd_presence(args):
                 STATE["badges"][device_id] = {
                     "chats": unread["chats"], "rooms": unread["rooms"], "muted_chats": muted["chats"],
                     "muted_rooms": muted["rooms"], "others": others,
+                    "listed_chats": (_id_sets(args.get("listed")) or {"chats": []})["chats"],
+                    "listed_rooms": (_id_sets(args.get("listed")) or {"rooms": []})["rooms"],
                     "shown": len(STATE["requests"]) + len(unread["chats"]) + len(unread["rooms"]) + others}
         device = STATE["devices"].get(device_id)
         open_count = len(STATE["requests"])
@@ -350,7 +352,9 @@ def delivered(notice, device_ids):
         for device_id in device_ids:
             STATE["delivered"].setdefault(device_id, {}).setdefault(kind, {})[key] = time.time()
             record = STATE["badges"].get(device_id)
-            if record and key not in record[f"muted_{kind}"] and key not in record[kind]:
+            # Only a chat the app lists counts (plugin 1.4.2): routine runs and one-shot chats never do.
+            if (record and key not in record[f"muted_{kind}"] and key not in record[kind]
+                    and key in record.get(f"listed_{kind}", [])):
                 record[kind].append(key)
                 moved.append(device_id)
     for device_id in moved:
