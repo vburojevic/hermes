@@ -45,8 +45,9 @@ extension AppPlugin {
         public init() {}
     }
 
-    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.3 sends a card fill's
-    /// notification as open-only, same access; 1.4.2 counts only chats the app lists in a sleeping
+    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.4 seals a card fill
+    /// as flagged too, for older app builds, same access; 1.4.3 sends a card fill's notification as
+    /// open-only, same access; 1.4.2 counts only chats the app lists in a sleeping
     /// device's badge, same access; 1.4.1 clips notices by
     /// bytes, so a long command in any script still fits the relay, same access; 1.4.0 passes reads on
     /// to the person's other devices (`read`, read pushes, badge-only pushes) with the same access;
@@ -57,10 +58,10 @@ extension AppPlugin {
     /// Settings → Setup → Priority); 1.2.1 sent no notice for a turn that ends in "[SILENT]".
     public static let push = AppPlugin(
         name: "hermes-app-push", repo: "vburojevic/hermes-app-push",
-        ref: "4d30b86cf68d9134a63ae3279f64a2e88deda7fc", version: "1.4.3", minimumVersion: "1.4.3",
+        ref: "ce536796f02dff945824528da95af5983754024b", version: "1.4.4", minimumVersion: "1.4.4",
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
                        "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess, "1.4.2": pushAccess,
-                       "1.4.3": pushAccess],
+                       "1.4.3": pushAccess, "1.4.4": pushAccess],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )
