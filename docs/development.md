@@ -334,14 +334,20 @@ Fill Card with Face ID) and "wrong site" (refused on gist.github.com). On a simu
 with `xcrun simctl spawn <udid> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1` then `-p` the
 same name, and pass a prompt with `notifyutil -p com.apple.BiometricKit_Sim.pearl.match`.
 
-**The secrets search** ([web.md](web.md) §8), after a full sign-in, a 2FA code, an Add Card and a card
-fill against the mock: put every value you typed (master password, passwords, card number, the code;
-a short security code as `"cvc":"737"`) in a file outside the repo, one per line, and run
-`Scripts/dev/web-secret-search.sh --secrets <file> --udid <simulator> --mac --mock-log <mock output>
---since 1h` (add `--bundle <id>` for a Mac build with its own bundle id). It searches the simulator's
-and this Mac's unified logs, the app's data, group containers, preferences, caches, web data and saved
-state, crash reports and the mock's output, prints where a value turned up (by line number, never the
-value) and exits 1; "Nothing found" and 0 is the pass.
+**The secrets search** ([web.md](web.md) §8), after a full sign-in, a 2FA code, an Add Card, a card
+fill and a checkout in the app's browser against the mock: put every value you typed (master
+password, passwords, card number, the code; a short security code as `"cvc":"737"`) in a file
+outside the repo (`chmod 600`), one per line, and run `Scripts/dev/web-secret-search.sh --secrets
+<file> --udid <simulator> --mac --mock-log <mock output> --since 1h` (`--bundle <id>` for another
+simulator build, `--mac-bundle <id>` and `--mac-home <dir>` for a Mac build with its own bundle id or
+run under `CFFIXED_USER_HOME`). The values are read from the file only, never put on a command line,
+and looked for as typed, JSON-escaped, percent-encoded, as bare digits and in UTF-16. It searches
+the simulator's and this Mac's unified logs (info and debug too), the app's data, group containers,
+preferences, caches, web data and saved state, the folders an unsandboxed Mac build keeps straight
+under `~/Library/Caches` and `Application Support` (Transcripts, Sessions, Outbox…), crash reports
+and the mock's output. It prints where a value turned up (by line number, never the value) and
+exits 1; it exits 2 when anything couldn't be searched or no place was given; "Nothing found" and 0
+is the pass.
 
 **Browsing in this app** ([web.md](web.md) §6) needs Bot Mode signed in, as Hermes refuses the
 controller to Automatic sign-in: start the backend with `--password <anything>` and launch with
