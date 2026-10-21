@@ -154,11 +154,12 @@ public struct AppPushClient: Sendable {
     ///   - unread: leaving, the chats the app icon badge counts, `muted` the muted ones,
     ///     `listed` every chat the app lists (only those may count) and `badgeOthers` what other
     ///     gateways add to it: the plugin keeps the badge right while the app is away (plugin 1.4.0,
-    ///     `listed` 1.4.2).
+    ///     `listed` 1.4.2). `badge` is what the icon shows as the app leaves: when that isn't the
+    ///     plugin's count, a badge push sets it right (1.4.5).
     @discardableResult
     public func setPresence(_ presence: Presence, deviceID: String, visibleChat: String? = nil, live: [String]? = nil,
                             sync: [String]? = nil, unread: ChatLists? = nil, muted: ChatLists? = nil,
-                            listed: ChatLists? = nil, badgeOthers: Int? = nil) async throws -> Int {
+                            listed: ChatLists? = nil, badgeOthers: Int? = nil, badge: Int? = nil) async throws -> Int {
         var args: [String: JSONValue] = ["device_id": .string(deviceID), "state": .string(presence.rawValue)]
         if let visibleChat { args["session_id"] = .string(visibleChat) }
         if let live { args["live"] = .array(live.map(JSONValue.string)) }
@@ -167,6 +168,7 @@ public struct AppPushClient: Sendable {
         if let muted { args["muted"] = muted.json }
         if let listed { args["listed"] = listed.json }
         if let badgeOthers { args["badge_others"] = .number(Double(max(0, badgeOthers))) }
+        if let badge { args["badge"] = .number(Double(max(0, badge))) }
         let answer = try await run("presence", args)
         return Int(answer["open"]?.doubleValue ?? 0)
     }

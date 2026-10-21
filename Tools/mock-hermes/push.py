@@ -159,14 +159,19 @@ def cmd_presence(args):
             else:
                 others = args.get("badge_others")
                 others = int(others) if isinstance(others, (int, float)) and not isinstance(others, bool) and others > 0 else 0
+                # What the icon shows as the app leaves (plugin 1.4.5): a count that isn't this one is set right.
+                shown = args.get("badge")
+                shown = int(shown) if isinstance(shown, (int, float)) and not isinstance(shown, bool) and shown >= 0 else None
                 STATE["badges"][device_id] = {
                     "chats": unread["chats"], "rooms": unread["rooms"], "muted_chats": muted["chats"],
                     "muted_rooms": muted["rooms"], "others": others,
                     "listed_chats": (_id_sets(args.get("listed")) or {"chats": []})["chats"],
                     "listed_rooms": (_id_sets(args.get("listed")) or {"rooms": []})["rooms"],
-                    "shown": len(STATE["requests"]) + len(unread["chats"]) + len(unread["rooms"]) + others}
+                    "shown": shown}
         device = STATE["devices"].get(device_id)
         open_count = len(STATE["requests"])
+    if args["state"] == "away" and device_id in STATE["badges"]:
+        soon("badge", device_id, PUSH_DEBOUNCE)
     for request in released:
         log(f"→ held request to {device.get('name') if device else device_id} (left the chat)")
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
@@ -534,6 +539,14 @@ def deliver(notice, walked_away=()):
         log(f"→ {notice.kind} '{notice.title}' to {device.get('name') or device_id}")
         sent.append(device_id)
     delivered(notice, sent)
+    if notice.request_id:
+        # Its extension counts the request in the badge, so that's what the icon shows now (plugin 1.4.5).
+        with LOCK:
+            for device_id in sent:
+                record = STATE["badges"].get(device_id)
+                if record is not None:
+                    record["shown"] = min(len(STATE["requests"]) + len(record["chats"]) + len(record["rooms"])
+                                          + record.get("others", 0), 9999)
 
 
 def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away):
@@ -562,6 +575,9 @@ def withdraw(ids):
         request = notices.withdraw_request(device, closed, GATEWAY, open_count)
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
     log(f"withdrew {', '.join(closed)}")
+    # Like plugin 1.4.5: the badge goes as its own push too, since iOS may drop the background withdraw.
+    for device_id in list(STATE["badges"]):
+        soon("badge", device_id, PUSH_DEBOUNCE)
 
 
 def sync(stored, profile=None):

@@ -81,7 +81,7 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
 | `register` | `device_id`, `token` (APNs, hex), `topic` (bundle id), `environment` (`development` / `production`, from the provisioning profile), `public_key` (base64 X25519), `platform` (`ios` / `ipados`), `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}` (the relay installation id and the gateway's name), `relay` (`ok` or the error), `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2) and `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) | `open` (open requests) |
+| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2), `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) and `badge` (what the icon shows as the app leaves; 1.4.5) | `open` (open requests) |
 | `read` | `device_id` (the device that read), `chats` (session ids: each chat's id and its lineage root, a Bot Chat's stored id), `rooms` (group room ids). Plugin 1.4.0 | `ok`, `open` |
 | `activity` | `device_id`, `token` (none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` | `version`, `gateway`, `relay_error`, `devices`, `registered`, `preferences`, `open` |
@@ -275,6 +275,14 @@ Rules:
     changes while the device is away sends a badge-only push (`aps {badge}`, nothing shown, priority
     5, collapse id `badge`, plus `badge_others`), so the Lock Screen's badge is right even when the
     app isn't woken.
+  - The icon never keeps a count the person can't see (plugin 1.4.5). Leaving, the app says what its
+    icon shows (`badge`) and takes the `open` count the gateway answers, so a count kept from a
+    notice hours ago (requests answered elsewhere while the phone slept, whose background withdraw
+    iOS dropped: 8 on the icon, 0 unread chats) goes then. When the icon's count isn't the plugin's
+    (or an older app doesn't say), a badge push sets it. A request's notice counts as shown on the
+    devices it went to, and a withdraw is followed by a badge push, so a request answered elsewhere
+    comes off the icon even when the withdraw never arrives. In front, the open count is read again
+    as soon as Bot Mode comes online, not at the next presence 50 s later.
   - Group chats have no read mark on the gateway (`docs/inbox.md` §1), so the plugin's reads are
     how a room read on one device reaches the others: an app that hears of one (the `read` push,
     or a notice's list, applied when it next comes to the front) marks the room read too, unless

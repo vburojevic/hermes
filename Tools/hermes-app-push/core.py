@@ -22,7 +22,7 @@ from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
 from .store import Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.4"
+VERSION = "1.4.5"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -153,8 +153,9 @@ class Push:
         itself (the Mac); without it, a ``running`` device gets nothing pushed. ``sync`` (with ``away``): the
         chats to keep current on the device while it's away (``_sync``). ``unread`` and ``muted`` (with
         ``away``, ``{chats, rooms}``): what its badge counts as it leaves, and what it never counts, with
-        ``badge_others`` what the person's other gateways add to it; a device that sends no ``unread`` gets no
-        badge pushes (docs/notifications.md §2, Reading)."""
+        ``badge_others`` what the person's other gateways add to it and ``badge`` what its icon shows; when
+        that isn't this count (or isn't said), the badge is set right; a device that sends no ``unread`` gets
+        no badge pushes (docs/notifications.md §2, Reading)."""
         device_id = _require(args, "device_id", _DEVICE)
         state = args.get("state")
         if state not in ("foreground", "running", "away"):
@@ -172,8 +173,14 @@ class Push:
             unread = _id_sets(args.get("unread"))
             others = args.get("badge_others")
             others = min(int(others), 9999) if isinstance(others, (int, float)) and not isinstance(others, bool) and others > 0 else 0
+            shown = args.get("badge")
+            shown = min(int(shown), 9999) if isinstance(shown, (int, float)) and not isinstance(shown, bool) and shown >= 0 else None
             self.store.set_badge(device_id, unread, _id_sets(args.get("muted")) if unread is not None else None, others,
-                                 _id_sets(args.get("listed"), MAX_LISTED_IDS))
+                                 _id_sets(args.get("listed"), MAX_LISTED_IDS), shown)
+            if unread is not None:
+                # An icon left showing a count this gateway doesn't have (a request answered elsewhere while
+                # the app slept, its background push dropped) is set right.
+                self._soon("badge", device_id, PUSH_DEBOUNCE)
         self._release_held(device_id, state, session, live)
         return {"ok": True, "open": len(self.store.open_requests())}
 
@@ -342,6 +349,9 @@ class Push:
             sent += 1
             tracked.append(device_id)
         self._delivered(notice, tracked)
+        if notice.request_id and tracked:
+            with contextlib.suppress(Exception):
+                self.store.note_shown(tracked)
         return sent
 
     def _delivered(self, notice: notices.Notice, device_ids: list[str]) -> None:
@@ -366,6 +376,10 @@ class Push:
             with contextlib.suppress(Exception):
                 request = notices.withdraw_request(device, ids, self.gateway(), len(state["requests"]))
                 self.relay.enqueue(Delivery(device_id, request, on_done=self._done(device_id)))
+        # The withdraw is a background push, which iOS may never deliver to an app that isn't running: the
+        # badge goes as its own push, so a request answered elsewhere doesn't stay on the icon.
+        for device_id in state["badges"]:
+            self._soon("badge", device_id, PUSH_DEBOUNCE)
 
     def _done(self, device_id: str) -> Callable[[dict], None]:
         return lambda result: self._handle_result(device_id, result)

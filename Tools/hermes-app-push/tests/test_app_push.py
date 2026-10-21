@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.4"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.5"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1326,20 +1326,75 @@ def test_reads_inside_the_window_go_as_one_push(reading):
     assert latest["collapse_id"] == "read"
 
 
+def test_an_icon_left_wrong_is_set_right(reading):
+    """The icon must show what the person can see. Leaving, the app says what its icon shows; when that
+    isn't this gateway's count (a request answered elsewhere while the phone slept, whose background
+    withdraw iOS dropped, left 8 on it), a badge push sets it. An older app that doesn't say gets one."""
+    plugins, handler, push, later = reading
+    _key, token = make_device(handler, "stale-phone", reply_after=0)
+    open_now = len(push.store.read()["requests"])
+    presence(handler, "stale-phone", state="away", unread={"chats": [], "rooms": []}, listed={"chats": [], "rooms": []},
+             badge=open_now + 8)
+    assert later.delays(("badge", "dev-stale-phone")) == [3.0]
+    later.run()
+    first = wait_for(lambda: badges_for(token) and badges_for(token)[0])
+    assert first["payload"] == {"aps": {"badge": open_now}}
+    # Saying the right count sends nothing.
+    presence(handler, "stale-phone", state="foreground")
+    presence(handler, "stale-phone", state="away", unread={"chats": [], "rooms": []}, listed={"chats": [], "rooms": []},
+             badge=open_now)
+    later.run()
+    time.sleep(0.3)
+    assert len(badges_for(token)) == 1
+    # An app from before `badge`: its icon is set once.
+    presence(handler, "stale-phone", state="foreground")
+    presence(handler, "stale-phone", state="away", unread={"chats": [], "rooms": []}, listed={"chats": [], "rooms": []})
+    later.run()
+    second = wait_for(lambda: badges_for(token)[1:] and badges_for(token)[1])
+    assert second["payload"] == {"aps": {"badge": open_now}}
+
+
+def test_a_request_answered_elsewhere_comes_off_the_icon(reading):
+    """A request's notice raises the badge of a device away from the app (its extension counts it); answered
+    elsewhere, its withdraw is a background push iOS may drop, so the badge goes as its own push too."""
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "asked-phone", reply_after=0)
+    from tools import approval
+    from tools.approval_gateway_wait import _await_gateway_decision
+    session = "20261021_badge_request"
+    open_before = len(push.store.read()["requests"])
+    presence(handler, "asked-phone", state="away", unread={"chats": [], "rooms": []}, listed={"chats": [session], "rooms": []},
+             badge=open_before)
+    worker = threading.Thread(target=lambda: _await_gateway_decision(
+        session, lambda data: None, {"command": "ls -la ~/backups", "description": "lists a folder",
+                                     "pattern_key": "ls", "pattern_keys": ["ls"]}))
+    worker.start()
+    alert = wait_for(lambda: next((p for p in pushes_for(token, "alert") if "hermes" in p["payload"]), None))
+    # Counted as shown once the notice has gone (just after the relay takes it).
+    wait_for(lambda: push.store.read()["badges"]["dev-asked-phone"]["shown"] == open_before + 1)
+    approval.resolve_gateway_approval(session, "deny", request_id=opened(key, alert)["request_id"])
+    worker.join(5)
+    wait_for(lambda: len(push.store.read()["requests"]) == open_before)
+    later.run()
+    badge = wait_for(lambda: badges_for(token) and badges_for(token)[-1])
+    assert badge["payload"] == {"aps": {"badge": open_before}}
+
+
 def test_the_badge_follows_reads_and_new_replies(reading):
     plugins, handler, push, later = reading
     key, token = make_device(handler, "badge-phone", reply_after=0)
     _other_key, other = make_device(handler, "plain-phone", reply_after=0)
     unread, still_unread, muted, fresh = ("20261021_badge_a", "20261021_badge_b", "20261021_badge_muted",
                                           "20261021_badge_fresh")
+    counted = len(push.store.read()["requests"]) + 3
     presence(handler, "badge-phone", state="away", unread={"chats": [unread, still_unread], "rooms": ["room-badge"]},
              muted={"chats": [muted], "rooms": []},
-             listed={"chats": [unread, still_unread, muted, fresh], "rooms": ["room-badge"]})
+             listed={"chats": [unread, still_unread, muted, fresh], "rooms": ["room-badge"]}, badge=counted)
     presence(handler, "plain-phone", state="away")  # it doesn't count unread chats: no record, no badge pushes
     state = push.store.read()
     record = state["badges"]["dev-badge-phone"]
     shown = record["shown"]
-    assert shown == len(state["requests"]) + 3 and "dev-plain-phone" not in state["badges"]
+    assert shown == counted and "dev-plain-phone" not in state["badges"]
     assert record["muted_chats"] == [muted]
 
     # Read on another device: one fewer, sent as a badge-only push.
@@ -1389,7 +1444,7 @@ def test_the_badge_follows_reads_and_new_replies(reading):
     # What the person's other gateways add to the badge rides along, so a push from this one doesn't
     # overwrite theirs.
     presence(handler, "badge-phone", state="away", unread={"chats": [unread], "rooms": []}, muted={"chats": [], "rooms": []},
-             badge_others=4)
+             badge_others=4, badge=len(push.store.read()["requests"]) + 1 + 4)
     record = push.store.read()["badges"]["dev-badge-phone"]
     assert record["others"] == 4 and record["shown"] == len(push.store.read()["requests"]) + 1 + 4
     read(handler, "badge-reader", chats=[unread])
@@ -1583,7 +1638,8 @@ def test_an_older_state_file_still_loads(copies, tmp_path):
     later = Later()
     push = core.Push(store=store, later=later)
     push.presence({"device_id": "dev-old", "state": "away", "unread": {"chats": ["20261021_old_chat"]}})
-    assert store.read()["badges"]["dev-old"]["shown"] == 2  # the open request and the chat
+    # An older app doesn't say what its icon shows: the next badge push sets it either way.
+    assert store.read()["badges"]["dev-old"]["shown"] is None
     assert push.read({"device_id": "dev-new", "chats": ["20261021_old_chat"]}) == {"ok": True, "open": 1}
     assert store.claim_badge("dev-old") == 1 and store.claim_badge("dev-old") is None
     assert store.claim_read_push("dev-old") == (None, 0.0)

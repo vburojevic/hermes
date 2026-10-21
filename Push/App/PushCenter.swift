@@ -196,6 +196,11 @@ final class PushCenter {
             if online, wasOnline[workspace.id] == false {
                 registeredAt[workspace.id] = nil
                 failedChecks[workspace.id] = nil
+                #if os(iOS)
+                // Its open requests now, not at the next presence 50 s on: a quick look shouldn't leave a
+                // count from hours ago on the icon.
+                lastPresence = nil
+                #endif
             }
             wasOnline[workspace.id] = online
             if online, gatewayStates[workspace.id]?.isOn == true,
@@ -527,7 +532,7 @@ final class PushCenter {
         lastPresence = nil
         let deviceID = shared.deviceID
         let countsUnread = shared.badgeMode == .unreadChats
-        let targets = model.workspaces.values.compactMap { workspace -> (BotRoster, [String], AwayBadge?, Int)? in
+        let targets = model.workspaces.values.compactMap { workspace -> (UUID, BotRoster, [String], AwayBadge?, Int)? in
             guard gatewayStates[workspace.id]?.isOn == true, let roster = workspace.roster else { return nil }
             // What the badge counts, so the plugin keeps it right while the app is away.
             var badge: AwayBadge?
@@ -535,18 +540,24 @@ final class PushCenter {
                 let lists = workspace.unread.badgeLists()
                 badge = (lists.unread, lists.muted, workspace.unread.listedChats())
             }
-            return (roster, workspace.chatsToKeepCurrent(showing: workspace.id == model.currentWorkspace?.id), badge,
+            return (workspace.id, roster, workspace.chatsToKeepCurrent(showing: workspace.id == model.currentWorkspace?.id), badge,
                     shared.badge(besides: workspace.id))
         }
         // Background time for it, given back before it runs out even if a gateway is slow to answer.
         let activity = BackgroundActivity()
         activity.begin("Hermes presence")
+        // What the icon shows as the app leaves: the plugin sets it right when that isn't its count.
+        let shown = shared.badge
         Task {
-            for (roster, chats, badge, others) in targets where roster.state.isOnline {
-                _ = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
+            for (gateway, roster, chats, badge, others) in targets where roster.state.isOnline {
+                let open = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
                     .setPresence(.away, deviceID: deviceID, sync: chats, unread: badge?.unread, muted: badge?.muted,
-                                 listed: badge?.listed, badgeOthers: badge == nil ? nil : others)
+                                 listed: badge?.listed, badgeOthers: badge == nil ? nil : others, badge: badge == nil ? nil : shown)
+                // The open requests as they are now: a count kept from a notice hours ago (a request
+                // answered elsewhere while the phone slept) leaves the icon here.
+                if let open, let installation = installationID(for: gateway) { shared.recordOpen(open, gateway: installation) }
             }
+            await applyBadge()
             activity.end()
         }
     }

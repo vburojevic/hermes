@@ -297,11 +297,11 @@ class Store:
         self.update(change)
 
     def set_badge(self, device_id: str, unread: dict | None, muted: dict | None, others: int = 0,
-                  listed: dict | None = None) -> None:
+                  listed: dict | None = None, shown: int | None = None) -> None:
         """Leaving the app, a device that counts unread chats in its badge names them (``unread``), the muted
-        ones, every chat its list shows (``listed``: only those may count) and what the person's other
-        gateways add to its badge (``others``); it showed the open requests plus those. None: it doesn't
-        count them."""
+        ones, every chat its list shows (``listed``: only those may count), what the person's other gateways
+        add to its badge (``others``) and the badge it shows (``shown``; older apps don't say, so their
+        badge is set once). None: it doesn't count them."""
         def change(state: dict) -> None:
             if unread is None:
                 state["badges"].pop(device_id, None)
@@ -312,8 +312,20 @@ class Store:
                       "muted_rooms": list((muted or {}).get("rooms") or []), "others": max(0, int(others)),
                       "listed_chats": list((listed or {}).get("chats") or []),
                       "listed_rooms": list((listed or {}).get("rooms") or []), "at": time.time()}
-            record["shown"] = _badge(state, record)
+            # What the icon shows: the next badge push goes when this count differs from it.
+            record["shown"] = shown
             state["badges"][device_id] = record
+        self.update(change)
+
+    def note_shown(self, device_ids: list[str]) -> None:
+        """A request's notice went to these devices: their extension shows the open requests in the badge,
+        so it's what they show now, and a request closing later moves it."""
+        def change(state: dict) -> None:
+            now = time.time()
+            for device_id in device_ids:
+                record = state["badges"].get(device_id)
+                if record is not None and not _in_app(state, device_id, now):
+                    record["shown"] = _badge(state, record)
         self.update(change)
 
     def record_delivered(self, device_ids: list[str], kind: str, key: str) -> list[str]:
