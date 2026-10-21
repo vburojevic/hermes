@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610210714 (October 21, 2026)
+
+- **Mac:** a chat with a question card no longer crashes the app while its window is hidden
+
 ### Build 2610210539 (October 21, 2026)
 
 - **Relay:** accepts badge-only pushes, so a gateway can set the app icon's count
