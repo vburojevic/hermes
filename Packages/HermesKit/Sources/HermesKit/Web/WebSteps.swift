@@ -36,22 +36,62 @@ public struct WebStep: Equatable, Sendable {
         case "browser_navigate":
             let url = arguments?["url"]?.stringValue ?? ""
             let site = Self.site(url) ?? String(localized: "a page")
-            return WebStep(title: isRunning ? String(localized: "Opening \(site)") : String(localized: "Opened \(site)"),
-                           symbol: "globe", preview: Self.shortURL(url), previewIsAddress: true,
-                           failure: isRunning ? nil : genericFailure(json))
+            let failure = isRunning ? nil : genericFailure(json)
+            let title = isRunning ? String(localized: "Opening \(site)")
+                : failure == nil ? String(localized: "Opened \(site)") : String(localized: "Didn't open \(site)")
+            return WebStep(title: title, symbol: "globe", preview: Self.shortURL(url), previewIsAddress: true,
+                           failure: failure, declined: json.map(refusedForPerson) ?? false)
         case "browser_type":
             // The text is often the username Hermes types itself; it never shows in a step.
-            return WebStep(title: isRunning ? String(localized: "Typing into the page") : String(localized: "Typed into the page"), symbol: "keyboard",
-                           failure: isRunning ? nil : genericFailure(json))
+            let failure = isRunning ? nil : genericFailure(json)
+            let title = isRunning ? String(localized: "Typing into the page")
+                : failure == nil ? String(localized: "Typed into the page") : String(localized: "Didn't type into the page")
+            return WebStep(title: title, symbol: "keyboard", failure: failure, declined: json.map(refusedForPerson) ?? false)
         case "browser_exec":
             // Browser Use: the model opens each script with a one-line comment that says what it does.
             let title = comment(in: arguments?["code"]?.stringValue) ?? (isRunning ? String(localized: "Using the browser") : String(localized: "Used the browser"))
             return WebStep(title: title, symbol: "safari", failure: isRunning ? nil : genericFailure(json))
         case "browser_vault":
             return vault(arguments: arguments, json: json, isRunning: isRunning)
+        case _ where BrowserControl.capabilities.contains(name):
+            // The other page steps keep their usual look, unless this app's browser didn't do them.
+            guard !isRunning, let json, controllerFailure(json["error"]?.stringValue) != nil || refusedForPerson(json) else { return nil }
+            // The person has the page: a quiet note, not a failure (Hermes waits for them).
+            return WebStep(title: unfinishedTitle(name), symbol: "safari", failure: genericFailure(json), declined: refusedForPerson(json))
         default:
             return nil
         }
+    }
+
+    /// A step this app's browser didn't finish.
+    private static func unfinishedTitle(_ name: String) -> String {
+        switch name {
+        case "browser_snapshot": String(localized: "Didn't read the page")
+        case "browser_click": String(localized: "Didn't click")
+        case "browser_scroll": String(localized: "Didn't scroll")
+        case "browser_press": String(localized: "Didn't press the key")
+        case "browser_back": String(localized: "Didn't go back")
+        case "browser_screenshot": String(localized: "Didn't look at the page")
+        default: String(localized: "Didn't switch tabs")
+        }
+    }
+
+    /// Hermes's words when this app's browser didn't finish a command (`tools/registry.py` wraps
+    /// the broker's exception: "Tool execution failed: ControllerTimeout: …"), said for a person.
+    static func controllerFailure(_ error: String?) -> String? {
+        guard let error, let range = error.range(of: "Tool execution failed: Controller") else { return nil }
+        switch error[range.upperBound...].prefix(while: \.isLetter) {
+        case "Timeout": return String(localized: "This app's browser didn't answer in 30 seconds.")
+        case "Unavailable": return String(localized: "This app's browser wasn't connected, so Hermes couldn't use it.")
+        case "Cancelled": return String(localized: "Stopped before it finished.")
+        case "Rejected": return String(localized: "This app's browser couldn't do it.")
+        default: return nil
+        }
+    }
+
+    private static func refusedForPerson(_ json: JSONValue) -> Bool {
+        json["success"]?.boolValue == false
+            && (json["error_type"]?.stringValue == "human_has_control" || json["code"]?.stringValue == "human_has_control")
     }
 
     // MARK: Passwords
@@ -114,6 +154,8 @@ public struct WebStep: Equatable, Sendable {
             step.failure = String(localized: "Finish signing in on your device.")
         case "human_has_control"?:
             step.failure = String(localized: "You're in control of the browser; Hermes is waiting.")
+        // TODO(docs/web.md §9): fill the app's browser too, once Hermes has a fill that never passes
+        // the secret through the app.
         case "supervisor_required"?:
             step.title = String(localized: "Didn't sign in")
             step.failure = String(localized: "Passwords can't fill a page in this app's browser. It's your turn to sign in.")
@@ -156,8 +198,10 @@ public struct WebStep: Equatable, Sendable {
     }
 
     private static func genericFailure(_ json: JSONValue?) -> String? {
-        guard let json, json["success"]?.boolValue == false else { return nil }
-        if json["error_type"]?.stringValue == "human_has_control" {
+        guard let json else { return nil }
+        if let words = controllerFailure(json["error"]?.stringValue) { return words }
+        guard json["success"]?.boolValue == false else { return nil }
+        if refusedForPerson(json) {
             return String(localized: "You're in control of the browser; Hermes is waiting.")
         }
         return json["error"]?.stringValue.map { String($0.prefix(200)) }

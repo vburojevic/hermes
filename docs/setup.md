@@ -530,6 +530,17 @@ new chats use as the detail ("A browser on Studio Mac", "With your logins on Stu
 cloud · Browserbase"); the row opens the Browser page (Open Apps & Tools on the Mac). Docs:
 `user-guide/features/browser`.
 
+With **In this app** (`browser.extension_control.enabled`, [web.md](web.md) §6) it's Ready ("In
+this app") until a chat's registration is refused, then Partly set up, with the fallback "Meanwhile
+Hermes browses with its own browser on Studio Mac." and what would fix it
+(`GatewaySetup.inAppBrowser`): **needs a newer Hermes Agent** (`hermes update`); **needs a sign-in**
+(Bot Mode with Automatic sign-in: Hermes lets only a signed-in client drive its browser, so the
+steps add the dashboard's username and password to `~/.hermes/.env` there and sign in with them in
+Edit Gateway); **needs the gateway's key** (`API_SERVER_KEY`); **the key was refused** (check it in
+Edit Gateway); **turned off** on the gateway though the page says In this app (choose it again);
+anything else in Hermes's words. A refusal for a chat Hermes doesn't know yet stays Ready: the next
+turn registers again.
+
 ## 5. Mocks and launch flags
 
 `Tools/mock-hermes/setup.py` serves each "not set up" state: start the backend with `--setup

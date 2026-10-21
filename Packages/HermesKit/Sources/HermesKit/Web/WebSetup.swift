@@ -50,6 +50,9 @@ extension GatewaySetup {
             return .unknown(id: ID.browser, title: title, reason: String(localized: "Hermes didn't send its settings."))
         }
         let settings = BrowserSettings(config: config)
+        if settings.extensionControl {
+            return inAppBrowser(facts, title: title)
+        }
         let detail: String = if let cloud = settings.cloud {
             String(localized: "In the cloud · \(BrowserSettings.cloudName(cloud))")
         } else if settings.useRealProfile {
@@ -58,5 +61,47 @@ extension GatewaySetup {
             String(localized: "A browser on \(facts.gatewayName)")
         }
         return SetupStatus(id: ID.browser, state: .ready, title: title, detail: detail, docs: Docs.browser)
+    }
+
+    /// In this app: ready until a chat's registration is refused; then what would fix it, while
+    /// Hermes browses with its own browser (a chat without a registered controller uses it).
+    static func inAppBrowser(_ facts: GatewaySetupFacts, title: String) -> SetupStatus {
+        let fallback = String(localized: "Meanwhile Hermes browses with its own browser on \(facts.gatewayName).")
+        switch facts.inAppBrowserRefusal {
+        case nil:
+            return SetupStatus(id: ID.browser, state: .ready, title: title, detail: String(localized: "In this app"), docs: Docs.browser)
+        case .needsNewerHermes?:
+            return SetupStatus(id: ID.browser, state: .limited, title: title,
+                               detail: String(localized: "In this app needs a newer Hermes Agent on \(facts.gatewayName)."), fallback: fallback,
+                               steps: [SetupStep(String(localized: "On \(facts.gatewayName), update Hermes:"), command: "hermes update")], docs: Docs.updating)
+        // TODO(docs/web.md §9): Ready with Automatic sign-in, if Hermes ever lets a local internal
+        // identity drive a browser.
+        case .needsSignIn?:
+            return SetupStatus(id: ID.browser, state: .limited, title: title,
+                               detail: String(localized: "Hermes lets only a signed-in app drive its browser, and Bot Mode on \(facts.gatewayName) signs in automatically."),
+                               fallback: fallback,
+                               steps: [SetupStep(String(localized: "Give the backend a sign-in: add these to ~/.hermes/.env on \(facts.gatewayName), restart it, then sign in with them in Edit Gateway:"),
+                                                 command: "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=…\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD=…\nHERMES_DASHBOARD_BASIC_AUTH_SECRET=…")],
+                               docs: Docs.botMode)
+        case .needsAPIKey?:
+            return SetupStatus(id: ID.browser, state: .limited, title: title,
+                               detail: String(localized: "\(facts.gatewayName)'s API server has no key, and Hermes lets only an app with the key drive its browser."), fallback: fallback,
+                               steps: [SetupStep(String(localized: "On \(facts.gatewayName), set a key for the API server, then add it to this gateway in Edit Gateway:"), command: "API_SERVER_KEY=…")], docs: Docs.browser)
+        case .keyRefused?:
+            return SetupStatus(id: ID.browser, state: .limited, title: title,
+                               detail: String(localized: "\(facts.gatewayName) didn't accept this app's key for its browser."), fallback: fallback,
+                               steps: [SetupStep(String(localized: "Check the gateway's key in Edit Gateway; it's API_SERVER_KEY on \(facts.gatewayName)."))], docs: Docs.browser)
+        case .turnedOff?:
+            // The Browser page says In this app, Hermes says the switch is off (edited by hand, or another profile).
+            return SetupStatus(id: ID.browser, state: .limited, title: title,
+                               detail: String(localized: "In this app is off on \(facts.gatewayName)."), fallback: fallback,
+                               steps: [SetupStep(String(localized: "Choose In this app on the Browser page again."))], docs: Docs.browser)
+        case .other(let message)?:
+            return SetupStatus(id: ID.browser, state: .limited, title: title,
+                               detail: String(localized: "Hermes didn't let this app be its browser: \(message)"), fallback: fallback, docs: Docs.browser)
+        case .unknownSession?:
+            // The chat wasn't stored yet; its next turn registers again.
+            return SetupStatus(id: ID.browser, state: .ready, title: title, detail: String(localized: "In this app"), docs: Docs.browser)
+        }
     }
 }

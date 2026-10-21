@@ -359,6 +359,14 @@ final class BotWorkspace: Identifiable {
         pluginHubModel = model
         return model
     }
+    @ObservationIgnored private var inAppBrowserModel: InAppBrowser?
+    /// Whether this app is Hermes's browser here (`docs/web.md` §6).
+    var inAppBrowser: InAppBrowser {
+        if let inAppBrowserModel { return inAppBrowserModel }
+        let model = InAppBrowser(workspace: self)
+        inAppBrowserModel = model
+        return model
+    }
     @ObservationIgnored private var setupCenter: SetupCenter?
     /// What on this gateway needs setting up: Settings → Setup (`docs/setup.md` §3).
     var setup: SetupCenter {

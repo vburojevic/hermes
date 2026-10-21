@@ -623,6 +623,20 @@ final class ConversationModel: Identifiable {
     /// The Inspector, only if this chat has made one.
     var inspectorIfLoaded: InspectorModel? { inspectorStore }
 
+    /// Before a turn: with Browser set to In this app, this chat's browser registers with the
+    /// gateway for the session the turn runs in, so Hermes's browser tools come here (`docs/web.md`
+    /// §6); otherwise a browser this chat had is given back.
+    private func prepareInAppBrowser(_ route: BrowserController.Route) async {
+        guard let workspace else { return }
+        // Hermes routes a chat's browser steps by its own profile's switch (`docs/web.md` §6.1).
+        await workspace.inAppBrowser.prepare(profile: gatewayProfile)
+        guard workspace.inAppBrowser.isOn(profile: gatewayProfile) else {
+            inspectorIfLoaded?.browserIfLoaded?.detach()
+            return
+        }
+        inspector.browser.attach(route)
+    }
+
     /// How much of a background process's output the Terminal keeps (never logged).
 
     // MARK: Checkpoints (docs/checkpoints.md)
@@ -3043,6 +3057,7 @@ final class ConversationModel: Identifiable {
             while true {
                 do {
                     let sessionID = try await ensureSession(client: client, workspace: workspace)
+                    if attempt == 0 { await prepareInAppBrowser(.apiServer(sessionID: sessionID)) }
                     if !remembered, !images.isEmpty, let key = stableKey {
                         workspace.imageStore.remember(images, conversation: key, text: text)
                         remembered = true
@@ -3740,6 +3755,8 @@ final class ConversationModel: Identifiable {
         outputFlush?.cancel()
         botTurnDone?.resume()
         botTurnDone = nil
+        // The chat is going: its browser is given back and closed (`docs/web.md` §6.5).
+        inspectorStore?.browserIfLoaded?.tearDown()
     }
 }
 
@@ -3881,6 +3898,8 @@ extension ConversationModel {
             }
             runtimeSessionID = runtime
             if !isBotChat { roster.attach(self) }
+            // Attached on this socket now: the app's browser registers on it too (`docs/web.md` §6.2).
+            inspectorIfLoaded?.browserIfLoaded?.chatReattached(runtime: runtime)
             if let info = LiveWorkspace(info: snapshot["info"]) { liveWorkspace = info }
             // Helpers that ran on while nobody watched (`subagent.list`).
             if !isBotChat { Task { await helpers.reconcile() } }
@@ -4039,6 +4058,7 @@ extension ConversationModel {
                     rememberParts(prompt: prompt, text: text, skills: [])
                 }
                 await markForWidgets(runtime: runtime, roster: roster)
+                await prepareInAppBrowser(.socket(sessionID: runtime))
                 turnGate.send()
                 submitted = SentPrompt(at: .now, knownNewestID: rawMessages.last?.id)
                 var submit: [String: JSONValue] = ["session_id": .string(runtime), "text": .string(prompt)]
@@ -4394,6 +4414,10 @@ extension ConversationModel {
             // is for Hermes, which answers in its next turn, never a line here.
             Task { await refreshProcesses() }
             if GatewayTurnDecoder.isProcessNotice(event.payload["text"]?.stringValue ?? "") { return }
+        // Hermes's browser tools, run by this app's browser (`docs/web.md` §6).
+        case "browser.controller.command", "browser.controller.cancel":
+            inspectorIfLoaded?.browserIfLoaded?.receive(BrowserControlFrame(method: event.type, params: event.payload))
+            return
         // Hermes opens and closes the Inspector's Preview (`desktop_preview`) and reveals its panes.
         case "preview.open":
             if let url = event.payload["url"]?.stringValue, !url.isEmpty {

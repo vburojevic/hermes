@@ -81,6 +81,7 @@ STARVE = load_starve()
 RUNTIME = {}       # runtime sid -> {stored, profile, running, interrupt, seq, ring, pending_title, pending_hidden}
 CRON = {}          # profile -> {job_id: job}
 PENDING = {}       # srq id -> {"event": Event, "result": dict | None, "sid": str}
+CURRENT = threading.local()  # .peer: the socket whose request a METHODS handler is answering
 CLIENTS = set()    # connected WebSocket peers
 DROP = {"settle": 0, "refuse_until": 0.0}  # /api/mock/drop-sockets: resumes answered 4009, sockets refused
 TICKETS = {}       # ws ticket -> expiry
@@ -2029,6 +2030,7 @@ class Handler(BaseHTTPRequestHandler):
         if lose is not None and not lose:
             return peer.cut()
         try:
+            CURRENT.peer = peer  # each frame runs on its own thread (browser_control.py binds to the socket)
             result = handler(frame.get("params") or {})
             if lose:
                 return peer.cut()
@@ -2235,6 +2237,13 @@ def main():
     _browser = _util.module_from_spec(_spec)
     _spec.loader.exec_module(_browser)
     _browser.install(globals())
+    # Hermes's browser in the app (docs/web.md §6): browser.controller.* here, the controller route and
+    # the mock's pages on the gateway, and the "in the app" turns on both.
+    _spec = _util.spec_from_file_location("mock_browser_control", _pathlib.Path(__file__).resolve().parent / "browser_control.py")
+    _browser_control = _util.module_from_spec(_spec)
+    _spec.loader.exec_module(_browser_control)
+    _browser_control.install(globals(), _browser, gateway if args.gateway_port else None,
+                             chats if args.gateway_port else None, args.gateway_port)
     if args.gateway_port:
         # Signing in, 2FA and card fills in a chat (docs/web.md §4), on the vault above.
         _spec = _util.spec_from_file_location("mock_web_turns", _pathlib.Path(__file__).resolve().parent / "web_turns.py")

@@ -24,6 +24,9 @@ struct BrowserSettingsTests {
 
     @Test func placesFollowHermesOrder() throws {
         var settings = BrowserSettings()
+        settings.extensionControl = true
+        #expect(BrowserPlace.current(settings, BrowserConnection(connected: true)) == .inThisApp)
+        settings.extensionControl = false
         settings.useRealProfile = true
         #expect(BrowserPlace.current(settings, nil) == .withYourLogins)
         settings.cloudProvider = "browserbase"
@@ -35,7 +38,13 @@ struct BrowserSettingsTests {
     }
 
     @Test func patchesWriteOnlyWhatChanges() {
-        #expect(BrowserSettings.cleanBrowserPatch == .object(["browser": .object(["cloud_provider": .string("local"), "use_real_profile": .bool(false)])]))
+        #expect(BrowserSettings.cleanBrowserPatch == .object(["browser": .object([
+            "cloud_provider": .string("local"), "use_real_profile": .bool(false), "extension_control": .object(["enabled": .bool(false)]),
+        ])]))
+        // In this app: the controller on, and the built-in tools, the only ones a controller runs.
+        #expect(BrowserSettings.inThisAppPatch == .object(["browser": .object([
+            "extension_control": .object(["enabled": .bool(true)]), "backend": .string("off"), "use_real_profile": .bool(false),
+        ])]))
         #expect(BrowserSettings.fastTextOnlyPatch(true) == .object(["browser": .object(["engine": .string("lightpanda")])]))
         #expect(BrowserSettings.fastTextOnlyPatch(false) == .object(["browser": .object(["engine": .string("auto")])]))
         // A list replaces the one in config, so the whole blocklist goes every time.

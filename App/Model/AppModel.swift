@@ -165,6 +165,8 @@ final class AppModel {
             UserDefaults.standard.removeObject(forKey: key)
         }
         Task { try? await WKWebsiteDataStore.remove(forIdentifier: botID) }
+        // And the in-app browser's sign-ins on it (`docs/web.md` §6.5).
+        Task { await BrowserController.removeData(gateway: botID) }
         workspaces[botID] = nil
         bots = updated
         UserDefaults.standard.removeObject(forKey: "model.\(botID.uuidString)")
@@ -313,6 +315,11 @@ final class AppModel {
     /// Every window is gone or hidden: Bot rosters stop polling until the app is back.
     func didEnterBackground() {
         backgroundedAt = .now
+        #if os(iOS)
+        // iOS suspends the app: Hermes is told its browser went away rather than waiting it out
+        // (`docs/web.md` §6.5). The next turn registers it again.
+        BrowserController.detachAll()
+        #endif
         for workspace in workspaces.values {
             workspace.stopKeepingConnected()
             workspace.roster?.didEnterBackground()
@@ -483,19 +490,28 @@ final class AppModel {
             bot.backend = nil
             try? updateBot(bot, apiKey: nil)
         }
+        // A signed-in Bot Mode (`HERMES_BOOTSTRAP_BACKEND_PASSWORD`, user admin): the mock started
+        // with `--password`, which is what Hermes lets drive the app's browser (`docs/web.md` §6).
+        let password = value("HERMES_BOOTSTRAP_BACKEND_PASSWORD")
+        func link(_ url: URL) -> BackendLink {
+            password == nil ? BackendLink(url: url, signIn: .automatic) : BackendLink(url: url, signIn: .password, username: "admin")
+        }
+        defer {
+            if let password, let first = bots.first, first.backend?.signIn == .password, store.backendCredential(for: first.id) == nil {
+                Task { try? await self.workspaces[first.id]?.roster?.signIn(username: "admin", password: password) }
+            }
+        }
         if let first = bots.first, first.backend == nil, value("HERMES_BOOTSTRAP_BACKEND") != "none",
            let backend = value("HERMES_BOOTSTRAP_BACKEND").flatMap(BackendLink.normalizedURL(from:)) {
             var bot = first
-            bot.backend = BackendLink(url: backend, signIn: .automatic)
+            bot.backend = link(backend)
             try? updateBot(bot, apiKey: nil)
         }
         guard bots.isEmpty,
               let address = value("HERMES_BOOTSTRAP_URL"), let url = BotConfiguration.normalizedURL(from: address),
               let key = value("HERMES_BOOTSTRAP_KEY")
         else { return }
-        let backend = value("HERMES_BOOTSTRAP_BACKEND").flatMap { $0 == "none" ? nil : BackendLink.normalizedURL(from: $0) }.map {
-            BackendLink(url: $0, signIn: .automatic)
-        }
+        let backend = value("HERMES_BOOTSTRAP_BACKEND").flatMap { $0 == "none" ? nil : BackendLink.normalizedURL(from: $0) }.map(link)
         _ = try? addBot(name: value("HERMES_BOOTSTRAP_NAME") ?? "Hermes", baseURL: url, apiKey: key, accent: .gold, backend: backend, startsSetup: false)
     }
     #endif

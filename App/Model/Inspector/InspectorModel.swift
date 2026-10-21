@@ -11,10 +11,13 @@ import AppKit
 struct InspectorTab: Identifiable, Hashable, Codable {
     enum Kind: String, Codable, CaseIterable {
         case preview, artifact, file, files, changes, terminal, screen, team, plan, sources
+        /// Hermes's browser in this app (`docs/web.md` §6).
+        case browser
 
         var symbol: String {
             switch self {
             case .preview: "globe"
+            case .browser: "safari"
             case .artifact: "sparkles"
             case .file: "doc"
             case .files: "folder"
@@ -30,6 +33,7 @@ struct InspectorTab: Identifiable, Hashable, Codable {
         var name: String {
             switch self {
             case .preview: String(localized: "Preview")
+            case .browser: String(localized: "Browser")
             case .artifact: String(localized: "Artifact")
             case .file: String(localized: "File")
             case .files: String(localized: "Files")
@@ -510,9 +514,34 @@ final class InspectorModel {
             open(.sources, key: "sources", title: String(localized: "Sources"))
         case .preview:
             showsAddressPrompt = true
+        case .browser:
+            showBrowser(byHermes: false)
         case .artifact, .file:
             break
         }
+    }
+
+    // MARK: Hermes's browser (`docs/web.md` §6)
+
+    @ObservationIgnored private var browserStore: BrowserController?
+    /// The app as Hermes's browser for this chat, made when it's first needed.
+    var browser: BrowserController {
+        if let browserStore { return browserStore }
+        let controller = BrowserController(inspector: self)
+        browserStore = controller
+        return controller
+    }
+
+    var browserIfLoaded: BrowserController? { browserStore }
+
+    static let browserTabKey = "hermes-browser"
+
+    /// Brings Hermes's browser to the front: a web view off screen stops running the page's
+    /// scripts, and the person watches what Hermes does. iPhone shows it in the sheet at medium.
+    func showBrowser(byHermes: Bool = true) {
+        if !isPresented { sheetHeight = .medium }
+        let title = browser.siteTitle ?? String(localized: "Browser")
+        open(.browser, key: Self.browserTabKey, title: title, byHermes: byHermes)
     }
 
     /// The Terminal tab (`docs/background-processes.md` §6): the list, or one process's page.

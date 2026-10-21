@@ -405,6 +405,8 @@ struct InspectorTabContent: View {
         switch tab.kind {
         case .preview:
             PreviewTabView(inspector: inspector, controller: inspector.preview(for: tab), tab: tab)
+        case .browser:
+            BrowserTabView(inspector: inspector, controller: inspector.browser)
         case .artifact:
             ArtifactTabView(inspector: inspector, tab: tab)
         case .file:

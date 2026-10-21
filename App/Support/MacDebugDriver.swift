@@ -8,7 +8,8 @@ import AppKit
 ///
 /// `-HERMES_MAC_DRIVE "wait 9; press Developer; wait 3; tap 150 190; wait 3; click top-button"`.
 /// Steps: `wait <seconds>`; `press <label>` (a toolbar item); `tap <x> <y>` (points from the
-/// Settings window's top left: a screenshot's pixels halved); `click top-button` (the topmost
+/// Settings window's top left: a screenshot's pixels halved; `maintap <x> <y>` the same in the
+/// main window); `click top-button` (the topmost
 /// AppKit button, which on a pushed page is its back button); `key cmd+[`, `key return` (a sheet's
 /// default button); `tabs` (Settings tabs
 /// shown and clipped); `dump`, `views` and `toolbar` (the accessibility, content and toolbar view
@@ -35,6 +36,8 @@ enum MacDebugDriver {
                 result = clickTopButton()
             case "tap":
                 result = tap(argument)
+            case "maintap":
+                result = tap(argument, in: mainWindow)
             case "tabs":
                 result = tabs()
             case "toolbar":
@@ -85,8 +88,17 @@ enum MacDebugDriver {
     /// `tap <x> <y>`: a click at that point of the Settings window, in points from its top left
     /// (a screenshot's pixels halved), sent to the window as the mouse would.
     private static func tap(_ point: String) -> String {
+        tap(point, in: settingsWindow)
+    }
+
+    /// The largest visible window that isn't Settings: the chats.
+    private static var mainWindow: NSWindow? {
+        NSApp.windows.filter { $0.isVisible && $0 !== settingsWindow && $0.frame.width > 600 }.max { $0.frame.width < $1.frame.width }
+    }
+
+    private static func tap(_ point: String, in window: NSWindow?) -> String {
         let numbers = point.split(separator: " ").compactMap { Double($0) }
-        guard numbers.count == 2, let window = settingsWindow else { return "tap needs x y and a Settings window" }
+        guard numbers.count == 2, let window else { return "tap needs x y and a window" }
         let location = NSPoint(x: numbers[0], y: window.frame.height - numbers[1])
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             guard let event = NSEvent.mouseEvent(

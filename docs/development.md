@@ -343,6 +343,14 @@ and this Mac's unified logs, the app's data, group containers, preferences, cach
 state, crash reports and the mock's output, prints where a value turned up (by line number, never the
 value) and exits 1; "Nothing found" and 0 is the pass.
 
+**Browsing in this app** ([web.md](web.md) §6) needs Bot Mode signed in, as Hermes refuses the
+controller to Automatic sign-in: start the backend with `--password <anything>` and launch with
+`-HERMES_BOOTSTRAP_BACKEND_PASSWORD <the same>` too (Debug only; the app signs in as admin). Pick In
+this app on the Browser page, then "in the app" in a chat drives the mock's Acme Cloud pages in the
+chat's Browser tab; "carry on" after signing in there finishes, "in the app slow" and "in the app
+router" try the deadline and the network ask. `POST /api/mock/browser-control {"reset": true}`
+drops every registration.
+
 A message with "key expired" fails its turn on Anthropic's key (Add Key… in the chat; the mock's
 `model.save_key` takes it), "signed out" on OpenAI Codex's sign-in.
 

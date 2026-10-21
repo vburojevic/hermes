@@ -51,6 +51,7 @@ HOUR = 3600
 DAY = 86400
 
 SESSIONS = {}
+ROUTES = {}  # (method, path) -> fn(handler, query) -> handled: routes other modules add (browser_control.py)
 MESSAGES = {}
 RUNS = {}
 JOBS = {}
@@ -488,8 +489,15 @@ class Handler(BaseHTTPRequestHandler):
         return path, query
 
     # dispatch
+    def hooked(self, method, path, query):
+        """A route another module adds (browser_control.py): it checks the key itself, if at all."""
+        hook = ROUTES.get((method, path))
+        return bool(hook) and hook(self, query)
+
     def do_GET(self):
         path, query = self.route("GET")
+        if self.hooked("GET", path, query):
+            return
         STARVE.wait(health=path in ("/health", "/v1/health"))
         if path in ("/health", "/v1/health"):
             return self.send_json(200, {"status": "ok", "platform": "hermes-agent", "version": "0.21.6"})
@@ -587,7 +595,9 @@ class Handler(BaseHTTPRequestHandler):
             return  # the run continues detached
 
     def do_POST(self):
-        path, _ = self.route("POST")
+        path, query = self.route("POST")
+        if self.hooked("POST", path, query):
+            return
         if path == "/api/mock/starve":
             # Mock-only (starve.py): the whole machine starved, this gateway and the backend with it.
             return self.send_json(200, STARVE.configure(self.body()))

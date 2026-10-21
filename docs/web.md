@@ -62,6 +62,8 @@ Code: `VaultSource`, `VaultItem`, `VaultOrigin`, `VaultDraft`, `VaultClient`, `V
   Studio Mac"); Apps and Tools → Built-in shows the same row under the Browser toolset. On the Mac
   it's an item of its own in Apps & Tools, under Built-in (`macSettingsBrowser`), with "And
   Passwords" under it, which opens the Passwords tab.
+- **Browsing in this app:** a **Browser** tab in the chat's Inspector (§6), opened by Hermes's first
+  browser step; on iPhone the Inspector comes up as a sheet at medium height.
 - **Settings → Setup** lists Passwords and Browser ([setup.md](setup.md) §4.19, §4.20).
 - **Needs Bot Mode.** Without it, or while it can't connect, each page is `BotModeSetupMessage`
   with Link Bot Mode… or Sign In…. An older Hermes shows "Needs a newer Hermes Agent" with
@@ -284,11 +286,164 @@ that would expose a key or a cloud server's metadata."
 A change that fails says so in an alert, in words; a failed connect adds what Hermes said while it
 looked for a browser. Every change reads the page again, so what's shown is the gateway's.
 
-Not built yet: **In this app** (§6) and Clear Browsing Data, which come with the in-app browser.
+**In this app** (Live · Take over · While the app is open, on the Mac While Hermes is open) is the
+first place; §6 has what it writes and how it works. While it's in use, Engine reads Built-in tools
+(Browser Use never reaches the app) and the footer says "You watch Hermes browse in the chat's
+Browser tab, and you can take over any time." Advanced ends with **Clear Browsing Data in This App**
+(red, confirmed: "Every site you signed in to in this app's browser for Studio Mac forgets you."), which empties
+the app's own data store for this gateway (§6.5).
 
 ## 6. Browsing in this app
 
-Not built yet.
+The app becomes the browser for a chat: Hermes's built-in browser tools run in a web view in the
+chat's Inspector, in a **Browser** tab (the Inspector sheet on iPhone), live, and the person can
+take over (`webInApp`, `ipadWebInApp`, `macWebInApp`). `BrowserControl`, `BrowserControlFrame`,
+`BrowserCommandResult`, `BrowserControlTicket` and `BrowserControlRefusal` in HermesKit hold the
+contract; `BrowserController`, `BrowserControllerScript`, `InAppBrowser` and `BrowserTabView` in
+the app do the work.
+
+### 6.1 Turning it on
+
+**In this app** is the Browser page's first place (§5): "Watch it live and take over any time. On a
+sign-in page, you sign in with your Passwords; Hermes waits." Choosing it, after one alert ("Use this
+app's browser?" · "Hermes will use this app's browser for new chats. You'll see everything it
+does." · Not Now / Use This App), lets go of an attached window and writes with `PUT /api/config`
+(`BrowserSettings.inThisAppPatch`):
+
+- `browser.extension_control.enabled: true`: Hermes lets a registered controller drive the tools.
+  It reads this switch twice: a browser step checks the config of the profile the chat runs with,
+  and a registration checks the profile Hermes was started with (`browser.controller.register`
+  isn't profile scoped). So for a gateway on another profile the app also writes the switch alone
+  to the launch profile (`controllersAllowedPatch`), which by itself sends no chat's steps anywhere;
+- `browser.backend: off`: Browser Use's `browser_exec` never reaches a controller, only the
+  built-in `browser_*` tools do (`tools/browser_extension_router.py`);
+- `browser.use_real_profile: false`.
+
+Every other place writes `extension_control.enabled: false`, and every chat on that gateway gives
+the app's browser back (`InAppBrowser.turnedOff` → `BrowserController.detachAll`).
+
+The app knows the switch per profile (`InAppBrowser`): the gateway's own from the config Setup and
+the Browser page read, a Bot's from its profile's config, read before its chat's first turn. A read
+older than five minutes is refreshed in the background; with none yet the turn waits for one at
+most three seconds, so a slow gateway never holds a message up. A Bot chat registers only when its
+own profile says In this app (§9).
+
+### 6.2 Connecting
+
+Hermes routes a chat's browser tools to a controller registered for that chat's session, over the
+transport the chat runs on (the identity it binds to is that transport's, and only the transport
+that registered may answer or detach). A Bot Mode chat registers before every turn it sends, and
+again after Bot Mode reconnects and the chat attaches (`session.resume`, `chatReattached`):
+registering again with the same identity only moves the controller to the current socket. An API
+server chat registers once and keeps its socket:
+
+| The chat runs on | The app registers | Notes |
+|---|---|---|
+| Bot Mode's socket | `browser.controller.register {session_id, controller_id, browser_profile_id, capabilities, protocol_version: 1}` on `/api/ws` → `{scope}`; commands arrive as `event`s (`browser.controller.command {command_id, action, arguments, controller_id, browser_profile_id, tool_call_id}`, `browser.controller.cancel {command_id, tool_call_id}`) and are answered with `browser.controller.result {session_id, command_id, ok, result \| error}`; `browser.controller.heartbeat {session_id}` every 20 s; `browser.controller.detach {session_id}` | Needs a server-minted, signed-in identity (a password sign-in's ticket): with Automatic sign-in Hermes refuses with 4403 (§9). The session must be attached to this socket |
+| The API server | `POST /v1/browser-control/register` with the gateway's key → 201 `{ticket, ws_path, ticket_expires_in_seconds: 30, scope}`; then `GET /v1/browser-control/ws` with the protocols `hermes-browser-control-v1` and `hermes-browser-control-ticket.<ticket>`, never the ticket in the URL (Hermes refuses one there) | `{method, params}` frames both ways; the heartbeat is `{nonce}` and comes back. Hermes routes only `/v1/runs` chats here (§9) |
+
+`controller_id` is this installation's (`hermes-app-<uuid>`, kept in UserDefaults; not a secret:
+Hermes binds the identity to the key or the sign-in) and `browser_profile_id` is `hermes-app`.
+Capabilities: `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`,
+`browser_scroll`, `browser_press`, `browser_back`, `browser_screenshot`, `browser_tabs`,
+`browser_tab_activate`; never `browser_cdp` or `browser_evaluate` (Hermes's Developer Mode) and no
+artifact transfers.
+
+The app gives the browser back (`detach`) when another place is chosen, when the chat closes or its
+gateway's address or key changes, and, on iPhone and iPad, when the app goes to the background; also
+while a registration is still on its way, and when one lands after it gave the browser back. Hermes
+then cancels what was waiting, and the chat's later browser steps use Hermes's own browser. A socket
+that drops without a detach (the network) leaves the registration in place but offline: Hermes fails
+those steps ("This app's browser wasn't connected") until the app registers again, by itself, after
+3 s and then twice as long each time up to a minute. Answers finished meanwhile go once it's back.
+The API server's socket counts as connected only once it echoes a heartbeat (an upgrade Hermes
+refused never does). A heartbeat or an answer Hermes refuses with 4403 means another device took
+the chat's browser (Hermes keeps one per chat): this one stops, and takes it back only with its next
+message.
+
+### 6.3 Commands
+
+Each command answers within 25 s whatever the page does (Hermes gives up at 30 s and sends a
+cancel): a page still loading by then is stopped and the answer says "The page didn't answer in
+time."; a script or snapshot that never returns is left behind. A cancel stops the page and sends
+nothing. Neither stops a page while the person has it (their own sign-in). Results are JSON text, as
+Hermes's own browser tools answer.
+
+The scripts (`BrowserControllerScript`) run in a content world of their own (`hermes-browser`), with
+the handler for the person's input: the page can't see them, call them, answer for them or post to
+them. One runs in every frame from the start (the person's touches and keys, the fields they edit,
+fields that were ever a password); the other in the main frame for the outline and the actions.
+
+**What the person typed never goes to Hermes.** A field shows only "(filled)" in the outline when
+the person edited it, or when it holds a secret by its kind: ever a password (a "Show password"
+button flips the type), a `cc-*`, `one-time-code` or password autocomplete, a name, id, label or
+placeholder that says password, card number, security code, CVC, one-time code, verification code,
+PIN or SSN, or masked text (`-webkit-text-security`). An editable element's text is its contents,
+never its label. Hermes never types into a secret field ("That field takes a card number, a security
+code or a one-time code. Entering those is the person's turn in this app…"), and
+`browser_screenshot` is refused while such a field with something in it is on the page.
+
+| Action | What the app does |
+|---|---|
+| `browser_navigate {url}` | Loads http or https only. The Preview's rule ([inspector.md](inspector.md)): the gateway itself opens, and so does loopback when the gateway is this machine; any other page on this device's network (a router, a NAS) doesn't open without the person, and the tab asks "Open a page on your network?" |
+| `browser_snapshot {full}` | An outline: headings, then every visible control as `- role "label" [@e5]` with what it holds (`: "…"`, or "(filled)" as above; a password "(password)" or "(password, filled)"), with text too when `full`, and `sign_in` when a password or one-time code is asked for |
+| `browser_click {ref}`, `browser_type {ref, text}` | The ref from the last snapshot. Typing into a password field is refused: "That is a password field. Signing in is the person's turn in this app: ask them to take over, then wait." Into another secret field likewise |
+| `browser_scroll {direction}`, `browser_press {key}`, `browser_back` | As named; Enter in a field submits its form |
+| `browser_screenshot` | A JPEG of the page, unless something the person entered shows |
+| `browser_tabs`, `browser_tab_activate` | One tab. A link or script that opens a new window (target=_blank, a sign-in pop-up) opens in it, under the same rules; the camera and microphone are always refused |
+
+A page on this device's network that the page itself goes to (a link, a redirect) asks the same
+way, as "This page tried to open…"; Open loads it. The ask goes once anything else starts loading.
+Only navigations are checked: a page's images, scripts and requests, and a name that later resolves
+somewhere else (DNS rebinding), aren't (§9).
+
+`agentDrivingBar` shows the step ("Opening vercel.com", "Reading the page", never what's typed), with
+the site and step count, Take Over and Stop. While the person has control (Take Over, or their own
+touch or key in the page), every command gets the refusal Hermes's own browser gives while a person
+holds its screen, `{"success": false, "code": "human_has_control", "error": "The person has taken
+over this app's browser…"}`, without running; Hand Back resumes. In the chat, a step the app didn't
+finish reads in words (`WebStep.controllerFailure`): "This app's browser didn't answer in 30
+seconds.", "This app's browser wasn't connected, so Hermes couldn't use it.", "You're in control of
+the browser; Hermes is waiting."
+
+### 6.4 Your turn
+
+A page with a visible password field or a one-time-code field is a sign-in page. Passwords can't fill the app's browser
+(Hermes answers `supervisor_required`, §4.1), so the bar says "Your turn: sign in to vercel.com ·
+Use Passwords, then hand it back." (`signInYourselfBar`) with Take Over. The person signs in with
+iOS or macOS Passwords AutoFill in the web view, then Hand Back. What they type there stays in the
+page: the app never reads or sends it.
+
+### 6.5 Platforms and data
+
+- **iPhone and iPad:** only while the app is in the foreground; it gives the browser back on the
+  way to the background and registers again with the chat's next turn.
+- **Mac:** while Hermes runs.
+
+The web view's cookies and storage are the app's own, one store per gateway
+(`WKWebsiteDataStore(forIdentifier:)`), apart from the Preview's. Sign-ins stay until Settings →
+Browser → **Clear Browsing Data in This App**, or until the gateway is removed, which removes its
+store. A chat that closes gives its browser back and closes the page.
+
+### 6.6 Setup
+
+What Hermes answered the last registration (`BrowserControlRefusal`), shown in the Browser tab, under
+In this app on the Browser page, and on Settings → Setup → Browser (limited, with the fallback
+"Meanwhile Hermes browses with its own browser on Studio Mac."; [setup.md](setup.md) §4.20):
+
+- **Needs a newer Hermes Agent:** the register route answers 404 without a code or 400
+  `browser_control_protocol_unsupported`, or `browser.controller.register` -32601 or refuses the
+  protocol version.
+- **Turned off:** 404 `browser_control_disabled`, or 4403 about `extension_control` (edited by hand,
+  or the launch profile's switch): choose In this app on the Browser page again.
+- **The key was refused:** 401 from the register route: check the key in Edit Gateway.
+- **Anything else Hermes said**, in its words.
+- **Needs a sign-in:** Bot Mode with Automatic sign-in (4403 "browser.controller.register requires
+  an authenticated non-internal identity"): sign in with a username and password in Edit Gateway.
+- **Needs the gateway's key:** 403 `browser_control_auth_required` (the API server has no
+  `API_SERVER_KEY`).
+- **Not a chat Hermes knows yet:** 403 `browser_control_session_forbidden`; Setup stays Ready, as
+  the next turn registers again.
 
 ## 7. Words
 
@@ -305,8 +460,22 @@ Not built yet.
   Remove with its confirmation, and a manager whose idle time runs out losing its logins.
 - No master password, password, card number, security code or code appears on screen after it's
   sent, in the app's logs, or in any request but the one call that carries it.
+- The Browser page (§5): each place, the consent, a failed connect, the cloud sheet and Cancel,
+  the blocklist; In this app with its alert, Clear Browsing Data with its confirmation.
+- In a chat (§4): signing in, a 2FA code, saving a login and a card fill with Face ID, each
+  declined too, and a fill refused on the wrong site, in steps and on the Lock Screen.
+- In this app (§6), against the mock signed in: "in the app" opens the Browser tab, the sign-in page
+  shows Your turn, signing in and "carry on" reads the deploys; "checkout in the app": the person
+  types a test card, and after "carry on" the steps show the card fields only as "(filled)" and
+  Hermes takes no screenshot; Take Over mid-turn gets the refusal
+  and Hand Back resumes; "in the app slow" fails in words within 30 s; "in the app router" asks
+  first; going to the background (iPhone, iPad) gives the browser back; Automatic sign-in shows
+  "needs a sign-in" in the tab, on the Browser page and in Setup.
+- After a full sign-in and a card fill on the mock, `Scripts/dev/web-secret-search.sh` finds none of
+  the secrets typed in the simulator's and the Mac's logs, the app's files or the mock's output
+  ([development.md](development.md)).
 - Light, dark and Increase Contrast; VoiceOver reads a login row as "GitHub, sam-k, in 1Password,
-  2FA" and each source row's state.
+  2FA" and each source row's state, and announces each step of the app's browser.
 
 ## 9. Open points
 
@@ -332,6 +501,34 @@ Not built yet.
 - **Hermes's vault has no master password** (its key is a file beside it). Worth a gateway option
   to protect it with the macOS Keychain or a passphrase.
 
+- **Automatic sign-in can't drive the app's browser.** Hermes binds the controller to a
+  server-minted identity, and an ungated backend's internal one is refused (4403), so a Mac running
+  Hermes Desktop's way needs a dashboard password for In this app. The app says so in Setup.
+- **The API server routes only `/v1/runs` chats** to a registered controller (the principal and
+  transport family are stamped on runs, not on `/v1/chat/completions` or `/v1/responses`).
+- **Browser Use never reaches the app**, so In this app turns it off; Hermes would need
+  `browser_exec` on the controller.
+- **After a detach, Hermes's own browser takes over the chat's later steps** rather than waiting
+  for the app to come back; a step that needs the person's sign-in can land in a browser they
+  can't see. A "wait for the controller" option on the gateway would keep it in the app.
+- **Passwords can't fill the app's browser** (`supervisor_required`): the person signs in with the
+  system's Passwords. A controller-side fill that never passes the secret through the app would
+  need a new gateway contract.
+- **The switch lives in two places.** Hermes checks a registration against the profile it was
+  started with and a step against the chat's own profile, so In this app writes both for a gateway
+  on another profile. A Bot keeps its own profile's browser settings, like every other place on the
+  Browser page: its chats register only when its profile says In this app.
+- **Only navigations are checked** against the local-network rule: subresources and a name that
+  resolves elsewhere after loading aren't. A per-request content rule or a resolver hook would close
+  that.
+- **What "(filled)" can't hide:** text the page itself shows back (a card's last four on a summary,
+  a username in a header) is the page's, and the outline reads it.
+- **The code card takes six digits**: Hermes's `vault.code` doesn't say how long the code is.
+- **JavaScript alerts and confirms have no UI** in the app's browser (a confirm reads as Cancel).
+- **To try on a device:** whether a click Hermes makes through the script counts as a user gesture
+  (pop-ups, the clipboard, universal links into other apps), and whether a same-page navigation
+  (`pushState`, a hash) waits the full 25 s for a load that never comes.
+
 ## 10. Mocks and flags
 
 `Tools/mock-hermes/browser.py` answers `browser.manage` and adds the `browser` and
@@ -352,6 +549,20 @@ Linear and Amazon; Bitwarden isn't installed. A master password containing "wron
 `POST /api/mock/vault` switches it: `{"idle": 60}` makes an unlock expire after a minute idle,
 `{"onepassword": "missing"|"off"|"locked"|"unlocked"}` (and `"bitwarden"`) sets a manager's state,
 `{"older": true}` answers every `vault.*` with -32601, `{"reset": true}` puts the demo data back.
+
+`Tools/mock-hermes/browser_control.py` is Hermes's browser-control broker on both transports
+(`browser.controller.*` on the socket, `POST /v1/browser-control/register` and its socket on the
+gateway), with Hermes's refusals in order and its 30 s deadline (then a cancel and
+"ControllerTimeout"). Start the backend with `--password <any>` and launch with
+`-HERMES_BOOTSTRAP_BACKEND_PASSWORD <the same>` to sign in as admin: Automatic sign-in gets the 4403
+Hermes gives it. "in the app" in a message opens the mock's Acme Cloud dashboard
+(`/mock-web/dashboard` on the gateway); signed out it lands on the sign-in page (any password
+works, and it's dropped unread), Passwords answers `supervisor_required`, and the reply asks the
+person to sign in and say "carry on", which reads the deploys a step at a time. "in the app slow"
+opens a page that never loads; "in the app router" asks for 192.168.1.1; "checkout in the app"
+opens a card form (`/mock-web/checkout`) for the person to fill. A chat with no controller
+uses "Hermes's own browser". `POST /api/mock/browser-control {"no_key": true}` answers the register
+route like a gateway without `API_SERVER_KEY`; `{"reset": true}` drops every controller.
 
 `-HERMES_PASSWORDS YES` opens Passwords (iPhone and iPad: with `-HERMES_OPEN settings`; the Mac
 opens its Settings window on the tab); `add:login|payment|address`, `unlock:<source>` and

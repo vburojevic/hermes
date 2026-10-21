@@ -92,6 +92,7 @@ final class SetupCenter {
         facts.taskProblems = reads.taskProblems
         facts.vaultSources = reads.vaultSources
         facts.vaultMissing = reads.vaultMissing
+        facts.inAppBrowserRefusal = workspace.inAppBrowser.refusal
         if let projects = workspace.projects, projects.hasLoaded, !projects.isAvailable { facts.projectsMissing = true }
         return facts
     }
@@ -373,7 +374,10 @@ final class SetupCenter {
                     self.reads.gatewayRunning = status?.gatewayRunning
                     self.reads.searchIndexRebuilding = status?.searchIndexRebuilding ?? false
                 },
-                Task { self.reads.config = await self.read(.config) { try? await client.config(profile: profile) } },
+                Task {
+                    self.reads.config = await self.read(.config) { try? await client.config(profile: profile) }
+                    if let config = self.reads.config { self.workspace?.inAppBrowser.read(BrowserSettings(config: config)) }
+                },
                 Task { self.reads.update = await self.read(.update) { try? await client.hermesUpdateCheck() } },
                 Task { self.reads.board = await self.read(.board) { try? await client.boardAvailability() } },
                 Task { self.reads.memory = await self.read(.memory) { try? await client.memoryStatus(profile: profile) } },

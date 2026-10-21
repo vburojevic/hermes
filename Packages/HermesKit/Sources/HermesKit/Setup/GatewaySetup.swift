@@ -91,6 +91,8 @@ public struct GatewaySetupFacts: Sendable, Equatable {
     public var vaultSources: [VaultSource]?
     /// `vault.sources` answered "unknown method" (a Hermes from before Passwords).
     public var vaultMissing = false
+    /// Why a chat couldn't make this app Hermes's browser, last time it tried (`docs/web.md` §6).
+    public var inAppBrowserRefusal: BrowserControlRefusal?
 
     public init(gatewayName: String, gatewayOnline: Bool, botMode: BotMode) {
         self.gatewayName = gatewayName

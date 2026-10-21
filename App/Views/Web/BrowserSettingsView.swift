@@ -43,6 +43,8 @@ struct BrowserSettingsView: View {
     @State private var choosingCloud = false
     /// The cloud provider when the provider sheet opened: only a save changes it.
     @State private var cloudBefore: String?
+    @State private var confirmingInApp = false
+    @State private var confirmingClear = false
 
     var body: some View {
         content
@@ -70,6 +72,19 @@ struct BrowserSettingsView: View {
                 }
             }) {
                 ToolsetKeySheet(model: model.workspace.appsAndTools, toolset: BuiltInToolset(name: "browser"))
+            }
+            .alert(String(localized: "Use this app's browser?"), isPresented: $confirmingInApp) {
+                Button("Not Now", role: .cancel) {}
+                Button("Use This App") { Task { await model.choose(.inThisApp) } }
+            } message: {
+                Text("Hermes will use this app's browser for new chats. You'll see everything it does.")
+            }
+            .confirmationDialog(String(localized: "Clear browsing data in this app?"), isPresented: $confirmingClear, titleVisibility: .visible) {
+                Button("Clear Browsing Data", role: .destructive) {
+                    Task { await BrowserController.clearData(gateway: model.workspace.id) }
+                }
+            } message: {
+                Text("Every site you signed in to in this app's browser for \(model.gatewayName) forgets you.")
             }
             .alert(String(localized: "Browser"), isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
                 Button("OK", role: .cancel) {}
@@ -140,12 +155,20 @@ struct BrowserSettingsView: View {
         } header: {
             Text("Where Hermes browses")
         } footer: {
-            Text("Applies to new chats. The chats you have open keep the browser they started with.")
+            VStack(alignment: .leading, spacing: 6) {
+                if model.place == .inThisApp, let refusal = model.workspace.inAppBrowser.refusal {
+                    Label(BrowserControlCopy.refusal(refusal, gateway: model.gatewayName), systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.warning)
+                }
+                Text("Applies to new chats. Passwords work everywhere except in this app, where you sign in yourself.")
+            }
         }
     }
 
     private func pick(_ place: BrowserPlace) {
         switch place {
+        case .inThisApp:
+            confirmingInApp = true
         case .cloud where model.settings?.cloud != nil && model.place != .cloud:
             // A provider is set up already: it becomes the place. In use, the row changes provider.
             Task { await model.choseCloud() }
@@ -166,7 +189,10 @@ struct BrowserSettingsView: View {
             if let place = model.place {
                 LabeledContent("Using", value: BrowserCopy.summary(place, settings: settings, gateway: model.gatewayName))
             }
-            if let browserUse = model.connection?.browserUse {
+            if model.place == .inThisApp {
+                // Only the built-in tools reach the app's browser; Browser Use stays off (`inThisAppPatch`).
+                LabeledContent("Engine", value: String(localized: "Built-in tools"))
+            } else if let browserUse = model.connection?.browserUse {
                 LabeledContent("Engine") {
                     HStack(spacing: 6) {
                         if model.busy.contains("engine") { Spinner() }
@@ -186,6 +212,8 @@ struct BrowserSettingsView: View {
         } footer: {
             if model.changedThisVisit {
                 Text("New chats use this. The chats you have open keep the browser they started with.")
+            } else if model.place == .inThisApp {
+                Text("You watch Hermes browse in the chat's Browser tab, and you can take over any time.")
             } else if model.place != .window {
                 Text("Hermes browses out of sight; you'll see each step in the chat.")
             }
@@ -209,6 +237,11 @@ struct BrowserSettingsView: View {
                       isOn: settings.localForPrivateAddresses, busy: "private") { on in await model.setLocalForPrivateAddresses(on) }
             switchRow(String(localized: "Record browser sessions"), detail: String(localized: "Saved as videos on \(model.gatewayName)"),
                       isOn: settings.recordSessions, busy: "record") { on in await model.setRecordSessions(on) }
+            Button(role: .destructive) {
+                confirmingClear = true
+            } label: {
+                Text("Clear Browsing Data in This App").foregroundStyle(Theme.danger)
+            }
             NavigationLink {
                 BlockedSitesView(model: model).settingsPage(back: String(localized: "Browser"))
             } label: {

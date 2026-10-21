@@ -45,7 +45,8 @@ public struct VaultSource: Identifiable, Hashable, Sendable {
         return rows.compactMap(VaultSource.init(json:))
     }
 
-    /// The name of Hermes's own vault.
+    // TODO(docs/web.md §9): show its lock once Hermes can protect it with a passphrase or the Keychain.
+    /// The name of Hermes's own vault. It has no master password: its key is a file beside it.
     public static let hermesVault = "local"
 
     /// `docs/web.md` §3's source states.

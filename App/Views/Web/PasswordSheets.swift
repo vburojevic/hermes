@@ -56,6 +56,7 @@ struct PasswordDetailView: View {
 
             Section {
                 LabeledContent("Source", value: sourceName)
+                // TODO(docs/web.md §9): Last Used, once `vault.list` says when.
                 if let created = item.createdAt {
                     LabeledContent("Added", value: created.formatted(date: .abbreviated, time: .omitted))
                 }
@@ -137,6 +138,7 @@ struct PasswordDetailView: View {
 }
 
 #if os(macOS)
+// TODO(docs/web.md §9): open the item itself once its id names the account and vault.
 /// A password manager's app on this Mac, for Open 1Password. The gateway's item ids don't say
 /// which account or vault an item is in, so the app opens, not the item.
 struct ManagerApp {

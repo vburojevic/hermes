@@ -1,5 +1,6 @@
 import Foundation
 
+// TODO(docs/web.md §9): read a dedicated card-fill request kind once Hermes sends one.
 /// A card fill waiting for the person's OK (`docs/web.md` §4, `approvalPayment`). Hermes asks with
 /// a generic approval: the command "Fill payment card '<label>' on <origin>" with the pattern key
 /// `mcp_elicitation` (`tools/browser_vault_tool.py` `_confirm_payment_fill`); its `vault-payment`

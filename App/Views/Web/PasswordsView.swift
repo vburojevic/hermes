@@ -399,6 +399,7 @@ struct VaultItemRow: View {
         case .login:
             return [item.identifier, site].compactMap { $0 }.joined(separator: " · ")
         case .payment, .address:
+            // TODO(docs/web.md §9): brand, last four and expiry once Hermes lists display-safe card facts.
             return site.map { String(localized: "For \($0)") } ?? String(localized: "No site, so Hermes can't fill it")
         }
     }

@@ -21,6 +21,9 @@ public struct BrowserSettings: Equatable, Sendable {
     public var recordSessions = false
     /// `browser.extension_control.enabled`: a browser controller (this app) may drive the tools.
     public var extensionControl = false
+    /// `browser.backend`: `""` (Browser Use when it's installed), `browser-use` or `off` (the
+    /// built-in tools, the only ones a controller can run).
+    public var backend = ""
     /// `security.website_blocklist`.
     public var blocklistEnabled = false
     public var blockedDomains: [String] = []
@@ -35,6 +38,7 @@ public struct BrowserSettings: Equatable, Sendable {
         localForPrivateAddresses = browser?["auto_local_for_private_urls"]?.boolValue ?? true
         recordSessions = browser?["record_sessions"]?.boolValue ?? false
         extensionControl = browser?["extension_control"]?["enabled"]?.boolValue ?? false
+        backend = browser?["backend"]?.stringValue ?? ""
         let blocklist = config["security"]?["website_blocklist"]
         blocklistEnabled = blocklist?["enabled"]?.boolValue ?? false
         if case .array(let domains)? = blocklist?["domains"] {
@@ -65,20 +69,45 @@ public struct BrowserSettings: Equatable, Sendable {
 
     // MARK: Writes (`PUT /api/config` bodies; Hermes deep-merges objects and replaces lists)
 
+    // TODO(docs/web.md §9): leave Browser Use as it was once `browser_exec` can reach a controller.
+    /// This app as the browser (`docs/web.md` §6): Hermes lets a registered controller drive its
+    /// tools, and only the built-in `browser_*` tools reach one (Browser Use's `browser_exec`
+    /// never does), so those are switched on too.
+    public static var inThisAppPatch: JSONValue {
+        .object(["browser": .object([
+            "extension_control": .object(["enabled": .bool(true)]), "backend": .string("off"), "use_real_profile": .bool(false),
+        ])])
+    }
+
+    /// The switch alone, for the profile Hermes was started with: it checks every registration
+    /// against that one (`browser.controller.register` isn't scoped to a profile).
+    public static var controllersAllowedPatch: JSONValue {
+        .object(["browser": .object(["extension_control": .object(["enabled": .bool(true)])])])
+    }
+
     /// A clean local browser: no cloud, no copied profile. `local` is written rather than left
     /// unset, so Hermes doesn't pick a cloud provider by itself.
     public static var cleanBrowserPatch: JSONValue {
-        .object(["browser": .object(["cloud_provider": .string("local"), "use_real_profile": .bool(false)])])
+        .object(["browser": .object([
+            "cloud_provider": .string("local"), "use_real_profile": .bool(false), "extension_control": .object(["enabled": .bool(false)]),
+        ])])
     }
 
     /// A copy of the person's browser profile, locally. Needs the consent first.
     public static var withYourLoginsPatch: JSONValue {
-        .object(["browser": .object(["cloud_provider": .string("local"), "use_real_profile": .bool(true)])])
+        .object(["browser": .object([
+            "cloud_provider": .string("local"), "use_real_profile": .bool(true), "extension_control": .object(["enabled": .bool(false)]),
+        ])])
     }
 
     /// Leaving the copied profile when going to the cloud: Hermes deletes the copy.
     public static var cloudPatch: JSONValue {
-        .object(["browser": .object(["use_real_profile": .bool(false)])])
+        .object(["browser": .object(["use_real_profile": .bool(false), "extension_control": .object(["enabled": .bool(false)])])])
+    }
+
+    /// A window on the gateway: the controller lets go.
+    public static var windowPatch: JSONValue {
+        .object(["browser": .object(["extension_control": .object(["enabled": .bool(false)])])])
     }
 
     public static func fastTextOnlyPatch(_ on: Bool) -> JSONValue {
@@ -145,6 +174,8 @@ public struct BrowserConnection: Equatable, Sendable {
 
 /// Where Hermes browses, as the Browser page offers it (`browserOption`).
 public enum BrowserPlace: String, CaseIterable, Identifiable, Sendable {
+    /// This app, in the chat's Inspector (`docs/web.md` §6).
+    case inThisApp
     /// A local Chromium that starts fresh each time (Hermes's default).
     case cleanBrowser
     /// A copy of the person's Chrome, Edge or Brave profile on the gateway.
@@ -157,8 +188,11 @@ public enum BrowserPlace: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
 
     /// Which place new chats use, in Hermes's own order when it builds a browser session: an
-    /// attached window first, then a cloud provider, then a copied profile, else a clean browser.
+    /// app's own browser first (a registered controller), then an attached window, then a cloud
+    /// provider, then a copied profile, else a clean browser.
     public static func current(_ settings: BrowserSettings, _ connection: BrowserConnection?) -> BrowserPlace {
+        // A registered controller takes a chat's browser tools before anything else.
+        if settings.extensionControl { return .inThisApp }
         if connection?.connected == true { return .window }
         if settings.cloud != nil { return .cloud }
         if settings.useRealProfile { return .withYourLogins }

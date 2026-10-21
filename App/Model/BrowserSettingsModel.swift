@@ -52,7 +52,9 @@ final class BrowserSettingsModel {
         async let config = client.config(profile: profile)
         async let status = manage(["action": .string("status")], timeout: .seconds(20))
         do {
-            settings = BrowserSettings(config: try await config)
+            let settings = BrowserSettings(config: try await config)
+            self.settings = settings
+            workspace.inAppBrowser.read(settings)
             loadError = nil
             hasLoaded = true
         } catch {
@@ -90,6 +92,15 @@ final class BrowserSettingsModel {
         defer { busy.remove(place.id) }
         do {
             switch place {
+            case .inThisApp:
+                try await leaveWindow()
+                try await write(BrowserSettings.inThisAppPatch)
+                // Hermes checks a registration against the profile it was started with: that one
+                // lets controllers register too (it changes nothing for its own chats by itself).
+                if let profile, !profile.isEmpty, let roster {
+                    try await roster.backendClient.updateConfig(BrowserSettings.controllersAllowedPatch, profile: nil)
+                }
+                workspace.inAppBrowser.turnedOn()
             case .window:
                 connectNotes = []
                 let result = try await manage(["action": .string("connect")], timeout: .seconds(60))
@@ -99,9 +110,12 @@ final class BrowserSettingsModel {
                     await load()
                     return
                 }
+                try await write(BrowserSettings.windowPatch)
+                workspace.inAppBrowser.turnedOff()
             case .cleanBrowser, .withYourLogins:
                 try await leaveWindow()
                 try await write(place == .cleanBrowser ? BrowserSettings.cleanBrowserPatch : BrowserSettings.withYourLoginsPatch)
+                workspace.inAppBrowser.turnedOff()
             case .cloud:
                 return
             }
@@ -120,6 +134,7 @@ final class BrowserSettingsModel {
         do {
             try await leaveWindow()
             try await write(BrowserSettings.cloudPatch)
+            workspace.inAppBrowser.turnedOff()
             changedThisVisit = true
         } catch {
             message = BrowserCopy.failure(error, gateway: gatewayName)
@@ -177,6 +192,7 @@ final class BrowserSettingsModel {
 enum BrowserCopy {
     static func title(_ place: BrowserPlace, gateway: String) -> String {
         switch place {
+        case .inThisApp: String(localized: "In this app")
         case .cleanBrowser: String(localized: "A clean browser on \(gateway)")
         case .withYourLogins: String(localized: "With your logins on \(gateway)")
         case .window: String(localized: "A window on \(gateway)")
@@ -186,6 +202,7 @@ enum BrowserCopy {
 
     static func detail(_ place: BrowserPlace, gateway: String) -> String {
         switch place {
+        case .inThisApp: String(localized: "Watch it live and take over any time. On a sign-in page, you sign in with your Passwords; Hermes waits.")
         case .cleanBrowser: String(localized: "Starts fresh every time. Signs in with the logins in Passwords.")
         case .withYourLogins: String(localized: "A copy of your Chrome profile, with its cookies and logins. Your own profile is never opened.")
         case .window: String(localized: "A Chrome window you can watch on \(gateway). What you sign in to there stays.")
@@ -195,6 +212,12 @@ enum BrowserCopy {
 
     static func tags(_ place: BrowserPlace, gateway: String) -> [String] {
         switch place {
+        case .inThisApp:
+            #if os(macOS)
+            [String(localized: "Live"), String(localized: "Take over"), String(localized: "While Hermes is open")]
+            #else
+            [String(localized: "Live"), String(localized: "Take over"), String(localized: "While the app is open")]
+            #endif
         case .cleanBrowser: [String(localized: "Default"), String(localized: "Free"), String(localized: "Not visible")]
         case .withYourLogins: [String(localized: "Your logins"), String(localized: "Chrome, Edge or Brave")]
         case .window: [String(localized: "Visible on \(gateway)")]
@@ -204,9 +227,15 @@ enum BrowserCopy {
 
     static func symbol(_ place: BrowserPlace) -> String {
         switch place {
+        case .inThisApp:
+            #if os(macOS)
+            "macwindow"
+            #else
+            "iphone"
+            #endif
         case .cleanBrowser: "desktopcomputer"
         case .withYourLogins: "person.badge.key"
-        case .window: "macwindow"
+        case .window: "rectangle.on.rectangle"
         case .cloud: "cloud"
         }
     }
