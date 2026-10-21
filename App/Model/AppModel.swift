@@ -42,6 +42,7 @@ final class AppModel {
         selectedBotID = bots.first { $0.id == saved }?.id ?? bots.first?.id
         #if DEBUG
         bootstrapFromEnvironment()
+        LaunchTrace.mark("model ready (\(bots.count) gateways)")
         #endif
         #if HERMES_PUSH
         PushCenter.shared.attach(self)

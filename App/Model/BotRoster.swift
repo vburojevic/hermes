@@ -241,6 +241,7 @@ final class BotRoster {
                   !self.hasLoaded, !self.isTornDown, self.link == link else { return }
             self.cachedRows = rows
             self.apply(rows.map(BotProfile.init(json:)).filter { !$0.name.isEmpty })
+            LaunchTrace.mark("cached Bots shown (\(rows.count))", id: "cached Bots")
             // Connected when the app last ran: its first moments read "Reconnecting…", like a drop's
             // (`reconnectGrace`), not offline at the first failed try.
             if self.socket == nil, self.droppedAt == nil {
@@ -457,6 +458,7 @@ final class BotRoster {
             connectedAt = .now
             droppedAt = nil
             state = .online(version: version)
+            LaunchTrace.mark("Bot Mode socket open")
             // Even when `state` didn't change (a reconnect from online): what waits goes now.
             resumeConnectedWaiters()
             // Once per backend run: a restart (a new replay epoch) may be a new version.
@@ -1432,6 +1434,7 @@ final class BotRoster {
             let result = try await request("profiles.list", [:], timeout: .seconds(30))
             guard case .array(let rows)? = result["profiles"] else { return }
             apply(rows.map(BotProfile.init(json:)).filter { !$0.name.isEmpty }, quickly: ContinuousClock.now - began < .seconds(5))
+            LaunchTrace.mark("Bots fetched (\(rows.count))", id: "Bots fetched")
             if rows != cachedRows {
                 cachedRows = rows
                 RosterCache.save(botID, rows: rows)

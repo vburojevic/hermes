@@ -184,6 +184,14 @@ accessibility queries a tapping tool sends. `--seed-bot-chat` with an export of 
 and tables makes Ops a heavy chat to open. `-HERMES_INLINE_SELECTION YES` makes iPhone and iPad
 replies selectable in place again, as they were, to measure what that costs.
 
+Measuring a cold launch (same build): `-HERMES_LAUNCH_LOG YES` prints each launch step once with
+its time since the process started (`LaunchTrace`: the model, the first view, the kept chats, Bots
+and last lines, the gateway's answer, the socket, the fresh lists, each row's last line), and the
+chat load steps above with it. `-HERMES_RESTORE bot:ops` (or `session:<key>`) opens as if the
+window had been showing that chat. A Mac window behind other windows isn't drawn, so its chat
+doesn't load until it's in front; measure the open chat on the simulator. Kill the app between
+launches, and launch twice: the first after a build pays for loading the new binary.
+
 The frame log's times count from the process's start, with marks for the root view, the first
 frame and the open chat showing (`chat showing`), and each mark carries the main thread's CPU so
 far: a cold launch reads straight off it. `-HERMES_SCROLL_RUN <rounds>` scrolls the open chat from

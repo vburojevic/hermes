@@ -623,7 +623,12 @@ struct MainView: View {
             #endif
             .task {
                 // The window comes back where it was (Tasks keeps its task; see TasksSplitView).
-                if workspace.selection == nil, let storedSelection, let item = SidebarItem(storedValue: storedSelection) {
+                var restored = storedSelection
+                #if DEBUG
+                // `-HERMES_RESTORE bot:ops` (or `session:<key>`): as if the window had been showing it.
+                restored = UserDefaults.standard.string(forKey: "HERMES_RESTORE") ?? restored
+                #endif
+                if workspace.selection == nil, let restored, let item = SidebarItem(storedValue: restored) {
                     if case .project = item { workspace.sidebarMode = .chats }
                     workspace.selection = item
                 }

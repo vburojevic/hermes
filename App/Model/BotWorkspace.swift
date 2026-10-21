@@ -438,6 +438,7 @@ final class BotWorkspace: Identifiable {
                   !self.hasFetchedSessions, self.sessions.isEmpty, self.bot.baseURL == endpoint else { return }
             self.sessions = cached
             self.nextSessionOffset = cached.count
+            LaunchTrace.mark("cached chats shown (\(cached.count))", id: "cached chats")
         }
     }
 
@@ -855,6 +856,7 @@ final class BotWorkspace: Identifiable {
                 return
             }
             connection = .online(version: status.version)
+            LaunchTrace.mark("gateway answered")
             // Side by side: the model list and widget answers don't wait behind a chat list that a
             // busy Mac takes minutes over.
             async let sessions: Void = refreshSessions()
@@ -919,6 +921,7 @@ final class BotWorkspace: Identifiable {
                 sessions = fresh
                 widgets.markKnownChats()
             }
+            LaunchTrace.mark("chat list fetched (\(fresh.count))", id: "chat list fetched")
             hasMoreSessions = page.hasMore
             nextSessionOffset = limit
             for session in sessions {
