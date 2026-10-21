@@ -447,6 +447,9 @@ def run_request_turn(sid, stored, lower):
     elif "clarify open" in lower:
         r = ask(sid, "clarify", {"questions": [{"qid": "skip", "question": "Which topics should the daily digest skip from now on?"}]})
         answer = f"Noted: {json.dumps((r or {}).get('answers'))}."
+    elif "clarify pair" in lower:
+        r = ask(sid, "clarify", {"questions": B["CLARIFY_PAIR"]})
+        answer = f"Set up with: {json.dumps((r or {}).get('answers'), ensure_ascii=False)}."
     elif "clarify long" in lower:
         # A real ask: a long question, and picks too long for one line (three on an iPhone).
         r = ask(sid, "clarify", {"questions": [{"qid": "swap", "question": "Pull Appeeky volume and difficulty for replacement keywords (e.g. carryon, camping, flight, beach, essentials) and bring you an exact keyword-field swap? Costs roughly 20–30 Appeeky credits.",

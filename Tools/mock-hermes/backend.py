@@ -902,6 +902,16 @@ Swift Testing runs tests in parallel, so shared fixtures show up as flaky tests 
 
 Want me to start with step 1 and report the warning count?"""
 
+# "clarify pair": two questions, the first answered at length, so its one-line summary sits over
+# the second in the card (docs/quick-actions.md §1).
+CLARIFY_PAIR = [
+    {"qid": "scope", "question": "Which Google Workspace services may I use, and how?",
+     "choices": ["Yes—Gmail, Calendar, Drive, Docs and Sheets, read/write; no Contacts (Recommended)",
+                 "Read-only for now", "Not yet"]},
+    {"qid": "protection", "question": "Is the Google account enrolled in Advanced Protection (hardware security keys required for sign-in)?",
+     "choices": ["No or not sure (Recommended)", "Yes"]},
+]
+
 
 def run_turn(sid, text):
     runtime = RUNTIME[sid]
@@ -938,6 +948,17 @@ def run_turn(sid, text):
         stream(sid, "Let me try that")
         time.sleep(0.4)
         return finish(sid, stored, "", status="error", error="The model provider returned 529: overloaded. Try again in a moment.")
+
+    if "clarify pair" in visible.lower():
+        # A reply, then two questions in one card, the first answered at length (Bot Chats and
+        # Hermes chats both).
+        emit(sid, "message.interim", {"text": f"I'm {bot_title(profile)}. I can turn records into agendas and summaries, plan "
+                                              "events and keep the paperwork straight. Two questions before I connect "
+                                              "your accounts.", "already_streamed": False})
+        result = server_request(sid, "clarify", {"questions": CLARIFY_PAIR})
+        answer = f"Set up with: {json.dumps((result or {}).get('answers'), ensure_ascii=False)}."
+        stream(sid, answer)
+        return finish(sid, stored, answer)
 
     if "late reply" in visible.lower():
         # The turn ends saying nothing and its reply is stored 12 s later (a busy database, or a

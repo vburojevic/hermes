@@ -30,6 +30,7 @@ struct RequestCard: View {
         }
         .requestCard()
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("requestCard")
     }
 }
 
@@ -110,6 +111,18 @@ private struct ClarifyCard: View {
             }
             footer
         }
+        #if DEBUG
+        // `-HERMES_CLARIFY_STEP <n>` (Debug) opens a card of several questions at question n, the
+        // earlier ones answered with their first pick (screenshots; the Mac can't be clicked).
+        .task {
+            let wanted = min(UserDefaults.standard.integer(forKey: "HERMES_CLARIFY_STEP"), questions.count)
+            guard wanted > 1, step == 0 else { return }
+            for earlier in questions.prefix(wanted - 1) {
+                answers[earlier.id] = earlier.choices.first ?? String(localized: "Your answer")
+            }
+            step = wanted - 1
+        }
+        #endif
         .onChange(of: step) {
             freeText = answers[question.id] ?? ""
             // Back to a question answered in words: the words, in their field.

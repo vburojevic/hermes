@@ -217,6 +217,9 @@ with upstream #136220) or without (Hermes 0.22, the default), for Settings → S
 `-HERMES_SEND_HERE <text> -HERMES_SEND_HERE_ROUNDS 1` sends it once into the open chat.
 In a Bot Chat, "links" answers with addresses written out every way agents write them (bare on a
 line, in a sentence, `www.`, a Markdown link, `localhost`, one in code) to check that they open.
+"clarify pair" (a Bot Chat or a Hermes chat) asks two questions in one card, the first with a long
+pick; `-HERMES_CLARIFY_STEP 2` opens such a card at its second question with the first answered
+by its first pick, so its one-line summary shows without a click (the Mac).
 
 Widgets (`Tools/mock-hermes/widgets.py`, [widgets.md](widgets.md) §13) play the
 hermes-app-widgets plugin over both servers: "widgets" pages through every example (three per

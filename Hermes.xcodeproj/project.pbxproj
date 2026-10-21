@@ -31,6 +31,7 @@
 		16F129BD5787DEF2B31B793A /* PreviewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B8DEB5FC3888A222BAA3996 /* PreviewController.swift */; };
 		18655E6E2F858030BD4FBE42 /* RealtimeTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0D396632008CFC1877E9DA /* RealtimeTalk.swift */; };
 		199EA52B9B260954C0E952AC /* ReadRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB15EAEFAB7E7C3B22F6B3FF /* ReadRecheck.swift */; };
+		1D29FFEFED30AD19557D7263 /* RequestCardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15FE26933154EBF12B5A749D /* RequestCardUITests.swift */; };
 		1E75843BD92DF5E116D855C9 /* GatewayJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1478CE26C0C38DDA9CABDC /* GatewayJobView.swift */; };
 		201AF65BA7D28F4AD433BF12 /* SidebarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB786670227F23BE604A7E7 /* SidebarChrome.swift */; };
 		20623955B4DCDBFFB4F07A3D /* BoardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF0637C55B964A45E3D01AA /* BoardModel.swift */; };
@@ -370,6 +371,7 @@
 		11EA5EF1AAB5B7B845A055F6 /* WelcomeDemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeDemo.swift; sourceTree = "<group>"; };
 		137EDA73B896BDE9D8EDB6A1 /* PairingConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingConnectView.swift; sourceTree = "<group>"; };
 		1526571A993B3EEBD5C03F78 /* RoutinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutinesView.swift; sourceTree = "<group>"; };
+		15FE26933154EBF12B5A749D /* RequestCardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestCardUITests.swift; sourceTree = "<group>"; };
 		16471D90FF6989063389860C /* TranscriptCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptCache.swift; sourceTree = "<group>"; };
 		17223865007E78A50C512209 /* LearnedSkillPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedSkillPage.swift; sourceTree = "<group>"; };
 		177942A1E815274590668D2B /* Formatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatting.swift; sourceTree = "<group>"; };
@@ -970,6 +972,7 @@
 				1110800A83B6C987DEA232F2 /* IndicatorsUITests.swift */,
 				0B7007FFF1EBBE3208FDDC9F /* PluginsUITests.swift */,
 				7F281FE5600EDDA0A9346D0D /* ProcessesUITests.swift */,
+				15FE26933154EBF12B5A749D /* RequestCardUITests.swift */,
 				50BD332B5E6974D145FD6A19 /* VoiceUITests.swift */,
 				2BF7364666C120B869D7095D /* WidgetGalleryUITests.swift */,
 				C345608D385B87D80B70485E /* WidgetsUITests.swift */,
@@ -1599,6 +1602,7 @@
 				4F1145F47475D2CFEED8157E /* IndicatorsUITests.swift in Sources */,
 				EB0A522033F38EFED652E5FD /* PluginsUITests.swift in Sources */,
 				88437626B47FBF14208587E1 /* ProcessesUITests.swift in Sources */,
+				1D29FFEFED30AD19557D7263 /* RequestCardUITests.swift in Sources */,
 				C28896533AA3CF30D16E846E /* VoiceUITests.swift in Sources */,
 				CBE81E73B7A75266EABC750C /* WidgetGalleryUITests.swift in Sources */,
 				4F247949E61DBF4AE19D2193 /* WidgetsUITests.swift in Sources */,

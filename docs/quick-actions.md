@@ -23,6 +23,10 @@ the design's component names, used in code comments.
   the running tool's title ("Asking a question…").
 - An approval always takes the card first; other requests follow, oldest first. Several approvals
   at once (parallel tool calls) share one batch card (§3).
+- The card is never wider than the screen. Questions and picks wrap; in a card of several
+  questions each earlier answer is one line ("Which Google Workspace…: Yes—Gmail, Calendar…") that
+  truncates inside the card, and tapping it goes back to that question. Rows of chips wrap and a
+  chip too long for a line shortens its text (`FlowLines`).
 - A card with a deadline shows a countdown in its header ("m:ss", red under 30 s). Connection
   requests carry one (`deadline_at` or `timeout_seconds`); other requests do when their params
   include `timeout_seconds`.
@@ -235,8 +239,11 @@ yes such as "yes", "go ahead", "run it"), "allow in this chat", or "deny" (any n
   (push rules: [notifications.md](notifications.md)).
 - Flagged commands can only be run from their card in the app.
 - Cards work with VoiceOver, Dynamic Type and a hardware keyboard.
+- No card is wider than the screen: "clarify pair", answered with its long first pick, shows
+  "Question 2 of 2" whole on the smallest iPhone, an iPad and the Mac (`RequestCardUITests`).
 - Against the mock backend (`Tools/mock-hermes/chats.py`), words in a message ask for each card:
-  "approve", "batch", "flagged", "clarify" (and "clarify steps", "clarify multi", "clarify open"),
+  "approve", "batch", "flagged", "clarify" (and "clarify steps", "clarify multi", "clarify open",
+  "clarify long" for picks of three lines, "clarify pair" for two questions with a long first answer),
   "secret", "sudo", "unlock", "save login", "2fa", "choose accent", "choose theme", "choose apps",
   "connect linear", "sign in", "install" and "timeout".
 

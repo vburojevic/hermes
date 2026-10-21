@@ -856,27 +856,13 @@ private extension Int {
 
 // MARK: - Flow layout
 
-/// Chips that wrap onto more lines when they don't fit.
+/// Chips that wrap onto more lines when they don't fit, none wider than the row
+/// (`FlowLines`: a chip too long for a line shortens its text).
 nonisolated struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
-            rowHeight = max(rowHeight, size.height)
-        }
-        // Whole points: a fractional height carried into a List row left the cells a pixel apart,
-        // the page showing through as a line between them (the Plugins hub's wrapped tags).
-        return CGSize(width: maxX, height: (y + rowHeight).rounded(.up))
+        lines(proposal.width, subviews).size
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -884,19 +870,14 @@ nonisolated struct FlowLayout: Layout {
         // the bounds are the reported width rounded to the screen's pixels, a hair narrower, so a
         // full line's last chip went onto a line the size never counted and drew over whatever
         // came next (the reply's actions under its sources).
-        // (The same arithmetic as there, from zero, so rounding can't break a line differently.)
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+        for (subview, frame) in zip(subviews, lines(proposal.width, subviews).frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func lines(_ width: CGFloat?, _ subviews: Subviews) -> FlowLines {
+        FlowLines(width: width, spacing: spacing, sizes: subviews.map { $0.sizeThatFits(.unspecified) }) { index, width in
+            subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
         }
     }
 }
