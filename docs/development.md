@@ -148,7 +148,16 @@ gateway does, for the read outbox (`docs/inbox.md` §4), and `POST
 names: `researcher`, `writer` is Ada, `ops`), as Hermes's one-shot `hermes -p <bot> chat` does:
 the message is stored, then 12 s with no rows and no `session.active_list` entry, then the
 reply ("long": a command step for 25 s first; "dies": no reply ever, as when Hermes stops a
-delivery with the sender's chat). `-HERMES_PUSH_OPEN botreply:<profile>` opens a
+delivery with the sender's chat). That process holds the Bot Chat until it replies, so a send is
+refused with Hermes's own sentence ([chat.md](chat.md), a chat another Hermes process holds).
+`POST /api/mock/routine-elsewhere {profile, title, output, reply, seconds}` is a routine's
+follow-up the same way (its output stored with no display kind, held `seconds`, default 20).
+`POST /api/mock/hold {profile, seconds, surface, age, late}` holds a Bot Chat with nothing stored:
+`age` minutes ago (45 reads as a terminal, 0 as a one-shot booting), `surface` `cli` or
+`desktop`; `late: true` takes the next send, stores it and refuses the turn as it runs instead (the
+`error` event shape). `POST /api/mock/held-notice {profile}` is a turn Hermes starts itself there
+refused the same way (`message.start`, then `error`), as the notice of a finished process was on
+2026-10-21. `-HERMES_PUSH_OPEN botreply:<profile>` opens a
 reply's notification for that Bot 20 s after launch, as a tap would. `-HERMES_FACE_CANVAS YES`
 draws every Bot face instead of playing resting faces on layers ([bot-faces.md](bot-faces.md) §3),
 to compare the two. Live indicators ([chat.md](chat.md) §4a): "ponder" thinks for about 14 s before

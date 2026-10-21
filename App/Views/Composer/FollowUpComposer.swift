@@ -170,9 +170,36 @@ struct QueueTray: View {
         return String(localized: "sends when this reply is done")
     }
 
+    /// What holds the chat while the first message waits for it, in words: Hermes's own work
+    /// lets it go by itself; a terminal or another window gets Hermes's sentence.
+    private var holdNote: String? {
+        guard conversation.waitsForChat, !isEditing, let holder = conversation.chatHolder else { return nil }
+        let name = conversation.askerName
+        switch holder {
+        case .answeringBot(let sender):
+            return String(localized: "\(name) is answering \(sender).")
+        case .routine(let routine):
+            return String(localized: "\(name) is following up on its routine \(routine).")
+        case .working:
+            return conversation.isBotChat ? String(localized: "\(name) is busy in another Hermes process.")
+                : String(localized: "Hermes is busy with this chat in another process.")
+        case .elsewhere(let sentence):
+            return sentence
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
+            if let holdNote {
+                Text(holdNote)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                    .transition(.opacity)
+            }
             ForEach(Array(held.prefix(showsAll ? held.count : Self.visibleCount).enumerated()), id: \.offset) { index, text in
                 HeldRow(order: index + 1, text: text, gateway: conversation.gatewayName)
             }

@@ -50,20 +50,20 @@ struct MidTurnTests {
     @Test func aBotsMessageWithNothingAfterItIsBeingAnswered() {
         let incoming = SessionMessage(id: 9, role: "user", content: .text("Message from 🤖 CORE (@hermes): Two infra items for you."), timestamp: at(-20))
         let earlier = SessionMessage(id: 8, role: "assistant", content: .text("Done."), timestamp: at(-3600))
-        #expect(TranscriptBuilder.awaitsReplyToBot([earlier, incoming], now: now))
+        #expect(TranscriptBuilder.awaitsReply([earlier, incoming], now: now))
         #expect(TranscriptBuilder.runsElsewhere([earlier, incoming], now: now))
         // Its first step, then its reply.
         #expect(TranscriptBuilder.runsElsewhere(rows(through: 1), now: now))
         #expect(!TranscriptBuilder.runsElsewhere(rows(through: 3), now: now))
         // Ten minutes with nothing after it: that turn died (Hermes stopped the delivery).
-        #expect(TranscriptBuilder.awaitsReplyToBot([earlier, incoming], now: at(9 * 60)))
-        #expect(!TranscriptBuilder.awaitsReplyToBot([earlier, incoming], now: at(11 * 60)))
-        // The person's own message, or a routine's delivery, runs where the app hears it.
+        #expect(TranscriptBuilder.awaitsReply([earlier, incoming], now: at(9 * 60)))
+        #expect(!TranscriptBuilder.awaitsReply([earlier, incoming], now: at(11 * 60)))
+        // The person's own message, or a routine's delivered as a dashboard turn, runs where the app hears it.
         let mine = SessionMessage(id: 10, role: "user", content: .text("Message from me: hi"), timestamp: at(-10))
-        #expect(!TranscriptBuilder.awaitsReplyToBot([earlier, mine], now: now))
+        #expect(!TranscriptBuilder.awaitsReply([earlier, mine], now: now))
         let routine = SessionMessage(id: 11, role: "user", content: .text("[Cronjob \"brief\" output — scheduled job, not the user.]\n\nAll quiet."),
                                      timestamp: at(-10), displayKind: "internal_notification")
-        #expect(!TranscriptBuilder.awaitsReplyToBot([earlier, routine], now: now))
+        #expect(!TranscriptBuilder.awaitsReply([earlier, routine], now: now))
     }
 
     /// The open chat shows a working turn under the Bot's message, and the row says who it answers
@@ -78,6 +78,10 @@ struct MidTurnTests {
         }
         #expect(turn.isWorking && turn.steps.isEmpty && turn.startedAt == at(-20))
         #expect(ElsewhereTurn.of([incoming], now: now) == ElsewhereTurn(answering: "CORE"))
+        // Its first step stored: it still answers CORE, running that call.
+        let step = SessionMessage(id: 10, role: "assistant", content: .text(""),
+                                  toolCalls: [ToolCall(id: "c2", name: "terminal", arguments: "{}")], timestamp: at(-5))
+        #expect(ElsewhereTurn.of([incoming, step], now: now) == ElsewhereTurn(answering: "CORE", runningTool: "terminal"))
         #expect(ElsewhereTurn.of(rows(through: 1), now: now) == ElsewhereTurn(runningTool: "terminal"))
         #expect(ElsewhereTurn.of(rows(through: 2), now: now) == ElsewhereTurn(runningTool: nil))
         #expect(ElsewhereTurn.of(rows(through: 3), now: now) == nil)

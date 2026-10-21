@@ -144,14 +144,17 @@ by one, and `sessions.changed` brings each in. That turn shows as working
 (`TranscriptBuilder.markMidTurn`, `ElsewhereTurn`):
 
 - **Before its first step.** Hermes stores the other Bot's message as the turn starts; with
-  nothing after it yet (under 10 minutes old), a working turn shows under it.
+  nothing after it yet (under 10 minutes old), a working turn shows under it. A routine's output
+  stored with no display kind is the same: Hermes's scheduler hands it to the Bot's one-shot
+  `hermes chat` (one tagged `internal_notification` runs as a dashboard turn, which the app hears).
 - **Stopped mid-turn.** The last stored row is a tool call or a tool's result, newer than 20
   minutes: its timer runs, a call without a result shows running, and what Hermes last said
   shows under it.
 - **Everywhere the Bot shows.** The roster reads a Bot Chat's last rows when its count or last
   activity moves (`BotRoster.runningElsewhere`): the Bot's row gets its activity line ("Running a
-  command", else thinking), its tile says "Working: Answering CORE", its face works, the Bot
-  Chat's title says what it does, and the jump pill follows the turn as it follows a live one.
+  command", else thinking), its tile says what it runs ("Working: Running a command"), else
+  "Working: Answering CORE" (or "Following up on <routine>"), its face works, the Bot Chat's
+  title says what it does, and the jump pill follows the turn as it follows a live one.
   The Bots found working are read again every 30 s, so one that went quiet stops showing.
 
 While it shows and the chat is on screen, the chat is fetched again every 10 s until the reply is
@@ -161,12 +164,37 @@ when the dashboard closes the sender's chat (its turn ended while no app was con
 receiving Bot's turn is stopped with it: the other Bot's message stays unanswered, and stops
 showing as working after 10 minutes.
 
-That other process holds the chat while it works: Hermes takes one writer per chat, and refuses a
-message sent meanwhile (4090 with `data.reason` `SESSION_NOT_OWNED`). The message isn't lost or
-sent around the hold: it waits at the top of Up Next ("sends when Engineer is free"), and goes as
-soon as the stored turn is seen to end, else after 30 s, 1 and 2 minutes, then every 5. Messages
-sent while it waits line up behind it. A 4090 for Hermes's own cap (`MAX_CONCURRENT_SESSIONS`,
-only when `max_concurrent_sessions` is set) says so instead.
+**A chat another Hermes process holds.** That other process holds the chat while it works:
+Hermes takes one writer per chat (hermes_cli/active_sessions.py), from the moment the one-shot
+`hermes chat` boots until its turn ends, and refuses any other turn meanwhile. It refuses in two
+shapes, with the same sentence ("This chat is open in another Hermes window/terminal. Use it there,
+or start a new chat here.\nDetails: session … opened by cli 0m ago."), which `ChatHold` reads
+back (surface, age):
+
+- **At the send.** `prompt.submit` answers 4090 with `data.reason` `SESSION_NOT_OWNED`; nothing is
+  stored.
+- **Once taken.** A turn already accepted (a message Hermes queued, or one Hermes starts itself,
+  like the notice that a background process finished) is refused as it runs: `message.start`,
+  then a bare `error` event with the sentence. `GatewayTurnDecoder` makes it `.held`, never
+  `.failed`, so it's never the failure card that told the person to use another window.
+
+A message sent from here isn't lost or sent around the hold: it waits at the top of Up Next and
+goes as soon as the stored turn is seen to end, else after 30 s, 1 and 2 minutes, then every 5.
+Messages sent while it waits line up behind it. Refused once taken, Hermes keeps the copy it stored
+at the send, so that message shows twice once it goes. A turn Hermes started itself just doesn't
+run, with nothing shown for it. Either way the chat is read again, so what holds it shows
+(`ElsewhereTurn`), and Up Next says it under "sends when Cofounder is free" (`ChatHolder`):
+
+| Holder | Up Next says |
+|---|---|
+| Another Bot's message being answered | "Cofounder is answering Engineer." |
+| A routine's follow-up | "Cofounder is following up on its routine control-room-issue-alerts." |
+| A turn of its own mid-work, or a Bot Chat's `hermes chat` that took it under 2 minutes ago with nothing stored yet | "Cofounder is busy in another Hermes process." |
+| Anything else: a terminal, another window (`desktop`, `tui`), a normal chat | Hermes's own first line |
+
+Once Hermes's own work was seen holding it, the line stays until the message goes. A 4090 for
+Hermes's own cap (`MAX_CONCURRENT_SESSIONS`, only when `max_concurrent_sessions` is set) says so
+instead. The mock's holds are in `docs/development.md`.
 
 ### Tools
 

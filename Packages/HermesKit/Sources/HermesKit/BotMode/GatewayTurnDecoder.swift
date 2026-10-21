@@ -111,10 +111,16 @@ public enum GatewayTurnDecoder {
         case "approval.cancelled":
             events = [.approvalResolved(requestID: nil)]
         case "error":
+            let message = nonEmpty(payload["message"]?.stringValue)
+            if let hold = message.flatMap(ChatHold.init(refusal:)) {
+                // Refused once taken: another Hermes process holds the chat. Not a failure of the turn.
+                events = [.held(hold)]
+                break
+            }
             // `code: provider_not_configured`: no model provider set up, for the setup flow.
             let problem: [TurnEvent] = payload["code"]?.stringValue == "provider_not_configured"
                 ? [.providerProblem(ProviderProblem(kind: .notConfigured))] : []
-            events = problem + [.failed(nonEmpty(payload["message"]?.stringValue))]
+            events = problem + [.failed(message)]
         default:
             events = []
         }

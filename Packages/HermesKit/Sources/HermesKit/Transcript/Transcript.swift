@@ -619,26 +619,43 @@ public enum TranscriptBuilder {
         return now.timeIntervalSince(at) < staleAfter
     }
 
-    /// How long another Bot's message with nothing after it still counts as being answered. Its
-    /// first step is stored after the first model call, so a turn silent this long has died (the
-    /// sender's delivery is stopped when Hermes closes the sender's chat).
+    /// How long another Bot's message (or a routine's output) with nothing after it still counts as
+    /// being answered. Its first step is stored after the first model call, so a turn silent this
+    /// long has died (the sender's delivery is stopped when Hermes closes the sender's chat).
     public static let replyToBotStaleAfter: TimeInterval = 10 * 60
 
-    /// The chat's last row is another Bot's message with nothing after it yet: Hermes stores it as
-    /// the receiving Bot's one-shot `hermes -p <bot> chat` starts its turn, and the reply follows
-    /// from that process, which the app hears nothing from (`docs/chat.md`, a turn going on elsewhere).
-    public static func awaitsReplyToBot(_ messages: [SessionMessage], now: Date = .now,
-                                        staleAfter: TimeInterval = replyToBotStaleAfter) -> Bool {
-        guard let last = lastTurnRow(messages), last.role == "user",
-              BotMentions.parseAgentMessage(last.content.text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil,
+    /// The chat's last row is a message Hermes answers in a one-shot `hermes -p <bot> chat`, with
+    /// nothing after it yet: another Bot's, or a routine's output stored without a display kind
+    /// (Hermes's scheduler hands it to that process; one tagged `internal_notification` is a
+    /// dashboard turn, which the app hears). Hermes stores it as that turn starts, and the reply
+    /// follows from that process, which the app hears nothing from (`docs/chat.md`, a turn going on
+    /// elsewhere).
+    public static func awaitsReply(_ messages: [SessionMessage], now: Date = .now,
+                                   staleAfter: TimeInterval = replyToBotStaleAfter) -> Bool {
+        guard let last = lastTurnRow(messages), last.role == "user", answeredElsewhere(last) != nil,
               let at = last.timestamp else { return false }
         return now.timeIntervalSince(at) < staleAfter
     }
 
+    /// Who a message answered in a one-shot `hermes chat` is from: the Bot that sent it, or the
+    /// routine whose output it is.
+    enum ElsewhereSender {
+        case bot(String)
+        case routine(String)
+    }
+
+    static func answeredElsewhere(_ message: SessionMessage) -> ElsewhereSender? {
+        let text = message.content.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let agent = BotMentions.parseAgentMessage(text) { return .bot(agent.senderName) }
+        guard message.displayKind == nil, let routine = BotMentions.parseRoutineDelivery(text) else { return nil }
+        return .routine(routine.name)
+    }
+
     /// A turn runs where no events reach the app: it stopped mid-work, or it has only just taken
-    /// another Bot's message. The chat, its row, its tile and the jump line show it working.
+    /// another Bot's message or a routine's output. The chat, its row, its tile and the jump line
+    /// show it working.
     public static func runsElsewhere(_ messages: [SessionMessage], now: Date = .now) -> Bool {
-        endsMidTurn(messages, now: now) || awaitsReplyToBot(messages, now: now)
+        endsMidTurn(messages, now: now) || awaitsReply(messages, now: now)
     }
 
     /// The rows `build` keeps in a turn decide it: a hidden nudge or a steer stored last doesn't end
@@ -659,9 +676,9 @@ public enum TranscriptBuilder {
     /// it did.
     @discardableResult
     public static func markMidTurn(_ items: inout [TranscriptItem], messages: [SessionMessage], now: Date = .now) -> Bool {
-        if awaitsReplyToBot(messages, now: now), case .user(let message)? = items.last {
-            // Another Bot's message, its answer not started in the stored rows yet: a working turn
-            // under it, until the first step is stored.
+        if awaitsReply(messages, now: now), case .user(let message)? = items.last {
+            // Another Bot's message or a routine's output, its answer not started in the stored rows
+            // yet: a working turn under it, until the first step is stored.
             let at = lastTurnRow(messages)?.timestamp
             items.append(.assistant(AssistantTurn(id: "t-reply-\(message.id)", state: .streaming, startedAt: at)))
             return true

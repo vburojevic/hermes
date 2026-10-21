@@ -337,6 +337,11 @@ final class ConversationModel: Identifiable {
     /// Hermes refused a message because another of its processes holds this chat (`waitForChat`):
     /// Up Next waits for it, and says so.
     private(set) var waitsForChat = false
+    /// What holds the chat while a message waits for it, in words for Up Next: a Bot answering
+    /// another Bot, a routine's follow-up, or a terminal (`ChatHolder`).
+    private(set) var chatHolder: ChatHolder?
+    /// Hermes's refusal behind `chatHolder`, until a message goes.
+    @ObservationIgnored private var chatHold: ChatHold?
     @ObservationIgnored private var chatWaitRetry: Task<Void, Never>?
     @ObservationIgnored private var chatWaitAttempts = 0
     /// The stored chat stopped mid-turn at the last look (`watchMidTurn`).
@@ -1180,6 +1185,7 @@ final class ConversationModel: Identifiable {
         // The other process's turn ended: what waited for the chat goes now.
         if wasMidTurn, !midTurn, waitsForChat { retryChat(after: 1) }
         wasMidTurn = midTurn
+        if chatHold != nil { describeHold() }
         if runsElsewhere != midTurn { runsElsewhere = midTurn }
         resolveImages(in: built)
         restoreParts(in: &built)
@@ -1700,19 +1706,71 @@ final class ConversationModel: Identifiable {
 
     /// Hermes refused the message because another of its processes holds the chat (a Bot answering
     /// another Bot's message in its one-shot `hermes chat`, a routine): it takes one writer per
-    /// chat (4090 `SESSION_NOT_OWNED`). The message waits at the top of Up Next, nothing lost, and
-    /// goes once the chat is free: when its stored turn is seen to end, else after 30 s, 1 and
-    /// 2 minutes, then every 5.
-    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment]) {
+    /// chat (4090 `SESSION_NOT_OWNED`, or the turn refused once taken). The message waits at the
+    /// top of Up Next, nothing lost, which says what holds the chat, and goes once the chat is
+    /// free: when its stored turn is seen to end, else after 30 s, 1 and 2 minutes, then every 5.
+    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment], hold: ChatHold?) {
         endDelivery()
         pendingUser = nil
         live = nil
         isStopping = false
         animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files), at: 0) }
         waitsForChat = true
+        if let hold {
+            chatHold = hold
+            describeHold()
+        }
         chatWaitAttempts += 1
         let delays: [Double] = [30, 60, 120]
         retryChat(after: chatWaitAttempts <= delays.count ? delays[chatWaitAttempts - 1] : 300)
+        // The stored rows say what holds it, and watch for it to let go (`watchMidTurn`).
+        if !isFetching { reload() }
+    }
+
+    /// What holds the chat, from the refusal and what its stored rows show running. Once Hermes's
+    /// own work was seen holding it, a turn ending doesn't make it a terminal: the message goes.
+    private func describeHold() {
+        guard let chatHold else { return }
+        let turn = ElsewhereTurn.of(rawMessages)
+        if turn == nil, chatHolder?.isHermesWork == true { return }
+        let holder = chatHold.holder(of: turn, inBotChat: isBotChat)
+        if holder != chatHolder { chatHolder = holder }
+    }
+
+    /// Hermes refused a turn it had already taken: another of its processes holds the chat
+    /// (`ChatHold`, a bare `error` event). Never a failure card: a message sent from here waits in
+    /// Up Next like one refused at once (Hermes keeps the copy it stored at the send, so that one
+    /// shows twice), and a turn Hermes started itself, a finished process's notice, just doesn't
+    /// run; the chat shows what holds it from its stored rows.
+    private func turnHeld(_ hold: ChatHold) {
+        guard let current = live, !current.isFinished else { return }
+        guard current.turn.steps.isEmpty, current.turn.answer.isEmpty, current.pendingText.isEmpty else {
+            // Under way already: not a refusal Hermes sends, but if it does, its words end the turn.
+            applyToLive(SequencedTurnEvent(seq: nil, event: .held(hold)))
+            return
+        }
+        ConnectionLog.logger.notice("chat: Hermes refused a turn it had taken, the chat is held by \(hold.surface ?? "?", privacy: .public) (\(self.isRemoteTurn ? "its own turn" : "a send from here", privacy: .public))")
+        settleFallback?.cancel()
+        settleFallback = nil
+        turnBaseline = nil
+        let fromHere = !isRemoteTurn
+        isRemoteTurn = false
+        isBotTurnOpen = false
+        if fromHere {
+            waitForChat(text: lastUserText, images: lastUserImages, files: lastUserFiles, hold: hold)
+        } else {
+            endDelivery()
+            animateRows {
+                pendingUser = nil
+                redirectedParts = []
+                live = nil
+            }
+            if !isFetching { reload() }
+        }
+        if let botTurnDone {
+            self.botTurnDone = nil
+            botTurnDone.resume()
+        }
     }
 
     private func retryChat(after seconds: Double) {
@@ -4004,6 +4062,8 @@ extension ConversationModel {
                     SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: answer["user_row_id"]?.truncatedIntValue, session: sessionID)
                 }
                 chatWaitAttempts = 0
+                chatHold = nil
+                chatHolder = nil
                 turnGate.take()
                 if live?.runID == nil { apply(.runStarted(runID: runtime)) }
                 break sending
@@ -4064,7 +4124,7 @@ extension ConversationModel {
                    !(live?.turn.steps.isEmpty == false) {
                     // Never around the hold (the API server would make a second writer): it waits.
                     isBotTurnOpen = false
-                    waitForChat(text: text, images: images, files: files)
+                    waitForChat(text: text, images: images, files: files, hold: ChatHold(refusal: refusal.message))
                     return
                 }
                 if !isBotChat, submitted == nil || error is GatewayRPCError || error is GatewaySocket.Failure {
@@ -4402,6 +4462,8 @@ extension ConversationModel {
                 if turnGate.settles { settle() }
             case .titleChanged:
                 if !isBotChat { workspace?.titleChanged(in: self) }
+            case .held(let hold):
+                turnHeld(hold)
             default:
                 trackSteers(item.event)
                 applyToLive(item)

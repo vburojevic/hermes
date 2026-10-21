@@ -318,12 +318,13 @@ final class BotRoster {
     }
 
     /// What its running turn is doing ("Running a command…"), when one runs here, or the one it
-    /// runs answering another Bot ("Answering CORE").
+    /// runs answering another Bot ("Answering CORE") or following up on a routine.
     func workingStatus(_ name: String) -> String? {
         if let conversation = conversations[name], conversation.isWorking { return conversation.liveStatus }
         guard let turn = runningElsewhere[name] else { return nil }
+        if let tool = turn.runningTool { return ToolDescriptor.describe(tool).activeTitle }
         if let sender = turn.answering { return String(localized: "Answering \(sender)") }
-        return turn.runningTool.map { ToolDescriptor.describe($0).activeTitle }
+        return turn.routine.map { String(localized: "Following up on \($0)") }
     }
 
     /// Thinking in its Bot Chat here, answering another Bot elsewhere, or a background worker of

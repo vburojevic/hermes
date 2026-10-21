@@ -179,6 +179,10 @@ public struct LiveTurn: Sendable, Equatable {
             let fallback = pendingText.isEmpty ? "Hermes couldn't finish this reply." : "The reply was cut short."
             finish(.failed(message ?? fallback), now: now)
 
+        case .held(let hold):
+            // The chat takes it to wait for the chat instead; a turn that gets this far shows Hermes's words.
+            finish(.failed(hold.sentence), now: now)
+
         case .cancelled:
             finish(.stopped, now: now)
 

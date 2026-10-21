@@ -1132,31 +1132,55 @@ def run_turn(sid, text):
     return finish(sid, stored, "", status="interrupted")
 
 
-HELD_CHATS = set()  # stored ids another (one-shot) Hermes process is writing to
+# Stored ids another Hermes process holds (hermes_cli/active_sessions.py, one writer per chat) ->
+# {"surface": "cli" | "desktop" | "tui", "since": when it took the chat, "late": the send is taken,
+# its row stored, and the turn refused as it runs instead of at the send}.
+HELD_CHATS = {}
+
+
+def hold_refusal(stored_id):
+    """Hermes's refusal, word for word (`session_already_owned_message`, its `format_age`)."""
+    held = HELD_CHATS.get(stored_id) or {}
+    minutes = int(max(0.0, time.time() - held.get("since", time.time())) // 60)
+    hours, rest = divmod(minutes, 60)
+    age = f"{minutes}m" if minutes < 60 else (f"{hours}h" if not rest else f"{hours}h{rest}m")
+    return ("This chat is open in another Hermes window/terminal. Use it there, or start a new chat here.\n"
+            f"Details: session {stored_id} opened by {held.get('surface', 'cli')} {age} ago.")
+
+
+def bot_chat(profile):
+    return next((s for s in STORED.values() if s["profile"] == profile and s["title"] == BOT_CHAT), None)
 
 
 def deliver_dm(sender, target, text):
     """Hermes answers a Bot's message in a one-shot `hermes -p <target> chat`: the message is stored
     as that turn starts, then nothing while the model works (no event, no `session.active_list` row,
-    only the stored rows move), then its steps and reply. "dies": the delivery is stopped after the
-    message is stored (Hermes ends it with the sender's chat), so no reply ever comes."""
+    only the stored rows move), then its steps and reply. That process holds the chat from start to
+    end: a send from the app is refused (4090 SESSION_NOT_OWNED). "dies": the delivery is stopped
+    after the message is stored (Hermes ends it with the sender's chat), so no reply ever comes."""
     with LOCK:
-        chat = next((s for s in STORED.values() if s["profile"] == target and s["title"] == BOT_CHAT), None)
+        chat = bot_chat(target)
         if chat is None:
             chat = STORED[add_session(target, BOT_CHAT, hidden=True)]
         handle = "hermes" if PROFILES[sender]["is_default"] else sender
+        HELD_CHATS[chat["id"]] = {"surface": "cli", "since": time.time()}
         add_message(chat["id"], "user", f"Message from 🤖 {bot_title(sender)} ({'@' + handle}): {text}")
     if "dies" in text.lower():
+        HELD_CHATS.pop(chat["id"], None)  # the process is gone, and its hold with it
         return
 
     def reply():
+        try:
+            answer()
+        finally:
+            HELD_CHATS.pop(chat["id"], None)
+
+    def answer():
         # The first model call: long enough to see the Bot working before anything else is stored.
         time.sleep(12)
         if "long" in text.lower():
             # A long turn in the one-shot `hermes chat`: its rows land one by one and no event reaches
-            # the app, so the stored chat stops mid-turn for a while (it shows working). That process
-            # holds the chat meanwhile: a send from the app is refused (4090 SESSION_NOT_OWNED).
-            HELD_CHATS.add(chat["id"])
+            # the app, so the stored chat stops mid-turn for a while (it shows working).
             call = f"call_{uuid.uuid4().hex[:8]}"
             add_message(chat["id"], "assistant", "The earlier test run died with the session, so I'm running it again.",
                         tool_calls=[{"id": call, "type": "function",
@@ -1167,7 +1191,6 @@ def deliver_dm(sender, target, text):
                         tool_call_id=call, tool_name="terminal")
             time.sleep(3)
             add_message(chat["id"], "assistant", f"All 284 tests pass, {bot_title(sender)}. The release branch is ready.")
-            HELD_CHATS.discard(chat["id"])
             return
         if "background" not in text.lower():
             add_message(chat["id"], "assistant", f"Got it, {bot_title(sender)}. I'll take a look and report back here.")
@@ -1183,6 +1206,60 @@ def deliver_dm(sender, target, text):
         add_message(chat["id"], "assistant", f"{bot_title(sender)} confirmed the change in its chat. "
                     "The backup check passed and nothing else needs doing.", touch=False)
     threading.Thread(target=reply, daemon=True).start()
+
+
+def routine_elsewhere(profile, title, output, reply, seconds):
+    """A routine's follow-up as Hermes's scheduler runs it: the output stored with no display kind as
+    a one-shot `hermes -p <bot> chat` starts, which holds the chat until its reply `seconds` later."""
+    with LOCK:
+        chat = bot_chat(profile)
+        if chat is None:
+            return False
+        HELD_CHATS[chat["id"]] = {"surface": "cli", "since": time.time()}
+        add_message(chat["id"], "user", f'[Cronjob "[bot:{profile}] {title}" output — scheduled job, not the user. '
+                    f"Review it, act on anything that needs action, and summarize for the chat.]\n\n{output}")
+
+    def finish_later():
+        time.sleep(seconds)
+        with LOCK:
+            add_message(chat["id"], "assistant", reply)
+        HELD_CHATS.pop(chat["id"], None)
+    threading.Thread(target=finish_later, daemon=True).start()
+    return True
+
+
+def hold_chat(profile, seconds, surface, age_minutes, late):
+    """Another Hermes process holds the Bot Chat with nothing stored: a terminal's `hermes chat`
+    (`age` minutes ago), another window, or a one-shot only just booted. Lets go after `seconds`."""
+    with LOCK:
+        chat = bot_chat(profile)
+        if chat is None:
+            return False
+        HELD_CHATS[chat["id"]] = {"surface": surface, "since": time.time() - age_minutes * 60, "late": late}
+
+    def release():
+        time.sleep(seconds)
+        HELD_CHATS.pop(chat["id"], None)
+    threading.Thread(target=release, daemon=True).start()
+    return True
+
+
+def held_notice(profile):
+    """A turn Hermes starts itself in a held Bot Chat (the notice that a background process
+    finished): `message.start`, then the refusal as a bare `error` event, to every attached client."""
+    with LOCK:
+        chat = bot_chat(profile)
+        if chat is None:
+            return 0
+        if chat["id"] not in HELD_CHATS:
+            HELD_CHATS[chat["id"]] = {"surface": "cli", "since": time.time()}
+        sids = [sid for sid, runtime in RUNTIME.items() if runtime.get("stored") == chat["id"]]
+    for sid in sids:
+        emit(sid, "message.start", {})
+    time.sleep(0.2)
+    for sid in sids:
+        emit(sid, "error", {"message": hold_refusal(chat["id"])})
+    return len(sids)
 
 
 def deliver_routine(profile, title, output, reply):
@@ -1383,10 +1460,25 @@ def method_session_activate(params):
 def method_prompt_submit(params):
     sid, runtime = runtime_for(params)
     text = params.get("text") or ""
-    if runtime["stored"] in HELD_CHATS:
-        # Like hermes_cli/active_sessions.py: one writer per chat.
-        raise RPCError(4090, f"Session {runtime['stored']} is already active in another Hermes process (surface=cli).",
-                       {"reason": "SESSION_NOT_OWNED"})
+    held = HELD_CHATS.get(runtime["stored"])
+    if held and not held.get("late"):
+        # Like hermes_cli/active_sessions.py: one writer per chat, refused before anything is stored.
+        raise RPCError(4090, hold_refusal(runtime["stored"]), {"reason": "SESSION_NOT_OWNED"})
+    if held:
+        # Taken, its row stored at the send (`_persist_submit_user_row`), then refused as the turn
+        # runs (`_admit_prompt_turn`): `message.start`, then a bare `error` with the same sentence.
+        # A race in Hermes, so only the first: a send after it is refused at the send.
+        with LOCK:
+            held["late"] = False
+            add_message(runtime["stored"], "user", text)
+
+        def refuse():
+            time.sleep(0.3)
+            emit(sid, "message.start", {})
+            time.sleep(0.2)
+            emit(sid, "error", {"message": hold_refusal(runtime["stored"])})
+        threading.Thread(target=refuse, daemon=True).start()
+        return {"status": "streaming"}
     with LOCK:
         busy = runtime["running"]
     if busy:
@@ -1827,6 +1919,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(404, {"detail": "Unknown profile"})
             deliver_dm(body["from"], body["to"], body.get("text") or "")
             return self.send_json(200, {"ok": True})
+        if url.path == "/api/mock/routine-elsewhere":
+            # Mock-only: a routine's follow-up in a one-shot `hermes chat`, holding the Bot Chat.
+            done = routine_elsewhere(body.get("profile") or "researcher", body.get("title") or "Issue alerts",
+                                     body.get("output") or "**Issue change**: 1 new TestFlight feedback.",
+                                     body.get("reply") or "That's the new TestFlight feedback; it's waiting for your review.",
+                                     float(body.get("seconds") or 20))
+            return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/hold":
+            # Mock-only: the Bot Chat held with nothing stored (a terminal, another window, a one-shot booting).
+            done = hold_chat(body.get("profile") or "researcher", float(body.get("seconds") or 60),
+                             body.get("surface") or "cli", float(body.get("age") or 0), bool(body.get("late")))
+            return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/held-notice":
+            # Mock-only: Hermes's own turn in a held Bot Chat, refused once taken.
+            return self.send_json(200, {"ok": True, "clients": held_notice(body.get("profile") or "researcher")})
         match = re.fullmatch(r"/api/cron/jobs/([^/]+)/trigger", url.path)
         if match:
             profile = parse_qs(url.query).get("profile", ["default"])[0]

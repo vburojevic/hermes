@@ -27,6 +27,8 @@ public enum TurnEvent: Sendable, Equatable {
     case status(String)
     case completed(output: String?, usage: TokenUsage?, runtime: RuntimeInfo?)
     case failed(String?)
+    /// Hermes refused the turn it had taken: another of its processes holds the chat (`ChatHold`).
+    case held(ChatHold)
     /// The turn failed on the model provider's credentials, or with no provider set up
     /// (`docs/setup.md` §4.3); comes just before its `failed`.
     case providerProblem(ProviderProblem)
