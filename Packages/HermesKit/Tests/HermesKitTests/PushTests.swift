@@ -318,7 +318,7 @@ import Testing
         }
         #expect(try await client.read(deviceID: "dev-1", chats: ["s1", "s1_root"], rooms: ["room_1"]) == 2)
         try await client.setPresence(.away, deviceID: "dev-1", sync: ["s1"], unread: .init(chats: ["s1"], rooms: ["room_1"]),
-                                     muted: .init(chats: ["s9"]), badgeOthers: 3)
+                                     muted: .init(chats: ["s9"]), listed: .init(chats: ["s1", "s2"], rooms: ["room_1"]), badgeOthers: 3)
         let sent = await calls.all.compactMap { $0.1["arg"]?.stringValue }
         func json(_ arg: String, after command: String) throws -> JSONValue {
             try JSONDecoder().decode(JSONValue.self, from: Data(arg.dropFirst(command.count + 1).utf8))
@@ -329,7 +329,7 @@ import Testing
         let away = try json(sent[1], after: "presence")
         #expect(away["state"]?.stringValue == "away" && away["unread"]?["rooms"] == .array([.string("room_1")]))
         #expect(away["muted"]?["chats"] == .array([.string("s9")]) && away["muted"]?["rooms"] == .array([]))
-        #expect(away["badge_others"]?.doubleValue == 3)
+        #expect(away["badge_others"]?.doubleValue == 3 && away["listed"]?["chats"] == .array([.string("s1"), .string("s2")]))
     }
 }
 

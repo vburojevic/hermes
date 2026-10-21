@@ -111,6 +111,34 @@ public enum ReadNotices {
     }
 }
 
+/// The chats one gateway's list in the app shows, every way a notice may name them: the only ones
+/// the app icon badge may count (`docs/notifications.md` §2 Badge).
+public struct CountableChats: Codable, Sendable, Hashable {
+    /// Session ids: each chat's own and its lineage root, each Bot Chat's.
+    public var ids: Set<String>
+    /// Bots by profile.
+    public var bots: Set<String>
+    public var rooms: Set<String>
+
+    public init(ids: Set<String> = [], bots: Set<String> = [], rooms: Set<String> = []) {
+        self.ids = ids
+        self.bots = bots
+        self.rooms = rooms
+    }
+
+    public func contains(_ chat: ReadNotices.Chat) -> Bool {
+        if let room = chat.room { return rooms.contains(room) }
+        if let profile = chat.profile, bots.contains(profile) { return true }
+        return !chat.ids.isDisjoint(with: ids)
+    }
+
+    public func contains(_ chat: UnreadChat) -> Bool {
+        if let room = chat.room { return rooms.contains(room) }
+        if chat.key.hasPrefix("bot:") { return bots.contains(String(chat.key.dropFirst(4))) }
+        return !ids.isDisjoint(with: chat.ids)
+    }
+}
+
 /// A chat the app icon badge counts (`docs/notifications.md` §2 Badge), as the app or the
 /// service extension wrote it into the App Group.
 public struct UnreadChat: Codable, Sendable, Hashable {

@@ -43,6 +43,8 @@ import AppKit
 final class PushAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        // A chat on screen behind a locked screen isn't being read (`BotRoster.isInFront`).
+        ScreenLock.start()
     }
 }
 #endif

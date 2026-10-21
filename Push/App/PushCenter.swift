@@ -530,7 +530,11 @@ final class PushCenter {
         let targets = model.workspaces.values.compactMap { workspace -> (BotRoster, [String], AwayBadge?, Int)? in
             guard gatewayStates[workspace.id]?.isOn == true, let roster = workspace.roster else { return nil }
             // What the badge counts, so the plugin keeps it right while the app is away.
-            let badge = countsUnread ? workspace.unread.badgeLists() : nil
+            var badge: AwayBadge?
+            if countsUnread {
+                let lists = workspace.unread.badgeLists()
+                badge = (lists.unread, lists.muted, workspace.unread.listedChats())
+            }
             return (roster, workspace.chatsToKeepCurrent(showing: workspace.id == model.currentWorkspace?.id), badge,
                     shared.badge(besides: workspace.id))
         }
@@ -541,7 +545,7 @@ final class PushCenter {
             for (roster, chats, badge, others) in targets where roster.state.isOnline {
                 _ = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
                     .setPresence(.away, deviceID: deviceID, sync: chats, unread: badge?.unread, muted: badge?.muted,
-                                 badgeOthers: badge == nil ? nil : others)
+                                 listed: badge?.listed, badgeOthers: badge == nil ? nil : others)
             }
             activity.end()
         }
@@ -569,6 +573,8 @@ final class PushCenter {
     }
 
     func applyBadge() async {
+        // Lists for gateways the app no longer has would count for ever.
+        if let gateways = model?.workspaces.keys, !gateways.isEmpty { shared.keepUnread(gateways: Set(gateways)) }
         #if os(iOS)
         try? await UNUserNotificationCenter.current().setBadgeCount(shared.badge)
         #else
@@ -579,8 +585,11 @@ final class PushCenter {
 
     /// A gateway's unread, unmuted chats changed (`UnreadStore`): the badge follows when it
     /// counts them.
-    func unreadChanged(_ chats: [UnreadChat], gateway: UUID) {
-        guard shared.recordUnread(chats, gateway: gateway) else { return }
+    func unreadChanged(_ chats: [UnreadChat], countable: CountableChats?, gateway: UUID) {
+        // Before its list has loaded, a gateway keeps what the badge knew.
+        guard let countable else { return }
+        let listed = shared.recordCountable(countable, gateway: gateway)
+        guard shared.recordUnread(chats, gateway: gateway) || listed else { return }
         Task { await applyBadge() }
     }
 

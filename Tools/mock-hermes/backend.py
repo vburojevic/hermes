@@ -97,6 +97,18 @@ GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongsid
 GATEWAY = []  # server.py itself, when it runs alongside: the default profile's chats are its sessions
 
 
+# Mock-only: shared with server.py when it runs alongside (`/api/mock/fail-reads`).
+FAILED_READS = {"count": 0}
+
+
+def take_failed_read() -> bool:
+    target = GATEWAY[0].FAILED_READS if GATEWAY else FAILED_READS
+    if target["count"] <= 0:
+        return False
+    target["count"] -= 1
+    return True
+
+
 def gateway_chat(sid, profile):
     """The default profile's chats live in the gateway's store (server.py) when it runs alongside: the
     dashboard reads and edits the same rows, read marks included (docs/inbox.md §1)."""
@@ -1688,6 +1700,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.pattern_route("PATCH", url.path, parse_qs(url.query), body):
             return
         match = re.fullmatch(r"/api/sessions/([^/]+)", url.path)
+        if match and body.get("unread") is False and take_failed_read():
+            return self.send_json(503, {"detail": "Gateway busy"})
         if not match:
             return self.send_json(404, {"detail": "Not Found"})
         # Hermes' sidebar edit (`rename_session_endpoint`): revision-fenced (unless `--plain-edits`);
@@ -1785,6 +1799,11 @@ class Handler(BaseHTTPRequestHandler):
             for peer in peers:
                 peer.frozen = True
             return self.send_json(200, {"ok": True, "frozen": len(peers)})
+        if url.path == "/api/mock/fail-reads":
+            # Mock-only: the next N read marks are refused with 503 (a busy gateway), on both servers.
+            target = GATEWAY[0].FAILED_READS if GATEWAY else FAILED_READS
+            target["count"] = max(0, int(body.get("count") or 0))
+            return self.send_json(200, {"ok": True, "count": target["count"]})
         if url.path == "/api/mock/message-agent":
             # Mock-only: another Bot's `message_agent`, delivered off-socket like Hermes' one-shot CLI.
             if body.get("from") not in PROFILES or body.get("to") not in PROFILES:

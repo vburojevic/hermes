@@ -151,19 +151,21 @@ public struct AppPushClient: Sendable {
     /// - Parameters:
     ///   - sync: leaving (`away`), the chats to keep current while the app is away: a turn ending
     ///     in one wakes the app with a background push (`sync`). Older plugins ignore it.
-    ///   - unread: leaving, the chats the app icon badge counts, `muted` the muted ones and
-    ///     `badgeOthers` what other gateways add to it: the plugin keeps the badge right while the
-    ///     app is away (plugin 1.4.0).
+    ///   - unread: leaving, the chats the app icon badge counts, `muted` the muted ones,
+    ///     `listed` every chat the app lists (only those may count) and `badgeOthers` what other
+    ///     gateways add to it: the plugin keeps the badge right while the app is away (plugin 1.4.0,
+    ///     `listed` 1.4.2).
     @discardableResult
     public func setPresence(_ presence: Presence, deviceID: String, visibleChat: String? = nil, live: [String]? = nil,
                             sync: [String]? = nil, unread: ChatLists? = nil, muted: ChatLists? = nil,
-                            badgeOthers: Int? = nil) async throws -> Int {
+                            listed: ChatLists? = nil, badgeOthers: Int? = nil) async throws -> Int {
         var args: [String: JSONValue] = ["device_id": .string(deviceID), "state": .string(presence.rawValue)]
         if let visibleChat { args["session_id"] = .string(visibleChat) }
         if let live { args["live"] = .array(live.map(JSONValue.string)) }
         if let sync { args["sync"] = .array(sync.map(JSONValue.string)) }
         if let unread { args["unread"] = unread.json }
         if let muted { args["muted"] = muted.json }
+        if let listed { args["listed"] = listed.json }
         if let badgeOthers { args["badge_others"] = .number(Double(max(0, badgeOthers))) }
         let answer = try await run("presence", args)
         return Int(answer["open"]?.doubleValue ?? 0)

@@ -96,6 +96,7 @@ public final class PushShared: @unchecked Sendable {
         gateways = gateways.filter { $0.value.appID != appID }
         unreadLists[appID.uuidString] = nil
         recentReads[appID.uuidString] = nil
+        countableLists[appID.uuidString] = nil
         var counts = openCounts
         for key in counts.keys where gateways[key] == nil { counts[key] = nil }
         openCounts = counts
@@ -153,6 +154,41 @@ public final class PushShared: @unchecked Sendable {
         recentReads[appID.uuidString] ?? ReadMarks()
     }
 
+    /// The chats each gateway's list shows (`UnreadStore`): only these may count in the badge. A
+    /// notice for anything else (a routine's run, a Bot-to-Bot one-shot chat, a helper's session)
+    /// is news the person can't see in the app, so it never counts.
+    private var countableLists: [String: CountableChats] {
+        get { decode([String: CountableChats].self, "push.countable") ?? [:] }
+        set { encode(newValue, "push.countable") }
+    }
+
+    public func countable(gateway appID: UUID) -> CountableChats? {
+        countableLists[appID.uuidString]
+    }
+
+    /// The app's list moved; returns whether the badge changed.
+    @discardableResult
+    public func recordCountable(_ chats: CountableChats, gateway appID: UUID) -> Bool {
+        var lists = countableLists
+        guard lists[appID.uuidString] != chats else { return false }
+        lists[appID.uuidString] = chats
+        countableLists = lists
+        return badgeMode == .unreadChats
+    }
+
+    /// Lists for gateways the app no longer has go: they'd count for ever.
+    @discardableResult
+    public func keepUnread(gateways appIDs: Set<UUID>) -> Bool {
+        let keep = Set(appIDs.map(\.uuidString))
+        var unread = unreadLists, countable = countableLists
+        let before = unread.count
+        unread = unread.filter { keep.contains($0.key) }
+        countable = countable.filter { keep.contains($0.key) }
+        unreadLists = unread
+        countableLists = countable
+        return unread.count != before && badgeMode == .unreadChats
+    }
+
     /// The app counted a gateway's unread chats (`UnreadStore`); returns whether the badge changed.
     @discardableResult
     public func recordUnread(_ counted: [UnreadChat], gateway appID: UUID) -> Bool {
@@ -170,6 +206,7 @@ public final class PushShared: @unchecked Sendable {
     @discardableResult
     public func noteUnread(_ notice: PushNotice, gateway appID: UUID, at date: Date = .now) -> Bool {
         guard let entry = UnreadChat(notice, at: notice.sentAt ?? date), let chat = ReadNotices.chat(of: notice),
+              countable(gateway: appID)?.contains(chat) == true,
               !isMuted(gateway: appID, keys: notice.muteKeys + [entry.key], at: date)
         else { return false }
         if let read = notice.read, entry.isRead(by: read) { return false }
@@ -222,7 +259,20 @@ public final class PushShared: @unchecked Sendable {
         let open = openCounts.filter { known[$0.key] != nil && $0.value.at > cutoff }.reduce(0) { $0 + $1.value.count }
         guard badgeMode == .unreadChats else { return open }
         // Every gateway's list: the Mac registers with none, and a removed gateway's list goes with it.
-        return open + unreadLists.values.reduce(0) { $0 + $1.count }
+        let countable = countableLists
+        return open + unreadLists.reduce(0) { total, list in
+            total + Self.counted(list.value, countable: countable[list.key])
+        }
+    }
+
+    /// The chats of a list the badge counts: those the app's list shows. A list from before the app
+    /// shared what it shows keeps only its own entries, never one only a notice added (`push:`).
+    static func counted(_ chats: [UnreadChat], countable: CountableChats?) -> Int {
+        var seen: Set<String> = []
+        return chats.reduce(0) { total, chat in
+            let shown = countable.map { $0.contains(chat) } ?? !chat.key.hasPrefix("push:")
+            return shown && seen.insert(chat.key).inserted ? total + 1 : total
+        }
     }
 
     // MARK: Mutes

@@ -166,7 +166,7 @@ search).
 ### Opening a chat
 
 - Just before a chat opens (`BotWorkspace.selection` `willSet`), the store notes how far it was
-  read (`UnreadStore.noteOpening`); a Bot Chat is marked read as it opens, so this comes first.
+  read (`UnreadStore.noteOpening`). Opening isn't reading: what's been on screen is (below).
 - Something new: the transcript finds the New Messages line (`NewMessagesMarker`): above the head
   of the first new turn (the message that started it, when that's new too), or the first new Bot
   message. A chat left half-way resumes after the last row this device showed.
@@ -180,13 +180,22 @@ search).
 
 ### Marking read
 
-- On the gateway when the newest message has been on screen for a second with the app active, or
-  on a jump to the end (`TranscriptView.markRead`). After each turn that ends while you watch,
-  again.
+- Read follows what's been on screen. On the gateway when the newest message has been on screen
+  for a second, or on a jump to the end (`TranscriptView.markRead`): chats and Bot Chats alike,
+  also while a Bot works on screen (at most every 10 s, `ReadThrottle`, the last carrying what came
+  meanwhile). Opening a chat at its newest message reads it all at once; opening it partway up
+  reads nothing until you reach the end.
+- Only where someone can be reading: the app in front, on the Mac the window in front
+  (`controlActiveState`) with the screen unlocked and awake (`ScreenLock`). A window behind
+  another, a locked Mac and notification previews never mark anything read.
 - Scrolled up with new messages below, the chat stays unread: Hermes' mark only means "read until
-  now". This device remembers how far it got.
+  now" (it stamps the time it lands, there's no "read up to this message"). This device remembers
+  how far it got; the jump pill offers what's new below.
+- A mark that doesn't reach the gateway (busy, offline) waits in the read outbox (`ReadOutbox`,
+  kept on the device) and goes when it answers, after 5 s, 15 s, 45 s, up to every 5 minutes;
+  marks only move forward, and a waiting mark is dropped once new messages came into its chat
+  (sending it then would mark them read unseen).
 - Mark as Unread (menu, swipe, ⇧⌘U); opening the chat clears it.
-- Bot Chats keep `BotRoster`'s rule: read as they open.
 
 ### The jump pill
 

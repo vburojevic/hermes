@@ -274,6 +274,19 @@ def public_session(s, listing):
 # ---------------------------------------------------------------- runs
 
 
+
+# Mock-only: the next N read marks (`unread: false`) are refused with 503, as a busy gateway does
+# (`POST /api/mock/fail-reads {count}` on the backend), for the app's read outbox.
+FAILED_READS = {"count": 0}
+
+
+def take_failed_read() -> bool:
+    with LOCK:
+        if FAILED_READS["count"] <= 0:
+            return False
+        FAILED_READS["count"] -= 1
+        return True
+
 class Run:
     def __init__(self, run_id, session_id, text):
         self.id = run_id
@@ -710,6 +723,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self.body()
         m = re.fullmatch(r"/api/sessions/([^/]+)", path)
+        if m and body.get("unread") is False and take_failed_read():
+            return self.error(503, "Gateway busy", "busy")
         if m and m.group(1) in SESSIONS:
             # api_server.py's PATCH: these fields only, flags as booleans; `unread` moves the read
             # mark (false stamps it now, true sets it to 0).

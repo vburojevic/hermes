@@ -81,7 +81,7 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
 | `register` | `device_id`, `token` (APNs, hex), `topic` (bundle id), `environment` (`development` / `production`, from the provisioning profile), `public_key` (base64 X25519), `platform` (`ios` / `ipados`), `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}` (the relay installation id and the gateway's name), `relay` (`ok` or the error), `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) | `open` (open requests) |
+| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2) and `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) | `open` (open requests) |
 | `read` | `device_id` (the device that read), `chats` (session ids: each chat's id and its lineage root, a Bot Chat's stored id), `rooms` (group room ids). Plugin 1.4.0 | `ok`, `open` |
 | `activity` | `device_id`, `token` (none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` | `version`, `gateway`, `relay_error`, `devices`, `registered`, `preferences`, `open` |
@@ -269,8 +269,9 @@ Rules:
     two or three an hour, and none reach an app the person force-quit. What a push doesn't reach,
     the next notice, the next app refresh or coming back to the app catches up.
   - A device that counts unread chats in its badge told the gateway which ones as it left
-    (`presence away` with `unread` and `muted`). The plugin keeps that set, adds the chats it
-    notifies the device about (not the muted ones), drops chats read anywhere, and when the number
+    (`presence away` with `unread`, `muted` and `listed`). The plugin keeps that set, adds the chats
+    it notifies the device about that the app lists (not the muted ones), drops chats read anywhere,
+    and when the number
     changes while the device is away sends a badge-only push (`aps {badge}`, nothing shown, priority
     5, collapse id `badge`, plus `badge_others`), so the Lock Screen's badge is right even when the
     app isn't woken.
@@ -284,6 +285,11 @@ Rules:
   counts older than six hours. Chats: one list per gateway in the App Group (`PushShared.unread`),
   which the app writes whenever its counts move (`UnreadStore`), the service extension adds a chat
   to when a reply or message for it arrives (unless it's muted), and every read takes chats off.
+  Only chats the app's list shows ever count (`PushShared.countable`, written with the list): a
+  routine's run, a Bot-to-Bot one-shot chat or a helper's session is a new session the list never
+  shows, and counting their replies took a badge to 120 for two unread chats (build 2610210714). A
+  list from before that rule keeps only the app's own entries, and lists for gateways the app no
+  longer has go.
   The badge (`PushShared.badge`) is set by the app whenever that list or a count moves and at
   launch (`setBadgeCount`, `NSApp.dockTile.badgeLabel`, so the Mac's Dock shows it too), by the
   extension on every notice, and by the plugin's badge-only push (`docs/inbox.md` §5).

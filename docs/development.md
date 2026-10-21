@@ -142,6 +142,8 @@ Hermes did at load 500 on 2026-10-19, and how the app tells busy from offline
 ([connecting-and-voice.md](connecting-and-voice.md) §8); `{"seconds": 0}` ends it. `POST
 /api/mock/lose-answer {method, taken}` loses the next answer to
 `method` (default `prompt.submit`) with the request run (`taken: true`) or not, and `POST
+/api/mock/fail-reads {count}` refuses the next `count` read marks with 503 on both servers, as a busy
+gateway does, for the read outbox (`docs/inbox.md` §4), and `POST
 /api/mock/message-agent {from, to, text}` delivers another Bot's message off the socket (profile
 names: `researcher`, `writer` is Ada, `ops`), as Hermes's one-shot `hermes -p <bot> chat` does:
 the message is stored, then 12 s with no rows and no `session.active_list` entry, then the

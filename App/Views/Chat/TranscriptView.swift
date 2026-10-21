@@ -96,6 +96,13 @@ struct TranscriptView: View {
     @AppStorage(PreferenceKey.openChatsAt) private var openChatsAt = OpenChatsAt.firstUnread
     @AppStorage(TalkPreferences.Key.replies) private var voiceReplies = VoiceReplies.Setting.whenISpeak.rawValue
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    /// Only the window in front reads: a chat in a window behind another isn't being read.
+    @Environment(\.controlActiveState) private var windowState
+    private var isReadingWindow: Bool { windowState == .key }
+    #else
+    private var isReadingWindow: Bool { true }
+    #endif
     /// Choosing words to quote (`ChooseQuoteSheet`).
     @State private var choosingQuote: QuoteChoice?
     /// A reply open in Select Text.
@@ -1507,9 +1514,10 @@ extension TranscriptView {
                 if shown { sawRows(edge.visibleKeys) }
             }
             // Read on the gateway once the newest message has been on screen for a second.
-            .task(id: ReadTrigger(atEnd: isFollowing && settled, rows: rowCount, active: scenePhase == .active,
-                                  lastActive: conversation.stableKey.flatMap { workspace.session(forKey: $0)?.lastActive })) {
-                guard isFollowing, settled, scenePhase == .active else { return }
+            .task(id: ReadTrigger(atEnd: isFollowing && settled, rows: rowCount, active: scenePhase == .active && isReadingWindow,
+                                  lastActive: conversation.stableKey.flatMap { workspace.session(forKey: $0)?.lastActive }
+                                    ?? conversation.botName.flatMap { workspace.roster?.bot(named: $0)?.lastActive })) {
+                guard isFollowing, settled, scenePhase == .active, isReadingWindow else { return }
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, isFollowing else { return }
                 markRead()
@@ -1716,12 +1724,12 @@ extension TranscriptView {
         if unseenBelow.isEmpty, jumpedToFirst { jumpedToFirst = false }
     }
 
-    /// Read on the gateway: the newest message has been on screen for a second, or the reader
-    /// jumped to it. A Bot's chat is read as it opens (`BotRoster.openBot`).
+    /// Read on the gateway: the newest message has been on screen for a second in the window in
+    /// front, or the reader jumped to it; a Bot Chat too, also while the Bot works (`docs/inbox.md`
+    /// §4). Opening a chat partway up, a window behind another or a locked Mac reads nothing.
     fileprivate func markRead() {
-        guard let key = conversation.inboxKey else { return }
+        guard let key = conversation.inboxKey, BotRoster.isInFront, isReadingWindow else { return }
         if let last = conversation.rows.last { workspace.unread.setSeenThrough(key, rowID: last.id) }
-        guard !key.hasPrefix("bot:") else { return }
         workspace.unread.markRead(key)
     }
 

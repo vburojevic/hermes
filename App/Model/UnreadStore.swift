@@ -53,6 +53,13 @@ final class UnreadStore {
         var seenThrough: String?
     }
     @ObservationIgnored private lazy var recheck = ReadRecheck { [weak self] now in self?.fetchMarks(now: now) }
+    /// Reads that didn't reach the gateway (busy, offline): they go when it answers (`ReadOutbox`).
+    @ObservationIgnored private lazy var outbox: ReadOutbox = {
+        guard let data = UserDefaults.standard.data(forKey: outboxKey) else { return ReadOutbox() }
+        return (try? JSONDecoder().decode(ReadOutbox.self, from: data)) ?? ReadOutbox()
+    }()
+    @ObservationIgnored private var outboxFlush: Task<Void, Never>?
+    private var outboxKey: String { "readOutbox.\(gatewayID.uuidString)" }
 
     init(gatewayID: UUID) {
         self.gatewayID = gatewayID
@@ -180,7 +187,7 @@ final class UnreadStore {
         #if HERMES_PUSH
         // The app icon (or Dock) badge counts them when the person chose Unread Chats; a mute moves
         // it without moving a row, so it's recorded every time (unchanged costs nothing).
-        PushCenter.shared.unreadChanged(badgeChats(), gateway: gatewayID)
+        PushCenter.shared.unreadChanged(badgeChats(), countable: countableChats(), gateway: gatewayID)
         // Whatever moved may have read a chat with notifications still on the Lock Screen.
         PushCenter.shared.readMayHaveMoved(in: workspace)
         #endif
@@ -362,6 +369,31 @@ final class UnreadStore {
         }
     }
 
+    /// Every chat, Bot and group chat the app lists for this gateway: the badge never counts
+    /// anything else (a notice for a routine's run or a Bot-to-Bot one-shot chat). Nil until the
+    /// list has loaded, so a cold start doesn't wipe what the badge knew.
+    func countableChats() -> CountableChats? {
+        guard let workspace, !workspace.sessions.isEmpty || workspace.roster?.profiles.isEmpty == false else { return nil }
+        var ids: Set<String> = []
+        for session in workspace.sessions {
+            ids.insert(session.id)
+            ids.insert(session.stableID)
+        }
+        ids.formUnion((workspace.roster?.botChats ?? [:]).keys)
+        return CountableChats(ids: ids, bots: Set(workspace.roster?.profiles.map(\.name) ?? []),
+                              rooms: Set(workspace.roster?.groupRooms.rooms.map(\.id) ?? []))
+    }
+
+    /// The chats the app lists, as the plugin names them (`presence away` with `listed`): a reply
+    /// for anything else never counts in its badge either.
+    func listedChats() -> AppPushClient.ChatLists {
+        guard let workspace else { return AppPushClient.ChatLists() }
+        return AppPushClient.ChatLists(
+            chats: Array(Set(workspace.sessions.map(\.id)).union((workspace.roster?.botChats ?? [:]).keys)).sorted(),
+            rooms: (workspace.roster?.groupRooms.rooms.map(\.id) ?? []).sorted()
+        )
+    }
+
     /// What the badge counts and what's muted, as the plugin names them (`presence away`), so it
     /// keeps the badge right while the app is away.
     func badgeLists() -> (unread: AppPushClient.ChatLists, muted: AppPushClient.ChatLists) {
@@ -484,9 +516,11 @@ final class UnreadStore {
             if pending[key] != nil { pending[key]?.at = .now }
         }
         guard let workspace else { return }
+        let through = session.lastActive ?? .now
         do {
             guard let client = workspace.client else { return }
             _ = try await client.setSessionFlags(id: session.id, unread: unread)
+            if !unread { readSent(key, through: through) }
         } catch HermesError.server(status: 400, _, _) {
             guard let backend = workspace.roster?.boardClient else { return }
             do {
@@ -494,12 +528,15 @@ final class UnreadStore {
                     try await backend.markUnread(storedSessionID: session.id, profile: workspace.bot.profileName)
                 } else {
                     try await backend.markRead(storedSessionID: session.id, profile: workspace.bot.profileName)
+                    readSent(key, through: through)
                 }
             } catch {
                 ConnectionLog.logger.notice("inbox: couldn't share a read mark: \(String(describing: type(of: error)), privacy: .public)")
+                if !unread { readFailed(key, through: through) }
             }
         } catch {
             ConnectionLog.logger.notice("inbox: couldn't share a read mark: \(String(describing: type(of: error)), privacy: .public)")
+            if !unread { readFailed(key, through: through) }
         }
     }
 
@@ -511,10 +548,67 @@ final class UnreadStore {
         recheck.mayHaveMoved()
     }
 
-    /// Bot Mode came online: Hermes' marks, and the list kept fresh while the app runs.
+    /// Bot Mode came online: Hermes' marks, the list kept fresh while the app runs, and reads that
+    /// waited for the gateway.
     func connected() {
         fetchMarks(now: true)
         startPolling()
+        flushReads()
+    }
+
+    // MARK: The read outbox
+
+    /// A read reached the gateway.
+    func readSent(_ key: String, through: Date) {
+        outbox.sent(key, through: through)
+        saveOutbox()
+    }
+
+    /// A read didn't reach the gateway: it waits, like a message in the send outbox.
+    func readFailed(_ key: String, through: Date) {
+        outbox.queue(key, through: through)
+        outbox.failed(key)
+        saveOutbox()
+        scheduleOutboxFlush()
+    }
+
+    /// Sends the reads whose turn it is, unless their chat has news since (Hermes would stamp that
+    /// read too, unseen).
+    func flushReads() {
+        guard let workspace else { return }
+        for entry in outbox.due() {
+            // Counted as a try now, so the next pass doesn't send it twice; landing clears it.
+            outbox.failed(entry.key)
+            if entry.key.hasPrefix("bot:") {
+                if workspace.roster?.resendRead(String(entry.key.dropFirst(4)), through: entry.through) != true {
+                    outbox.drop(entry.key)
+                }
+            } else if let session = workspace.session(forKey: entry.key), ReadOutbox.isCurrent(entry, lastActive: session.lastActive) {
+                Task { await self.setUnread(false, session: session) }
+            } else {
+                outbox.drop(entry.key)
+            }
+        }
+        saveOutbox()
+        scheduleOutboxFlush()
+    }
+
+    private func scheduleOutboxFlush() {
+        outboxFlush?.cancel()
+        guard let next = outbox.entries.values.map(\.nextTry).min() else { return }
+        outboxFlush = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow)))
+            guard let self, !Task.isCancelled else { return }
+            self.flushReads()
+        }
+    }
+
+    private func saveOutbox() {
+        if outbox.isEmpty {
+            UserDefaults.standard.removeObject(forKey: outboxKey)
+        } else if let data = try? JSONEncoder().encode(outbox) {
+            UserDefaults.standard.set(data, forKey: outboxKey)
+        }
     }
 
     func disconnected() {
@@ -626,7 +720,7 @@ final class UnreadStore {
         PushShared.current.setMutes(ends, gateway: gatewayID)
         #if HERMES_PUSH
         // A muted chat leaves the app icon badge, an unmuted unread one comes back.
-        PushCenter.shared.unreadChanged(badgeChats(), gateway: gatewayID)
+        PushCenter.shared.unreadChanged(badgeChats(), countable: countableChats(), gateway: gatewayID)
         #endif
     }
 

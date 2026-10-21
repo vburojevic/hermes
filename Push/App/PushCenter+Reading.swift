@@ -4,7 +4,7 @@ import os
 import UserNotifications
 
 /// What the badge counts as the app leaves (`presence away`).
-typealias AwayBadge = (unread: AppPushClient.ChatLists, muted: AppPushClient.ChatLists)
+typealias AwayBadge = (unread: AppPushClient.ChatLists, muted: AppPushClient.ChatLists, listed: AppPushClient.ChatLists)
 
 /// Read chats leave no notifications behind (`docs/notifications.md` §2 Reading): this device
 /// sweeps them as reads land, tells the gateway what it read so the person's other devices follow,

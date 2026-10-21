@@ -118,6 +118,7 @@
 		62CB8A117202C05FF5342482 /* PairingScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6503D50FE251017B2F3A4A76 /* PairingScanner.swift */; };
 		63FE8E809D2365A8AF19E9CC /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A1CBED0AAD3FDE87A4E72B /* Palette.swift */; };
 		64643004D312EC1013CB8903 /* WidgetStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C96731735B7A4F027C2B939A /* WidgetStyle.swift */; };
+		6645AF31D60F00E646F58226 /* ScreenLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 933DF3C59199DA5AA7CD64D7 /* ScreenLock.swift */; };
 		665755A319E2B05399C5E076 /* ChangesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D2D5DCEF43257F63678086 /* ChangesModel.swift */; };
 		669F8CF7EC954228DB7390C1 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E47BA9AF3C026D6EEF719EF1 /* WidgetKit.framework */; };
 		67E805FF5406C88853F4A2EC /* MacMemoryPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ABE89599F11A943AC509DD /* MacMemoryPane.swift */; };
@@ -515,6 +516,7 @@
 		9056EA027A87EF84EE487D10 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		909DF8FB8ED51CE235B0C2CD /* BotEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotEditorView.swift; sourceTree = "<group>"; };
 		928671F9F911923EE7DFCB7A /* ConnectionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLog.swift; sourceTree = "<group>"; };
+		933DF3C59199DA5AA7CD64D7 /* ScreenLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLock.swift; sourceTree = "<group>"; };
 		94B7E50C21B675B09477FE25 /* LearnedParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedParts.swift; sourceTree = "<group>"; };
 		9665019EA8646C1D03F2432B /* PushCenter+Conversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PushCenter+Conversations.swift"; sourceTree = "<group>"; };
 		967F497D71C16BA410851985 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
@@ -1253,6 +1255,7 @@
 				B15704D57892BBF084B64B57 /* MacDebugDriver.swift */,
 				0898D8B638E43B197D08F374 /* Platform.swift */,
 				D8DCE68A5C048D3E37F570BD /* RouteWatcher.swift */,
+				933DF3C59199DA5AA7CD64D7 /* ScreenLock.swift */,
 				FFD9CCD2676A19F67EE33509 /* ScrollRun.swift */,
 			);
 			path = Support;
@@ -1836,6 +1839,7 @@
 				754CE3123B70512394D85830 /* RouteWatcher.swift in Sources */,
 				E68F2F493BCBC14B3BCE29BF /* RoutinesView.swift in Sources */,
 				D4BCCDD0BBD1A880DA1F9418 /* ScreenController.swift in Sources */,
+				6645AF31D60F00E646F58226 /* ScreenLock.swift in Sources */,
 				98112A10BE3264D8D04B3E9D /* ScrollRun.swift in Sources */,
 				06519A331E1BA2BA15CC4984 /* SearchPalette.swift in Sources */,
 				C448DCC47F657119BDF46F09 /* SearchViews.swift in Sources */,

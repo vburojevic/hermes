@@ -71,11 +71,9 @@ final class BotRoster {
     /// Photo avatars, as `FaceImageCache` keys, by profile name.
     private(set) var photos: [String: String] = [:]
     /// The Bot Chat on screen, which never counts as unread.
-    var openBot: String? {
-        didSet {
-            if let openBot { markRead(openBot) }
-        }
-    }
+    /// The Bot Chat on screen. Opening it isn't reading it: the chat marks it read once its newest
+    /// message has been on screen (`TranscriptView`, `docs/inbox.md` §4).
+    var openBot: String?
 
     /// Sheets, shared by the sidebar and the chat toolbar.
     var editingBot: String?
@@ -134,6 +132,8 @@ final class BotRoster {
     @ObservationIgnored private var sessionsTickedAt = Date.distantPast
     @ObservationIgnored private var rosterRecheckedAt = Date.distantPast
     @ObservationIgnored private var sharingRead: Set<String> = []
+    @ObservationIgnored private var readThrottle = ReadThrottle()
+    @ObservationIgnored private var trailingRead: [String: Task<Void, Never>] = [:]
     #if os(macOS)
     @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
     #endif
@@ -223,7 +223,6 @@ final class BotRoster {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if let openBot = self.openBot { self.markRead(openBot) }
                 self.readMayHaveMoved() // read on the phone in the meantime
                 // A reconnect waiting out the slower backoff behind other apps goes now.
                 if self.reconnectTask != nil { self.retryNow() }
@@ -1562,15 +1561,10 @@ final class BotRoster {
                 marks[bot.name] = active
                 continue
             }
+            // Open or not: what's been on screen decides (the chat marks it read, `markRead`), so
+            // news below where the person stopped reading stays unread.
             if active > max(seen, serverRead[bot.name] ?? 0) + 0.5 {
-                if bot.name == openBot {
-                    marks[bot.name] = active
-                    // Opened before the roster loaded, or written to while on screen: read everywhere,
-                    // once the reply is done (a turn in progress moves on every poll).
-                    if conversations[bot.name]?.isWorking != true { shareRead(bot) }
-                } else {
-                    next.insert(bot.name)
-                }
+                next.insert(bot.name)
             }
         }
         next.formIntersection(profiles.map(\.name))
@@ -1598,25 +1592,51 @@ final class BotRoster {
     }
 
     /// Tells Hermes the Bot Chat was read (the mark Hermes Desktop keeps), so the person's other
-    /// devices stop showing the Bot unread.
+    /// devices stop showing the Bot unread. While the Bot keeps writing on screen, at most every
+    /// 10 s (the last one carries what came meanwhile); a mark that doesn't land waits in the read
+    /// outbox and goes when the gateway answers (`docs/inbox.md` §4).
     private func shareRead(_ bot: BotProfile) {
         let name = bot.name
         guard Self.isInFront, let chat = bot.canonicalSession, let active = bot.lastActive?.timeIntervalSince1970,
               (serverRead[name] ?? 0) + 0.5 < active, !sharingRead.contains(name) else { return }
+        let wait = readThrottle.wait(for: name)
+        guard wait == 0 else {
+            guard trailingRead[name] == nil else { return }
+            trailingRead[name] = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self, !Task.isCancelled else { return }
+                self.trailingRead[name] = nil
+                if let bot = self.bot(named: name) { self.shareRead(bot) }
+            }
+            return
+        }
+        readThrottle.sent(name)
         sharingRead.insert(name)
         Task { [weak self] in
             guard let self else { return }
             defer { self.sharingRead.remove(name) }
+            let key = UnreadStore.botKey(name)
             do {
                 try await self.client.markRead(storedSessionID: chat.resolvedID, profile: name)
                 // Stamped by the server after this activity; its clock, not ours, so no later.
                 self.serverRead[name] = max(self.serverRead[name] ?? 0, active)
+                self.workspace?.unread.readSent(key, through: Date(timeIntervalSince1970: active))
                 self.workspace?.unread.didRead(chats: self.botChats.filter { $0.value == name }.keys.sorted())
             } catch is CancellationError {
             } catch {
-                ConnectionLog.logger.notice("bots: couldn't mark \(name, privacy: .public) read: \(error.localizedDescription, privacy: .public)")
+                let failure = error as NSError
+                ConnectionLog.logger.notice("bots: couldn't mark \(name, privacy: .public) read (\(failure.domain, privacy: .public) \(failure.code, privacy: .public)); it waits")
+                self.workspace?.unread.readFailed(key, through: Date(timeIntervalSince1970: active))
             }
         }
+    }
+
+    /// A read waiting in the outbox: sent now unless the Bot wrote since (`ReadOutbox.isCurrent`).
+    func resendRead(_ name: String, through: Date) -> Bool {
+        guard let bot = bot(named: name), let active = bot.lastActive else { return false }
+        guard active.timeIntervalSince(through) <= 0.5 else { return false }
+        shareRead(bot)
+        return true
     }
 
     /// Mark as Unread (`docs/inbox.md` §5): a dot on every device until the Bot Chat is opened.
@@ -1641,11 +1661,12 @@ final class BotRoster {
 
     /// The person is looking at the app. A Mac often keeps a Bot Chat open all day: that counts as
     /// read here, but only what was on screen while Hermes was in front is read on other devices.
+    /// Reading is possible: the app in front, and on the Mac a screen that isn't locked or asleep.
     static var isInFront: Bool {
         #if os(iOS)
         UIApplication.shared.applicationState == .active
         #else
-        NSApp.isActive
+        NSApp.isActive && !ScreenLock.isLocked
         #endif
     }
 

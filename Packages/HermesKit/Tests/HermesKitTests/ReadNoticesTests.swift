@@ -90,6 +90,9 @@ struct ReadNoticesTests {
         shared.remember(installationID: "inst_1", appID: home, name: "Studio Mac")
         shared.recordOpen(1, gateway: "inst_1")
         #expect(shared.badgeMode == .unreadChats, "unread chats count by default")
+        // What the app's list shows: only these may count.
+        shared.recordCountable(CountableChats(ids: ["s1", "s1_root", "s_ops", "s2", "s3", "s4", "s5"], bots: ["ops"], rooms: ["room_1"]),
+                               gateway: home)
         // The app's own count: a chat and a Bot.
         let chat = UnreadChat(key: "s1", ids: ["s1", "s1_root"], since: sent)
         let bot = UnreadChat(key: "bot:ops", ids: ["s_ops"], since: sent)
@@ -125,6 +128,54 @@ struct ReadNoticesTests {
         #expect(!shared.noteUnread(reply("s5"), gateway: home), "counted, but not in the badge")
         shared.forget(appID: home)
         #expect(shared.unread(gateway: home).isEmpty)
+    }
+
+    /// A gateway like a real one on 2026-10-21: ten Bots, about sixty chats in the list, two of them
+    /// unread, and a day of notices from routine runs and Bot-to-Bot one-shot chats, each a session
+    /// the list never shows. The badge said 120; it must say 2.
+    @Test func theBadgeCountsOnlyChatsTheAppLists() {
+        let shared = PushShared(suiteName: "read-notices-\(UUID().uuidString)")
+        let home = UUID()
+        shared.remember(installationID: "inst_home", appID: home, name: "Studio Mac")
+        shared.recordOpen(0, gateway: "inst_home")
+        let bots = ["analyst", "coach", "engineer", "planner", "reporter", "sysadmin", "tutor", "writer", "scout", "chef"]
+        let chats = (0..<60).map { "20261020_1200\(String(format: "%02d", $0))_chat" }
+        let botChats = bots.map { "20261001_090000_\($0)" }
+        let listed = CountableChats(ids: Set(chats + botChats), bots: Set(bots), rooms: ["room_launch"])
+
+        // A list from build 2610210714: the app's two unread Bots, then everything the extension added.
+        var bloated = [UnreadChat(key: "bot:engineer", ids: ["20261001_090000_engineer"], since: sent),
+                       UnreadChat(key: "bot:sysadmin", ids: ["20261001_090000_sysadmin"], since: sent)]
+        bloated += (0..<118).map { UnreadChat(key: "push:20261021_0\($0)_oneshot", ids: ["20261021_0\($0)_oneshot"], since: sent) }
+        shared.recordUnread(bloated, gateway: home)
+        #expect(shared.unread(gateway: home).count == 120)
+        // Until the app shares what it lists, only its own entries count: the next notice already says 2.
+        #expect(shared.badge == 2)
+
+        // The app runs: its list and what it shows.
+        shared.recordCountable(listed, gateway: home)
+        shared.recordUnread(Array(bloated.prefix(2)), gateway: home)
+        #expect(shared.badge == 2)
+
+        // A day of notices: routine runs and one-shot chats (each a new session, no profile the app
+        // knows) never count; news in a listed chat or Bot does, once.
+        for n in 0..<118 {
+            #expect(!shared.noteUnread(reply("20261021_\(n)_routine"), gateway: home))
+        }
+        #expect(!shared.noteUnread(reply("20261021_x_oneshot", profile: "ghost"), gateway: home))
+        #expect(!shared.noteUnread(message(room: "room_unknown"), gateway: home))
+        #expect(shared.noteUnread(reply(chats[3]), gateway: home))
+        #expect(!shared.noteUnread(reply("20261021_y_routine", profile: "sysadmin"), gateway: home), "already counted")
+        #expect(shared.noteUnread(reply("20261021_z_routine", profile: "writer"), gateway: home))
+        #expect(shared.badge == 4)
+
+        // A gateway the app no longer has stops counting.
+        let gone = UUID()
+        shared.recordCountable(CountableChats(ids: ["g1"]), gateway: gone)
+        shared.recordUnread([UnreadChat(key: "g1", ids: ["g1"], since: sent)], gateway: gone)
+        #expect(shared.badge == 5)
+        #expect(shared.keepUnread(gateways: [home]))
+        #expect(shared.badge == 4 && shared.countable(gateway: gone) == nil)
     }
 
     /// Each gateway's plugin sets the whole badge while the app is away: it adds what the others count.
