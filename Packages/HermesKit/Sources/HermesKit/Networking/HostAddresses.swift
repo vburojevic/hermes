@@ -36,7 +36,8 @@ public enum HostAddresses {
     }
 
     /// On this device's network or the machine itself: loopback, private, link-local, Tailscale's
-    /// CGNAT range, "this host" (`0.0.0.0`, `::`) and IPv4 addresses written as IPv6.
+    /// CGNAT range, "this host" (`0.0.0.0`, `::`) and IPv4 addresses written as IPv6 (mapped, or
+    /// behind NAT64).
     public static func isLocal(_ address: IPAddress) -> Bool {
         switch address {
         case .v4(let octets):
@@ -45,6 +46,10 @@ public enum HostAddresses {
             guard bytes.count == 16 else { return false }
             // ::ffff:a.b.c.d, and ::a.b.c.d (which covers :: and ::1 as 0.0.0.0 and 0.0.0.1).
             if bytes[0..<10].allSatisfy({ $0 == 0 }), bytes[10] == bytes[11], bytes[10] == 0 || bytes[10] == 0xff {
+                return isLocalV4(Array(bytes[12...]))
+            }
+            // 64:ff9b::a.b.c.d, NAT64's well-known prefix: an IPv4 address reached through IPv6.
+            if bytes[0..<12] == [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0] {
                 return isLocalV4(Array(bytes[12...]))
             }
             return (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80) // fe80::/10, link-local

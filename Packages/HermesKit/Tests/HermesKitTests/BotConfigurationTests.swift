@@ -36,10 +36,11 @@ struct BotConfigurationTests {
 
     /// An address counts only when the whole host is one; IPv4 written as IPv6 is still IPv4.
     @Test func addressLiteralsAreReadWhole() {
-        for host in ["10.0.0.1.attacker.example", "192.168.1.1.nip.io", "127.0.0.1x", "1.2.3.4.5", "010.0.0.1", "::ffff:8.8.8.8", "2001:db8::1"] {
+        for host in ["10.0.0.1.attacker.example", "192.168.1.1.nip.io", "127.0.0.1x", "1.2.3.4.5", "010.0.0.1", "::ffff:8.8.8.8", "2001:db8::1", "64:ff9b::8.8.8.8"] {
             #expect(!BotConfiguration.looksLocal(host), "\(host) should be public")
         }
-        for host in ["::ffff:192.168.1.1", "[::ffff:c0a8:101]", "::ffff:127.0.0.1", "0.0.0.0", "::", "[::1]", "fe80::1%en0", "febf::1", "0.0.0.0"] {
+        for host in ["::ffff:192.168.1.1", "[::ffff:c0a8:101]", "::ffff:127.0.0.1", "0.0.0.0", "::", "[::1]", "fe80::1%en0", "febf::1", "0.0.0.0",
+                     "64:ff9b::192.168.1.1", "[64:ff9b::a9fe:a9fe]"] {
             #expect(BotConfiguration.looksLocal(host), "\(host) should be local")
         }
         #expect(HostAddresses.literal("10.0.0.1.attacker.example") == nil)
