@@ -80,11 +80,14 @@ struct TurnActivityWidget: Widget {
 /// Each gateway's keys, read once per process: the widget opens each sealed state with them.
 enum DeviceKey {
     nonisolated(unsafe) private static var cached: [UUID: [PushDeviceKey]] = [:]
+    /// The app's token for the states it writes itself (`PushShared.activityToken`), read until found.
+    nonisolated(unsafe) private static var token: String?
 
     static func state(_ content: TurnActivityAttributes.ContentState, gateway: UUID) -> TurnActivityState {
         let keys = cached[gateway] ?? PushShared.current.keys(for: gateway)
         cached[gateway] = keys
-        return content.state(keys: keys)
+        if token == nil { token = PushShared.current.activityToken(creating: false) }
+        return content.state(keys: keys, token: token)
     }
 }
 

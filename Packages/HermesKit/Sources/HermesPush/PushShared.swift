@@ -404,6 +404,26 @@ public final class PushShared: @unchecked Sendable {
         return (notice, gateway)
     }
 
+    // MARK: Live Activity
+
+    /// Marks the activity states this app writes itself (`TurnActivityAttributes.ContentState`):
+    /// random, in the shared Keychain, never sent anywhere. The app creates it; the widget only reads.
+    public func activityToken(creating: Bool) -> String? {
+        if let data = (try? readKey(account: Self.activityTokenAccount)) ?? nil { return String(decoding: data, as: UTF8.self) }
+        guard creating else { return nil }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return nil }
+        let token = Data(bytes).base64EncodedString()
+        do {
+            try storeKey(Data(token.utf8), account: Self.activityTokenAccount)
+        } catch {
+            return nil
+        }
+        return token
+    }
+
+    static let activityTokenAccount = "activity.local-token"
+
     private func keyQuery(account: String) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

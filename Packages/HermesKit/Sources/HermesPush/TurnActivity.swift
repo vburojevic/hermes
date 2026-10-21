@@ -109,26 +109,30 @@ import ActivityKit
 /// One activity per gateway; the newest running turn wins.
 public struct TurnActivityAttributes: ActivityAttributes {
     /// What the plugin pushes (`notices.activity_request`): only the phase in the clear, the rest
-    /// sealed for this device. Updates the app makes itself carry `local` instead.
+    /// sealed for this device. Updates the app makes itself carry `local` instead, with this
+    /// installation's token, so a push through the relay can't pass for one.
     public struct ContentState: Codable, Hashable, Sendable {
         public var phase: TurnActivityState.Phase
         public var sealed: PushEnvelope?
         public var local: TurnActivityState?
+        /// With `local`: `PushShared.activityToken`, which never leaves this device.
+        public var token: String?
 
-        public init(phase: TurnActivityState.Phase, sealed: PushEnvelope? = nil, local: TurnActivityState? = nil) {
+        public init(phase: TurnActivityState.Phase, sealed: PushEnvelope? = nil, local: TurnActivityState? = nil, token: String? = nil) {
             self.phase = phase
             self.sealed = sealed
             self.local = local
+            self.token = token
         }
 
-        public init(_ state: TurnActivityState) {
-            self.init(phase: state.phase, local: state)
+        public init(_ state: TurnActivityState, token: String?) {
+            self.init(phase: state.phase, local: state, token: token)
         }
 
-        /// The readable state: local, or opened with the device key.
-        /// Opened with the first of the gateway's keys that opens it (`PushShared.keys(for:)`).
-        public func state(keys: [PushDeviceKey]) -> TurnActivityState {
-            if let local { return local }
+        /// The readable state: the app's own (`local` with this installation's token), or opened
+        /// with the first of the gateway's keys that opens it (`PushShared.keys(for:)`).
+        public func state(keys: [PushDeviceKey], token expected: String?) -> TurnActivityState {
+            if let local, let token, let expected, token == expected { return local }
             if let sealed {
                 for key in keys {
                     if let opened = try? key.open(TurnActivityState.self, from: sealed) { return opened }

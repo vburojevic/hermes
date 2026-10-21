@@ -45,7 +45,7 @@ final class TurnActivityController {
     func turnFinished(in conversation: ConversationModel, ok: Bool, result: String?) {
         guard running.removeValue(forKey: ObjectIdentifier(conversation)) != nil, let session = conversation.sessionID else { return }
         for activity in Activity<TurnActivityAttributes>.activities where activity.attributes.sessionID == session {
-            let current = activity.content.state.state(keys: center.shared.keys(for: activity.attributes.gatewayID))
+            let current = activity.content.state.state(keys: center.shared.keys(for: activity.attributes.gatewayID), token: center.shared.activityToken(creating: false))
             var state = TurnActivityState(phase: .done, startedAt: current.startedAt, title: current.title, result: result, ok: ok)
             state.endedAt = .now
             let id = activity.id
@@ -61,7 +61,7 @@ final class TurnActivityController {
     /// An approval on the activity was answered: back to working until the gateway says more.
     func requestsResolved(_ ids: [String]) {
         for activity in Activity<TurnActivityAttributes>.activities {
-            let state = activity.content.state.state(keys: center.shared.keys(for: activity.attributes.gatewayID))
+            let state = activity.content.state.state(keys: center.shared.keys(for: activity.attributes.gatewayID), token: center.shared.activityToken(creating: false))
             guard state.phase == .needsYou, let request = state.requestID, ids.contains(request) else { continue }
             var next = state
             next.phase = .working
@@ -76,7 +76,7 @@ final class TurnActivityController {
 
     func answerRoute(gatewayID: UUID) -> PushNotice.Answer? {
         let state = Activity<TurnActivityAttributes>.activities.first { $0.attributes.gatewayID == gatewayID }?
-            .content.state.state(keys: center.shared.keys(for: gatewayID))
+            .content.state.state(keys: center.shared.keys(for: gatewayID), token: center.shared.activityToken(creating: false))
         return state?.answer ?? routes[gatewayID]
     }
 
@@ -158,7 +158,7 @@ final class TurnActivityController {
         )
         do {
             let activity = try Activity.request(
-                attributes: attributes, content: .init(state: .init(state), staleDate: .now.addingTimeInterval(900), relevanceScore: 50),
+                attributes: attributes, content: .init(state: .init(state, token: Self.token), staleDate: .now.addingTimeInterval(900), relevanceScore: 50),
                 pushType: .token
             )
             observeToken(of: activity, workspace: workspace, session: session)
@@ -206,12 +206,15 @@ final class TurnActivityController {
     }
 
     nonisolated private static func end(_ id: String, with state: TurnActivityState?, dismissal: ActivityUIDismissalPolicy) async {
-        await activity(id)?.end(state.map { .init(state: .init($0), staleDate: nil) }, dismissalPolicy: dismissal)
+        await activity(id)?.end(state.map { .init(state: .init($0, token: token), staleDate: nil) }, dismissalPolicy: dismissal)
     }
 
     nonisolated private static func update(_ id: String, to state: TurnActivityState) async {
-        await activity(id)?.update(.init(state: .init(state), staleDate: nil))
+        await activity(id)?.update(.init(state: .init(state, token: token), staleDate: nil))
     }
+
+    /// Marks the states this app writes, so the widget never believes a `local` one from a push.
+    nonisolated private static var token: String? { PushShared.current.activityToken(creating: true) }
 
     private static func json(_ values: [String: String]) -> String {
         (try? String(data: JSONEncoder().encode(values), encoding: .utf8)) ?? "{}"

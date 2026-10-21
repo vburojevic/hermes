@@ -34,6 +34,8 @@ enum PushResponder {
 
     enum Failure: Error {
         case unknownGateway, noBackend, expired
+        /// A card fill or a flagged command: answered on its card in the app only.
+        case answerInApp
     }
 
     /// The bodies the plugin sends before the service extension fills in the notice (the relay
@@ -59,7 +61,8 @@ enum PushResponder {
             // Allow goes only to what the notification showed: never a command Hermes's safety check
             // flagged or a card fill, never one shown as the bare fallback (the extension didn't
             // run). Those open the chat, where the card shows it whole (and asks for Face ID).
-            if allows, notice.smartDenied || notice.isPaymentFill || Self.fallbackBodies.contains(response.shownBody) {
+            if allows, notice.smartDenied || notice.isPaymentFill || Self.fallbackBodies.contains(response.shownBody)
+                || !showed(notice, body: response.shownBody, center: center) {
                 center.open(notice)
                 return
             }
@@ -88,6 +91,18 @@ enum PushResponder {
                 center.open(notice)
             }
         }
+    }
+
+    /// Whether the notification said what this device makes of the notice: when the service
+    /// extension didn't run, the text on screen is the relay's, which could name another command
+    /// than the one the envelope holds.
+    @MainActor
+    static func showed(_ notice: PushNotice, body: String, center: PushCenter) -> Bool {
+        guard notice.kind == .approval else { return true }
+        let gateway = center.shared.gateway(notice.gateway?.id)
+        let presentation = NoticePresentation(notice, gatewayName: gateway?.name, slot: gateway?.slot,
+                                              showDetails: center.shared.preferences.showDetails)
+        return presentation.body == body
     }
 
     /// Runs one answer, keeping the app alive for it, and says so only if it failed.
@@ -133,6 +148,35 @@ enum PushResponder {
         }
         // `resolved` counts the approvals this settled: 0 means it was already answered or timed out.
         if let resolved = result["resolved"]?.doubleValue, resolved < 1 { throw Failure.expired }
+    }
+
+    /// What an Allow from the Live Activity would answer, read back from Hermes: the activity names
+    /// only a request id, and whatever pushed it isn't trusted to say which command that is. A card
+    /// fill or a flagged command is refused here (it's answered on its card), as is one Hermes no
+    /// longer lists.
+    @MainActor
+    static func checkActivityApproval(_ notice: PushNotice, center: PushCenter) async throws {
+        guard let requestID = notice.requestID else { throw Failure.expired }
+        let (workspace, apiKey) = try gateway(for: notice, center: center)
+        let approval: ApprovalRequest?
+        if notice.answer?.via == "run", let runID = notice.answer?.runID {
+            guard let apiKey else { throw Failure.unknownGateway }
+            approval = try await HermesClient(baseURL: workspace.bot.baseURL, apiKey: apiKey).runStatus(runID: runID).approval
+        } else {
+            let session = notice.answer?.sessionID ?? notice.chatID ?? ""
+            let snapshot = try await withSocket(workspace) { request in
+                var resume: [String: JSONValue] = ["session_id": .string(session), "omit_messages": .bool(true)]
+                if let profile = notice.profile { resume["profile"] = .string(profile) }
+                return try await request("session.resume", resume)
+            }
+            guard case .array(let open)? = snapshot["open_requests"] else { throw Failure.expired }
+            approval = open.lazy.compactMap { row -> ApprovalRequest? in
+                guard let id = row["id"]?.stringValue, let method = row["method"]?.stringValue else { return nil }
+                return GatewayTurnDecoder.approval(from: GatewayServerRequest(id: id, method: method, params: row["params"] ?? .object([:])))
+            }.first { $0.requestID == requestID || $0.gatewayRequestID == requestID }
+        }
+        guard let approval, approval.requestID == requestID || approval.gatewayRequestID == requestID else { throw Failure.expired }
+        if approval.smartDenied || approval.isPaymentFill { throw Failure.answerInApp }
     }
 
     // MARK: - Questions
@@ -267,6 +311,9 @@ enum PushResponder {
         if case Failure.expired? = error as? Failure {
             content.title = String(localized: "Already answered")
             content.body = String(localized: "That request on \(name) was answered elsewhere or timed out.")
+        } else if case Failure.answerInApp? = error as? Failure {
+            content.title = String(localized: "Answer in Hermes")
+            content.body = String(localized: "This one is answered on its card in the chat.")
         } else {
             content.title = String(localized: "Couldn't reach \(name)")
             content.body = notice.kind.needsYou ? String(localized: "Open Hermes to answer.") : String(localized: "Open Hermes to send it.")
@@ -298,6 +345,8 @@ enum ActivityAnswering {
             answer: route ?? .init(via: "socket", sessionID: sessionID)
         )
         do {
+            // Deny needs no check: it can only stop something.
+            if allow { try await PushResponder.checkActivityApproval(notice, center: center) }
             try await PushResponder.approve(notice, choice: allow ? .once : .deny, center: center)
             await center.removeDelivered(requests: [requestID])
             await center.refreshBadge()

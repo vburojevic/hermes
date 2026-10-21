@@ -308,7 +308,9 @@ Rules:
 - **Allow Once / Deny** (`UNNotificationAction` with `.authenticationRequired`; Deny also
   `.destructive`). The app wakes in the background, uses the gateway's live backend socket or opens
   a fresh one with the saved sign-in (`PushResponder`), and answers the request the notification
-  showed, by id:
+  showed, by id. Allow Once goes only when the notification's text is what this device makes of the
+  notice (`PushResponder.showed`): when the service extension didn't run, the text is the relay's,
+  and the chat opens instead:
   - `answer.via: "socket"`: `approval.respond {session_id, choice: "once" | "deny", request_id}`.
     The gateway falls back from a stale session id to the request id (`tui_gateway/methods_prompt.py`);
     `resolved: 0` means it was already settled.
@@ -366,7 +368,10 @@ Rules:
   wins and replaces the older one. Its push token goes to the plugin (`/app-push activity`), which
   sends the updates through the relay.
 - The plugin's updates carry only the phase in the clear (`content-state {phase, sealed}`); the
-  widget opens the rest with the device key. Updates the app makes itself carry the state as is.
+  widget opens the rest with the device key. Updates the app makes itself carry the state as is
+  (`local`) with this installation's token (`PushShared.activityToken`, random, in the shared
+  Keychain, never sent anywhere); a `local` state without it, as a push through the relay would be,
+  is ignored.
 - States (`TurnActivityState`):
   - **Working:** the step from the latest tool ("Running a command: npm test", "Searching the web"),
     progress from the plan (steps done of total), elapsed time. The plugin sends at most one working
@@ -374,7 +379,9 @@ Rules:
   - **Needs you:** the command (or the question). Deny and Allow Once (`AnswerFromActivityIntent`, a
     `LiveActivityIntent` that needs Face ID or the passcode) show only beside a command on one line
     of at most 50 characters; anything longer opens the app. The app never puts a flagged command's
-    request on the activity it starts.
+    request on the activity it starts. Allow first reads the request back from Hermes (the session's
+    `open_requests`, or the run's pending approval): one Hermes no longer lists is "Already
+    answered", and a card fill or a flagged command gets "Answer in Hermes" instead of an answer.
   - **Done:** the result line and whether it succeeded; it ends after 4 minutes.
 - Designs: `liveActivity`, `liveActivityNeedsYou`, `liveActivityDone`, `islandCompact`,
   `islandCompactNeedsYou`, `islandExpanded`. A Bot with a drawn face shows it in the Island; others
