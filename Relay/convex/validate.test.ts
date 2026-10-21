@@ -75,6 +75,38 @@ describe("validatePush", () => {
     expect(validatePush({ ...alert, environment: "staging" }).ok).toBe(false);
   });
 
+  test("accepts a badge-only alert and nothing more", () => {
+    const badge = { token, environment: "production", topic: "co.caffeinatedcode.hermes", push_type: "alert",
+      priority: 5, collapse_id: "badge", expiration: 1_800_000_000, payload: { aps: { badge: 3 } } };
+    expect(validatePush(badge).ok).toBe(true);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 0 } } }).ok).toBe(true);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 9999 } } }).ok).toBe(true);
+    // Shown at once, carrying an alert or a sealed notice: only the count rides without an envelope.
+    expect(validatePush({ ...badge, priority: 10 })).toEqual({ ok: false, error: "a badge-only alert uses priority 5" });
+    expect(validatePush({ ...badge, priority: undefined }).ok).toBe(false);
+    const withAlert = structuredClone(alert) as any;
+    withAlert.payload.aps.badge = 3;
+    expect(validatePush(withAlert).ok).toBe(false);
+    withAlert.priority = 5;
+    expect(validatePush(withAlert).ok).toBe(false);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 3, alert: { title: "Hermes replied",
+      body: "Open Hermes to see it." } } } }).ok).toBe(false);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 3 }, hermes: envelope } }).ok).toBe(false);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 3, sound: "default" } } }).ok).toBe(false);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 3, "content-available": 1 } } }).ok).toBe(false);
+    expect(validatePush({ ...badge, payload: { aps: { badge: 3 }, note: "secret" } }).ok).toBe(false);
+    for (const bad of [-1, 2.5, "3", 10_000, null, Number.NaN, true]) {
+      expect(validatePush({ ...badge, payload: { aps: { badge: bad } } })).toMatchObject({ ok: false });
+    }
+    // Background pushes and Live Activities never carry a badge.
+    expect(validatePush({ ...badge, push_type: "background", payload: { aps: { badge: 3 } } }).ok).toBe(false);
+    expect(validatePush({ ...badge, push_type: "background",
+      payload: { aps: { "content-available": 1, badge: 3 }, hermes: envelope } }).ok).toBe(false);
+    expect(validatePush({ token, environment: "production", topic: "co.caffeinatedcode.hermes.push-type.liveactivity",
+      push_type: "liveactivity", priority: 5, payload: { aps: { timestamp: 1, event: "update", badge: 3,
+        "content-state": { phase: "working", sealed: envelope } } } }).ok).toBe(false);
+  });
+
   test("envelopes", () => {
     expect(isEnvelope(envelope)).toBe(true);
     expect(isEnvelope({ ...envelope, v: 2 })).toBe(false);

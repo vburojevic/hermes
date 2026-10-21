@@ -1,6 +1,8 @@
 // What the relay accepts. The relay must never carry readable content: every alert is one of the
 // kind-only titles below, everything else rides in the sealed `hermes` envelope (or the sealed Live
-// Activity state), and only the Hermes app's topics are allowed. Pure functions, unit-tested.
+// Activity state), and only the Hermes app's topics are allowed. The one alert without an envelope
+// is a badge-only one, `{aps: {badge}}` at priority 5 and nothing else: the plugin setting the app
+// icon's count while the app is away (docs/notifications.md §2, Reading). Pure functions, unit-tested.
 
 export const ALERT_TITLES = new Set([
   "Hermes needs your OK",
@@ -28,6 +30,7 @@ export const LEVELS = new Set(["passive", "active", "time-sensitive"]);
 export const PHASES = new Set(["working", "needsYou", "done"]);
 export const DEFAULT_TOPICS = ["co.caffeinatedcode.hermes", "co.caffeinatedcode.hermes.dev"];
 export const MAX_PAYLOAD_BYTES = 4096;
+export const MAX_BADGE = 9999;
 
 export type PushType = "alert" | "background" | "liveactivity";
 
@@ -73,10 +76,22 @@ function checkAlert(alert: unknown): string | null {
   return null;
 }
 
-function checkPayload(type: PushType, payload: Record<string, unknown>): string | null {
+/** A badge-only alert: `{aps: {badge: 0…9999}}` at priority 5, nothing shown, nothing else carried. */
+function checkBadge(payload: Record<string, unknown>, aps: Record<string, unknown>, priority: number): string | null {
+  if (!onlyKeys(payload, ["aps"]) || Object.keys(aps).length !== 1)
+    return "a badge-only alert holds aps.badge and nothing else";
+  const badge = aps.badge;
+  if (typeof badge !== "number" || !Number.isInteger(badge) || badge < 0 || badge > MAX_BADGE)
+    return `badge must be a whole number from 0 to ${MAX_BADGE}`;
+  if (priority !== 5) return "a badge-only alert uses priority 5";
+  return null;
+}
+
+function checkPayload(type: PushType, payload: Record<string, unknown>, priority: number): string | null {
   const aps = payload.aps;
   if (!isObject(aps)) return "payload.aps is required";
   if (type === "alert") {
+    if (aps.badge !== undefined) return checkBadge(payload, aps, priority);
     if (!onlyKeys(payload, ["aps", "hermes"])) return "payload may only hold aps and hermes";
     if (!isEnvelope(payload.hermes)) return "payload.hermes must be a sealed envelope";
     if (!onlyKeys(aps, ["alert", "mutable-content", "category", "interruption-level", "relevance-score", "sound"]))
@@ -141,7 +156,7 @@ export function validatePush(body: unknown, allowedTopics: string[] = DEFAULT_TO
   if (!isObject(body.payload)) return { ok: false, error: "payload must be an object" };
   const size = new TextEncoder().encode(JSON.stringify(body.payload)).length;
   if (size > MAX_PAYLOAD_BYTES) return { ok: false, error: `payload is ${size} bytes; APNs takes ${MAX_PAYLOAD_BYTES}` };
-  const problem = checkPayload(type, body.payload);
+  const problem = checkPayload(type, body.payload, priority as number);
   if (problem) return { ok: false, error: problem };
   return {
     ok: true,

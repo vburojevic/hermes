@@ -41,6 +41,9 @@ The deployment's environment holds everything secret; none of it is in this repo
 - Alerts whose title isn't one of the kind-only titles ("Hermes needs your OK", …) or body isn't
   "Open Hermes to see it." / "Open Hermes to answer.", any `aps` field it doesn't forward, and any
   payload without a sealed `hermes` envelope `{v: 1, epk, box}`.
+- A badge anywhere but in a badge-only alert: exactly `{aps: {badge}}`, a whole number from 0 to
+  9999, at priority 5, with no alert, sound or envelope. It's the plugin setting the app icon's
+  count while the app is away.
 - Live Activity states other than `{phase, sealed}`; background pushes other than `{content-available: 1}`.
 - Payloads over 4 KB.
 
