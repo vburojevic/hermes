@@ -12,6 +12,11 @@ with a stdlib twin of its crypto (``pushcrypto.py``). Then a fake relay delivers
 Also adds the gateway methods answering from a notification needs: ``approval.respond`` and
 ``request.answer``. Scripted triggers (any chat): "approve" or "disk" asks for an OK, "ask" asks a
 question, "sudo" asks for a password, "slow" runs long; Tasks → Run Now posts a task result.
+
+Reading (docs/notifications.md §2, Reading): ``read`` and ``presence`` with ``unread``/``muted`` work like
+the plugin's, read and badge pushes included. ``GET /api/mock/push-state`` shows what it recorded,
+``POST /api/mock/read {chats, rooms}`` plays a read on another device, ``POST /api/mock/badge {badge}``
+sends every device a badge-only push now.
 """
 from __future__ import annotations
 
@@ -36,8 +41,13 @@ DEFAULT_PREFERENCES = {"approvals": True, "passwords": True, "replies": True, "r
 B: dict = {}          # backend.py's globals
 G = None              # server.py (the API server mock), when it runs too
 STATE = {"devices": {}, "presence": {}, "requests": {}, "resolved": [], "activities": {}, "turns": {}, "held": {},
-         "sync": {}}
+         "sync": {}, "reads": {"chats": {}, "rooms": {}}, "delivered": {}, "cleared": {}, "badges": {},
+         "read_pushes": {}}
 SYNC_MIN_INTERVAL = 60  # the plugin's: iOS rations background pushes
+# The plugin's reading rules: reads listed in notices for six hours (the newest 12 of each), at most one read
+# push a device every 30 s carrying at most 40 of each, read and badge pushes 3 s after what moved them.
+READ_TTL, NOTICE_READS, READ_MIN_INTERVAL, CLEARED_MAX, PUSH_DEBOUNCE = 6 * 3600, 12, 30, 40, 3.0
+DUE: set = set()        # (read | badge, device) pushes waiting
 LOCK = threading.RLock()
 RELAY = {"mode": "simctl", "installation": None, "secret": None}
 GATEWAY = {"id": "inst_mock" + uuid.uuid4().hex[:6], "name": "Mock Gateway"}
@@ -103,6 +113,8 @@ def cmd_register(args):
 def cmd_unregister(args):
     with LOCK:
         removed = STATE["devices"].pop(args["device_id"], None) is not None
+        for key in ("delivered", "cleared", "badges", "read_pushes"):
+            STATE[key].pop(args["device_id"], None)
     return {"ok": True, "removed": removed}
 
 
@@ -135,12 +147,95 @@ def cmd_presence(args):
                 released.append(request)
         if keep:
             STATE["held"][device_id] = keep
+        if args["state"] == "foreground":
+            # The app decides what's read while it's in front: forget what it was sent, cleared and counted.
+            for key in ("delivered", "cleared", "badges"):
+                STATE[key].pop(device_id, None)
+            STATE["read_pushes"].get(device_id, {}).pop("pending", None)
+        elif args["state"] == "away":
+            unread, muted = _id_sets(args.get("unread")), _id_sets(args.get("muted")) or {"chats": [], "rooms": []}
+            if unread is None:
+                STATE["badges"].pop(device_id, None)  # its badge doesn't count unread chats
+            else:
+                others = args.get("badge_others")
+                others = int(others) if isinstance(others, (int, float)) and not isinstance(others, bool) and others > 0 else 0
+                STATE["badges"][device_id] = {
+                    "chats": unread["chats"], "rooms": unread["rooms"], "muted_chats": muted["chats"],
+                    "muted_rooms": muted["rooms"], "others": others,
+                    "shown": len(STATE["requests"]) + len(unread["chats"]) + len(unread["rooms"]) + others}
         device = STATE["devices"].get(device_id)
         open_count = len(STATE["requests"])
     for request in released:
         log(f"→ held request to {device.get('name') if device else device_id} (left the chat)")
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
     return {"ok": True, "open": open_count}
+
+
+def cmd_read(args):
+    """Chats and rooms read on ``device_id`` (the plugin's ``read``): listed in every notice for six hours;
+    other devices away from the app that were sent something for them get a read push, and their badge."""
+    device_id = str(args.get("device_id") or "")
+    if not device_id:
+        raise ValueError("device_id is missing or malformed")
+    chats, rooms = _ids(args.get("chats"), "chats", 50), _ids(args.get("rooms"), "rooms", 50)
+    owed, moved = [], []
+    with LOCK:
+        now = time.time()
+        read = {"chats": chats, "rooms": rooms}
+        for kind in ("chats", "rooms"):
+            times = STATE["reads"][kind]
+            times.update({key: now for key in read[kind]})
+            for key in [key for key, at in times.items() if now - at > READ_TTL]:
+                times.pop(key)
+        for other in STATE["devices"]:
+            if other == device_id or in_app(other):
+                continue
+            sent = STATE["delivered"].get(other) or {}
+            matched = False
+            for kind in ("chats", "rooms"):
+                for key in [key for key in read[kind] if key in (sent.get(kind) or {})]:
+                    sent[kind].pop(key)
+                    STATE["cleared"].setdefault(other, {}).setdefault(kind, {})[key] = now  # when it was read
+                    matched = True
+            # Rooms too: the app marks a room read when it hears another device read it.
+            record = STATE["badges"].get(other)
+            if record and (set(chats) & set(record["chats"]) or set(rooms) & set(record["rooms"])):
+                record["chats"] = [c for c in record["chats"] if c not in set(chats)]
+                record["rooms"] = [r for r in record["rooms"] if r not in set(rooms)]
+                moved.append(other)
+            if matched:
+                entry = STATE["read_pushes"].setdefault(other, {})
+                entry["pending"] = True
+                owed.append((other, entry.get("sent", 0) + READ_MIN_INTERVAL - now))
+        open_count = len(STATE["requests"])
+    if chats or rooms:
+        log(f"read on {device_id}: {', '.join(chats + rooms)}")
+    for other, wait in owed:
+        soon("read", other, max(PUSH_DEBOUNCE, wait))
+    for other in moved:
+        soon("badge", other, PUSH_DEBOUNCE)
+    return {"ok": True, "open": open_count}
+
+
+def _ids(value, key, limit):
+    """The plugin's id lists: strings clipped to 120 characters, no repeats, at most ``limit``."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{key} must be a list of ids")
+    return list(dict.fromkeys(v[:120] for v in value if isinstance(v, str) and v))[:limit]
+
+
+def _id_sets(value):
+    if not isinstance(value, dict):
+        return None
+    sets = {}
+    for kind in ("chats", "rooms"):
+        try:
+            sets[kind] = _ids(value.get(kind), kind, 200)
+        except ValueError:
+            sets[kind] = []
+    return sets
 
 
 def cmd_activity(args):
@@ -207,13 +302,13 @@ def cmd_test(args):
         raise ValueError("device not registered")
     notice = notices.Notice(kind="test", id=f"test-{int(time.time())}", title="Push notifications are on",
                             body=f"{GATEWAY['name']} can reach this device.", hidden=f"Test from {GATEWAY['name']}")
-    result = relay(device, notices.apns_request(device, notice, GATEWAY, 0, []))
+    result = relay(device, notices.apns_request(device, notice, GATEWAY, 0, [], recent_reads()))
     return {"ok": result.get("status") == 200, "status": result.get("status"), "reason": result.get("reason")}
 
 
 COMMANDS = {"register": cmd_register, "unregister": cmd_unregister, "preferences": cmd_preferences,
-            "presence": cmd_presence, "activity": cmd_activity, "status": cmd_status, "test": cmd_test,
-            "host": cmd_host}
+            "presence": cmd_presence, "read": cmd_read, "activity": cmd_activity, "status": cmd_status,
+            "test": cmd_test, "host": cmd_host}
 
 
 # ── Delivery ─────────────────────────────────────────────────────────────────────────────────────────
@@ -223,6 +318,92 @@ def presence(device_id):
     if not entry or time.time() - entry["at"] > PRESENCE_TTL:
         return None
     return entry
+
+
+def in_app(device_id):
+    here = presence(device_id)
+    return bool(here) and here["state"] in ("foreground", "running")
+
+
+def recent_reads():
+    """What every notice lists: the newest reads of the last six hours, ``{chats: [[id, at]…], rooms}``."""
+    now = time.time()
+    with LOCK:
+        listed = {kind: [[key, round(at, 3)] for key, at in sorted(STATE["reads"][kind].items(), key=lambda i: -i[1])
+                         if now - at <= READ_TTL][:NOTICE_READS] for kind in ("chats", "rooms")}
+    return listed if listed["chats"] or listed["rooms"] else {}
+
+
+def delivered(notice, device_ids):
+    """A reply's chat or a Bot message's room went to these devices: a read elsewhere clears it there, and
+    it counts on badges that count unread chats (unless it's muted there)."""
+    if notice.kind == "reply":
+        kind, key = "chats", notice.session_id or notice.thread
+    elif notice.kind == "message":
+        kind, key = "rooms", notice.extra.get("room_id") or notice.thread.removeprefix("room:")
+    else:
+        return
+    if not key:
+        return
+    moved = []
+    with LOCK:
+        for device_id in device_ids:
+            STATE["delivered"].setdefault(device_id, {}).setdefault(kind, {})[key] = time.time()
+            record = STATE["badges"].get(device_id)
+            if record and key not in record[f"muted_{kind}"] and key not in record[kind]:
+                record[kind].append(key)
+                moved.append(device_id)
+    for device_id in moved:
+        soon("badge", device_id, PUSH_DEBOUNCE)
+
+
+def soon(kind, device_id, delay):
+    """One waiting read (or badge) push per device: what changes meanwhile goes with it."""
+    with LOCK:
+        if (kind, device_id) in DUE:
+            return
+        DUE.add((kind, device_id))
+    timer = threading.Timer(delay, flush, args=(kind, device_id))
+    timer.daemon = True
+    timer.start()
+
+
+def flush(kind, device_id):
+    request, retry = None, 0
+    with LOCK:
+        DUE.discard((kind, device_id))
+        device = STATE["devices"].get(device_id)
+        if device is None or in_app(device_id):
+            STATE["read_pushes"].get(device_id, {}).pop("pending", None)
+            return
+        if kind == "read":
+            entry = STATE["read_pushes"].get(device_id) or {}
+            wait = entry.get("sent", 0) + READ_MIN_INTERVAL - time.time()
+            if entry.get("pending") and wait > 0.5:
+                retry = wait  # inside the 30 s window: after it
+            elif entry.get("pending"):
+                cleared = STATE["cleared"].get(device_id) or {}
+                read = {k: [[key, round(at, 3)] for key, at in sorted((cleared.get(k) or {}).items(),
+                                                                      key=lambda i: -i[1])][:CLEARED_MAX]
+                        for k in ("chats", "rooms")}
+                entry.pop("pending", None)
+                if read["chats"] or read["rooms"]:
+                    entry["sent"] = time.time()
+                    request = notices.read_request(device, read, GATEWAY, len(STATE["requests"]))
+                    log(f"→ read {', '.join(key for key, _at in read['chats'] + read['rooms'])} to "
+                        f"{device.get('name') or device_id}")
+        else:
+            record = STATE["badges"].get(device_id)
+            count = (min(len(STATE["requests"]) + len(record["chats"]) + len(record["rooms"]) + record.get("others", 0), 9999)
+                     if record else None)
+            if count is not None and count != record["shown"]:
+                record["shown"] = count
+                request = notices.badge_request(device, count)
+                log(f"→ badge {count} to {device.get('name') or device_id}")
+    if request is not None:
+        threading.Thread(target=relay, args=(device, request), daemon=True).start()
+    elif retry:
+        soon("read", device_id, retry)
 
 
 def wants(device_id, device, notice, walked_away=(), ignore_presence=False):
@@ -299,20 +480,24 @@ def deliver(notice, walked_away=()):
         devices = dict(STATE["devices"])
         open_count = len(STATE["requests"])
         resolved = list(STATE["resolved"])
+    read = recent_reads()
+    sent = []
     for device_id, device in devices.items():
         wanted = wants(device_id, device, notice, walked_away)
         if not wanted:
             if notice.kind in ("approval", "question", "password", "widget") and notice.request_id \
                     and wants(device_id, device, notice, walked_away, ignore_presence=True):
-                request = notices.apns_request(device, notice, GATEWAY, open_count, resolved)
+                request = notices.apns_request(device, notice, GATEWAY, open_count, resolved, read)
                 with LOCK:
                     STATE["held"].setdefault(device_id, {})[notice.request_id] = (
                         request, [c for c in (notice.thread, notice.session_id) if c])
                 log(f"held {notice.kind} for {device.get('name') or device_id} (chat on screen)")
             continue
-        request = notices.apns_request(device, notice, GATEWAY, open_count, resolved)
+        request = notices.apns_request(device, notice, GATEWAY, open_count, resolved, read)
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
         log(f"→ {notice.kind} '{notice.title}' to {device.get('name') or device_id}")
+        sent.append(device_id)
+    delivered(notice, sent)
 
 
 def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away):
@@ -564,6 +749,37 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         return 200, {"ok": True, "devices": len(devices)}
 
     backend_globals["HTTP_ROUTES"][("POST", "/api/mock/sync")] = push_sync
+
+    def push_state(query, body):
+        # Mock-only: what the push mock recorded for reading (docs/notifications.md §2, Reading).
+        with LOCK:
+            return 200, json.loads(json.dumps({key: STATE[key] for key in (
+                "presence", "reads", "delivered", "cleared", "badges", "read_pushes")}))
+
+    def mock_read(query, body):
+        # Mock-only: chats and rooms read on another device ({"chats", "rooms", "device_id"?}), as the app's
+        # `read` from there: devices away that were sent something for them get a read push (and a badge).
+        try:
+            return 200, cmd_read({"device_id": body.get("device_id") or "mock-other-device",
+                                  "chats": body.get("chats"), "rooms": body.get("rooms")})
+        except ValueError as error:
+            return 400, {"ok": False, "error": str(error)}
+
+    def mock_badge(query, body):
+        # Mock-only: a badge-only push to every device now ({"badge": n}), whatever its presence.
+        try:
+            count = int(body.get("badge") or 0)
+        except (TypeError, ValueError):
+            return 400, {"ok": False, "error": "badge must be a number"}
+        with LOCK:
+            devices = dict(STATE["devices"])
+        for device in devices.values():
+            threading.Thread(target=relay, args=(device, notices.badge_request(device, count)), daemon=True).start()
+        return 200, {"ok": True, "devices": len(devices)}
+
+    backend_globals["HTTP_ROUTES"][("GET", "/api/mock/push-state")] = push_state
+    backend_globals["HTTP_ROUTES"][("POST", "/api/mock/read")] = mock_read
+    backend_globals["HTTP_ROUTES"][("POST", "/api/mock/badge")] = mock_badge
 
     original_request = backend_globals["server_request"]
 

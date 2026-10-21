@@ -76,6 +76,7 @@ Scheduled tasks: `deliver: apppush`, and `failure_deliver: apppush:fail` to hear
 | `on_room_member_activity` | a Bot's group message (settled after 5 s) | `MESSAGE` | active |
 | none: the gateway reads each profile's new `logs/curator/<run>/run.json` every 30 s | "Hermes tidied its skills" when a tidy merged, archived or marked something (once per run; follows the tasks setting) | `OPEN` | passive |
 | `post_approval_response`, `on_human_input_resolved`, `pre_tool_call` on `widget` claim or resolve | background "withdraw" push | — | — |
+| the app's `read` (a chat or group chat read on another device) | background "read" push to devices away from the app that were sent a reply or Bot message for it, and a badge-only push (`aps {badge}`) to those that count unread chats | — | — |
 
 Live Activities: `pre_llm_call`, `pre_tool_call`, approvals and questions, and `on_session_end` update the
 activity a device registered for that chat.
@@ -95,7 +96,8 @@ Plugins can't add gateway RPC methods, so the app calls
 | `register` | `device_id`, `token` (hex), `topic` (bundle id), `environment` (`development`/`production`), `public_key` (base64 X25519), `platform`, `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}`, `relay`, `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` + `session_id`, `running`, `away`), `live` (chats the app notifies about itself, the Mac), `sync` (with `away`: chats to keep current; a turn ending in one sends the device a background `sync` push, at most one a minute) | `open` |
+| `presence` | `device_id`, `state` (`foreground` + `session_id`, `running`, `away`), `live` (chats the app notifies about itself, the Mac), `sync` (with `away`: chats to keep current; a turn ending in one sends the device a background `sync` push, at most one a minute), `unread` and `muted` (with `away`: `{chats, rooms}`, what the app icon's badge counts and what it never counts; at most 200 of each) | `open` |
+| `read` | `device_id` (the device that read), `chats` (session ids), `rooms` (group chat ids), at most 50 of each | `ok`, `open` |
 | `activity` | `device_id`, `token` (or none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` (optional) | version, relay, devices, registered, preferences, open |
 | `test` | `device_id` | sends a test notice now |
@@ -107,6 +109,16 @@ approvals carry none and only open the app. Questions answered in the TUI gatewa
 the app reads the session's open requests (`session.resume`) and answers with `request.answer`.
 
 Replies skip subagent turns and messaging-platform chats (their own app already notifies).
+
+Reading: every notice lists the chats and rooms read in the last six hours (`read: {chats: [[id, at], …],
+rooms: […]}`, the newest 12 of each; the oldest give way first when a notice would pass the relay's
+4 KB). A device away from the app that was sent a reply or Bot message for something read elsewhere gets
+a background `read` push (`read: {chats: [[id, at], …], rooms}`: all read since it was last in front,
+with when each was last read, at most 40 each; `open`), at most one every 30 s, collapse id `read`. A device that left with `unread` gets a badge-only
+push (`{"aps": {"badge": n}}`, priority 5, collapse id `badge`) when its count (open requests + unread
+chats + unread rooms) moves: down for a chat read elsewhere, up for a reply or message it's sent (not a
+muted one). Group chats have no read mark on the gateway, so a room read elsewhere stays in the count.
+Coming back to the app (`presence foreground`) forgets all of it for that device.
 
 Preferences: `approvals`, `passwords`, `replies`, `reply_after` (seconds), `tasks` (`all`/`failures`/`off`, default `all`),
 `bots` (`all`/`mentions`/`off`), `background`, `live_activity`, `show_details`, `mention_names`.

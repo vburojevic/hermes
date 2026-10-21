@@ -51,6 +51,7 @@ CARD_KINDS = ("card_needs_you", "card_review", "card_stopped", "card_done")
 MAX_BODY = 400
 MAX_COMMAND = 600
 MAX_CHOICES = 3
+MAX_PAYLOAD = 4096  # the relay's limit on a payload's JSON, and APNs's
 
 
 @dataclass
@@ -72,11 +73,16 @@ class Notice:
     def category(self) -> str:
         return MEMORY if self.kind == "approval" and self.extra.get("memory") else KINDS[self.kind][0]
 
-    def content(self, gateway: dict, open_count: int, resolved: list[str]) -> dict:
+    def content(self, gateway: dict, open_count: int, resolved: list[str], read: dict | None = None) -> dict:
+        """``read``: the chats and rooms read lately (``store.recent_reads``), so the service extension clears
+        their notifications whenever this one arrives (docs/notifications.md §2, Reading)."""
         data = {k: v for k, v in asdict(self).items() if v not in ("", None, {}) and k != "extra"}
         data.update(self.extra)
         data.update({"v": 1, "category": self.category, "gateway": gateway, "open": open_count,
                      "resolved": resolved[:20], "sent_at": round(time.time(), 3)})
+        if read and (read.get("chats") or read.get("rooms")):
+            data["read"] = {"chats": [list(r) for r in read.get("chats") or []],
+                            "rooms": [list(r) for r in read.get("rooms") or []]}
         return data
 
 
@@ -371,7 +377,8 @@ def message(*, room_id: str, room: str, member_id: str, bot: str, gateway_name: 
 
 # -- APNs requests ---------------------------------------------------------------------------------
 
-def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, resolved: list[str]) -> dict:
+def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, resolved: list[str],
+                 read: dict | None = None) -> dict:
     category, level, relevance, fallback = KINDS[notice.kind]
     if notice.category == MEMORY:
         category, level, fallback = MEMORY, "active", "Hermes wants to remember something"
@@ -387,17 +394,39 @@ def apns_request(device: dict, notice: Notice, gateway: dict, open_count: int, r
     }
     if level != "passive":
         aps["sound"] = "default"
+    content = notice.content(gateway, open_count, resolved, read)
+    _fit(aps, content)
     request = {
         "token": device["token"], "environment": device.get("environment", "production"), "topic": device["topic"],
         "push_type": "alert", "priority": 10 if level in ("time-sensitive", "active") else 5,
-        "payload": {"aps": aps, "hermes": crypto.seal(device["public_key"], notice.content(gateway, open_count,
-                                                                                            resolved))},
+        "payload": {"aps": aps, "hermes": crypto.seal(device["public_key"], content)},
     }
     if notice.request_id or notice.kind in ("reply", "task", "task_failed", "tidied", *CARD_KINDS):
         request["collapse_id"] = (notice.request_id or notice.id)[:64]
     expiry = notice.expires_at or time.time() + 86_400
     request["expiration"] = int(expiry)
     return request
+
+
+def payload_size(aps: dict, content: dict) -> int:
+    """The bytes of ``{"aps", "hermes": seal(content)}`` as the relay counts them, without sealing: the
+    envelope's box is base64 of nonce (12) + the compact JSON + tag (16), as ``crypto.seal`` makes it."""
+    plain = len(json.dumps(content, ensure_ascii=False, separators=(",", ":")).encode())
+    envelope = {"v": 1, "epk": "A" * 44, "box": "A" * (4 * -(-(plain + 28) // 3))}
+    return len(json.dumps({"aps": aps, "hermes": envelope}, ensure_ascii=False, separators=(",", ":")).encode())
+
+
+def _fit(aps: dict, content: dict) -> None:
+    """Drops the oldest reads a notice lists until it fits the relay's limit. They're a hint the next
+    notice, an app refresh or coming back to the app also brings; the notice itself isn't."""
+    read = content.get("read")
+    while read and payload_size(aps, content) > MAX_PAYLOAD:
+        kinds = [kind for kind in ("chats", "rooms") if read[kind]]
+        oldest = min(kinds, key=lambda kind: read[kind][-1][1])
+        read[oldest].pop()
+        if not read["chats"] and not read["rooms"]:
+            content.pop("read")
+            return
 
 
 def withdraw_request(device: dict, ids: list[str], gateway: dict, open_count: int) -> dict:
@@ -419,6 +448,28 @@ def sync_request(device: dict, sessions: list[str], gateway: dict, open_count: i
     return {"token": device["token"], "environment": device.get("environment", "production"),
             "topic": device["topic"], "push_type": "background", "priority": 5, "expiration": int(time.time() + 1800),
             "payload": {"aps": {"content-available": 1}, "hermes": crypto.seal(device["public_key"], content)}}
+
+
+def read_request(device: dict, read: dict, gateway: dict, open_count: int) -> dict:
+    """A background push: these chats and rooms were read on another device since this one was last in the
+    app, so it removes the notifications sent before each was read and sets the badge. ``read`` is shaped
+    like a notice's (``{chats: [[id, at], …], rooms}``) and names everything read since then, so a later
+    one replaces an earlier one (collapse id ``read``)."""
+    content = {"v": 1, "kind": "read", "read": {"chats": list(read.get("chats") or []),
+                                                "rooms": list(read.get("rooms") or [])},
+               "gateway": gateway, "open": open_count, "sent_at": round(time.time(), 3)}
+    return {"token": device["token"], "environment": device.get("environment", "production"),
+            "topic": device["topic"], "push_type": "background", "priority": 5, "collapse_id": "read",
+            "expiration": int(time.time() + 3600),
+            "payload": {"aps": {"content-available": 1}, "hermes": crypto.seal(device["public_key"], content)}}
+
+
+def badge_request(device: dict, count: int) -> dict:
+    """A badge-only push: the app icon's count, nothing shown and nothing sealed (the relay takes exactly
+    ``{aps: {badge}}`` at priority 5), for when the app isn't woken."""
+    return {"token": device["token"], "environment": device.get("environment", "production"),
+            "topic": device["topic"], "push_type": "alert", "priority": 5, "collapse_id": "badge",
+            "expiration": int(time.time() + 3600), "payload": {"aps": {"badge": max(0, min(int(count), 9999))}}}
 
 
 def activity_request(device: dict, activity: dict, state: dict, *, event: str = "update", alert: bool = False,

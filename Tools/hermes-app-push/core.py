@@ -19,10 +19,10 @@ from typing import Any, Callable
 
 from . import crypto, hostinfo, notices
 from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
-from .store import Store
+from .store import Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.3.2"
+VERSION = "1.4.0"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -46,6 +46,9 @@ CARD_POLL_SECONDS = 5.0        # how often the gateway looks for cards ready for
 CARD_IDLE_POLL_SECONDS = 30.0  # the slowest it looks once no card is running and the boards are quiet
 TIDY_POLL_SECONDS = 30.0       # how often it looks for a finished tidy (the curator's run reports)
 ROOM_MESSAGE_SETTLE = 5.0      # a Bot's streamed message counts as finished after this quiet time
+PUSH_DEBOUNCE = 3.0            # a read or badge push waits this long, so a burst of reads goes as one
+MAX_PRESENCE_IDS = 200         # chats (and rooms) a device may name as unread or muted when it leaves
+MAX_READ_IDS = 50              # chats (and rooms) one ``read`` may name
 # Surfaces whose replies the app reports. A messaging platform's own app already notifies, and cron
 # results come through the delivery platform.
 NOTIFY_PLATFORMS = {"", "api_server", "api", "tui", "desktop", "dashboard", "webui", "cli", "local", "acp"}
@@ -63,8 +66,13 @@ class PushError(ValueError):
 
 
 class Push:
-    def __init__(self, *, store: Store | None = None, config: Callable[[str, Any], Any] | None = None):
+    def __init__(self, *, store: Store | None = None, config: Callable[[str, Any], Any] | None = None,
+                 later: Callable[[float, Callable[[], None], tuple[str, str]], Any] | None = None):
         self.store = store or Store()
+        # Runs a read or badge push's flush after a delay, ``later(seconds, flush, (kind, device))``: a daemon
+        # timer; tests pass their own.
+        self._later = later or _later
+        self._due: set[tuple[str, str]] = set()     # (read | badge, device) flushes waiting in this process
         self._config = config or (lambda key, default=None: default)
         self.relay = Relay(self.store, lambda: str(self._config("relay_url", "") or ""), self.gateway_name)
         self._lock = threading.RLock()
@@ -142,7 +150,10 @@ class Push:
         """``state``: ``foreground`` (``session_id`` = the visible chat), ``running`` (the Mac app is open but
         not in front), or ``away``. ``live``: chats the app hears over its own connection and notifies about
         itself (the Mac); without it, a ``running`` device gets nothing pushed. ``sync`` (with ``away``): the
-        chats to keep current on the device while it's away (``_sync``)."""
+        chats to keep current on the device while it's away (``_sync``). ``unread`` and ``muted`` (with
+        ``away``, ``{chats, rooms}``): what its badge counts as it leaves, and what it never counts, with
+        ``badge_others`` what the person's other gateways add to it; a device that sends no ``unread`` gets no
+        badge pushes (docs/notifications.md §2, Reading)."""
         device_id = _require(args, "device_id", _DEVICE)
         state = args.get("state")
         if state not in ("foreground", "running", "away"):
@@ -154,8 +165,32 @@ class Push:
         # Leaving, the app names the chats to keep current while it's away (``sync``); older apps don't.
         if state == "away" and isinstance(args.get("sync"), list):
             self.store.set_sync(device_id, [str(s)[:120] for s in args["sync"] if s][:20])
+        if state == "foreground":
+            self.store.reset_reading(device_id)  # the app decides what's read while it's in front
+        elif state == "away":
+            unread = _id_sets(args.get("unread"))
+            others = args.get("badge_others")
+            others = min(int(others), 9999) if isinstance(others, (int, float)) and not isinstance(others, bool) and others > 0 else 0
+            self.store.set_badge(device_id, unread, _id_sets(args.get("muted")) if unread is not None else None, others)
         self._release_held(device_id, state, session, live)
         return {"ok": True, "open": len(self.store.open_requests())}
+
+    def read(self, args: dict) -> dict:
+        """Chats (``chats``: session ids) and group chats (``rooms``) read on ``device_id``. Every notice
+        lists them for six hours, and devices away from the app that were sent a reply or message for one
+        get a background ``read`` push, at most one every 30 s; the reader itself gets nothing
+        (docs/notifications.md §2, Reading)."""
+        device_id = _require(args, "device_id", _DEVICE)
+        chats = _ids(args.get("chats"), "chats", MAX_READ_IDS)
+        rooms = _ids(args.get("rooms"), "rooms", MAX_READ_IDS)
+        if not chats and not rooms:
+            return {"ok": True, "open": len(self.store.open_requests())}
+        result = self.store.record_read(device_id, chats, rooms)
+        for owed, wait in result["read"]:
+            self._soon("read", owed, max(PUSH_DEBOUNCE, wait))
+        for moved in result["badge"]:
+            self._soon("badge", moved, PUSH_DEBOUNCE)
+        return {"ok": True, "open": result["open"]}
 
     def _release_held(self, device_id: str, state: str, session: str | None, live: list | None) -> None:
         """Requests held back because their chat was on screen go out once it isn't (the person left)."""
@@ -214,7 +249,8 @@ class Push:
         notice = notices.Notice(kind="test", id=f"test-{int(time.time())}", title="Push notifications are on",
                                 body=f"{self.gateway_name()} can reach this device.",
                                 hidden=f"Test from {self.gateway_name()}")
-        result = self.relay.post(notices.apns_request(device, notice, self.gateway(), 0, []))
+        result = self.relay.post(notices.apns_request(device, notice, self.gateway(), 0, [],
+                                                      recent_reads(self.store.read())))
         self._handle_result(device_id, result)
         return {"ok": result.get("status") == 200, "status": result.get("status"), "reason": result.get("reason")}
 
@@ -223,7 +259,7 @@ class Push:
         → Setup → Priority flags a Mac that throttles them."""
         return {"ok": True, "version": VERSION, "host": hostinfo.report()}
 
-    COMMANDS = ("register", "unregister", "preferences", "presence", "activity", "status", "test", "host")
+    COMMANDS = ("register", "unregister", "preferences", "presence", "read", "activity", "status", "test", "host")
 
     # -- delivery ---------------------------------------------------------------------------------------
 
@@ -280,7 +316,9 @@ class Push:
     def deliver(self, notice: notices.Notice, walked_away: set | None = None) -> int:
         state = self.store.read()
         resolved = [rid for rid, _ in state["resolved"]]
+        read = recent_reads(state)
         sent = 0
+        tracked = []  # devices sent a reply or Bot message: a read elsewhere clears it there
         for device_id, device in state["devices"].items():
             wanted = self._wants(device_id, device, notice, walked_away)
             # Hermes waits on this one: if only the screen held it back, keep it for when the person leaves.
@@ -289,7 +327,7 @@ class Push:
             if not wanted and not hold:
                 continue
             try:
-                request = notices.apns_request(device, notice, self.gateway(), len(state["requests"]), resolved)
+                request = notices.apns_request(device, notice, self.gateway(), len(state["requests"]), resolved, read)
             except Exception:
                 logger.warning("app push: couldn't build a notice for %s", device_id, exc_info=True)
                 continue
@@ -300,7 +338,23 @@ class Push:
                 continue
             self.relay.enqueue(Delivery(device_id, request, on_done=self._done(device_id)))
             sent += 1
+            tracked.append(device_id)
+        self._delivered(notice, tracked)
         return sent
+
+    def _delivered(self, notice: notices.Notice, device_ids: list[str]) -> None:
+        """Remembers which chat or room these devices were just notified about, and counts it unread on
+        those that count unread chats in their badge."""
+        key = _read_key(notice)
+        if key is None or not device_ids:
+            return
+        try:
+            moved = self.store.record_delivered(device_ids, *key)
+        except Exception:
+            logger.warning("app push: couldn't note what was sent", exc_info=True)
+            return
+        for device_id in moved:
+            self._soon("badge", device_id, PUSH_DEBOUNCE)
 
     def withdraw(self, ids: list[str]) -> None:
         if not ids:
@@ -313,6 +367,53 @@ class Push:
 
     def _done(self, device_id: str) -> Callable[[dict], None]:
         return lambda result: self._handle_result(device_id, result)
+
+    # -- reading: read and badge pushes (docs/notifications.md §2, Reading) ---------------------------------
+
+    def _soon(self, kind: str, device_id: str, delay: float) -> None:
+        """One waiting read (or badge) push per device in this process: whatever changes meanwhile goes with
+        it, since its flush reads the store when it runs."""
+        key = (kind, device_id)
+        with self._lock:
+            if key in self._due:
+                return
+            self._due.add(key)
+
+        def run() -> None:
+            with self._lock:
+                self._due.discard(key)
+            flush = self._flush_read if kind == "read" else self._flush_badge
+            try:
+                flush(device_id)
+            except Exception:
+                logger.warning("app push: a %s push failed", kind, exc_info=True)
+
+        try:
+            self._later(delay, run, key)
+        except Exception:
+            with self._lock:
+                self._due.discard(key)
+            logger.warning("app push: couldn't schedule a %s push", kind, exc_info=True)
+
+    def _flush_read(self, device_id: str) -> None:
+        """Sends ``device_id`` what was read since it was last in the app, unless it's back or nothing is owed."""
+        claimed, wait = self.store.claim_read_push(device_id)
+        if claimed is None:
+            if wait > 0:
+                self._soon("read", device_id, wait)  # another process sent one meanwhile: after its window
+            return
+        device = self.store.devices().get(device_id)
+        if not device:
+            return
+        request = notices.read_request(device, claimed["read"], self.gateway(), claimed["open"])
+        self.relay.enqueue(Delivery(device_id, request, on_done=self._done(device_id)))
+
+    def _flush_badge(self, device_id: str) -> None:
+        """Sets the badge of a device away from the app when its count moved since it last showed one."""
+        count = self.store.claim_badge(device_id)
+        device = self.store.devices().get(device_id) if count is not None else None
+        if device:
+            self.relay.enqueue(Delivery(device_id, notices.badge_request(device, count), on_done=self._done(device_id)))
 
     def _handle_result(self, device_id: str, result: dict) -> None:
         if result.get("status") == 410 or result.get("reason") in DEAD_TOKEN_REASONS:
@@ -761,10 +862,11 @@ class Push:
                               text=text, failed=failed)
         state = self.store.read()
         sent = 0
+        read = recent_reads(state)
         for device_id, device in state["devices"].items():
             if not self._wants(device_id, device, notice):
                 continue
-            request = notices.apns_request(device, notice, self.gateway(), len(state["requests"]), [])
+            request = notices.apns_request(device, notice, self.gateway(), len(state["requests"]), [], read)
             try:
                 result = await asyncio.to_thread(self.relay.post, request)
             except Exception as exc:
@@ -791,6 +893,47 @@ def _require(args: dict, key: str, pattern: re.Pattern) -> str:
     if not pattern.match(value):
         raise PushError(f"{key} is missing or malformed")
     return value
+
+
+def _ids(value: Any, key: str, limit: int) -> list[str]:
+    """A list of chat or room ids: strings, each clipped to 120 characters, without repeats, at most ``limit``."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise PushError(f"{key} must be a list of ids")
+    return list(dict.fromkeys(v[:120] for v in value if isinstance(v, str) and v))[:limit]
+
+
+def _id_sets(value: Any) -> dict | None:
+    """``{chats, rooms}`` as ``presence`` takes it (``unread``, ``muted``); None when it isn't one."""
+    if not isinstance(value, dict):
+        return None
+    sets = {}
+    for kind in ("chats", "rooms"):
+        try:
+            sets[kind] = _ids(value.get(kind), kind, MAX_PRESENCE_IDS)
+        except PushError:
+            sets[kind] = []
+    return sets
+
+
+def _read_key(notice: notices.Notice) -> tuple[str, str] | None:
+    """What a read clears a notice by: a reply's chat, a Bot message's room. Requests, task results and
+    cards stay until they settle."""
+    if notice.kind == "reply":
+        key = notice.session_id or notice.thread
+        return ("chats", key) if key else None
+    if notice.kind == "message":
+        key = str(notice.extra.get("room_id") or "") or notice.thread.removeprefix("room:")
+        return ("rooms", key) if key else None
+    return None
+
+
+def _later(delay: float, run: Callable[[], None], key: tuple[str, str]) -> threading.Timer:
+    timer = threading.Timer(delay, run)
+    timer.name, timer.daemon = f"app-push-{key[0]}", True
+    timer.start()
+    return timer
 
 
 def _preferences(raw: dict) -> dict:

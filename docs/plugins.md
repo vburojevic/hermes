@@ -7,7 +7,7 @@ run inside the person's own Hermes, and are published to public repositories tha
 
 | Plugin | What it adds | Source | State |
 |---|---|---|---|
-| `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.3.2 |
+| `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.0 |
 | `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.2.2 |
 
 Everything else the app does runs on a stock Hermes Agent: the API server for chats, and
@@ -231,7 +231,7 @@ plugin's side of it.
 | | `pre_tool_call` | The Live Activity's step, a `clarify` call's questions, and a `widget` claim or resolve withdrawing its notice |
 | | `on_room_member_activity` | Bot messages in group chats |
 | | `kanban_task_blocked`, `kanban_task_completed` | Board cards that need you or are done |
-| Command | `/app-push <command> <json>` | How the app registers devices and sets preferences, presence and Live Activities. Hidden from the app's "/" list |
+| Command | `/app-push <command> <json>` | How the app registers devices, sets preferences, presence and Live Activities, and says which chats were read. Hidden from the app's "/" list |
 | Delivery platform | `apppush` (`ctx.register_platform`) | Scheduled tasks: `deliver: apppush`, `failure_deliver: apppush:fail` |
 | Watcher | one thread per gateway process | What Hermes has no hook for: cards ready for review or stopped (each board's `task_events`) and skill tidies (each profile's `logs/curator/<run>/run.json`) |
 | Hermes code it reads | `tools.approval`, `hermes_state.SessionDB`, `hermes_cli.kanban_db`, `hermes_cli.profiles`, `gateway.hosted_rooms`, `agent.redact`, `cron.execution_identity` | Request ids, chat titles, card facts, profiles' names and homes, room names, the redactor, a task's name |
@@ -240,7 +240,7 @@ plugin's side of it.
 Plugins can't add gateway RPC methods, so the app calls
 `command.dispatch {name: "app-push", arg: "<command> <json>"}` on the backend socket and reads one
 line of JSON (`AppPushClient`). The commands are `register`, `unregister`, `preferences`,
-`presence`, `activity`, `status` and `test` ([notifications.md](notifications.md) §1.2). Error
+`presence`, `read`, `activity`, `status`, `test` and `host` ([notifications.md](notifications.md) §1.2). Error
 4018 ("not a quick/plugin/bundle/skill command") means the plugin isn't installed or enabled in that
 profile. A command that fails answers `{"ok": false, "error": …}` and never raises, because Hermes
 would turn an exception into the same 4018.
@@ -254,7 +254,7 @@ In `~/.hermes/plugin-data/hermes-app-push/` (the root's, for every profile):
 
 | File | What's in it |
 |---|---|
-| `state.json` | Devices (APNs token, bundle id, public key, name, app version, preferences; at most 32), open requests, recently settled ones, presence (forgotten after 75 s), the chats each device keeps current while away (forgotten after a day), Live Activity tokens, the relay installation id, the board and tidy cursors. Owner-only (0600), replaced atomically |
+| `state.json` | Devices (APNs token, bundle id, public key, name, app version, preferences; at most 32), open requests, recently settled ones, presence (forgotten after 75 s), the chats each device keeps current while away (forgotten after a day), chats and rooms read (forgotten after six hours) and, per device away from the app, which ones it was sent, cleared and counts unread (forgotten when it's back in the app), Live Activity tokens, the relay installation id, the board and tidy cursors. Owner-only (0600), replaced atomically |
 | `relay-secret` | The secret the relay issued this gateway. Owner-only, never logged or sent to the app |
 | `.lock` | The write lock shared by every Hermes process (`fcntl`) |
 

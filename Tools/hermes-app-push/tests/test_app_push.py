@@ -200,6 +200,8 @@ def test_register_status_and_bad_input(hermes):
     key, token = make_device(handler, "status")
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
+    manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
+    assert status["version"] == manifest == "1.4.0"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1097,3 +1099,409 @@ def test_a_widget_request_notifies_like_an_approval(hermes):
     plugins.invoke_hook("on_session_end", session_id=session, turn_id="turn-w3", completed=True)
     time.sleep(0.5)
     assert len(pushes_for(token, "alert")) == before
+
+
+# -- reading: a chat read anywhere leaves no notifications behind (docs/notifications.md §2, Reading) ------
+
+class Later:
+    """Holds the read and badge pushes' timers: each flush waits until the test runs it."""
+
+    def __init__(self):
+        self.waiting: list[tuple[float, object, tuple]] = []
+
+    def __call__(self, delay, run, key):
+        self.waiting.append((delay, run, key))
+
+    def delays(self, key) -> list[float]:
+        return [delay for delay, _run, waiting in self.waiting if waiting == key]
+
+    def run(self) -> int:
+        waiting, self.waiting = self.waiting, []
+        for _delay, run, _key in waiting:
+            run()
+        return len(waiting)
+
+
+@pytest.fixture()
+def reading(hermes, monkeypatch):
+    """The plugin Hermes loaded, with its read and badge timers held (``Later``)."""
+    plugins, handler = hermes
+    push = sys.modules[handler.__module__]._instance()
+    later = Later()
+    monkeypatch.setattr(push, "_later", later)
+    yield plugins, handler, push, later
+    push._due.clear()
+
+
+def presence(handler, name, **fields):
+    return json.loads(handler("presence " + json.dumps({"device_id": f"dev-{name}", **fields})))
+
+
+def read(handler, name, chats=(), rooms=()):
+    return json.loads(handler("read " + json.dumps({"device_id": f"dev-{name}", "chats": list(chats),
+                                                    "rooms": list(rooms)})))
+
+
+def finish_turn(plugins, session, turn_id, text="Done."):
+    plugins.invoke_hook("pre_llm_call", session_id=session, turn_id=turn_id)
+    plugins.invoke_hook("post_llm_call", session_id=session, turn_id=turn_id, assistant_response=text)
+    plugins.invoke_hook("on_session_end", session_id=session, turn_id=turn_id, completed=True)
+
+
+def notices_for(key, token):
+    """The sealed notices a device was sent (alerts, not badge-only pushes)."""
+    return [opened(key, p) for p in pushes_for(token, "alert") if "hermes" in p["payload"]]
+
+
+def badges_for(token):
+    return [p for p in pushes_for(token, "alert") if "hermes" not in p["payload"]]
+
+
+def reads_for(key, token):
+    """The read pushes a device was sent (not withdrawals or syncs)."""
+    return [p for p in pushes_for(token, "background") if opened(key, p).get("kind") == "read"]
+
+
+def read_times(body, kind="chats") -> dict:
+    """A read push's (or notice's) ``read`` list of ``kind`` as {id: when it was read}."""
+    return {key: at for key, at in body["read"][kind]}
+
+
+def test_a_read_elsewhere_clears_another_devices_reply(reading):
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "read-phone", reply_after=0)
+    ipad_key, ipad = make_device(handler, "read-ipad", reply_after=0)
+    session, root = "20261021_read_chat", "20261021_read_root"
+    presence(handler, "read-phone", state="away")
+    presence(handler, "read-ipad", state="away")
+    finish_turn(plugins, session, "read-1")
+    wait_for(lambda: pushes_for(token, "alert") and pushes_for(ipad, "alert"))
+    assert push.store.read()["delivered"]["dev-read-phone"]["chats"][session] <= time.time()
+
+    # Read on the iPad (the chat's id and its lineage root): the phone owes a read push, the iPad nothing.
+    before = time.time()
+    answer = read(handler, "read-ipad", chats=[session, root])
+    assert answer == {"ok": True, "open": len(push.store.read()["requests"])}
+    assert ("read", "dev-read-phone") in push._due and ("read", "dev-read-ipad") not in push._due
+    assert later.delays(("read", "dev-read-phone")) == [3.0]
+    state = push.store.read()
+    assert session not in state["delivered"]["dev-read-phone"]["chats"]
+    assert list(state["cleared"]["dev-read-phone"]["chats"]) == [session]
+    assert session in state["delivered"]["dev-read-ipad"]["chats"]
+
+    later.run()
+    sent = wait_for(lambda: next(iter(reads_for(key, token)), None))
+    body = opened(key, sent)
+    assert body["kind"] == "read" and list(read_times(body)) == [session] and body["read"]["rooms"] == []
+    read_at = read_times(body)[session]  # when it was read, not when the push went
+    assert before - 0.01 <= read_at <= time.time() and round(read_at, 3) == read_at
+    assert "sessions" not in body and "rooms" not in body
+    assert body["gateway"]["name"] == "Test Mac" and body["open"] == answer["open"] and body["v"] == 1
+    assert sent["payload"]["aps"] == {"content-available": 1} and set(sent["payload"]) == {"aps", "hermes"}
+    assert (sent["priority"], sent["collapse_id"]) == (5, "read")
+    assert time.time() < sent["expiration"] <= time.time() + 3601
+    time.sleep(0.3)
+    assert not reads_for(ipad_key, ipad), "the device that read got a read push"
+
+
+def test_a_room_read_elsewhere_clears_its_bot_messages(reading, monkeypatch):
+    plugins, handler, push, later = reading
+    monkeypatch.setattr(_core_module(), "ROOM_MESSAGE_SETTLE", 0.05)
+    key, token = make_device(handler, "room-phone", bots="all")
+    presence(handler, "room-phone", state="away")
+    room = "room-launch-crew-0021"
+    plugins.invoke_hook("on_room_member_activity", room_id=room, member_id="ada", turn_id="room-1",
+                        kind="message.delta", payload={"text": "The build is green."})
+    wait_for(lambda: pushes_for(token, "alert"))
+    assert room in push.store.read()["delivered"]["dev-room-phone"]["rooms"]
+    read(handler, "room-reader", rooms=[room])  # a Mac: never registered, still a reader
+    later.run()
+    body = opened(key, wait_for(lambda: next(iter(reads_for(key, token)), None)))
+    assert list(read_times(body, "rooms")) == [room] and body["read"]["chats"] == []
+
+
+def test_no_read_push_for_what_a_device_was_never_sent(reading):
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "unsent-phone", reply_after=0)
+    presence(handler, "unsent-phone", state="away")
+    finish_turn(plugins, "20261021_sent_chat", "unsent-1")
+    wait_for(lambda: pushes_for(token, "alert"))
+    read(handler, "unsent-reader", chats=["20261021_never_sent"], rooms=["room-never-sent"])
+    assert ("read", "dev-unsent-phone") not in push._due
+    later.run()
+    time.sleep(0.3)
+    assert not reads_for(key, token)
+    assert "20261021_sent_chat" in push.store.read()["delivered"]["dev-unsent-phone"]["chats"]
+
+
+def test_devices_in_the_app_get_no_read_push(reading):
+    plugins, handler, push, later = reading
+    devices = [make_device(handler, name, reply_after=0) for name in ("front-phone", "running-mac", "back-phone")]
+    front, running, back = (token for _key, token in devices)
+    session = "20261021_in_app_chat"
+    presence(handler, "front-phone", state="foreground", session_id="20261021_other_chat")
+    presence(handler, "running-mac", state="running", live=[])
+    presence(handler, "back-phone", state="away")
+    finish_turn(plugins, session, "in-app-1")
+    wait_for(lambda: all(pushes_for(t, "alert") for t in (front, running, back)))
+    read(handler, "in-app-reader", chats=[session])
+    assert ("read", "dev-front-phone") not in push._due and ("read", "dev-running-mac") not in push._due
+    delivered = push.store.read()["delivered"]
+    assert session in delivered["dev-front-phone"]["chats"] and session in delivered["dev-running-mac"]["chats"]
+    # Owed one, but back in the app before it went: none, and what it was owed is forgotten.
+    assert ("read", "dev-back-phone") in push._due
+    presence(handler, "back-phone", state="foreground", session_id=session)
+    state = push.store.read()
+    assert "dev-back-phone" not in state["cleared"] and "dev-back-phone" not in state["delivered"]
+    later.run()
+    time.sleep(0.3)
+    for key, token in devices:
+        assert not reads_for(key, token)
+
+
+def test_reads_inside_the_window_go_as_one_push(reading):
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "window-phone", reply_after=0)
+    presence(handler, "window-phone", state="away")
+    first, second, third = "20261021_window_a", "20261021_window_b", "20261021_window_c"
+    for n, session in enumerate((first, second, third)):
+        finish_turn(plugins, session, f"window-{n}")
+    wait_for(lambda: len(pushes_for(token, "alert")) == 3)
+    owed = ("read", "dev-window-phone")
+    read(handler, "window-reader", chats=[first])
+    read(handler, "window-reader", chats=[second])
+    assert later.delays(owed) == [3.0]  # the second read rides with the first's push
+    later.run()
+    wait_for(lambda: reads_for(key, token))
+    time.sleep(0.3)
+    reads = reads_for(key, token)
+    first_push = opened(key, reads[0])
+    assert len(reads) == 1 and sorted(read_times(first_push)) == sorted([first, second])
+    assert read_times(first_push)[first] <= read_times(first_push)[second]  # each its own read time
+
+    # Inside 30 s of that one: the next waits for the window, then names everything read since the
+    # device left, so it replaces the first.
+    read(handler, "window-reader", chats=[third])
+    assert later.delays(owed)[0] > 25
+    later.run()  # early: it waits out the rest of the window
+    assert later.delays(owed)[0] > 25 and len(reads_for(key, token)) == 1
+    push.store.update(lambda s: s["read_pushes"]["dev-window-phone"].__setitem__("sent", time.time() - 31))
+    later.run()
+    latest = wait_for(lambda: reads_for(key, token)[1:] and reads_for(key, token)[1])
+    times = read_times(opened(key, latest))
+    assert sorted(times) == sorted([first, second, third])
+    # The earlier reads keep their own times (a reply after one of them must stay), the newest is newest.
+    assert times[first] == read_times(first_push)[first] and times[second] == read_times(first_push)[second]
+    assert times[third] > times[second] and [c for c, _at in opened(key, latest)["read"]["chats"]][0] == third
+    assert latest["collapse_id"] == "read"
+
+
+def test_the_badge_follows_reads_and_new_replies(reading):
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "badge-phone", reply_after=0)
+    _other_key, other = make_device(handler, "plain-phone", reply_after=0)
+    unread, still_unread, muted, fresh = ("20261021_badge_a", "20261021_badge_b", "20261021_badge_muted",
+                                          "20261021_badge_fresh")
+    presence(handler, "badge-phone", state="away", unread={"chats": [unread, still_unread], "rooms": ["room-badge"]},
+             muted={"chats": [muted], "rooms": []})
+    presence(handler, "plain-phone", state="away")  # it doesn't count unread chats: no record, no badge pushes
+    state = push.store.read()
+    record = state["badges"]["dev-badge-phone"]
+    shown = record["shown"]
+    assert shown == len(state["requests"]) + 3 and "dev-plain-phone" not in state["badges"]
+    assert record["muted_chats"] == [muted]
+
+    # Read on another device: one fewer, sent as a badge-only push.
+    read(handler, "badge-reader", chats=[unread])
+    assert later.delays(("badge", "dev-badge-phone")) == [3.0]
+    assert ("read", "dev-badge-phone") not in push._due  # it was sent nothing for that chat
+    later.run()
+    first = wait_for(lambda: badges_for(token) and badges_for(token)[0])
+    assert first["payload"] == {"aps": {"badge": shown - 1}}
+    assert (first["push_type"], first["priority"], first["collapse_id"]) == ("alert", 5, "badge")
+    assert time.time() < first["expiration"] <= time.time() + 3601
+
+    # A reply in a new chat: one more. A muted chat's reply counts nothing.
+    finish_turn(plugins, fresh, "badge-1")
+    finish_turn(plugins, muted, "badge-2")
+    wait_for(lambda: len(notices_for(key, token)) == 2)
+    later.run()
+    second = wait_for(lambda: badges_for(token)[1:] and badges_for(token)[1])
+    assert second["payload"] == {"aps": {"badge": shown}}
+    record = push.store.read()["badges"]["dev-badge-phone"]
+    assert record["chats"] == [still_unread, fresh] and record["rooms"] == ["room-badge"]
+
+    # A group chat read elsewhere comes off too (the app marks it read when it hears), and a count that
+    # didn't move sends nothing.
+    read(handler, "badge-reader", rooms=["room-badge"])
+    later.run()
+    third = wait_for(lambda: badges_for(token)[2:] and badges_for(token)[2])
+    assert third["payload"] == {"aps": {"badge": shown - 1}}
+    push._flush_badge("dev-badge-phone")
+    read(handler, "badge-reader", chats=[fresh, still_unread])
+    later.run()
+    fourth = wait_for(lambda: badges_for(token)[3:] and badges_for(token)[3])
+    assert fourth["payload"] == {"aps": {"badge": shown - 3}}
+    push._flush_badge("dev-badge-phone")
+    time.sleep(0.3)
+    assert len(badges_for(token)) == 4
+
+    # The device without a record never gets one, and coming back to the app forgets the record.
+    assert not badges_for(other)
+    presence(handler, "badge-phone", state="foreground", session_id=fresh)
+    assert "dev-badge-phone" not in push.store.read()["badges"]
+
+    # What the person's other gateways add to the badge rides along, so a push from this one doesn't
+    # overwrite theirs.
+    presence(handler, "badge-phone", state="away", unread={"chats": [unread], "rooms": []}, muted={"chats": [], "rooms": []},
+             badge_others=4)
+    record = push.store.read()["badges"]["dev-badge-phone"]
+    assert record["others"] == 4 and record["shown"] == len(push.store.read()["requests"]) + 1 + 4
+    read(handler, "badge-reader", chats=[unread])
+    later.run()
+    fifth = wait_for(lambda: badges_for(token)[4:] and badges_for(token)[4])
+    assert fifth["payload"] == {"aps": {"badge": len(push.store.read()["requests"]) + 4}}
+    presence(handler, "badge-phone", state="away")
+    assert "dev-badge-phone" not in push.store.read()["badges"]
+
+
+def test_notices_list_the_latest_reads(reading):
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "read-list", reply_after=0)
+    before = time.time()
+    read(handler, "read-list-reader", chats=["20261021_listed_chat"], rooms=["room-listed"])
+    finish_turn(plugins, "20261021_listing_reply", "listing-1")
+    content = wait_for(lambda: notices_for(key, token) and notices_for(key, token)[0])
+    chats, rooms = dict(map(tuple, content["read"]["chats"])), dict(map(tuple, content["read"]["rooms"]))
+    assert before - 1 <= chats["20261021_listed_chat"] <= time.time() and "room-listed" in rooms
+    assert len(content["read"]["chats"]) <= 12 and len(content["read"]["rooms"]) <= 12
+    times = [at for _id, at in content["read"]["chats"]]
+    assert times == sorted(times, reverse=True) and all(round(at, 3) == at for at in times)
+
+    store = sys.modules[type(push).__module__.rsplit(".", 1)[0] + ".store"]
+    notices = sys.modules[type(push).__module__.rsplit(".", 1)[0] + ".notices"]
+    now = time.time()
+    state = {"reads": {"chats": {**{f"20261021_0225{i:02d}_a1b2c3": now - i for i in range(20)},
+                                 "20261021_old": now - 7 * 3600}}}
+    listed = store.recent_reads(state)
+    assert [c for c, _at in listed["chats"]] == [f"20261021_0225{i:02d}_a1b2c3" for i in range(12)]
+    assert listed["rooms"] == []
+    assert store.recent_reads({"reads": {"chats": {"20261021_old": now - 7 * 3600}}}) == {}
+    assert store.recent_reads({}) == {}
+    plain = notices.Notice(kind="test", id="t", title="Push notifications are on", body="Hi.")
+    assert "read" not in plain.content({}, 0, [], {}) and "read" not in plain.content({}, 0, [], None)
+    assert plain.content({}, 0, [], {"chats": [["c", 1.5]], "rooms": []})["read"] == {"chats": [["c", 1.5]], "rooms": []}
+
+
+def _device_key():
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    return X25519PrivateKey.generate()
+
+
+def _public_key(key) -> str:
+    from cryptography.hazmat.primitives import serialization
+    return base64.b64encode(key.public_key().public_bytes(serialization.Encoding.Raw,
+                                                          serialization.PublicFormat.Raw)).decode()
+
+
+def test_the_longest_approval_and_a_full_read_list_fit_the_relay(hermes):
+    """The relay refuses payloads over 4096 bytes. The read list gives way, oldest first, before the
+    notice does: the longest approval keeps every one of its own fields, a reply the whole list."""
+    import uuid
+    notices = sys.modules[_core_module().__name__.rsplit(".", 1)[0] + ".notices"]
+    key = _device_key()
+    device = {"token": "ab" * 32, "topic": "co.caffeinatedcode.hermes", "environment": "production",
+              "public_key": _public_key(key)}
+    gateway = {"id": "inst_" + "k" * 27, "name": "Home Server"}
+    session = "20261021_022501_a1b2c3"
+    resolved = [uuid.uuid4().hex for _ in range(20)]
+    command = ("rsync -av --delete --exclude '.DS_Store' /Volumes/Work/Projects/hermes/build/snapshots/ "
+               "/Volumes/Backup/hermes/snapshots/ && ") * 8
+    now = time.time()
+
+    def full(chat_id, room_id):
+        return {"chats": [[chat_id(i), round(now - 2 * i, 3)] for i in range(12)],
+                "rooms": [[room_id(i), round(now - 2 * i - 1, 3)] for i in range(12)]}
+
+    def size(request) -> int:
+        return len(json.dumps(request["payload"], ensure_ascii=False, separators=(",", ":")).encode())
+
+    approval = notices.approval(request_id=uuid.uuid4().hex, session_id=session, chat="Clean up the old build snapshots",
+                                gateway_name=gateway["name"], command=command, description="d" * 300,
+                                choices=["once", "session", "always", "deny"], expires_at=now + 300, surface="gateway")
+    approval.extra.update(answer={"via": "socket", "session_id": session}, answerable=True)
+    reads = full(lambda i: f"20261021_0225{i:02d}_a1b2c3", lambda i: f"room-{uuid.UUID(int=i)}")
+    bare = notices.apns_request(device, approval, gateway, 3, resolved)
+    request = notices.apns_request(device, approval, gateway, 3, resolved, reads)
+    content = opened(key, request)
+    assert size(bare) <= size(request) <= 4096, (size(bare), size(request))
+    assert notices.payload_size(request["payload"]["aps"], content) == size(request)
+    assert len(content["command"]) == 600 and content["resolved"] == resolved and content["choices"][-1] == "deny"
+    kept = content.get("read", {"chats": [], "rooms": []})
+    assert kept["chats"] == reads["chats"][:len(kept["chats"])] and kept["rooms"] == reads["rooms"][:len(kept["rooms"])]
+    assert len(kept["chats"]) + len(kept["rooms"]) >= 6, kept  # the newest reads still go with it
+
+    # The longest reply with 20 settled requests keeps nearly all of them, an everyday one the whole list.
+    reply = notices.reply(session_id=session, turn_id="t", chat="Clean up the old build snapshots",
+                          gateway_name=gateway["name"], text="Freed space on the build volume. " * 40, seconds=45)
+    request = notices.apns_request(device, reply, gateway, 3, resolved, reads)
+    kept = opened(key, request)["read"]
+    assert size(request) <= 4096 and len(kept["chats"]) + len(kept["rooms"]) >= 20, (size(request), kept)
+    reply = notices.reply(session_id=session, turn_id="t", chat="Clean up the old build snapshots",
+                          gateway_name=gateway["name"], text="Freed 42 GB.\nKept the last 7 days.", seconds=45)
+    request = notices.apns_request(device, reply, gateway, 0, resolved[:3], reads)
+    assert size(request) <= 4096 and opened(key, request)["read"] == reads
+
+    # Ids at their 120-character limit: fewer reads, still under the limit.
+    longest = full(lambda i: f"{i:02d}" + "c" * 118, lambda i: f"{i:02d}" + "r" * 118)
+    request = notices.apns_request(device, approval, gateway, 3, resolved, longest)
+    assert size(request) <= 4096 and len(opened(key, request)["command"]) == 600
+
+
+def test_read_and_presence_check_their_ids(copies, tmp_path):
+    core = copies("app_push_ids")
+    push = core.Push(store=core.Store(tmp_path), later=Later())
+    with pytest.raises(core.PushError):
+        push.read({"device_id": "dev-reader", "chats": "20261021_x"})
+    with pytest.raises(core.PushError):
+        push.read({"chats": ["20261021_x"]})
+    assert push.read({"device_id": "dev-reader"}) == {"ok": True, "open": 0}
+    push.read({"device_id": "dev-reader", "chats": ["c" * 200, "c" * 200, 7, "", *[f"chat-{i}" for i in range(80)]],
+               "rooms": [None, "room-1"]})
+    reads = push.store.read()["reads"]
+    assert "c" * 120 in reads["chats"] and len(reads["chats"]) == 50 and list(reads["rooms"]) == ["room-1"]
+    push.store.put_device("dev-away", {"token": "ab" * 32, "topic": "co.caffeinatedcode.hermes", "preferences": {}})
+    push.presence({"device_id": "dev-away", "state": "away",
+                   "unread": {"chats": [f"chat-{i}" for i in range(300)] + ["x" * 300], "rooms": "nope"},
+                   "muted": ["not", "a", "set"]})
+    record = push.store.read()["badges"]["dev-away"]
+    assert len(record["chats"]) == 200 and record["rooms"] == [] and record["muted_chats"] == []
+    push.presence({"device_id": "dev-away", "state": "away", "unread": ["not", "a", "set"]})
+    assert "dev-away" not in push.store.read()["badges"]
+
+
+def test_an_older_state_file_still_loads(copies, tmp_path):
+    """A state file from before 1.4.0 (no reads, delivered, cleared or badge records) loads and works."""
+    core = copies("app_push_old_state")
+    old = {"version": 1, "devices": {"dev-old": {"token": "ab" * 32, "topic": "co.caffeinatedcode.hermes",
+                                                 "environment": "production", "preferences": {}}},
+           "requests": {"req-1": {"kind": "approval", "session": "s", "opened_at": time.time()}},
+           "resolved": [], "presence": {}, "activities": {}, "installation": {}, "sync": {}}
+    (tmp_path / "state.json").write_text(json.dumps(old))
+    store = core.Store(tmp_path)
+    state = store.read()
+    assert state["reads"] == {"chats": {}, "rooms": {}} and state["badges"] == {} and state["delivered"] == {}
+    assert sys.modules["app_push_old_state.store"].recent_reads(state) == {}
+    later = Later()
+    push = core.Push(store=store, later=later)
+    push.presence({"device_id": "dev-old", "state": "away", "unread": {"chats": ["20261021_old_chat"]}})
+    assert store.read()["badges"]["dev-old"]["shown"] == 2  # the open request and the chat
+    assert push.read({"device_id": "dev-new", "chats": ["20261021_old_chat"]}) == {"ok": True, "open": 1}
+    assert store.claim_badge("dev-old") == 1 and store.claim_badge("dev-old") is None
+    assert store.claim_read_push("dev-old") == (None, 0.0)
+    assert push.store.remove_device("dev-old") and store.read()["badges"] == {}
+
+    # A file whose reads came from an older shape still lists what it can.
+    (tmp_path / "state.json").write_text(json.dumps({"devices": {}, "reads": {"chats": []}}))
+    assert sys.modules["app_push_old_state.store"].recent_reads(store.read()) == {}
+    assert push.read({"device_id": "dev-new", "rooms": ["room-1"]})["ok"]

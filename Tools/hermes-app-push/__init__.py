@@ -7,8 +7,8 @@ The relay sees only routing fields and the sealed envelope. Answers come back ov
 protocol (``approval.respond``, clarify responses); the plugin only reports.
 
 The app talks to the plugin with ``command.dispatch {name: "app-push", arg: "<command> <json>"}``
-(plugins can't add gateway RPC methods). Commands: register, unregister, preferences, presence,
-activity, status, test. Each answers one line of JSON.
+(plugins can't add gateway RPC methods). Commands: register, unregister, preferences, presence, read,
+activity, status, test, host. Each answers one line of JSON.
 
 Scheduled tasks reach the app with ``deliver: apppush`` (and ``failure_deliver: apppush:fail``).
 """

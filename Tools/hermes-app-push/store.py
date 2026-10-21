@@ -34,6 +34,19 @@ PRESENCE_TTL = 75
 # list is forgotten after a day.
 SYNC_TTL = 86_400
 SYNC_MIN_INTERVAL = 60
+# Reading (docs/notifications.md §2, Reading). Each read is kept six hours, and every notice lists the
+# newest NOTICE_READS of each kind. A device away from the app is told what was read since it was last in
+# front (at most CLEARED_MAX of each), at most every READ_MIN_INTERVAL, and only for what it was sent: the
+# newest DELIVERED_MAX chats and rooms per device are remembered for that.
+READ_TTL = 6 * 3600
+READ_MEMORY = 200
+NOTICE_READS = 12
+READ_MIN_INTERVAL = 30
+CLEARED_MAX = 40
+DELIVERED_MAX = 100
+UNREAD_MAX = 400
+MAX_BADGE = 9999  # the relay's ceiling for a badge-only push
+KINDS = ("chats", "rooms")
 
 
 def _root_home() -> str:
@@ -59,7 +72,8 @@ def data_dir() -> Path:
 
 def _empty() -> dict:
     return {"version": 1, "devices": {}, "requests": {}, "resolved": [], "presence": {}, "activities": {},
-            "installation": {}, "sync": {}}
+            "installation": {}, "sync": {}, "reads": {"chats": {}, "rooms": {}}, "delivered": {}, "cleared": {},
+            "badges": {}, "read_pushes": {}}
 
 
 class StoreBusy(TimeoutError):
@@ -168,16 +182,11 @@ class Store:
             devices[device_id] = {**devices.get(device_id, {}), **record, "updated_at": time.time()}
             if len(devices) > MAX_DEVICES:  # drop the stalest
                 oldest = min(devices, key=lambda key: devices[key].get("updated_at", 0))
-                devices.pop(oldest, None)
+                _forget(state, oldest)
         self.update(change)
 
     def remove_device(self, device_id: str) -> bool:
-        def change(state: dict) -> bool:
-            state["presence"].pop(device_id, None)
-            state["activities"].pop(device_id, None)
-            state["sync"].pop(device_id, None)
-            return state["devices"].pop(device_id, None) is not None
-        return self.update(change)
+        return self.update(lambda state: _forget(state, device_id))
 
     # -- open requests (the badge and withdrawals) ------------------------------------------------
 
@@ -275,6 +284,187 @@ class Store:
 
     def activities(self) -> dict[str, dict]:
         return self.read()["activities"]
+
+    # -- reading (docs/notifications.md §2, Reading and Badge) --------------------------------------------
+
+    def reset_reading(self, device_id: str) -> None:
+        """Back in the app, which knows best what's read while it's in front: forget what this device was
+        sent, cleared and counted while it was away."""
+        def change(state: dict) -> None:
+            for key in ("delivered", "cleared", "badges"):
+                state[key].pop(device_id, None)
+            (state["read_pushes"].get(device_id) or {}).pop("pending", None)
+        self.update(change)
+
+    def set_badge(self, device_id: str, unread: dict | None, muted: dict | None, others: int = 0) -> None:
+        """Leaving the app, a device that counts unread chats in its badge names them (``unread``) and the
+        muted ones, and what the person's other gateways add to its badge (``others``); it showed the open
+        requests plus those. None: it doesn't count them."""
+        def change(state: dict) -> None:
+            if unread is None:
+                state["badges"].pop(device_id, None)
+                return
+            _expire(state)
+            record = {"chats": list(unread["chats"]), "rooms": list(unread["rooms"]),
+                      "muted_chats": list((muted or {}).get("chats") or []),
+                      "muted_rooms": list((muted or {}).get("rooms") or []), "others": max(0, int(others)),
+                      "at": time.time()}
+            record["shown"] = _badge(state, record)
+            state["badges"][device_id] = record
+        self.update(change)
+
+    def record_delivered(self, device_ids: list[str], kind: str, key: str) -> list[str]:
+        """A notice for ``key`` (a chat or a room, ``kind`` "chats" or "rooms") went to these devices:
+        remembered, so a read elsewhere clears it there, and counted unread on those that count unread chats
+        (unless it's muted there). Returns the devices whose count moved."""
+        def change(state: dict) -> list[str]:
+            now = time.time()
+            moved = []
+            for device_id in device_ids:
+                sent = state["delivered"].setdefault(device_id, {}).setdefault(kind, {})
+                sent[key] = now
+                _keep_newest(sent, DELIVERED_MAX)
+                record = state["badges"].get(device_id)
+                if record is None or key in record.get(f"muted_{kind}", []) or key in record.get(kind, []):
+                    continue
+                record[kind] = (record.get(kind, []) + [key])[-UNREAD_MAX:]
+                moved.append(device_id)
+            return moved
+        return self.update(change)
+
+    def record_read(self, reader: str, chats: list[str], rooms: list[str]) -> dict:
+        """Chats and rooms read on ``reader``: kept for the notices (``recent_reads``), and on every other
+        device away from the app what it was sent for them is cleared and its unread count drops. Returns
+        ``{"open", "read": [(device, seconds until a read push may go)], "badge": [devices whose count
+        moved]}``."""
+        def change(state: dict) -> dict:
+            now = time.time()
+            reads = _reads(state)
+            read = {"chats": chats, "rooms": rooms}
+            for kind in KINDS:
+                for key in read[kind]:
+                    reads[kind][key] = now
+                _keep_newest(reads[kind], READ_MEMORY, now - READ_TTL)
+            owed, moved = [], []
+            for device_id in state["devices"]:
+                if device_id == reader or _in_app(state, device_id, now):
+                    continue
+                sent = state["delivered"].get(device_id) or {}
+                matched = False
+                for kind in KINDS:
+                    hits = [key for key in read[kind] if (sent.get(kind) or {}).get(key, now + 1) <= now]
+                    if not hits:
+                        continue
+                    matched = True
+                    cleared = state["cleared"].setdefault(device_id, {}).setdefault(kind, {})
+                    for key in hits:
+                        sent[kind].pop(key, None)
+                        cleared[key] = now  # when it was read: the newest read of it counts
+                    _keep_newest(cleared, CLEARED_MAX)
+                # Off its count too: the app marks a room read here when it hears another device read it
+                # (group chats have no read mark on the gateway, docs/inbox.md §1).
+                record = state["badges"].get(device_id)
+                if record:
+                    before = {kind: list(record.get(kind) or []) for kind in KINDS}
+                    for kind in KINDS:
+                        record[kind] = [key for key in before[kind] if key not in set(read[kind])]
+                    if any(record[kind] != before[kind] for kind in KINDS):
+                        moved.append(device_id)
+                if matched:
+                    entry = state["read_pushes"].setdefault(device_id, {})
+                    entry["pending"] = True
+                    owed.append((device_id, entry.get("sent", 0) + READ_MIN_INTERVAL - now))
+            return {"open": len(state["requests"]), "read": owed, "badge": moved}
+        return self.update(change)
+
+    def claim_read_push(self, device_id: str) -> tuple[dict | None, float]:
+        """When ``device_id`` is owed a read push and may get one now: what was read since it was last in
+        front, with when (``read: {chats: [[id, at], …], rooms}``, newest first), and the open count, marked as
+        sent. Else None, with how long until one may go (0 when none is owed: back in the app, or nothing
+        to say)."""
+        def change(state: dict) -> tuple[dict | None, float]:
+            now = time.time()
+            entry = state["read_pushes"].get(device_id)
+            if not entry or not entry.get("pending"):
+                return None, 0.0
+            if device_id not in state["devices"] or _in_app(state, device_id, now):
+                entry.pop("pending", None)
+                return None, 0.0
+            wait = entry.get("sent", 0) + READ_MIN_INTERVAL - now
+            if wait > 0.5:
+                return None, wait  # another process sent one meanwhile
+            entry.pop("pending", None)
+            cleared = state["cleared"].get(device_id) or {}
+            read = {kind: [[key, round(at, 3)] for key, at in _newest_items(cleared.get(kind) or {}, CLEARED_MAX)]
+                    for kind in KINDS}
+            if not read["chats"] and not read["rooms"]:
+                return None, 0.0
+            entry["sent"] = now
+            return {"read": read, "open": len(state["requests"])}, 0.0
+        return self.update(change)
+
+    def claim_badge(self, device_id: str) -> int | None:
+        """The count to send ``device_id`` when it's away from the app, counts unread chats and last showed
+        (or was sent) a different one, marked as sent; else None."""
+        def change(state: dict) -> int | None:
+            record = state["badges"].get(device_id)
+            if record is None or device_id not in state["devices"] or _in_app(state, device_id, time.time()):
+                return None
+            _expire(state)
+            count = _badge(state, record)
+            if count == record.get("shown"):
+                return None
+            record["shown"] = count
+            return count
+        return self.update(change)
+
+
+def recent_reads(state: dict, limit: int = NOTICE_READS) -> dict:
+    """What every notice lists of the last six hours' reads: ``{"chats": [[id, at], …], "rooms": […]}``,
+    the newest ``limit`` of each, newest first, times in unix seconds; empty when there are none."""
+    reads = _reads(state)
+    since = time.time() - READ_TTL
+    listed = {kind: [[key, round(at, 3)] for key, at in _newest_items(reads[kind], limit) if at >= since]
+              for kind in KINDS}
+    return listed if listed["chats"] or listed["rooms"] else {}
+
+
+def _forget(state: dict, device_id: str) -> bool:
+    for key in ("presence", "activities", "sync", "delivered", "cleared", "badges", "read_pushes"):
+        state[key].pop(device_id, None)
+    return state["devices"].pop(device_id, None) is not None
+
+
+def _reads(state: dict) -> dict:
+    """``state["reads"]``, whole whatever an older file held."""
+    reads = state["reads"] if isinstance(state.get("reads"), dict) else state.setdefault("reads", {})
+    for kind in KINDS:
+        if not isinstance(reads.get(kind), dict):
+            reads[kind] = {}
+    return reads
+
+
+def _in_app(state: dict, device_id: str, now: float) -> bool:
+    """In front (``foreground``) or open behind other apps (``running``, the Mac), by a fresh report."""
+    entry = state["presence"].get(device_id) or {}
+    return entry.get("state") in ("foreground", "running") and now - entry.get("at", 0) <= PRESENCE_TTL
+
+
+def _badge(state: dict, record: dict) -> int:
+    count = len(state["requests"]) + len(record.get("chats") or []) + len(record.get("rooms") or [])
+    return min(count + int(record.get("others") or 0), MAX_BADGE)
+
+
+def _newest_items(times: dict, limit: int) -> list[tuple[str, float]]:
+    items = [(key, at) for key, at in times.items() if isinstance(at, (int, float))]
+    return sorted(items, key=lambda item: item[1], reverse=True)[:limit]
+
+
+def _keep_newest(times: dict, limit: int, since: float | None = None) -> None:
+    """Trims ``{key: time}`` to its newest ``limit`` (and to those at ``since`` or later)."""
+    keep = {key for key, at in _newest_items(times, limit) if since is None or at >= since}
+    for key in [key for key in times if key not in keep]:
+        times.pop(key, None)
 
 
 def _expire(state: dict) -> None:

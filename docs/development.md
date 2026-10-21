@@ -163,7 +163,11 @@ device on the same chat shows whether it reads it from there ([chat.md](chat.md)
 `--slow-history SECONDS` answers stored chats' messages that late while the socket keeps up, as
 a dashboard on an overloaded Mac does: a message sent meanwhile goes out before the history comes
 ([connecting-and-voice.md](connecting-and-voice.md) §8).
-`POST /api/mock/sync {sessions}` sends every registered device a `sync` push now, and
+`POST /api/mock/read {chats, rooms, device_id?}` plays chats read on another device (the plugin's
+`read`: read pushes to devices away from the app, badge pushes, the `read` list in later notices),
+`POST /api/mock/badge {badge}` sends every device a badge-only push now, and
+`GET /api/mock/push-state` shows what the push mock recorded (presence, reads, what each device was
+sent and cleared, badge records). `POST /api/mock/sync {sessions}` sends every registered device a `sync` push now, and
 `-HERMES_REFRESH_AFTER <s>` runs the app's background refresh that long after launch: both read
 the chats kept current without waiting for iOS ([notifications.md](notifications.md) §2). A
 simulator turns `simctl push` into a plain background fetch that never reaches
