@@ -76,6 +76,9 @@ final class TalkSession: Identifiable, TalkDisplay {
     /// From the end of speech to the first audio of the reply, for the debug overlay
     /// (`docs/voice.md` §12).
     private(set) var lastLatency: TimeInterval?
+    /// From the call starting to Listening, for the same overlay.
+    private(set) var readyAfter: TimeInterval?
+    @ObservationIgnored private var beganAt: TimeInterval?
     private(set) var spokenTurns = 0
     private(set) var approvalsAnswered = 0
     private(set) var stepsRun = 0
@@ -335,6 +338,7 @@ final class TalkSession: Identifiable, TalkDisplay {
     func begin() {
         guard watchers.isEmpty, !ended else { return }
         startedAt = .now
+        beganAt = ProcessInfo.processInfo.systemUptime
         // What voice the gateway has, so the call can say why if it falls back.
         Task { [workspace, conversation] in await VoiceSetup.of(workspace).checkIfStale(profile: conversation.botName) }
         lastSentTurns = conversation.sentTurns
@@ -482,13 +486,23 @@ final class TalkSession: Identifiable, TalkDisplay {
             }
         }
         let backend = conversation.audioBackend
-        if let backend { await backend.client.ttsLease("app:talk", active: true, profile: backend.profile) }
-        if let backend, TalkPreferences.engine == .realtime,
-           (try? await backend.client.voiceLiveStatus(profile: backend.profile))?.isRealtime == true,
-           await startRealtime(backend: backend) {
+        // Keeps the Bot's voice warm for the call; nothing waits for it.
+        if let backend { Task { await backend.client.ttsLease("app:talk", active: true, profile: backend.profile) } }
+        // Whether Realtime runs is asked while the microphone and the audio session get ready.
+        async let realtimeOffered = Self.realtimeOffered(backend)
+        guard await voice.takeAudio(speaker: prefersSpeaker) else {
+            _ = await realtimeOffered
+            updatePhase()
             return
         }
+        if let backend, await realtimeOffered, await startRealtime(backend: backend) { return }
         await startHermesVoice()
+    }
+
+    /// Realtime is chosen and the gateway offers it (`GET /api/audio/voice-live/status`).
+    private static func realtimeOffered(_ backend: (client: BackendClient, profile: String?)?) async -> Bool {
+        guard let backend, TalkPreferences.engine == .realtime else { return false }
+        return (try? await backend.client.voiceLiveStatus(profile: backend.profile))?.isRealtime == true
     }
 
     private func startHermesVoice() async {
@@ -524,7 +538,7 @@ final class TalkSession: Identifiable, TalkDisplay {
     /// Realtime: the call's audio through WebRTC to GPT-Live. `false` when it can't start, so the
     /// call goes on as Hermes Voice.
     private func startRealtime(backend: (client: BackendClient, profile: String?)) async -> Bool {
-        guard let graph = await voice.acquireForRealtime(speaker: prefersSpeaker) else { return voice.state == .denied }
+        guard let graph = voice.runRealtime() else { return voice.state == .denied }
         let realtime = RealtimeTalk()
         realtime.onDelegation = { [weak self] id, prompt, context in self?.delegated(id, prompt: prompt, context: context) }
         realtime.onEnded = { [weak self] reason in self?.realtimeEnded(reason) }
@@ -973,6 +987,11 @@ final class TalkSession: Identifiable, TalkDisplay {
         }
         guard next != phase else { return }
         phase = next
+        if next == .listening, let beganAt {
+            self.beganAt = nil
+            readyAfter = ProcessInfo.processInfo.systemUptime - beganAt
+            TalkCenter.logger.info("listening \(Int((self.readyAfter ?? 0) * 1000)) ms after the call started (\(self.engineName, privacy: .public))")
+        }
         if next != .approval { approvalHint = nil }
         // VoiceOver announces each state ("Listening", "Hermes is speaking").
         let spoken = next == .speaking ? String(localized: "\(speakerName) is speaking") : status

@@ -239,8 +239,9 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   input level.
 - **Sounds** (`HermesVoiceEngine.cue`): a soft rise on start and after a phone call, a tick when
   a turn is sent, a fall on end. Off with Sounds and haptics off.
-- From the end of speech to the first audio is logged (category `talk`) and shown with
-  `-HERMES_TALK_LATENCY YES`.
+- From the end of speech to the first audio, and from the call starting to Listening, are logged
+  (category `talk`) and shown with `-HERMES_TALK_LATENCY YES`. The call takes the microphone while
+  it asks whether Realtime runs, and doesn't wait for the voice's warm-up lease.
 
 ### 4.3 What happens in a call
 

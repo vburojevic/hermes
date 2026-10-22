@@ -146,20 +146,27 @@ final class HermesVoiceEngine {
     /// Starts listening. `voice` speaks replies; `fallback` takes over if it fails. With
     /// `transcription` the gateway hears the words.
     func start(voice: any SentenceVoice, fallback: (any SentenceVoice)?, contextualStrings: [String], speaker: Bool, transcription: GatewayTranscription? = nil) async {
-        guard await acquire(speaker: speaker, listening: true) else { return }
+        guard await takeAudio(speaker: speaker) else { return }
         await listen(voice: voice, fallback: fallback, contextualStrings: contextualStrings, transcription: transcription)
     }
 
-    /// Takes the call's audio (the coordinator's Talk role) without transcribing: Realtime brings
-    /// its own ears. Returns the engine to play and record through.
-    func acquireForRealtime(speaker: Bool) async -> AudioGraph? {
-        guard await acquire(speaker: speaker, listening: false) else { return nil }
+    /// Takes the call's audio (the microphone and the coordinator's Talk role), so the call gets
+    /// ready while it finds out which engine runs. `listen` or `runRealtime` carries on from here.
+    func takeAudio(speaker: Bool) async -> Bool {
+        if lease != nil { return true }
+        return await acquire(speaker: speaker)
+    }
+
+    /// The audio already taken goes to Realtime, which brings its own ears. Returns the engine to
+    /// play and record through.
+    func runRealtime() -> AudioGraph? {
+        guard let lease else { return nil }
         state = .running
-        return lease?.graph
+        return lease.graph
     }
 
     /// Asks for the microphone and takes the Talk role.
-    private func acquire(speaker: Bool, listening: Bool) async -> Bool {
+    private func acquire(speaker: Bool) async -> Bool {
         guard state == .idle || state == .denied || isFailed else { return false }
         generation += 1
         let attempt = generation

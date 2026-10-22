@@ -26,10 +26,18 @@ struct TalkScreen: View {
                 .padding(.top, 6)
             #if DEBUG
             // `-HERMES_TALK_LATENCY YES`: from the end of speech to the first audio (`docs/voice.md` §12).
-            if UserDefaults.standard.bool(forKey: "HERMES_TALK_LATENCY"), let latency = (session as? TalkSession)?.lastLatency {
-                Text("First audio \(latency, format: .number.precision(.fractionLength(2))) s")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(latency < 2 ? Theme.success : Theme.danger)
+            if UserDefaults.standard.bool(forKey: "HERMES_TALK_LATENCY"), let talk = session as? TalkSession {
+                HStack(spacing: 12) {
+                    if let ready = talk.readyAfter {
+                        Text("Listening after \(ready, format: .number.precision(.fractionLength(2))) s")
+                            .foregroundStyle(ready < 1 ? Theme.success : Theme.danger)
+                    }
+                    if let latency = talk.lastLatency {
+                        Text("First audio \(latency, format: .number.precision(.fractionLength(2))) s")
+                            .foregroundStyle(latency < 2 ? Theme.success : Theme.danger)
+                    }
+                }
+                .font(.caption.monospacedDigit())
             }
             #endif
             Spacer(minLength: 8)
