@@ -1,3 +1,4 @@
+import AVFoundation
 import HermesKit
 import HermesMarkdown
 import SwiftUI
@@ -36,6 +37,11 @@ struct TalkScreen: View {
             TalkTexts(session: session, large: !compactFigure)
                 .padding(.horizontal, 32)
                 .padding(.top, compactFigure ? 14 : 26)
+            if session.isLoudRoom {
+                VoiceIsolationButton()
+                    .padding(.top, 12)
+                    .transition(.opacity)
+            }
             if let step = session.runningStep {
                 StepChip(title: step.title, since: step.since)
                     .padding(.top, 36)
@@ -262,6 +268,24 @@ struct TalkTexts: View {
         }
         .frame(maxWidth: 520)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A room as loud as the person (`docs/voice.md` §4.2): Voice Isolation hears only them. Apps can't
+/// turn it on, so this opens the system's Mic Mode.
+struct VoiceIsolationButton: View {
+    var body: some View {
+        Button(action: TalkActions.showMicrophoneModes) {
+            Label("Use Voice Isolation", systemImage: "person.wave.2.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.primaryText)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Theme.controlFill, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityHint("Opens Mic Mode, where Voice Isolation hears only your voice")
     }
 }
 
@@ -536,6 +560,11 @@ enum TalkActions {
         TalkCenter.shared.typeRequests += 1
     }
 
+    /// The system's Mic Mode (Voice Isolation, Wide Spectrum), for this call's microphone.
+    static func showMicrophoneModes() {
+        AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+    }
+
     static func openSettings() {
         #if os(iOS)
         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
@@ -574,6 +603,12 @@ struct TalkPanel: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(4)
                     .accessibilityAddTraits(.updatesFrequently)
+            }
+            if session.isLoudRoom, session.phase == .speaking || session.phase == .listening {
+                Text("It's loud here. Tap to interrupt.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tertiaryText)
+                VoiceIsolationButton()
             }
             panelBottom
         }

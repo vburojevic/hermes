@@ -38,6 +38,9 @@ final class HermesVoiceEngine {
     private(set) var isMuted = false
     /// The person is talking (voice activity), for the rings.
     private(set) var isHearingSpeech = false
+    /// The room is about as loud as the person, so talking over the Bot may not stop it
+    /// (`TalkEars.isLoud`).
+    private(set) var isLoudRoom = false
     /// The speech model is downloading, 0…1.
     private(set) var downloadProgress: Double?
     /// The person talked while muted ("You're muted").
@@ -300,6 +303,7 @@ final class HermesVoiceEngine {
         heardVolatile = ""
         inputLevel = 0
         isHearingSpeech = false
+        isLoudRoom = false
         state = .idle
     }
 
@@ -367,6 +371,11 @@ final class HermesVoiceEngine {
                 apply(ears.frame(level: level, at: start + Double(index) * 0.02, botLevel: bot))
             }
             isHearingSpeech = ears.isHearingPerson
+            if ears.isLoud != isLoudRoom {
+                isLoudRoom = ears.isLoud
+                let ceiling = Int(ears.ceiling.rounded()), person = Int((ears.personLevel ?? 0).rounded())
+                Self.logger.info("\(self.isLoudRoom ? "loud room" : "room quieter", privacy: .public): ceiling \(ceiling) dB, person \(person) dB")
+            }
             if !wasHearing, ears.isHearingPerson, !ears.isBotSpeaking {
                 Task { await input?.personStarted() }
             }

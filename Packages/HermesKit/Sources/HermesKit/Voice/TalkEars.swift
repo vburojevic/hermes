@@ -89,6 +89,10 @@ public struct TalkEars: Sendable {
         /// A turn whose words stopped this long after the pause ends, even if the room still sounds
         /// like someone talking.
         public var wordsStoppedAfter: TimeInterval = 0.6
+        /// The room is loud when its loudest moments come within this much of the person's level,
+        /// and quiet again once they're this far under it.
+        public var loudWithin: Float = 6
+        public var quietAgainUnder: Float = 9
 
         public init() {}
     }
@@ -153,6 +157,9 @@ public struct TalkEars: Sendable {
     /// The person is talking near the microphone (the rings).
     public private(set) var isHearingPerson = false
     public private(set) var isDucked = false
+    /// The room is about as loud as the person (a TV or music near the phone): their voice can't be
+    /// told from it, so talking over the Bot may not stop it. Known once a turn has been heard.
+    public private(set) var isLoud = false
     public var isBotSpeaking: Bool { botSince != nil }
 
     private var vad = VoiceActivityDetector()
@@ -334,6 +341,7 @@ public struct TalkEars: Sendable {
                 let median = levels[levels.count / 2]
                 // Up quickly (the person came closer), down slowly (one quiet turn).
                 personLevel = personLevel.map { median > $0 ? $0 * 0.3 + median * 0.7 : $0 * 0.85 + median * 0.15 } ?? median
+                judgeLoudness()
             }
         }
         endpointer.reset()
@@ -374,6 +382,17 @@ public struct TalkEars: Sendable {
     private mutating func measureCeiling() {
         let sorted = background.map(\.level).sorted()
         ceiling = sorted.isEmpty ? -120 : sorted[min(sorted.count - 1, sorted.count * 9 / 10)]
+        judgeLoudness()
+    }
+
+    /// With a gap between entering and leaving, so the call's note doesn't flicker.
+    private mutating func judgeLoudness() {
+        guard let personLevel, background.count >= 50 else { return }
+        if !isLoud, ceiling >= personLevel - tuning.loudWithin {
+            isLoud = true
+        } else if isLoud, ceiling < personLevel - tuning.quietAgainUnder {
+            isLoud = false
+        }
     }
 
     /// It was the person after all (their words came, or they lowered the Bot): what they said

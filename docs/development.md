@@ -484,7 +484,13 @@ the microphone, each at its second from when listening starts, e.g.
 `-HERMES_VOICE_INPUT $PWD/Tools/mock-hermes/voice/check-nas.m4a@2,$PWD/Tools/mock-hermes/voice/allow-once.m4a@11`.
 Voice activity, endpointing and barge-in run on that audio. Simulators can't run the speech model,
 so there the words come from the `.txt` beside each clip, appearing as it plays. The clips in
-`Tools/mock-hermes/voice/` were made with `say` and `afconvert -f m4af -d aac -b 32000 -c 1`.
+`Tools/mock-hermes/voice/` were made with `say` and `afconvert -f m4af -d aac -b 32000 -c 1`;
+`loud-tv` is three `say` voices mixed with `ffmpeg` at about the level of the others, with an empty
+`.txt` (noise has no words).
+
+The mock's audio routes (REST, both sockets, the voice fields of `prompt.submit`, the wake word)
+have tests that start their own mock on free ports: `python3 -I -m unittest discover -s
+Tools/mock-hermes/tests`.
 
 ### Push notifications
 

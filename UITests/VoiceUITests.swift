@@ -85,6 +85,25 @@ final class VoiceUITests: XCTestCase {
         app.buttons["End call"].tap()
     }
 
+    /// A TV as loud as the person, playing over a long reply (`loud-tv`: three voices, no words for
+    /// the transcriber): the Bot may dip, but it reads to the end, nothing is sent, and the call
+    /// says the room is loud and offers Voice Isolation.
+    @MainActor
+    func testTalkNoiseNeverStopsTheReply() async throws {
+        let app = launch([
+            "-HERMES_TALK_TO", "researcher",
+            "-HERMES_VOICE_INPUT", mock.clip("essay", at: 2) + "," + mock.clip("loud-tv", at: 12),
+        ])
+        XCTAssertTrue(app.buttons["End call"].waitForExistence(timeout: 60), "no call")
+        XCTAssertTrue(app.buttons["Use Voice Isolation"].waitForExistence(timeout: 40), "the loud room wasn't noticed")
+        try await eventually(timeout: 120) {
+            try await self.mock.audio().spoken.contains { $0.contains("report the warning count") }
+        }
+        let audio = try await mock.audio()
+        XCTAssertEqual(audio.turns, ["Write me a short essay about backups."], "noise was sent as a turn")
+        app.buttons["End call"].tap()
+    }
+
     /// Transcribe on: The gateway: a turn's words come from `transcribe-stream` (16 kHz, one socket
     /// per turn); when the provider drops a turn, it goes to `POST /api/audio/transcribe` whole.
     @MainActor

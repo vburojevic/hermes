@@ -18,6 +18,7 @@ final class TalkStage: TalkDisplay {
     var hint: String?
     var notice: String?
     var setupNote: SetupStatus?
+    var isLoudRoom = false
     var showsCaptions = true
     var isMuted = false
     var inputLevel: Float = 0.45
@@ -58,10 +59,13 @@ final class TalkStage: TalkDisplay {
         bot.engineName = "Cedar"
         bot.startedAt = .now.addingTimeInterval(-48)
         bot.figureAppearance = BotAppearance(profile: "research", shape: "hexagon", color: "hsl(150 68% 58%)", customized: true)
+        let loud = TalkStage(.speaking, status: "Speaking", caption: ("The NAS is at 61%. Snapshots older than 30 days take 148 GB.", " Want me to delete them?"), hint: "It's loud here. Tap to interrupt.")
+        loud.isLoudRoom = true
+        loud.route = AudioRoute(output: .speaker, name: "Speaker")
         let muted = TalkStage(.listening, status: "Muted", caption: ("You're muted", ""), hint: "Tap Mute to talk again")
         muted.isMuted = true
         let microphone = TalkStage(.noMicrophone, status: "Microphone is off", caption: ("", "Hermes needs the microphone to hear you. Speech is turned into text on this device."))
-        return [listening, working, speaking, approval, card, bot, muted, microphone]
+        return [listening, working, speaking, approval, card, bot, loud, muted, microphone]
     }
 }
 #endif

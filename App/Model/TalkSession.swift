@@ -170,6 +170,9 @@ final class TalkSession: Identifiable, TalkDisplay {
     var inputLevel: Float { realtime?.inputLevel ?? voice.inputLevel }
     var outputLevel: Float { realtime?.outputLevel ?? voice.outputLevel }
     var isHearingSpeech: Bool { voice.isHearingSpeech }
+    /// A room as loud as the person (`docs/voice.md` §4.2): the call says to tap, and offers Voice
+    /// Isolation.
+    var isLoudRoom: Bool { realtime == nil && voice.isLoudRoom }
     private var isSpeaking: Bool { realtime?.isSpeaking ?? voice.isSpeaking }
 
     /// The state's name under the face.
@@ -236,7 +239,10 @@ final class TalkSession: Identifiable, TalkDisplay {
         return switch phase {
         case .listening: isMuted ? String(localized: "Tap Mute to talk again") : String(localized: "Pause when you're done")
         case .working: String(localized: "Keep talking to steer")
-        case .speaking: String(localized: "Talk or tap to interrupt")
+        case .speaking:
+            // GPT-Live takes turns itself: only talking stops it.
+            realtime != nil ? String(localized: "Talk to interrupt")
+                : isLoudRoom ? String(localized: "It's loud here. Tap to interrupt.") : String(localized: "Talk or tap to interrupt")
         case .approval: String(localized: "Say “allow once” or “deny”")
         case .question: String(localized: "Say your answer, or tap it")
         default: nil
@@ -1012,6 +1018,8 @@ protocol TalkDisplay: AnyObject, Observable {
     var caption: (settled: String, lighter: String)? { get }
     var hint: String? { get }
     var notice: String? { get }
+    /// The room is as loud as the person: offer Voice Isolation.
+    var isLoudRoom: Bool { get }
     /// Why the call can't use the gateway's voice, with how to set it up (`docs/voice.md` §6.1).
     var setupNote: SetupStatus? { get }
     var showsCaptions: Bool { get set }

@@ -257,6 +257,36 @@ struct TalkEarsTests {
         #expect(decisions.contains { $0.action == .discardHeard })
     }
 
+    @Test func aRoomAsLoudAsThePersonIsLoudUntilItQuietensDown() {
+        var replay = Replay()
+        #expect(!replay.ears.isLoud)
+        // Music right by the phone, 3 dB under the person.
+        let start = replay.time
+        replay.run(until: start + 6, level: Self.syllables(-27, from: start, to: start + 6, quiet: -31))
+        #expect(replay.ears.isLoud)
+        // A little quieter isn't enough to say it's fine (no flicker)...
+        replay.run(until: replay.time + 12, level: Self.syllables(-31, from: 0, to: .infinity, quiet: -35))
+        #expect(replay.ears.isLoud)
+        // ...turned down well under the person, it is.
+        replay.run(until: replay.time + 12, level: { _ in -50 })
+        #expect(!replay.ears.isLoud)
+    }
+
+    @Test func aFanOrATvAcrossTheRoomIsNotLoud() {
+        var replay = Replay()
+        let start = replay.time
+        replay.run(until: start + 10, level: { _ in -42 + Float.random(in: -1...1) })
+        #expect(!replay.ears.isLoud)
+        replay.run(until: start + 20, level: Self.syllables(-38, from: start + 10, to: start + 20, quiet: -48))
+        #expect(!replay.ears.isLoud)
+    }
+
+    @Test func loudnessIsOnlyJudgedOnceThePersonIsKnown() {
+        var replay = Replay(personLevel: nil)
+        replay.run(until: 10, level: Self.syllables(-20, from: 0, to: 10, quiet: -24))
+        #expect(!replay.ears.isLoud)
+    }
+
     @Test func stopPhrases() {
         #expect(TalkEars.isStopPhrase("stop"))
         #expect(TalkEars.isStopPhrase("Wait!"))

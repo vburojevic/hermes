@@ -212,6 +212,12 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   A tap does the same. Talking over an ask (an approval, a question, a step note) stops only the
   ask. A lone "stop" is never sent to Hermes as a message. Words heard over the Bot that didn't
   stop it are dropped, and so are words heard while Hermes worked that were nobody's turn.
+- **A loud room**: when the room's loudest moments come within 6 dB of the person's level (a TV or
+  music right by the phone), no level tells them apart, so talking over the Bot may not stop it.
+  The call says so ("It's loud here. Tap to interrupt." while it speaks) and offers Use Voice
+  Isolation, which opens the system's Mic Mode (`AVCaptureDevice.showSystemUserInterface`; apps
+  can't choose the mode). It goes once the room is 9 dB under the person again. Known after the
+  first turn, logged ("loud room: ceiling -26 dB, person -24 dB").
 - **Endpointing** (`Endpointer`, fed by `TalkEars`): a turn ends after a silence of Short 0.6 s /
   Normal 0.9 s / Long 1.4 s since the person's last near voice or words (when the words were said,
   not when they arrived), 0.4 s longer when the last word sounds unfinished ("and", "so", "um"). A
@@ -239,7 +245,7 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 | Connecting | The face; "Downloading speech model · 40%" while the model downloads | |
 | Listening | Rings in the Bot's colour; the words as heard, the last ones lighter until settled; "Pause when you're done" | `talkListening` |
 | Working | The face works; the plan step or status line, lighter; the running step in a chip ("df -h /volume1 · 3 s"); a step longer than 4 s gets a short spoken note once ("Running a command."). Speaking now steers (`session.steer`) | `talkWorking` |
-| Speaking | The sentence being said in ink, the next one lighter; "Talk or tap to interrupt" | `talkSpeaking` |
+| Speaking | The sentence being said in ink, the next one lighter; "Talk or tap to interrupt" ("Talk to interrupt" with Realtime, which only a voice stops; "It's loud here. Tap to interrupt." in a loud room) | `talkSpeaking` |
 | Needs your OK | Hermes asks out loud ("I need your OK to …"); the approval card docks; spoken answers as [quick-actions.md](quick-actions.md) §6. A tap on Always Allow, a flagged command or anything that can't be undone asks for Face ID | `talkApproval` |
 | Question | A clarify question or setup choice read out with its choices, answered by voice ("the second one") or on the card | |
 | Needs you to type | Secrets, sudo, vault and sign-ins: "I need you to type that", the card docks; never spoken | |
@@ -479,7 +485,8 @@ one-time `?ticket=`; a Bot is `?profile=`.
 - The Mac panel has Open Settings and Try Again; the iPad has no Earpiece control.
 - Tests: `SpokenTextTests` (the cleaner), `SpokenAnswersTests` (approval phrases, clarify
   choices), `TurnTakingTests` (voice activity, endpointing), `TalkEarsTests` (barge-in and turns
-  with noise, echo, backchannels and untimed words),
+  with noise, echo, backchannels and untimed words, a loud room), `NearGateTests` (what the
+  transcriber hears over the Bot),
   `AudioCoordinatorTests` (role changes, interruptions, routes, resets), `SpokenReplyTests`.
 
 ## 12. Acceptance checks
@@ -539,8 +546,10 @@ metre away. The Bot never stops for its own voice at full volume on the speaker.
 Checked on the mock in a simulator (`-HERMES_VOICE_INPUT` clips): a spoken turn goes with its
 voice fields, an approval is asked aloud and answered by voice, the reply is read in the Bot's
 gateway voice, "stop" cuts a long reply and the next turn says it was interrupted, a clarify
-question is answered by "the second one", and Realtime that can't connect falls back to Hermes
-Voice. Voice messages: hold to record and let go to send, lock then Pause into Review, play back
+question is answered by "the second one", Realtime that can't connect falls back to Hermes
+Voice, and a TV as loud as the person playing over a long reply (`loud-tv`, no words) neither
+stops it nor makes a turn, and the call offers Voice Isolation. The mock's audio routes have their
+own tests (`Tools/mock-hermes/tests`). Voice messages: hold to record and let go to send, lock then Pause into Review, play back
 and send from there, slide left to cancel; a message sent while Hermes works waits in Up Next;
 messages from elsewhere are fetched from `/api/files/stream` and drawn as bubbles; "send it as
 audio" to a Bot plays its `text_to_speech` reply as a strip.
