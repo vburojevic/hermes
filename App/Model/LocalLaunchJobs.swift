@@ -157,6 +157,9 @@ enum LocalLaunchJobs {
         }
         for attempt in 0..<12 {
             if run("/bin/launchctl", ["bootstrap", domain, job.plistPath]).status == 0 { return true }
+            // Hermes's own deferred reload (after `hermes gateway restart` or an update) may have
+            // loaded it first; it read the plist after it was set Interactive, so that counts.
+            if run("/bin/launchctl", ["print", "\(domain)/\(job.label)"]).output.contains("spawn type = interactive") { return true }
             if attempt < 11 { Thread.sleep(forTimeInterval: 5) }
         }
         logger.error("launchd didn't load \(job.label, privacy: .public) again")

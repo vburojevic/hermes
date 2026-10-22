@@ -389,7 +389,10 @@ states use `build/mock-launch-agents`. The main window's bars (the sidebar's foo
 don't draw in an off-Space capture, so `-HERMES_GALLERY priority` shows the footer with its priority
 notice (at the sidebar's narrowest and usual widths, and with large text where SwiftUI scales it)
 and the update's result for the connected gateway; `priority:update` updates Hermes first,
-and `priority:update:fix` then runs Run at Full Priority (docs/setup.md §4.17).
+and `priority:update:fix` then runs Run at Full Priority (docs/setup.md §4.17). With
+`priority-here`, `priority:update` shows the app putting the gateway back at full priority by
+itself, and `priority:restart` does the same after Plugins' Restart Gateway (the mock's plist in
+`build/mock-launch-agents` says Interactive again; pointed at another folder, it stays without).
 `-appearance light` or `dark` picks the gallery's look.
 
 A Mac window that isn't on screen (the screen locked, another Space, behind other windows) lays

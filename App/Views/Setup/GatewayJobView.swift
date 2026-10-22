@@ -33,6 +33,9 @@ struct GatewayJobView: View {
             if let reset = job.priorityReset {
                 PriorityResetView(notice: reset, setup: setup)
                     .padding(.top, 2)
+            } else if let restore = job.priorityRestore {
+                PriorityRestoreView(restore: restore)
+                    .padding(.top, 2)
             }
             if !job.log.lines.isEmpty {
                 lines

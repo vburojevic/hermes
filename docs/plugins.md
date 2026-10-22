@@ -102,7 +102,9 @@ The design is the Elyx project's `docs/plugins.md`; its frames are named below.
   first), because the scheduled-task delivery and the Board and tidy watcher start with the
   gateway. **Later** leaves "Restart the gateway to finish" in Settings. The app remembers that per
   gateway with the gateway's process id at the time (`GET /health/detailed` → `pid`) and drops it
-  when a later check sees a new process, however the gateway restarted.
+  when a later check sees a new process, however the gateway restarted. On a Mac the restart writes
+  the gateway's plist without full priority, so the app reads it again afterwards and puts it back
+  as Settings → Setup's restart does ([setup.md](setup.md) §4.17).
 - **Keeping current** (`AppPluginsSurvey.plan`). The app remembers, per gateway on this device, the
   version of each plugin the person said yes to (the ask, a review's Install, the consent card).
   Each time it looks, and right after it makes a Bot (`createBot`: a Bot made from scratch has none

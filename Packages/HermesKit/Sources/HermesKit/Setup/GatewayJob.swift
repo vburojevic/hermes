@@ -38,6 +38,13 @@ public struct GatewayJob: Sendable, Equatable {
     /// Once it's done: Hermes wrote the gateway's plist again on the way, and macOS runs it at
     /// background priority (`docs/setup.md` §4.17).
     public var priorityReset: PriorityNotice?
+    /// Once it's done, on the gateway's own Mac: the app is putting the gateway back at full
+    /// priority, as it was before the run, or has.
+    public var priorityRestore: PriorityRestore?
+
+    public enum PriorityRestore: Sendable, Equatable {
+        case restoring, restored
+    }
 
     public var isRunning: Bool { tone == .running }
 

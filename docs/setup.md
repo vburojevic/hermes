@@ -441,11 +441,11 @@ its gateway plist without one, and writes it again (still without) on `hermes ga
 `restart`, `install` and `hermes update`, whenever the file differs from the one it generates
 (`refresh_launchd_plist_if_needed`, which compares all of it but `PATH`); it never writes a
 dashboard's plist. The gateway itself (`hermes gateway run`) and `launchctl kickstart` leave the
-file alone. So the app's own Update Hermes and /restart reset it, and say so (below). The cause
-is in Hermes Agent: `generate_launchd_plist` (`hermes_cli/gateway_launchd.py`) writes no
-ProcessType, and `refresh_launchd_plist_if_needed` counts one added by hand as a difference to
-undo. Upstream: issue #72210, PR #72211 (open, not merged); until it's in, the app doesn't work
-around it.
+file alone. So the app's own Update Hermes, /restart and Plugins' Restart Gateway reset it, and the
+app puts it back afterwards (below). The cause is in Hermes Agent: `generate_launchd_plist`
+(`hermes_cli/gateway_launchd.py`) writes no ProcessType, and `refresh_launchd_plist_if_needed`
+counts one added by hand as a difference to undo. Upstream: issue #72210, PR #72211 (open, not
+merged); until it's in, the app puts it back only after its own runs.
 
 - **Read:** `/app-push host` (push plugin 1.3.0, `hostinfo.report`) lists Hermes's launchd jobs on
   the gateway's Mac: its gateways (`ai.hermes.gateway*`), the `ai.hermes.*` jobs that run a
@@ -474,17 +474,29 @@ around it.
   doesn't read the plist again), dashboards first and the gateway last. A job that still runs at
   full priority only gets the plist (its Terminal step too): nothing restarts. Only `ai.hermes.*`
   jobs whose plist is in `~/Library/LaunchAgents` are touched, whatever the report says.
-- **After the app's own update or restart** (Settings → Setup, /update, /restart; §4.2a): once
-  it's done (any end but a failed update), the app reads `/app-push host` again as soon as Bot
-  Mode is back, every 10 s for up to two minutes while the dashboard restarts. When the gateway is
-  throttled, the result says so under how it ended (`PriorityResetView`, in Setup and on the chat
-  card): "Updating reset Hermes to background priority" ("Restarting reset…"; "Hermes still runs
-  at background priority" when the read before the run already said so), what that means, and
-  Run at Full Priority… with the same confirmation on the gateway's own Mac, otherwise the same
-  Terminal steps as the Priority row. It follows the reads, so the fix takes it away.
+- **After the app's own update or restart** (Settings → Setup, /update, /restart; §4.2a; and
+  Restart Gateway in Apps and Tools → Plugins, which has no result of its own and waits for
+  `gateway-restart` to finish): once it's done (any end but a failed update), the app reads
+  `/app-push host` again as soon as Bot Mode is back, every 10 s for up to two minutes while the
+  dashboard restarts.
+  - **On this Mac, when the read before the run saw the gateway at full priority**, the app puts it
+    back by itself, the way Run at Full Priority does, without asking again: the person had it
+    there, and the run they started is what took it (a run started while Bot Mode's first read is
+    still on its way waits for it). Only the gateway's job (Hermes never writes a dashboard's
+    plist): the plist alone while it still runs at full priority, otherwise a reload.
+    When Hermes's own deferred reload loads it first, it has already read the edited plist, so that
+    counts. The result says "Putting Hermes back at full priority" (`PriorityRestoreView`), then
+    "Put Hermes back at full priority, as it was", and a read after it.
+  - **Otherwise** (another Mac, already throttled before, or the putting back failed) the result
+    says so in one line under how it ended (`PriorityResetView`, in Setup and on the chat card):
+    "Updating reset Hermes to background priority" ("Restarting reset…"; "Hermes still runs at
+    background priority" when the read before the run already said so) with Run at Full Priority…
+    beside it on the gateway's own Mac, otherwise the same Terminal steps as the Priority row. What
+    it means is its help and VoiceOver hint. It follows the reads, so the fix takes it away.
 - **The update's confirmation** says it up front on a Mac gateway (a report from `darwin` with a
   gateway job): "Updating resets Hermes to background priority on <gateway>. The app offers to
-  restore it when it's done." (`GatewaySetup.updateConfirmation`).
+  restore it when it's done.", or on this Mac at full priority "…on this Mac. The app puts it back
+  when it's done." (`GatewaySetup.updateConfirmation`).
 - **Beside Settings, on the Mac** (`macPriorityNotice`): while the gateway runs throttled (or will
   from its next start) and Bot Mode is online, one line in the sidebar's footer, above the
   connection and Settings: the warning glyph, "Background priority" ("Priority drops at next

@@ -160,7 +160,7 @@ extension GatewaySetup {
             }
             var steps = prioritySteps(throttled, on: name)
             if throttled.contains(where: { $0.role == .gateway }) {
-                steps.append(SetupStep(String(localized: "hermes update and hermes gateway start or restart write the gateway's plist again without it. When the app's own update or restart does, it says so and offers to put it back.")))
+                steps.append(SetupStep(String(localized: "hermes update and hermes gateway start or restart write the gateway's plist again without it. After the app's own update or restart, the app puts it back on this Mac and says so on another.")))
             }
             let later = throttled.allSatisfy(\.losesPriorityAtNextStart)
             let host = hostName(facts)
@@ -236,9 +236,32 @@ extension GatewaySetup {
         let message = String(localized: "Hermes updates itself, then restarts once running chats and tasks finish. The app reconnects by itself.")
         guard case .report(let report)? = facts.hostPriority, report.os == "darwin",
               report.jobs.contains(where: { $0.role == .gateway }) else { return message }
+        if facts.hostIsThisMac, runsAtFullPriority(facts.hostPriority) {
+            return message + "\n\n" + String(localized: "Updating resets Hermes to background priority on this Mac. The app puts it back when it's done.")
+        }
         return message + "\n\n" + String(localized: "Updating resets Hermes to background priority on \(hostName(facts)). The app offers to restore it when it's done.")
     }
 
+    /// The gateway runs at full priority on a Mac: the report has a gateway job and none is throttled.
+    public static func runsAtFullPriority(_ priority: GatewaySetupFacts.HostPriority?) -> Bool {
+        guard case .report(let report)? = priority, report.os == "darwin" else { return false }
+        return report.jobs.contains { $0.role == .gateway } && report.throttledGateway == nil
+    }
+
+    /// After the app's own update or restart (`docs/setup.md` §4.17): Hermes wrote the gateway's
+    /// plist again without ProcessType. The app puts it back by itself, as Run at Full Priority
+    /// does, only where it can (the gateway is on this Mac) and only where the person had it
+    /// (the read before the run saw it at full priority). Otherwise the run's result says so.
+    public static func restoresPriority(before: GatewaySetupFacts.HostPriority?, after facts: GatewaySetupFacts) -> Bool {
+        guard facts.hostIsThisMac, runsAtFullPriority(before), case .report(let report)? = facts.hostPriority else { return false }
+        return report.throttledGateway != nil
+    }
+
+    /// What the app puts back after its own run: the gateways only. Hermes never writes a
+    /// dashboard's plist, so a throttled dashboard was that way before and stays the person's call.
+    public static func jobsToRestore(_ report: GatewayHostReport) -> [GatewayHostReport.Job] {
+        report.throttled.filter { $0.role == .gateway }
+    }
 }
 
 /// Hermes on a Mac runs at background priority, said where the person sees it: on the result of an

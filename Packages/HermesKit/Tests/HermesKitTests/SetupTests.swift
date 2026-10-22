@@ -595,6 +595,10 @@ struct GatewayPriorityTests {
         let plain = "Hermes updates itself, then restarts once running chats and tasks finish. The app reconnects by itself."
         #expect(GatewaySetup.updateConfirmation(facts(.report(report))) == plain + "\n\nUpdating resets Hermes to background priority on Studio Mac. The app offers to restore it when it's done.")
         #expect(GatewaySetup.updateConfirmation(facts(.report(report), thisMac: true)).hasSuffix("on this Mac. The app offers to restore it when it's done."))
+        // At full priority on this Mac, the app puts it back by itself.
+        let full = GatewayHostReport(os: "darwin", jobs: [report.jobs[1], fullGateway])
+        #expect(GatewaySetup.updateConfirmation(facts(.report(full), thisMac: true)).hasSuffix("on this Mac. The app puts it back when it's done."))
+        #expect(GatewaySetup.updateConfirmation(facts(.report(full))).hasSuffix("on Studio Mac. The app offers to restore it when it's done."))
         #expect(GatewaySetup.updateConfirmation(facts(.report(GatewayHostReport(os: "linux")))) == plain)
         #expect(GatewaySetup.updateConfirmation(facts(nil)) == plain)
     }
@@ -609,6 +613,28 @@ extension GatewayPriorityTests {
         #expect(later.label == "Priority drops at next start")
         #expect(later.headline == "Hermes is set to background priority")
         #expect(PriorityNotice.cause.contains("pull request 72211"))
+    }
+
+    /// After the app's own update or restart, it puts the gateway back by itself only on this Mac,
+    /// only when it ran at full priority before the run, and only while it's throttled now.
+    @Test func theAppRestoresPriorityOnlyWhereItWasAndOnlyHere() {
+        let before = GatewaySetupFacts.HostPriority.report(GatewayHostReport(os: "darwin", jobs: [fullGateway, report.jobs[1]]))
+        #expect(GatewaySetup.runsAtFullPriority(before))
+        #expect(!GatewaySetup.runsAtFullPriority(.report(report)))
+        #expect(!GatewaySetup.runsAtFullPriority(.report(GatewayHostReport(os: "linux"))))
+        #expect(!GatewaySetup.runsAtFullPriority(.report(GatewayHostReport(os: "darwin", jobs: [report.jobs[1]]))))
+        #expect(!GatewaySetup.runsAtFullPriority(.failed))
+        #expect(!GatewaySetup.runsAtFullPriority(nil))
+
+        #expect(GatewaySetup.restoresPriority(before: before, after: facts(.report(report), thisMac: true)))
+        // Not on another Mac (the app can't), not when it was already throttled (the person's
+        // choice, or Not Now), not before the app knew, and not when nothing changed.
+        #expect(!GatewaySetup.restoresPriority(before: before, after: facts(.report(report))))
+        #expect(!GatewaySetup.restoresPriority(before: .report(report), after: facts(.report(report), thisMac: true)))
+        #expect(!GatewaySetup.restoresPriority(before: nil, after: facts(.report(report), thisMac: true)))
+        #expect(!GatewaySetup.restoresPriority(before: before, after: facts(before, thisMac: true)))
+        // Only the gateway goes back: Hermes never writes a dashboard's plist.
+        #expect(GatewaySetup.jobsToRestore(report).map(\.label) == ["ai.hermes.gateway"])
     }
 }
 

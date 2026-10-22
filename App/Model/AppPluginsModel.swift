@@ -292,6 +292,9 @@ final class AppPluginsModel {
         do {
             try await roster.restartGateway()
             markRestarted()
+            // `hermes gateway restart` writes the gateway's plist again without full priority
+            // (`docs/setup.md` §4.17).
+            workspace?.setup.followRestart()
         } catch {
             restartError = error.localizedDescription
         }

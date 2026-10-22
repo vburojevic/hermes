@@ -7,7 +7,8 @@ import SwiftUI
 /// at its narrowest and its usual width, and with large text, then an update's result.
 /// `-HERMES_GALLERY priority` with the mock's `priority-here` or `throttled`; `priority:update` also
 /// updates Hermes once Bot Mode is up, and `priority:update:fix` then runs Run at Full Priority (on
-/// this Mac) once the notice shows. `-appearance light` or `dark` picks the look.
+/// this Mac) once the notice shows; `priority:restart` restarts the gateway as Plugins' Restart
+/// Gateway does. `-appearance light` or `dark` picks the look.
 struct PriorityPage: View {
     let page: String
     @Environment(AppModel.self) private var app
@@ -35,9 +36,14 @@ struct PriorityPage: View {
             .task {
                 workspace.keepConnected()
                 if !workspace.connection.isOnline { await workspace.connect() }
-                guard page.contains(":update") else { return }
+                guard page.contains(":update") || page.contains(":restart") else { return }
                 for _ in 0..<80 where workspace.roster?.isConnected != true {
                     try? await Task.sleep(for: .milliseconds(250))
+                }
+                if page.contains(":restart") {
+                    // Apps and Tools → Plugins' Restart Gateway, which has no result of its own.
+                    await workspace.plugins.restartGateway()
+                    return
                 }
                 workspace.setup.updateHermes()
                 #if os(macOS)

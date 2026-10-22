@@ -53,6 +53,32 @@ struct PriorityResetView: View {
     }
 }
 
+/// Under an update's or restart's result: the app put the gateway back at full priority by itself
+/// (`docs/setup.md` §4.17), or is doing so.
+struct PriorityRestoreView: View {
+    let restore: GatewayJob.PriorityRestore
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            switch restore {
+            case .restoring:
+                Spinner()
+                    .accessibilityHidden(true)
+                Text("Putting Hermes back at full priority")
+            case .restored:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
+                Text("Put Hermes back at full priority, as it was")
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(Theme.secondaryText)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 #if os(macOS)
 /// Run at Full Priority…, with the same confirmation as Settings → Setup → Priority, and what it's
 /// doing while Hermes's services restart.
