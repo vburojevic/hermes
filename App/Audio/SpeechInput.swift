@@ -429,8 +429,9 @@ nonisolated final class InputFeed: @unchecked Sendable {
     private let modernConverter: AnyObject?
     private var lastLevel: TimeInterval = 0
     private let fed = OSAllocatedUnfairLock(initialState: CMTime.zero)
-    /// When the analyzer's timeline began (system uptime), so its word times can be placed.
-    private let origin = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+    /// Where the analyzer's timeline sits in system uptime, across gaps in the microphone, so its
+    /// word times can be placed.
+    private let clock: OSAllocatedUnfairLock<AnalyzerClock>
     /// Talk: the analyzer hears through a `NearGate`, whose threshold Talk's ears set.
     private let gateThreshold: OSAllocatedUnfairLock<Float?>?
     private var gate: NearGate?
@@ -447,6 +448,7 @@ nonisolated final class InputFeed: @unchecked Sendable {
         self.events = events
         gateThreshold = gate
         if gate != nil { self.gate = NearGate(sampleRate: target.sampleRate) }
+        clock = OSAllocatedUnfairLock(initialState: AnalyzerClock(delay: gate == nil ? 0 : NearGate.delay))
     }
 
     static func make(target: AVAudioFormat, modules: [any SpeechModule], analyzer: AsyncStream<AnalyzerInput>.Continuation,
@@ -465,16 +467,15 @@ nonisolated final class InputFeed: @unchecked Sendable {
 
     /// A time on the analyzer's timeline as system uptime: when it was said.
     func uptime(atAnalyzerTime seconds: Double) -> TimeInterval? {
-        origin.withLock { $0.map { $0 + seconds - (gateThreshold == nil ? 0 : NearGate.delay) } }
+        clock.withLock { $0.uptime(atAnalyzerTime: seconds) }
     }
 
     func process(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         let start = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : ProcessInfo.processInfo.systemUptime
         measure(buffer, start: start)
         guard !scriptedOnly else { return }
-        origin.withLock { origin in
-            if origin == nil { origin = start }
-        }
+        let fed = timeFed.seconds
+        clock.withLock { $0.buffer(at: start, fed: fed) }
         if #available(iOS 27, macOS 27, *), let modern = modernConverter as? AnalyzerInputConverter {
             guard let inputs = try? modern.convert(buffer, at: nil) else { return }
             for input in inputs { yield(input, frames: input.bufferDuration) }

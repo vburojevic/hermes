@@ -227,9 +227,13 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   words that were never near are dropped after 1.2 s.
 - Every decision is logged with what it was decided on, never the words (category `talk`):
   `duck: near voice, level -23 dB, near -35 dB, floor -52 dB, person -23 dB, voice 120 ms`.
-- **Mute**: `AVAudioApplication.setInputMuted`, so the AirPods stem mutes and unmutes too. Mute
+- **Mute**: `AVAudioApplication.setInputMuted`, so the AirPods stem mutes and unmutes too, and a
+  mute from there is the call's mute (a lowered Bot comes back up, Realtime is muted too). Mute
   never stops the Bot. Talking while muted shows "You're muted"
-  (`setMutedSpeechActivityEventListener`).
+  (`setMutedSpeechActivityEventListener`). A transcriber that fails while muted still says so.
+- **Word times** (`AnalyzerClock`): the transcriber's timeline is the audio it was fed, so after a
+  gap in the microphone (a phone call, the engine restarting for AirPods) each stretch keeps its
+  own origin; otherwise the person's words would land in the past and count as the room's.
 - **The face** moves with the real output level: RMS per 1/30 s of the audio being played,
   looked up by play time, into `BotFace(voiceLevel:)`. While listening, the rings follow the
   input level.
