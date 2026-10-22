@@ -89,8 +89,10 @@ public final class AudioGraph: @unchecked Sendable {
         }
     }
 
-    /// The media server restarted: everything is gone, so start from a new engine. Holders of the
-    /// audio are told (`engineRestarted`) and make their nodes again.
+    /// The media server restarted: every node is gone, so start from a new engine. Holders of the
+    /// audio are told (`engineRestarted`) and make their players again; whoever listens to the
+    /// microphone carries on, as the tap goes back once the role is set up again
+    /// (`restartAfterConfigurationChange`).
     func rebuild() {
         lock.withLock {
             engine.stop()
@@ -99,8 +101,17 @@ public final class AudioGraph: @unchecked Sendable {
             tapInstalled = false
             players.removeAll()
             sources.removeAll()
-            consumers.withLock { $0.removeAll() }
         }
+    }
+
+    /// Whether `chain` still plays in this engine (a media services reset drops every player).
+    public func contains(_ chain: AudioPlayerChain) -> Bool {
+        lock.withLock { players[chain.id] != nil }
+    }
+
+    /// Whether `node` still renders in this engine.
+    public func contains(_ node: AVAudioSourceNode) -> Bool {
+        lock.withLock { sources.contains { $0 === node } }
     }
 
     // MARK: The microphone

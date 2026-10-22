@@ -223,9 +223,14 @@ final class SpokenPlayer {
         level = 0
     }
 
-    /// The engine restarted (a route change): what was scheduled is gone, so read on from the
-    /// sentence that was playing.
+    /// The engine restarted (a route change, or a media services reset that took the player with
+    /// it): what was scheduled is gone, so read on from the sentence that was playing.
     func engineRestarted() {
+        if let chain, !graph.contains(chain) {
+            self.chain = nil
+            metering?.cancel()
+            metering = nil
+        }
         guard let current else { return }
         let remaining = Array(queued[current...])
         Task {

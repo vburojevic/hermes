@@ -94,6 +94,14 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
         return true
     }
 
+    /// A media services reset took the playout node and the microphone's tap with the old engine:
+    /// make the node again (the tap comes back by itself).
+    func engineRestarted() {
+        guard let source = state.withLock({ $0.source }), !graph.contains(source) else { return }
+        state.withLock { $0.source = nil }
+        _ = initializePlayout()
+    }
+
     func initializePlayout() -> Bool {
         let playout = state.withLock { $0.playout }
         guard let playout else { return false }

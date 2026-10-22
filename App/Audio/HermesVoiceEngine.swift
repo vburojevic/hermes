@@ -78,6 +78,10 @@ final class HermesVoiceEngine {
     var onTranscriptionFellBack: ((String) -> Void)?
     /// A phone call or Siri took the audio (true) or gave it back (false).
     var onInterruption: ((Bool) -> Void)?
+    /// Muted or unmuted, from the call or the system (Realtime follows).
+    var onMuteChanged: ((Bool) -> Void)?
+    /// The engine restarted (a route change, a media services reset): Realtime's nodes follow.
+    var onEngineRestarted: (() -> Void)?
 
     @ObservationIgnored private var lease: AudioLease?
     @ObservationIgnored private var input: (any TalkTranscriber)?
@@ -172,10 +176,7 @@ final class HermesVoiceEngine {
                 return false
             }
             self.lease = lease
-            lease.graph.setMutedSpeechListener { [weak self] started in
-                guard started else { return }
-                Task { @MainActor in self?.mutedSpeechAt = .now }
-            }
+            listenForMutedSpeech()
             route = await AudioCoordinator.shared.currentRoute
             isMuted = AVAudioApplication.shared.isInputMuted
             tasks.append(Task { [weak self] in
@@ -329,12 +330,19 @@ final class HermesVoiceEngine {
     /// Mute is the microphone only: the Bot keeps talking, and unmuting carries on from there.
     func setMuted(_ muted: Bool) {
         try? AVAudioApplication.shared.setInputMuted(muted)
+        mutedChanged(muted)
+    }
+
+    /// From the call's Mute, or the system's (an AirPods stem press, Control Center).
+    private func mutedChanged(_ muted: Bool) {
+        guard muted != isMuted else { return }
         isMuted = muted
         if muted {
             apply(ears.muted(at: ProcessInfo.processInfo.systemUptime))
             isHearingSpeech = false
             inputLevel = 0
         }
+        onMuteChanged?(muted)
     }
 
     /// iPhone: the loudspeaker or the earpiece.
@@ -357,6 +365,17 @@ final class HermesVoiceEngine {
     }
 
     private func handle(_ event: SpeechInput.Event) {
+        switch event {
+        case .failed(let message):
+            state = .failed(message)
+            return
+        case .unavailable(let why):
+            Task { await fallBackToDevice(why) }
+            return
+        default:
+            break
+        }
+        // Muted, nothing heard counts; a failure still does.
         guard !isMuted else { return }
         switch event {
         case .words(let final, let volatile, let runs):
@@ -382,10 +401,8 @@ final class HermesVoiceEngine {
             (input as? SpeechInput)?.setGate(ears.gateThreshold)
         case .level(let level):
             inputLevel = level
-        case .failed(let message):
-            state = .failed(message)
-        case .unavailable(let why):
-            Task { await fallBackToDevice(why) }
+        case .failed, .unavailable:
+            break
         }
     }
 
@@ -423,10 +440,22 @@ final class HermesVoiceEngine {
         case .routeChanged(let route):
             self.route = route
         case .engineRestarted:
+            if let cueChain, let graph = lease?.graph, !graph.contains(cueChain) { self.cueChain = nil }
+            listenForMutedSpeech()
             player?.engineRestarted()
+            onEngineRestarted?()
         case .inputMuteChanged(let muted):
             // AirPods stem, Control Center: the system's mute is the call's mute.
-            isMuted = muted
+            mutedChanged(muted)
+        }
+    }
+
+    /// "You're muted" when the person talks while muted. Set on the engine's input, so again after
+    /// the engine is rebuilt.
+    private func listenForMutedSpeech() {
+        lease?.graph.setMutedSpeechListener { [weak self] started in
+            guard started else { return }
+            Task { @MainActor in self?.mutedSpeechAt = .now }
         }
     }
 

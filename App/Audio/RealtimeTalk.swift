@@ -151,6 +151,13 @@ final class RealtimeTalk: NSObject {
         send(.object(["type": .string(muted ? "session.input_audio.mute" : "session.input_audio.unmute"), "event_id": .string(nextEventID(muted ? "mute" : "unmute"))]))
     }
 
+    /// The engine restarted: after a media services reset the playout node is made again.
+    func engineRestarted() {
+        #if os(iOS)
+        device?.engineRestarted()
+        #endif
+    }
+
     /// Sentences, cut to the append limit.
     static func chunks(_ text: String) -> [String] {
         var chunks: [String] = []

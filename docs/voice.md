@@ -435,7 +435,9 @@ stop.
   playback (Apple's rule).
 - `AVAudioEngineConfigurationChange` (AirPods connecting): the engine restarts with the tap on
   the new input format and the holder reschedules what was playing.
-- `mediaServicesWereReset`: a new engine, the session set up again, and the holder rebuilds.
+- `mediaServicesWereReset`: a new engine, the session set up again, and the holder makes its
+  players again (`AudioGraph.contains`); whoever listens to the microphone carries on, as the tap
+  goes back on the new engine.
 - `AVAudioApplication` input mute changes are passed on (AirPods stem).
 - Every role change is logged (category `audio`, `AudioLogEntry`):
   `log show --last 1h --predicate 'subsystem == "co.caffeinatedcode.hermes" && category == "audio"'`.

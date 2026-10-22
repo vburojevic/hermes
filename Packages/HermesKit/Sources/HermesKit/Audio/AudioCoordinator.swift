@@ -186,6 +186,8 @@ public actor AudioCoordinator {
             guard let active else { return }
             do {
                 try await apply(.for(active.role, options: activeOptions))
+                // The microphone's tap goes back for whoever was listening.
+                graph.restartAfterConfigurationChange()
                 active.send(.engineRestarted)
             } catch {
                 record(.failed(active.role, error: Self.describe(error)), owner: active.owner)

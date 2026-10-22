@@ -349,6 +349,8 @@ final class TalkSession: Identifiable, TalkDisplay {
         voice.onBargeIn = { [weak self] in self?.bargedIn() }
         voice.onFirstAudio = { [weak self] at in self?.firstAudio(at: at) }
         voice.onInterruption = { [weak self] began in self?.interruption(began) }
+        voice.onMuteChanged = { [weak self] muted in self?.realtime?.setMuted(muted) }
+        voice.onEngineRestarted = { [weak self] in self?.realtime?.engineRestarted() }
         voice.onVoiceFellBack = { [weak self] why in
             guard let self else { return }
             VoiceSetup.of(self.workspace).noteSpeechFailure(why, profile: self.conversation.botName)
@@ -418,7 +420,6 @@ final class TalkSession: Identifiable, TalkDisplay {
     /// Mute is the microphone only: the Bot carries on, and unmuting carries on from there.
     func toggleMute() {
         voice.setMuted(!voice.isMuted)
-        realtime?.setMuted(voice.isMuted)
         updatePhase()
     }
 
