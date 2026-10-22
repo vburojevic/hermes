@@ -282,7 +282,8 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 - **iPhone and iPad:** background audio (`UIBackgroundModes: audio`) and a Live Activity
   (`liveActivityTalk`, `islandTalk`, `islandTalkExpanded`; `TalkActivityAttributes`) with Mute
   and End as `LiveActivityIntent`s. It shows the face, the state and length, and the last words
-  (updated at most every 4 s; the state at once). AirPods mute through `AVAudioApplication`.
+  (updated at most every 4 s, the newest shown once the budget allows; the state and Mute at
+  once, from the app, the Island or an AirPods stem). AirPods mute through `AVAudioApplication`.
 - **LiveCommunicationKit isn't used.** Apple presents it for calls between people (handles,
   Recents, PushKit), and App Review guideline 2.5.4 limits the `voip` background mode to its
   intended use; an AI conversation isn't a VoIP call. ChatGPT ships background voice the same way

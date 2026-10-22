@@ -16,6 +16,8 @@ final class TalkActivity {
     private var activity: Activity<TalkActivityAttributes>?
     private var lastState: TalkActivityAttributes.ContentState?
     private var lastLineUpdate = Date.distantPast
+    /// A newer line held back by the budget, shown when it allows.
+    private var trailing: Task<Void, Never>?
     #endif
 
     func start(for session: TalkSession) {
@@ -36,7 +38,19 @@ final class TalkActivity {
         let state = Self.state(of: session)
         guard state != lastState else { return }
         let onlyLine = lastState.map { $0.phase == state.phase && $0.isMuted == state.isMuted } ?? false
-        if onlyLine, Date.now.timeIntervalSince(lastLineUpdate) < 4 { return }
+        let since = Date.now.timeIntervalSince(lastLineUpdate)
+        if onlyLine, since < 4 {
+            // The last words still get there, once the budget allows.
+            trailing?.cancel()
+            trailing = Task { [weak self, weak session] in
+                try? await Task.sleep(for: .seconds(4 - since))
+                guard !Task.isCancelled, let self, let session else { return }
+                self.update(for: session)
+            }
+            return
+        }
+        trailing?.cancel()
+        trailing = nil
         lastState = state
         lastLineUpdate = .now
         let id = activity.id
@@ -49,6 +63,8 @@ final class TalkActivity {
         guard let activity else { return }
         self.activity = nil
         lastState = nil
+        trailing?.cancel()
+        trailing = nil
         let id = activity.id
         Task { await Self.activity(id)?.end(nil, dismissalPolicy: .immediate) }
         #endif

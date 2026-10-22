@@ -379,6 +379,17 @@ final class TalkSession: Identifiable, TalkDisplay {
                 }
             },
             Task { [weak self] in
+                // The Live Activity: the state, Mute and the last words, as they change (it keeps
+                // to its own budget).
+                let changes = Observations { [weak self] in
+                    self.map { ActivitySnapshot(phase: $0.phase, muted: $0.isMuted, caption: $0.caption.map { $0.settled + $0.lighter }) }
+                }
+                for await _ in changes {
+                    guard let self, !self.ended else { return }
+                    TalkCenter.shared.sessionChanged(self)
+                }
+            },
+            Task { [weak self] in
                 guard let voice = self?.voice else { return }
                 let changes = Observations { [weak self, voice] in
                     EngineSnapshot(state: voice.state, speaking: self?.realtime?.isSpeaking ?? voice.isSpeaking, muted: voice.isMuted,
@@ -979,6 +990,12 @@ private struct ConversationSnapshot: Equatable {
     var isWorking: Bool
     var sentTurns: Int
     var status: String?
+}
+
+private struct ActivitySnapshot: Equatable {
+    var phase: TalkSession.Phase
+    var muted: Bool
+    var caption: String?
 }
 
 private struct EngineSnapshot: Equatable {
