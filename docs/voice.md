@@ -504,8 +504,9 @@ one-time `?ticket=`; a Bot is `?profile=`.
 - The Mac panel has Open Settings and Try Again; the iPad has no Earpiece control.
 - Tests: `SpokenTextTests` (the cleaner), `SpokenAnswersTests` (approval phrases, clarify
   choices), `TurnTakingTests` (voice activity, endpointing), `TalkEarsTests` (barge-in and turns
-  with noise, echo, backchannels and untimed words, a loud room), `NearGateTests` (what the
-  transcriber hears over the Bot),
+  with noise, echo, backchannels and untimed words, a loud room, a voice Realtime answered),
+  `NearGateTests` (what the transcriber hears over the Bot, Realtime's shorter lookahead),
+  `AnalyzerClockTests` (word times across gaps in the microphone),
   `AudioCoordinatorTests` (role changes, interruptions, routes, resets), `SpokenReplyTests`.
 
 ## 12. Acceptance checks
@@ -555,6 +556,15 @@ The misses are music as loud as the person (−26 against −24: no level tells 
 interrupt) and one "hold on" under the TV. `SpeechTranscriber` with the same rule: no false stops,
 35 of 40 caught, but 360 ms median and 1.9 s worst. Voice processing isn't in the loop (it runs
 only on a live microphone), so the app's input is cleaner than the bench's.
+
+Realtime's gate, measured through the loopback (`-HERMES_REALTIME_LOOPBACK`, simulator,
+2026-10-22): a TV across the room arrived at about -41 dB while GPT-Live was quiet and -81 to
+-83 dB while it spoke; a near voice said over it, -18 to -22 dB. For about a second at the start of
+a burst the TV still came through while the person's level wasn't known yet (no turn heard).
+
+From the call starting to Listening, on the mock in a simulator: 1.6–1.9 s with Hermes Voice
+(0.4 s the audio session, about 1.1 s the speech framework's model check, which a simulator may
+not time as a device does), 0.7 s when Realtime fails and Hermes Voice takes over.
 
 **Hand checks on a real phone in a real room** (what the bench can't prove): Talk on the speaker
 with a TV on, music playing, a fan, people talking nearby and typing on a laptop beside the phone;
