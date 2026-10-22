@@ -245,6 +245,19 @@ class AudioRoutes(unittest.TestCase):
         _, turns = self.call("GET", "/api/mock/audio/turns")
         self.assertEqual(turns["whole"], [{"mime_type": "audio/wav", "transcript": "Allow once."}])
 
+    def test_transcribe_takes_its_time_and_refuses_as_hermes_does(self):
+        self.switch(transcript="", transcribe_delay=0.3)
+        started = time.monotonic()
+        status, body = self.call("POST", "/api/audio/transcribe", {"data_url": "data:audio/mp4;base64,AAAA"})
+        self.assertEqual((status, body["transcript"]), (200, ""))
+        self.assertGreaterEqual(time.monotonic() - started, 0.3)
+        self.switch(transcribe_delay=0, transcribe_refusal="No STT provider available. Install faster-whisper …")
+        status, body = self.call("POST", "/api/audio/transcribe", {"data_url": "data:audio/mp4;base64,AAAA"})
+        self.assertEqual((status, body["detail"]), (400, "No STT provider available. Install faster-whisper …"))
+        self.switch(transcribe_refusal=None)
+        status, _ = self.call("POST", "/api/audio/transcribe", {"data_url": "data:audio/mp4;base64,AAAA"})
+        self.assertEqual(status, 200)
+
     def test_voice_config_relays_until_direct_hands_out_a_fake_key(self):
         _, body = self.call("GET", "/api/audio/voice-config")
         self.assertEqual((body["stt"]["mode"], body["tts"]["mode"], body["stt"]["streaming"]), ("relay", "relay", False))

@@ -16,7 +16,9 @@ tools/voice_client_config.py, tools/tts_streaming.py):
   - POST /api/audio/speak {text} → {ok, data_url: data:audio/wav;base64,…, mime_type, provider}.
   - POST /api/audio/tts-lease, /api/audio/stt-lease {lease, active}.
   - POST /api/audio/transcribe {data_url}: the transcript set with the switch (Talk's fallback for
-    a turn the live socket lost).
+    a turn the live socket lost, and a voice message the device heard no words in), after
+    "transcribe_delay" seconds; "" is no speech heard, as Hermes answers it. "transcribe_refusal"
+    answers 400 with those words instead, as Hermes does for "No STT provider available. …".
   - WS /api/audio/transcribe-stream, as Hermes's transcription_streaming: {"sample_rate": N} first
     (else it closes without a word), then int16 mono PCM, {"partial", text} with everything heard
     so far, and {"eos": true} → {"final", transcript, provider} and a close. Live only with the
@@ -48,7 +50,8 @@ Setup (`docs/voice.md` §6.1): GET /api/env lists the voice keys (is_set, a reda
 {"env_refusal": "…"} makes PUT /api/env refuse with that 400, as Hermes does for a pinned key.
 
 Switches: POST /api/mock/audio {"realtime": bool, "key": bool, "tts": "stream" | "fallback"
-| "broken" | "slow", "direct": bool, "elevenlabs": bool, "stt_streaming": bool, "transcript": str};
+| "broken" | "slow", "direct": bool, "elevenlabs": bool, "stt_streaming": bool, "transcript": str,
+"transcribe_delay": seconds, "transcribe_refusal": str | null};
 POST /api/mock/audio/reset.
 
 Voices: GET/PUT /api/config keep each Bot's `tts` and `voice` sections. With "direct" on,
@@ -93,7 +96,8 @@ def reset():
     with LOCK:
         STATE.clear()
         STATE.update({"realtime": False, "key": True, "tts": "stream", "direct": False, "elevenlabs": True,
-                      "stt_streaming": False, "transcript": "", "env_refusal": None, "stt_live_fail": None})
+                      "stt_streaming": False, "transcript": "", "env_refusal": None, "stt_live_fail": None,
+                      "transcribe_delay": 0.0, "transcribe_refusal": None})
         TURNS.clear()
         LIVE.clear()
         WHOLE.clear()
@@ -272,7 +276,13 @@ def transcribe(query, body):
         return 400, {"detail": "Invalid audio payload"}
     with LOCK:
         transcript = STATE["transcript"]
+        delay = STATE["transcribe_delay"]
+        refusal = STATE["transcribe_refusal"]
         WHOLE.append({"mime_type": url[5:url.find(";")] if ";" in url else "", "transcript": transcript})
+    if delay:
+        time.sleep(delay)
+    if refusal:
+        return 400, {"detail": refusal}
     return 200, {"ok": True, "transcript": transcript, "provider": "local"}
 
 
@@ -300,6 +310,10 @@ def mock_switch(query, body):
             STATE["env_refusal"] = body["env_refusal"] or None
         if "stt_live_fail" in (body or {}):
             STATE["stt_live_fail"] = body["stt_live_fail"] or None
+        if "transcribe_delay" in (body or {}):
+            STATE["transcribe_delay"] = max(0.0, float(body["transcribe_delay"] or 0))
+        if "transcribe_refusal" in (body or {}):
+            STATE["transcribe_refusal"] = body["transcribe_refusal"] or None
         return 200, dict(STATE)
 
 

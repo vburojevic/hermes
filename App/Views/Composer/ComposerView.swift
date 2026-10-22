@@ -796,7 +796,8 @@ struct ComposerView: View {
     }
 
     /// Let go, or Send: the transcript goes as the message, the recording with it. When the
-    /// device heard no words, the gateway transcribes the recording.
+    /// device heard no words, it shows as audio at once and the gateway transcribes it on the way
+    /// (`ConversationModel.gatewayWords`, `docs/voice.md` §2).
     private func sendRecording() {
         Task {
             guard let recording = await recorder.finish() else {
@@ -806,11 +807,7 @@ struct ComposerView: View {
                 showsHoldHint = false
                 return
             }
-            var transcript = recording.transcript
-            if transcript.isEmpty, let backend = conversation.audioBackend,
-               let audio = try? Data(contentsOf: recording.file) {
-                transcript = (try? await backend.client.transcribe(audio, mimeType: "audio/mp4", profile: backend.profile)) ?? ""
-            }
+            let transcript = recording.transcript
             if transcript.isEmpty, !conversation.usesGateway {
                 try? FileManager.default.removeItem(at: recording.file)
                 recordingFailure = String(localized: "No words were heard in it, and this chat can only send words. Try again, or type.")

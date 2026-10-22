@@ -50,13 +50,32 @@ pausing joins them.
 
 **Sending** (`ConversationModel.sendVoiceMessage`):
 
-- The message text is the transcript. If the device heard no words, the gateway transcribes the
-  recording (`POST /api/audio/transcribe`, Bot Mode only).
+- The message text is the transcript. If the device heard no words, the message still shows at
+  once as audio (playable, from the recording on this device), and the gateway transcribes it on
+  the way (`POST /api/audio/transcribe`, over the gateway protocol only; `gatewayWords`), beside
+  the upload. Hermes reads words, not the recording (`prompt.submit` takes text; an `@file:` of
+  audio reaches the model as a binary file), so the prompt goes once the words are back, and
+  they fill in under the waveform. Meanwhile the turn's live line says "Transcribing…" (the one
+  moving thing; the bubble itself stays still) and VoiceOver reads "Your voice message, 0:07,
+  transcribing". A long recording isn't "waiting": the 10 s that turn "Sending…" into "Waiting for
+  <Mac>…" don't run while it's transcribed. A gateway that's away, restarting or too busy to answer
+  (no answer, 429, 502–504) is asked again after a pause (`SendFailure.pause`) and the line says
+  "Waiting for <Mac>…"; the message is kept on the device from the start of the transcription, so
+  quitting the app meanwhile loses nothing (after a relaunch it's held at the top of Up Next, with
+  its recording, for Send). Stop gives it back, as before the prompt leaves.
+- When the gateway heard no words (`""`) or couldn't transcribe it (a 400 such as "No STT provider
+  available. …", or a provider's 500), the message goes with the recording alone, as Hermes can
+  still reach the file, and the bubble says why under the waveform: "No words were heard in it."
+  or "Couldn't transcribe it." with the first sentence of Hermes's reason (`VoiceTranscription`).
+  A voice message stored without words, from before a relaunch or another device, says "No
+  transcript." On the API server (no upload) a recording without words isn't sent: "No words were
+  heard in it, and this chat can only send words."
 - Over the gateway protocol the recording goes with it: `file.attach` as `voice-<uuid>.m4a`, an
   `@file:` line after the transcript. Hermes keeps it in the profile's `attachments/` and gives an
   absolute path, which `/api/files/stream` serves to every device. On the API server (no upload)
   it's the transcript alone.
-- While Hermes works it waits in Up Next, like any message with a file (a recording can't steer).
+- While Hermes works it waits in Up Next, like any message with a file (a recording can't steer);
+  the tray calls it "Voice message" until it has words, which it gets when it goes.
 - The recording is kept on this device under its message name (Caches/VoiceMessages), so the
   sender's bubble never downloads it.
 

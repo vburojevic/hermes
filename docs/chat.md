@@ -353,7 +353,8 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   the end, the chat follows any growth; scrolling up stops following and the pill resumes it.
 - **Sending on a busy or away gateway.** Send never waits on the gateway, and is never greyed out
   for it. The message shows at once; a quick gateway takes it before anything else shows. After
-  half a second it says "Sending…" under it (a big upload to a healthy Mac stays there), and
+  half a second it says "Sending…" under it (a big upload to a healthy Mac stays there;
+  "Transcribing…" while the gateway transcribes a voice message, `docs/voice.md` §2), and
   "Waiting for <Mac>…" once the gateway is away or busy, or 10 s have gone
   (`ConversationModel.deliveryNote`). The turn header's live line says so in place of "Thinking…"
   (still words while it waits for the Mac), and turns to "Thinking…" once Hermes has the message;

@@ -142,11 +142,12 @@ extension BackendClient {
 
     /// The gateway's speech to text for a whole recording (`POST /api/audio/transcribe`): a
     /// voice message the device couldn't make out (`docs/voice.md` §2). "" when no speech was heard.
-    public func transcribe(_ audio: Data, mimeType: String, profile: String?) async throws -> String {
+    /// A long recording on a local model can take minutes: `timeout` gives it them.
+    public func transcribe(_ audio: Data, mimeType: String, profile: String?, timeout: TimeInterval? = nil) async throws -> String {
         let json = try await rest("api/audio/transcribe", method: "POST", query: Self.profileItems(profile), body: .object([
             "data_url": .string("data:\(mimeType);base64,\(audio.base64EncodedString())"),
             "mime_type": .string(mimeType),
-        ]))
+        ]), timeout: timeout)
         return json["transcript"]?.stringValue ?? ""
     }
 

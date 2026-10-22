@@ -477,6 +477,12 @@ openai, xai or elevenlabs and `stt.streaming: true` with `PUT /api/config`, plus
 `PUT /api/env`, as on a real gateway); `{"stt_live_fail": "…"}` answers `eos` with that error, so
 the turn goes whole to `POST /api/audio/transcribe`. `GET /api/mock/audio/turns` lists `live`
 (each socket's rate, bytes and end) and `whole`.
+A voice message without on-device words (record with `-HERMES_VOICE_INPUT` playing `loud-tv.m4a`,
+whose words are none): `POST /api/mock/audio`
+`{"transcript": "…", "transcribe_delay": 4}` has the gateway's words come back after 4 s, so the
+message shows as audio first and "Transcribing…" in the live line; `{"transcript": ""}` is no words
+heard; `{"transcribe_refusal": "No STT provider available. Install faster-whisper …"}` answers
+Hermes's 400 instead (`null` turns it off).
 `POST /api/mock/audio/brief` delivers Research Buddy's "Morning brief" routine now, a stack in an
 inline block, for Listen to the brief.
 Hey Hermes (launch with `-voice.heyHermes YES`, and `-HERMES_CHARGING YES` on a simulator, which

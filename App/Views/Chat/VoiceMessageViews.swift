@@ -196,7 +196,7 @@ private struct Scrubbing: ViewModifier {
 }
 
 /// The person's voice message (`voiceMessage`): play, the waveform, the length and the speed, and
-/// under it the transcript, which is what Hermes read.
+/// under it the transcript, which is what Hermes read, or why there's none (`VoiceTranscription`).
 struct VoiceMessageBubble: View {
     let entry: UserEntry
     let path: String
@@ -255,6 +255,11 @@ struct VoiceMessageBubble: View {
             }
             if !entry.text.isEmpty {
                 transcript
+            } else if let note = VoiceTranscription.note(text: entry.text, state: transcription) {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .padding(.horizontal, 2)
             }
         }
         .padding(EdgeInsets(top: 10, leading: 10, bottom: 12, trailing: 12))
@@ -270,7 +275,7 @@ struct VoiceMessageBubble: View {
         }
         .fileExporter(isPresented: $exporting, item: clip.localURL.map(AudioFileItem.init), contentTypes: [.mpeg4Audio], defaultFilename: (path as NSString).lastPathComponent) { _ in }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Your voice message, \(clip.duration.map(Waveform.time) ?? ""): \(entry.text)"))
+        .accessibilityLabel(Text(verbatim: VoiceTranscription.spokenLabel(duration: clip.duration.map(Waveform.time), text: entry.text, state: transcription)))
         .accessibilityValue(clip.isPlaying ? Text("Playing, \(clip.timeLabel)") : Text(verbatim: ""))
         .accessibilityAction { Task { await clip.toggle(backend: backend) } }
         .accessibilityAdjustableAction { direction in
@@ -279,6 +284,11 @@ struct VoiceMessageBubble: View {
         .accessibilityAction(named: "Speed \(ClipSpeedButton.label(clip.player.rate))") {
             clip.player.rate = clip.player.rate < 1.25 ? 1.5 : clip.player.rate < 1.75 ? 2 : 1
         }
+    }
+
+    /// The gateway's transcription of a message the device heard no words in, this run of the app.
+    private var transcription: VoiceTranscription? {
+        VoiceTranscripts.shared.state(for: path)
     }
 
     /// Three lines, then More.

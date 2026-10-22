@@ -102,6 +102,12 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var deliveryWatch: Task<Void, Never>?
     /// The message going out, kept on the device once it waits (`OutboxItem`).
     @ObservationIgnored private var outgoing: OutboxItem?
+    /// The message going out is kept on the device before it waits: a voice message while the
+    /// gateway transcribes it.
+    @ObservationIgnored private var outgoingIsKept = false
+    /// The gateway is transcribing the voice message going out (`docs/voice.md` §2): the live line
+    /// says so.
+    private(set) var isTranscribingVoice = false
     /// Messages a previous run of the app kept and never saw taken: looked for in the stored chat
     /// once it loads (`settleOutbox`).
     @ObservationIgnored private var keptFromBefore: [OutboxItem] = []
@@ -2407,7 +2413,8 @@ final class ConversationModel: Identifiable {
     /// protocol the recording goes with it (`file.attach`, named `voice-<uuid>.m4a`), so every
     /// device can play it; the API server has no upload, so there it's the transcript alone. While
     /// Hermes works it waits for the next turn, like any message with a file (a recording can't
-    /// steer).
+    /// steer). With no transcript it shows as audio at once, and the gateway's words fill it in
+    /// before the prompt goes (`gatewayWords`).
     func sendVoiceMessage(transcript: String, recording: URL) {
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         var files: [FileAttachment] = []
@@ -3556,6 +3563,7 @@ final class ConversationModel: Identifiable {
     private func beginDelivery(_ message: QueuedFollowUp) {
         deliveryWatch?.cancel()
         delivery = .sending
+        outgoingIsKept = false
         outgoing = OutboxItem(message: message, sentAt: .now, knownNewestID: rawMessages.last?.id)
         if sessionID == nil, !isBotChat, waitingChat == nil {
             waitingChat = WaitingChat(title: message.line, model: model, effort: reasoningEffort,
@@ -3572,7 +3580,8 @@ final class ConversationModel: Identifiable {
                     return
                 }
                 try? await Task.sleep(for: .seconds(1))
-                waited += 1
+                // A long recording takes the gateway a while to transcribe: that's not waiting.
+                if !self.isTranscribingVoice { waited += 1 }
             }
         }
     }
@@ -3602,13 +3611,14 @@ final class ConversationModel: Identifiable {
         guard delivery != nil || outgoing != nil else { return }
         deliveryWatch?.cancel()
         deliveryWatch = nil
-        let wasKept = delivery == .waiting
+        let wasKept = delivery == .waiting || outgoingIsKept
         if let outgoing {
             ConnectionLog.logger.notice("chat: a message's delivery ended after \(Int(Date.now.timeIntervalSince(outgoing.sentAt) * 1000))ms\(wasKept ? ", having waited" : "", privacy: .public)")
         }
         delivery = nil
         deliveryNote = nil
         outgoing = nil
+        outgoingIsKept = false
         if wasKept { saveOutbox() }
         // Hermes has a new chat's first message, or it went back to the person: nothing of it is
         // kept on the device any more.
@@ -3686,7 +3696,8 @@ final class ConversationModel: Identifiable {
 
     private func saveOutbox() {
         guard let queueKey else { return }
-        FollowUpQueueStore.saveOutbox(keptFromBefore + (delivery == .waiting ? outgoing.map { [$0] } ?? [] : []), key: queueKey)
+        let keepsOutgoing = delivery == .waiting || outgoingIsKept
+        FollowUpQueueStore.saveOutbox(keptFromBefore + (keepsOutgoing ? outgoing.map { [$0] } ?? [] : []), key: queueKey)
     }
 
     /// After a relaunch, messages the last run kept and never saw taken are looked for in the
@@ -4099,6 +4110,12 @@ extension ConversationModel {
         backgroundActivity.begin("Hermes reply")
         defer { backgroundActivity.end() }
         let command = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // A voice message the device heard no words in: the gateway's are asked for now, beside
+        // the upload, and the prompt goes once they're back (`docs/voice.md` §2).
+        var text = text
+        let voice = text.isEmpty ? files.first { VoiceMessageFile.isVoiceMessage($0.name) } : nil
+        let transcription = voice.map { voice in Task { await self.gatewayWords(for: voice, roster: roster) } }
+        defer { transcription?.cancel() }
         var submitted: SentPrompt?
         var tries = 0
         // Until Hermes has the message, a busy or away gateway makes it wait, not fail: with no
@@ -4137,6 +4154,12 @@ extension ConversationModel {
                 var references: [String] = []
                 for file in files {
                     references.append(try await attach(file, runtime: runtime, roster: roster))
+                }
+                if let transcription, text.isEmpty {
+                    // Hermes reads the words, not the recording: the prompt waits for them.
+                    text = await withTaskCancellationHandler { await transcription.value } onCancel: { transcription.cancel() }
+                    try Task.checkCancellation()
+                    heardVoiceWords(text)
                 }
                 var prompt = botName.map { BotMentions.prompt(for: text, roster: roster.profiles, activeBot: $0) } ?? text
                 if !references.isEmpty {
@@ -4275,6 +4298,58 @@ extension ConversationModel {
         }
         await waitForBotTurn()
         await finishBotTurn()
+    }
+
+    /// The gateway's words for a voice message the device heard none in (`POST
+    /// /api/audio/transcribe`), asked for again while the gateway is away or busy: the message
+    /// waits meanwhile, kept on the device. "" when it heard none or couldn't: the message then goes
+    /// with the recording alone, as Hermes can still reach it, and the bubble says why.
+    private func gatewayWords(for voice: FileAttachment, roster: BotRoster) async -> String {
+        let transcripts = VoiceTranscripts.shared
+        transcripts.set(.pending, for: voice.name)
+        isTranscribingVoice = true
+        defer { isTranscribingVoice = false }
+        // Not with Hermes until its words are: quitting the app meanwhile loses nothing.
+        outgoingIsKept = true
+        saveOutbox()
+        var attempt = 0
+        trying: while !Task.isCancelled {
+            if !roster.isConnected {
+                markWaiting()
+                guard await roster.untilConnected() else { break trying }
+            }
+            let result: Result<String, any Error>
+            do {
+                result = .success(try await roster.backendClient.transcribe(voice.data, mimeType: "audio/mp4", profile: gatewayProfile, timeout: 300))
+            } catch {
+                result = .failure(error)
+            }
+            switch VoiceTranscription.outcome(of: result) {
+            case .settled(let state):
+                transcripts.set(state, for: voice.name)
+                if case .failed = state {
+                    ConnectionLog.logger.notice("chat: the gateway couldn't transcribe a voice message; it goes with the recording alone")
+                }
+                return state.words
+            case .tryAgain:
+                attempt += 1
+                markWaiting()
+                do { try await Task.sleep(for: SendFailure.pause(before: attempt)) } catch { break trying }
+            case .cancelled:
+                break trying
+            }
+        }
+        transcripts.set(nil, for: voice.name)
+        return ""
+    }
+
+    /// The gateway's words fill in the voice message's bubble, and go with it if it's kept.
+    private func heardVoiceWords(_ words: String) {
+        guard !words.isEmpty else { return }
+        lastUserText = words
+        animateRows { pendingUser?.text = words }
+        outgoing?.message.text = words
+        if outgoingIsKept || delivery == .waiting { saveOutbox() }
     }
 
     /// Uploads a file for the next prompt and returns what goes into the prompt for it: a PDF's

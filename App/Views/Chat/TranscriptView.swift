@@ -1428,7 +1428,9 @@ struct TranscriptView: View {
             AssistantTurnView(
                 turn: turn,
                 pendingSteers: turn.id == conversation.liveTurnID ? conversation.followUps.filter { $0.state == .steerWaiting && $0.turnID == turn.id } : [],
-                status: turn.isWorking ? delivery.map { TranscriptView.words(for: $0, gateway: conversation.gatewayName) } ?? conversation.liveStatus : nil,
+                status: turn.isWorking ? delivery.map {
+                    TranscriptView.words(for: $0, gateway: conversation.gatewayName, transcribing: conversation.isTranscribingVoice)
+                } ?? conversation.liveStatus : nil,
                 statusWaits: delivery == .waiting,
                 isStopping: turn.isWorking && conversation.isStopping,
                 onBranch: onBranch,
@@ -1441,9 +1443,11 @@ struct TranscriptView: View {
         }
     }
 
-    /// What the live line says while the message is on its way.
-    static func words(for delivery: ConversationModel.Delivery, gateway: String) -> String {
+    /// What the live line says while the message is on its way: a voice message without words
+    /// is transcribed first (`docs/voice.md` §2).
+    static func words(for delivery: ConversationModel.Delivery, gateway: String, transcribing: Bool = false) -> String {
         switch delivery {
+        case .sending where transcribing: String(localized: "Transcribing…")
         case .sending: String(localized: "Sending…")
         case .waiting: String(localized: "Waiting for \(gateway)…")
         }

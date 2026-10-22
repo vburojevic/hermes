@@ -197,7 +197,9 @@ struct QueuedFollowUp: Identifiable, Equatable {
         }
         let collapsed = text.split(whereSeparator: \.isNewline).joined(separator: " ")
         if !collapsed.isEmpty { return collapsed }
-        if let file = files.first { return file.name }
+        if let file = files.first {
+            return VoiceMessageFile.isVoiceMessage(file.name) ? String(localized: "Voice message") : file.name
+        }
         return images.isEmpty ? "" : String(localized: "Photo")
     }
 }
