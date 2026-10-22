@@ -268,8 +268,9 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 | Microphone off | Open Settings and Type Instead | |
 
 - **Cards:** the table or code a reply put in the chat rises above the controls ("Hermes showed
-  you a card") and stays in the chat (`talkCard`). Widgets will show here too once the app has
-  them.
+  you a card") and stays in the chat (`talkCard`). The card is as tall as what it shows, up to
+  204 pt (less when the screen has no more room); anything longer scrolls inside it. Widgets will
+  show here too once the app has them.
 - **The reply read** is the one to each turn sent during the call (spoken or typed into the call),
   followed by turn id (`SpokenReplyTracker`): a reply already in the chat is never read again, a
   later turn never takes over, and a turn that finishes and comes back as a stored row is read to

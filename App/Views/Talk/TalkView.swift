@@ -64,6 +64,8 @@ struct TalkScreen: View {
                 CallCard(markdown: card, speaker: session.speakerName)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)
+                    // Its height before the spacers': otherwise they share the room out with it.
+                    .layoutPriority(1)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
             TalkBottom(session: session)
@@ -329,24 +331,47 @@ private struct StepChip: View {
     }
 }
 
-/// "Hermes showed you a card": the table or code the reply put in the chat (`talkCard`).
+/// "Hermes showed you a card": the table or code the reply put in the chat (`talkCard`). It's as
+/// tall as what it shows, up to 204 pt; anything taller scrolls inside it.
 private struct CallCard: View {
     let markdown: String
     let speaker: String
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         VStack(alignment: .leading, spacing: 6) {
             Text("\(speaker) showed you a card")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.secondaryText)
-            MarkdownView(text: markdown)
-                .frame(maxHeight: 180, alignment: .top)
-                .clipped()
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            HuggingHeight(limit: 204) {
+                ScrollView {
+                    MarkdownView(text: markdown)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            .background(Theme.surface, in: shape)
+            .clipShape(shape)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// As tall as its content, up to `limit`, and shorter still when that's all the room there is.
+/// (A `maxHeight` frame takes all the height it's offered up to its limit, however short the
+/// content.)
+private nonisolated struct HuggingHeight: Layout {
+    let limit: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let ideal = content.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: ideal.width, height: min(ideal.height, limit, proposal.height ?? .infinity))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }
 
