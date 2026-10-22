@@ -714,7 +714,7 @@ def merge(into, incoming):
 
 
 def install_config():
-    """GET/PUT /api/config keep each Bot's `tts` and `voice` sections (Hermes deep-merges a PUT)."""
+    """GET/PUT /api/config keep each Bot's `tts`, `stt` and `voice` sections (Hermes deep-merges a PUT)."""
     routes = B["HTTP_ROUTES"]
     previous_get = routes.get(("GET", "/api/config"))
     previous_put = routes.get(("PUT", "/api/config"))
