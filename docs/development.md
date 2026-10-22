@@ -389,9 +389,12 @@ A Mac window that isn't on screen (the screen locked, another Space, behind othe
 out differently: AppKit solves its split view's constraints from each column's minimum size, and a
 column that reports a minimum taller than the window sends it round until it throws
 (`-[NSWindow _postWindowNeedsUpdateConstraints]`). So a column never takes its minimum from what
-it shows (`RootView.splitView`, and the chat before the Inspector makes it a column). To check a
-change to what fills a column, start a Debug build from a shell (it opens behind the window in
-front) on a chat with a question card:
+it shows (`RootView.splitView`, the sidebar's as much as the detail's, and the chat before the
+Inspector makes it a column). A column that does lays out the whole window taller than itself even
+on screen: its top slides under the title bar and its bottom (the composer, the sidebar's footer)
+is cut off; the backend's `--setup throttled-here` puts the priority notice in the sidebar's footer
+to check it. To check a change to what fills a column, start a Debug build from a shell (it opens
+behind the window in front) on a chat with a question card:
 `.../Hermes.app/Contents/MacOS/Hermes -HERMES_OPEN bot:researcher -HERMES_SEND_HERE "clarify pair"
 -HERMES_SEND_HERE_AFTER 4` with the `-HERMES_BOOTSTRAP_*` flags and its own `CFFIXED_USER_HOME`.
 It should still be running a minute later; the loop shows first as SwiftUI's "Geometry action is

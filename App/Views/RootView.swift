@@ -668,6 +668,12 @@ struct MainView: View {
     private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(workspace: workspace, style: .split)
+                #if os(macOS)
+                // Its height never comes from what it shows either: the footer's priority notice
+                // counts its wrapping text at its narrowest, taller than the window, and the whole
+                // window was laid out that tall, its top under the title bar and its bottom cut off.
+                .frame(minHeight: 0, maxHeight: .infinity)
+                #endif
                 .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
         } detail: {
             NavigationStack {
