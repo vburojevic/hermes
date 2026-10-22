@@ -17,7 +17,11 @@ struct TalkScreen: View {
     @GestureState private var dragDown: CGFloat = 0
 
     private var center: TalkCenter { .shared }
-    private var compactFigure: Bool { session.phase == .approval || session.pendingRequest != nil && session.phase == .needsTyping }
+    private var showsCard: Bool { session.card != nil && (session.phase == .speaking || session.phase == .listening) }
+    /// A smaller face when a card or an ask needs the room, so the words aren't cut to one line.
+    private var compactFigure: Bool {
+        session.phase == .approval || session.pendingRequest != nil && session.phase == .needsTyping || showsCard
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,7 +60,7 @@ struct TalkScreen: View {
                     .transition(.opacity)
             }
             Spacer(minLength: 12)
-            if let card = session.card, session.phase == .speaking || session.phase == .listening {
+            if showsCard, let card = session.card {
                 CallCard(markdown: card, speaker: session.speakerName)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)
