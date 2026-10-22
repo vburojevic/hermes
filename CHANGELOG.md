@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610221951 (October 22, 2026)
+
+- **Setup:** on the Mac, background priority is one line in the sidebar's footer, with Fix… and Not Now
+- **Setup:** after the app's own update or restart on this Mac, Hermes goes back to full priority by itself
+
 ### Build 2610221551 (October 22, 2026)
 
 - **Notifications:** the app icon never keeps a count you can't see
