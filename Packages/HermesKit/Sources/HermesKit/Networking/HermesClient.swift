@@ -152,14 +152,24 @@ public struct HermesClient: Sendable {
     }
 
     /// Creates an empty server-side session. Leave `title` nil so Hermes auto-titles it.
-    public func createSession(model: ModelSelection? = nil) async throws -> HermesSession {
+    ///
+    /// With an `id` chosen here (`WaitingChat.newSessionID`), asking again is safe: Hermes refuses
+    /// an id it has (409 `session_exists`), and the chat under it is the one asked for. One the
+    /// person deleted stays refused (409 `session_deleted`).
+    public func createSession(id: String? = nil, model: ModelSelection? = nil) async throws -> HermesSession {
         var body: [String: JSONValue] = ["source": .string("api_server")]
+        if let id { body["id"] = .string(id) }
         if let model {
             body["model"] = .string(model.model)
             body["provider"] = .string(model.provider)
         }
-        let envelope: SessionEnvelope = try await send("POST", ["api", "sessions"], body: body)
-        return envelope.session
+        do {
+            let envelope: SessionEnvelope = try await send("POST", ["api", "sessions"], body: body)
+            return envelope.session
+        } catch HermesError.server(status: 409, code: "session_exists"?, _) {
+            guard let id else { throw HermesError.server(status: 409, code: "session_exists", message: nil) }
+            return try await session(id: id)
+        }
     }
 
     public func renameSession(id: String, title: String?) async throws -> HermesSession {

@@ -79,6 +79,7 @@ def load_starve():
 
 STARVE = load_starve()
 RUNTIME = {}       # runtime sid -> {stored, profile, running, interrupt, seq, ring, pending_title, pending_hidden}
+CREATED = {}       # session.create idempotency_key -> (runtime sid, when)
 CRON = {}          # profile -> {job_id: job}
 PENDING = {}       # srq id -> {"event": Event, "result": dict | None, "sid": str}
 CURRENT = threading.local()  # .peer: the socket whose request a METHODS handler is answering
@@ -1379,9 +1380,24 @@ def method_session_create(params):
     profile = (params.get("profile") or "default").strip() or "default"
     if profile not in PROFILES:
         raise RPCError(4064, f"unknown profile: {profile}")
+    key = params.get("idempotency_key") or None
     with LOCK:
+        # As Hermes: a retried create under the same key (its answer lost) gets the same chat back
+        # while that chat is open, for five minutes.
+        now = time.time()
+        for old in [k for k, (_, at) in CREATED.items() if now - at > 300]:
+            CREATED.pop(old, None)
+        if key in CREATED and CREATED[key][0] in RUNTIME:
+            sid = CREATED[key][0]
+            CREATED[key] = (sid, now)
+            stored = RUNTIME[sid]["stored"]
+            messages = STORED.get(stored, {}).get("messages", [])
+            return {"session_id": sid, "stored_session_id": stored, "message_count": len(messages), "messages": [],
+                    "info": {"model": PROFILES[profile]["model"], "running": RUNTIME[sid]["running"]}}
         stored = new_id()
         sid = new_runtime(stored, profile, title=params.get("title") or None, hidden=bool(params.get("hidden")))
+        if key:
+            CREATED[key] = (sid, now)
     return {"session_id": sid, "stored_session_id": stored, "message_count": 0, "messages": [],
             "info": {"model": PROFILES[profile]["model"], "running": False}}
 
@@ -1419,6 +1435,10 @@ def method_session_resume(params):
     profile = (params.get("profile") or "default").strip() or "default"
     with LOCK:
         session = STORED.get(stored)
+        if session is None and re.fullmatch(r"\d{8}_\d{6}_[0-9a-f]{6}", stored):
+            # As Hermes (_resume_materialize_minted): a key session.create minted that never got
+            # its first prompt resumes as an empty chat, not 4007.
+            session = STORED[add_session(profile, "Untitled", source="desktop", sid=stored)]
         if session is None or session["profile"] != profile:
             raise RPCError(4007, "session not found")
         sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored), None) or new_runtime(stored, profile)

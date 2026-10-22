@@ -135,6 +135,36 @@ struct HermesClientTests {
         }
     }
 
+    /// A new chat asked for again under the same id: Hermes refuses an id it has, and that chat is it.
+    @Test func aNewChatAskedForAgainIsTheSameChat() async throws {
+        let host = "create-again.test"
+        let client = makeClient(host: host) { request in
+            if request.httpMethod == "POST" {
+                return .init(status: 409, body: Data(#"{"error":{"message":"Session already exists: api_1_0a1b2c3d","type":"invalid_request_error","param":null,"code":"session_exists"}}"#.utf8))
+            }
+            return .init(status: 200, body: Data(#"{"object":"hermes.session","session":{"id":"api_1_0a1b2c3d","source":"api_server","title":null}}"#.utf8))
+        }
+        let session = try await client.createSession(id: "api_1_0a1b2c3d")
+        #expect(session.id == "api_1_0a1b2c3d")
+        let requests = StubProtocol.requests(for: host)
+        #expect(requests.map(\.httpMethod) == ["POST", "GET"])
+        let body = try #require(JSONValue.parse(String(decoding: requests.first?.httpBody ?? Data(), as: UTF8.self)))
+        #expect(body["id"] == .string("api_1_0a1b2c3d"))
+        #expect(requests.last?.url?.path() == "/api/sessions/api_1_0a1b2c3d")
+    }
+
+    /// A chat deleted meanwhile (on another device) is never made again under its id.
+    @Test func aDeletedChatsIdIsRefused() async {
+        let host = "create-deleted.test"
+        let client = makeClient(host: host) { _ in
+            .init(status: 409, body: Data(#"{"error":{"message":"Session was deleted; its id cannot be reused: api_1_0a1b2c3d","type":"invalid_request_error","param":null,"code":"session_deleted"}}"#.utf8))
+        }
+        await #expect(throws: HermesError.server(status: 409, code: "session_deleted", message: "Session was deleted; its id cannot be reused: api_1_0a1b2c3d")) {
+            _ = try await client.createSession(id: "api_1_0a1b2c3d")
+        }
+        #expect(StubProtocol.requests(for: host).count == 1)
+    }
+
     @Test func startRunBody() async throws {
         let host = "runs.test"
         let client = makeClient(host: host) { _ in .init(status: 202, body: Data(#"{"run_id":"run_abc","status":"started","replayed":false}"#.utf8)) }

@@ -185,12 +185,11 @@ struct SendFailureTests {
         #expect(SendFailure.overHTTP(conflict) == .mayHaveArrived)
     }
 
-    /// `POST /api/sessions` isn't deduped: only a request that never left goes again.
-    @Test func onlyARequestThatNeverLeftIsSafeToRepeatUnkeyed() {
-        #expect(SendFailure.neverLeft(HermesError.unreachable(host: "mac", reason: .cannotConnect)))
-        #expect(SendFailure.neverLeft(HermesError.unreachable(host: "mac", reason: .offline)))
-        #expect(!SendFailure.neverLeft(HermesError.unreachable(host: "mac", reason: .timedOut)))
-        #expect(!SendFailure.neverLeft(HermesError.server(status: 503, code: nil, message: nil)))
+    /// A new chat is asked for under an id chosen on the device, so a create that timed out goes
+    /// again; one the person deleted is refused.
+    @Test func aNewChatsCreateGoesAgainUnlessRefused() {
+        #expect(SendFailure.overHTTP(HermesError.unreachable(host: "mac", reason: .timedOut)) == .sendAgain)
+        #expect(SendFailure.overHTTP(HermesError.server(status: 409, code: "session_deleted", message: nil)) == .refused)
     }
 
     @Test func pausesGrowToFifteenSeconds() {

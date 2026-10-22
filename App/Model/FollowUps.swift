@@ -322,6 +322,33 @@ enum FollowUpQueueStore {
     }
 }
 
+/// Keeps each gateway's waiting new chats (`WaitingChat`) on the device, in Application Support
+/// beside their messages (the outbox), so they survive a restart.
+enum WaitingChatStore {
+    private static func file(for gateway: UUID) -> URL? {
+        (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
+            .appending(path: "WaitingChats", directoryHint: .isDirectory)
+            .appending(path: "\(gateway.uuidString).json")
+    }
+
+    static func load(gateway: UUID) -> [WaitingChat] {
+        guard let file = file(for: gateway), let data = try? Data(contentsOf: file) else { return [] }
+        return (try? JSONDecoder().decode([WaitingChat].self, from: data)) ?? []
+    }
+
+    static func save(_ chats: [WaitingChat], gateway: UUID) {
+        guard let file = file(for: gateway) else { return }
+        guard !chats.isEmpty else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(chats) {
+            try? data.write(to: file, options: .atomic)
+        }
+    }
+}
+
 // MARK: - Settings
 
 /// Settings → Chat → "Sending while Hermes works" (`screens/iphone/settings.elyx`,

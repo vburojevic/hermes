@@ -424,6 +424,7 @@ final class BotWorkspace: Identifiable {
         widgets.workspace = self
         restoreCachedSessions()
         restoreCachedModels()
+        restoreWaitingChats()
     }
 
     /// The model list this device saw last: the model picker opens on it instead of "Loading
@@ -533,6 +534,8 @@ final class BotWorkspace: Identifiable {
 
     func conversation(forKey key: String) -> ConversationModel {
         if let existing = conversations[key] { return existing }
+        // A waiting chat that's gone (sent, or deleted) has no chat to load under its key.
+        if WaitingChat.isKey(key) { return draft }
         let session = sessions.first { $0.stableID == key } ?? HermesSession(id: key)
         let conversation = ConversationModel(workspace: self, session: session)
         conversations[key] = conversation
@@ -592,7 +595,7 @@ final class BotWorkspace: Identifiable {
 
     func session(forKey key: String) -> HermesSession? {
         _ = sessions // whoever asks follows the list, as before
-        return sessionsByKey[key]
+        return sessionsByKey[key] ?? waitingChats.first { $0.rowKey == key }?.row
     }
 
     func isWorking(sessionKey key: String) -> Bool {
@@ -743,6 +746,11 @@ final class BotWorkspace: Identifiable {
 
     /// The draft got its server session on first send: file it under that session.
     func adopt(_ conversation: ConversationModel, session: HermesSession) {
+        // Listed as a waiting chat until now (`keepWaiting`): its row becomes the chat's.
+        if case .session(let key)? = selection, key != session.stableID, WaitingChat.isKey(key), conversations[key] === conversation {
+            selection = .session(session.stableID)
+        }
+        conversations = conversations.filter { !WaitingChat.isKey($0.key) || $0.value !== conversation }
         conversations[session.stableID] = conversation
         // Filed under its session now: the background list no longer needs to hold it.
         backgroundChats.removeAll { $0 === conversation }
@@ -762,6 +770,108 @@ final class BotWorkspace: Identifiable {
             if selection == .project(projectID) {
                 selection = .session(session.stableID)
             }
+        }
+    }
+
+    // MARK: Waiting chats (`docs/chat.md` §4)
+
+    /// Brand-new chats whose first message waits for the gateway, kept on the device
+    /// (`WaitingChat`): listed above the chats until Hermes makes them, and sent again after a
+    /// relaunch.
+    private(set) var waitingChats: [WaitingChat] = []
+
+    /// A new chat's first message waits: it's kept and listed under its own row from now on, and
+    /// the new-chat draft gives way to a fresh one, as when Hermes makes the chat (`adopt`).
+    func keepWaiting(_ chat: WaitingChat, in conversation: ConversationModel) {
+        if let index = waitingChats.firstIndex(where: { $0.key == chat.key }) {
+            guard waitingChats[index] != chat else { return }
+            waitingChats[index] = chat
+        } else {
+            waitingChats.append(chat)
+        }
+        WaitingChatStore.save(waitingChats, gateway: id)
+        if conversations[chat.rowKey] !== conversation { conversations[chat.rowKey] = conversation }
+        backgroundChats.removeAll { $0 === conversation }
+        if conversation === draft {
+            draft = ConversationModel(workspace: self)
+            if selection == nil { selection = .session(chat.rowKey) }
+        } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
+            projectDrafts[projectID] = nil
+            if selection == .project(projectID) { selection = .session(chat.rowKey) }
+        }
+    }
+
+    /// Hermes has the message, or it went back to the person.
+    func forgetWaiting(_ chat: WaitingChat) {
+        guard waitingChats.contains(where: { $0.key == chat.key }) else { return }
+        waitingChats.removeAll { $0.key == chat.key }
+        WaitingChatStore.save(waitingChats, gateway: id)
+    }
+
+    func waitingChat(forKey key: String) -> WaitingChat? {
+        waitingChats.first { $0.rowKey == key }
+    }
+
+    /// What a waiting chat's row says: "Waiting for <Mac>…" while its message is on its way.
+    func waitingNote(forKey key: String) -> String? {
+        guard waitingChat(forKey: key) != nil else { return nil }
+        guard conversations[key]?.isWorking == true else { return nil }
+        return String(localized: "Waiting for \(bot.name)…")
+    }
+
+    /// The chats a previous run of the app kept waiting. One whose message never left goes again
+    /// by itself; one whose message went out is looked for in the chat Hermes made, and a message
+    /// that isn't there waits in Up Next for a Send.
+    private func restoreWaitingChats() {
+        let kept = WaitingChatStore.load(gateway: id)
+        guard !kept.isEmpty else { return }
+        var restored: [WaitingChat] = []
+        var sends: [(ConversationModel, QueuedFollowUp)] = []
+        for chat in kept {
+            switch chat.resume {
+            case .send:
+                guard let message = FollowUpQueueStore.loadOutbox(key: chat.outboxKey).first?.message else { continue }
+                let queue = FollowUpQueueStore.load(key: chat.outboxKey)
+                let resent = chat.resent
+                if chat.outboxKey != resent.key {
+                    // Kept under its own key again: the chat Hermes made over the socket was never
+                    // stored, and one made over the API server is asked for under the same id.
+                    FollowUpQueueStore.saveOutbox([OutboxItem(message: message, sentAt: chat.sentAt)], key: resent.key)
+                    FollowUpQueueStore.save(queue, key: resent.key)
+                    FollowUpQueueStore.saveOutbox([], key: chat.outboxKey)
+                    FollowUpQueueStore.save([], key: chat.outboxKey)
+                }
+                let conversation = ConversationModel(workspace: self, waiting: resent, queue: queue)
+                conversations[resent.rowKey] = conversation
+                restored.append(resent)
+                sends.append((conversation, message))
+            case .lookFor(let sessionID):
+                let conversation = conversations[sessionID] ?? ConversationModel(workspace: self, session: HermesSession(id: sessionID))
+                conversation.restoreWaiting(chat)
+                conversations[sessionID] = conversation
+                restored.append(chat)
+                conversation.loadIfNeeded()
+            }
+        }
+        waitingChats = restored
+        WaitingChatStore.save(restored, gateway: id)
+        ConnectionLog.logger.notice("chat: \(restored.count) new chat(s) kept from before a relaunch, \(sends.count) sent again")
+        // Once the workspace is set up: the sends wait for the gateway like any other.
+        Task { @MainActor in
+            for (conversation, message) in sends { conversation.sendWaiting(message) }
+        }
+    }
+
+    /// Deletes a chat that waits: nothing more of it goes. One whose message may have reached Hermes
+    /// is deleted there too, if Hermes made it.
+    private func discardWaiting(_ chat: WaitingChat) async {
+        conversations[chat.rowKey]?.discardWaiting()
+        conversations[chat.rowKey] = nil
+        forgetWaiting(chat)
+        if selection == .session(chat.rowKey) { selection = nil }
+        if let sessionID = chat.sessionID, let client {
+            try? await client.deleteSession(id: sessionID)
+            sessions.removeAll { $0.stableID == sessionID }
         }
     }
 
@@ -922,6 +1032,15 @@ final class BotWorkspace: Identifiable {
             // Most refreshes bring nothing new: an unchanged list redraws nothing and recounts
             // nothing (the sidebar, the open chat's title and the unread counts all read it).
             let fresh = localOnly + page.sessions.filter { !$0.isInternalChild }
+            // A waiting chat Hermes lists now got its message (Hermes stores a chat with its first).
+            let stillWaiting = WaitingChat.remaining(waitingChats, gatewayListed: Set(page.sessions.map(\.stableID)))
+            if stillWaiting != waitingChats {
+                for chat in waitingChats where !stillWaiting.contains(chat) {
+                    conversations[chat.rowKey]?.restoreWaiting(nil)
+                }
+                waitingChats = stillWaiting
+                WaitingChatStore.save(stillWaiting, gateway: id)
+            }
             if !hasFetchedSessions {
                 hasFetchedSessions = true
                 if fresh == sessions { keepSessions() }
@@ -1158,6 +1277,10 @@ final class BotWorkspace: Identifiable {
     }
 
     func delete(_ session: HermesSession) async throws {
+        if let waiting = waitingChat(forKey: session.stableID) {
+            await discardWaiting(waiting)
+            return
+        }
         guard let client else { return }
         try await client.deleteSession(id: session.id)
         sessions.removeAll { $0.stableID == session.stableID }
@@ -1391,6 +1514,8 @@ final class BotWorkspace: Identifiable {
         widgets.forgetDevice()
         WidgetCache.removeAll(gateway: id)
         for conversation in conversations.values { conversation.forgetLocalData() }
+        waitingChats = []
+        WaitingChatStore.save([], gateway: id)
         draft.forgetLocalData()
         projectDrafts.values.forEach { $0.forgetLocalData() }
     }

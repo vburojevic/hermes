@@ -24,7 +24,12 @@ extension BotWorkspace {
         let shown = inboxFilter == .all
             ? sessions.filter { $0.pinned || !projects.isScoped($0) }
             : sessions.filter { matches(inboxFilter, key: $0.stableID) }
-        return Self.inboxOrder(shown)
+        let ordered = Self.inboxOrder(shown)
+        // New chats whose first message waits for the gateway, under the pinned ones (`docs/chat.md` §4).
+        guard inboxFilter == .all, !waitingChats.isEmpty else { return ordered }
+        let waiting = WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
+        let pinned = ordered.prefix { $0.pinned }.count
+        return Array(ordered[..<pinned]) + waiting + ordered[pinned...]
     }
 
     static func inboxOrder(_ sessions: [HermesSession]) -> [HermesSession] {

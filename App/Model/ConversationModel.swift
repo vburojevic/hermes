@@ -105,6 +105,13 @@ final class ConversationModel: Identifiable {
     /// Messages a previous run of the app kept and never saw taken: looked for in the stored chat
     /// once it loads (`settleOutbox`).
     @ObservationIgnored private var keptFromBefore: [OutboxItem] = []
+    /// A brand-new chat's first message on its way (`WaitingChat`): once it waits, kept on the
+    /// device with the chat, listed meanwhile, and sent again after a relaunch (`docs/chat.md` §4).
+    @ObservationIgnored private(set) var waitingChat: WaitingChat?
+    /// The id a new chat is asked for under over the API server, and the key it's created with over
+    /// the socket: the same on every try, so Hermes makes it once.
+    @ObservationIgnored private var newChatID: String?
+    @ObservationIgnored private var newChatCreateKey = UUID().uuidString
     /// "Reconnecting…" while a detached run's event stream is down.
     private(set) var connectionNote: String? { didSet { syncDerivedState() } }
     /// Increments whenever a turn completes, for haptics and scroll anchoring.
@@ -423,10 +430,10 @@ final class ConversationModel: Identifiable {
         userCaptions[entry.id] ?? userCaptions[displayID(for: .user(entry))]
     }
 
-    /// Where this chat's queue is kept.
+    /// Where this chat's queue is kept: a new chat's under its key on the device until Hermes makes it.
     private var queueKey: String? {
         if let botName, let roster { return "bot-\(roster.botID.uuidString)-\(botName)" }
-        return stableKey
+        return stableKey ?? waitingChat?.key
     }
 
     /// The gateway was removed: what this chat kept on the device goes too (how sent messages
@@ -440,6 +447,7 @@ final class ConversationModel: Identifiable {
             FollowUpQueueStore.save([], key: queueKey)
             FollowUpQueueStore.saveOutbox([], key: queueKey)
         }
+        waitingChat = nil
     }
 
     /// The gateway or API server is there to send to.
@@ -536,6 +544,18 @@ final class ConversationModel: Identifiable {
             queue = FollowUpQueueStore.load(key: key)
             keptFromBefore = FollowUpQueueStore.loadOutbox(key: key)
         }
+    }
+
+    /// A new chat whose first message waited when the app last ran and never left
+    /// (`WaitingChat.Resume.send`): it goes again as it was (`sendWaiting`).
+    init(workspace: BotWorkspace, waiting: WaitingChat, queue: [QueuedFollowUp]) {
+        self.workspace = workspace
+        self.botName = nil
+        self.model = waiting.model ?? workspace.preferredModel
+        self.reasoningEffort = waiting.effort ?? workspace.preferredEffort
+        self.placement = waiting.projectID.map { workspace.projects.placement(in: $0) }
+        self.waitingChat = waiting
+        self.queue = queue
     }
 
     /// A Bot's Bot Chat, served by the Hermes backend.
@@ -1079,6 +1099,13 @@ final class ConversationModel: Identifiable {
                 await shown
                 guard !Task.isCancelled else { return }
                 if retriesQuietly(after: error) { return }
+                if waitingChat != nil, case HermesError.notFound = error {
+                    // A new chat whose message went out before a relaunch and that Hermes never
+                    // stored: it didn't get the message, which waits in Up Next for a Send.
+                    loadState = .loaded
+                    settleOutbox()
+                    return
+                }
                 if items.isEmpty {
                     loadState = .failed(error as? HermesError ?? .invalidResponse(error.localizedDescription))
                 } else {
@@ -3062,6 +3089,7 @@ final class ConversationModel: Identifiable {
                         workspace.imageStore.remember(images, conversation: key, text: text)
                         remembered = true
                     }
+                    waitingChatLeft()
                     if images.isEmpty {
                         let runID = try await client.startRun(
                             sessionID: sessionID,
@@ -3077,9 +3105,7 @@ final class ConversationModel: Identifiable {
                         try await streamChat(sessionID: sessionID, text: input, images: images, client: client)
                     }
                     break
-                } catch where live?.runID == nil && images.isEmpty && !Task.isCancelled && SendFailure.overHTTP(error) == .sendAgain
-                    // A new chat's session isn't deduped: only one that never left goes again.
-                    && (sessionID != nil || SendFailure.neverLeft(error)) {
+                } catch where live?.runID == nil && images.isEmpty && !Task.isCancelled && SendFailure.overHTTP(error) == .sendAgain {
                     attempt += 1
                     markWaiting()
                     try await Task.sleep(for: SendFailure.pause(before: attempt))
@@ -3107,9 +3133,11 @@ final class ConversationModel: Identifiable {
 
     private func ensureSession(client: HermesClient, workspace: BotWorkspace) async throws -> String {
         if let sessionID { return sessionID }
-        let session = try await client.createSession()
+        // Under an id chosen here: asked for again, Hermes makes it once (`createSession(id:)`).
+        let session = try await client.createSession(id: newSessionID)
         sessionID = session.id
         stableKey = session.stableID
+        waitingChatCreated(session.stableID)
         apply(.sessionChanged(session.id))
         workspace.adopt(self, session: session)
         return session.id
@@ -3529,6 +3557,10 @@ final class ConversationModel: Identifiable {
         deliveryWatch?.cancel()
         delivery = .sending
         outgoing = OutboxItem(message: message, sentAt: .now, knownNewestID: rawMessages.last?.id)
+        if sessionID == nil, !isBotChat, waitingChat == nil {
+            waitingChat = WaitingChat(title: message.line, model: model, effort: reasoningEffort,
+                                      projectID: placement?.projectID, requestedID: newSessionID)
+        }
         deliveryWatch = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard let self, !Task.isCancelled, self.delivery == .sending else { return }
@@ -3559,6 +3591,7 @@ final class ConversationModel: Identifiable {
         guard delivery != nil, delivery != .waiting else { return }
         delivery = .waiting
         deliveryNote = .waiting
+        keepWaitingChat()
         saveOutbox()
         ConnectionLog.logger.notice("chat: a message waits for the gateway (away: \(self.gatewayRoster.map { !$0.isConnected } ?? false, privacy: .public), busy: \(self.gatewayAwayOrBusy, privacy: .public))")
     }
@@ -3577,6 +3610,78 @@ final class ConversationModel: Identifiable {
         deliveryNote = nil
         outgoing = nil
         if wasKept { saveOutbox() }
+        // Hermes has a new chat's first message, or it went back to the person: nothing of it is
+        // kept on the device any more.
+        if let waitingChat {
+            self.waitingChat = nil
+            FollowUpQueueStore.save([], key: waitingChat.key)
+            workspace?.forgetWaiting(waitingChat)
+        }
+    }
+
+    // MARK: A new chat's first message (`WaitingChat`)
+
+    /// The id this new chat is asked for under over the API server.
+    private var newSessionID: String {
+        if let id = waitingChat?.requestedID ?? newChatID { return id }
+        let id = WaitingChat.newSessionID()
+        newChatID = id
+        return id
+    }
+
+    /// The message waits: the chat is kept on the device and listed until Hermes has it.
+    private func keepWaitingChat() {
+        guard let waitingChat, delivery == .waiting else { return }
+        workspace?.keepWaiting(waitingChat, in: self)
+    }
+
+    /// Hermes made the chat: what was kept under the device's key moves to the chat's own.
+    private func waitingChatCreated(_ stored: String) {
+        guard var chat = waitingChat else { return }
+        let before = chat.outboxKey
+        chat.created(stored)
+        waitingChat = chat
+        guard before != stored else { return }
+        if !queue.isEmpty {
+            FollowUpQueueStore.save([], key: before)
+            FollowUpQueueStore.save(queue, key: stored)
+        }
+        if delivery == .waiting {
+            FollowUpQueueStore.saveOutbox([], key: before)
+            saveOutbox()
+        }
+        keepWaitingChat()
+    }
+
+    /// The message is going out to Hermes: from now on it may have it, so a relaunch never sends
+    /// it again by itself.
+    private func waitingChatLeft() {
+        guard var chat = waitingChat, let sessionID else { return }
+        chat.left(in: sessionID)
+        waitingChat = chat
+        keepWaitingChat()
+    }
+
+    /// A new chat that waited when the app last ran goes again (`WaitingChat.Resume.send`).
+    func sendWaiting(_ message: QueuedFollowUp) {
+        start(text: message.text, images: message.images, files: message.files, skills: message.skills, parts: message.parts)
+    }
+
+    /// A new chat whose message had gone out when the app last ran (`WaitingChat.Resume.lookFor`):
+    /// listed under its record until Hermes lists it (`nil` then), the message looked for once it loads.
+    func restoreWaiting(_ chat: WaitingChat?) {
+        waitingChat = chat
+    }
+
+    /// The person deleted the chat while it waited: nothing more of it goes, and nothing stays.
+    func discardWaiting() {
+        guard let chat = waitingChat else { return }
+        waitingChat = nil
+        cancelAll()
+        for key in Set([chat.key, chat.outboxKey]) {
+            FollowUpQueueStore.save([], key: key)
+            FollowUpQueueStore.saveOutbox([], key: key)
+        }
     }
 
     private func saveOutbox() {
@@ -4061,6 +4166,7 @@ extension ConversationModel {
                 await prepareInAppBrowser(.socket(sessionID: runtime))
                 turnGate.send()
                 submitted = SentPrompt(at: .now, knownNewestID: rawMessages.last?.id)
+                waitingChatLeft()
                 var submit: [String: JSONValue] = ["session_id": .string(runtime), "text": .string(prompt)]
                 if turnQueued { submit["queued"] = .bool(true) } // a queued message never becomes a steer
                 if let voice = turnVoice { submit.merge(voice.submitParams) { $1 } }
@@ -4242,7 +4348,8 @@ extension ConversationModel {
         var params: [String: JSONValue] = [
             // The desktop platform: Hermes gets its Inspector tools (`docs/inspector.md` §2).
             "source": .string(PreviewBridge.sessionSource),
-            "idempotency_key": .string(UUID().uuidString),
+            // The same on every try: a create whose answer was lost gets the same chat back.
+            "idempotency_key": .string(newChatCreateKey),
         ]
         if let profile = gatewayProfile { params["profile"] = .string(profile) }
         if let model {
@@ -4265,6 +4372,7 @@ extension ConversationModel {
         roster.attach(self)
         sessionID = stored
         stableKey = stored
+        waitingChatCreated(stored)
         if let workspace { inspectorStore?.restore(chatKey: stored, workspaceID: workspace.id) }
         if let info = LiveWorkspace(info: created["info"]) { liveWorkspace = info }
         workspace?.projects.placed(storedID: stored, in: placement?.projectID)

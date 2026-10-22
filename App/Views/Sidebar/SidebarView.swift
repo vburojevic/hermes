@@ -103,8 +103,12 @@ struct SidebarView: View {
         ) { session in
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) { delete(session) }
-        } message: { _ in
-            Text("The conversation is removed from Hermes on every device.")
+        } message: { session in
+            if workspace.waitingChat(forKey: session.stableID) != nil {
+                Text("Its message waits for \(workspace.bot.name) and won't be sent.")
+            } else {
+                Text("The conversation is removed from Hermes on every device.")
+            }
         }
         .alert("Something went wrong", isPresented: errorBinding, presenting: actionError) { _ in
             Button("OK", role: .cancel) {}
@@ -261,6 +265,36 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: HermesSession) -> some View {
+        if workspace.waitingChat(forKey: session.stableID) != nil {
+            waitingRow(session)
+        } else {
+            listedRow(session)
+        }
+    }
+
+    /// A new chat whose first message waits for the gateway (`docs/chat.md` §4): nothing to mark,
+    /// pin or archive on Hermes yet, so Delete is all it offers.
+    @ViewBuilder
+    private func waitingRow(_ session: HermesSession) -> some View {
+        SessionRow(session: session, workspace: workspace, onNavigate: onNavigate)
+            .contextMenu {
+                Button("Delete…", systemImage: "trash", role: .destructive) { deleting = session }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if style == .split || DrawerSwipe.isSystems {
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = session }
+                }
+            }
+            .modifier(DrawerSwipeActions(
+                isInDrawer: style == .drawer,
+                leading: [],
+                trailing: [SwipeTile(title: String(localized: "Delete"), symbol: "trash") { deleting = session }]
+            ))
+            .accessibilityAction(named: Text("Delete")) { deleting = session }
+    }
+
+    @ViewBuilder
+    private func listedRow(_ session: HermesSession) -> some View {
         let key = session.stableID
         let isUnread = workspace.unread.badge(for: key).isUnread || workspace.unread.readMark(for: key) == .markedUnread
         let muted = workspace.unread.isMuted(key)

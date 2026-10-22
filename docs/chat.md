@@ -369,8 +369,11 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   - Over the API server the run is asked for again after 1, 2, 4, 8 and then every 15 s on
     timeouts, 5xx, 429 or an unreachable gateway, under one `Idempotency-Key` and the same body
     (Hermes starts a run once per key and body; a 409 `idempotency_key_conflict` means it had the
-    first, and the chat says it can't tell how it went). A new chat's session is asked for again only
-    when the request never left (refused, no route): `POST /api/sessions` isn't deduped. A picture
+    first, and the chat says it can't tell how it went). A new chat is asked for under an id chosen
+    on the device (`POST /api/sessions {id}`, `WaitingChat.requestedID`), so it's asked for again
+    like the run: Hermes refuses an id it has (409 `session_exists`), and that chat is the one; one
+    deleted meanwhile (409 `session_deleted`) gives the message back. Over the socket,
+    `session.create` goes with one `idempotency_key` on every try. A picture
     goes over a stream Hermes doesn't dedupe, so it isn't sent again by itself. A setting on the
     device (Local Network, Mobile Data, Wi-Fi) or a certificate gives the message back with why.
   - Stop takes the message back into the composer, or, with something new in the field, to the top
@@ -380,8 +383,16 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   - Once it has waited, it's kept on the device (`FollowUpQueueStore` outbox). After a relaunch the
     stored chat is asked whether it has it (`SubmitCheck`); one that isn't there goes to the top of
     Up Next held ("Not sent", `QueuedFollowUp.isHeld`): only a Send sends it, and the queue drains
-    past it. A brand-new chat's first message isn't kept this way yet (it has no chat id to keep it
-    under until Hermes makes one).
+    past it.
+  - A brand-new chat's first message is kept the same way, with the chat (`WaitingChat`): once it
+    waits, the chat is listed under the pinned chats with its first line as its title and "Waiting
+    for <Mac>…" under it (Delete is all its row offers), and the new-chat screen gives way to it.
+    Hermes makes the chat before the message goes, and the row becomes the chat's. After a
+    relaunch, a message that never went out goes again by itself, as a new chat asking for the
+    same id (a chat Hermes made over the socket isn't stored until its first message). One that
+    went out is looked for in the chat Hermes made, as above: stored, the chat shows as it is;
+    not there, it waits in Up Next held. Deleting the waiting chat sends nothing more, and deletes
+    the chat on Hermes if Hermes made it.
   - The composer says "Offline · messages wait for <Mac>" or "<Mac> is busy"; attachments and Send
     stay available, Talk waits for the gateway.
 - **Unread.** A chat with something new opens at the New Messages line, a quarter of the way

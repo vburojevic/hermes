@@ -54,6 +54,8 @@ SESSIONS = {}
 ROUTES = {}  # (method, path) -> fn(handler, query) -> handled: routes other modules add (browser_control.py)
 MESSAGES = {}
 RUNS = {}
+# Deleted chats' ids: Hermes never makes a chat under one again.
+DELETED = set()
 JOBS = {}
 
 
@@ -606,8 +608,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self.body()
         if path == "/api/sessions":
-            sid = body.get("id") or f"api_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            sid = body.get("id") or body.get("session_id") or f"api_{int(time.time())}_{uuid.uuid4().hex[:8]}"
             with LOCK:
+                # Hermes refuses an id it has, or one that was deleted (create_conflict).
+                if sid in SESSIONS:
+                    return self.error(409, f"Session already exists: {sid}", "session_exists")
+                if sid in DELETED:
+                    return self.error(409, f"Session was deleted; its id cannot be reused: {sid}", "session_deleted")
                 session_row(sid, body.get("title"), body.get("source", "api_server"), time.time(), time.time(), "", model=body.get("model"))
             return self.send_json(201, {"object": "hermes.session", "session": public_session(SESSIONS[sid], False)})
         m = re.fullmatch(r"/api/sessions/([^/]+)/fork", path)
@@ -764,6 +771,7 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/sessions/([^/]+)", path)
         if m and m.group(1) in SESSIONS:
             SESSIONS.pop(m.group(1))
+            DELETED.add(m.group(1))
             MESSAGES.pop(m.group(1), None)
             return self.send_json(200, {"object": "hermes.session.deleted", "id": m.group(1), "deleted": True})
         m = re.fullmatch(r"/api/jobs/([^/]+)", path)

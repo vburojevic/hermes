@@ -32,8 +32,9 @@ public enum SendFailure: Equatable, Sendable {
         }
     }
 
-    /// A `POST /v1/runs` (with its `Idempotency-Key`) or the session it needs: a timeout, an
-    /// unreachable gateway, a 5xx or a 429 goes again; any other answer is Hermes refusing it.
+    /// A `POST /v1/runs` (with its `Idempotency-Key`) or the session it needs (under an id chosen
+    /// here, `WaitingChat.requestedID`): a timeout, an unreachable gateway, a 5xx or a 429 goes
+    /// again; any other answer is Hermes refusing it.
     public static func overHTTP(_ error: any Error) -> SendFailure {
         switch error {
         case is CancellationError:
@@ -58,15 +59,6 @@ public enum SendFailure: Equatable, Sendable {
             return error.code == .cancelled ? .refused : .sendAgain
         default:
             return .refused
-        }
-    }
-
-    /// The request never reached the gateway's machine (refused, or no route), so even a call
-    /// Hermes doesn't dedupe (`POST /api/sessions`) can go again.
-    public static func neverLeft(_ error: any Error) -> Bool {
-        switch error {
-        case HermesError.unreachable(_, .cannotConnect), HermesError.unreachable(_, .offline): true
-        default: false
         }
     }
 

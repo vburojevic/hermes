@@ -363,7 +363,8 @@ final class UnreadStore {
     /// A row came on screen without its last message, or its chat moved on: the chat's newest few
     /// rows, once per activity, a few at a time.
     func needsLastLine(_ session: HermesSession) {
-        guard let client = workspace?.client else { return }
+        // A waiting chat's row says what it waits for; Hermes may not have the chat yet.
+        guard let client = workspace?.client, workspace?.waitingChat(forKey: session.stableID) == nil else { return }
         readLine(session.stableID, activity: session.lastActive) {
             let transcript = try await client.transcript(sessionID: session.id, limit: 8)
             return LastLine.of(TranscriptBuilder.build(transcript.messages))

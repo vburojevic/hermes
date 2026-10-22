@@ -12,7 +12,9 @@ struct ChatInboxRow: View {
     var body: some View {
         let key = session.stableID
         let unread = workspace.unread
-        let line = workspace.activity.line(for: key)
+        // A new chat whose first message waits says so, in still words: Hermes isn't working on it.
+        let waiting = workspace.waitingNote(forKey: key)
+        let line = waiting == nil ? workspace.activity.line(for: key) : nil
         // The open chat is read as it's shown; a running turn shows no count until it ends.
         let running = line.map { $0.isLive && !$0.needsYou } ?? false
         let badge: UnreadBadge = isSelected || running ? .none : unread.badge(for: key)
@@ -31,7 +33,9 @@ struct ChatInboxRow: View {
             badge: badge,
             needsYou: line?.needsYou ?? false
         ) {
-            if let line {
+            if let waiting {
+                RowPreview(prefix: nil, text: waiting, bright: false)
+            } else if let line {
                 ActivityLineView(line: line)
             } else if let draft {
                 RowPreview(prefix: String(localized: "Draft:"), prefixIsInk: true, text: LastLine.flatten(draft), bright: false)
@@ -44,7 +48,7 @@ struct ChatInboxRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.spoken(title: session.displayTitle, badge: badge, muted: muted, pinned: session.pinned, line: line,
-                                        date: session.activityDate, preview: lastLine?.text ?? session.preview))
+                                        date: session.activityDate, preview: waiting ?? lastLine?.text ?? session.preview))
     }
 
     /// "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs" (`docs/inbox.md` §6).
