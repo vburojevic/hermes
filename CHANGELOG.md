@@ -31,6 +31,25 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610221551 (October 22, 2026)
+
+- **Notifications:** the app icon never keeps a count you can't see
+- **Plugins:** the app installs push 1.4.5
+- **Talk:** noise in the room no longer cuts Hermes off; it yields as you start talking and stops on your words
+- **Talk:** in a room as loud as you, the call says to tap to interrupt and offers Voice Isolation
+- **Talk:** what you say after a phone call or AirPods connecting is still heard as yours
+- **Talk:** an AirPods stem mute is the call's mute, and the call gets its sound back after an audio reset
+- **Talk:** the Live Activity's Mute and last words keep up with the call
+- **Talk:** a call gets ready without waiting on the gateway twice, and says how long it took
+- **Talk:** with Realtime on iPhone and iPad, a TV or people across the room no longer cut the voice off
+- **Talk:** Realtime shows Connecting until it can hear you, and a failed start lets go of its connection
+- **Talk:** with a card on screen the face gets smaller, so the words have room and nothing slides under the status bar
+- **Talk:** VoiceOver says each state of a call once, not at every pause in a reply
+- **Talk:** a card in a call is as tall as what it shows, and a long one scrolls inside it
+- **Talk:** a call the app didn't end no longer stays on the Lock Screen
+- **Tools:** the Talk noise bench scores barge-in in noisy rooms on the Mac's own transcriber
+- **Mac:** the window no longer lays out taller than itself while the priority notice shows
+
 ### Build 2610211907 (October 21, 2026)
 
 - **Chat:** signing in says where your login came from, and a card fill needs your OK with Face ID
