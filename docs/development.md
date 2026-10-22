@@ -71,6 +71,11 @@ xcodebuild -project Hermes.xcodeproj -scheme HermesUITests -destination 'platfor
 They cover opening at the New Messages line, the jump pill marking a chat read, and Mark as Read /
 Unread syncing with another client (`docs/inbox.md` §7). Each test resets the mock's read marks.
 
+A test that stops mid-call must end the call: its Live Activity outlives the app, and installing
+the next build makes the system launch the app for it, without launch arguments, just as the next
+run's first test launches the app. That test gets the system's launch and no `-HERMES_*` flags.
+`VoiceUITests` ends any call left running when each test ends.
+
 The relay has its own tests (`cd Relay && npm ci && npm test`). The app's Hermes plugins' tests run
 against a real Hermes Agent checkout, in a throwaway `HERMES_HOME`; see [plugins.md](plugins.md)
 §5.6 and [Tools/hermes-app-push](../Tools/hermes-app-push/README.md).

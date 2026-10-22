@@ -195,6 +195,7 @@ final class VoiceUITests: XCTestCase {
             "-HERMES_TIPS", "hide", "-HERMES_WHATS_NEW", "NO",
         ] + arguments
         app.launch()
+        addTeardownBlock { @MainActor in Self.endCallLeftRunning(in: app) }
         // The ask to install the app's plugin, on a fresh install.
         let notNow = app.buttons["Not Now"]
         if notNow.waitForExistence(timeout: 8) { notNow.tap() }
@@ -207,6 +208,20 @@ final class VoiceUITests: XCTestCase {
         guard !app.buttons["Dictate"].waitForExistence(timeout: 12) else { return }
         let card = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Research Buddy'")).firstMatch
         if card.waitForExistence(timeout: 10) { card.tap() }
+    }
+
+    /// A test that fails or stops mid-call leaves its call running when the app is stopped, and
+    /// the call's Live Activity stays. Installing the next build then makes the system launch the
+    /// app for it just as the next run's first test launches it, and that test gets the system's
+    /// launch, without its arguments: no call. So the call ends here, whatever happened.
+    @MainActor
+    private static func endCallLeftRunning(in app: XCUIApplication) {
+        guard app.state == .runningForeground else { return }
+        let end = app.buttons["End call"]
+        // A call the test just ended is still closing: give it the moment.
+        guard !end.waitForNonExistence(timeout: 3) else { return }
+        end.tap()
+        XCTAssertTrue(end.waitForNonExistence(timeout: 10), "the call didn't end")
     }
 
     private func eventually(timeout: TimeInterval, _ check: @escaping () async throws -> Bool) async throws {

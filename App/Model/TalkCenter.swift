@@ -44,6 +44,8 @@ final class TalkCenter {
         if let data = defaults.data(forKey: Self.recordsKey), let saved = try? JSONDecoder().decode([CallRecord].self, from: data) {
             records = saved
         }
+        // No call has started in this process yet: any call's Live Activity is a leftover.
+        TalkActivity.shared.endLeftovers()
     }
 
     var isActive: Bool { session != nil }

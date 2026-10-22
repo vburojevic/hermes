@@ -58,6 +58,23 @@ final class TalkActivity {
         #endif
     }
 
+    /// A call never outlives the app that ran it, but its Live Activity did: after a crash, or the
+    /// app being stopped mid-call, the Lock Screen kept a call that was gone, with Mute and End.
+    /// The next launch ends them (`docs/voice.md` §4.4).
+    func endLeftovers() {
+        #if os(iOS)
+        let current = activity?.id
+        let leftovers = Activity<TalkActivityAttributes>.activities.map(\.id).filter { $0 != current }
+        guard !leftovers.isEmpty else { return }
+        TalkCenter.logger.info("ending \(leftovers.count) call activities left from before")
+        Task {
+            for id in leftovers {
+                await Self.activity(id)?.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+        #endif
+    }
+
     func end() {
         #if os(iOS)
         guard let activity else { return }
