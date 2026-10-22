@@ -220,6 +220,7 @@ extension GatewaySetup {
         let name = hostName(facts)
         let later = gateway.losesPriorityAtNextStart
         return PriorityNotice(
+            label: later ? String(localized: "Priority drops at next start") : String(localized: "Background priority"),
             headline: later ? String(localized: "Hermes is set to background priority") : String(localized: "Hermes runs at background priority"),
             detail: later
                 ? String(localized: "From its next start, when \(name) is busy, Hermes will answer late or not at all.")
@@ -237,11 +238,14 @@ extension GatewaySetup {
               report.jobs.contains(where: { $0.role == .gateway }) else { return message }
         return message + "\n\n" + String(localized: "Updating resets Hermes to background priority on \(hostName(facts)). The app offers to restore it when it's done.")
     }
+
 }
 
 /// Hermes on a Mac runs at background priority, said where the person sees it: on the result of an
 /// update or restart the app ran, and on the Mac beside Settings (`docs/setup.md` §4.17).
 public struct PriorityNotice: Sendable, Equatable {
+    /// A few words for one line (the Mac's sidebar footer); the headline says it in full.
+    public var label: String
     public var headline: String
     public var detail: String
     /// Run at Full Priority… does it: the gateway is on this Mac.
@@ -249,7 +253,11 @@ public struct PriorityNotice: Sendable, Equatable {
     /// What to run on the gateway's Mac instead.
     public var steps: [SetupStep]
 
-    public init(headline: String, detail: String, canFixHere: Bool, steps: [SetupStep] = []) {
+    /// Why it keeps coming back, for the details: the cause is upstream (`docs/setup.md` §4.17).
+    public static let cause = String(localized: "Hermes Agent writes its plist without it on every restart and update; the fix is hermes-agent pull request 72211.")
+
+    public init(label: String? = nil, headline: String, detail: String, canFixHere: Bool, steps: [SetupStep] = []) {
+        self.label = label ?? headline
         self.headline = headline
         self.detail = detail
         self.canFixHere = canFixHere

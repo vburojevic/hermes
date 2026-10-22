@@ -441,7 +441,11 @@ its gateway plist without one, and writes it again (still without) on `hermes ga
 `restart`, `install` and `hermes update`, whenever the file differs from the one it generates
 (`refresh_launchd_plist_if_needed`, which compares all of it but `PATH`); it never writes a
 dashboard's plist. The gateway itself (`hermes gateway run`) and `launchctl kickstart` leave the
-file alone. So the app's own Update Hermes and /restart reset it, and say so (below).
+file alone. So the app's own Update Hermes and /restart reset it, and say so (below). The cause
+is in Hermes Agent: `generate_launchd_plist` (`hermes_cli/gateway_launchd.py`) writes no
+ProcessType, and `refresh_launchd_plist_if_needed` counts one added by hand as a difference to
+undo. Upstream: issue #72210, PR #72211 (open, not merged); until it's in, the app doesn't work
+around it.
 
 - **Read:** `/app-push host` (push plugin 1.3.0, `hostinfo.report`) lists Hermes's launchd jobs on
   the gateway's Mac: its gateways (`ai.hermes.gateway*`), the `ai.hermes.*` jobs that run a
@@ -482,13 +486,18 @@ file alone. So the app's own Update Hermes and /restart reset it, and say so (be
   gateway job): "Updating resets Hermes to background priority on <gateway>. The app offers to
   restore it when it's done." (`GatewaySetup.updateConfirmation`).
 - **Beside Settings, on the Mac** (`macPriorityNotice`): while the gateway runs throttled (or will
-  from its next start) and Bot Mode is online, a small card at the bottom of the sidebar, above
-  the status and the Settings button: "Hermes runs at background priority", "When <gateway> is
-  busy, Hermes answers late or not at all.", Run at Full Priority… (this Mac) or Show Steps (opens
-  Settings → Setup), and Not Now. Not Now puts it away on this Mac until a read sees the gateway at
-  full priority again, so it comes back only after something resets it, never on a timer. The Mac
-  reads `/app-push host` when Bot Mode connects (at most hourly), so the card doesn't wait for
-  Settings. The iPhone and iPad keep it to Setup and the job results: they can't fix it.
+  from its next start) and Bot Mode is online, one line in the sidebar's footer, above the
+  connection and Settings: the warning glyph, "Background priority" ("Priority drops at next
+  start"), Fix… and × (Not Now). It never wraps: the words truncate, so it can't change the
+  window's layout at any sidebar width or text size. Its help and VoiceOver label carry the
+  headline and what it means ("Hermes runs at background priority. When <gateway> is busy, Hermes
+  answers late or not at all. Hermes Agent writes its plist without it on every restart and
+  update; the fix is hermes-agent pull request 72211."). Fix… is Run at Full Priority… with its
+  confirmation on this Mac, and opens Settings → Setup (the steps) for another. Not Now puts it
+  away on this Mac until a read sees the gateway at full priority again, so it comes back only
+  after something resets it, never on a timer. The Mac reads `/app-push host` when Bot Mode
+  connects (at most hourly), so the line doesn't wait for Settings. The iPhone and iPad keep it to
+  Setup and the job results: they can't fix it.
 
 ### 4.18 Bot-to-Bot replies
 

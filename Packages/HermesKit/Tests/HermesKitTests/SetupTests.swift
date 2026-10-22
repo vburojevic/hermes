@@ -576,9 +576,13 @@ struct GatewayPriorityTests {
         #expect(GatewaySetup.priorityReset(facts(.failed), after: .update, wasThrottled: false) == nil)
     }
 
+    private let fullGateway = GatewayHostReport.Job(label: "ai.hermes.gateway", role: .gateway, plistPath: "/Users/sam/Library/LaunchAgents/ai.hermes.gateway.plist",
+                                                    processType: "Interactive", spawnType: "interactive", pid: 40, priority: 31)
+
     @Test func theMacsNoticeAndTheUpdateConfirmation() throws {
         let notice = try #require(GatewaySetup.priorityNotice(facts(.report(report), thisMac: true)))
         #expect(notice.headline == "Hermes runs at background priority")
+        #expect(notice.label == "Background priority")
         #expect(notice.detail == "When this Mac is busy, Hermes answers late or not at all.")
         #expect(GatewaySetup.priorityNotice(facts(.report(report)))?.detail == "When Studio Mac is busy, Hermes answers late or not at all.")
         #expect(notice.canFixHere)
@@ -593,6 +597,18 @@ struct GatewayPriorityTests {
         #expect(GatewaySetup.updateConfirmation(facts(.report(report), thisMac: true)).hasSuffix("on this Mac. The app offers to restore it when it's done."))
         #expect(GatewaySetup.updateConfirmation(facts(.report(GatewayHostReport(os: "linux")))) == plain)
         #expect(GatewaySetup.updateConfirmation(facts(nil)) == plain)
+    }
+}
+
+extension GatewayPriorityTests {
+    /// The sidebar's line is short whichever way the gateway is throttled.
+    @Test func theNoticesLineIsShort() throws {
+        let rewritten = GatewayHostReport.Job(label: "ai.hermes.gateway", role: .gateway, plistPath: fullGateway.plistPath,
+                                              processType: nil, spawnType: "interactive", pid: 40, priority: 31)
+        let later = try #require(GatewaySetup.priorityNotice(facts(.report(GatewayHostReport(os: "darwin", jobs: [rewritten])), thisMac: true)))
+        #expect(later.label == "Priority drops at next start")
+        #expect(later.headline == "Hermes is set to background priority")
+        #expect(PriorityNotice.cause.contains("pull request 72211"))
     }
 }
 

@@ -195,11 +195,10 @@ struct SidebarFooter: View {
     var body: some View {
         VStack(spacing: 0) {
             #if os(macOS)
-            // Hermes at background priority on its Mac, beside Settings (`docs/setup.md` §4.17).
+            // Hermes at background priority on its Mac: one line above the connection
+            // (`docs/setup.md` §4.17).
             if let notice = workspace.setup.priorityNotice {
                 MacPriorityNotice(setup: workspace.setup, notice: notice)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
             }
             #endif
             row
