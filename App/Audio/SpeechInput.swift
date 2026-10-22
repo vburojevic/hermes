@@ -316,19 +316,23 @@ actor SpeechInput {
         volatile = ""
         consumer = try graph.addInputConsumer { buffer, time in feed.process(buffer, time: time) }
         let clips = AudioGraph.simulatedInput
-        // Words arrive when their clip is heard, counted from when the microphone started.
-        let begin = graph.simulatedStart ?? ProcessInfo.processInfo.systemUptime
         reader = Task { [weak self] in
             for clip in clips.sorted(by: { $0.at < $1.at }) {
                 guard let text = try? String(contentsOf: clip.url.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8),
                       let file = try? AVAudioFile(forReading: clip.url) else { continue }
                 let duration = Double(file.length) / file.processingFormat.sampleRate
                 let words = text.split(separator: " ")
-                for (index, _) in words.enumerated() {
-                    let at = clip.at + duration * Double(index + 1) / Double(words.count)
-                    let wait = begin + at - ProcessInfo.processInfo.systemUptime
-                    if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
-                    guard !Task.isCancelled else { return }
+                let times = SimulatedClock.wordTimes(count: words.count, clipAt: clip.at, duration: duration)
+                for (index, at) in times.enumerated() {
+                    // Words arrive when their clip is heard: on the microphone's clock, which
+                    // starts when listening does.
+                    while true {
+                        guard !Task.isCancelled else { return }
+                        let wait = graph.simulatedClock?.wait(until: at, at: ProcessInfo.processInfo.systemUptime)
+                        if wait == 0 { break }
+                        // Not listening yet: look again shortly.
+                        try? await Task.sleep(for: .seconds(wait ?? 0.05))
+                    }
                     await self?.apply(text: AttributedString(words[...index].joined(separator: " ")), isFinal: false, finalizedThrough: .invalid)
                 }
                 await self?.apply(text: AttributedString(text + " "), isFinal: true, finalizedThrough: .invalid)

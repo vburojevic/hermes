@@ -194,6 +194,7 @@ final class VoiceUITests: XCTestCase {
             "-HERMES_BOOTSTRAP_BACKEND", mock.backend.absoluteString,
             "-HERMES_TIPS", "hide", "-HERMES_WHATS_NEW", "NO",
         ] + arguments
+        if let delay = mock.engineStartDelay { app.launchArguments += ["-HERMES_ENGINE_START_DELAY", delay] }
         app.launch()
         addTeardownBlock { @MainActor in Self.endCallLeftRunning(in: app) }
         // The ask to install the app's plugin, on a fresh install.
@@ -239,6 +240,8 @@ private struct VoiceMock {
     let gateway: URL
     let backend: URL
     let clips: String
+    /// Seconds the app's audio engine waits before its first start (`HERMES_ENGINE_START_DELAY=12`).
+    let engineStartDelay: String?
     let key = "dev-key-0123456789abcdef"
 
     init() {
@@ -249,6 +252,8 @@ private struct VoiceMock {
         gateway = URL(string: setting("HermesMockGateway", "http://127.0.0.1:18642"))!
         backend = URL(string: setting("HermesMockBackend", "http://127.0.0.1:19119"))!
         clips = setting("HermesVoiceClips", "")
+        let delay = setting("HermesEngineStartDelay", "")
+        engineStartDelay = delay.isEmpty ? nil : delay
     }
 
     func clip(_ name: String, at seconds: Double) -> String {

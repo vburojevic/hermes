@@ -36,6 +36,9 @@ struct HermesApp: App {
                 return (URL(fileURLWithPath: String(path)), pieces.count > 1 ? Double(pieces[1]) ?? 0 : 0)
             }
         }
+        // `-HERMES_ENGINE_START_DELAY 12`: the audio engine's first start takes that much longer, as
+        // on a busy Mac.
+        AudioGraph.engineStartDelay = UserDefaults.standard.double(forKey: "HERMES_ENGINE_START_DELAY")
     }
     #endif
 

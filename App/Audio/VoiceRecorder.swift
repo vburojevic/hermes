@@ -277,6 +277,9 @@ final class VoiceRecorder {
             segments.append(url)
             segmentStartedAt = .now
             writer.consumer = try lease.graph.addInputConsumer { buffer, _ in writer.append(buffer) }
+            #if DEBUG
+            lease.graph.simulatedListeningStarted()
+            #endif
             listeners = Task { [weak self] in
                 await withTaskGroup(of: Void.self) { group in
                     group.addTask { [weak self] in

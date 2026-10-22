@@ -262,6 +262,9 @@ targets:
         HERMES_MOCK_BACKEND: http://127.0.0.1:19119
         # The spoken clips the simulated microphone plays (`-HERMES_VOICE_INPUT`).
         HERMES_VOICE_CLIPS: $(SRCROOT)/Tools/mock-hermes/voice
+        # Seconds the app's audio engine waits before its first start (`-HERMES_ENGINE_START_DELAY`),
+        # as on a busy Mac; empty for none.
+        HERMES_ENGINE_START_DELAY: ""
         # XCTestCase's initialisers aren't main-actor; the tests mark what drives the UI.
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 

@@ -8,5 +8,7 @@
 	<string>$(HERMES_MOCK_BACKEND)</string>
 	<key>HermesVoiceClips</key>
 	<string>$(HERMES_VOICE_CLIPS)</string>
+	<key>HermesEngineStartDelay</key>
+	<string>$(HERMES_ENGINE_START_DELAY)</string>
 </dict>
 </plist>

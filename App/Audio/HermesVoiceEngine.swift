@@ -157,6 +157,13 @@ final class HermesVoiceEngine {
         return await acquire(speaker: speaker)
     }
 
+    #if DEBUG
+    /// The call is listening: the simulated microphone's clips count from now.
+    func simulatedListeningStarted() {
+        lease?.graph.simulatedListeningStarted()
+    }
+    #endif
+
     /// The audio already taken goes to Realtime, which brings its own ears. Returns the engine to
     /// play and record through.
     func runRealtime() -> AudioGraph? {

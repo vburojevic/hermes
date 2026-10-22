@@ -221,6 +221,9 @@ final class HeyHermes {
             state = .failed(error.localizedDescription)
             return
         }
+        #if DEBUG
+        graph.simulatedListeningStarted()
+        #endif
         audio = continuation
         let frameLength = frameLength
         // Framed off the main actor: it hears about each batch (about three a second), not each buffer.

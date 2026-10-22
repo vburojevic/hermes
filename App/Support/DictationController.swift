@@ -96,6 +96,9 @@ final class DictationController {
             self.input = input
             startedAt = .now
             state = .listening
+            #if DEBUG
+            lease.graph.simulatedListeningStarted()
+            #endif
             events = Task { [weak self] in
                 await withTaskGroup(of: Void.self) { group in
                     group.addTask { [weak self] in

@@ -29,7 +29,13 @@ public final class AudioGraph: @unchecked Sendable {
     /// `-HERMES_VOICE_INPUT clip.caf@1.5,stop.caf@9`: spoken clips heard as if by the microphone,
     /// each at its second from when listening starts (simulators and UI tests have no microphone).
     nonisolated(unsafe) public static var simulatedInput: [(url: URL, at: TimeInterval)] = []
+    /// `-HERMES_ENGINE_START_DELAY 12`: the engine's first start takes this many seconds more, as
+    /// it can on a busy Mac (finding the audio units), to check that nothing counts on it.
+    nonisolated(unsafe) public static var engineStartDelay: TimeInterval = 0
     private var simulated: SimulatedMicrophone?
+    /// Listening started before the simulated microphone had a consumer: its clips count from
+    /// when it gets one.
+    private var simulatedListening = false
     #endif
 
     // MARK: Configuration (the coordinator)
@@ -117,10 +123,22 @@ public final class AudioGraph: @unchecked Sendable {
     // MARK: The microphone
 
     #if DEBUG
-    /// Debug: when the simulated microphone's timeline began (system uptime), so scripted words
-    /// arrive when their clip is heard, whenever the transcriber joined.
-    public var simulatedStart: TimeInterval? {
-        lock.withLock { simulated?.start }
+    /// Debug: the simulated microphone's clock, so scripted words arrive when their clip is
+    /// heard, whenever the transcriber joined.
+    public var simulatedClock: SimulatedClock? {
+        lock.withLock { simulated?.clock }
+    }
+
+    /// Debug: listening has started (a call reaching Listening, dictation, a voice message, the
+    /// wake word), so the simulated microphone's clips play from now. The first time counts.
+    public func simulatedListeningStarted() {
+        lock.withLock {
+            if let simulated {
+                simulated.begin()
+            } else if Self.isSimulated {
+                simulatedListening = true
+            }
+        }
     }
     #endif
 
@@ -154,7 +172,12 @@ public final class AudioGraph: @unchecked Sendable {
             consumers.withLock { $0[id] = consumer }
             #if DEBUG
             if !Self.simulatedInput.isEmpty {
-                if simulated == nil { simulated = SimulatedMicrophone(clips: Self.simulatedInput, consumers: consumers) }
+                if simulated == nil {
+                    let microphone = SimulatedMicrophone(clips: Self.simulatedInput, consumers: consumers)
+                    if simulatedListening { microphone.begin() }
+                    simulatedListening = false
+                    simulated = microphone
+                }
                 return id
             }
             #endif
@@ -181,6 +204,7 @@ public final class AudioGraph: @unchecked Sendable {
                 #if DEBUG
                 simulated?.stop()
                 simulated = nil
+                simulatedListening = false
                 #endif
                 removeTap()
                 if players.isEmpty { engine.stop() }
@@ -288,6 +312,13 @@ public final class AudioGraph: @unchecked Sendable {
 
     private func startLocked() throws {
         guard !engine.isRunning else { return }
+        #if DEBUG
+        if Self.engineStartDelay > 0 {
+            let delay = Self.engineStartDelay
+            Self.engineStartDelay = 0
+            Thread.sleep(forTimeInterval: delay)
+        }
+        #endif
         engine.prepare()
         try engine.start()
     }
@@ -494,15 +525,19 @@ public enum AudioLevel {
 
 #if DEBUG
 /// Plays clips into the microphone's consumers in real time, 50 ms at a time, with silence
-/// between them, as if someone were talking to the device.
+/// between them, as if someone were talking to the device. The clips wait for listening to start
+/// (`SimulatedClock`).
 final class SimulatedMicrophone: @unchecked Sendable {
     static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
 
     private let timer: any DispatchSourceTimer
     private var samples: [Float] = []
-    private var position = 0
-    /// When the clips' timeline began (system uptime).
-    let start = ProcessInfo.processInfo.systemUptime
+    /// How many samples have been played, on the timer's queue.
+    private var played = 0
+    private let clockState: OSAllocatedUnfairLock<SimulatedClock>
+    private let consumers: OSAllocatedUnfairLock<[UUID: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void]>
+
+    var clock: SimulatedClock { clockState.withLock { $0 } }
 
     init(clips: [(url: URL, at: TimeInterval)], consumers: OSAllocatedUnfairLock<[UUID: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void]>) {
         // One timeline: silence, and each clip at its time, mixed where they overlap (a TV with
@@ -515,23 +550,42 @@ final class SimulatedMicrophone: @unchecked Sendable {
             for (index, sample) in audio.enumerated() { timeline[offset + index] += sample }
         }
         samples = timeline
+        self.consumers = consumers
+        clockState = OSAllocatedUnfairLock(initialState: SimulatedClock(origin: ProcessInfo.processInfo.systemUptime))
         timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "simulated-microphone"))
-        let chunk = Int(Self.format.sampleRate / 20)
         timer.schedule(deadline: .now(), repeating: .milliseconds(50))
-        timer.setEventHandler { [weak self] in
-            guard let self, let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(chunk)) else { return }
-            buffer.frameLength = AVAudioFrameCount(chunk)
+        timer.setEventHandler { [weak self] in self?.play() }
+        timer.resume()
+    }
+
+    /// Listening started: the clips count from now.
+    func begin() {
+        clockState.withLock { $0.begin(at: ProcessInfo.processInfo.systemUptime) }
+    }
+
+    /// Plays what's due by now, in buffers of at most 50 ms, each stamped with when it's heard:
+    /// a timer that fires late (a busy Mac) catches up rather than falling behind the words.
+    private func play() {
+        let clock = self.clock
+        let rate = Self.format.sampleRate
+        let due = clock.samplesDue(at: ProcessInfo.processInfo.systemUptime, sampleRate: rate)
+        let chunk = Int(rate / 20)
+        while played < due {
+            let count = min(chunk, due - played)
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(count)) else { return }
+            buffer.frameLength = AVAudioFrameCount(count)
             let out = buffer.floatChannelData![0]
-            for index in 0..<chunk {
-                let sample = self.position < self.samples.count ? self.samples[self.position] : 0
+            let first = clock.timelineIndex(ofSample: played, sampleRate: rate)
+            for index in 0..<count {
+                let position = first.map { $0 + index } ?? -1
+                let sample = position >= 0 && position < samples.count ? samples[position] : 0
                 // A little room noise, so voice activity has a floor to stand on.
                 out[index] = sample + Float.random(in: -0.0005...0.0005)
-                self.position += 1
             }
-            let time = AVAudioTime(hostTime: mach_absolute_time())
+            let time = AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: clock.uptime(ofSample: played, sampleRate: rate)))
+            played += count
             for consumer in consumers.withLock({ Array($0.values) }) { consumer(buffer, time) }
         }
-        timer.resume()
     }
 
     func stop() {

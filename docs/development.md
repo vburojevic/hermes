@@ -66,6 +66,7 @@ pulling), then
 ```sh
 xcodebuild -project Hermes.xcodeproj -scheme HermesUITests -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 # a mock elsewhere: add HERMES_MOCK_GATEWAY=http://127.0.0.1:28642 HERMES_MOCK_BACKEND=http://127.0.0.1:29119
+# Voice tests with a slow audio engine, as on a busy Mac: add HERMES_ENGINE_START_DELAY=12
 ```
 
 They cover opening at the New Messages line, the jump pill marking a chat read, and Mark as Read /
@@ -496,6 +497,11 @@ at the real microphone): `-HERMES_VOICE_INPUT <path>@<seconds>,…` plays spoken
 the microphone, each at its second from when listening starts (overlapping clips mix: a TV with
 someone talking over it), e.g.
 `-HERMES_VOICE_INPUT $PWD/Tools/mock-hermes/voice/check-nas.m4a@2,$PWD/Tools/mock-hermes/voice/allow-once.m4a@11`.
+Listening starts when a call reaches Listening, dictation listens, a voice message records or the
+wake word listens; until then the microphone hears a quiet room, so a call slow to get there plays
+its clips late rather than to no one. The clips and their words keep one clock:
+`-HERMES_ENGINE_START_DELAY <seconds>` holds the audio engine's first start back that long, as a
+busy Mac can, to check that nothing counts on a quick start.
 Voice activity, endpointing and barge-in run on that audio. `-HERMES_REALTIME_LOOPBACK YES`
 (iPhone and iPad, with `{"realtime": true}` on the mock) answers Realtime's WebRTC offer with a
 peer in the app instead of OpenAI: it speaks in bursts (four seconds on, four off) and logs how

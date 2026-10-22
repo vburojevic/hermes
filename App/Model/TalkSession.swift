@@ -1012,6 +1012,9 @@ final class TalkSession: Identifiable, TalkDisplay {
             self.beganAt = nil
             readyAfter = ProcessInfo.processInfo.systemUptime - beganAt
             TalkCenter.logger.info("listening \(Int((self.readyAfter ?? 0) * 1000)) ms after the call started (\(self.engineName, privacy: .public))")
+            #if DEBUG
+            voice.simulatedListeningStarted()
+            #endif
         }
         if next != .approval { approvalHint = nil }
         announce(next)

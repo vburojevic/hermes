@@ -2032,6 +2032,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				GENERATE_INFOPLIST_FILE = YES;
+				HERMES_ENGINE_START_DELAY = "";
 				HERMES_MOCK_BACKEND = "http://127.0.0.1:19119";
 				HERMES_MOCK_GATEWAY = "http://127.0.0.1:18642";
 				HERMES_VOICE_CLIPS = "$(SRCROOT)/Tools/mock-hermes/voice";
@@ -2302,6 +2303,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				GENERATE_INFOPLIST_FILE = YES;
+				HERMES_ENGINE_START_DELAY = "";
 				HERMES_MOCK_BACKEND = "http://127.0.0.1:19119";
 				HERMES_MOCK_GATEWAY = "http://127.0.0.1:18642";
 				HERMES_VOICE_CLIPS = "$(SRCROOT)/Tools/mock-hermes/voice";
