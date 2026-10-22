@@ -397,7 +397,7 @@ final class TalkSession: Identifiable, TalkDisplay {
                 guard let voice = self?.voice else { return }
                 let changes = Observations { [weak self, voice] in
                     EngineSnapshot(state: voice.state, speaking: self?.realtime?.isSpeaking ?? voice.isSpeaking, muted: voice.isMuted,
-                                   interrupted: voice.isInterrupted)
+                                   interrupted: voice.isInterrupted, realtimeConnecting: self?.realtime?.state == .connecting)
                 }
                 for await _ in changes {
                     guard let self, !self.ended else { return }
@@ -549,6 +549,8 @@ final class TalkSession: Identifiable, TalkDisplay {
         } catch {
             TalkCenter.logger.error("realtime didn't start: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
             self.realtime = nil
+            // Its peer connection and audio go; the call has already moved on, so this ends nothing.
+            realtime.close()
             notice = String(localized: "Realtime couldn't connect. Using Hermes Voice.")
             return false
         }
@@ -967,7 +969,10 @@ final class TalkSession: Identifiable, TalkDisplay {
         case .failed(let message): next = .failed(message)
         case .idle, .starting: next = .connecting
         case .running:
-            if voice.isInterrupted {
+            if realtime?.state == .connecting {
+                // Nothing hears the person until Realtime is connected (or Hermes Voice takes over).
+                next = .connecting
+            } else if voice.isInterrupted {
                 next = .onHold
             } else if !isReachable, !conversation.isWorking {
                 next = .offline
@@ -1022,6 +1027,7 @@ private struct EngineSnapshot: Equatable {
     var speaking: Bool
     var muted: Bool
     var interrupted: Bool
+    var realtimeConnecting: Bool
 }
 
 /// A call that ended, folded into one card in its chat (`callSummary`, `docs/voice.md` §4.3).

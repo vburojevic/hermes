@@ -416,8 +416,15 @@ extension RealtimeTalk: RTCPeerConnectionDelegate {
 
 extension RealtimeTalk: RTCDataChannelDelegate {
     nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        guard dataChannel.readyState == .closed else { return }
-        Task { @MainActor in self.finish("connection_lost") }
+        switch dataChannel.readyState {
+        case .open:
+            // Connected: GPT-Live hears from now on (its `session.started` may come later).
+            Task { @MainActor in if self.state == .connecting { self.state = .live } }
+        case .closed:
+            Task { @MainActor in self.finish("connection_lost") }
+        default:
+            break
+        }
     }
 
     nonisolated func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
