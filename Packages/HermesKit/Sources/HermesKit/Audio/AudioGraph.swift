@@ -505,12 +505,14 @@ final class SimulatedMicrophone: @unchecked Sendable {
     let start = ProcessInfo.processInfo.systemUptime
 
     init(clips: [(url: URL, at: TimeInterval)], consumers: OSAllocatedUnfairLock<[UUID: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void]>) {
-        // One timeline: silence, then each clip at its time.
+        // One timeline: silence, and each clip at its time, mixed where they overlap (a TV with
+        // someone talking over it).
         var timeline: [Float] = []
-        for clip in clips.sorted(by: { $0.at < $1.at }) {
+        for clip in clips {
             let offset = Int(clip.at * Self.format.sampleRate)
-            if timeline.count < offset { timeline += [Float](repeating: 0, count: offset - timeline.count) }
-            timeline += Self.read(clip.url)
+            let audio = Self.read(clip.url)
+            if timeline.count < offset + audio.count { timeline += [Float](repeating: 0, count: offset + audio.count - timeline.count) }
+            for (index, sample) in audio.enumerated() { timeline[offset + index] += sample }
         }
         samples = timeline
         timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "simulated-microphone"))

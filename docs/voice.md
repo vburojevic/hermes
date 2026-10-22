@@ -199,6 +199,15 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
     (everything else 40 dB down, with 100 ms of lookahead so a word's soft start passes, open for
     250 ms after). A transcriber hearing the Bot's echo or a TV takes it for one long utterance and
     reports a word said over it seconds late; heard alone, "stop" comes back in about 0.35 s.
+- **Realtime hears only the person while it speaks** (iPhone and iPad): GPT-Live's barge-in is
+  its own, with no noise settings, and takes any voice for the person. So while its audio was
+  loud in the last 0.4 s, what `GraphAudioDevice` sends it goes through a `NearGate` (50 ms of
+  lookahead, `NearGate.realtimeLookahead`), with the threshold from `TalkEars` fed the microphone's
+  levels in `RealtimeTalk`: a TV or people across the room arrive 40 dB down, the person's voice
+  whole. The ears learn the person's level from turns GPT-Live transcribed, and a voice heard just
+  before it answered is never the room's (`botAnswered`: its transcript can come later). A loud
+  room offers Voice Isolation as with Hermes Voice. On the Mac WebRTC owns the microphone, so
+  there's only mute. Checked without OpenAI with `-HERMES_REALTIME_LOOPBACK` (development.md).
 - **Barge-in**: a near voice for 100 ms (steady: five of the last six frames, outside the first
   300 ms of each stretch of the Bot's speech) lowers the Bot to 20% within 60 ms, so it yields as
   you start. It stops (an 80 ms fade) only on the person's words: a stop phrase ("stop", "wait",

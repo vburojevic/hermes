@@ -13,7 +13,9 @@ import os
 /// `session.commentary.append`), as Hermes Desktop does.
 ///
 /// On iPhone and iPad its audio runs through the coordinator's engine (`GraphAudioDevice`), so
-/// voice processing removes the Bot from the microphone and the face moves with the real output.
+/// voice processing removes the Bot from the microphone and the face moves with the real output,
+/// and Talk's ears (`TalkEars`) keep the room out of what GPT-Live hears while it speaks: its own
+/// barge-in would stop for a TV.
 /// WebRTC's Mac SDK has no custom audio device: there it uses its own Core Audio module and echo
 /// canceller, and the levels come from its statistics.
 @MainActor
@@ -34,10 +36,18 @@ final class RealtimeTalk: NSObject {
     #if os(iOS)
     var outputLevel: Float { device?.outputLevel ?? 0 }
     var inputLevel: Float { device?.inputLevel ?? 0 }
+    /// The room is as loud as the person (`TalkEars.isLoud`).
+    private(set) var isLoudRoom = false
     @ObservationIgnored private var device: GraphAudioDevice?
+    @ObservationIgnored private var ears = TalkEars()
+    @ObservationIgnored private var hearing: Task<Void, Never>?
+    /// The person said something since GPT-Live last spoke: their turn, for their level.
+    @ObservationIgnored private var personSpoke = false
     #else
     private(set) var outputLevel: Float = 0
     private(set) var inputLevel: Float = 0
+    /// WebRTC owns the Mac's microphone: there's nothing to hear the room with.
+    var isLoudRoom: Bool { false }
     #endif
 
     /// The person asked for something: the delegation's id, what they said last and the recent
@@ -54,6 +64,9 @@ final class RealtimeTalk: NSObject {
     @ObservationIgnored private var eventNumber = 0
     @ObservationIgnored private var speakingSince: Date?
     @ObservationIgnored private var levelWatch: Task<Void, Never>?
+    #if DEBUG && os(iOS)
+    @ObservationIgnored private var loopback: RealtimeLoopback?
+    #endif
     static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "talk")
 
     /// GPT-Live keeps appended text to this many characters a message.
@@ -70,6 +83,11 @@ final class RealtimeTalk: NSObject {
         #if os(iOS)
         let device = GraphAudioDevice(graph: graph)
         self.device = device
+        let (frames, continuation) = AsyncStream<(TimeInterval, [Float])>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        device.onFrames { start, levels in continuation.yield((start, levels)) }
+        hearing = Task { [weak self] in
+            for await (start, levels) in frames { self?.hear(levels, from: start) }
+        }
         let factory = RTCPeerConnectionFactory(encoderFactory: nil, decoderFactory: nil, audioDevice: device)
         #else
         let factory = RTCPeerConnectionFactory(encoderFactory: nil, decoderFactory: nil)
@@ -104,7 +122,19 @@ final class RealtimeTalk: NSObject {
         }
         await waitForIceGathering(connection)
         guard let sdp = connection.localDescription?.sdp else { throw Failure.couldNotConnect }
-        let answer = try await backend.voiceLiveSession(offer: sdp, history: history, profile: profile)
+        let answer: String
+        #if DEBUG && os(iOS)
+        if RealtimeLoopback.isOn {
+            // `-HERMES_REALTIME_LOOPBACK YES`: a peer in the app answers instead of GPT-Live.
+            let loopback = RealtimeLoopback()
+            self.loopback = loopback
+            answer = try await loopback.answer(sdp)
+        } else {
+            answer = try await backend.voiceLiveSession(offer: sdp, history: history, profile: profile)
+        }
+        #else
+        answer = try await backend.voiceLiveSession(offer: sdp, history: history, profile: profile)
+        #endif
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             connection.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer)) { error in
                 if let error { continuation.resume(throwing: error) } else { continuation.resume() }
@@ -222,11 +252,51 @@ final class RealtimeTalk: NSObject {
                 let loud = self.outputLevel > 0.12
                 if loud { self.speakingSince = .now }
                 let speaking = self.speakingSince.map { Date.now.timeIntervalSince($0) < 0.4 } ?? false
-                if speaking != self.isSpeaking { self.isSpeaking = speaking }
+                if speaking != self.isSpeaking {
+                    self.isSpeaking = speaking
+                    #if os(iOS)
+                    self.speakingChanged(speaking)
+                    #endif
+                }
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
     }
+
+    #if os(iOS)
+    /// The microphone's 20 ms levels: the ears learn the room and the person, and the gate gets
+    /// their threshold.
+    private func hear(_ levels: [Float], from start: TimeInterval) {
+        // The Bot's level as the face shows it (0…1 over −50…0 dB), back in dBFS.
+        let bot = isSpeaking && outputLevel > 0 ? outputLevel * 50 - 50 : nil
+        for (index, level) in levels.enumerated() {
+            _ = ears.frame(level: level, at: start + Double(index) * 0.02, botLevel: bot)
+        }
+        device?.nearThreshold = ears.nearThreshold
+        if ears.isLoud != isLoudRoom {
+            isLoudRoom = ears.isLoud
+            let ceiling = Int(ears.ceiling.rounded()), person = Int((ears.personLevel ?? 0).rounded())
+            Self.logger.info("realtime: \(self.isLoudRoom ? "loud room" : "room quieter", privacy: .public): ceiling \(ceiling) dB, person \(person) dB")
+        }
+    }
+
+    /// GPT-Live started or stopped: the person's turn before it teaches the ears how loud they
+    /// are, and the gate shuts on the room while it talks.
+    private func speakingChanged(_ speaking: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if speaking {
+            ears.botAnswered(at: now)
+            ears.turnEnded(at: now, sent: personSpoke)
+            personSpoke = false
+            ears.botStarted(at: now, saying: saying)
+            let person = ears.personLevel.map { "\(Int($0.rounded())) dB" } ?? "not known yet"
+            Self.logger.info("realtime: gate at \(Int(self.ears.nearThreshold.rounded())) dB while it speaks, floor \(Int(self.ears.floor.rounded())) dB, person \(person, privacy: .public)")
+        } else {
+            _ = ears.botStopped(at: now)
+            Self.logger.info("realtime: it stopped speaking, the gate is open")
+        }
+    }
+    #endif
 
     #if os(macOS)
     /// The audio levels WebRTC reports (0…1 linear), as the meters show them.
@@ -258,6 +328,12 @@ final class RealtimeTalk: NSObject {
             fragments.append((isUser, delta, .now))
             if fragments.count > 2000 { fragments.removeFirst(500) }
             if isUser { heard += delta; saying = "" } else { saying += delta; heard = "" }
+            #if os(iOS)
+            if isUser {
+                personSpoke = true
+                _ = ears.heard(HeardWords(volatile: heard), at: ProcessInfo.processInfo.systemUptime)
+            }
+            #endif
         case "session.delegation.created":
             guard let id = event["delegation"]?["id"]?.stringValue else { return }
             let (prompt, context) = delegationPrompt()
@@ -299,7 +375,14 @@ final class RealtimeTalk: NSObject {
         connection?.close()
         channel = nil
         connection = nil
+        #if DEBUG && os(iOS)
+        loopback?.close()
+        loopback = nil
+        #endif
         #if os(iOS)
+        hearing?.cancel()
+        hearing = nil
+        device?.onFrames(nil)
         device?.shutDown()
         device = nil
         #endif

@@ -9,11 +9,14 @@ import Foundation
 /// lowered by 40 dB, and it opens for sound above it with a little lookahead (the start of a
 /// word is quieter than its middle) and holds open for a breath after.
 ///
-/// The audio comes out `delay` late, always, so the transcriber's timeline never jumps.
+/// The audio comes out `lookahead` late, always, so the transcriber's timeline never jumps.
+/// Realtime uses less (`realtimeLookahead`): everything GPT-Live hears is that much later.
 /// Runs on the audio thread: no locks, no allocation after the first buffer.
 public struct NearGate: Sendable {
     /// Lookahead: the output runs this far behind the input.
     public static let delay: TimeInterval = 0.1
+    /// Realtime's: GPT-Live answers after its own pause, so every reply would wait the lookahead.
+    public static let realtimeLookahead: TimeInterval = 0.05
     /// Open this long after the last near sound.
     public static let hangover: TimeInterval = 0.25
     private static let closedGain: Float = 0.01
@@ -23,6 +26,7 @@ public struct NearGate: Sendable {
     public var threshold: Float?
 
     public let sampleRate: Double
+    public let lookahead: TimeInterval
     private var line: [Float]
     private var position = 0
     /// Input samples seen, and the gate's state in input samples.
@@ -35,9 +39,10 @@ public struct NearGate: Sendable {
     private var windowCount = 0
     private let step: Float
 
-    public init(sampleRate: Double) {
+    public init(sampleRate: Double, lookahead: TimeInterval = NearGate.delay) {
         self.sampleRate = sampleRate
-        delaySamples = max(1, Int(Self.delay * sampleRate))
+        self.lookahead = lookahead
+        delaySamples = max(1, Int(lookahead * sampleRate))
         windowSamples = max(1, Int(Self.window * sampleRate))
         line = [Float](repeating: 0, count: delaySamples)
         // About 5 ms from shut to open, so nothing clicks.

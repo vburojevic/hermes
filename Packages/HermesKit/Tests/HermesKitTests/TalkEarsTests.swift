@@ -287,6 +287,24 @@ struct TalkEarsTests {
         #expect(!replay.ears.isLoud)
     }
 
+    @Test func aVoiceRealtimeAnsweredIsThePersonsNotTheRooms() {
+        // GPT-Live answers before its transcript of the person arrives: no words reach the ears.
+        func ceiling(answered: Bool) -> Float {
+            var replay = Replay(personLevel: nil)
+            replay.run(until: 2, level: { _ in -60 })
+            replay.run(until: 5, level: Self.syllables(-24, from: 2, to: 5, quiet: -58))
+            replay.run(until: 5.6, level: { _ in -60 })
+            if answered { replay.ears.botAnswered(at: replay.time) }
+            replay.ears.turnEnded(at: replay.time, sent: false)
+            replay.botSpeaks()
+            replay.run(until: 7, level: { _ in -60 }, bot: { _ in -20 })
+            return replay.ears.ceiling
+        }
+        // Counted as the room, the person's own voice would set the gate above them.
+        #expect(ceiling(answered: false) > -30)
+        #expect(ceiling(answered: true) < -50)
+    }
+
     @Test func stopPhrases() {
         #expect(TalkEars.isStopPhrase("stop"))
         #expect(TalkEars.isStopPhrase("Wait!"))

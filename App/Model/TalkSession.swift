@@ -175,7 +175,7 @@ final class TalkSession: Identifiable, TalkDisplay {
     var isHearingSpeech: Bool { voice.isHearingSpeech }
     /// A room as loud as the person (`docs/voice.md` §4.2): the call says to tap, and offers Voice
     /// Isolation.
-    var isLoudRoom: Bool { realtime == nil && voice.isLoudRoom }
+    var isLoudRoom: Bool { realtime?.isLoudRoom ?? voice.isLoudRoom }
     private var isSpeaking: Bool { realtime?.isSpeaking ?? voice.isSpeaking }
 
     /// The state's name under the face.

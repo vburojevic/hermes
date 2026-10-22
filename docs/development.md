@@ -480,9 +480,15 @@ where the top bar ends and the composer's top, the two the menu's room comes fro
 
 Voice without a microphone (simulators, UI tests, a Mac build started from a shell, which TCC stops
 at the real microphone): `-HERMES_VOICE_INPUT <path>@<seconds>,…` plays spoken clips as if heard by
-the microphone, each at its second from when listening starts, e.g.
+the microphone, each at its second from when listening starts (overlapping clips mix: a TV with
+someone talking over it), e.g.
 `-HERMES_VOICE_INPUT $PWD/Tools/mock-hermes/voice/check-nas.m4a@2,$PWD/Tools/mock-hermes/voice/allow-once.m4a@11`.
-Voice activity, endpointing and barge-in run on that audio. Simulators can't run the speech model,
+Voice activity, endpointing and barge-in run on that audio. `-HERMES_REALTIME_LOOPBACK YES`
+(iPhone and iPad, with `{"realtime": true}` on the mock) answers Realtime's WebRTC offer with a
+peer in the app instead of OpenAI: it speaks in bursts (four seconds on, four off) and logs how
+loud what it hears is ("loopback heard -81 dB at 11.5 s, speaking", category `talk`), so the gate
+can be checked with clips: a TV across the room is 40 dB down while it speaks, a near voice whole.
+Nothing reaches a provider. Simulators can't run the speech model,
 so there the words come from the `.txt` beside each clip, appearing as it plays. The clips in
 `Tools/mock-hermes/voice/` were made with `say` and `afconvert -f m4af -d aac -b 32000 -c 1`;
 `loud-tv` is three `say` voices mixed with `ffmpeg` at about the level of the others, with an empty

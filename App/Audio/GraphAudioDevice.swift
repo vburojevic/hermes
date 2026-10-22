@@ -9,12 +9,21 @@ import Synchronization
 /// (`docs/voice.md` §4.2): the microphone's shared tap feeds the call as 16-bit PCM, and WebRTC's
 /// playout renders into a source node in the same voice-processing engine, so the echo canceller
 /// hears GPT-Live and the face can follow its real level. Runs on audio threads.
+///
+/// While GPT-Live speaks, what it hears goes through a `NearGate` (`docs/voice.md` §4.2): its own
+/// barge-in takes any voice for the person, so a TV or people across the room would cut it off.
+/// The gate's threshold comes from Talk's ears on the main actor (`nearThreshold`), fed the
+/// microphone's 20 ms levels (`onFrames`).
 nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked Sendable {
     static let sampleRate: Double = 48_000
     private static let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
+    /// GPT-Live counts as speaking this long after its audio was last loud (between words).
+    private static let speakingHangover: TimeInterval = 0.4
+    private static let loudOutput: Float = 0.12
 
     private let graph: AudioGraph
     private let state = Mutex(State())
+    private let gate = Mutex(NearGate(sampleRate: GraphAudioDevice.sampleRate, lookahead: NearGate.realtimeLookahead))
     /// What the audio threads read and write, without locks.
     private let live = Live()
 
@@ -23,6 +32,10 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
         let input = Atomic<UInt32>(0)
         let muted = Atomic<Bool>(false)
         let playing = Atomic<Bool>(false)
+        /// The gate's threshold in dBFS; NaN while the ears don't know one.
+        let near = Atomic<UInt32>(Float.nan.bitPattern)
+        /// Host time until which GPT-Live counts as speaking.
+        let speakingUntil = Atomic<UInt64>(0)
     }
 
     private struct State {
@@ -37,6 +50,7 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
         var playing = false
         var recordingInitialized = false
         var recording = false
+        var onFrames: (@Sendable (TimeInterval, [Float]) -> Void)?
     }
 
     init(graph: AudioGraph) {
@@ -50,6 +64,20 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
     var isMuted: Bool {
         get { live.muted.load(ordering: .relaxed) }
         set { live.muted.store(newValue, ordering: .relaxed) }
+    }
+    /// The quietest sound that's the person while GPT-Live speaks (`TalkEars.nearThreshold`).
+    var nearThreshold: Float? {
+        get {
+            let value = Float(bitPattern: live.near.load(ordering: .relaxed))
+            return value.isNaN ? nil : value
+        }
+        set { live.near.store((newValue ?? .nan).bitPattern, ordering: .relaxed) }
+    }
+
+    /// The microphone's 20 ms levels in dBFS with when the first was heard (system uptime), for
+    /// Talk's ears. Set before recording starts.
+    func onFrames(_ handler: (@Sendable (TimeInterval, [Float]) -> Void)?) {
+        state.withLock { $0.onFrames = handler }
     }
 
     func shutDown() {
@@ -106,6 +134,7 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
         let playout = state.withLock { $0.playout }
         guard let playout else { return false }
         let live = live
+        let hangover = AVAudioTime.hostTime(forSeconds: Self.speakingHangover)
         // The render thread reads only atomics and the playout block.
         let node = AVAudioSourceNode(format: Self.format) { isSilence, timestamp, frameCount, outputData in
             guard live.playing.load(ordering: .relaxed) else {
@@ -116,7 +145,12 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
             }
             var flags = AudioUnitRenderActionFlags()
             let status = playout(&flags, timestamp, 0, frameCount, outputData)
-            live.output.store(Self.level(outputData, frames: Int(frameCount)).bitPattern, ordering: .relaxed)
+            let level = Self.level(outputData, frames: Int(frameCount))
+            live.output.store(level.bitPattern, ordering: .relaxed)
+            if level > Self.loudOutput {
+                let now = timestamp.pointee.mFlags.contains(.hostTimeValid) ? timestamp.pointee.mHostTime : mach_absolute_time()
+                live.speakingUntil.store(now + hangover, ordering: .relaxed)
+            }
             return status
         }
         do {
@@ -156,7 +190,7 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
     }
 
     func startRecording() -> Bool {
-        guard let id = try? graph.addInputConsumer({ [weak self] buffer, _ in self?.record(buffer) }) else { return false }
+        guard let id = try? graph.addInputConsumer({ [weak self] buffer, time in self?.record(buffer, at: time) }) else { return false }
         state.withLock {
             $0.consumer = id
             $0.recording = true
@@ -177,16 +211,20 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
 
     // MARK: Audio threads
 
-    /// One microphone buffer, as 48 kHz 16-bit mono, into WebRTC.
-    private func record(_ buffer: AVAudioPCMBuffer) {
+    /// One microphone buffer, as 48 kHz 16-bit mono, into WebRTC: gated while GPT-Live speaks.
+    private func record(_ buffer: AVAudioPCMBuffer, at time: AVAudioTime) {
         live.input.store(AudioLevel.level(of: buffer).bitPattern, ordering: .relaxed)
-        let (deliver, converter) = state.withLock { state -> (RTCAudioDeviceDeliverRecordedDataBlock?, AVAudioConverter?) in
+        let (deliver, converter, onFrames) = state.withLock { state -> (RTCAudioDeviceDeliverRecordedDataBlock?, AVAudioConverter?, (@Sendable (TimeInterval, [Float]) -> Void)?) in
             if state.converter == nil || state.converter?.inputFormat != buffer.format {
                 state.converter = AVAudioConverter(from: buffer.format, to: Self.format)
                 state.converter?.primeMethod = .none
                 if buffer.format.channelCount > 1 { state.converter?.channelMap = [0] }
             }
-            return (state.deliver, state.converter)
+            return (state.deliver, state.converter, state.onFrames)
+        }
+        let host = time.isHostTimeValid ? time.hostTime : mach_absolute_time()
+        if let onFrames {
+            onFrames(AVAudioTime.seconds(forHostTime: host), AudioLevel.decibelWindows(of: buffer, size: max(1, Int(buffer.format.sampleRate / 50))))
         }
         guard let deliver, let converter else { return }
         let capacity = AVAudioFrameCount((Double(buffer.frameLength) * Self.sampleRate / buffer.format.sampleRate).rounded(.up)) + 16
@@ -201,10 +239,15 @@ nonisolated final class GraphAudioDevice: NSObject, RTCAudioDevice, @unchecked S
             status.pointee = .haveData
             return buffer
         }
-        guard status != .error, converted.frameLength > 0 else { return }
-        if isMuted, let samples = converted.int16ChannelData?[0] {
-            samples.update(repeating: 0, count: Int(converted.frameLength))
+        guard status != .error, converted.frameLength > 0, let samples = converted.int16ChannelData?[0] else { return }
+        let count = Int(converted.frameLength)
+        let speaking = host < live.speakingUntil.load(ordering: .relaxed)
+        let near = nearThreshold
+        gate.withLock { gate in
+            gate.threshold = speaking ? near : nil
+            gate.process(UnsafeMutableBufferPointer(start: samples, count: count))
         }
+        if isMuted { samples.update(repeating: 0, count: count) }
         var flags = AudioUnitRenderActionFlags()
         var timestamp = AudioTimeStamp()
         timestamp.mSampleTime = 0

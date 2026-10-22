@@ -353,6 +353,15 @@ public struct TalkEars: Sendable {
         ending = false
     }
 
+    /// Realtime: GPT-Live answered what it heard, and its transcript of the person can come after it
+    /// starts. A voice heard just before it started was the person's, so it isn't the room's (the
+    /// ceiling would rise to their level and shut them out of the gate).
+    public mutating func botAnswered(at time: TimeInterval) {
+        guard let start = turnStart, let last = nearLast, time - last <= 1.5 else { return }
+        if !turnHasWords { forgetRoom(since: start) }
+        turnHasWords = true
+    }
+
     /// Muted: nothing heard counts, and a lowered Bot comes back.
     public mutating func muted(at time: TimeInterval) -> [Decision] {
         nearSince = nil

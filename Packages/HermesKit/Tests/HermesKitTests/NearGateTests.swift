@@ -75,6 +75,24 @@ struct NearGateTests {
         #expect(Self.level(output, from: 1.4, to: 1.9) < -80)
     }
 
+    @Test func realtimesShorterLookaheadStillKeepsAWordsStart() {
+        let input = Self.signal(seconds: 2, level: -20, from: 1.0, to: 1.4, quiet: -45)
+        var gate = NearGate(sampleRate: Self.rate, lookahead: NearGate.realtimeLookahead)
+        gate.threshold = -30
+        var output = input
+        output.withUnsafeMutableBufferPointer { gate.process($0) }
+        let delay = Int(NearGate.realtimeLookahead * Self.rate)
+        #expect(output.prefix(delay).allSatisfy { $0 == 0 })
+        // The word, and the 30 ms before it, as they came in, 50 ms late.
+        func level(_ start: Double, _ end: Double) -> Float {
+            let slice = output[(Int(start * Self.rate) + delay)..<(Int(end * Self.rate) + delay)]
+            return 10 * log10(max(slice.reduce(0) { $0 + $1 * $1 } / Float(slice.count), 1e-12))
+        }
+        #expect(abs(level(1.0, 1.4) - -20) < 0.5)
+        #expect(level(0.97, 0.99) > -46)
+        #expect(level(0.3, 0.8) < -80)
+    }
+
     @Test func int16AudioIsGatedTheSameWay() {
         let floats = Self.signal(seconds: 2, level: -20, from: 1.0, to: 1.4, quiet: -45)
         var samples = floats.map { Int16(max(-32768, min(32767, $0 * 32768))) }

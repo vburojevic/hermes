@@ -163,6 +163,7 @@
 		8663174E02D9BDF1BC270291 /* WelcomeDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11EA5EF1AAB5B7B845A055F6 /* WelcomeDemo.swift */; };
 		86872F98BB9420D033F6D558 /* PairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EACA4AA1B8418DE48E92A67F /* PairingSheet.swift */; };
 		88437626B47FBF14208587E1 /* ProcessesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F281FE5600EDDA0A9346D0D /* ProcessesUITests.swift */; };
+		88CE05BA29E44C4530461A06 /* RealtimeLoopback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE9826FCF3D6E495D0E05B71 /* RealtimeLoopback.swift */; };
 		88E5D9824CA1829DEF0D4107 /* PushCenter+Reading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F3156BEEB744D34AF184FB /* PushCenter+Reading.swift */; };
 		89BBF2D076CAF94E7DCAF569 /* TurnActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B44702411639E8D97E9C1E82 /* TurnActivityController.swift */; };
 		89BD93FD7DE3226482F9F0AF /* UserNotificationsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 09D79A2D0DD71C89124CB886 /* UserNotificationsUI.framework */; };
@@ -556,6 +557,7 @@
 		A9F5D3D1C902546563CD5B47 /* AssistantTurnView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTurnView.swift; sourceTree = "<group>"; };
 		AA37B05C9FBD7C0BDC8CE5EB /* ReplyBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyBody.swift; sourceTree = "<group>"; };
 		ACCA4781D9F09B89A5B9928C /* WidgetSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSigner.swift; sourceTree = "<group>"; };
+		AE9826FCF3D6E495D0E05B71 /* RealtimeLoopback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeLoopback.swift; sourceTree = "<group>"; };
 		AF20C6204B0EFEB101AF72A8 /* BoardCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCopy.swift; sourceTree = "<group>"; };
 		B0D882C904BE141DEB048F86 /* SpokenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpokenPlayer.swift; sourceTree = "<group>"; };
 		B15704D57892BBF084B64B57 /* MacDebugDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDebugDriver.swift; sourceTree = "<group>"; };
@@ -1011,6 +1013,7 @@
 				203DAC47C6E03EE23A70BB37 /* DesignGallery.swift */,
 				202B1FF9B6247201C0904CDF /* IndicatorsGallery.swift */,
 				EACF39E5928B0D874FC0CD68 /* PriorityGallery.swift */,
+				AE9826FCF3D6E495D0E05B71 /* RealtimeLoopback.swift */,
 				7A9B63399C182A992D6A5ED0 /* TalkStage.swift */,
 			);
 			path = Debug;
@@ -1855,6 +1858,7 @@
 				E0F261BA011122192DECBCA9 /* QuickOpenView.swift in Sources */,
 				E39645051EA4341360C7E6EB /* QuoteMemory.swift in Sources */,
 				199EA52B9B260954C0E952AC /* ReadRecheck.swift in Sources */,
+				88CE05BA29E44C4530461A06 /* RealtimeLoopback.swift in Sources */,
 				18655E6E2F858030BD4FBE42 /* RealtimeTalk.swift in Sources */,
 				AB8ED4FAF20C225BAA0592BB /* ReferenceContext.swift in Sources */,
 				8E30CC8324EBFED6EBB181DC /* ReferencePills.swift in Sources */,
