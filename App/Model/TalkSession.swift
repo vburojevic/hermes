@@ -104,6 +104,7 @@ final class TalkSession: Identifiable, TalkDisplay {
     /// Tools already given a spoken note ("Checking the NAS.").
     @ObservationIgnored private var notedSteps: Set<String> = []
     @ObservationIgnored private var stepNote: Task<Void, Never>?
+    @ObservationIgnored private var announcement: Task<Void, Never>?
     @ObservationIgnored private var speechEndedAt: TimeInterval?
     @ObservationIgnored private var ended = false
     /// Realtime's delegation being worked on, and how much of its reply has gone back.
@@ -415,6 +416,7 @@ final class TalkSession: Identifiable, TalkDisplay {
         watchers.forEach { $0.cancel() }
         watchers = []
         stepNote?.cancel()
+        announcement?.cancel()
         reply = nil
         realtime?.close()
         let backend = conversation.audioBackend
@@ -961,6 +963,20 @@ final class TalkSession: Identifiable, TalkDisplay {
 
     // MARK: Phase
 
+    /// VoiceOver announces each state ("Listening", "Hermes is speaking") once it has held for a
+    /// moment: a reply with pauses in it flips between speaking and listening, and would say so
+    /// over and over.
+    private func announce(_ phase: Phase) {
+        announcement?.cancel()
+        announcement = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard let self, !Task.isCancelled, !self.ended, self.phase == phase else { return }
+            let spoken = phase == .speaking ? String(localized: "\(self.speakerName) is speaking") : self.status
+            AccessibilityNotification.Announcement(spoken).post()
+            TalkCenter.logger.debug("announced \(String(describing: phase), privacy: .public)")
+        }
+    }
+
     private func updatePhase() {
         noteShownApproval()
         let next: Phase
@@ -998,9 +1014,7 @@ final class TalkSession: Identifiable, TalkDisplay {
             TalkCenter.logger.info("listening \(Int((self.readyAfter ?? 0) * 1000)) ms after the call started (\(self.engineName, privacy: .public))")
         }
         if next != .approval { approvalHint = nil }
-        // VoiceOver announces each state ("Listening", "Hermes is speaking").
-        let spoken = next == .speaking ? String(localized: "\(speakerName) is speaking") : status
-        AccessibilityNotification.Announcement(spoken).post()
+        announce(next)
         TalkCenter.shared.sessionChanged(self)
     }
 }

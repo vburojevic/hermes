@@ -285,6 +285,8 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   "Summary by Apple Intelligence". No audio is kept, only the text (`CallRecord`, on this
   device).
 - The transcript sheet (the captions button at the top) shows the call's words so far.
+- VoiceOver announces each state once it has held for 0.8 s ("Listening", "Hermes is
+  speaking"): a reply with pauses doesn't make it repeat itself.
 - The notification permission prompt waits while a call runs.
 
 ### 4.4 Beyond the app
