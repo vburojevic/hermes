@@ -109,7 +109,10 @@ private struct MacAppsAndToolsContent: View {
                     .listRowSeparator(.hidden)
             }
             Section("Apps") {
-                if model.appsAvailable {
+                if !model.hasLoaded && model.isOnline {
+                    // The first read: still lines, not an empty section.
+                    SkeletonRows(count: 2, twoLines: false)
+                } else if model.appsAvailable {
                     ForEach(model.apps) { app in
                         ToolsListRow(title: app.name, detail: appDetail(app), needsAttention: app.needsAttention) {
                             AppLogo(name: app.name, url: app.logoURL, size: 24)
@@ -124,6 +127,9 @@ private struct MacAppsAndToolsContent: View {
                 }
             }
             Section("MCP Servers") {
+                if !model.hasLoaded && model.isOnline {
+                    SkeletonRows(count: 2, twoLines: false)
+                }
                 ForEach(model.servers) { server in
                     ToolsListRow(title: server.name, mono: true, detail: shortStatus(server), needsAttention: server.enabled && server.status == .failed) {
                         GlyphTile(symbol: server.usesURL ? "globe" : "terminal", size: 24)

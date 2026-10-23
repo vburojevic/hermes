@@ -129,7 +129,8 @@ struct ServerDetailView: View {
                             }
                         } else if test?.oauthNeeded == true || server.auth == "oauth" {
                             PairedButtons(secondary: String(localized: "Test Again"), onSecondary: { Task { await model.test(server.name) } },
-                                          primary: String(localized: "Sign In")) {
+                                          primary: model.signingIn == server.name ? String(localized: "Signing In…") : String(localized: "Sign In"),
+                                          primaryEnabled: model.signingIn == nil) {
                                 Task { _ = await model.signIn(server.name) }
                             }
                         } else {
@@ -204,10 +205,9 @@ struct ServerDetailView: View {
         }
         .alert("Remove \(server.name)?", isPresented: $confirmingRemove) {
             Button("Remove", role: .destructive) {
-                Task {
-                    await model.remove(server)
-                    dismiss()
-                }
+                // It leaves the list at once; a refusal brings it back with a note.
+                Task { await model.remove(server) }
+                dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -492,10 +492,9 @@ struct AddServerSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add", systemImage: "checkmark") {
-                        Task {
-                            await model.finishAdding()
-                            dismiss()
-                        }
+                        // It passed its test: the list reads it while the sheet goes.
+                        Task { await model.finishAdding() }
+                        dismiss()
                     }
                     // Only a server that passed its test.
                     .disabled(result?.ok != true)

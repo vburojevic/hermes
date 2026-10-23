@@ -1,5 +1,6 @@
 import Foundation
 import HermesKit
+import SwiftUI
 import Observation
 
 /// What Hermes on one gateway can reach (`docs/connections.md`): apps, MCP servers, plugins and
@@ -25,7 +26,7 @@ final class AppsAndToolsModel {
     }
 
     /// A connected app: its state, catalog entry, accounts and tool count.
-    struct ConnectedApp: Identifiable, Hashable {
+    nonisolated struct ConnectedApp: Identifiable, Hashable, Sendable {
         var row: ConnectorRow
         var entry: ConnectorCatalogEntry?
         var accounts: [ConnectorAccount]
@@ -90,24 +91,36 @@ final class AppsAndToolsModel {
     /// `tools.connectors` switch, then a Nous account that includes them (`docs/setup.md` §4.5).
     enum AppsBlock: Equatable { case signIn, turnedOff, notIncluded }
     private(set) var appsBlock = AppsBlock.signIn
-    private(set) var apps: [ConnectedApp] = []
+    /// The apps as the gateway last listed them.
+    private var gatewayApps: [ConnectedApp] = []
+    private var appChanges = PendingChanges<ConnectedApp>()
+    /// Connected apps, with every change still on its way (`docs/chat.md` §4a).
+    var apps: [ConnectedApp] { appChanges.applied(to: gatewayApps) }
     private(set) var catalog: [ConnectorCatalogEntry] = []
     private(set) var toolLists: [String: ConnectorToolList] = [:]
     private(set) var policy: ConnectorPolicy?
+    /// Tool switches still on their way to the policy.
+    private var toolChanges = PendingChanges<ToolChoice>()
     private(set) var appsError: String?
 
-    private(set) var servers: [McpServer] = []
+    private var gatewayServers: [McpServer] = []
+    private var serverChanges = PendingChanges<McpServer>()
+    var servers: [McpServer] { serverChanges.applied(to: gatewayServers) }
     private(set) var presets: [McpPreset] = []
     /// The last test of each server: how a failed one says why.
     private(set) var serverTests: [String: McpTestResult] = [:]
     private(set) var serversError: String?
 
-    private(set) var plugins: [HermesPlugin] = []
+    private var gatewayPlugins: [HermesPlugin] = []
+    private var pluginChanges = PendingChanges<HermesPlugin>()
+    var plugins: [HermesPlugin] { pluginChanges.applied(to: gatewayPlugins) }
     private(set) var catalogPlugins: [CatalogPlugin] = []
     private(set) var pluginAdds: [String: PluginAdds] = [:]
     private(set) var pluginsError: String?
 
-    private(set) var toolsets: [BuiltInToolset] = []
+    private var gatewayToolsets: [BuiltInToolset] = []
+    private var toolsetChanges = PendingChanges<BuiltInToolset>()
+    var toolsets: [BuiltInToolset] { toolsetChanges.applied(to: gatewayToolsets) }
     private(set) var toolsetsError: String?
     /// On, but with no key on the gateway: Hermes leaves their tools out (`docs/setup.md` §4.5).
     private(set) var toolsetsWithoutKeys: Set<String> = []
@@ -116,6 +129,8 @@ final class AppsAndToolsModel {
 
     /// Something to say in an alert.
     var message: String?
+    /// A change the gateway refused, said once: what was put back, and why.
+    var refusal: RefusedChange?
     /// A sign-in under way (slug or server name).
     private(set) var signingIn: String?
     /// Work under way on one item (key of the row).
@@ -209,7 +224,7 @@ final class AppsAndToolsModel {
             let (available, rows) = try await client.connectors()
             appsAvailable = available
             guard available else {
-                apps = []
+                gatewayApps = []
                 appsError = nil
                 await readAppsBlock()
                 return
@@ -231,7 +246,7 @@ final class AppsAndToolsModel {
                 }
             }
             toolLists = lists
-            self.apps = rows.filter(\.connected).map { row in
+            gatewayApps = rows.filter(\.connected).map { row in
                 ConnectedApp(
                     row: row,
                     entry: entries.first { $0.slug == row.connector },
@@ -243,7 +258,7 @@ final class AppsAndToolsModel {
         } catch {
             if ConnectorErrorReason(error: error) == .needsNousAuth {
                 appsAvailable = false
-                apps = []
+                gatewayApps = []
                 appsError = nil
                 appsBlock = .signIn
             } else {
@@ -280,7 +295,7 @@ final class AppsAndToolsModel {
 
     private func loadServers(_ client: ConnectionsClient) async {
         do {
-            servers = try await client.mcpServers()
+            gatewayServers = try await client.mcpServers()
             presets = (try? await client.mcpCatalog()) ?? presets
             serversError = nil
         } catch {
@@ -290,7 +305,7 @@ final class AppsAndToolsModel {
 
     private func loadPlugins(_ client: ConnectionsClient) async {
         do {
-            plugins = try await client.plugins()
+            gatewayPlugins = try await client.plugins()
             catalogPlugins = (try? await client.catalogPlugins()) ?? catalogPlugins
             pluginsError = nil
             let toolsets = (try? await client.toolsetTools()) ?? [:]
@@ -315,7 +330,7 @@ final class AppsAndToolsModel {
 
     private func loadToolsets(_ client: ConnectionsClient) async {
         do {
-            toolsets = try await client.toolsets()
+            gatewayToolsets = try await client.toolsets()
             toolsetsError = nil
         } catch {
             toolsetsError = error.localizedDescription
@@ -334,13 +349,49 @@ final class AppsAndToolsModel {
     }
 
     /// Saves a toolset's keys on the gateway and makes `provider` the one it uses; then reads
-    /// again which toolsets still need a key.
-    func saveToolsetKeys(_ name: String, provider: String, keys: [String: String]) async throws {
-        guard let backend = roster?.backendClient else { throw HermesError.invalidResponse(String(localized: "\(gatewayName) isn't connected.")) }
-        try await backend.saveToolsetKeys(name, provider: provider, keys: keys, profile: workspace?.bot.profileName)
+    /// again which toolsets still need a key. The sheet has closed: the toolset stops asking for
+    /// a key at once, and asks again with a note if the gateway refuses. The keys aren't kept.
+    func saveToolsetKeys(_ name: String, provider: String, keys: [String: String]) async {
+        guard let backend = roster?.backendClient else {
+            message = String(localized: "\(gatewayName) isn't connected.")
+            return
+        }
+        let wasMissing = toolsetsWithoutKeys.remove(name) != nil
+        do {
+            try await backend.saveToolsetKeys(name, provider: provider, keys: keys, profile: workspace?.bot.profileName)
+        } catch {
+            if wasMissing { toolsetsWithoutKeys.insert(name) }
+            let note = RefusedChange(String(localized: "Couldn't save the key for \(name)"),
+                                     message: ConnectorErrorReason.line(for: error) + " " + String(localized: "Add it again."))
+            refusal = note
+            AccessibilityNotification.Announcement("\(note.title). \(note.message)").post()
+        }
         if let missing = try? await backend.toolsetsWithoutKeys(profile: workspace?.bot.profileName) {
             toolsetsWithoutKeys = missing
         }
+    }
+
+    /// A change the person made: shown at once through `changes`, sent with `work` (which takes
+    /// the answer into the gateway's lists), then settled. A refusal puts it back and says so.
+    private func change<Item: Identifiable & Sendable>(
+        _ changes: ReferenceWritableKeyPath<AppsAndToolsModel, PendingChanges<Item>>, _ change: PendingChanges<Item>.Change,
+        for id: Item.ID, refused title: String, _ work: (ConnectionsClient) async throws -> Void
+    ) async where Item.ID: Sendable {
+        guard let client else {
+            message = String(localized: "\(gatewayName) isn't connected.")
+            return
+        }
+        let token = self[keyPath: changes].begin(change, for: id)
+        do {
+            try await work(client)
+        } catch {
+            if self[keyPath: changes].isNewest(token, for: id) {
+                let note = RefusedChange(title, message: ConnectorErrorReason.line(for: error) + " " + String(localized: "It's back as it was."))
+                refusal = note
+                AccessibilityNotification.Announcement("\(note.title). \(note.message)").post()
+            }
+        }
+        self[keyPath: changes].settle(token, for: id)
     }
 
     /// Runs `work` against the gateway, marking `key` busy and turning failures into one line.
@@ -400,6 +451,7 @@ final class AppsAndToolsModel {
     /// Allowed by the policy and not turned off by the gateway's own config.
     func allows(_ tool: ConnectorTool, of slug: String) -> Bool {
         let gatewayOff = app(slug)?.row.gatewayDisabledTools.contains(tool.slug) ?? false
+        if !gatewayOff, let choice = toolChanges.item(for: ToolChoice.id(tool.slug, of: slug)) { return choice.allowed }
         return !gatewayOff && (policy?.allows(tool: tool.slug, of: slug) ?? true)
     }
 
@@ -413,9 +465,12 @@ final class AppsAndToolsModel {
         tools(of: slug).filter { allows($0, of: slug) }.count
     }
 
+    /// The switch moves at once; the policy in the answer settles it.
     func setTool(_ tool: ConnectorTool, of slug: String, allowed: Bool) async {
         guard let policy else { return }
-        await perform("tool:\(tool.slug)") { client in
+        let choice = ToolChoice(id: ToolChoice.id(tool.slug, of: slug), allowed: allowed)
+        await change(\.toolChanges, .update(choice), for: choice.id,
+                     refused: allowed ? String(localized: "Couldn't allow \(tool.name)") : String(localized: "Couldn't turn off \(tool.name)")) { client in
             self.policy = try await client.setPolicy(policy) { current in
                 var disabled = current.memberDisabledTools(of: slug).filter { $0 != tool.slug }
                 if !allowed { disabled.append(tool.slug) }
@@ -481,24 +536,31 @@ final class AppsAndToolsModel {
         self.policy = try? await client.setPolicy(policy) { _ in .tools(connector: slug, disabled: destructive) }
     }
 
+    /// The new name shows at once.
     func rename(_ account: ConnectorAccount, to alias: String) async {
-        await perform("account:\(account.id)") { client in
+        guard var app = app(account.connector) else { return }
+        app.accounts = app.accounts.map { $0.id == account.id ? $0.renamed(alias) : $0 }
+        await change(\.appChanges, .update(app), for: app.id, refused: String(localized: "Couldn't rename \(account.label)")) { client in
             _ = try await client.rename(account: account.connectionID, alias: alias)
             await self.loadApps(client)
         }
     }
 
+    /// The account goes at once.
     func remove(_ account: ConnectorAccount) async {
-        await perform("account:\(account.id)") { client in
+        guard var app = app(account.connector) else { return }
+        app.accounts.removeAll { $0.id == account.id }
+        await change(\.appChanges, .update(app), for: app.id, refused: String(localized: "Couldn't remove \(account.label)")) { client in
             try await client.remove(account: account.connectionID)
             await self.loadApps(client)
         }
     }
 
-    /// Removes every account of the app.
+    /// Removes every account of the app: it leaves the list at once.
     func disconnect(_ app: ConnectedApp) async {
-        await perform("app:\(app.id)") { client in
+        await change(\.appChanges, .remove, for: app.id, refused: String(localized: "Couldn't disconnect \(app.name)")) { client in
             for account in app.accounts { try await client.remove(account: account.connectionID) }
+            self.gatewayApps.removeAll { $0.id == app.id }
             await self.loadApps(client)
         }
     }
@@ -507,11 +569,15 @@ final class AppsAndToolsModel {
 
     func server(_ name: String) -> McpServer? { servers.first { $0.name == name } }
 
+    /// The switch moves at once; the server list read after settles it.
     func setServer(_ server: McpServer, enabled: Bool) async {
-        await perform("server:\(server.name)") { client in
-            var names = Set(self.servers.filter(\.enabled).map(\.name))
-            if enabled { names.insert(server.name) } else { names.remove(server.name) }
-            try await client.setEnabledServers(self.servers.map(\.name).filter(names.contains))
+        var changed = server
+        changed.enabled = enabled
+        await change(\.serverChanges, .update(changed), for: server.id,
+                     refused: enabled ? String(localized: "Couldn't turn on \(server.name)") : String(localized: "Couldn't turn off \(server.name)")) { client in
+            // Every switch as shown, this one and any still on their way.
+            try await client.setEnabledServers(self.servers.filter(\.enabled).map(\.name))
+            if let index = self.gatewayServers.firstIndex(where: { $0.id == server.id }) { self.gatewayServers[index].enabled = enabled }
             try? await client.reloadMCP()
             await self.loadServers(client)
         }
@@ -540,11 +606,13 @@ final class AppsAndToolsModel {
         }
     }
 
+    /// The server leaves the list at once.
     func remove(_ server: McpServer) async {
-        await perform("server:\(server.name)") { client in
+        await change(\.serverChanges, .remove, for: server.id, refused: String(localized: "Couldn't remove \(server.name)")) { client in
             try await client.removeServer(server.name)
-            try? await client.reloadMCP()
+            self.gatewayServers.removeAll { $0.id == server.id }
             self.serverTests[server.name] = nil
+            try? await client.reloadMCP()
             await self.loadServers(client)
         }
     }
@@ -634,9 +702,14 @@ final class AppsAndToolsModel {
 
     func plugin(_ key: String) -> HermesPlugin? { plugins.first { $0.key == key } }
 
+    /// The switch moves at once; the plugin list read after settles it.
     func setPlugin(_ plugin: HermesPlugin, enabled: Bool) async {
-        await perform("plugin:\(plugin.key)") { client in
+        var changed = plugin
+        changed.status = enabled ? "enabled" : "not enabled"
+        await change(\.pluginChanges, .update(changed), for: plugin.id,
+                     refused: enabled ? String(localized: "Couldn't turn on \(plugin.name)") : String(localized: "Couldn't turn off \(plugin.name)")) { client in
             let result = try await client.togglePlugin(plugin.key, enable: enabled)
+            if let index = self.gatewayPlugins.firstIndex(where: { $0.id == plugin.id }) { self.gatewayPlugins[index].status = changed.status }
             self.show(result, for: plugin.name)
             await self.loadPlugins(client)
         }
@@ -678,18 +751,23 @@ final class AppsAndToolsModel {
         }
     }
 
+    /// The plugin leaves the list at once.
     func remove(_ plugin: HermesPlugin) async {
-        await perform("plugin:\(plugin.key)") { client in
+        await change(\.pluginChanges, .remove, for: plugin.id, refused: String(localized: "Couldn't remove \(plugin.name)")) { client in
             _ = try await client.removePlugin(plugin.key)
+            self.gatewayPlugins.removeAll { $0.id == plugin.id }
             await self.loadPlugins(client)
             try? await client.reloadMCP()
             await self.loadServers(client)
         }
     }
 
+    /// The setting shows its new value at once; a refusal puts the old one back in its field.
     func saveSettings(_ plugin: HermesPlugin, values: [String: JSONValue]) async {
-        await perform("plugin:\(plugin.key)") { client in
+        let changed = plugin.withValues(values)
+        await change(\.pluginChanges, .update(changed), for: plugin.id, refused: String(localized: "Couldn't change \(plugin.name)'s settings")) { client in
             _ = try await client.savePluginSettings(plugin.key, values: values)
+            if let index = self.gatewayPlugins.firstIndex(where: { $0.id == plugin.id }) { self.gatewayPlugins[index] = changed }
             await self.loadPlugins(client)
         }
     }
@@ -715,12 +793,25 @@ final class AppsAndToolsModel {
 
     // MARK: Built-in
 
+    /// The switch moves at once; the toolset list read after settles it.
     func setToolset(_ toolset: BuiltInToolset, enabled: Bool) async {
-        await perform("toolset:\(toolset.name)") { client in
+        var changed = toolset
+        changed.enabled = enabled
+        await change(\.toolsetChanges, .update(changed), for: toolset.id,
+                     refused: enabled ? String(localized: "Couldn't turn on \(toolset.name)") : String(localized: "Couldn't turn off \(toolset.name)")) { client in
             try await client.setToolsets([toolset.name], enabled: enabled)
+            if let index = self.gatewayToolsets.firstIndex(where: { $0.id == toolset.id }) { self.gatewayToolsets[index].enabled = enabled }
             await self.loadToolsets(client)
         }
     }
+}
+
+/// A tool switch on its way to the policy (`setTool`).
+nonisolated struct ToolChoice: Identifiable, Sendable {
+    var id: String
+    var allowed: Bool
+
+    static func id(_ tool: String, of app: String) -> String { "\(app)/\(tool)" }
 }
 
 /// When the person closed the sign-in browser, if they did.

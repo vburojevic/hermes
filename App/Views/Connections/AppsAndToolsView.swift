@@ -99,6 +99,9 @@ struct AppsAndToolsView: View {
             }
             Group {
                 switch model.tab {
+                case let tab where tab != .plugins && !model.hasLoaded && model.isOnline:
+                    // The first read: still lines where the lists will be, not empty sections.
+                    Section { SkeletonRows() }
                 case .apps: AppsTabSections(model: model)
                 case .mcp: ServersTabSections(model: model)
                 case .plugins:
@@ -332,8 +335,13 @@ struct AppsAndToolsAlerts: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+            // One alert for both: what went wrong, or what was put back and why.
+            .alert(model.refusal?.title ?? model.message ?? "",
+                   isPresented: Binding(get: { model.refusal != nil || model.message != nil },
+                                        set: { if !$0 { model.refusal = nil; model.message = nil } })) {
                 Button("OK", role: .cancel) {}
+            } message: {
+                if let refusal = model.refusal { Text(refusal.message) }
             }
             .sheet(item: $model.pluginNotes) { notes in
                 PluginNotesSheet(model: model, notes: notes)

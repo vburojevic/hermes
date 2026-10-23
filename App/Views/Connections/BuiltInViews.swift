@@ -188,13 +188,12 @@ struct ToolsetKeySheet: View {
     @State private var options: ToolsetKeys?
     @State private var provider: String = ""
     @State private var values: [String: String] = [:]
-    @State private var isSaving = false
     @State private var error: String?
 
     private var title: String { BuiltInToolsetInfo.info(toolset.name, gateway: model.gatewayName)?.title ?? toolset.name }
     private var picked: ToolsetKeys.Provider? { options?.takingKeys.first { $0.name == provider } }
     private var canSave: Bool {
-        guard let picked, !isSaving else { return false }
+        guard let picked else { return false }
         return picked.keys.contains { !$0.isSet } ? picked.keys.allSatisfy { $0.isSet || !(values[$0.name] ?? "").trimmingCharacters(in: .whitespaces).isEmpty } : true
     }
 
@@ -239,11 +238,6 @@ struct ToolsetKeySheet: View {
                 } else {
                     Section { SkeletonRows(count: 2, twoLines: false) }
                 }
-                if let error, options != nil {
-                    Section {
-                        Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(Theme.danger)
-                    }
-                }
             }
             .formStyle(.grouped)
             .navigationTitle("Key for \(title)")
@@ -255,11 +249,7 @@ struct ToolsetKeySheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSaving {
-                        Spinner()
-                    } else {
-                        Button("Save", action: save).disabled(!canSave)
-                    }
+                    Button("Save", action: save).disabled(!canSave)
                 }
             }
             .task {
@@ -282,17 +272,10 @@ struct ToolsetKeySheet: View {
         let keys = values.filter { key, value in
             picked.keys.contains { $0.name == key } && !value.trimmingCharacters(in: .whitespaces).isEmpty
         }.mapValues { $0.trimmingCharacters(in: .whitespaces) }
-        isSaving = true
-        error = nil
-        Task {
-            defer { isSaving = false }
-            do {
-                try await model.saveToolsetKeys(toolset.name, provider: picked.name, keys: keys)
-                values = [:]
-                dismiss()
-            } catch {
-                self.error = ConnectorErrorReason.line(for: error)
-            }
-        }
+        // Closes at once: the toolset stops asking for a key, and a refusal says so on the page.
+        let name = toolset.name
+        Task { await model.saveToolsetKeys(name, provider: picked.name, keys: keys) }
+        values = [:]
+        dismiss()
     }
 }

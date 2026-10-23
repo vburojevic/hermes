@@ -224,10 +224,9 @@ struct PluginDetailView: View {
         }
         .alert("Remove \(plugin.name)?", isPresented: $confirmingRemove) {
             Button("Remove", role: .destructive) {
-                Task {
-                    await model.remove(plugin)
-                    dismiss()
-                }
+                // It leaves the list at once; a refusal brings it back with a note.
+                Task { await model.remove(plugin) }
+                dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -322,6 +321,8 @@ private struct PluginSettingRow: View {
             }
         }
         .onAppear(perform: fill)
+        // A refusal puts the old value back in the model: the field follows it.
+        .onChange(of: field.value) { fill() }
     }
 
     private func fill() {

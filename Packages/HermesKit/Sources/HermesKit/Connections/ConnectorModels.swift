@@ -92,6 +92,13 @@ public struct ConnectorAccount: Sendable, Hashable, Identifiable {
 
     public var id: String { connectionID }
 
+    /// The account under a new short name (`nil` or empty for none).
+    public func renamed(_ alias: String?) -> ConnectorAccount {
+        var account = self
+        account.alias = alias?.isEmpty == true ? nil : alias
+        return account
+    }
+
     public init(connectionID: String, connector: String, status: ConnectorStatus = .active, label: String, alias: String? = nil, active: Bool = false, disabled: Bool = false, updatedAt: Date? = nil) {
         self.connectionID = connectionID
         self.connector = connector

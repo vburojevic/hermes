@@ -235,6 +235,17 @@ public struct HermesPlugin: Sendable, Hashable, Identifiable {
 
     public var id: String { key }
 
+    /// The plugin with settings saved: what it will say once the gateway has them.
+    public func withValues(_ values: [String: JSONValue]) -> HermesPlugin {
+        var plugin = self
+        for index in plugin.settings.indices {
+            if let value = values[plugin.settings[index].key] {
+                plugin.settings[index].value = value == .null ? nil : value
+            }
+        }
+        return plugin
+    }
+
     init?(json: JSONValue) {
         guard let name = json["name"]?.stringValue else { return nil }
         self.name = name

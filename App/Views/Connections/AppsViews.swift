@@ -317,10 +317,9 @@ struct AppDetailView: View {
         }
         .alert("Disconnect \(app.name)?", isPresented: $confirmingDisconnect) {
             Button("Disconnect", role: .destructive) {
-                Task {
-                    await model.disconnect(app)
-                    dismiss()
-                }
+                // It leaves the list at once; a refusal brings it back with a note.
+                Task { await model.disconnect(app) }
+                dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {

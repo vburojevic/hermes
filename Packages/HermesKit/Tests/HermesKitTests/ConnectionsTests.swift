@@ -16,6 +16,15 @@ private let ulidB = "01JABCDEFGHJKMNPQRSTVWXYZ1"
 
 @Suite("Apps and Tools")
 struct ConnectionsTests {
+    @Test func aSettingOrANameShowsBeforeTheGatewayAnswers() throws {
+        let plugin = try #require(HermesPlugin(json: json(#"{"name": "notes", "key": "notes", "settings_schema": [{"key": "folder", "type": "string", "value": "Inbox"}, {"key": "sync", "type": "boolean", "value": true}]}"#)))
+        let changed = plugin.withValues(["folder": .string("Work"), "sync": .null])
+        #expect(changed.settings.map(\.value) == [.string("Work"), nil])
+        let account = ConnectorAccount(connectionID: "c1", connector: "gmail", label: "Personal", alias: "home")
+        #expect(account.renamed("work").alias == "work")
+        #expect(account.renamed("").alias == nil)
+    }
+
     @Test func readsAppsAccountsAndTools() throws {
         let list = json("""
         {"available": true, "connectors": [

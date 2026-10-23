@@ -153,7 +153,8 @@ keeps them.
   - OAuth servers: Sign In instead of a key field (`oauth.start`, open `auth_url`, poll; the browser
     closes when Hermes has the tokens).
   - Testing adds the server first (`mcp.servers.add`), writes its keys, then tests it. **Add** (✓)
-    is enabled only after a passing test, and finishes with `reload.mcp`. Cancel after a test
+    is enabled only after a passing test; it closes the sheet at once and sends `reload.mcp`, and
+    the list reads the new server. Cancel after a test
     removes the server again.
 - Secrets are written once (`set_api_key`) and never read back. The field starts empty, shows dots
   and the env name, and says the key is stored in the gateway's `.env`. Saving a new key tests the
@@ -223,6 +224,16 @@ the tab's first item until one is picked. Narrower, it falls back to the iPhone 
 - **`connectors.list` answers `available: false`, or a `NEEDS_NOUS_AUTH` error:** the Apps tab
   shows "Sign in to Nous to connect apps" with one ink button, Sign In to Nous (§1). MCP, Plugins
   and Built-in still work.
+- **Loading:** the first read shows `SkeletonRows` where the lists will be (on the Mac, in the
+  sidebar's Apps and MCP Servers), never empty sections counting 0.
+- **Changes** ([chat.md](chat.md) §4a, `PendingChanges`): a switch (a tool, an MCP server, a
+  plugin, a built-in toolset) moves at once and stays there while the gateway takes it; a rename
+  shows the new name; a removed account, a disconnected app, a removed server or plugin leaves the
+  list as its confirmation closes and its page goes back. A plugin setting keeps its new value. A
+  toolset's Add a Key and Add's ✓ close at once. Then the list is read again. A refusal puts the
+  change back and says what and why ("Couldn't turn off Linear. … It's back as it was."). Only
+  the person's own waits show a `Spinner` or words: sign-ins ("Signing In…"), Connect, Test Again
+  and Test Connection, installs and updates.
 - **Errors** map from `ConnectorErrorReason` (`data.reason` on the gateway error) to one line each
   (`ORG_REQUIRED`: "Apps need a Nous organization. Ask your admin to add you.", `FORBIDDEN_SCOPE`,
   `ALIAS_TAKEN`: "Another account already has that name.", `POLICY_CONFLICT`…). The raw code is
@@ -232,7 +243,8 @@ the tab's first item until one is picked. Narrower, it falls back to the iPhone 
 
 - Every connected app, account, MCP server, plugin and toolset on the gateway appears with the
   state the gateway reports, and updates after connect, reconnect, test, remove and toggle without
-  a manual refresh.
+  a manual refresh. On a slow gateway (`--starve 5-30`) a toggle, rename or removal shows at once,
+  with no spinner and no page or sheet held open.
 - A new app's destructive tools are off after it connects.
 - Blocking a tool here stops Hermes using it in the next turn. This needs a gateway with Nous
   connectors; check it in a chat.
