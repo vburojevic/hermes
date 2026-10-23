@@ -79,18 +79,10 @@ struct AssistantTurnView: View, Equatable {
         }
     }
 
-    /// What the reply reads as right now. While Hermes works with its steps folded, what it last
-    /// said between steps stays in this place, muted, until it says more: it no longer streams in
-    /// and then vanishes into the fold when the next tool starts, pulling the chat up and down. A
-    /// turn that ended without a reply (it died, or another process is still on it) keeps it too,
-    /// rather than showing nothing under its steps.
+    /// What the reply reads as right now (`AssistantTurn.reading`): what Hermes said between steps
+    /// stays in this place, muted, while it works with the steps folded; the reply once it's there.
     private var shownText: (text: String, isInterim: Bool)? {
-        if !turn.answer.isEmpty { return (turn.answer, false) }
-        guard !isExpanded else { return nil }
-        for step in turn.steps.reversed() {
-            if case .narration(_, let text) = step, !text.isEmpty { return (text, true) }
-        }
-        return nil
+        turn.reading(stepsOpen: isExpanded)
     }
 
     private var showsWork: Bool {
@@ -368,6 +360,11 @@ struct AssistantTurnView: View, Equatable {
         }
         if !turn.isWorking, !memoryChanges.isEmpty {
             MemoryNotes(changes: memoryChanges, context: memoryContext)
+        }
+        // What Hermes's background self-review of this reply did (`review.summary`): quietly here,
+        // never a row of its own between the turn and the next (`docs/chat.md` §1, 13).
+        if !turn.isWorking, let review = turn.review {
+            TurnNote(symbol: "checkmark.seal", text: String(localized: "Reviewed this reply · \(review)"))
         }
         // Cards Hermes put on a board (`kanban_create`, `docs/board.md` §4).
         if !turn.isWorking, let memoryContext, case let cards = turn.addedCards, !cards.isEmpty {

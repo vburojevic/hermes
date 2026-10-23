@@ -44,7 +44,10 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
    Review and Undo; [checkpoints.md](checkpoints.md)).
 7. Steers Hermes read, as captioned bubbles ([follow-ups.md](follow-ups.md) §2).
 8. The reply as Markdown (§3). While Hermes works with the steps folded, the last thing it said
-   between steps stays here, muted, until it says more.
+   between steps stays here, muted, until it says more. That narration is the turn's progress, never
+   a reply of its own: once the turn finishes its reply takes the place, a turn that finished with no
+   reply but what it said along the way reads as those words, and one that died keeps them muted
+   (`AssistantTurn.reading`).
 9. Steers still waiting, at the end where they were sent.
 10. Artifact and preview cards that open in the Inspector (`Inspector.artifactCard`,
     [inspector.md](inspector.md)).
@@ -52,7 +55,8 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
 12. The footer: a "Stopped" badge, the failure line, or the reply actions (`replyActions`), and
     usage when shown (`usageFooter`, `UsageFooter`).
 13. Quiet notes after the reply: skills Hermes wrote ([learned.md](learned.md) §6), what the
-    memory tool did (`memoryNote`, [memory.md](memory.md)), cards added to a board
+    memory tool did (`memoryNote`, [memory.md](memory.md)), what Hermes's self-review of the reply
+    did ("Reviewed this reply · Skill 'logging-supplements' patched", `ReviewNote`), cards added to a board
     (`Kanban.cardsAddedNote`, [board.md](board.md)), and on the latest reply a context notice
     when the chat is 80% full or more (`contextNotice`).
 
@@ -137,7 +141,7 @@ stored after the newest row from before the turn. Never by words, and never by b
 - Its time is the run's own: a turn starts when its message does, live (`turn_started_at` when
   joined) and stored, so the count while it thinks and the final "Worked for" agree.
 
-Mock: `--late-store 20` with "upgrade" in a Bot Chat (the turn behind this rule),
+Mock: `--late-store 20` with "upgrade" in a Bot Chat (the turn behind this rule, with its review),
 `POST /api/mock/drop-sockets` and `POST /api/mock/restart-gateway` during it.
 
 The header's title holds each label for at least 0.6 s so fast updates don't flicker. When the
@@ -285,7 +289,7 @@ that opens to them, and consecutive subagents share one row.
 | `moa.reference`, `moa.progress`, `moa.aggregating` | "Asking 3 models", which have answered, and which model combines them | `modelsCard` |
 | `btw.complete` (`task_id`, `text`, `question`) | The side answer after the chat, apart from the running turn, with Dismiss | `asideCard` |
 | `background.complete` (`task_id`, `text`) | "Finished in the background" with the short result and Open for all of it | `backgroundCard` |
-| `review.summary` (`text`) | One receipt line: "Reviewed the last reply · …" | receipt |
+| `review.summary` (`text`) | A quiet note on the reply it reviewed: "Reviewed this reply · Skill 'logging-supplements' patched". Hermes reviews in the background as the turn finishes (agent/background_review.py): the note comes after the turn ended, sometimes during the next one, stores no rows and comes with no other event. It goes on the turn just ended, else the newest finished reply, never on a turn still running and never as a row between a turn and its stored copy (`ReviewNote`) | `TurnNote` |
 | `session.reclaimed` | One receipt line: "This chat was resting · it picks up where you left off"; the next message resumes the session | receipt |
 | `session.title` | The chat's title updates in the sidebar; nothing in the transcript | |
 | A message another Bot sent (`message_agent`), a routine's delivery | Their own rows in a Bot Chat | `botMessageCard` (`AgentMessageRow`), `RoutineDeliveryRow` ([bots-groups-skills.md](bots-groups-skills.md)) |

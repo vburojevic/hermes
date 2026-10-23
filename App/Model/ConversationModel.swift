@@ -858,6 +858,8 @@ final class ConversationModel: Identifiable {
         var models: ModelsProgress?
         var warning: String?
         var stopped = false
+        /// Hermes's self-review of the reply (`ReviewNote`), which comes after it.
+        var review: String?
     }
 
     private struct ToolOverlay {
@@ -3434,6 +3436,7 @@ final class ConversationModel: Identifiable {
                 }
                 handOverIdentity(shown: shownRows, existing: existing)
                 needsReconcile = false
+                // As it is now: what came after its end (Hermes's self-review) goes along.
                 carryOverExtras(from: ending.turn)
                 if finished.turn.state == .stopped {
                     markLastTurnStopped()
@@ -3506,13 +3509,17 @@ final class ConversationModel: Identifiable {
     }
 
     /// - Parameter heldID: the turn was held on screen under this id (`heldOver`): its stored copy
-    ///   is the row that took its identity.
+    ///   is the row that took its identity, and what it gathered meanwhile (a review) goes along.
     private func carryOverExtras(from live: AssistantTurn, heldAs heldID: String? = nil) {
         let handedOver = heldID.flatMap { id in items.lastIndex { rowAliases[$0.id] == id } }
         guard let index = handedOver ?? items.lastIndex(where: { if case .assistant = $0 { true } else { false } }),
               case .assistant(let turn) = items[index]
         else { return }
         var overlay = turnOverlays[turn.id] ?? TurnOverlay()
+        if let heldID, let gathered = turnOverlays.removeValue(forKey: heldID) {
+            overlay.review = overlay.review ?? gathered.review
+        }
+        overlay.review = overlay.review ?? live.review
         if overlay.plan.isEmpty { overlay.plan = live.plan }
         overlay.usage = overlay.usage ?? live.usage
         overlay.models = overlay.models ?? live.models
@@ -3552,6 +3559,7 @@ final class ConversationModel: Identifiable {
                 turn.usage = turn.usage ?? overlay.usage
                 turn.models = turn.models ?? overlay.models
                 turn.warning = turn.warning ?? overlay.warning
+                turn.review = turn.review ?? overlay.review
                 if overlay.stopped {
                     turn.state = .stopped
                     turn.steps = turn.steps.map { step in
@@ -4591,9 +4599,7 @@ extension ConversationModel {
             // A move (`session.workspace.move`) or `session.cwd.set` names the new folder.
             if let info = LiveWorkspace(info: event.payload), info != liveWorkspace { liveWorkspace = info }
         case "review.summary":
-            if let text = event.payload["text"]?.stringValue, !text.isEmpty {
-                addReceipt(String(localized: "Reviewed the last reply · \(text)"), symbol: "checkmark.seal.fill")
-            }
+            if let text = event.payload["text"]?.stringValue.flatMap(ReviewNote.text) { noteReview(text) }
             return
         case "message.reaction":
             if let row = event.payload["row_id"].flatMap({ $0.stringValue ?? $0.truncatedIntValue.map(String.init) }),
@@ -5029,6 +5035,18 @@ extension ConversationModel {
             } else {
                 addReceipt(String(localized: "Skipped · \(Self.title(of: request))"), symbol: "xmark.seal")
             }
+        }
+    }
+
+    /// Hermes's self-review goes on the reply it reviewed (`ReviewNote.reviewed`): the turn ending
+    /// now, carried over to its stored rows as it hands over, or one already in the chat.
+    private func noteReview(_ text: String) {
+        guard let target = ReviewNote.reviewed(in: items, live: live?.turn) else { return }
+        if live?.turn.id == target {
+            live?.turn.review = text
+        } else {
+            turnOverlays[target, default: TurnOverlay()].review = text
+            applyOverlays()
         }
     }
 

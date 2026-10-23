@@ -137,6 +137,8 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
     public var audio: [AgentAudio] = []
     /// Why a failed turn failed, when it was the model provider's credentials (`docs/setup.md` §4.3).
     public var providerProblem: ProviderProblem?
+    /// What Hermes's background self-review of this reply did (`ReviewNote`), a quiet note after it.
+    public var review: String?
 
     public init(id: String, steps: [AssistantStep] = [], answer: String = "", state: State = .complete, startedAt: Date? = nil, finishedAt: Date? = nil) {
         self.id = id
