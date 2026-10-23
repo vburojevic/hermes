@@ -51,7 +51,9 @@ rejected (4000). A gateway without `subagent.list` (-32601) simply has no snapsh
 
 - Top-level `delegate_task` runs in the **background**. The call returns `dispatched` at once and
   the turn ends; `subagent.*` events keep arriving on the parent's session; the results come back
-  as a new turn that starts with an `async_delegation_complete` row ("Helpers finished").
+  as a new turn that starts with an `async_delegation_complete` row. It reads as the helpers it
+  names and how they did ("2 helpers finished: Research pricing pages, Review the draft · 1
+  failed"), opening to each one's goal and result ([chat.md](chat.md) §2a).
 - `subagent.*` events carry no timestamps; the app stamps arrival. Falsy keys are left out, not
   sent as `null`.
 - Nested helpers report only `start` and `complete` (Hermes relays nothing else from depth 1).

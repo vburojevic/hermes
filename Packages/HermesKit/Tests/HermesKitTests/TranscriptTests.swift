@@ -105,13 +105,16 @@ struct TranscriptTests {
         """)
         let items = TranscriptBuilder.build(messages)
         #expect(items.count == 4)
-        guard case .notice(let notice) = items[1], case .assistant(let turn) = items[2], case .user = items[3] else {
+        // A watch pattern's match is Hermes's too, never the person's message (Desktop's
+        // `PROCESS_NOTIFICATION_RE` takes every such row).
+        guard case .notice(let notice) = items[1], case .assistant(let turn) = items[2], case .notice(let watch) = items[3] else {
             Issue.record("unexpected \(items)")
             return
         }
         #expect(notice.kind == "process_complete")
-        #expect(notice.text == "Background process finished")
+        #expect(notice.text == "News got the message")
         #expect(turn.answer == "@news confirmed the change.")
+        #expect(watch.work == [.process(FinishedProcess(id: "proc_2", command: "", outcome: .matched(pattern: "ERROR"), output: ""))])
     }
 
     /// Steer: a `steer` row stays in the reply it landed in, read after the steps before it, and

@@ -229,6 +229,16 @@ public enum ProcessNaming {
         return String(localized: "Message to a Bot")
     }
 
+    /// The Bot a message to another Bot went to: the profile of Hermes's delivery
+    /// (`bot_mode_dm.py … hermes -p <bot> chat …`). Nil for any other command, or one cut before it.
+    public static func messageRecipient(of command: String) -> String? {
+        let words = commandWords(command).map(\.value)
+        guard words.contains(where: { basename($0) == "bot_mode_dm.py" })
+                || (words.first.map(basename) == "hermes" && argumentsSkippingProfile(Array(words.dropFirst())).first(where: { !$0.hasPrefix("-") }) == "chat")
+        else { return nil }
+        return profile(in: words)
+    }
+
     private static func profile(in args: [String]) -> String? {
         for (index, word) in args.enumerated() {
             if (word == "-p" || word == "--profile"), index + 1 < args.count { return args[index + 1] }

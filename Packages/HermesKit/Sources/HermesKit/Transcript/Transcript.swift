@@ -107,6 +107,11 @@ public struct Notice: Identifiable, Hashable, Sendable {
     public var id: String
     public var kind: String
     public var text: String
+    /// The background processes or helpers a "finished" notice is about, several when notices in
+    /// a row fold into one (`TranscriptBuilder.foldingFinishedWork`).
+    public var work: [FinishedWork] = []
+    /// When it was stored.
+    public var timestamp: Date?
 
     public init(id: String, kind: String, text: String) {
         self.id = id
@@ -444,10 +449,13 @@ public enum TranscriptBuilder {
                     }
                     continue
                 }
-                if let kind = kind ?? untaggedNoticeKind(message.content.text), noticeKinds.contains(kind),
+                // A finished process or helpers reads as such whatever Hermes tagged it: on a
+                // messaging platform it's an `internal_notification` with a footer.
+                let noticeKind = finishedWorkKind(message.content.text) ?? kind ?? untaggedNoticeKind(message.content.text)
+                if let kind = noticeKind, noticeKinds.contains(kind),
                    !isDelivered(kind: kind, text: message.content.text) {
                     closeTurn()
-                    items.append(.notice(Notice(id: rowID, kind: kind, text: noticeText(kind: kind, content: message.content.text))))
+                    items.append(.notice(notice(id: rowID, kind: kind, message: message)))
                     continue
                 }
                 closeTurn()
@@ -456,7 +464,7 @@ public enum TranscriptBuilder {
             case "assistant":
                 if let kind, noticeKinds.contains(kind) {
                     closeTurn()
-                    items.append(.notice(Notice(id: rowID, kind: kind, text: noticeText(kind: kind, content: message.content.text))))
+                    items.append(.notice(notice(id: rowID, kind: kind, message: message)))
                     continue
                 }
                 if turn == nil {
@@ -548,7 +556,46 @@ public enum TranscriptBuilder {
             }
         }
         closeTurn()
-        return hidesSilence ? withoutRoutineEchoes(items) : items
+        return foldingFinishedWork(hidesSilence ? withoutRoutineEchoes(items) : items)
+    }
+
+    /// A stored notice, with what it's about when it's finished work.
+    static func notice(id: String, kind: String, message: SessionMessage) -> Notice {
+        let work = FinishedWork.parse(kind: kind, text: message.content.text)
+        var notice = Notice(id: id, kind: kind, text: Notice.finishedLine(work) ?? noticeText(kind: kind, content: message.content.text))
+        notice.work = work
+        notice.timestamp = message.timestamp
+        return notice
+    }
+
+    /// Notices of finished work in a row, with nothing between them, are one line that opens to
+    /// each: "3 background processes finished" (`docs/chat.md` §2a). Processes and helpers fold
+    /// apart. The line keeps the first notice's identity, so one that joins it doesn't move it.
+    static func foldingFinishedWork(_ items: [TranscriptItem]) -> [TranscriptItem] {
+        var kept: [TranscriptItem] = []
+        kept.reserveCapacity(items.count)
+        for item in items {
+            if case .notice(let next) = item, !next.work.isEmpty,
+               case .notice(var folded)? = kept.last, folded.kind == next.kind, !folded.work.isEmpty {
+                folded.work += next.work
+                folded.text = Notice.finishedLine(folded.work) ?? folded.text
+                folded.timestamp = next.timestamp ?? folded.timestamp
+                kept[kept.count - 1] = .notice(folded)
+                continue
+            }
+            kept.append(item)
+        }
+        return kept
+    }
+
+    /// The kind of a finished process's or helpers' notice by its words, however it's tagged.
+    static func finishedWorkKind(_ text: String) -> String? {
+        let head = text.drop { $0.isWhitespace }
+        if head.hasPrefix(FinishedProcess.prefix) || head.range(of: #"^\[IMPORTANT: \d+ background processes completed\."#, options: .regularExpression) != nil {
+            return "process_complete"
+        }
+        if head.hasPrefix("[ASYNC DELEGATION ") { return "async_delegation_complete" }
+        return nil
     }
 
     /// Rows another writer stored in the middle of a turn go after it. A model writes nothing while
@@ -765,9 +812,7 @@ public enum TranscriptBuilder {
     /// interrupted turn picked up again was stored untyped before Hermes typed it.
     static func untaggedNoticeKind(_ text: String) -> String? {
         if HermesScaffold.isAutoContinue(text) { return "auto_continue" }
-        let text = text.drop { $0.isWhitespace }
-        guard text.hasPrefix("[IMPORTANT: Background process "), !text.prefix(200).contains(" matched watch pattern") else { return nil }
-        return "process_complete"
+        return finishedWorkKind(text)
     }
 
     /// Assistant rows that are only a silence marker, plus an `internal_notification` user row whose

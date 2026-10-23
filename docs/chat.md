@@ -296,7 +296,8 @@ that opens to them, and consecutive subagents share one row.
 | `session.reclaimed` | One receipt line: "This chat was resting · it picks up where you left off"; the next message resumes the session | receipt |
 | `session.title` | The chat's title updates in the sidebar; nothing in the transcript | |
 | A message another Bot sent (`message_agent`), a routine's, a webhook's or a script's delivery | Their own rows, never the person's bubble (§2a) | `botMessageCard` (`AgentMessageRow`), `RoutineDeliveryRow` ([bots-groups-skills.md](bots-groups-skills.md)) |
-| Stored notices (`model_switch`, `auto_continue`, `failed_turn`, `process_complete`…) | One quiet centred line; a failed turn shows its whole sentence | `NoticeRow`, `FailedTurnRow` |
+| Stored notices (`model_switch`, `auto_continue`, `failed_turn`…) | One quiet centred line; a failed turn shows its whole sentence | `NoticeRow`, `FailedTurnRow` |
+| `process_complete`, `async_delegation_complete` | A line saying which and how, that opens to each (§2a) | `finishedNotice` (`FinishedWorkRow`) |
 | Approvals and other requests | A docked card above the composer, and a receipt in the chat once settled | [quick-actions.md](quick-actions.md) |
 
 ### Over the API server
@@ -353,7 +354,16 @@ counted as "You", offered for Edit and Resend, Branch or a voice reply (`UserEnt
 | `[System: …]` recovery nudges without a kind; the task list and planning state compaction carries over | `agent/conversation_loop.py`, `tools/todo_tool.py` | Nothing: Hermes's REST projection hides them and its TUI drops them | |
 | An interrupted turn picked up again (`auto_continue`, or untyped `[System note: Your previous turn was interrupted …`) | `tui_gateway/session_auto_continue.py` | One quiet line, "Resumed an interrupted turn" | `NoticeRow` |
 | Recalled memory in a message with images (`<memory-context>…</memory-context>`) | `agent/memory_context.py` | Left out of the message | |
-| Another Bot's message, a background process or helpers finishing | | §2 and [bots-groups-skills.md](bots-groups-skills.md) | |
+| A background process finished: `[IMPORTANT: Background process <proc_id> completed normally (exit code 0).\nCommand: …\nOutput:\n…]` (or `exited`, `terminated by …`, `marked lost …`, `failed to start`, `matched watch pattern "…"`), several as one batch (`[IMPORTANT: 3 background processes completed. …]`) | `tools/process_registry_notifications.py`, as `process_complete`, untyped from a one-shot `hermes chat`, or `internal_notification` with a footer on messaging platforms. The dashboard route adds `display_metadata.display_text` ("Background Process Failed (exit 1): …"); the API server's doesn't, so the app reads the content, which carries everything on both | One quiet line saying which and how, from the command as processes are named ([background-processes.md](background-processes.md) §2): "Tests passed", "Tests failed · exit 1", "Docs site was stopped", "Watching app.log printed “ERROR”". Opened: each one's command and the last 8 lines of its output, and Show Step, which lands on the step that started it (by its `proc_` id). Hermes's clients show `display_text`, else "background process finished" | `finishedNotice` (`FinishedWorkRow`, `FinishedProcess`) |
+| A message to another Bot answered: the same notice for its delivery (`bot_mode_dm.py --run-delivery … hermes -p <bot> chat`), its output the reply (`Reply from <Bot>:`, JSON `reply`, or the reply itself) or `Delivery to <Bot> failed [reason: …]: …` | `tools/bot_mode_dm.py`: the reply comes back this way, never as a field of the call | "Engineer replied", opening to the reply as Markdown; "Your message to Engineer wasn't delivered" with the reason | `finishedNotice` |
+| Helpers finished: `[ASYNC DELEGATION COMPLETE — <id>]` (with `Original goal:` and `--- RESULT ---`), `[ASYNC DELEGATION BATCH COMPLETE — <id>]` (a `--- ✓ TASK 1/2: <goal>  (status=…) ---` block each), `[ASYNC DELEGATION TASK FAILED — …]` | `tools/process_registry_notifications.py`, as `async_delegation_complete`; `display_metadata` adds `display_text`, `task_count`, `completed_count`, `failed_count` on the dashboard route | "Helper finished: Find the flaky test", "2 helpers finished: Research pricing pages, Review the draft · 1 failed" (each named by its goal's first four words). Opened: each goal, whether it didn't finish, and its result as Markdown, a few lines with Show More, without Hermes's notes to the model (transcript paths, truncation notes, process accounting) | `finishedNotice` (`FinishedHelper`) |
+
+**Finished work in a row is one line.** Notices of finished processes with nothing between them
+(a silent reply hidden in a Bot Chat doesn't count) fold into one: "3 background processes
+finished · 1 failed", "Engineer replied 2 times"; helpers' the same way, apart from processes. It
+keeps the first notice's place and opens to each (`TranscriptBuilder.foldingFinishedWork`). Hermes
+Desktop draws each on its own row (`BackgroundResult`); the TUI one `◈` line each. Like other
+notices, these are never counted, unread, a last line or read aloud.
 
 **A reply to a delivery** says so: "Replying to the routine Disk report" (or the webhook, or "an
 automated message") over the turn right after it (`Delivery.replies`, `deliveryReplyCaption`). The
@@ -367,7 +377,9 @@ Desktop. What a routine or an automation delivered is rendered (§3), with the s
 Mock: Ops' Bot Chat holds one of each (an automation's alert and its reply, a routine's and a
 webhook's delivery, a hidden nudge, a skill from another device, a summary folded into a message
 and one on its own); `POST /api/mock/deliver {profile}` posts an alert that the Bot answers live
-([development.md](development.md)).
+([development.md](development.md)). "overnight" in a Bot Chat plays a night of work: a message to
+Ada and two background checks, then their notices, a follow-up with tools and no reply, Ada's
+reply, helpers' results and Ada's brief.
 
 ## 3. Markdown
 

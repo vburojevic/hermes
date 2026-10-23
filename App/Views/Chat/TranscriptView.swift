@@ -1377,6 +1377,12 @@ struct TranscriptView: View {
             ReceiptRow(notice: notice, conversation: conversation)
         case .notice(let notice) where notice.kind == Notice.compactionKind:
             CompactionDivider(summary: notice.text)
+        case .notice(let notice) where !notice.work.isEmpty:
+            FinishedWorkRow(
+                notice: notice, botName: { conversation.botTitle($0) },
+                stepRow: { id in TranscriptBuilder.turn(startingProcess: id, in: conversation.rows)?.id },
+                showRow: { conversation.flash($0) }
+            )
         case .notice(let notice) where notice.kind == "failed_turn":
             FailedTurnRow(notice: notice)
         case .notice(let notice) where notice.kind == "restored":

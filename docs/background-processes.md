@@ -90,6 +90,10 @@ their rail, under the header. The step shows the name; the state with how long (
 "Finished · 4 min", "Failed · exit 1", "Stopped · 12 min", "Stopping…"); the command (`$ …`) and
 the latest line.
 
+When a process finishes, Hermes tells the chat with a notice the app shows as one line saying which
+and how ("Tests failed · exit 1", "Engineer replied"); notices in a row fold into one, and each
+opens to its command and output, with Show Step back to this step ([chat.md](chat.md) §2a).
+
 | State | From | Look |
 |---|---|---|
 | Running | `status: running` | Green dot, still (only the chat's live line moves, [chat.md](chat.md) §4a) |
