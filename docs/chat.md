@@ -322,10 +322,28 @@ These have no surface here and are ignored: `tool.generating`, `notification.sho
 the Inspector's Bot Screen follows), `browser.controller.*`, `pet.*` and `skin.changed`.
 `projects.changed` and `sessions.changed` trigger a refetch of projects and the chat list and draw
 nothing in the chat. A compaction's handoff summary ("[CONTEXT COMPACTION — REFERENCE ONLY] …",
-stored as the person's message or Hermes') is never the chat's last line, its time in the list or
-its order, and never unread ([inbox.md](inbox.md) §1, §2). `sessions.changed` also reads the Bots roster again (at most every 3 s), so a
+stored as the person's message or Hermes') is a folded divider (§2a), never the chat's last line,
+its time in the list or its order, and never unread ([inbox.md](inbox.md) §1, §2). `sessions.changed` also reads the Bots roster again (at most every 3 s), so a
 message that reached an open, idle Bot Chat elsewhere (another Bot, a routine, another device)
 shows in seconds.
+
+## 2a. Messages that aren't yours
+
+Everything in a transcript is either a message someone wrote, or a short line saying in plain words
+what happened, with the details one tap away. Hermes stores much of what nobody typed as the
+person's own rows (role `user`), and no row says who wrote it: no author, source or job id
+(`hermes_state_common.py`). The text, and for some the `display_kind`, are all that tell them apart,
+so `TranscriptBuilder` classifies each row by them (`CompactionSummary`), the same way Hermes's
+own clients do.
+
+| Stored row | Hermes writes it | Shown as | Component |
+|---|---|---|---|
+| A compaction's handoff summary: `[CONTEXT COMPACTION — REFERENCE ONLY] …avoid repeating it:` (or the legacy `[CONTEXT SUMMARY]:`), the summary, `--- END OF CONTEXT SUMMARY — …` | `agent/context_compressor.py`, as the person's row or Hermes's; Hermes's projection marks one on its own `hidden` and keeps its words | A quiet divider, "Earlier messages were summarized", folded. Opened, the summary's own words as Markdown, read-only, without Hermes's instructions to the model (`CompactionSummary.parse`, as `_strip_summary_prefix`). Not a reply target, never counted, unread, a last line or in the jump pill, not read by Listen or Talk (notices aren't), and session search leaves it out on the gateway. VoiceOver: "Earlier messages summarized". Desktop doesn't draw it at all; the web dashboard draws a muted "Context handoff" | `compactionDivider` (`CompactionDivider`) |
+| The same summary folded into a message (`[PRIOR CONTEXT — …]` before it, or the person's request after its end marker) | When roles must alternate | The message it was folded into, as it was (Hermes's or the person's), and the divider in its place | |
+| A request restated after a compaction (`[STILL IN PROGRESS — …]`) | In place of the person's message it replaced | The person's message, without the header | `userBubble` |
+
+Mock: Ops' Bot Chat ends on a summary on its own and holds one folded into the person's next
+message; `/compact` in a Bot Chat stores another ([development.md](development.md)).
 
 ## 3. Markdown
 

@@ -31,7 +31,7 @@ public struct InflightTurn: Sendable, Equatable {
     /// The message as its bubble shows it (another Bot's message and a routine's delivery read
     /// as they do stored), or `nil` when there's nothing to show.
     public func userEntry(id: String) -> UserEntry? {
-        guard !user.isEmpty, displayKind != "hidden" else { return nil }
+        guard !user.isEmpty, displayKind != "hidden", !CompactionSummary.matches(user) else { return nil }
         let entry = TranscriptBuilder.userEntry(id: id, message: SessionMessage(role: "user", content: .text(user), timestamp: startedAt))
         return entry.text.isEmpty && entry.fileNames.isEmpty ? nil : entry
     }

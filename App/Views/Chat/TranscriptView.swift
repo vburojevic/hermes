@@ -1366,6 +1366,8 @@ struct TranscriptView: View {
             BackgroundCard(prompt: conversation.backgroundResults[notice.id]?.prompt ?? "", answer: conversation.backgroundResults[notice.id]?.answer ?? notice.text)
         case .notice(let notice) where notice.kind.hasPrefix("receipt:"):
             ReceiptRow(notice: notice, conversation: conversation)
+        case .notice(let notice) where notice.kind == Notice.compactionKind:
+            CompactionDivider(summary: notice.text)
         case .notice(let notice) where notice.kind == "failed_turn":
             FailedTurnRow(notice: notice)
         case .notice(let notice) where notice.kind == "restored":

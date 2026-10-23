@@ -374,10 +374,40 @@ public enum TranscriptBuilder {
             turn = nil
         }
 
-        for (index, message) in messages.enumerated() {
+        for (index, stored) in messages.enumerated() {
             if silentRows.contains(index) { continue }
+            var message = stored
             let rowID = message.id.map { "m\($0)" } ?? "i\(index)"
             let kind = message.displayKind
+            if kind == nil || kind == "hidden", message.role == "user" || message.role == "assistant",
+               let parts = CompactionSummary.parse(message.content.text) {
+                // A compaction's summary is nobody's message: a divider in its place, with the
+                // message Hermes folded it into before it and the one it leads after it. Hermes's
+                // projection hides a summary on its own, but keeps its words (`_project_for_display`).
+                closeTurn()
+                if kind == "hidden" {
+                    if !parts.summary.isEmpty {
+                        items.append(.notice(Notice(id: "\(rowID)-s", kind: Notice.compactionKind, text: parts.summary)))
+                    }
+                    continue
+                }
+                if !parts.before.isEmpty {
+                    var prior = message
+                    prior.content = .text(parts.before)
+                    prior.toolCalls = []
+                    if message.role == "user" {
+                        items.append(.user(userEntry(id: "\(rowID)-p", message: prior)))
+                    } else {
+                        let text = cleanAssistantText(parts.before)
+                        items.append(.assistant(AssistantTurn(id: "t\(rowID)-p", answer: text, startedAt: message.timestamp, finishedAt: message.timestamp)))
+                    }
+                }
+                if !parts.summary.isEmpty {
+                    items.append(.notice(Notice(id: "\(rowID)-s", kind: Notice.compactionKind, text: parts.summary)))
+                }
+                guard !parts.after.isEmpty || !message.toolCalls.isEmpty else { continue }
+                message.content = .text(parts.after)
+            }
             if message.role == "user", kind != "steer" {
                 askedAt = kind.map(noticeKinds.contains) == true ? nil : message.timestamp
             }
@@ -770,6 +800,8 @@ public enum TranscriptBuilder {
 
     static func userEntry(id: String, message: SessionMessage) -> UserEntry {
         var text = message.content.text
+        // A request Hermes restated after a compaction is the person's message it replaced.
+        if let restated = CompactionSummary.restatedRequest(text) { text = restated }
         for marker in ["--- Attached Context ---", "--- Context Warnings ---"] {
             if let range = text.range(of: marker) {
                 text = String(text[..<range.lowerBound])

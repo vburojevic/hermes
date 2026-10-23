@@ -195,7 +195,7 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
     /// A newer routine run or other session moves neither it nor the row's time.
     private var computedPreview: String? {
         guard let raw = (canonicalSession ?? lastSession)?.preview?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty, !BotMentions.isSilenceMarker(raw), !CompactionSummary.matches(raw)
+              !raw.isEmpty, !BotMentions.isSilenceMarker(raw), CompactionSummary.parse(raw) == nil
         else { return nil }
         switch Self.controlFrame(raw) {
         case .named(let text)?: return text
