@@ -31,6 +31,16 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610231106 (October 23, 2026)
+
+- **Chat:** a new chat's first message waits on the device while the gateway is away, and goes when it's back
+- **Voice messages:** a message without on-device words shows as audio at once, and its transcript fills in when the gateway's arrives
+- **Tasks:** pause, resume, delete and a new task show at once, and settle when the gateway answers
+- **Routines:** a new routine, its switch and Delete show at once, and settle when the gateway answers
+- **Skills:** Keep As Is, Archive, Restore and a skill's edit show at once in What Hermes Learned
+- **Apps and Tools:** switches, renames and removals show at once, and settle when the gateway answers
+- **Memory:** edits, forgets, reviews and the provider show at once, and settle when the gateway answers
+
 ### Build 2610221951 (October 22, 2026)
 
 - **Setup:** on the Mac, background priority is one line in the sidebar's footer, with Fix… and Not Now
