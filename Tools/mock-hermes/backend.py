@@ -106,6 +106,17 @@ def load_starve():
     return module
 
 
+def load_edits():
+    """edits.py: the "many edits" turn."""
+    module = sys.modules.get("mock_edits")
+    if module is None:
+        spec = importlib.util.spec_from_file_location("mock_edits", pathlib.Path(__file__).resolve().parent / "edits.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["mock_edits"] = module
+        spec.loader.exec_module(module)
+    return module
+
+
 STARVE = load_starve()
 RUNTIME = {}       # runtime sid -> {stored, profile, running, interrupt, seq, ring, pending_title, pending_hidden}
 CREATED = {}       # session.create idempotency_key -> (runtime sid, when)
@@ -1235,6 +1246,11 @@ def run_turn(sid, text):
         answer = "All **30 hosts** checked. Disk use is between 41% and 70%; nothing needs attention."
         stream(sid, answer)
         return finish(sid, stored, answer)
+
+    if "many edits" in visible.lower():
+        # A long coding turn's edits (edits.py, docs/chat.md §1): one file patched again and again, a new
+        # file, a deleted one and a failed patch, all in the turn's one Changes row.
+        return load_edits().many_edits(sid, stored, runtime, tool=tool, stream=stream, finish=finish, emit=emit)
 
     if "widgets" in visible.lower():
         # Shaped like a real coding turn: two files, a failing check, a steer read after it (sent while
