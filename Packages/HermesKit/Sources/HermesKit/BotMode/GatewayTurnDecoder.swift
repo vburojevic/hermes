@@ -90,16 +90,18 @@ public enum GatewayTurnDecoder {
         case "message.complete":
             let text = payload["text"]?.stringValue ?? payload["rendered"]?.stringValue ?? ""
             let usage = decodeNested(TokenUsage.self, payload["usage"])
-            let warning: [TurnEvent] = nonEmpty(payload["warning"]?.stringValue).map { [.warning($0)] } ?? []
+            // Where Hermes stored the turn, before its end: the chat finds its rows by these ids.
+            let receipt: [TurnEvent] = PersistedTurn(payload["persisted_turn"]).map { [.persisted($0)] } ?? []
+            let before: [TurnEvent] = receipt + (nonEmpty(payload["warning"]?.stringValue).map { [.warning($0)] } ?? [])
             switch payload["status"]?.stringValue {
             case "interrupted":
-                events = warning + [.finalText(text), .cancelled]
+                events = before + [.finalText(text), .cancelled]
             case "error":
                 let message = nonEmpty(payload["error"]?.stringValue) ?? nonEmpty(payload["failure_reason"]?.stringValue)
                 let problem: [TurnEvent] = ProviderProblem.from(surface: payload["error_surface"]).map { [.providerProblem($0)] } ?? []
-                events = warning + [.finalText(text)] + problem + [.failed(message)]
+                events = before + [.finalText(text)] + problem + [.failed(message)]
             default:
-                events = warning + [.finalText(text), .completed(output: text, usage: usage, runtime: nil)]
+                events = before + [.finalText(text), .completed(output: text, usage: usage, runtime: nil)]
             }
         case "session.info":
             events = payload["running"]?.boolValue == false ? [.settled] : []

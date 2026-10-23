@@ -104,13 +104,41 @@ shows no message.
 | `thinking.delta` | Only provider waits ("⏳ waiting on…", "rate limited") become the header's label; spinner text is ignored | `turnHeader` |
 | `status.update`, kinds `status`, `lifecycle`, `compacting`, `process` | The header's label ("Compacting context…") | `turnHeader` |
 | `status.update`, kind `warn`, or text starting with "⚠" | A warning line above the work | `TurnWarnings` |
-| `message.complete` | The header turns into its finished form; actions appear; `usage` is kept for the footer | `turnHeader`, `replyActions` |
+| `message.complete` | The header turns into its finished form; actions appear; `usage` is kept for the footer, and `persisted_turn` (the turn's stored rows: `user_row_id`, `row_ids`, `final_assistant_row_id`) to find its stored copy by (one turn, one place, below) | `turnHeader`, `replyActions` |
 | `message.complete` with `status: interrupted` | "Stopped" badge under the partial reply, with the actions | footer |
 | `message.complete` with `status: error` | A warning-coloured line with `error` (or `failure_reason`) under the reply, and the error card after the chat with Try Again (or Reload when the outcome is unknown) and Dismiss | footer, `TurnErrorRow` |
 | `message.complete` with `warning` | A warning line above the work | `TurnWarnings` |
 | `error` during a turn | Fails the turn with its `message` | footer, `TurnErrorRow` |
 | `session.info` with `running: false` | The turn has settled on the backend; the app then fetches the stored transcript, which replaces the live rows in place. It counts only once Hermes has taken the prompt (its submit answered, or an event of its turn came): Hermes says the session is idle while it builds a chat's agent, before it takes the prompt, and ending the turn then emptied it (`TurnSettleGate`). A turn on screen never just vanishes: one that ended with nothing in it and no stored reply yet stays a turn still working (in a Bot Chat, the typing bubble), the chat read again every 5 s until the reply takes its place, and after 3 minutes it says "Hermes hasn't answered this here yet" with Reload (`AssistantTurn.endedEmpty`). Only that fetch hands a turn on screen over to its stored rows: until it has, no other reload (the Bots' roster noticing the chat moved, a reconnect) redraws the chat, and the turn's rows are matched from the newest stored message from before it, taken as it started. When the socket died with the reply, a reload redrew the stored turn under the live one and the turn then took its own rows for history, so it showed twice (`TranscriptBuilder.newestBeforeTurn`) | |
 | `session.info` with `yolo`, folder, branch or project | Updates "allow everything" ([quick-actions.md](quick-actions.md) §3) and where the chat runs ([projects.md](projects.md)) | |
+
+**One turn, one place.** The live turn and its stored rows are the same turn, found by Hermes's
+own ids (`message.complete.persisted_turn`, agent/persisted_turn_receipt.py, which Hermes publishes
+"instead of comparing words"): the stored row of the message it answers, and the reply's row. No
+socket event carries a turn id, so without the receipt (an older Hermes) it's the first message
+stored after the newest row from before the turn. Never by words, and never by being last.
+
+- A turn that ended before its rows were whole (a busy database writes the reply late; a starved
+  Mac reads slowly) stays as it ended, in the place of the part Hermes stored, and the chat is read
+  again every 5 s until the reply's row is there; then the stored rows take over in place
+  (`TurnPlacement`). The stored part is never drawn as a second turn still working elsewhere: that
+  showed one turn twice, "Thinking… · 4m 19s" over its own narration above "Worked for 3m 57s".
+- A live header never outlives its run. When the session says it's idle and the turn never heard
+  its end (it ended while the socket was down, or the gateway restarted under it), the stored chat
+  says how it ended; until it does, the turn says "Lost track of this reply. Reload to see how it
+  ended." with Reload on its card, and the chat reads itself again (`LiveTurn.settleUnheard`,
+  `heldTurn`). "Stopped" and failures say so. A lost turn keeps the steps Hermes stored when they
+  went further than what it heard.
+- A turn this device joins while it runs (back from the background, a dropped stream, another
+  device) carries on the part the stored chat holds, under that part's identity (`LiveTurn.joining`):
+  Hermes takes one writer per chat, so stored rows that stop partway are the turn running now. One
+  held as lost, or as not reconnected, that turns out to be running carries on in its place. A turn
+  never appears below a still-live copy of itself.
+- Its time is the run's own: a turn starts when its message does, live (`turn_started_at` when
+  joined) and stored, so the count while it thinks and the final "Worked for" agree.
+
+Mock: `--late-store 20` with "upgrade" in a Bot Chat (the turn behind this rule),
+`POST /api/mock/drop-sockets` and `POST /api/mock/restart-gateway` during it.
 
 The header's title holds each label for at least 0.6 s so fast updates don't flicker. When the
 connection drops mid-turn (the socket, or a run's event stream twice in a row), the header says

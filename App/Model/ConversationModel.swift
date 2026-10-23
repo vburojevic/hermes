@@ -808,9 +808,32 @@ final class ConversationModel: Identifiable {
     /// in place; as new rows they were laid out from scratch, which on long chats with heavy
     /// replies showed blank frames before the content came back.
     @ObservationIgnored private var rowAliases: [String: String] = [:]
-    /// A turn whose stored rows weren't written yet when it ended: what was on screen, to hand its
-    /// identities over once a later load brings them (`after`: the newest message id before it).
-    @ObservationIgnored private var heldOver: (shown: [TranscriptItem], after: Int?)?
+    /// A turn whose stored rows weren't written yet when it ended: what was on screen, kept in its
+    /// stored rows' place (`TurnPlacement`) until a later load brings them whole, then handing its
+    /// identities over.
+    @ObservationIgnored private var heldOver: HeldTurn?
+
+    private struct HeldTurn {
+        /// What was on screen: the person's message while it wasn't stored, then the reply.
+        var shown: [TranscriptItem]
+        /// The newest stored message from before the turn.
+        var after: Int?
+        /// Where Hermes said it stored the turn (`message.complete.persisted_turn`).
+        var persisted: PersistedTurn?
+        /// It ended without hearing how (a lost run, a re-attach that never came back): a turn
+        /// running on the chat again is this one.
+        var endUnheard: Bool
+
+        var reply: AssistantTurn? {
+            if case .assistant(let turn)? = shown.last { turn } else { nil }
+        }
+
+        /// The stored chat holds the whole turn: by its reply's row when Hermes said which, else
+        /// a reply stored after the turn's message.
+        func isStored(in messages: [SessionMessage]) -> Bool {
+            persisted?.isStored(in: messages) ?? TranscriptBuilder.holdsTurn(messages, after: after)
+        }
+    }
     /// Reading the chat again for a turn kept as still working (`awaitStoredReply`).
     @ObservationIgnored private var storedReplyWait: Task<Void, Never>?
     /// Bumped by every `rebuild`: work that awaited before applying rows checks nobody rebuilt in
@@ -1229,7 +1252,10 @@ final class ConversationModel: Identifiable {
         workspace?.widgets.ingest(messages: messages)
         var built = prebuilt ?? TranscriptBuilder.build(Self.fromTurnStart(messages, hasEarlier: hasEarlierMessages), hidesSilence: botName != nil)
         if sentTurns == 0, completedTurns == 0, !built.isEmpty { openedWithHistory = true }
-        let midTurn = live == nil && TranscriptBuilder.markMidTurn(&built, messages: messages)
+        // A turn held on screen whose stored rows aren't whole yet: the stored rows that stop
+        // partway are that turn, not another one still going somewhere else.
+        let held = heldOver.flatMap { $0.isStored(in: messages) ? nil : $0 }
+        let midTurn = live == nil && held == nil && TranscriptBuilder.markMidTurn(&built, messages: messages)
         watchMidTurn(lastRowAt: midTurn ? messages.last?.timestamp : nil)
         // The other process's turn ended: what waited for the chat goes now.
         if wasMidTurn, !midTurn, waitsForChat { retryChat(after: 1) }
@@ -1244,24 +1270,20 @@ final class ConversationModel: Identifiable {
             localItems += turnReceipts.map { (.afterUser(userCount), $0) }
             turnReceipts = []
         }
-        items = mergeLocalItems(into: built)
+        var merged = mergeLocalItems(into: built)
+        if let held {
+            // Not whole yet: what streamed in stays, in the place of the part Hermes stored, rather
+            // than vanishing with this rebuild, or showing twice. The person's own message only
+            // while Hermes hasn't stored it either.
+            merged = TurnPlacement.place(held.shown, userRowID: held.persisted?.userRowID, after: held.after, in: merged, messages: messages)
+        }
+        items = merged
         applyOverlays()
-        if let held = heldOver {
-            if TranscriptBuilder.holdsTurn(messages, after: held.after) {
-                heldOver = nil
-                handOverIdentity(shown: held.shown, existing: existing)
-                LoadTrace.mark(stableKey ?? "?", "held turn: \(held.shown.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(held.shown.count) rows kept their identity")
-            } else {
-                // Not stored yet: what streamed in stays where it was until it is, rather than
-                // vanishing with this rebuild and coming back with a later one. The person's own
-                // message only while Hermes hasn't stored it either.
-                let storedAsk = messages.contains { $0.role == "user" && ($0.id ?? .max) > (held.after ?? .min) }
-                let shown = Set(items.map(\.id))
-                items += held.shown.filter { row in
-                    if case .user = row, storedAsk { return false }
-                    return !shown.contains(row.id)
-                }
-            }
+        if let stored = heldOver, held == nil {
+            heldOver = nil
+            handOverIdentity(shown: stored.shown, existing: existing)
+            if let reply = stored.reply { carryOverExtras(from: reply, heldAs: reply.id) }
+            LoadTrace.mark(stableKey ?? "?", "held turn: \(stored.shown.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(stored.shown.count) rows kept their identity")
         }
         matchCaptions()
         linkStoredProcesses()
@@ -1286,15 +1308,6 @@ final class ConversationModel: Identifiable {
                 return
             }
         }
-    }
-
-    /// The stored rows end partway through a turn (`TranscriptBuilder.markMidTurn`): that turn, to
-    /// carry on live when this device joins it running.
-    private func storedTurnInProgress() -> (index: Int, turn: AssistantTurn)? {
-        guard let index = items.indices.last, case .assistant(let turn) = items[index], turn.isWorking else { return nil }
-        midTurnWatch?.cancel()
-        midTurnWatch = nil
-        return (index, turn)
     }
 
     /// Events for the chat's turn arrived after all (the app attached to it): the stored copy
@@ -3004,7 +3017,8 @@ final class ConversationModel: Identifiable {
             guard unconfirmed.wasStored(in: rawMessages) else { return }
             self.unconfirmed = nil
         }
-        if turnError?.canRetry == false { turnError = nil }
+        // Not while a turn that lost its run is held: the stored rows don't say how it ended yet.
+        if turnError?.canRetry == false, heldOver?.endUnheard != true { turnError = nil }
     }
 
     private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, queued: Bool = false, voice: VoiceTurn? = nil) {
@@ -3280,24 +3294,36 @@ final class ConversationModel: Identifiable {
     }
 
     private func stopWaitingForReply() {
-        guard let held = heldOver, case .assistant(var turn)? = held.shown.last, turn.isWorking else { return }
+        guard let held = heldOver, var turn = held.reply, turn.isWorking else { return }
         let message = String(localized: "Hermes hasn't answered this here yet. Reload to see whether it has.")
         turn.state = .failed(message)
         turn.finishedAt = .now
-        heldOver = (Array(held.shown.dropLast()) + [.assistant(turn)], held.after)
+        heldOver?.shown = Array(held.shown.dropLast()) + [.assistant(turn)]
         if let index = items.lastIndex(where: { $0.id == turn.id }) { items[index] = .assistant(turn) }
         failureIsRetryable = false
         turnError = TurnFailure(message: message, canRetry: false)
         recoverSoon()
     }
 
-    /// A turn kept as still working gives its place to the turn now running here: the same one,
-    /// come back, or the next.
-    private func dropWaitingTurn() {
+    /// A turn held on screen that the turn now running here continues: one kept as still working
+    /// (the same one, come back, or the next), and one that never heard how it ended (it lost its
+    /// run, or couldn't re-attach): a turn running on the chat now is that one, carrying on in its
+    /// place rather than below a copy of itself saying it was lost. Its error card goes with it.
+    private func reopenHeldTurn() {
         storedReplyWait?.cancel()
-        guard let held = heldOver, case .assistant(let turn)? = held.shown.last, turn.isWorking else { return }
-        items.removeAll { $0.id == turn.id }
-        heldOver = (Array(held.shown.dropLast()), held.after)
+        guard let held = heldOver, var turn = held.reply, turn.isWorking || held.endUnheard,
+              let index = items.lastIndex(where: { $0.id == turn.id }) else { return }
+        heldOver?.shown = Array(held.shown.dropLast())
+        guard !turn.isWorking, index == items.indices.last else {
+            items.remove(at: index)
+            return
+        }
+        // It carries on live (`LiveTurn.joining`).
+        turn.state = .streaming
+        turn.finishedAt = nil
+        items[index] = .assistant(turn)
+        if turnError?.canRetry == false { turnError = nil }
+        recoveryTask?.cancel()
     }
 
     private func applyTerminal(_ status: RunStatus) {
@@ -3376,7 +3402,9 @@ final class ConversationModel: Identifiable {
                 guard live?.turn.id == finished.turn.id else { return }
                 // Fetch in an unstructured task: a turn that ended by cancellation must still reconcile.
                 guard let fetched = try? await Task(operation: { try await fetch(sessionID) }).value else { continue }
-                guard TranscriptBuilder.holdsTurn(fetched.messages, after: newestBefore, stopped: stoppedByUser) else { continue }
+                // By the rows Hermes said it stored the turn in, when it said; else a reply after its message.
+                guard finished.persisted?.isStored(in: fetched.messages)
+                        ?? TranscriptBuilder.holdsTurn(fetched.messages, after: newestBefore, stopped: stoppedByUser) else { continue }
                 transcript = fetched
                 if live?.turn.id == finished.turn.id, let merged = merge(fetched) {
                     let generation = rowsGeneration
@@ -3392,7 +3420,7 @@ final class ConversationModel: Identifiable {
                 break
             }
         }
-        guard live?.turn.id == finished.turn.id else { return }
+        guard let ending = live, ending.turn.id == finished.turn.id else { return }
         // The stored rows take over from the live ones in place (same identities), in one
         // animated step: the reply's actions fade in where it ends instead of shoving it up.
         animateRows {
@@ -3406,24 +3434,35 @@ final class ConversationModel: Identifiable {
                 }
                 handOverIdentity(shown: shownRows, existing: existing)
                 needsReconcile = false
-                carryOverExtras(from: finished.turn)
+                carryOverExtras(from: ending.turn)
                 if finished.turn.state == .stopped {
                     markLastTurnStopped()
                 }
             } else {
                 // Couldn't reach the server, or it hasn't written the turn yet: keep what streamed
-                // in, and reload when we can. A turn that ended with nothing in it stays a turn
-                // still working, never an empty space under the message, until its stored reply
-                // takes its place (`awaitStoredReply`).
+                // in, in its stored rows' place (`TurnPlacement`), and read the chat again until
+                // they're whole (`awaitStoredReply`). A turn that ended with nothing in it stays a
+                // turn still working, never an empty space under the message; one that never heard
+                // how it ended says the app lost track of it (`LiveTurn.heldTurn`).
                 var held = shownRows
-                if waitsForReply, let last = held.indices.last, case .assistant(var turn) = held[last] {
-                    turn.state = .streaming
-                    turn.finishedAt = nil
+                if let last = held.indices.last, case .assistant(var turn) = held[last] {
+                    turn = ending.heldTurn
+                    if waitsForReply {
+                        turn.state = .streaming
+                        turn.finishedAt = nil
+                    }
                     held[last] = .assistant(turn)
                 }
-                items += held
+                // Failed without knowing how it ended ("Couldn't reconnect…"): the same, for a turn running again.
+                var uncertain = finished.endedUnheard
+                if case .failed = finished.turn.state, !failureIsRetryable { uncertain = true }
+                heldOver = HeldTurn(shown: held, after: newestBefore, persisted: finished.persisted, endUnheard: uncertain)
+                items = TurnPlacement.place(held, userRowID: finished.persisted?.userRowID, after: newestBefore, in: items, messages: rawMessages)
                 needsReconcile = true
-                heldOver = (held, newestBefore)
+                if case .failed(let line)? = heldOver?.reply?.state, line == LiveTurn.lostTrack {
+                    failureIsRetryable = false
+                    turnError = TurnFailure(message: line, canRetry: false)
+                }
             }
             pendingUser = nil
             redirectedParts = []
@@ -3437,15 +3476,7 @@ final class ConversationModel: Identifiable {
         if workspace?.currentConversation === self { ChatSounds.play(.received) }
         LoadTrace.mark(stableKey ?? "?", "turn end: \(shownRows.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(shownRows.count) rows kept their identity\(transcript == nil ? ", held for a later load" : "")")
         if transcript == nil, sessionID != nil {
-            if waitsForReply {
-                awaitStoredReply()
-            } else {
-                Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(3))
-                    guard let self, self.needsReconcile, !self.isWorking, !self.isFinishing else { return }
-                    self.reload()
-                }
-            }
+            awaitStoredReply()
         }
         if let botName {
             seenActivity = .now
@@ -3474,8 +3505,11 @@ final class ConversationModel: Identifiable {
         return items[(sent + 1)...].firstIndex { if case .assistant = $0 { true } else { false } }
     }
 
-    private func carryOverExtras(from live: AssistantTurn) {
-        guard let index = items.lastIndex(where: { if case .assistant = $0 { true } else { false } }),
+    /// - Parameter heldID: the turn was held on screen under this id (`heldOver`): its stored copy
+    ///   is the row that took its identity.
+    private func carryOverExtras(from live: AssistantTurn, heldAs heldID: String? = nil) {
+        let handedOver = heldID.flatMap { id in items.lastIndex { rowAliases[$0.id] == id } }
+        guard let index = handedOver ?? items.lastIndex(where: { if case .assistant = $0 { true } else { false } }),
               case .assistant(let turn) = items[index]
         else { return }
         var overlay = turnOverlays[turn.id] ?? TurnOverlay()
@@ -5055,23 +5089,22 @@ extension ConversationModel {
         }
     }
 
-    /// - Parameter continuingStored: the stored rows that stop partway are this turn's, so it carries
-    ///   on from them as one turn instead of starting a second one below them.
-    private func beginRemoteTurn(startedAt: Date? = nil, continuingStored: Bool = false) {
-        // A turn running on the gateway answers "how did it end?": an uncertain-outcome card is moot.
+    /// - Parameter continuingStored: the stored rows that stop partway are this turn's (Hermes takes
+    ///   one writer per chat), so it carries on from them as one turn instead of settling them as
+    ///   done and starting a second one below (`LiveTurn.joining`). Off when the attach says the
+    ///   turn running answers another message than the one stored last.
+    private func beginRemoteTurn(startedAt: Date? = nil, continuingStored: Bool = true) {
         // A turn running on the gateway answers "how did it end?" (and "did Hermes get it?").
         unconfirmed = nil
         if turnError?.canRetry == false { turnError = nil }
-        let stored = continuingStored ? storedTurnInProgress() : nil
-        if stored == nil { settleStoredTurn() }
-        dropWaitingTurn()
+        midTurnWatch?.cancel()
+        midTurnWatch = nil
+        if !continuingStored { settleStoredTurn() }
+        reopenHeldTurn()
         animateRows {
-            if let stored {
-                items.remove(at: stored.index)
-                live = LiveTurn(continuing: stored.turn, sessionID: sessionID, startedAt: startedAt)
-            } else {
-                live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID, startedAt: startedAt ?? .now)
-            }
+            let joined = LiveTurn.joining(items, sessionID: sessionID, startedAt: startedAt)
+            if joined.rest.count != items.count { items = joined.rest }
+            live = joined.live
             redirectedParts = []
             takeExpectedFromGateway()
         }
@@ -5104,6 +5137,8 @@ extension ConversationModel {
         if let live, !inflight.assistant.isEmpty, live.pendingText.isEmpty, live.turn.steps.isEmpty, live.turn.answer.isEmpty {
             apply(.textDelta(inflight.assistant))
         }
+        // The run's own start (`turn_started_at`): the live count and the final "Worked for" agree.
+        if let started = inflight.startedAt, live?.turn.startedAt != started { live?.turn.startedAt = started }
     }
 
     /// The turn is over on the backend.
@@ -5115,7 +5150,10 @@ extension ConversationModel {
             if isStopping {
                 self.live?.markStopped()
             } else {
-                apply(.completed(output: nil, usage: nil, runtime: nil))
+                // Idle without the turn's end (it ended while the socket was down, the gateway
+                // restarted): how it ended is read from the stored chat, and until that shows it
+                // the turn says the app lost track of it, never that it finished (`heldTurn`).
+                self.live?.settleUnheard()
             }
         }
         if let botTurnDone {

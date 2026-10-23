@@ -347,6 +347,8 @@ public enum TranscriptBuilder {
         var turn: AssistantTurn?
         var pendingText: [String] = []
         var planCallIDs: Set<String> = []
+        // A turn starts when the message it answers does, as the live turn does (`docs/chat.md` §4a).
+        var askedAt: Date?
 
         func flushText(asAnswer: Bool) {
             guard var current = turn else { return }
@@ -374,6 +376,9 @@ public enum TranscriptBuilder {
             if silentRows.contains(index) { continue }
             let rowID = message.id.map { "m\($0)" } ?? "i\(index)"
             let kind = message.displayKind
+            if message.role == "user", kind != "steer" {
+                askedAt = kind.map(noticeKinds.contains) == true ? nil : message.timestamp
+            }
 
             switch message.role {
             case "user":
@@ -407,7 +412,8 @@ public enum TranscriptBuilder {
                     continue
                 }
                 if turn == nil {
-                    turn = AssistantTurn(id: "t\(rowID)", startedAt: message.timestamp)
+                    turn = AssistantTurn(id: "t\(rowID)", startedAt: askedAt ?? message.timestamp)
+                    askedAt = nil
                 }
                 if let reasoning = message.reasoning {
                     flushText(asAnswer: false)

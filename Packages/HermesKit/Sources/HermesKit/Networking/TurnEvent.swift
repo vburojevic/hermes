@@ -25,6 +25,8 @@ public enum TurnEvent: Sendable, Equatable {
     /// Compression rotated the conversation onto a new session id.
     case sessionChanged(String)
     case status(String)
+    /// Where the turn's rows are stored (`message.complete.persisted_turn`); comes just before its end.
+    case persisted(PersistedTurn)
     case completed(output: String?, usage: TokenUsage?, runtime: RuntimeInfo?)
     case failed(String?)
     /// Hermes refused the turn it had taken: another of its processes holds the chat (`ChatHold`).

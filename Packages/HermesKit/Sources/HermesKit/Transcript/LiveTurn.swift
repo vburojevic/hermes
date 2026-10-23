@@ -16,6 +16,11 @@ public struct LiveTurn: Sendable, Equatable {
     public private(set) var runtime: RuntimeInfo?
     /// Events were dropped while disconnected; the transcript must be reloaded.
     public private(set) var needsReload = false
+    /// Where Hermes stored the turn's rows, from its end (`message.complete.persisted_turn`).
+    public private(set) var persisted: PersistedTurn?
+    /// The turn ended without hearing how: the session said it was idle with no end of the turn
+    /// before it (a gateway restart, a stream that never came back).
+    public private(set) var endedUnheard = false
 
     public init(id: String, sessionID: String?, startedAt: Date = .now) {
         self.turn = AssistantTurn(id: id, state: .streaming, startedAt: startedAt)
@@ -231,6 +236,9 @@ public struct LiveTurn: Sendable, Equatable {
             progress.total = max(progress.total, progress.references.count)
             turn.models = progress
 
+        case .persisted(let receipt):
+            persisted = receipt
+
         case .settled, .titleChanged:
             break // handled by the transport driver
         }
@@ -242,6 +250,42 @@ public struct LiveTurn: Sendable, Equatable {
             return index
         }
         return turn.steps.lastIndex { if case .tool(let tool) = $0 { tool.name == name } else { false } }
+    }
+
+    /// The session says it's idle and the turn never heard how it ended. It ends here so the chat
+    /// can read how it ended; until the stored chat says, it holds as lost (`heldTurn`).
+    public mutating func settleUnheard(now: Date = .now) {
+        guard !isFinished else { return }
+        endedUnheard = true
+        finish(.complete, now: now)
+    }
+
+    /// What a turn that lost its run says until the stored chat shows how it ended (`docs/chat.md`
+    /// §2): one line, with Reload on the chat's error card. Never an endless shimmer.
+    public static var lostTrack: String {
+        String(localized: "Lost track of this reply. Reload to see how it ended.")
+    }
+
+    /// The turn as it stays on screen while its stored rows aren't whole: as it ended, or, when
+    /// it never heard its end, saying the app lost track of it rather than "Worked for …".
+    public var heldTurn: AssistantTurn {
+        var held = snapshot
+        if endedUnheard, !held.endedEmpty { held.state = .failed(Self.lostTrack) }
+        return held
+    }
+
+    /// A turn this device joins while it runs (back from the background, a dropped stream,
+    /// another device's turn). When the stored chat stops partway through a turn, that is this
+    /// one (Hermes takes one writer per chat): its stored part carries on live as the same turn,
+    /// rather than settling as done with a second turn below it. Its time is the run's own
+    /// (`turn_started_at`), so the live count and the final "Worked for" agree.
+    /// - Returns: the rows without the stored part taken over, and the live turn.
+    public static func joining(_ items: [TranscriptItem], sessionID: String?, startedAt: Date?,
+                               id: String = "live-\(UUID().uuidString)") -> (rest: [TranscriptItem], live: LiveTurn) {
+        guard let last = items.indices.last, case .assistant(let stored) = items[last], stored.isWorking else {
+            return (items, LiveTurn(id: id, sessionID: sessionID, startedAt: startedAt ?? .now))
+        }
+        return (Array(items.dropLast()), LiveTurn(continuing: stored, sessionID: sessionID, startedAt: startedAt))
     }
 
     /// Marks the turn as stopped locally (e.g. the user cancelled before the server confirmed).
