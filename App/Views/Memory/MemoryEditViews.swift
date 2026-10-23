@@ -3,16 +3,22 @@ import HermesPush
 import SwiftUI
 
 /// What the edit sheet works on: an entry, and where it sat (its id changes with its text, so a
-/// reload finds it again by place).
+/// reload finds it again by place). After a refusal, also the text typed and why.
 struct MemoryEditTarget: Identifiable, Hashable {
     let entry: MemoryEntry
     let index: Int?
+    /// What the person typed, when the gateway refused it.
+    var draft: String?
+    var refusal: String?
+    /// The entry was forgotten on the gateway: the text stays to copy, with nothing to save over.
+    var isGone = false
     var id: String { entry.id }
 }
 
 /// Edit Memory (`memoryEdit`, a partial glass sheet): the entry as plain text, the room left in
-/// its store, Forget This, and ✓ to save. A refusal (over the cap, changed on the gateway) shows
-/// the gateway's words and keeps every character typed.
+/// its store, Forget This, and ✓ to save. ✓ closes it at once and the list shows the new text; a
+/// refusal (over the cap, changed on the gateway) opens it again with the gateway's words and
+/// every character typed (`MemoryModel.refusedEdit`).
 struct MemoryEditSheet: View {
     let model: MemoryModel
     let target: MemoryEditTarget
@@ -22,7 +28,6 @@ struct MemoryEditSheet: View {
     @State private var entry: MemoryEntry?
     @State private var loaded = false
     @State private var refusal: String?
-    @State private var isSaving = false
     @State private var forgetting: MemoryEntry?
     @State private var resetting = false
     @FocusState private var focused: Bool
@@ -45,7 +50,7 @@ struct MemoryEditSheet: View {
     }
 
     private var canSave: Bool {
-        loaded && entry != nil && !isSaving && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.isOnline
+        loaded && entry != nil && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.isOnline
     }
 
     var body: some View {
@@ -119,8 +124,13 @@ struct MemoryEditSheet: View {
         }
         .task {
             guard !loaded else { return }
-            entry = target.entry
-            text = await model.fullText(of: target.entry)
+            entry = target.isGone ? nil : target.entry
+            refusal = target.refusal
+            if let draft = target.draft {
+                text = draft
+            } else {
+                text = await model.fullText(of: target.entry)
+            }
             loaded = true
             focused = true
         }
@@ -135,28 +145,9 @@ struct MemoryEditSheet: View {
 
     private func save() {
         guard let entry else { return }
-        isSaving = true
-        refusal = nil
-        Task {
-            let outcome = await model.save(entry, text: text)
-            isSaving = false
-            switch outcome {
-            case .saved:
-                dismiss()
-            case .refused(let message):
-                refusal = message
-                // Changed on the gateway: work on the entry as it is now, keeping the typed text.
-                if MemoryModel.isStale(message) {
-                    self.entry = model.current(entry, at: target.index)
-                    if let fresh = self.entry {
-                        // What the gateway has now, beside what the person typed.
-                        refusal = String(localized: "\(message)\nOn \(model.gatewayName) it now says: “\(fresh.text)”. Save to replace it with your text.")
-                    } else {
-                        refusal = String(localized: "This was forgotten on \(model.gatewayName). Your text is still here to copy.")
-                    }
-                }
-            }
-        }
+        let text = text
+        Task { await model.save(entry, text: text, at: target.index) }
+        dismiss()
     }
 }
 
@@ -508,10 +499,10 @@ struct MemoryProviderInstallSheet: View {
                     Button("Set Up \(provider.title)…", action: setUp)
                 case "ready":
                     Button("Use \(provider.title)") {
-                        Task {
-                            await model.setProvider(provider.name)
-                            dismiss()
-                        }
+                        // The checkmark moves at once on the page below; a refusal says so there.
+                        let name = provider.name
+                        Task { await model.setProvider(name) }
+                        dismiss()
                     }
                 default:
                     Text("Hermes still says \(provider.title) isn't available.").foregroundStyle(Theme.secondaryText)

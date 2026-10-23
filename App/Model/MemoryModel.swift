@@ -1,11 +1,13 @@
 import Foundation
 import HermesKit
 import Observation
+import SwiftUI
 
 /// What Hermes, or one Bot, remembers on a gateway (`docs/memory.md`): About You and Hermes's
 /// Notes, saves waiting for review, the switches and the provider. One page's worth: the model
 /// is made when the page opens and dropped when it closes, so entries never outlive the screen
-/// (never logged, never in Spotlight, never on disk). Every change re-reads what it touched.
+/// (never logged, never in Spotlight, never on disk). Every change shows at once and settles when
+/// the gateway answers (`docs/chat.md` §4a), then re-reads what it touched; a refusal puts it back.
 @MainActor
 @Observable
 final class MemoryModel {
@@ -30,17 +32,25 @@ final class MemoryModel {
 
     var tab: MemoryStoreKind = .about
 
-    private(set) var list: MemoryList?
+    /// The entries as the gateway last listed them.
+    private var gatewayList: MemoryList?
+    /// Edits, forgets and saves from review still on their way.
+    private var entryChanges = PendingChanges<MemoryEntry>()
     private(set) var settings: MemorySettings?
     private(set) var status: MemoryStatus?
-    private(set) var pending: [MemoryPending] = []
+    /// The review list as the gateway last listed it.
+    private var gatewayPending: [MemoryPending] = []
+    /// Saves and discards from review still on their way.
+    private var reviewChanges = PendingChanges<MemoryPending>()
     /// The review list couldn't be read (an older gateway, no session for a Bot).
     private(set) var pendingUnavailable = false
     private(set) var hasLoadedPending = false
     private(set) var isLoading = false
     private(set) var loadError: String?
-    /// A gateway message to show (an action that failed).
-    var message: String?
+    /// What the gateway refused, said once: what was put back, and why.
+    var refusal: RefusedChange?
+    /// An edit the gateway refused after its sheet closed: the sheet opens again with the text.
+    var refusedEdit: MemoryEditTarget?
     /// A passing note: what a save replaced, what was reset.
     var toast: String?
 
@@ -84,6 +94,19 @@ final class MemoryModel {
     }
 
     // MARK: Reading
+
+    /// The entries with every change still on its way.
+    var list: MemoryList? {
+        guard let gatewayList else { return nil }
+        guard !entryChanges.isEmpty else { return gatewayList }
+        return MemoryList(about: entryChanges.applied(to: gatewayList.about).filter { $0.store == .about },
+                          notes: entryChanges.applied(to: gatewayList.notes).filter { $0.store == .notes })
+    }
+
+    /// Saves waiting for review, less the ones answered here.
+    var pending: [MemoryPending] {
+        reviewChanges.applied(to: gatewayPending)
+    }
 
     func entries(in store: MemoryStoreKind) -> [MemoryEntry] {
         list?.entries(in: store) ?? []
@@ -154,7 +177,7 @@ final class MemoryModel {
         async let status = roster.memoryStatus(profile: profile)
         async let reviews: Void = includingPending ? loadPending() : ()
         do {
-            list = try await entries
+            gatewayList = try await entries
             loadError = nil
         } catch {
             loadError = error.localizedDescription
@@ -212,11 +235,14 @@ final class MemoryModel {
         }
     }
 
-    /// Just the entries (after an edit, a forget, a save from review).
-    func reloadEntries() async {
-        guard let roster, roster.isConnected else { return }
-        if let fresh = try? await roster.memoryEntries(profile: profile) { list = fresh }
-        if let fresh = try? await roster.memoryStatus(profile: profile) { status = fresh }
+    /// Just the entries (after an edit, a forget, a save from review). Whether they came.
+    @discardableResult
+    func reloadEntries() async -> Bool {
+        guard let roster, roster.isConnected else { return false }
+        let fresh = try? await roster.memoryEntries(profile: profile)
+        if let fresh { gatewayList = fresh }
+        if let status = try? await roster.memoryStatus(profile: profile) { self.status = status }
+        return fresh != nil
     }
 
     /// `/memory pending`. The gateway scopes `command.dispatch` by session: a Bot's review list
@@ -225,7 +251,7 @@ final class MemoryModel {
         do {
             let text = try await memoryCommand("pending")
             // The gateway lists the oldest first; the newest leads here (`memoryNotes`).
-            pending = MemoryPendingParser.parse(text).reversed()
+            gatewayPending = MemoryPendingParser.parse(text).reversed()
             pendingUnavailable = false
             hasLoadedPending = true
         } catch {
@@ -252,21 +278,54 @@ final class MemoryModel {
         return (try? await roster.memoryEntryText(id: entry.id, profile: profile)) ?? entry.text
     }
 
-    /// Rewrites an entry. A refusal keeps the person's text and shows the gateway's words; if the
-    /// entry changed on the gateway meanwhile, the list reloads.
-    func save(_ entry: MemoryEntry, text: String) async -> EditOutcome {
-        guard let roster, roster.isConnected else { return .refused(String(localized: "\(gatewayName) is offline. Your text is still here.")) }
+    /// Rewrites an entry. The list shows the new text at once, while the edit sheet has already
+    /// closed. A refusal puts the entry back and opens the sheet again (`refusedEdit`) with every
+    /// character typed and the gateway's words; if the entry changed on the gateway meanwhile,
+    /// with what it says now.
+    @discardableResult
+    func save(_ entry: MemoryEntry, text: String, at index: Int?) async -> EditOutcome {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .refused(String(localized: "An entry can't be empty. Use Forget This to remove it.")) }
+        guard let roster, roster.isConnected else {
+            return refuseEdit(entry, at: index, text: text, String(localized: "\(gatewayName) is offline. Your text is still here."))
+        }
+        guard !trimmed.isEmpty else {
+            return refuseEdit(entry, at: index, text: text, String(localized: "An entry can't be empty. Use Forget This to remove it."))
+        }
+        var edited = entry
+        edited.text = trimmed
+        let token = entryChanges.begin(.update(edited), for: entry.id)
         do {
             try await roster.editMemoryEntry(id: entry.id, content: trimmed, profile: profile)
-            await reloadEntries()
+            // The entry's id changes with its text: the list read settles it. Without one, the
+            // gateway's list takes the edit here until the next read.
+            let reloaded = await reloadEntries()
+            if !reloaded { gatewayList?.replace(entry.id, with: edited) }
+            entryChanges.settle(token, for: entry.id)
             return .saved
         } catch {
             let message = error.localizedDescription
             if Self.isStale(message) { await reloadEntries() }
-            return .refused(message)
+            guard entryChanges.settle(token, for: entry.id) else { return .refused(message) }
+            return refuseEdit(entry, at: index, text: text, message)
         }
+    }
+
+    /// Opens the edit sheet again with the person's text and why the gateway refused it.
+    private func refuseEdit(_ entry: MemoryEntry, at index: Int?, text: String, _ message: String) -> EditOutcome {
+        var target = MemoryEditTarget(entry: entry, index: index, draft: text, refusal: message)
+        if Self.isStale(message) {
+            if let fresh = current(entry, at: index) {
+                // What the gateway has now, beside what the person typed.
+                target = MemoryEditTarget(entry: fresh, index: index, draft: text,
+                                          refusal: String(localized: "\(message)\nOn \(gatewayName) it now says: “\(fresh.text)”. Save to replace it with your text."))
+            } else {
+                target.isGone = true
+                target.refusal = String(localized: "This was forgotten on \(gatewayName). Your text is still here to copy.")
+            }
+        }
+        refusedEdit = target
+        AccessibilityNotification.Announcement(String(localized: "Couldn't save the change. \(target.refusal ?? "")")).post()
+        return .refused(target.refusal ?? message)
     }
 
     /// The same entry after a reload (its id changes with its text): by store and position.
@@ -281,40 +340,59 @@ final class MemoryModel {
         message.localizedCaseInsensitiveContains("stale") || message.localizedCaseInsensitiveContains("not found")
     }
 
+    /// Forget (confirmed first): the entry goes now, and comes back if the gateway refuses.
     func forget(_ entry: MemoryEntry) async {
         guard let roster, roster.isConnected else { return }
+        let token = entryChanges.begin(.remove, for: entry.id)
         do {
             try await roster.forgetMemoryEntry(id: entry.id, profile: profile)
+            let reloaded = await reloadEntries()
+            if !reloaded { gatewayList?.replace(entry.id, with: nil) }
         } catch {
-            message = error.localizedDescription
+            if entryChanges.isNewest(token, for: entry.id) {
+                refuse(String(localized: "Couldn't forget this"), error)
+            }
+            await reloadEntries()
         }
-        await reloadEntries()
+        entryChanges.settle(token, for: entry.id)
     }
 
     // MARK: Review
 
+    /// Save from review: it leaves the review list now and, when it adds, shows in its store
+    /// until the entries are read again.
     func approve(_ item: MemoryPending) async {
+        guard !reviewChanges.isPending(item.id) else { return }
+        let review = reviewChanges.begin(.remove, for: item.id)
+        let added = item.action == .add ? MemoryEntry(id: "review-\(item.id)", store: item.store ?? .notes, text: item.text, fingerprint: "") : nil
+        let entry = added.map { entryChanges.begin(.insert($0), for: $0.id) }
         do {
             let reply = MemoryPendingParser.approveReply(try await memoryCommand("approve \(item.id)"))
             if let failure = reply.failure {
-                message = failure
+                refusal = RefusedChange(String(localized: "Couldn't save this"), message: failure)
             } else if let replaced = reply.overwritten.first {
                 toast = String(localized: "Saved. It replaced: \(replaced)")
             }
         } catch {
-            message = error.localizedDescription
+            refuse(String(localized: "Couldn't save this"), error)
         }
         await loadPending()
         await reloadEntries()
+        reviewChanges.settle(review, for: item.id)
+        if let added, let entry { entryChanges.settle(entry, for: added.id) }
     }
 
+    /// Discard from review: it leaves the list now, and comes back if the gateway refuses.
     func discard(_ item: MemoryPending) async {
+        guard !reviewChanges.isPending(item.id) else { return }
+        let review = reviewChanges.begin(.remove, for: item.id)
         do {
             _ = try await memoryCommand("reject \(item.id)")
         } catch {
-            message = error.localizedDescription
+            refuse(String(localized: "Couldn't discard this"), error)
         }
         await loadPending()
+        reviewChanges.settle(review, for: item.id)
     }
 
     // MARK: Options
@@ -339,39 +417,58 @@ final class MemoryModel {
         await setEnabled(.notes, true)
     }
 
+    /// A switch flips at once; a refusal flips it back (and the gateway's switches are read again).
     private func setSetting(_ key: String, _ value: Bool, apply: (inout MemorySettings) -> Void) async {
         guard let roster, roster.isConnected else { return }
+        let before = settings
         var optimistic = settings ?? MemorySettings()
         apply(&optimistic)
         settings = optimistic
         do {
             try await roster.setMemorySetting(key, to: value, profile: profile)
         } catch {
-            message = error.localizedDescription
+            if settings == optimistic { settings = before }
+            refuse(String(localized: "Couldn't change this setting"), error)
         }
         if let fresh = try? await roster.memorySettings(profile: profile) { settings = fresh }
     }
 
+    /// The provider's checkmark moves at once; a refusal moves it back.
     func setProvider(_ provider: String) async {
         guard let roster, roster.isConnected else { return }
+        let before = status?.active
+        status?.active = provider
         do {
             try await roster.setMemoryProvider(provider, profile: profile)
         } catch {
-            message = error.localizedDescription
+            if status?.active == provider, let before { status?.active = before }
+            refuse(String(localized: "Couldn't change where memory lives"), error)
         }
         if let fresh = try? await roster.memoryStatus(profile: profile) { status = fresh }
     }
 
-    /// Reset Memory…: both files go. Destructive and not undoable; the page confirms first.
+    /// Reset Memory…: both files go. Destructive and not undoable; the page confirms first. The
+    /// entries go at once and come back if the gateway refuses.
     func reset() async {
         guard let roster, roster.isConnected else { return }
+        let entries = (gatewayList?.about ?? []) + (gatewayList?.notes ?? [])
+        let tokens = entries.map { ($0.id, entryChanges.begin(.remove, for: $0.id)) }
         do {
             try await roster.resetMemory(target: "all", profile: profile)
             toast = String(localized: "\(keeperName)'s memory was reset.")
+            let reloaded = await reloadEntries()
+            if !reloaded { gatewayList = MemoryList() }
         } catch {
-            message = error.localizedDescription
+            refuse(String(localized: "Couldn't reset memory"), error)
+            await reloadEntries()
         }
-        await reloadEntries()
+        for (id, token) in tokens { entryChanges.settle(token, for: id) }
+    }
+
+    private func refuse(_ title: String, _ error: any Error) {
+        let note = RefusedChange(title, error: error)
+        refusal = note
+        AccessibilityNotification.Announcement("\(note.title). \(note.message)").post()
     }
 
     // MARK: Telling

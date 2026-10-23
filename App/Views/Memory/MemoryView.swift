@@ -63,6 +63,12 @@ struct MemoryView: View {
         .sheet(item: $editing) { target in
             MemoryEditSheet(model: model, target: target)
         }
+        .onChange(of: model.refusedEdit) {
+            // An edit the gateway refused after its sheet closed: open it again with the text.
+            guard let target = model.refusedEdit else { return }
+            model.refusedEdit = nil
+            editing = target
+        }
         .navigationDestination(isPresented: $showsProvider) {
             MemoryProviderPicker(model: model)
         }

@@ -93,6 +93,11 @@ private struct MacMemoryContent: View {
             if model.isOnline { await model.load() }
         }
         .modifier(MemoryConfirmations(model: model, forgetting: $forgetting, resetting: $resetting) { selection = nil })
+        .onChange(of: model.refusedEdit) {
+            guard let target = model.refusedEdit else { return }
+            model.refusedEdit = nil
+            reopen(target)
+        }
         .modifier(MemoryToast(text: $model.toast))
     }
 
@@ -109,8 +114,13 @@ private struct MacMemoryContent: View {
             if model.list != nil {
                 MemoryMeter(store: store, count: entries.count, fraction: model.fraction(in: store))
             }
-            if entries.isEmpty {
-                Text(model.list == nil ? String(localized: "Loading…") : String(localized: "Nothing here yet. Tell \(model.keeperName) “Remember that…” in any chat."))
+            if model.list == nil {
+                SkeletonRows(count: 3)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else if entries.isEmpty {
+                Text("Nothing here yet. Tell \(model.keeperName) “Remember that…” in any chat.")
                     .font(.callout)
                     .foregroundStyle(Theme.secondaryText)
                     .padding(12)
@@ -243,22 +253,33 @@ private struct MacMemoryContent: View {
         listFocused = true
     }
 
+    /// Save closes the editor at once and the row shows the new text; a refusal opens it again
+    /// with the text typed and the gateway's words (`reopen`).
     private func commit(_ entry: MemoryEntry, index: Int) {
+        let text = draft
+        editingID = nil
+        refusal = nil
+        listFocused = true
         Task {
-            switch await model.save(entry, text: draft) {
-            case .saved:
-                editingID = nil
-                refusal = nil
-                selection = model.entries(in: entry.store).indices.contains(index) ? model.entries(in: entry.store)[index].id : nil
-                listFocused = true
-            case .refused(let message):
-                refusal = message
-                if MemoryModel.isStale(message), let fresh = model.current(entry, at: index) {
-                    editingID = fresh.id
-                    selection = fresh.id
-                }
+            if await model.save(entry, text: text, at: index) == .saved {
+                let entries = model.entries(in: entry.store)
+                if selection == entry.id { selection = entries.indices.contains(index) ? entries[index].id : nil }
             }
         }
+    }
+
+    private func reopen(_ target: MemoryEditTarget) {
+        draft = target.draft ?? target.entry.text
+        refusal = target.refusal
+        guard !target.isGone else {
+            // Nothing left to edit: say so, with what was typed.
+            model.refusal = RefusedChange(String(localized: "Couldn't save the change"),
+                                          message: (target.refusal ?? "") + "\n“\(target.draft ?? "")”")
+            return
+        }
+        selection = target.entry.id
+        editingID = target.entry.id
+        fieldFocused = true
     }
 
     // MARK: Right column

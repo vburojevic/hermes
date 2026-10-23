@@ -134,9 +134,12 @@ at 1,200 characters. When the limits can't be read, the defaults above apply.
   - A plain-text field, kept as typed, and the room left in that store ("room for N more
     characters", or "N characters over").
   - Forget This.
-  - ✓ saves. An empty entry is refused ("Use Forget This to remove it.").
-  - If the entry changed on the gateway meanwhile, the sheet shows what it says now and keeps the
-    person's text; if it was forgotten, the text stays to copy.
+  - ✓ saves and closes the sheet at once; the list shows the new text while the gateway takes
+    it. An empty entry is refused ("Use Forget This to remove it.").
+  - A refusal puts the entry back and opens the sheet again with every character typed and the
+    gateway's words. If the entry changed on the gateway meanwhile, the sheet shows what it says
+    now beside the person's text; if it was forgotten, the text stays to copy. On the Mac the
+    editor opens again in place.
 - **Empty** (`memoryEmpty`): what memory is, and Tell Hermes Something. **Off** (`memoryOff`, both
   stores off): Turn On Memory, which turns both on. One store off says so in its tab.
 - **Not available:** "Turn on Bot Mode for <gateway>", "<gateway> is offline", or "Couldn't read
@@ -149,8 +152,13 @@ at 1,200 characters. When the limits can't be read, the defaults above apply.
   - The arrow keys move the selection. Return or a double-click edits in place. Delete forgets the
     selected entry after a confirmation. ⌘C copies it.
 
-The page loads entries, settings, provider and the review list together, and pulls to refresh.
-Every change re-reads what it touched.
+The page loads entries, settings, provider and the review list together, and pulls to refresh;
+the stores show `SkeletonRows` until the entries arrive, on the Mac too. Every change shows at once
+and settles when the gateway answers ([chat.md](chat.md) §4a, `PendingChanges`): an edit's text, a
+forgotten entry gone, a review row gone (a saved addition already in its store), a switch or the
+provider's checkmark moved, Reset's empty stores. Then it re-reads what it touched. A refusal puts
+it back and says what and why. Install and provider setup wait for the gateway's answer, which is
+what they show, with a `Spinner` and words.
 
 ## 3a. What Hermes Learned
 
@@ -185,7 +193,8 @@ entry's store.
   field.
 - With Ask Before Saving on, a save in a chat that can be asked shows `memorySaveAsk`; a save in a
   task shows up under Waiting for Review.
-- Save and Discard on a pending row update the list and the badge.
+- Save and Discard on a pending row update the list and the badge at once.
+- On a slow gateway (`--starve 5-30`) no change waits behind a spinner or keeps its sheet open.
 - Reset needs the confirmation and empties both tabs.
 - A Bot's switches and review list change that Bot, not the primary profile.
 - The copy never says a change affects the open chat.

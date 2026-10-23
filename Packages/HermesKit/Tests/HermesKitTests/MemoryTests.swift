@@ -10,6 +10,27 @@ struct MemoryTests {
 
     // MARK: Entries
 
+    @Test func anEditOrAForgetShowsBeforeTheListIsReadAgain() {
+        let likes = MemoryEntry(id: "memory:user:0:a", store: .about, text: "Likes tea", fingerprint: "a")
+        let mac = MemoryEntry(id: "memory:memory:1:b", store: .notes, text: "Uses a Mac", fingerprint: "b")
+        let gateway = MemoryList(about: [likes], notes: [mac])
+        // An edit on its way, laid over the gateway's entries; a store keeps its own.
+        var changes = PendingChanges<MemoryEntry>()
+        var edited = likes
+        edited.text = "Likes green tea"
+        changes.begin(.update(edited), for: likes.id)
+        let added = MemoryEntry(id: "review-1", store: .notes, text: "Works late", fingerprint: "")
+        changes.begin(.insert(added), for: added.id)
+        #expect(changes.applied(to: gateway.about).filter { $0.store == .about }.map(\.text) == ["Likes green tea"])
+        #expect(changes.applied(to: gateway.notes).filter { $0.store == .notes }.map(\.text) == ["Uses a Mac", "Works late"])
+        // Done, but no list read came: the gateway's list takes it.
+        var list = gateway
+        list.replace(likes.id, with: edited)
+        list.replace(mac.id, with: nil)
+        #expect(list.about.map(\.text) == ["Likes green tea"])
+        #expect(list.notes.isEmpty)
+    }
+
     @Test func listsBothStoresInFileOrderWithTheGraphsIDs() throws {
         // The graph puts MEMORY.md's cards first, then USER.md's; the index is the combined one.
         let graph = try json("""

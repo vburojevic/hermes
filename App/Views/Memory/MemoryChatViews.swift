@@ -216,6 +216,12 @@ struct MemoryNoteSheet: View {
         .sheet(item: $editing) { target in
             MemoryEditSheet(model: model, target: target)
         }
+        .onChange(of: model.refusedEdit) {
+            // Memory, when it's open over this, opens the sheet again itself.
+            guard !showsMemory, let target = model.refusedEdit else { return }
+            model.refusedEdit = nil
+            editing = target
+        }
         .modifier(MemoryConfirmations(model: model, forgetting: $forgetting, resetting: $resetting))
         #if os(iOS)
         .presentationDetents([.medium, .large], selection: $detent)

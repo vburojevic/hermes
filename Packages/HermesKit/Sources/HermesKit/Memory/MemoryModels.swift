@@ -126,6 +126,19 @@ public struct MemoryList: Sendable, Hashable {
 
     public var isEmpty: Bool { about.isEmpty && notes.isEmpty }
 
+    /// Takes a change the gateway made but no list read has shown yet: the entry with `id`
+    /// replaced in place, or gone (`nil`).
+    public mutating func replace(_ id: String, with entry: MemoryEntry?) {
+        for keyPath in [\MemoryList.about, \MemoryList.notes] {
+            guard let index = self[keyPath: keyPath].firstIndex(where: { $0.id == id }) else { continue }
+            if let entry {
+                self[keyPath: keyPath][index] = entry
+            } else {
+                self[keyPath: keyPath].remove(at: index)
+            }
+        }
+    }
+
     public func entry(id: String) -> MemoryEntry? {
         about.first { $0.id == id } ?? notes.first { $0.id == id }
     }

@@ -350,10 +350,9 @@ struct MemoryConfirmations: ViewModifier {
             .confirmationDialog("Forget this?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
                                 titleVisibility: .visible, presenting: forgetting) { entry in
                 Button("Forget", role: .destructive) {
-                    Task {
-                        await model.forget(entry)
-                        onForgotten()
-                    }
+                    // The entry goes at once; a refusal brings it back with a note.
+                    Task { await model.forget(entry) }
+                    onForgotten()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
@@ -365,8 +364,11 @@ struct MemoryConfirmations: ViewModifier {
             } message: {
                 Text("Everything \(model.keeperName) remembers about you and your setup on \(model.gatewayName) is erased (\(MemoryCopy.aboutCount(model.entries(in: .about).count)), \(MemoryCopy.notesCount(model.entries(in: .notes).count))). This can't be undone.")
             }
-            .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+            .alert(model.refusal?.title ?? "", isPresented: Binding(get: { model.refusal != nil }, set: { if !$0 { model.refusal = nil } }),
+                   presenting: model.refusal) { _ in
                 Button("OK", role: .cancel) {}
+            } message: { refusal in
+                Text(refusal.message)
             }
     }
 }
