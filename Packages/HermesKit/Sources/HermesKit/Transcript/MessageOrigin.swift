@@ -169,3 +169,30 @@ extension Delivery {
         return replies
     }
 }
+
+/// Who a Bot's turn answers when it isn't the person: a delivery, or another Bot's message.
+public enum Answering: Hashable, Sendable {
+    case delivery(DeliverySource)
+    case bot(AgentSender)
+}
+
+extension Delivery {
+    /// The turns that answer someone other than the person, by turn id: the turn right after a
+    /// delivery reads as a reply to it, and the one right after another Bot's message as a reply
+    /// to that Bot ("Replying to Engineer"), as Hermes Desktop folds it (`docs/chat.md` §2a).
+    public static func answering(in items: [TranscriptItem]) -> [String: Answering] {
+        var answering: [String: Answering] = [:]
+        var previous: TranscriptItem?
+        for item in items {
+            if case .assistant(let turn) = item, case .user(let entry)? = previous {
+                if let source = entry.delivery {
+                    answering[turn.id] = .delivery(source)
+                } else if let sender = entry.sender {
+                    answering[turn.id] = .bot(sender)
+                }
+            }
+            previous = item
+        }
+        return answering
+    }
+}

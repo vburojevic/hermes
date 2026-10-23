@@ -1298,7 +1298,24 @@ private struct ProcessStepLine: View {
     private var process: BackgroundProcess? { conversation?.processes.first { $0.id == processID } }
     private var command: String { process?.shownCommand ?? ProcessNaming.clean(tool.startedCommand ?? "") }
     private var name: String {
-        process?.name ?? tool.startedProcessName ?? ProcessNaming.name(for: tool.startedCommand ?? "", botName: { conversation?.botTitle($0) })
+        if let message { return String(localized: "Message to \(message.name(botName: { conversation?.botTitle($0) }))") }
+        return process?.name ?? tool.startedProcessName ?? ProcessNaming.name(for: tool.startedCommand ?? "", botName: { conversation?.botTitle($0) })
+    }
+
+    /// A message to another Bot: the step shows what it said and what came back, not a command.
+    private var message: BotMessageStep? { BotMessageStep(tool) }
+
+    /// The answer to a message: the reply Hermes carried back when its delivery finished, else the
+    /// Bot's own message in this chat after it.
+    private var answer: (text: String, failed: Bool)? {
+        guard let message, let rows = conversation?.rows else { return nil }
+        switch TranscriptBuilder.finished(process: processID, in: rows)?.answer {
+        case .replied(let text)?: return (text, false)
+        case .failed(let reason)?: return (reason, true)
+        case nil: break
+        }
+        if let error = message.error { return (error, true) }
+        return message.reply(in: rows, sentBy: tool.id).map { ($0.text, false) }
     }
 
     /// No process here: the gateway no longer lists it (or never got asked).
@@ -1378,7 +1395,37 @@ private struct ProcessStepLine: View {
         }
     }
 
-    private var snippet: some View {
+    @ViewBuilder private var snippet: some View {
+        if let message {
+            messageSnippet(message)
+        } else if !command.isEmpty || latest != nil {
+            commandSnippet
+        }
+    }
+
+    /// What the message said, a few lines with Show More, and the answer under it.
+    private func messageSnippet(_ message: BotMessageStep) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !message.text.isEmpty {
+                ExpandableText(text: message.text, markdown: true, lines: 3)
+            }
+            if let answer {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(answer.failed ? String(localized: "Not delivered") : String(localized: "\(message.name(botName: { conversation?.botTitle($0) })) replied"),
+                          systemImage: answer.failed ? "exclamationmark.triangle" : "arrowshape.turn.up.left")
+                        .font(Theme.Typography.caption.weight(.semibold))
+                        .foregroundStyle(answer.failed ? Theme.danger : Theme.secondaryText)
+                    ExpandableText(text: answer.text, markdown: !answer.failed, lines: 3)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var commandSnippet: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !command.isEmpty {
                 Text(verbatim: "$ " + command)
@@ -1425,6 +1472,11 @@ private struct ProcessStepLine: View {
             }
         } else if state == .ended {
             parts.append(String(localized: "ended"))
+        }
+        if let message {
+            if !message.text.isEmpty { parts.append(BotMentions.stripMarkdown(message.text)) }
+            if let answer { parts.append(answer.failed ? answer.text : String(localized: "reply: \(BotMentions.stripMarkdown(answer.text))")) }
+            return parts.joined(separator: ", ")
         }
         if !command.isEmpty { parts.append(command) }
         if let latest { parts.append(String(localized: "latest: \(latest)")) }

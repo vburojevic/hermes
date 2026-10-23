@@ -355,8 +355,9 @@ counted as "You", offered for Edit and Resend, Branch or a voice reply (`UserEnt
 | An interrupted turn picked up again (`auto_continue`, or untyped `[System note: Your previous turn was interrupted …`) | `tui_gateway/session_auto_continue.py` | One quiet line, "Resumed an interrupted turn" | `NoticeRow` |
 | Recalled memory in a message with images (`<memory-context>…</memory-context>`) | `agent/memory_context.py` | Left out of the message | |
 | A background process finished: `[IMPORTANT: Background process <proc_id> completed normally (exit code 0).\nCommand: …\nOutput:\n…]` (or `exited`, `terminated by …`, `marked lost …`, `failed to start`, `matched watch pattern "…"`), several as one batch (`[IMPORTANT: 3 background processes completed. …]`) | `tools/process_registry_notifications.py`, as `process_complete`, untyped from a one-shot `hermes chat`, or `internal_notification` with a footer on messaging platforms. The dashboard route adds `display_metadata.display_text` ("Background Process Failed (exit 1): …"); the API server's doesn't, so the app reads the content, which carries everything on both | One quiet line saying which and how, from the command as processes are named ([background-processes.md](background-processes.md) §2): "Tests passed", "Tests failed · exit 1", "Docs site was stopped", "Watching app.log printed “ERROR”". Opened: each one's command and the last 8 lines of its output, and Show Step, which lands on the step that started it (by its `proc_` id). Hermes's clients show `display_text`, else "background process finished" | `finishedNotice` (`FinishedWorkRow`, `FinishedProcess`) |
-| A message to another Bot answered: the same notice for its delivery (`bot_mode_dm.py --run-delivery … hermes -p <bot> chat`), its output the reply (`Reply from <Bot>:`, JSON `reply`, or the reply itself) or `Delivery to <Bot> failed [reason: …]: …` | `tools/bot_mode_dm.py`: the reply comes back this way, never as a field of the call | "Engineer replied", opening to the reply as Markdown; "Your message to Engineer wasn't delivered" with the reason | `finishedNotice` |
+| A message to another Bot answered: the same notice for its delivery (`bot_mode_dm.py --run-delivery … hermes -p <bot> chat`), its output the reply (`Reply from <Bot>:`, JSON `reply`, or the reply itself) or `Delivery to <Bot> failed [reason: …]: …` | `tools/bot_mode_dm.py`: the reply comes back this way, never as a field of the call | "Engineer replied", opening to the reply as Markdown; "Your message to Engineer wasn't delivered" with the reason. The message's step shows the reply too | `finishedNotice` |
 | Helpers finished: `[ASYNC DELEGATION COMPLETE — <id>]` (with `Original goal:` and `--- RESULT ---`), `[ASYNC DELEGATION BATCH COMPLETE — <id>]` (a `--- ✓ TASK 1/2: <goal>  (status=…) ---` block each), `[ASYNC DELEGATION TASK FAILED — …]` | `tools/process_registry_notifications.py`, as `async_delegation_complete`; `display_metadata` adds `display_text`, `task_count`, `completed_count`, `failed_count` on the dashboard route | "Helper finished: Find the flaky test", "2 helpers finished: Research pricing pages, Review the draft · 1 failed" (each named by its goal's first four words). Opened: each goal, whether it didn't finish, and its result as Markdown, a few lines with Show More, without Hermes's notes to the model (transcript paths, truncation notes, process accounting) | `finishedNotice` (`FinishedHelper`) |
+| Another Bot's message: `Message from 🤖 <Name> (@<handle>): …` | `tools/bot_mode_dm.py`, as `internal_notification` | The sender's card (`botMessageCard`): face, name, @handle and time over the text as Markdown, folded to six lines with Show More. A machine-style handoff (a bracketed tag, two headings or more, three labelled fields or a long list, and 400 characters or more) is one line under a "Brief" tag, its first heading or sentence, that opens to the whole brief (`HandoffBrief`). The Bot's turn right after it says "Replying to Engineer" | `AgentMessageRow`, `handoffBrief` (`HandoffBriefRow`) |
 
 **Finished work in a row is one line.** Notices of finished processes with nothing between them
 (a silent reply hidden in a Bot Chat doesn't count) fold into one: "3 background processes
@@ -365,8 +366,15 @@ keeps the first notice's place and opens to each (`TranscriptBuilder.foldingFini
 Desktop draws each on its own row (`BackgroundResult`); the TUI one `◈` line each. Like other
 notices, these are never counted, unread, a last line or read aloud.
 
-**A reply to a delivery** says so: "Replying to the routine Disk report" (or the webhook, or "an
-automated message") over the turn right after it (`Delivery.replies`, `deliveryReplyCaption`). The
+**A message to another Bot** (`message_agent`) is a step in the turn that sent it ("Message to
+Engineer", [background-processes.md](background-processes.md) §4), never an empty preview: the
+words it sent (three lines, Show More) and, once its delivery finished, "Engineer replied" with the
+reply, or why it wasn't delivered. With no notice for it, the reply is the first message from that
+Bot in the chat after the turn (`BotMessageStep`).
+
+**A reply to a delivery or another Bot** says so: "Replying to the routine Disk report" (or the
+webhook, "an automated message", or "Replying to Engineer") over the turn right after it
+(`Delivery.answering`, `deliveryReplyCaption`). The
 reply is the Bot's; the delivery is the routine's, counted and shown in the list as its own
 ("Disk report: …", "Automation: …", never "You:").
 

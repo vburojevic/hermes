@@ -38,7 +38,7 @@ the Bot "Hermes", with the handle `@hermes`. A Bot's look and organisation live 
 | Bot hello | `prompt.submit` with "Hey, tell me about yourself!" | Sent once, right after creation, so the Bot introduces itself. |
 | Compact | `session.compress {session_id}` | In a Bot Chat, `/new`, `/reset`, `/compact` and `/compress` all compact. The transcript reloads and a note says what happened ("Bot Chats are one continuous conversation, so this one was compacted instead."). |
 | Routines | `cron.manage` with `profile` | See §1.3. |
-| Bot-to-Bot messages | No client call | The agent uses its `message_agent` tool. The receiving Bot Chat stores `Message from 🤖 Name (@handle): …`; the app shows it as the sender's card (`AgentMessageRow`, `botMessageCard`). The receiving Bot answers in a one-shot `hermes -p <bot> chat` that sends no events: its row, tile, face and chat show it working from its stored rows ([chat.md](chat.md), a turn going on elsewhere). |
+| Bot-to-Bot messages | No client call | The agent uses its `message_agent` tool (`target`, `message`; tools/bot_mode_dm.py). Its step in the sender's chat shows the words it sent and, once the delivery's background process finishes, the reply it carried back ([chat.md](chat.md) §2a). The receiving Bot Chat stores `Message from 🤖 Name (@handle): …`; the app shows it as the sender's card (`AgentMessageRow`, `botMessageCard`), long text folded and a machine-style handoff as a one-line brief. The receiving Bot answers in a one-shot `hermes -p <bot> chat` that sends no events: its row, tile, face and chat show it working from its stored rows ([chat.md](chat.md), a turn going on elsewhere). |
 | Mark a Bot Chat read on every device | `GET /api/sessions/<id>/mutation-snapshot?profile=`, then `PATCH /api/sessions/<id> {unread: false, request_id, expected_revision, expected_generation, profile}`; read back with `GET /api/sessions/<id>?profile=` (`last_read_at`) | See §1.2. |
 
 Not built yet:
@@ -74,6 +74,13 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   repeated with its widget as JSON (the widgets plugin turns a widget fence it didn't write into
   `json`) goes entirely, where trimming it line by line once left an empty code frame. Replies of
   their own, and replies that act on it, show as usual.
+- **Bots messaging Bots.** Everything one Bot sends another is attributed, never in the
+  person's style: the sender's card with its face, name and @handle (its text as Markdown, six
+  lines and Show More), "Replying to Engineer" over the turn that answers it, and a handoff brief
+  (a bracketed tag, headings, labelled fields or a long list) as one line under a "Brief" tag that
+  opens to the whole text (`HandoffBrief`). The sender's side is the "Message to Engineer" step,
+  with what it said and the reply, and a notice when the reply comes back ("Engineer replied").
+  Group chats already draw each member's message with its face and name (`memberMessage`).
 - **Resting chats.** When the gateway puts an idle chat to sleep (`session.reclaimed`), the face
   sleeps and a note says the chat was resting; the next message resumes it.
 - **The hello screen** (`BotHelloView`) shows before the first message: the face, the role and

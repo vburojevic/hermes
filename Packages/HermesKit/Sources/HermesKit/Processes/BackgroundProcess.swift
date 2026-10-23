@@ -379,8 +379,10 @@ extension ToolActivity {
     /// "Message to Engineer" for `message_agent` (its `to`); a `terminal` process is named from
     /// its command.
     public var startedProcessName: String? {
-        guard name == "message_agent", let result, let to = ToolDisplayCache.json(result)?["to"]?.stringValue, !to.isEmpty else { return nil }
-        return String(localized: "Message to \(to)")
+        guard name == "message_agent", let result, let to = ToolDisplayCache.json(result)?["to"]?.stringValue?.drop(while: { $0 == "@" }),
+              !to.isEmpty else { return nil }
+        // Hermes answers with the handle ("@engineer"): the Bot's name, as the app writes it.
+        return String(localized: "Message to \(ProcessNaming.bot(String(to), botName: { _ in nil }))")
     }
 
     /// The command a `terminal` call ran.

@@ -149,8 +149,8 @@ struct TranscriptView: View {
         // Replies to a voice message open with the Bot's voice (`docs/voice.md` §2).
         let spokenReplies = VoiceReplies.turns(in: all, setting: VoiceReplies.Setting(rawValue: voiceReplies) ?? .whenISpeak)
         let latestReply = all.last { if case .assistant = $0 { true } else { false } }?.id
-        // A reply to a routine's or a script's delivery says so (`docs/chat.md` §2a).
-        let deliveryReplies = Delivery.replies(in: all)
+        // A reply to a routine's or a script's delivery, or to another Bot, says so (`docs/chat.md` §2a).
+        let deliveryReplies = Delivery.answering(in: all)
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 if showsLoadingRow(first: first) {
@@ -935,7 +935,7 @@ struct TranscriptView: View {
         if aboveRoom != 0 { aboveRoom = 0 }
     }
 
-    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String], spokenReplies: Set<String>, latestReply: String?, answers: DeliverySource? = nil) -> some View {
+    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String], spokenReplies: Set<String>, latestReply: String?, answers: Answering? = nil) -> some View {
         VStack(alignment: .leading, spacing: 30) {
             if let date {
                 DateSeparator(date: date)
@@ -949,7 +949,7 @@ struct TranscriptView: View {
             }
             if let answers {
                 VStack(alignment: .leading, spacing: 8) {
-                    DeliveryReplyCaption(source: answers)
+                    DeliveryReplyCaption(answering: answers, botName: { conversation.botTitle($0) })
                     row(for: item, extraTeams: extraTeams, spokenReplies: spokenReplies, latestReply: latestReply)
                 }
             } else {

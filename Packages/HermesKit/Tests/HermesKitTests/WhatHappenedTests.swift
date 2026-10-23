@@ -183,4 +183,43 @@ struct WhatHappenedTests {
         #expect(notice.work.count == 3)
         #expect(notice.text == "3 helpers finished: Find the flaky test, Research pricing pages, Review the draft · 1 failed")
     }
+
+    // MARK: Messages between Bots
+
+    @Test func aMessageStepShowsItsWordsAndItsAnswer() throws {
+        var tool = ToolActivity(id: "c:1", callID: "1", name: "message_agent", status: .succeeded)
+        tool.arguments = .object(["target": .string("engineer"), "message": .string("Run the tests, please.")])
+        tool.result = #"{"status": "queued", "to": "@engineer", "process_id": "proc_x", "reply_delivery": "notification"}"#
+        let step = try #require(BotMessageStep(tool))
+        #expect(step.text == "Run the tests, please.")
+        #expect(step.recipientName == "engineer")
+        #expect(step.name(botName: { _ in nil }) == "Engineer")
+        #expect(step.name(botName: { $0 == "engineer" ? "Engineer" : nil }) == "Engineer")
+        #expect(tool.startedProcessID == "proc_x")
+        #expect(tool.startedProcessName == "Message to Engineer")
+        var reply = UserEntry(id: "u2", text: "All green.", sender: AgentSender(name: "Engineer", handle: "engineer"))
+        reply.timestamp = nil
+        let items: [TranscriptItem] = [.assistant(AssistantTurn(id: "t1", steps: [.tool(tool)])), .user(reply)]
+        #expect(step.reply(in: items, sentBy: "c:1")?.text == "All green.")
+        #expect(TranscriptBuilder.turn(startingProcess: "proc_x", in: items)?.id == "t1")
+        #expect(Delivery.answering(in: items + [.assistant(AssistantTurn(id: "t2", answer: "Thanks."))]) == ["t2": .bot(AgentSender(name: "Engineer", handle: "engineer"))])
+
+        tool.result = #"{"error": "target_busy: profile 'engineer' is busy with another message. Try later.", "reason": "target_busy"}"#
+        #expect(BotMessageStep(tool)?.error == "Engineer is busy with another message.")
+    }
+
+    @Test func aMachineStyleBriefFoldsToItsSummary() {
+        let brief = "[HANDOFF] Release 2.4 notes: status and open items\n\n## Status\nDraft written.\n\n## Done\n- Draft\n- Screenshots\n\n"
+            + "## Open items\n- Owner: you. Decide on the bug number.\n\n## Facts\nRelease: 2.4\nDeadline: 09:00\nChannel: blog\n"
+            + String(repeating: "More detail about the release that runs on. ", count: 14)
+        #expect(HandoffBrief.summary(brief) == "Release 2.4 notes: status and open items")
+        let headed = "## Sync audit\nThe sync audit is done and the results are below for you.\n\n## Findings\n" + String(repeating: "- A finding that matters\n", count: 30)
+        #expect(HandoffBrief.summary(headed) == "Sync audit")
+        // A long message in plain sentences is a message: it folds to a few lines instead.
+        let prose = String(repeating: "I looked at the logs and nothing stood out, so I left it running. ", count: 14)
+        #expect(HandoffBrief.summary(prose) == nil)
+        #expect(LongText.isLong(prose))
+        #expect(!LongText.isLong("Short and sweet."))
+        #expect(LongText.tail("a\nb\nc", lines: 2) == ("b\nc", 1))
+    }
 }

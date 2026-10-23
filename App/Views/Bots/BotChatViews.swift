@@ -290,12 +290,13 @@ struct BotMessageCard: View {
                         .foregroundStyle(Theme.tertiaryText)
                 }
             }
-            // Its web addresses open (`Text(linking:)`); nothing else in it does.
-            Text(linking: text)
-                .font(Theme.Typography.message)
-                .lineSpacing(Theme.Typography.messageLineSpacing)
-                .foregroundStyle(Theme.primaryText)
-                .textSelection(.enabled)
+            // A Bot writes Markdown, rendered with a reply's rules (links through `WebLink`). A
+            // long message folds to a few lines; a machine-style brief to its one-line summary.
+            if let summary = HandoffBrief.summary(text) {
+                HandoffBriefRow(summary: summary, text: text)
+            } else {
+                ExpandableText(text: text, markdown: true, prominent: true)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -306,8 +307,8 @@ struct BotMessageCard: View {
                 .strokeBorder(Theme.hairline)
         )
         .padding(.trailing, trailingInset)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Message from \(name): \(BotMentions.stripMarkdown(text))"))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Message from \(name)"))
     }
 }
 
