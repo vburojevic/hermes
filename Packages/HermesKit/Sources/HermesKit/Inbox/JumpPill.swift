@@ -35,8 +35,8 @@ public enum JumpPill: Hashable, Sendable {
     }
 }
 
-/// The time on a row (`docs/inbox.md` §2): "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct".
-/// The app words it; this decides which.
+/// The time on a row (`docs/inbox.md` §2): "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct",
+/// "12 Oct 2025". The app words it; this decides which.
 public enum InboxTime: Hashable, Sendable {
     case now
     case minutes(Int)
@@ -44,6 +44,8 @@ public enum InboxTime: Hashable, Sendable {
     case yesterday
     case weekday(Date)
     case date(Date)
+    /// Before this year: the date with its year.
+    case dateInAnotherYear(Date)
 
     public init(_ date: Date, now: Date = .now, calendar: Calendar = .current) {
         let interval = now.timeIntervalSince(date)
@@ -57,8 +59,10 @@ public enum InboxTime: Hashable, Sendable {
             self = .yesterday
         } else if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day, days < 7 {
             self = .weekday(date)
-        } else {
+        } else if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
             self = .date(date)
+        } else {
+            self = .dateInAnotherYear(date)
         }
     }
 }

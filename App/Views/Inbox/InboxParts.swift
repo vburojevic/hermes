@@ -241,24 +241,25 @@ struct ActivityLineView: View {
 
 // MARK: - Time
 
-/// The time on a row: "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct". Rows from the last
-/// hour tick each minute; older ones don't wake anything.
+/// The time on a row: "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct", "12 Oct 2025". It
+/// redraws only when its words change (`InboxTime.nextChange`): each minute in the first hour, then
+/// at midnight, so an idle list doesn't wake the CPU. It follows the system's calendar and time zone.
 struct InboxTimeText: View {
     let date: Date
     var emphasized = false
+    @Environment(\.calendar) private var calendar
+    @Environment(\.timeZone) private var timeZone
 
     var body: some View {
-        if Date.now.timeIntervalSince(date) < 3600 {
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                label(InboxTime(date, now: context.date))
-            }
-        } else {
-            label(InboxTime(date))
+        var zoned = calendar
+        zoned.timeZone = timeZone
+        return TimelineView(InboxTimeSchedule(date: date, calendar: zoned)) { context in
+            label(InboxTime(date, now: context.date, calendar: zoned), timeZone: timeZone)
         }
     }
 
-    private func label(_ time: InboxTime) -> some View {
-        Text(Self.words(time))
+    private func label(_ time: InboxTime, timeZone: TimeZone) -> some View {
+        Text(Self.words(time, timeZone: timeZone))
             .font(InboxMetrics.timeFont)
             .monospacedDigit()
             .foregroundStyle(emphasized ? Theme.primaryText : Theme.tertiaryText)
@@ -266,14 +267,27 @@ struct InboxTimeText: View {
             .fixedSize()
     }
 
-    static func words(_ time: InboxTime) -> String {
+    static func words(_ time: InboxTime, timeZone: TimeZone = .autoupdatingCurrent) -> String {
         switch time {
         case .now: String(localized: "now")
         case .minutes(let minutes): String(localized: "\(minutes) min")
-        case .time(let date): date.formatted(date: .omitted, time: .shortened)
+        case .time(let date): date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: timeZone))
         case .yesterday: String(localized: "Yesterday")
-        case .weekday(let date): date.formatted(.dateTime.weekday(.abbreviated))
-        case .date(let date): date.formatted(.dateTime.day().month(.abbreviated))
+        case .weekday(let date): date.formatted(Date.FormatStyle(timeZone: timeZone).weekday(.abbreviated))
+        case .date(let date): date.formatted(Date.FormatStyle(timeZone: timeZone).day().month(.abbreviated))
+        case .dateInAnotherYear(let date): date.formatted(Date.FormatStyle(timeZone: timeZone).day().month(.abbreviated).year())
+        }
+    }
+
+    /// The moments a row's time reads differently, and only those.
+    nonisolated struct InboxTimeSchedule: TimelineSchedule {
+        let date: Date
+        let calendar: Calendar
+
+        func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnySequence<Date> {
+            AnySequence(sequence(first: startDate) { [date, calendar] now in
+                InboxTime.nextChange(for: date, after: now, calendar: calendar)
+            })
         }
     }
 

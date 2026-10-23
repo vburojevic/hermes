@@ -31,3 +31,20 @@ public enum RowTime {
         }.map { rows[$0] }
     }
 }
+
+extension InboxTime {
+    /// When a row's time next reads differently, so the list wakes only then: each minute in the
+    /// first hour, then at midnight ("14:21" becomes "Yesterday", then a weekday, then a date).
+    /// Nil once it reads as a date.
+    public static func nextChange(for date: Date, after now: Date, calendar: Calendar = .current) -> Date? {
+        let interval = now.timeIntervalSince(date)
+        if interval < 3600 {
+            // A message stamped a little ahead of this device's clock reads "now" until it's a minute old.
+            return date.addingTimeInterval((max(0, interval / 60).rounded(.down) + 1) * 60)
+        }
+        switch InboxTime(date, now: now, calendar: calendar) {
+        case .date, .dateInAnotherYear: return nil
+        default: return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
+        }
+    }
+}

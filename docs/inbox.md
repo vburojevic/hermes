@@ -132,8 +132,10 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
   row stands at its activity (so it rises), and when the reply ends it settles at the reply's time.
   A row with no messages uses its creation time (a Bot's `created`). A chat opened from elsewhere
   before the list has it (the Board, a task's run) has no time until its line is read.
-- The time on each row: "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct" (`InboxTime`). Rows
-  from the last hour tick each minute; older ones don't wake anything.
+- The time reads "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct", "12 Oct 2025"
+  (`InboxTime`), in the system's calendar and time zone, the same on every device. It redraws only
+  when its words change (`InboxTime.nextChange`): each minute in the first hour, then at midnight,
+  so an idle list wakes nothing.
 - Projects stay above the chats, collapsed with their count ("Projects · 3").
 - Bot rows (`BotInboxRow`) have the face at 44 pt (32 on the Mac) in the mood of what it's doing
   (`ActivityLine.faceMood`, `docs/bot-faces.md` §5.9). Group rows (`GroupInboxRow`) stack the
