@@ -92,6 +92,7 @@
 		4B85B339F947E71992F92CBB /* TalkCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CB6124782192E27CA0BD71 /* TalkCenter.swift */; };
 		4BF8831034DFAB61E75EDC3B /* PushCenter+Conversations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9665019EA8646C1D03F2432B /* PushCenter+Conversations.swift */; };
 		4BFA648630F0761411451310 /* PluginViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8C7B4E609499F1998E291B /* PluginViews.swift */; };
+		4CF07CBFBD45425ADF1A94AF /* TurnChangesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7504D4A8A4CCF619C980BC64 /* TurnChangesTabView.swift */; };
 		4DF6343EB847C63D3A099EB8 /* GatewayTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3913701718FC64048198E1F6 /* GatewayTranscriber.swift */; };
 		4E168EC2550E8CB1FF37D012 /* TalkStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9B63399C182A992D6A5ED0 /* TalkStage.swift */; };
 		4E1956C0D2998F3D874B8884 /* MacWelcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 882F4E9AE99A6D1804941B46 /* MacWelcome.swift */; };
@@ -497,6 +498,7 @@
 		704C5D19D6138DE82884D59C /* FollowUps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUps.swift; sourceTree = "<group>"; };
 		73327689C0F7522EE0092197 /* BotFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotFace.swift; sourceTree = "<group>"; };
 		739F04618F407BB73EF31D69 /* AppsAndToolsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppsAndToolsModel.swift; sourceTree = "<group>"; };
+		7504D4A8A4CCF619C980BC64 /* TurnChangesTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnChangesTabView.swift; sourceTree = "<group>"; };
 		75ABE89599F11A943AC509DD /* MacMemoryPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMemoryPane.swift; sourceTree = "<group>"; };
 		7670C4D879B1C88014035EE0 /* BotWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotWorkspace.swift; sourceTree = "<group>"; };
 		7848810B51D87C981F281C08 /* ProcessViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessViews.swift; sourceTree = "<group>"; };
@@ -1223,6 +1225,7 @@
 				D653945E90FC55FB10625D6D /* InspectorTabs.swift */,
 				1B4F3531DAC5AE58784937A6 /* InspectorTabWindow.swift */,
 				2FC49AE650A0F97A89D19B7F /* PreviewTabView.swift */,
+				7504D4A8A4CCF619C980BC64 /* TurnChangesTabView.swift */,
 			);
 			path = Inspector;
 			sourceTree = "<group>";
@@ -1927,6 +1930,7 @@
 				AC178049990D093B97A545F0 /* TranscriptCache.swift in Sources */,
 				6847AB2F4BE7257C5FDFD77D /* TranscriptView.swift in Sources */,
 				89BBF2D076CAF94E7DCAF569 /* TurnActivityController.swift in Sources */,
+				4CF07CBFBD45425ADF1A94AF /* TurnChangesTabView.swift in Sources */,
 				8F9624C5B62EEE356173629C /* TurnChangesViews.swift in Sources */,
 				EEBB26CBEA825B506837FF01 /* TurnExtras.swift in Sources */,
 				23B57873A2D3008FDE703B31 /* UnreadStore.swift in Sources */,

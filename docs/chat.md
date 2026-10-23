@@ -308,7 +308,9 @@ HermesKit, read from the turn itself, so it reads the same live and from history
 - **Counts:** "Changed 3 files · +106 −1" counts the files left different and their net lines.
   VoiceOver reads "Changed 3 files, 106 lines added, 1 removed".
 
-Tapping the row opens the turn's changes in the Changes sheet (`TurnChangesSheet`): the files, each once, with its folder
+Tapping the row opens the turn's changes where the Inspector is. Beside the chat (Mac, iPad
+landscape) that's the Changed Files tab ([inspector.md](inspector.md) §2.7); elsewhere (iPhone,
+iPad portrait) the Changes sheet (`TurnChangesSheet`): the files, each once, with its folder
 shortened against the turn's other files ("scripts", "…/Sources/Chat"), what happened to it and
 its +/−. Tapping one shows its diff: old and new line numbers, the lines in their language's
 colours (`CodeHighlighter`), gaps that say how many unchanged lines they skip, lines that scroll

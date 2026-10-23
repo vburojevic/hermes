@@ -415,6 +415,8 @@ struct InspectorTabContent: View {
             FilesTabView(inspector: inspector, tree: inspector.tree(root: tab.key))
         case .changes:
             ChangesTabView(inspector: inspector, model: inspector.changes(for: tab))
+        case .turnChanges:
+            TurnChangesTabView(inspector: inspector, conversation: conversation, tab: tab)
         case .terminal:
             TerminalTabView(inspector: inspector, conversation: conversation)
         case .screen:

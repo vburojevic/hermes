@@ -100,7 +100,8 @@ so their split is approximate; a stat path shortened to `.../tail` can't be rest
 - While Hermes is still working, Undo is dimmed, its hint "Undo is available when Hermes stops"
   (`turnCheckpointBusy`). The row still opens the changes. Offline, Undo is disabled too; for a chat the gateway
   refuses (a container), there is no Undo at all.
-- **Review:** the Changes row opens the turn's own files and diffs (the Changes sheet). What changed since a checkpoint, as git
+- **Review:** the Changes row opens the turn's own files and diffs (the Changed Files tab on the
+  Mac and iPad landscape, the Changes sheet elsewhere). What changed since a checkpoint, as git
   sees it, is the timeline's checkpoint detail (§3) and the Inspector's **Changes** tab on This
   Turn.
 - **Review** (`reviewChanges`, full-height sheet): the files with +/− and "new" for files Hermes

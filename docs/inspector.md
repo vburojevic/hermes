@@ -107,6 +107,7 @@ follows its behaviour where this doc is silent.
 | **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine |
 | **Files** | + menu | `GET /api/fs/list?path&profile`, folders loaded as they open; the app also hides `node_modules`, `.git` and `.DS_Store`. Git letters from `GET /api/fs/git-root` and `GET /api/git/status` |
 | **Changes** | Review on the latest file-changing turn's `turnCheckpoint` (iPad and Mac; elsewhere Review is its own sheet, [checkpoints.md](checkpoints.md)), Show in Changes on a diff card, + menu, `pane.reveal review` | `GET /api/git/review/list?path&scope&base` with scope `lastTurn` (This Turn), `branch` or `uncommitted`; `GET /api/git/review/diff?path&file&scope&base&staged`; `POST /api/git/review/stage` / `unstage {path, file}`; `commit {path, message, push}`; `create-pr {path}`. `GET /api/git/review/ship-info` finds the branch's open pull request; `GET /api/git/gh-auth` says whether Create Pull Request can work (§2.5) |
+| **Changed Files** | A turn's Changes row in the chat, on the Mac and iPad landscape (iPhone and iPad portrait open the Changes sheet instead, [chat.md](chat.md) §2), + menu (the latest turn's) | None: the turn's own edits (`TurnChanges`), so it works without Bot Mode (§2.7) |
 | **Terminal** | A process step or the composer's process chip, + menu, `pane.reveal terminal`, ⌥⌘P | One tab for the chat's processes: running first with Stop, then Finished with Clear; a process's page with all its output ([background-processes.md](background-processes.md) §6). Live output from `agent.terminal.output {process_id, chunk}`; `process.list {session_id}` when the tab shows. Stop is `process.kill {session_id, process_id}` |
 | **Screen** (the Bot Screen) | + menu | `display.status`, `display.observe` → a single-use ticket → `WS /api/display/ws?display_ticket=` (§2.6) |
 | **Team** | `teamCard`, + menu | As in [helpers.md](helpers.md): the team, or one helper's transcript |
@@ -235,6 +236,23 @@ the whole disk.
 - Close codes: 4000 someone else took control, 4001 the desktop stopped, 4401 the ticket expired
   (the app asks for another once), 4403 viewing isn't allowed from here. Each closed state offers
   Reconnect. The socket closes when the tab leaves the screen.
+
+### 2.7 Changed Files
+
+What one turn did to files, read from the chat itself ([chat.md](chat.md) §2, "File changes"):
+the same files and diffs as the Changes sheet on iPhone, laid out for the panel. It is one tab
+(`turnChanges`, `TurnChangesTabView`); a turn's Changes row points it at that turn and the + menu
+at the latest one. Unlike **Changes** it needs no git and no Bot Mode, and it shows what Hermes's
+edits did, not what's uncommitted.
+
+- The turn's summary on top ("Changed 4 files · +115 −7"; "Hermes is still working" while the
+  turn runs, still words), then its files, each once (about five rows show, then the list
+  scrolls), then the selected file: its name, Wrap Lines and Open, its notes (failed edits, sent
+  in part, written whole, edits shown one by one) and its diff, numbered and highlighted.
+- A running turn's files and counts follow its edits as they land.
+- **Mac:** ↑ and ↓ move between files once the list has focus (a click on a file gives it), Esc
+  closes the tab, and the tab is in Inspector Tabs (⌥⌘1–9) like any other.
+- Open opens the file in a File tab, read through the gateway; a deleted file has no Open.
 
 ## 3. Reaching localhost
 

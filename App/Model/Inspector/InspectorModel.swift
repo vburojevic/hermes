@@ -13,6 +13,8 @@ struct InspectorTab: Identifiable, Hashable, Codable {
         case preview, artifact, file, files, changes, terminal, screen, team, plan, sources
         /// Hermes's browser in this app (`docs/web.md` §6).
         case browser
+        /// What a turn did to files, from the chat itself (`docs/inspector.md` §2.7).
+        case turnChanges
 
         var symbol: String {
             switch self {
@@ -22,6 +24,7 @@ struct InspectorTab: Identifiable, Hashable, Codable {
             case .file: "doc"
             case .files: "folder"
             case .changes: "arrow.triangle.branch"
+            case .turnChanges: "plus.forwardslash.minus"
             case .terminal: "apple.terminal"
             case .screen: "desktopcomputer"
             case .team: "person.2"
@@ -38,6 +41,7 @@ struct InspectorTab: Identifiable, Hashable, Codable {
             case .file: String(localized: "File")
             case .files: String(localized: "Files")
             case .changes: String(localized: "Changes")
+            case .turnChanges: String(localized: "Changed Files")
             case .terminal: String(localized: "Terminal")
             case .screen: String(localized: "Screen")
             case .team: String(localized: "Team")
@@ -52,6 +56,9 @@ struct InspectorTab: Identifiable, Hashable, Codable {
     var title: String
 
     var id: String { "\(kind.rawValue):\(key)" }
+
+    /// The one Changed Files tab: the turn it shows is the Inspector's `changesTurn`.
+    static let turnChangesKey = "turn"
 
     /// The one Terminal tab: the chat's processes (`docs/background-processes.md` §6).
     static let terminalKey = "processes"
@@ -153,8 +160,14 @@ final class InspectorModel {
     var terminalOpenRow: String?
     /// ⌘. on the Mac: the process waiting for Stop's confirmation.
     var confirmingStop: String?
-    /// A turn's changes in their own sheet.
+    /// The turn the Changed Files tab shows, by its `changesKey`; nil: the newest that changed files.
+    var changesTurn: String?
+    /// The file selected there.
+    var changesFile: String?
+    /// iPhone, and wherever the Inspector is a sheet: a turn's changes in their own sheet.
     var changesSheet: TurnChangesTarget?
+    /// The Inspector sits beside the chat (the Mac, iPad landscape): the chat says so.
+    var showsAsPanel = false
     /// A process wrote in the last moments: the Terminal tab's ink dot.
     private(set) var terminalWriting = false
     @ObservationIgnored private var terminalQuiet: Task<Void, Never>?
@@ -455,6 +468,9 @@ final class InspectorModel {
             let changed = changesSummary
             offers.append(Offer(kind: .changes, detail: changed ?? String(localized: "Git review")))
         }
+        if let key = conversation.latestChangesKey, let changes = conversation.changes(forTurn: key) {
+            offers.append(Offer(kind: .turnChanges, detail: String(localized: "\(changes.title) · latest turn")))
+        }
         let processes = conversation.processes
         if !processes.isEmpty {
             let running = processes.filter(\.isRunning)
@@ -526,6 +542,9 @@ final class InspectorModel {
             showsAddressPrompt = true
         case .browser:
             showBrowser(byHermes: false)
+        case .turnChanges:
+            guard let key = conversation?.latestChangesKey else { return }
+            showChanges(turn: key)
         case .artifact, .file:
             break
         }
@@ -593,9 +612,16 @@ final class InspectorModel {
         open(.file, key: full, title: ProjectPath.lastComponent(full))
     }
 
-    /// A turn's Changes row (`docs/chat.md` §1): its files and diffs in a sheet of their own.
+    /// A turn's Changes row (`docs/chat.md` §1): its files and diffs in the Changed Files tab
+    /// beside the chat, else in a sheet of their own.
     func showChanges(turn key: String, file: String? = nil) {
-        changesSheet = TurnChangesTarget(turnKey: key, file: file)
+        if showsAsPanel {
+            changesTurn = key
+            changesFile = file
+            open(.turnChanges, key: InspectorTab.turnChangesKey, title: InspectorTab.Kind.turnChanges.name)
+        } else {
+            changesSheet = TurnChangesTarget(turnKey: key, file: file)
+        }
     }
 
     func openChanges(scope: ReviewScope = .lastTurn, file: String? = nil) {
