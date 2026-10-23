@@ -125,11 +125,15 @@ and turn on **Bot Mode** for the gateway with `127.0.0.1:19119`, or add
 Markdown reply for about ten seconds, "widgets" is a coding turn of about 25 s: two files, a failing
 check, a third file and a passing one, with `inline_diff`s as Hermes renders them, and a steer sent
 during the check is read after it, "late reply" ends its turn saying nothing and stores the reply 12 s
-later, "page risks" reads three pages with what Hermes's scanner reports for each: a zero-width space
+later, "upgrade" is the ARGUS turn from `docs/chat.md` §2 (one turn, one place): narration, three
+commands, the reply and a `review.summary` 2 s after the turn, "page risks" reads three pages with what Hermes's scanner reports for each: a zero-width space
 only, a right-to-left override, instructions; "page risks with a digest" also delivers Research
 Buddy's Daily digest while the second page is read), and `@mentioning`
 another Bot drops a message in its chat. `--drop-after-reply` cuts every socket right after a turn's
-`message.complete`, `--agent-build <s>` says the session is idle on `prompt.submit` and takes the
+`message.complete`, `--late-store <s>` writes a turn's reply that long after `message.complete` (its
+`persisted_turn` then has no `final_assistant_row_id`), `POST /api/mock/restart-gateway` kills the
+turns where they are and cuts every socket, as a gateway restart does (a resume finds the chat idle,
+with a new event sequence; auto-continue isn't played), `--agent-build <s>` says the session is idle on `prompt.submit` and takes the
 prompt that long later (Hermes building a chat's agent on a loaded Mac), and `--late-settle <s>` says
 the session is idle that long after it (the turn's
 end handing over: `-HERMES_SEND "write swift widgets" -HERMES_SEND_AFTER 6 -HERMES_FOLLOWUP <text>

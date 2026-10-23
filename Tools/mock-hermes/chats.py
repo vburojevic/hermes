@@ -850,7 +850,9 @@ def finish(sid, stored, text, *, status="complete", error=None, recoverable=None
         late = B["CONFIG"].get("late_store") or 0
         if late:
             # Hermes queues transcript writes while its database is busy: the reply lands after the turn ends.
-            threading.Timer(late, lambda: G.add_message(stored, "assistant", text, finish_reason="stop")).start()
+            # The row keeps the message's own time (hermes_state_messages.append_message `timestamp`).
+            ended = time.time()
+            threading.Timer(late, lambda: G.add_message(stored, "assistant", text, finish_reason="stop", timestamp=ended)).start()
         else:
             G.add_message(stored, "assistant", text, finish_reason="stop")
     payload = {"text": text, "status": status, "usage": {**USAGE, **(usage_override or {})}}

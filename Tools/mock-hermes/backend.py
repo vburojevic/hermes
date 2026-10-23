@@ -487,7 +487,7 @@ def err(rid, code, message, data=None):
 def emit(sid, kind, payload):
     with LOCK:
         runtime = RUNTIME.get(sid)
-        if runtime is None:
+        if runtime is None or runtime.get("dead"):
             return
         runtime["seq"] += 1
         # Like Hermes' `_append_inflight_delta`: the live turn's text so far, for a client that joins late.
@@ -569,6 +569,8 @@ def tool(sid, stored, name, args, result, seconds, context, inline_diff=None, ri
         time.sleep(0.1)
         waited += 0.1
     RUNTIME[sid]["tool_running"] = False
+    if RUNTIME[sid].get("dead"):
+        raise SystemExit  # the gateway restarted mid-call: no result is stored
     add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
     complete = {"tool_id": call, "name": name, "args": args, "duration_s": round(waited, 2),
                 "result": result, "summary": f"Completed in {waited:.1f}s"}
@@ -794,12 +796,43 @@ def ensure_row(sid):
     return stored
 
 
+def persisted_turn(rows, final_row):
+    """`message.complete.persisted_turn` (agent/persisted_turn_receipt.py): the committed rows of the turn, from
+    the message it answers on, and the reply's row when it was committed by the turn's end (not with
+    --late-store, where the receipt can't retire the turn and the stored rows decide)."""
+    start = max((i for i, r in enumerate(rows) if r["role"] == "user" and r.get("display_kind") not in ("hidden", "steer")),
+                default=None)
+    if start is None:
+        return None
+    tail = rows[start:]
+    receipt = {"row_ids": [r["id"] for r in tail], "complete": False, "user_row_id": tail[0]["id"]}
+    if final_row is not None:
+        receipt["final_assistant_row_id"] = final_row["id"]
+        receipt["complete"] = True
+    return receipt
+
+
 def finish(sid, stored, text, status="complete", error=None):
+    if RUNTIME[sid].get("dead"):
+        raise SystemExit  # the gateway restarted under the turn (/api/mock/restart-gateway): it stores nothing more
+    final_row = None
     if text:
-        add_message(stored, "assistant", text, finish_reason="stop")
+        late = CONFIG.get("late_store") or 0
+        if late:
+            # Hermes queues transcript writes while its database is busy: the reply lands after the
+            # turn ends, and a read meanwhile ends partway through the turn (chats.py does the same).
+            # The row keeps the message's own time (hermes_state_messages.append_message `timestamp`).
+            ended = time.time()
+            threading.Timer(late, lambda: add_message(stored, "assistant", text, ended, finish_reason="stop")).start()
+        else:
+            final_row = add_message(stored, "assistant", text, finish_reason="stop")
     payload = {"text": text, "status": status, "usage": {"input_tokens": 1830, "output_tokens": 212, "total_tokens": 2042}}
     if error:
         payload["error"] = error
+    with LOCK:
+        receipt = persisted_turn(list(STORED[stored]["messages"]), final_row) if stored in STORED else None
+    if receipt:
+        payload["persisted_turn"] = receipt
     emit(sid, "message.complete", payload)
     with LOCK:
         RUNTIME[sid]["running"] = False
@@ -1116,6 +1149,25 @@ def run_turn(sid, text):
         answer = f"I've messaged {names}. Their reply will show up in their Bot Chat."
         stream(sid, answer)
         return finish(sid, stored, answer)
+
+    if "upgrade" in visible.lower():
+        # Shaped like the ARGUS turn of 2026-10-22 (docs/chat.md §2, one turn in one place): narration, three
+        # commands of a few seconds each, the reply, then Hermes's background self-review of it a moment after
+        # the turn ended (`review.summary`, agent/background_review.py; it stores no rows).
+        emit(sid, "message.interim", {"text": "A newer release exists (v1.40.5). I'll check what it adds and upgrade.",
+                                      "already_streamed": False})
+        for command, output, seconds in (("argus --version", "argus 1.40.4", 3),
+                                         ("brew upgrade argus", "argus 1.40.4 -> 1.40.5", 6),
+                                         ("argus import --help", "argus import blood <file.pdf|file.csv>", 3)):
+            tool(sid, stored, "terminal", {"command": command}, json.dumps({"output": output, "exit_code": 0}), seconds, command)
+        if runtime["interrupt"]:
+            return finish(sid, stored, "", status="interrupted")
+        answer = "Yes. **1.40.5** imports blood records: `argus import blood` reads a lab's PDF or CSV export."
+        stream(sid, answer)
+        finish(sid, stored, answer)
+        time.sleep(2)
+        emit(sid, "review.summary", {"text": "💾 Self-improvement review: Skill 'logging-supplements' patched"})
+        return
 
     if "busy" in visible.lower():
         # A long agentic turn like real ones: dozens of tool rounds with narration in between.
@@ -1434,7 +1486,7 @@ def new_runtime(stored, profile, *, title=None, hidden=False):
 
 def runtime_for(params):
     sid = params.get("session_id") or ""
-    if sid not in RUNTIME:
+    if sid not in RUNTIME or RUNTIME[sid].get("dead"):  # a runtime id from before a restart
         raise RPCError(4001, "session not found")
     return sid, RUNTIME[sid]
 
@@ -1504,7 +1556,8 @@ def method_session_resume(params):
             session = STORED[add_session(profile, "Untitled", source="desktop", sid=stored)]
         if session is None or session["profile"] != profile:
             raise RPCError(4007, "session not found")
-        sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored), None) or new_runtime(stored, profile)
+        sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored and not r.get("dead")), None) \
+            or new_runtime(stored, profile)
         runtime = RUNTIME[sid]
         if DROP["settle"] > 0 and runtime["running"]:
             DROP["settle"] -= 1
@@ -1962,6 +2015,21 @@ class Handler(BaseHTTPRequestHandler):
                 peers = list(CLIENTS)
                 DROP["settle"] = int(body.get("settle") or 0)
                 DROP["refuse_until"] = time.time() + float(body.get("outage") or 0)
+            for peer in peers:
+                peer.cut()
+            return self.send_json(200, {"ok": True, "dropped": len(peers)})
+        if url.path == "/api/mock/restart-gateway":
+            # Mock-only: Hermes restarts under a running turn (`hermes gateway restart`, a crash). Every socket
+            # drops, the turns die where they are (stored rows stop there, nothing more is sent), and a resume
+            # finds a fresh, idle session with a new event sequence. Hermes's auto-continue isn't played.
+            with LOCK:
+                peers = list(CLIENTS)
+                for runtime in RUNTIME.values():
+                    runtime["dead"] = True
+                    runtime["interrupt"] = True
+                    runtime["running"] = False
+                    runtime["inflight"] = None
+                    runtime["peers"] = set()
             for peer in peers:
                 peer.cut()
             return self.send_json(200, {"ok": True, "dropped": len(peers)})
