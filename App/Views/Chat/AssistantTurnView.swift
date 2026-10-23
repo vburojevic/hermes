@@ -11,6 +11,9 @@ struct AssistantTurnView: View, Equatable {
     /// `status` says the message waits for the gateway ("Waiting for MacBook Pro…"): a wait, so
     /// its words hold still.
     var statusWaits = false
+    /// Hermes waits on a question or other request on its card (`docs/chat.md` §4a): the header
+    /// says so, still and orange, rather than shimmering the tool asking it.
+    var waitsForAnswer = false
     var isStopping = false
     var onBranch: BranchAction?
     /// Helper teams no call in the transcript claims: the latest reply shows them.
@@ -32,6 +35,7 @@ struct AssistantTurnView: View, Equatable {
     /// never held: every reply in the chat redrew, actions and menus included, for each word.
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.turn == rhs.turn && lhs.status == rhs.status && lhs.statusWaits == rhs.statusWaits && lhs.isStopping == rhs.isStopping
+            && lhs.waitsForAnswer == rhs.waitsForAnswer
             && lhs.rowKey == rhs.rowKey && lhs.pendingSteers == rhs.pendingSteers
             && lhs.extraTeamIDs == rhs.extraTeamIDs && lhs.onBranch == rhs.onBranch
             && lhs.memoryContext == rhs.memoryContext && lhs.answersVoice == rhs.answersVoice
@@ -123,7 +127,7 @@ struct AssistantTurnView: View, Equatable {
                     .transition(.opacity.combined(with: .offset(y: -6)).animation(.smooth(duration: 0.32)))
             }
             if showsWork {
-                WorkSummaryView(turn: turn, status: status, statusWaits: statusWaits, isStopping: isStopping, helpers: HelperHeadline(teams), isExpanded: isExpanded) {
+                WorkSummaryView(turn: turn, status: status, statusWaits: statusWaits, waitsForAnswer: waitsForAnswer, isStopping: isStopping, helpers: HelperHeadline(teams), isExpanded: isExpanded) {
                     setExpanded(!isExpanded)
                     if turn.usage != nil { withAnimation(Theme.spring) { showsUsage.toggle() } }
                 }
@@ -458,6 +462,7 @@ struct WorkSummaryView: View, Equatable {
     let turn: AssistantTurn
     var status: String?
     var statusWaits = false
+    var waitsForAnswer = false
     var isStopping = false
     /// The turn's helpers: they keep it working after its reply (background delegation).
     var helpers: HelperHeadline?
@@ -469,7 +474,8 @@ struct WorkSummaryView: View, Equatable {
     /// The header shows whether the answer has begun, never its words: while they stream in it
     /// holds still (`.equatable()` in the reply). What `onToggle` acts on is compared here too.
     static func == (lhs: Self, rhs: Self) -> Bool {
-        guard lhs.status == rhs.status, lhs.statusWaits == rhs.statusWaits, lhs.isStopping == rhs.isStopping, lhs.helpers == rhs.helpers,
+        guard lhs.status == rhs.status, lhs.statusWaits == rhs.statusWaits, lhs.waitsForAnswer == rhs.waitsForAnswer,
+              lhs.isStopping == rhs.isStopping, lhs.helpers == rhs.helpers,
               lhs.isExpanded == rhs.isExpanded, lhs.turn.answer.isEmpty == rhs.turn.answer.isEmpty else { return false }
         var left = lhs.turn, right = rhs.turn
         left.answer = ""
@@ -486,12 +492,13 @@ struct WorkSummaryView: View, Equatable {
 
     private static let titleHold: TimeInterval = 0.25
 
-    private var isWaiting: Bool { turn.state == .waitingForApproval }
+    private var isWaiting: Bool { turn.state == .waitingForApproval || (waitsForAnswer && turn.isWorking && !isStopping) }
 
     private var helpersWorking: Bool { helpers?.isWorking == true }
 
     private var title: String {
-        if isWaiting { return String(localized: "Waiting for your approval") }
+        if turn.state == .waitingForApproval { return String(localized: "Waiting for your approval") }
+        if isWaiting { return String(localized: "Waiting for your answer") }
         if turn.isWorking, !turn.answer.isEmpty, !isStopping, status == nil { return streamingTitle }
         return turn.isWorking || helpersWorking ? workingTitle : doneTitle
     }

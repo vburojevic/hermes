@@ -29,7 +29,8 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
 2. The turn header (`turnHeader`, `WorkSummaryView`): the turn's one live line (§4a). A still
    sparkle and words that shimmer while it runs ("Thinking…", then the running step, "Thinking… ·
    12s" after 10 s), still words once the reply streams ("Working · 3 tools"), a raised hand while
-   it waits for an approval ("Waiting for your approval"), and when finished a summary such as
+   it waits for an approval ("Waiting for your approval") or for an answer on a request card
+   ("Waiting for your answer", in place of the asking tool's "Asking a question…"), and when finished a summary such as
    "Worked for 14s · 2 tools" or "Thought for 3s". Tapping a header with steps opens or closes
    them. A running step shows its tool's glyph and a time that counts up; nothing spins.
 3. Unfolded: the plan card (`planCard`) if the agent keeps a todo list, then the steps on a rail
@@ -495,7 +496,7 @@ typing bubbles, no waving dots and no spinners for agent work.
 | Rows: chats, Bots, groups, the Mac sidebar | The activity line's words shimmer (`activityLine`) | A still ink dot before a running chat's title. Faces show the mood, without dots |
 | The jump pill | "Hermes is writing…" (or the running step) shimmers (`newMessagesPillLive`) | – |
 | Live Activity, Dynamic Island, notifications, widgets | Static words (the system can't shimmer) | The face shows its dots only where it stands alone (the compact Island) |
-| Waiting for you, or stopped | Nothing: solid orange or red words | – |
+| Waiting for you, or stopped | Nothing: solid orange or red words ("Waiting for your approval", "Waiting for your answer" while a question or other request waits on its card) | The card says what's waiting; the line above it doesn't shimmer the tool that asked |
 | Run in Background, an unread steer | "Working in the background: …" shimmers; a steer keeps its dashed border | No spinner |
 
 - **`ShimmerText`** (`App/Design/Components.swift`), one view everywhere: a `thinking-shimmer` band,

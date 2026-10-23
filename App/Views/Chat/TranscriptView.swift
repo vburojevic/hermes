@@ -1432,6 +1432,7 @@ struct TranscriptView: View {
                     TranscriptView.words(for: $0, gateway: conversation.gatewayName, transcribing: conversation.isTranscribingVoice)
                 } ?? conversation.liveStatus : nil,
                 statusWaits: delivery == .waiting,
+                waitsForAnswer: isLive && turn.isWorking && !conversation.requests.isEmpty,
                 isStopping: turn.isWorking && conversation.isStopping,
                 onBranch: onBranch,
                 extraTeamIDs: extraTeamIDs,
