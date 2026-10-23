@@ -74,6 +74,29 @@ public struct CronJob: Decodable, Sendable, Hashable, Identifiable {
         return HermesDate.fromEpoch(try? container.decodeIfPresent(Double.self, forKey: key))
     }
 
+    /// A task the gateway hasn't made yet: what New Task sent, shown until the gateway's answer
+    /// replaces it (`docs/tasks.md` §1). Its next run comes with that answer.
+    public init(making job: NewCronJob, id: String) {
+        self.id = id
+        name = job.name
+        prompt = job.prompt
+        scheduleDisplay = job.schedule
+        skills = job.skills ?? []
+        enabled = true
+        state = "scheduled"
+    }
+
+    /// The task as it will be once the gateway has paused or resumed it. Resuming leaves the next
+    /// run to the gateway's answer: the app never computes it.
+    public func paused(_ paused: Bool) -> CronJob {
+        var job = self
+        job.enabled = !paused
+        job.state = paused ? "paused" : "scheduled"
+        job.pausedReason = nil
+        job.nextRunAt = nil
+        return job
+    }
+
     public var isPaused: Bool { state == "paused" || !enabled }
     /// The last run failed, or Hermes wouldn't start it for want of setup (`blocked_config`).
     public var hasFailed: Bool { state == "error" || lastStatus == "error" || lastStatus == "blocked_config" }

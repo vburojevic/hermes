@@ -511,6 +511,12 @@ typing bubbles, no waving dots and no spinners for agent work.
   something the person started and waits on: connecting, pairing, signing in, installing,
   restarting, saving. It shows after 0.5 s, in the control that started it or centred on an empty
   page. Lists and cards that are loading show `SkeletonRows`, still grey lines.
+- **A change the person makes shows at once** and settles in place: a switch flips, a row moves
+  or goes, a new item appears as its sheet closes, while the gateway takes it, on a busy Mac a
+  minute or more. A refusal puts it back and says what was put back and why. A sheet stays open
+  only when the gateway's answer is what it shows (a test, an install), and then says so. The
+  chat list and the Bots do this, and Tasks, Routines, Skills, Apps and Tools and Memory through
+  `PendingChanges` (HermesKit), which lays the changes on their way over every list read.
 - **Reduce Motion:** no sweep; the words stay still in `text-secondary`. Times still count.
 - **VoiceOver:** "Research Buddy is thinking" once Hermes has the message, then "Replying", then
   "Reply finished" (`ReplyPhase`). Never each step, never the words as they stream.

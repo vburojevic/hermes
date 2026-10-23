@@ -1,64 +1,5 @@
 import HermesKit
-import Observation
 import SwiftUI
-
-/// Hermes' scheduled jobs, shown as Tasks.
-@MainActor
-@Observable
-final class TasksModel {
-    private(set) var jobs: [CronJob] = []
-    private(set) var isLoading = false
-    private(set) var loadError: HermesError?
-    var actionError: HermesError?
-
-    func load(client: HermesClient?) async {
-        guard let client else { return }
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            jobs = try await client.jobs().sorted(by: Self.order)
-            loadError = nil
-        } catch {
-            loadError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-        }
-    }
-
-    func perform(_ client: HermesClient?, _ action: @escaping (HermesClient) async throws -> CronJob?) async {
-        guard let client else { return }
-        do {
-            if let updated = try await action(client), let index = jobs.firstIndex(where: { $0.id == updated.id }) {
-                jobs[index] = updated
-            }
-        } catch {
-            actionError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-        }
-    }
-
-    func remove(_ job: CronJob, client: HermesClient?) async {
-        guard let client else { return }
-        let backup = jobs
-        jobs.removeAll { $0.id == job.id }
-        do {
-            try await client.deleteJob(id: job.id)
-        } catch {
-            jobs = backup
-            actionError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-        }
-    }
-
-    func insert(_ job: CronJob) {
-        jobs.append(job)
-        jobs.sort(by: Self.order)
-    }
-
-    private static func order(_ lhs: CronJob, _ rhs: CronJob) -> Bool {
-        switch (lhs.isPaused, rhs.isPaused) {
-        case (false, true): return true
-        case (true, false): return false
-        default: return (lhs.nextRunAt ?? .distantFuture) < (rhs.nextRunAt ?? .distantFuture)
-        }
-    }
-}
 
 struct TasksView: View {
     let workspace: BotWorkspace
@@ -114,8 +55,8 @@ struct TasksView: View {
             .refreshable { await model.load(client: workspace.client) }
             .sheet(isPresented: $isCreating, onDismiss: { prefill = nil }) {
                 NavigationStack {
-                    NewTaskView(workspace: workspace, prefill: prefill) { job in
-                        model.insert(job)
+                    NewTaskView(prefill: prefill) { draft in
+                        Task { await model.create(draft, client: workspace.client) }
                     }
                 }
                 #if os(macOS)
@@ -130,10 +71,19 @@ struct TasksView: View {
                 .frame(width: 520, height: 520)
                 #endif
             }
-            .alert("Something went wrong", isPresented: errorBinding, presenting: model.actionError) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { error in
-                Text(error.errorDescription ?? "")
+            .alert(model.refusal?.title ?? "", isPresented: refusalBinding, presenting: model.refusal) { _ in
+                if let draft = model.refusedDraft {
+                    Button("Edit Task") {
+                        model.refusedDraft = nil
+                        prefill = draft
+                        isCreating = true
+                    }
+                    Button("Discard", role: .cancel) { model.refusedDraft = nil }
+                } else {
+                    Button("OK", role: .cancel) {}
+                }
+            } message: { refusal in
+                Text(refusal.message)
             }
     }
 
@@ -167,31 +117,36 @@ struct TasksView: View {
             List {
                 Section {
                 ForEach(model.jobs) { job in
+                    let isAdding = model.isAdding(job)
                     Button {
                         inspecting = job
                     } label: {
-                        TaskRow(job: job)
+                        TaskRow(job: job, isAdding: isAdding, isStarting: model.starting.contains(job.id))
                     }
                     .buttonStyle(.plain)
                     .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            Task { await model.remove(job, client: workspace.client) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                        if !isAdding {
+                            Button(role: .destructive) {
+                                Task { await model.remove(job, client: workspace.client) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                togglePause(job)
+                            } label: {
+                                Label(job.isPaused ? "Resume" : "Pause", systemImage: job.isPaused ? "play" : "pause")
+                            }
+                            .tint(Theme.warning)
                         }
-                        Button {
-                            togglePause(job)
-                        } label: {
-                            Label(job.isPaused ? "Resume" : "Pause", systemImage: job.isPaused ? "play" : "pause")
-                        }
-                        .tint(Theme.warning)
                     }
                     .contextMenu {
-                        Button("Run Now", systemImage: "play.circle") { runNow(job) }
-                        Button(job.isPaused ? "Resume" : "Pause", systemImage: job.isPaused ? "play" : "pause") { togglePause(job) }
-                        Divider()
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            Task { await model.remove(job, client: workspace.client) }
+                        if !isAdding {
+                            Button("Run Now", systemImage: "play.circle") { runNow(job) }
+                            Button(job.isPaused ? "Resume" : "Pause", systemImage: job.isPaused ? "play" : "pause") { togglePause(job) }
+                            Divider()
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                Task { await model.remove(job, client: workspace.client) }
+                            }
                         }
                     }
                 }
@@ -209,24 +164,15 @@ struct TasksView: View {
     }
 
     private func togglePause(_ job: CronJob) {
-        Task {
-            await model.perform(workspace.client) { client in
-                job.isPaused ? try await client.resumeJob(id: job.id) : try await client.pauseJob(id: job.id)
-            }
-        }
+        Task { await model.setPaused(job, !job.isPaused, client: workspace.client) }
     }
 
     private func runNow(_ job: CronJob) {
-        Task {
-            await model.perform(workspace.client) { client in
-                try await client.runJobNow(id: job.id)
-                return nil
-            }
-        }
+        Task { await model.runNow(job, client: workspace.client) }
     }
 
-    private var errorBinding: Binding<Bool> {
-        Binding(get: { model.actionError != nil }, set: { if !$0 { model.actionError = nil } })
+    private var refusalBinding: Binding<Bool> {
+        Binding(get: { model.refusal != nil }, set: { if !$0 { model.refusal = nil } })
     }
 }
 
@@ -234,6 +180,10 @@ struct TasksView: View {
 /// for what's next: when it runs, how the last run went, or that it's paused.
 struct TaskRow: View {
     let job: CronJob
+    /// New Task's row before the gateway has made the task.
+    var isAdding = false
+    /// Run Now before the gateway has the run.
+    var isStarting = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -271,7 +221,12 @@ struct TaskRow: View {
 
     @ViewBuilder
     private var status: some View {
-        if job.isPaused {
+        // Still words, not a spinner: the change is shown, the gateway settles it (`docs/chat.md` §4a).
+        if isAdding {
+            TagLabel(title: String(localized: "Adding…"), symbol: "arrow.up.circle")
+        } else if isStarting {
+            TagLabel(title: String(localized: "Starting…"), symbol: "play.circle")
+        } else if job.isPaused {
             TagLabel(title: String(localized: "Paused"), symbol: "pause.fill", style: .warning)
         } else if job.hasFailed {
             TagLabel(title: String(localized: "Last run failed"), symbol: "exclamationmark.triangle.fill", style: .danger)
@@ -308,7 +263,7 @@ private struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var current: CronJob {
-        model.jobs.first { $0.id == job.id } ?? job
+        model.job(id: job.id) ?? job
     }
 
     var body: some View {
@@ -336,23 +291,21 @@ private struct TaskDetailView: View {
             }
             TaskProblemSection(job: current)
             Section {
-                Button("Run Now", systemImage: "play.circle") {
-                    Task {
-                        await model.perform(workspace.client) { client in
-                            try await client.runJobNow(id: current.id)
-                            return nil
-                        }
-                    }
+                Button(model.starting.contains(current.id) ? "Starting…" : "Run Now", systemImage: "play.circle") {
+                    let job = current
+                    Task { await model.runNow(job, client: workspace.client) }
                 }
+                .disabled(model.starting.contains(current.id))
                 Button(current.isPaused ? "Resume" : "Pause", systemImage: current.isPaused ? "play" : "pause") {
                     let job = current
-                    Task {
-                        await model.perform(workspace.client) { client in
-                            job.isPaused ? try await client.resumeJob(id: job.id) : try await client.pauseJob(id: job.id)
-                        }
-                    }
+                    Task { await model.setPaused(job, !job.isPaused, client: workspace.client) }
+                }
+            } footer: {
+                if model.isAdding(current) {
+                    Text("Hermes is still adding this task.")
                 }
             }
+            .disabled(model.isAdding(current))
         }
         .formStyle(.grouped)
         .navigationTitle(current.name)
@@ -383,17 +336,16 @@ struct TaskPrefill: Hashable {
     }
 }
 
+/// New Task. Create closes it at once: the task shows in the list and settles there when the
+/// gateway has made it, or comes back here with the gateway's reason (`docs/tasks.md` §1).
 private struct NewTaskView: View {
-    let workspace: BotWorkspace
     var prefill: TaskPrefill?
-    let onCreated: (CronJob) -> Void
+    let onCreate: (NewCronJob) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var schedule = "every day at 09:00"
     @State private var prompt = ""
-    @State private var isSaving = false
-    @State private var error: HermesError?
 
     private static let presets = ["in 30m", "every 1h", "every day at 09:00", "0 9 * * 1"]
 
@@ -401,7 +353,6 @@ private struct NewTaskView: View {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && !schedule.trimmingCharacters(in: .whitespaces).isEmpty
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !isSaving
     }
 
     var body: some View {
@@ -434,12 +385,6 @@ private struct NewTaskView: View {
             } footer: {
                 Text("Hermes understands “in 30m”, “every 2h”, “every day at 09:00”, “every weekday at 08:00” and cron expressions such as “0 9 * * 1”.")
             }
-            if let error {
-                Section {
-                    Label(error.errorDescription ?? "", systemImage: "xmark.octagon.fill")
-                        .foregroundStyle(Theme.danger)
-                }
-            }
         }
         .formStyle(.grouped)
         .navigationTitle("New Task")
@@ -457,34 +402,18 @@ private struct NewTaskView: View {
                 Button("Cancel") { dismiss() }
             }
             ToolbarItem(placement: .confirmationAction) {
-                if isSaving {
-                    Spinner()
-                } else {
-                    Button("Create", action: save).disabled(!canSave)
-                }
+                Button("Create", action: save).disabled(!canSave)
             }
         }
     }
 
     private func save() {
-        guard let client = workspace.client else { return }
-        isSaving = true
-        error = nil
-        let job = NewCronJob(
+        onCreate(NewCronJob(
             name: name.trimmingCharacters(in: .whitespaces),
             schedule: schedule.trimmingCharacters(in: .whitespaces),
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        Task {
-            do {
-                let created = try await client.createJob(job)
-                onCreated(created)
-                dismiss()
-            } catch {
-                self.error = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-            }
-            isSaving = false
-        }
+        ))
+        dismiss()
     }
 }
 

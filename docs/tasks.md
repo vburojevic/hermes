@@ -18,9 +18,9 @@ and the iPad and Mac layouts. Design components: `Tasks.taskRow`, `Tasks.runRow`
 | Action | Call | Notes |
 |---|---|---|
 | Tasks list | `GET /api/jobs?include_disabled=true` | Paused jobs only appear with `include_disabled`. Sorted active first by next run, paused last. Loaded when Tasks opens and on pull to refresh |
-| New Task | `POST /api/jobs {name, schedule, prompt}` | Name, prompt and schedule are required. Hermes allows a name up to 200 characters and a prompt up to 5000, and sets `deliver: local` when none is given |
-| Pause / Resume | `POST /api/jobs/{id}/pause`, `…/resume` | The row updates from the job in the answer |
-| Run Now | `POST /api/jobs/{id}/run` | |
+| New Task | `POST /api/jobs {name, schedule, prompt}` | Name, prompt and schedule are required. Hermes allows a name up to 200 characters and a prompt up to 5000, and sets `deliver: local` when none is given. Create closes the sheet at once; the task shows in the list, tagged "Adding…", until the gateway's job replaces it. A refusal (an invalid schedule) takes the row away and says why, with Edit Task to open New Task again with what was typed |
+| Pause / Resume | `POST /api/jobs/{id}/pause`, `…/resume` | The row moves at once (Paused, or back among the active ones) and the job in the answer settles it, next run included. A refusal puts it back and says so |
+| Run Now | `POST /api/jobs/{id}/run` | The row says "Starting…" until the gateway has the run, and VoiceOver hears "<task> started" |
 | Delete | `DELETE /api/jobs/{id}` | Removed from the list at once and put back if the call fails. No confirmation |
 | Recent runs | `GET /api/cron/jobs/{id}/runs?limit=20&profile?` | On the backend, so only with Bot Mode connected, and only on iPad and Mac (§4). Each agent run is a chat with id `cron_<jobId>_<timestamp>` and source `cron`; script-only runs have output but no chat |
 | Open a run | `GET /api/sessions/{id}/messages` | The run opens in Chats like any other chat, and can be continued |
@@ -97,8 +97,10 @@ it was made" for `origin`, else the target's platform name.
 
 ## 3. Checks
 
-- Pause, resume, run now and delete update the list without a reload; a new task appears in
-  order.
+- Pause, resume, run now and delete update the list without a reload, at once, on a slow gateway
+  too (`--starve 5-30`): no spinner, and a list read from before the change doesn't undo it. A new
+  task appears as New Task closes, then settles in order. Changes the gateway refuses go back with
+  a note saying what was put back and why (`PendingChanges`, `docs/chat.md` §4a).
 - A routine created for one Bot appears only in that Bot's routines and, with Post results in the
   Bot Chat on, posts there (try Run Now against the mock backend).
 - A failed run shows "Last run failed" in the list and its error in the detail.

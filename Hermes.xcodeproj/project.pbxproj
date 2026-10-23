@@ -102,6 +102,7 @@
 		50B4719C864A56E8D6BE79B1 /* CodeBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8933EA0ADEC930A6EC2949 /* CodeBlockView.swift */; };
 		51029ED14B31AD7FFAEA5EBF /* EmptyChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A20A7F4B520874AB71118EA /* EmptyChatView.swift */; };
 		52761847D58B78CF4E565112 /* TalkIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9EE4E9AF91FF1C64243F017 /* TalkIntents.swift */; };
+		555EC05A571604E6CED3A1F0 /* TasksModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94DBB56C2C71245B82CDFDD2 /* TasksModel.swift */; };
 		5743F33541DD4554CD41C53F /* InboxList.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DEA8D56275CE408F7C096A /* InboxList.swift */; };
 		57AD06960E3A3FB728D7C8C2 /* SpeechVocabulary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20C4910F53091194A5E77053 /* SpeechVocabulary.swift */; };
 		57CDC820425F29E6ECBEB8B4 /* SidebarModeSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65F86E4FDC5733C8ABF5605 /* SidebarModeSwitcher.swift */; };
@@ -530,6 +531,7 @@
 		928671F9F911923EE7DFCB7A /* ConnectionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLog.swift; sourceTree = "<group>"; };
 		933DF3C59199DA5AA7CD64D7 /* ScreenLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLock.swift; sourceTree = "<group>"; };
 		94B7E50C21B675B09477FE25 /* LearnedParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedParts.swift; sourceTree = "<group>"; };
+		94DBB56C2C71245B82CDFDD2 /* TasksModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksModel.swift; sourceTree = "<group>"; };
 		9665019EA8646C1D03F2432B /* PushCenter+Conversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PushCenter+Conversations.swift"; sourceTree = "<group>"; };
 		967F497D71C16BA410851985 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		97253A097FB095217EC3E459 /* ProjectChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectChip.swift; sourceTree = "<group>"; };
@@ -752,6 +754,7 @@
 				482C95B9926E755A073D07C3 /* TalkPreferences.swift */,
 				7A4912C8F379EA7F9ECCB370 /* TalkSession.swift */,
 				B83C2D7B4FEAF12F2B50F155 /* TalkShortcuts.swift */,
+				94DBB56C2C71245B82CDFDD2 /* TasksModel.swift */,
 				16471D90FF6989063389860C /* TranscriptCache.swift */,
 				B88CB26D81243C7B77D55505 /* UnreadStore.swift */,
 				F7590A98D87F963BDB5F82EB /* VoiceSetup.swift */,
@@ -1904,6 +1907,7 @@
 				4E168EC2550E8CB1FF37D012 /* TalkStage.swift in Sources */,
 				6A076582013F177C093F67AD /* TalkView.swift in Sources */,
 				6D1C85BCF2EE0D4E99325B95 /* TaskSplitViews.swift in Sources */,
+				555EC05A571604E6CED3A1F0 /* TasksModel.swift in Sources */,
 				311D242525B41371CA130E1B /* TasksView.swift in Sources */,
 				7DC12C677CEF90FDC613DE81 /* TeamViews.swift in Sources */,
 				8D237ADC3014D97F32E0DC5F /* Theme.swift in Sources */,

@@ -16,7 +16,7 @@ struct TasksSplitView: View {
     @SceneStorage("tasks.selected") private var selectedID: String?
 
     private var selected: CronJob? {
-        model.jobs.first { $0.id == selectedID } ?? model.jobs.first
+        selectedID.flatMap(model.job(id:)) ?? model.jobs.first
     }
 
     var body: some View {
@@ -42,7 +42,7 @@ struct TasksSplitView: View {
         .toolbar {
             if let job = selected {
                 ToolbarItem(placement: .topBarTrailing) {
-                    TaskMoreMenu(job: job, onCreate: onCreate, remove: remove)
+                    TaskMoreMenu(job: job, canDelete: !model.isAdding(job), onCreate: onCreate, remove: remove)
                 }
             }
         }
@@ -54,10 +54,12 @@ struct TasksSplitView: View {
                 ToolbarSpacer(.flexible)
                 ToolbarItemGroup(placement: .automatic) {
                     Button(job.isPaused ? "Resume" : "Pause") { togglePause(job) }
+                        .disabled(model.isAdding(job))
                     Button("Run Now") { runNow(job) }
                         .inkDefaultButton()
                         .keyboardShortcut(.defaultAction)
-                    TaskMoreMenu(job: job, onCreate: onCreate, remove: remove)
+                        .disabled(model.isAdding(job) || model.starting.contains(job.id))
+                    TaskMoreMenu(job: job, canDelete: !model.isAdding(job), onCreate: onCreate, remove: remove)
                 }
             }
         }
@@ -83,7 +85,7 @@ struct TasksSplitView: View {
                     Button {
                         selectedID = job.id
                     } label: {
-                        TaskRow(job: job)
+                        TaskRow(job: job, isAdding: model.isAdding(job), isStarting: model.starting.contains(job.id))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
                             .background(isSelected ? Theme.rowSelected : Self.rowBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -91,10 +93,12 @@ struct TasksSplitView: View {
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                     .contextMenu {
-                        Button("Run Now", systemImage: "play.circle") { runNow(job) }
-                        Button(job.isPaused ? "Resume" : "Pause", systemImage: job.isPaused ? "play" : "pause") { togglePause(job) }
-                        Divider()
-                        Button("Delete", systemImage: "trash", role: .destructive) { remove(job) }
+                        if !model.isAdding(job) {
+                            Button("Run Now", systemImage: "play.circle") { runNow(job) }
+                            Button(job.isPaused ? "Resume" : "Pause", systemImage: job.isPaused ? "play" : "pause") { togglePause(job) }
+                            Divider()
+                            Button("Delete", systemImage: "trash", role: .destructive) { remove(job) }
+                        }
                     }
                 }
                 Text("Ask Hermes in any chat to add one.")
@@ -126,6 +130,7 @@ struct TasksSplitView: View {
 /// The … menu: New Task, Delete.
 private struct TaskMoreMenu: View {
     let job: CronJob
+    let canDelete: Bool
     let onCreate: () -> Void
     let remove: (CronJob) -> Void
 
@@ -137,6 +142,7 @@ private struct TaskMoreMenu: View {
             Divider()
             #endif
             Button("Delete Task", systemImage: "trash", role: .destructive) { remove(job) }
+                .disabled(!canDelete)
         } label: {
             Image(systemName: "ellipsis")
         }
@@ -155,7 +161,7 @@ struct TaskDetailPane: View {
     @State private var runs: [CronRun]?
     @State private var runsFailed = false
 
-    private var current: CronJob { model.jobs.first { $0.id == job.id } ?? job }
+    private var current: CronJob { model.job(id: job.id) ?? job }
 
     var body: some View {
         Form {
@@ -212,6 +218,7 @@ struct TaskDetailPane: View {
             ) {
                 runNow(current)
             }
+            .disabled(model.isAdding(current))
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
@@ -249,6 +256,11 @@ struct TaskDetailPane: View {
 
     /// The run history lives on the Bot Mode dashboard.
     private func loadRuns() async {
+        // A new task has no runs, and no id on the gateway yet.
+        if model.isAdding(job) {
+            runs = []
+            return
+        }
         guard let roster = workspace.roster, roster.isConnected else {
             runsFailed = true
             return
