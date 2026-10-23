@@ -61,8 +61,12 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   behind them (`BotMentions.prompt`), as Desktop's composer middleware does: the Bot then decides
   whether to message them with `message_agent`. The note is stripped from the message when shown.
   `all`, `everyone`, `user`, `default` and `hermes` are never a Bot's friendly handle.
-- **Routine deliveries** arrive as stored user rows starting `[Cronjob "<name>" output …]`. The app
-  shows them in full as `RoutineDeliveryRow`. Hermes asks the Bot to summarize each one, and some
+- **Routine deliveries** arrive as stored user rows starting `[Cronjob "<name>" output …]`
+  (`[Cron delivery: <name>]` when mirrored into the chat that made the routine). The app shows them
+  in full as `RoutineDeliveryRow`, their output as Markdown; the routine's name opens Routines on
+  that routine, and the Bot's reply right after says it's replying to the routine. Anything else
+  Hermes tags `internal_notification` (a script's `hermes peer dm`, a plugin's message) is the same
+  card tagged "Automation", never the person's bubble ([chat.md](chat.md) §2a). Hermes asks the Bot to summarize each one, and some
   Bots answer with the delivery again: a reply straight after a delivery that used no tools and
   repeats it (30 words or more, most of its three-word runs from the delivery,
   `BotMentions.repeats`) shows only the lines it adds (a note under the brief), and nothing when it
@@ -98,7 +102,8 @@ the roster, and treats `session.info {running: false}` as the turn having settle
 - **Previews** describe the Bot Chat when there is one. Hermes's control frames read as what they
   mean ("Steered the reply", "Used the <name> skill") or are hidden, messages from other Bots read
   "Name: text", and routine deliveries read "⏰ <routine>: <output>". A compaction's summary is
-  never a preview or a last line (`CompactionSummary`).
+  never a preview or a last line (`CompactionSummary`), nor are Hermes's own notes; a routine's or a
+  webhook's mirrored delivery reads "⏰ <name>: <output>" too.
 - **Fresh:** the roster is read on its poll and again on `sessions.changed` (at once, then at most
   every 3 s while changes keep coming), so a Bot that wrote where nothing streamed here (a
   routine's result, another Bot's message, a turn on another device) shows on its tile and in its
@@ -125,8 +130,9 @@ Every change shows at once and settles when the gateway answers (`PendingChanges
 | Delete | `cron.manage {action: "remove", profile, name: <job id>}` | Asks first; past results stay in the chat. The row goes once confirmed. |
 | Run now | `POST /api/cron/jobs/<id>/trigger?profile=` | REST only; there is no RPC for it. The row says "Starting…" until it's answered. |
 
-`success: false` with an `error` is shown as the gateway's words. Scheduled tasks outside Bots are
-in [tasks.md](tasks.md).
+`success: false` with an `error` is shown as the gateway's words. Opened from a delivery's name in a
+chat, Routines scrolls to that routine and picks it out (matched by title, `RoutinesView(focus:)`).
+Scheduled tasks outside Bots are in [tasks.md](tasks.md).
 
 ## 2. Group chats (rooms)
 

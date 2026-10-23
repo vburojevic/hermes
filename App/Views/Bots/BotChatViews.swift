@@ -312,11 +312,25 @@ struct BotMessageCard: View {
 }
 
 /// `routineCard` (Elyx `blocks/transcript.elyx`): a routine's output, delivered into the Bot Chat
-/// on schedule, always in full: an ink "Routine" tag, the routine's name and time over the output.
-/// Listen reads it aloud, a scheduled report as a brief (`docs/voice.md` §3).
+/// on schedule, always in full: an ink "Routine" tag, the routine's name and time over the output
+/// as Markdown. A webhook's or a script's delivery is the same card with its own tag
+/// (`docs/chat.md` §2a): never the person's bubble. The routine's name opens it in the Bot's
+/// Routines. Listen reads it aloud, a scheduled report as a brief (`docs/voice.md` §3).
 struct RoutineDeliveryRow: View {
     let entry: UserEntry
-    let name: String
+    let source: DeliverySource
+    /// Opens the routine in its Bot's Routines; nil where there's none to open.
+    var openSource: (() -> Void)?
+
+    private var name: String { source.speaker }
+
+    private var tag: (title: String, symbol: String) {
+        switch source {
+        case .routine: (String(localized: "Routine"), "alarm")
+        case .webhook: (String(localized: "Webhook"), "point.3.connected.trianglepath.dotted")
+        case .automation: (String(localized: "Automation"), "gearshape.2")
+        }
+    }
 
     @Environment(\.widgetHost) private var widgetHost
     @Environment(\.listenContext) private var listenContext
@@ -331,12 +345,35 @@ struct RoutineDeliveryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                TagLabel(title: "Routine", symbol: "alarm", style: .ink)
-                Text(name)
-                    .font(Self.nameFont)
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                TagLabel(title: tag.title, symbol: tag.symbol, style: .ink)
+                Group {
+                    if let sourceName = source.name {
+                        if let openSource {
+                            Button(action: openSource) {
+                                HStack(spacing: 3) {
+                                    Text(sourceName)
+                                    Image(systemName: "chevron.right")
+                                        .font(Self.timeFont.weight(.semibold))
+                                        .foregroundStyle(Theme.tertiaryText)
+                                        .accessibilityHidden(true)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Text("Routine \(sourceName)"))
+                            .accessibilityHint("Opens it in Routines")
+                        } else {
+                            Text(sourceName)
+                        }
+                    } else {
+                        // No name to show: the time and Listen still sit at the end.
+                        Color.clear.frame(height: 1)
+                    }
+                }
+                .font(Self.nameFont)
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if let date = entry.timestamp {
                     Text(date, format: .dateTime.hour().minute())
                         .font(Self.timeFont)
@@ -377,8 +414,8 @@ struct RoutineDeliveryRow: View {
                 }
             }
         }
-        .accessibilityElement(children: hasWidgets ? .contain : .ignore)
-        .accessibilityLabel(Text("Routine \(name): \(BotMentions.stripMarkdown(ReplySplitter.readableText(entry.text)))"))
+        .accessibilityElement(children: hasWidgets || openSource != nil ? .contain : .ignore)
+        .accessibilityLabel(Text("\([tag.title, source.name].compactMap(\.self).joined(separator: " ")): \(BotMentions.stripMarkdown(ReplySplitter.readableText(entry.text)))"))
     }
 
     /// The delivery to read aloud: its words, each widget as its own, a stack as a brief.

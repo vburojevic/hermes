@@ -71,7 +71,7 @@ public struct CheckpointMatcher: Sendable {
         var spans: [Span] = []
         for item in items {
             switch item {
-            case .user(let entry) where !entry.isSteer && entry.sender == nil && entry.routineName == nil:
+            case .user(let entry) where !entry.isSteer && entry.isFromPerson:
                 guard let start = entry.timestamp else { continue }
                 if !spans.isEmpty { spans[spans.count - 1].end = start }
                 spans.append(Span(userID: entry.id, text: entry.text, turnID: nil, start: start, end: nil))

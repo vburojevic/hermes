@@ -1488,7 +1488,7 @@ final class ConversationModel: Identifiable {
     private func matchCaptions() {
         guard !captionsByText.isEmpty else { return }
         for (text, caption) in captionsByText {
-            let row = items.last { if case .user(let entry) = $0 { entry.text == text && entry.sender == nil } else { false } }
+            let row = items.last { if case .user(let entry) = $0 { entry.text == text && entry.isFromPerson } else { false } }
             if let row {
                 userCaptions[row.id] = caption
                 captionsByText[text] = nil
@@ -1505,7 +1505,7 @@ final class ConversationModel: Identifiable {
     ///   would otherwise hand its key, and its open folds, to the reply before it.
     private func handOverIdentity(shown: [TranscriptItem], existing: Set<String>) {
         func isPersonsMessage(_ item: TranscriptItem) -> Bool {
-            if case .user(let entry) = item { entry.sender == nil && entry.routineName == nil && !entry.isSteer } else { false }
+            if case .user(let entry) = item { entry.isFromPerson && !entry.isSteer } else { false }
         }
         let shownIDs = Set(shown.map(\.id))
         var index = items.count - 1
@@ -3503,7 +3503,7 @@ final class ConversationModel: Identifiable {
     /// The first reply after your last message (steers don't count): where a split turn starts.
     private func firstPartOfLastTurn() -> Int? {
         guard let sent = items.lastIndex(where: {
-            if case .user(let entry) = $0 { !entry.isSteer && entry.sender == nil && entry.routineName == nil } else { false }
+            if case .user(let entry) = $0 { !entry.isSteer && entry.isFromPerson } else { false }
         }) else { return nil }
         return items[(sent + 1)...].firstIndex { if case .assistant = $0 { true } else { false } }
     }

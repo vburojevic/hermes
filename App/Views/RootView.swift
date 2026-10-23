@@ -798,8 +798,9 @@ private struct BotSheets: ViewModifier {
                     #endif
                 }
                 .sheet(item: Binding(get: { roster.routinesBot.map(BotSheetTarget.init) }, set: { roster.routinesBot = $0?.name })) { target in
-                    RoutinesView(roster: roster, botName: target.name) {
+                    RoutinesView(roster: roster, botName: target.name, focus: roster.routinesFocus) {
                         roster.routinesBot = nil
+                        roster.routinesFocus = nil
                     }
                     #if os(macOS)
                     .frame(width: 520).frame(minHeight: 420, idealHeight: 620)

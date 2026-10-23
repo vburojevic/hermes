@@ -28,8 +28,8 @@ public struct UserEntry: Identifiable, Hashable, Sendable {
     public var timestamp: Date?
     /// Set when another Bot wrote this message (`message_agent`), not the person.
     public var sender: AgentSender?
-    /// Set when a routine's output was delivered here (a scheduled job, not the person).
-    public var routineName: String?
+    /// Set when a routine, a webhook or other automation delivered this message, not the person.
+    public var delivery: DeliverySource?
     /// Files that went with the message (see ``AttachedFiles``).
     public var fileNames: [String] = []
     /// Skills the message used (`/skill` prefixes), shown as chips.
@@ -52,6 +52,16 @@ public struct UserEntry: Identifiable, Hashable, Sendable {
         self.inlineImageURLs = inlineImageURLs
         self.timestamp = timestamp
         self.sender = sender
+    }
+
+    /// The person wrote it: not another Bot, a routine or anything else that delivers into a chat.
+    /// Only such a message is "You", theirs to edit, resend or answer by voice, and never unread.
+    public var isFromPerson: Bool { sender == nil && delivery == nil }
+
+    /// The routine whose output this is.
+    public var routineName: String? {
+        get { if case .routine(let name)? = delivery { name } else { nil } }
+        set { delivery = newValue.map(DeliverySource.routine) }
     }
 }
 
@@ -415,6 +425,7 @@ public enum TranscriptBuilder {
             switch message.role {
             case "user":
                 if kind == "hidden" { continue }
+                if kind == nil, HermesScaffold.isHidden(message.content.text) { continue }
                 if kind == "steer" {
                     // A steer lands mid-turn, after a tool result, and the same reply goes on: it
                     // stays in that turn, read after the steps so far, as it showed live.
@@ -429,7 +440,7 @@ public enum TranscriptBuilder {
                     continue
                 }
                 if let kind = kind ?? untaggedNoticeKind(message.content.text), noticeKinds.contains(kind),
-                   !isRoutineDelivery(kind: kind, text: message.content.text) {
+                   !isDelivered(kind: kind, text: message.content.text) {
                     closeTurn()
                     items.append(.notice(Notice(id: rowID, kind: kind, text: noticeText(kind: kind, content: message.content.text))))
                     continue
@@ -580,7 +591,7 @@ public enum TranscriptBuilder {
         var kept: [TranscriptItem] = []
         kept.reserveCapacity(items.count)
         for item in items {
-            if case .assistant(var turn) = item, case .user(let delivery)? = kept.last, delivery.routineName != nil,
+            if case .assistant(var turn) = item, case .user(let delivery)? = kept.last, delivery.delivery != nil,
                !turn.steps.contains(where: { if case .tool = $0 { true } else { false } }),
                let added = BotMentions.linesAdded(by: turn.answer, to: delivery.text) {
                 if added.isEmpty { continue }
@@ -735,15 +746,19 @@ public enum TranscriptBuilder {
         return true
     }
 
-    /// A routine's output delivered into the chat: Hermes tags it `internal_notification`, but it
-    /// reads as the routine's message (`UserEntry.routineName`), not a one-line notice.
-    static func isRoutineDelivery(kind: String, text: String) -> Bool {
-        kind == "internal_notification" && BotMentions.parseRoutineDelivery(String(text.drop { $0.isWhitespace })) != nil
+    /// What Hermes tags `internal_notification` is a message something delivered (a routine's
+    /// output, another Bot's message, a script's or a plugin's): it reads as theirs
+    /// (`UserEntry.delivery`, `sender`), not a one-line notice. Only Hermes's own notes stay notices.
+    static func isDelivered(kind: String, text: String) -> Bool {
+        let text = String(text.drop { $0.isWhitespace })
+        return kind == "internal_notification" && (BotMentions.parseAgentMessage(text) != nil || Delivery.parse(text, displayKind: kind) != nil)
     }
 
     /// Notices stored without a `display_kind`: Hermes' one-shot `hermes chat` injects a finished
-    /// background process as a plain user row (Desktop spots it by the same prefix).
+    /// background process as a plain user row (Desktop spots it by the same prefix), and an
+    /// interrupted turn picked up again was stored untyped before Hermes typed it.
     static func untaggedNoticeKind(_ text: String) -> String? {
+        if HermesScaffold.isAutoContinue(text) { return "auto_continue" }
         let text = text.drop { $0.isWhitespace }
         guard text.hasPrefix("[IMPORTANT: Background process "), !text.prefix(200).contains(" matched watch pattern") else { return nil }
         return "process_complete"
@@ -802,6 +817,10 @@ public enum TranscriptBuilder {
         var text = message.content.text
         // A request Hermes restated after a compaction is the person's message it replaced.
         if let restated = CompactionSummary.restatedRequest(text) { text = restated }
+        text = HermesScaffold.withoutMemoryContext(text)
+        // A skill used elsewhere is stored expanded: the skill as a chip, the words as typed.
+        let invocation = SkillInvocation.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        if let invocation { text = invocation.instruction }
         for marker in ["--- Attached Context ---", "--- Context Warnings ---"] {
             if let range = text.range(of: marker) {
                 text = String(text[..<range.lowerBound])
@@ -820,13 +839,13 @@ public enum TranscriptBuilder {
         let files = AttachedFiles.extract(from: text)
         text = files.text
         var sender: AgentSender?
-        var routineName: String?
+        var delivery: DeliverySource?
         if let message = BotMentions.parseAgentMessage(text) {
             sender = AgentSender(name: message.senderName, handle: message.senderHandle)
             text = message.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        } else if let delivery = BotMentions.parseRoutineDelivery(text) {
-            routineName = delivery.name
-            text = delivery.output
+        } else if let delivered = Delivery.parse(text, displayKind: message.displayKind) {
+            delivery = delivered.source
+            text = delivered.body
         }
         var entry = UserEntry(
             id: id,
@@ -836,10 +855,11 @@ public enum TranscriptBuilder {
             timestamp: message.timestamp,
             sender: sender,
             // The recording is the bubble, not a file chip.
-            fileNames: files.names.filter { !VoiceMessageFile.isVoiceMessage($0) }
+            fileNames: files.names.filter { !VoiceMessageFile.isVoiceMessage($0) },
+            skillNames: invocation?.skills ?? []
         )
         entry.voicePath = voicePath
-        entry.routineName = routineName
+        entry.delivery = delivery
         return entry
     }
 

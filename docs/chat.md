@@ -292,7 +292,7 @@ that opens to them, and consecutive subagents share one row.
 | `review.summary` (`text`) | A quiet note on the reply it reviewed: "Reviewed this reply · Skill 'logging-supplements' patched". Hermes reviews in the background as the turn finishes (agent/background_review.py): the note comes after the turn ended, sometimes during the next one, stores no rows and comes with no other event. It goes on the turn just ended, else the newest finished reply, never on a turn still running and never as a row between a turn and its stored copy (`ReviewNote`) | `TurnNote` |
 | `session.reclaimed` | One receipt line: "This chat was resting · it picks up where you left off"; the next message resumes the session | receipt |
 | `session.title` | The chat's title updates in the sidebar; nothing in the transcript | |
-| A message another Bot sent (`message_agent`), a routine's delivery | Their own rows in a Bot Chat | `botMessageCard` (`AgentMessageRow`), `RoutineDeliveryRow` ([bots-groups-skills.md](bots-groups-skills.md)) |
+| A message another Bot sent (`message_agent`), a routine's, a webhook's or a script's delivery | Their own rows, never the person's bubble (§2a) | `botMessageCard` (`AgentMessageRow`), `RoutineDeliveryRow` ([bots-groups-skills.md](bots-groups-skills.md)) |
 | Stored notices (`model_switch`, `auto_continue`, `failed_turn`, `process_complete`…) | One quiet centred line; a failed turn shows its whole sentence | `NoticeRow`, `FailedTurnRow` |
 | Approvals and other requests | A docked card above the composer, and a receipt in the chat once settled | [quick-actions.md](quick-actions.md) |
 
@@ -333,17 +333,38 @@ Everything in a transcript is either a message someone wrote, or a short line sa
 what happened, with the details one tap away. Hermes stores much of what nobody typed as the
 person's own rows (role `user`), and no row says who wrote it: no author, source or job id
 (`hermes_state_common.py`). The text, and for some the `display_kind`, are all that tell them apart,
-so `TranscriptBuilder` classifies each row by them (`CompactionSummary`), the same way Hermes's
-own clients do.
+so `TranscriptBuilder` classifies each row by them (`MessageOrigin.swift`, `CompactionSummary`),
+the same way Hermes's own clients do. Only a message the person wrote is drawn in their style,
+counted as "You", offered for Edit and Resend, Branch or a voice reply (`UserEntry.isFromPerson`).
 
 | Stored row | Hermes writes it | Shown as | Component |
 |---|---|---|---|
 | A compaction's handoff summary: `[CONTEXT COMPACTION — REFERENCE ONLY] …avoid repeating it:` (or the legacy `[CONTEXT SUMMARY]:`), the summary, `--- END OF CONTEXT SUMMARY — …` | `agent/context_compressor.py`, as the person's row or Hermes's; Hermes's projection marks one on its own `hidden` and keeps its words | A quiet divider, "Earlier messages were summarized", folded. Opened, the summary's own words as Markdown, read-only, without Hermes's instructions to the model (`CompactionSummary.parse`, as `_strip_summary_prefix`). Not a reply target, never counted, unread, a last line or in the jump pill, not read by Listen or Talk (notices aren't), and session search leaves it out on the gateway. VoiceOver: "Earlier messages summarized". Desktop doesn't draw it at all; the web dashboard draws a muted "Context handoff" | `compactionDivider` (`CompactionDivider`) |
 | The same summary folded into a message (`[PRIOR CONTEXT — …]` before it, or the person's request after its end marker) | When roles must alternate | The message it was folded into, as it was (Hermes's or the person's), and the divider in its place | |
 | A request restated after a compaction (`[STILL IN PROGRESS — …]`) | In place of the person's message it replaced | The person's message, without the header | `userBubble` |
+| A routine's output: `[Cronjob "<name>" output — …]` (Bot Chat), `[Cron delivery: <name>]` (mirrored into the chat that made it), `Cronjob Response: <name>` | `cron/scheduler_delivery.py`, `cron/scheduler.py` | The routine's card: an ink "Routine" tag, its name, its time and the output as Markdown (§3); links open through `WebLink` only. The name opens the routine in the Bot's Routines, picked out | `routineCard` (`RoutineDeliveryRow`) |
+| A webhook's event mirrored into a chat: `[Webhook delivery: <route>]` | `gateway/platforms/webhook.py` | The same card, tagged "Webhook", with the route | `routineCard` |
+| Anything else tagged `internal_notification`: a script's `hermes peer dm`, a `/v1/runs` call, a plugin's `inject_message` | `gateway/response_filters.py` (`display_kind_for_event`) | The same card, tagged "Automation". The row has nothing that names its sender, so the card names none; a sender's name needs Hermes to store one | `routineCard` |
+| The message a live turn answers, from another device or a delivery (`inflight.user`) | `session.resume`, `session.activate`, with its `display_kind` | As it will read stored: a delivery's card, never the person's bubble while it runs | |
+| A skill used elsewhere: `[IMPORTANT: The user has invoked the "<name>" skill …]`, a bundle, a channel's auto-load | `agent/skill_commands.py` | The person's message with the skill as a chip and the words they typed with it (`SkillInvocation`, as `describe_skill_invocation`) | `userBubble` |
+| `[System: …]` recovery nudges without a kind; the task list and planning state compaction carries over | `agent/conversation_loop.py`, `tools/todo_tool.py` | Nothing: Hermes's REST projection hides them and its TUI drops them | |
+| An interrupted turn picked up again (`auto_continue`, or untyped `[System note: Your previous turn was interrupted …`) | `tui_gateway/session_auto_continue.py` | One quiet line, "Resumed an interrupted turn" | `NoticeRow` |
+| Recalled memory in a message with images (`<memory-context>…</memory-context>`) | `agent/memory_context.py` | Left out of the message | |
+| Another Bot's message, a background process or helpers finishing | | §2 and [bots-groups-skills.md](bots-groups-skills.md) | |
 
-Mock: Ops' Bot Chat ends on a summary on its own and holds one folded into the person's next
-message; `/compact` in a Bot Chat stores another ([development.md](development.md)).
+**A reply to a delivery** says so: "Replying to the routine Disk report" (or the webhook, or "an
+automated message") over the turn right after it (`Delivery.replies`, `deliveryReplyCaption`). The
+reply is the Bot's; the delivery is the routine's, counted and shown in the list as its own
+("Disk report: …", "Automation: …", never "You:").
+
+**The person's own words aren't Markdown.** Hermes Desktop draws a message the person wrote as
+plain text with code spans, and so does the TUI; only the web dashboard renders it. The app matches
+Desktop. What a routine or an automation delivered is rendered (§3), with the same rules as a reply.
+
+Mock: Ops' Bot Chat holds one of each (an automation's alert and its reply, a routine's and a
+webhook's delivery, a hidden nudge, a skill from another device, a summary folded into a message
+and one on its own); `POST /api/mock/deliver {profile}` posts an alert that the Bot answers live
+([development.md](development.md)).
 
 ## 3. Markdown
 
@@ -389,6 +410,8 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   menu (long press, or …) has **Select Text**, a sheet with the reply's words to select any part
   of and copy (Copy, or Copy All). The person's bubbles aren't selectable; their long press opens
   the message menu (§4).
+- **The person's own messages** are plain text, as in Hermes Desktop (§2a). A routine's, a
+  webhook's or an automation's delivery is Markdown like a reply.
 
 ## 4. Interaction
 

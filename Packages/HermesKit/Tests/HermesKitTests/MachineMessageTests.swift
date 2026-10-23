@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import HermesKit
 
-/// Messages nobody typed, beginning with a compaction's summary: what it is in the chat, never the
-/// person's bubble (`docs/chat.md` §2a).
+/// Messages nobody typed: a compaction's summary, a routine's or a hook's delivery, Hermes's own
+/// notes. Each is what it is in the chat, never the person's bubble (`docs/chat.md` §2a).
 @Suite("Messages that aren't yours")
 struct MachineMessageTests {
     /// Hermes's current preamble (`SUMMARY_PREFIX` in agent/context_compressor.py), cut short in
@@ -86,5 +86,84 @@ struct MachineMessageTests {
         let items = TranscriptBuilder.build([row(1, "user", "\(CompactionSummary.restatedHeader)\nCheck the disks")])
         guard case .user(let entry) = items.first else { Issue.record("not a message"); return }
         #expect(entry.text == "Check the disks")
+    }
+
+    // MARK: Deliveries
+
+    /// A routine's alert a script posted into the Bot Chat (`hermes peer dm`): Hermes tags it
+    /// `internal_notification` with no wrapper. It's the automation's card, as Markdown, never
+    /// the person's bubble or a two-line notice.
+    @Test func anUnwrappedDeliveryIsAutomationsNotYours() {
+        let alert = "**Ops room — issue change**\n- 🔴 **P2 · Backups: 1 job failed** (needs you)\n  Fix: open the backups page."
+        let items = TranscriptBuilder.build([
+            row(1, "user", alert, kind: "internal_notification"),
+            row(2, "assistant", "That's the same alert again."),
+        ], hidesSilence: true)
+        guard case .user(let entry) = items.first else { Issue.record("not a message"); return }
+        #expect(entry.delivery == .automation)
+        #expect(entry.text == alert)
+        #expect(!entry.isFromPerson)
+        #expect(UnreadCounter.counts(items[0]))
+        #expect(LastLine.of(Array(items.prefix(1)))?.speaker == .named("Automation"))
+        #expect(Delivery.replies(in: items) == ["tm2": .automation])
+        // Hermes's own notes tagged the same stay notices.
+        let note = TranscriptBuilder.build([row(1, "user", "[IMPORTANT: Background process proc_1 matched watch pattern \"ERR\"]", kind: "internal_notification")])
+        if case .notice = note.first {} else { Issue.record("not a notice") }
+        // The live turn's message reads the same, by its display kind.
+        let live = InflightTurn(user: alert, displayKind: "internal_notification").userEntry(id: "local-1")
+        #expect(live?.delivery == .automation)
+        #expect(InflightTurn(user: alert).userEntry(id: "local-2")?.isFromPerson == true)
+    }
+
+    /// The wrappers Hermes's cron and webhooks write (`cron/scheduler_delivery.py`, `cron/scheduler.py`,
+    /// `gateway/platforms/webhook.py`): the source's name, and the words without the wrapper.
+    @Test func wrappedDeliveriesNameTheirSource() {
+        let cronjob = Delivery.parse("[Cronjob \"[bot:ops] Issue alerts\" output — scheduled job, not the user. Review it.]\n\nAll clear.", displayKind: nil)
+        #expect(cronjob?.source == .routine("Issue alerts"))
+        #expect(cronjob?.body == "All clear.")
+        let mirrored = Delivery.parse("[Cron delivery: Morning brief]\nThree things today.", displayKind: nil)
+        #expect(mirrored?.source == .routine("Morning brief"))
+        #expect(mirrored?.body == "Three things today.")
+        let hook = Delivery.parse("[Webhook delivery: deploys]\nBuild 41 shipped.", displayKind: nil)
+        #expect(hook?.source == .webhook("deploys"))
+        let platform = Delivery.parse("Cronjob Response: Morning brief\n(job_id: a1b2)\n-------------\n\nThree things today.\n\n"
+            + "To stop or manage this job, send me a new message (e.g. \"stop reminder Morning brief\").", displayKind: nil)
+        #expect(platform?.source == .routine("Morning brief"))
+        #expect(platform?.body == "Three things today.")
+        // The person's own words that only look alike stay theirs.
+        #expect(Delivery.parse("[Cron delivery] is broken", displayKind: nil) == nil)
+        #expect(Delivery.parse("Please check the backups", displayKind: nil) == nil)
+    }
+
+    // MARK: Hermes's own notes
+
+    /// A skill used on another device is stored expanded; it shows as the skill and the words typed
+    /// with it (`describe_skill_invocation`).
+    @Test func aSkillPayloadShowsAsTheSkillAndTheWords() {
+        let single = "[IMPORTANT: The user has invoked the \"logging-meals\" skill, indicating they want you to follow its instructions. "
+            + "The full skill content is loaded below.]\n\n# Logging meals\nLog food.\n\n"
+            + "The user has provided the following instruction alongside the skill invocation: two eggs and toast\n\n[Runtime note: today]"
+        let items = TranscriptBuilder.build([row(1, "user", single)])
+        guard case .user(let entry) = items.first else { Issue.record("not a message"); return }
+        #expect(entry.skillNames == ["logging-meals"])
+        #expect(entry.text == "two eggs and toast")
+        let bundle = "[IMPORTANT: The user has invoked the \"/clean /work\" skill bundle, indicating …]\nUser instruction: tidy the repo\n\n[Loaded as part of the bundle]"
+        #expect(SkillInvocation.parse(bundle)?.skills == ["clean", "work"])
+        #expect(SkillInvocation.parse(bundle)?.instruction == "tidy the repo")
+        #expect(SkillInvocation.parse("[IMPORTANT: The config file is broken]") == nil)
+    }
+
+    /// Recovery nudges and compaction's carried-over task list are for the model: not shown, as in
+    /// Hermes's clients. An interrupted turn picked up again is a notice, typed or not.
+    @Test func scaffoldingIsNotTheirs() {
+        let items = TranscriptBuilder.build([
+            row(1, "user", "[System: Your previous response was truncated by the output length limit. Continue exactly.]"),
+            row(2, "user", "[Your active task list was preserved across context compression]\n- [ ] Check disks"),
+            row(3, "user", "[System note: Your previous turn was interrupted mid-run — the app stopped. The interrupted request was:]\n\nCheck disks"),
+            row(4, "user", "<memory-context>\n[System note: recalled]\nLikes short answers\n</memory-context>Check the disks"),
+        ])
+        #expect(items.map(\.id) == ["m3", "m4"])
+        if case .notice(let notice) = items[0] { #expect(notice.kind == "auto_continue") } else { Issue.record("not a notice") }
+        if case .user(let entry) = items[1] { #expect(entry.text == "Check the disks") }
     }
 }

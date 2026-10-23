@@ -197,7 +197,7 @@ final class MacNotifier {
     static func botStartedLatestTurn(in conversation: ConversationModel) -> Bool {
         for item in conversation.rows.reversed() {
             switch item {
-            case .user(let entry): return entry.routineName != nil || entry.sender != nil
+            case .user(let entry): return !entry.isFromPerson
             case .notice(let notice) where notice.kind == "internal_notification": return true
             default: continue
             }

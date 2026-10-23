@@ -195,7 +195,7 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
     /// A newer routine run or other session moves neither it nor the row's time.
     private var computedPreview: String? {
         guard let raw = (canonicalSession ?? lastSession)?.preview?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty, !BotMentions.isSilenceMarker(raw), CompactionSummary.parse(raw) == nil
+              !raw.isEmpty, !BotMentions.isSilenceMarker(raw), CompactionSummary.parse(raw) == nil, !HermesScaffold.isHidden(raw)
         else { return nil }
         switch Self.controlFrame(raw) {
         case .named(let text)?: return text
@@ -205,9 +205,9 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
         if let message = BotMentions.parseAgentMessage(raw) {
             return "\(message.senderName): \(message.body)"
         }
-        if let routine = BotMentions.parseRoutineDelivery(raw) {
-            let quiet = routine.output.isEmpty || BotMentions.isSilenceMarker(routine.output)
-            return quiet ? "⏰ \(routine.name)" : "⏰ \(routine.name): \(BotMentions.stripMarkdown(routine.output))"
+        if let delivery = Delivery.parse(raw, displayKind: nil), let name = delivery.source.name {
+            let quiet = delivery.body.isEmpty || BotMentions.isSilenceMarker(delivery.body)
+            return quiet ? "⏰ \(name)" : "⏰ \(name): \(BotMentions.stripMarkdown(delivery.body))"
         }
         return BotMentions.stripMarkdown(raw)
     }

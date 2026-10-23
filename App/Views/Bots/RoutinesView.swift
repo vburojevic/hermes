@@ -5,6 +5,8 @@ import SwiftUI
 struct RoutinesView: View {
     let roster: BotRoster
     let botName: String
+    /// A routine to show first, by its title: a chat's delivery opened here (`docs/chat.md` §2a).
+    var focus: String?
     let onDone: () -> Void
 
     @State private var model: RoutinesModel
@@ -14,9 +16,10 @@ struct RoutinesView: View {
     @State private var removing: BotRoutine?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(roster: BotRoster, botName: String, onDone: @escaping () -> Void) {
+    init(roster: BotRoster, botName: String, focus: String? = nil, onDone: @escaping () -> Void) {
         self.roster = roster
         self.botName = botName
+        self.focus = focus
         self.onDone = onDone
         _model = State(initialValue: RoutinesModel(roster: roster, botName: botName))
     }
@@ -115,6 +118,7 @@ struct RoutinesView: View {
     }
 
     private var list: some View {
+        ScrollViewReader { proxy in
             List {
                 #if os(iOS)
                 Section {
@@ -150,6 +154,9 @@ struct RoutinesView: View {
                             RoutineRow(routine: routine, isAdding: adding, isStarting: model.starting.contains(routine.id)) { paused in
                                 Task { await model.setPaused(routine, paused) }
                             }
+                            .id(routine.id)
+                            .listRowBackground(isFocused(routine) ? Theme.infoTint : nil)
+                            .accessibilityAddTraits(isFocused(routine) ? .isSelected : [])
                             .contextMenu {
                                 if !adding { actions(for: routine) }
                             }
@@ -178,6 +185,16 @@ struct RoutinesView: View {
             .listStyle(.insetGrouped)
             #endif
             .refreshable { await model.load() }
+            .onChange(of: routines.first(where: isFocused)?.id, initial: true) { _, id in
+                guard let id else { return }
+                withAnimation(reduceMotion ? nil : .smooth) { proxy.scrollTo(id, anchor: .center) }
+            }
+        }
+    }
+
+    /// The routine a delivery named; a Bot's routines are told apart by title.
+    private func isFocused(_ routine: BotRoutine) -> Bool {
+        focus.map { routine.title.caseInsensitiveCompare($0) == .orderedSame } ?? false
     }
 
     private var header: some View {

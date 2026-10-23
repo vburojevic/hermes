@@ -36,7 +36,7 @@ public struct LastLine: Hashable, Sendable, Codable {
                     ?? flatten(entry.text)
                 guard !text.isEmpty else { continue }
                 if let sender = entry.sender { return LastLine(speaker: .named(sender.name), text: text, at: entry.timestamp) }
-                if let routine = entry.routineName { return LastLine(speaker: .named(routine), text: text, at: entry.timestamp) }
+                if let source = entry.delivery { return LastLine(speaker: .named(source.speaker), text: text, at: entry.timestamp) }
                 return LastLine(speaker: .you, text: text, at: entry.timestamp)
             case .command(let command):
                 return LastLine(speaker: .you, text: "/" + command.name + (command.argument.map { " " + $0 } ?? ""), at: command.timestamp)

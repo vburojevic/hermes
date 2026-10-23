@@ -20,7 +20,7 @@ public enum UnreadCounter {
         if item.isCompactionSummary { return false }
         return switch item {
         case .assistant(let turn): !turn.isWorking && !turn.answer.isEmpty
-        case .user(let entry): entry.sender != nil || entry.routineName != nil
+        case .user(let entry): !entry.isFromPerson
         case .command(let command): if case .running = command.outcome { false } else { true }
         case .notice: false
         }

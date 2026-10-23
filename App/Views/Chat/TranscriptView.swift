@@ -149,6 +149,8 @@ struct TranscriptView: View {
         // Replies to a voice message open with the Bot's voice (`docs/voice.md` §2).
         let spokenReplies = VoiceReplies.turns(in: all, setting: VoiceReplies.Setting(rawValue: voiceReplies) ?? .whenISpeak)
         let latestReply = all.last { if case .assistant = $0 { true } else { false } }?.id
+        // A reply to a routine's or a script's delivery says so (`docs/chat.md` §2a).
+        let deliveryReplies = Delivery.replies(in: all)
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 if showsLoadingRow(first: first) {
@@ -161,7 +163,7 @@ struct TranscriptView: View {
                     RowEdges {
                         callFolded(shown.item, folds: folds, calls: calls) {
                             rowView(shown.item, date: separators[shown.item.id], extraTeams: shown.item.id == unclaimed.turnID ? unclaimed.teams : [],
-                                    spokenReplies: spokenReplies, latestReply: latestReply)
+                                    spokenReplies: spokenReplies, latestReply: latestReply, answers: deliveryReplies[shown.item.id])
                         }
                     }
                         .background {
@@ -933,7 +935,7 @@ struct TranscriptView: View {
         if aboveRoom != 0 { aboveRoom = 0 }
     }
 
-    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String], spokenReplies: Set<String>, latestReply: String?) -> some View {
+    private func rowView(_ item: TranscriptItem, date: Date?, extraTeams: [String], spokenReplies: Set<String>, latestReply: String?, answers: DeliverySource? = nil) -> some View {
         VStack(alignment: .leading, spacing: 30) {
             if let date {
                 DateSeparator(date: date)
@@ -945,7 +947,14 @@ struct TranscriptView: View {
                     }
                     .transition(.opacity.animation(.easeOut(duration: 0.3)))
             }
-            row(for: item, extraTeams: extraTeams, spokenReplies: spokenReplies, latestReply: latestReply)
+            if let answers {
+                VStack(alignment: .leading, spacing: 8) {
+                    DeliveryReplyCaption(source: answers)
+                    row(for: item, extraTeams: extraTeams, spokenReplies: spokenReplies, latestReply: latestReply)
+                }
+            } else {
+                row(for: item, extraTeams: extraTeams, spokenReplies: spokenReplies, latestReply: latestReply)
+            }
         }
     }
 
@@ -1063,7 +1072,7 @@ struct TranscriptView: View {
     /// glides up instead of jumping by the row's height.
     private static func insertion(for item: TranscriptItem, holding: Bool) -> AnyTransition {
         switch item {
-        case .user(let entry) where entry.sender == nil && entry.routineName == nil && entry.id.hasPrefix("local-"):
+        case .user(let entry) where entry.isFromPerson && entry.id.hasPrefix("local-"):
             .asymmetric(
                 insertion: .scale(scale: 0.96, anchor: .bottomTrailing)
                     .combined(with: .opacity.animation(.easeOut(duration: 0.2))),
@@ -1338,8 +1347,8 @@ struct TranscriptView: View {
                 }
             } else if let sender = entry.sender {
                 AgentMessageRow(entry: entry, sender: sender, roster: workspace.roster)
-            } else if let routine = entry.routineName {
-                RoutineDeliveryRow(entry: entry, name: routine)
+            } else if let source = entry.delivery {
+                RoutineDeliveryRow(entry: entry, source: source, openSource: routineOpener(for: source))
             } else if let command = command(in: entry) {
                 CommandBubble(name: command.name, argument: command.argument, isBotChat: conversation.isBotChat)
             } else {
@@ -1377,6 +1386,15 @@ struct TranscriptView: View {
         case .command(let command):
             CommandRow(entry: command, isBotChat: conversation.isBotChat, job: conversation.job(forCommand: command.id),
                        setup: conversation.workspace?.setup)
+        }
+    }
+
+    /// Opens a routine's delivery at its routine, in the Bot's Routines (`docs/chat.md` §2a).
+    private func routineOpener(for source: DeliverySource) -> (() -> Void)? {
+        guard case .routine(let name) = source, let bot = conversation.botName, let roster = workspace.roster else { return nil }
+        return {
+            roster.routinesFocus = name
+            roster.routinesBot = bot
         }
     }
 

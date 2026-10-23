@@ -64,3 +64,29 @@ struct CompactionDivider: View {
         }
     }
 }
+
+/// The line over a reply to a delivery (`deliveryReplyCaption`, `docs/chat.md` §2a): the Bot
+/// answered the routine or the automation, not the person.
+struct DeliveryReplyCaption: View {
+    let source: DeliverySource
+
+    private var text: String {
+        switch source {
+        case .routine(let name): String(localized: "Replying to the routine \(name)")
+        case .webhook(let name): String(localized: "Replying to the webhook \(name)")
+        case .automation: String(localized: "Replying to an automated message")
+        }
+    }
+
+    var body: some View {
+        Label {
+            Text(text)
+                .lineLimit(1)
+        } icon: {
+            Image(systemName: "arrowshape.turn.up.left")
+        }
+        .font(Theme.Typography.caption)
+        .foregroundStyle(Theme.tertiaryText)
+        .accessibilityElement(children: .combine)
+    }
+}

@@ -99,7 +99,7 @@ public enum VoiceReplies {
         var turns: Set<String> = []
         for item in items {
             switch item {
-            case .user(let entry) where entry.sender == nil && entry.routineName == nil && !entry.isSteer:
+            case .user(let entry) where entry.isFromPerson && !entry.isSteer:
                 answering = setting == .always || entry.voicePath != nil
             case .assistant(let turn):
                 if answering { turns.insert(turn.id) }

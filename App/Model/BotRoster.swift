@@ -78,6 +78,8 @@ final class BotRoster {
     /// Sheets, shared by the sidebar and the chat toolbar.
     var editingBot: String?
     var routinesBot: String?
+    /// The routine Routines opens on (a delivery's name tapped in a chat), by its title.
+    var routinesFocus: String?
     var isCreatingBot = false
 
     @ObservationIgnored let botID: UUID

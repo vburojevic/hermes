@@ -28,12 +28,14 @@ public struct InflightTurn: Sendable, Equatable {
         startedAt = HermesDate.fromEpoch(snapshot["turn_started_at"]?.doubleValue)
     }
 
-    /// The message as its bubble shows it (another Bot's message and a routine's delivery read
-    /// as they do stored), or `nil` when there's nothing to show.
+    /// The message as its bubble shows it (another Bot's message and a routine's or a script's
+    /// delivery read as they do stored, by the same `display_kind`), or `nil` when there's nothing
+    /// to show.
     public func userEntry(id: String) -> UserEntry? {
         guard !user.isEmpty, displayKind != "hidden", !CompactionSummary.matches(user) else { return nil }
-        let entry = TranscriptBuilder.userEntry(id: id, message: SessionMessage(role: "user", content: .text(user), timestamp: startedAt))
-        return entry.text.isEmpty && entry.fileNames.isEmpty ? nil : entry
+        let message = SessionMessage(role: "user", content: .text(user), timestamp: startedAt, displayKind: displayKind)
+        let entry = TranscriptBuilder.userEntry(id: id, message: message)
+        return entry.text.isEmpty && entry.fileNames.isEmpty && entry.skillNames.isEmpty ? nil : entry
     }
 
     /// The chat's rows already end with this message: Hermes without turn isolation stores it

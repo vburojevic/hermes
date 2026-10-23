@@ -56,7 +56,7 @@ public struct WidgetChatFacts: Hashable, Sendable {
                     facts.answers[answer.widgetID, default: []].append(Answer(
                         rowID: entry.id, rev: answer.rev, action: answer.action, mid: answer.mid,
                         device: answer.device, at: entry.timestamp, text: entry.text))
-                } else if entry.sender == nil, entry.routineName == nil {
+                } else if entry.isFromPerson {
                     facts.movedPast.formUnion(seen) // the person wrote something else
                 } else {
                     show(inlineIDs(entry))
