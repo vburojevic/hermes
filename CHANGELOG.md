@@ -31,6 +31,15 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610231809 (October 23, 2026)
+
+- **Chats:** a row's time and place follow its last message, not an opened chat, a compaction or a Bot's routine run
+- **Chats:** row times turn into Yesterday and a weekday at midnight, and older ones show their year
+- **Chat:** while a question waits on its card, the line above it says "Waiting for your answer" and holds still
+- **Chat:** a reply is one turn in one place: a late, lost or rejoined reply never leaves its live line behind or shows twice
+- **Chat:** Hermes's self-review shows as a quiet note on the reply it reviewed, and narration stays the turn's progress
+- **Requests:** a question shows whole, with its answers, while you type, and the keyboard steps aside for a new one
+
 ### Build 2610231106 (October 23, 2026)
 
 - **Chat:** a new chat's first message waits on the device while the gateway is away, and goes when it's back
