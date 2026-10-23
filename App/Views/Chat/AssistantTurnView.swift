@@ -668,6 +668,8 @@ struct WorkSummaryView: View, Equatable {
             let team = helpers.count == 1 ? String(localized: "1 helper") : String(localized: "\(helpers.count) helpers")
             return time.map { String(localized: "Worked for \($0) · \(team)") } ?? String(localized: "Worked with \(team)")
         }
+        // Tools and no reply: what it did, never a bare count that reads as a reply gone missing.
+        if let line = WorkLine.text(for: turn) { return line }
         switch (tools, time) {
         case (0, let time?): return String(localized: "Thought for \(time)")
         case (0, nil): return String(localized: "Thoughts")
@@ -719,10 +721,12 @@ private struct TickerTitle: View {
                 if shimmers {
                     ShimmerText(text: text)
                 } else {
+                    // Still words may take a second line: a finished turn's line says what it did.
                     Text(text)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(tint)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .id(id)
@@ -1444,17 +1448,17 @@ private struct ToolRunLine: View {
 
     private var title: String {
         let count = tools.count
-        let name = tools.first?.name ?? ""
-        switch Self.kind(of: name) {
-        case "terminal": return isRunning ? String(localized: "Running commands · \(count)") : String(localized: "Ran \(count) commands")
-        case "doc.text": return isRunning ? String(localized: "Reading files · \(count)") : String(localized: "Read \(count) files")
-        case "pencil.line": return isRunning ? String(localized: "Editing files · \(count)") : String(localized: "Edited \(count) files")
-        case "square.and.pencil": return isRunning ? String(localized: "Writing files · \(count)") : String(localized: "Wrote \(count) files")
-        case "globe": return isRunning ? String(localized: "Searching the web · \(count)") : String(localized: "Searched the web \(count) times")
-        case "doc.richtext": return isRunning ? String(localized: "Reading pages · \(count)") : String(localized: "Read \(count) pages")
-        case "doc.text.magnifyingglass": return isRunning ? String(localized: "Searching files · \(count)") : String(localized: "Searched files \(count) times")
-        default:
-            return isRunning ? "\(descriptor.activeTitle) · \(count)" : "\(descriptor.doneTitle) · \(count)×"
+        let kind = Self.kind(of: tools.first?.name ?? "")
+        guard isRunning else { return ToolDescriptor.doneTitle(symbol: kind, count: count) ?? "\(descriptor.doneTitle) · \(count)×" }
+        switch kind {
+        case "terminal": return String(localized: "Running commands · \(count)")
+        case "doc.text": return String(localized: "Reading files · \(count)")
+        case "pencil.line": return String(localized: "Editing files · \(count)")
+        case "square.and.pencil": return String(localized: "Writing files · \(count)")
+        case "globe": return String(localized: "Searching the web · \(count)")
+        case "doc.richtext": return String(localized: "Reading pages · \(count)")
+        case "doc.text.magnifyingglass": return String(localized: "Searching files · \(count)")
+        default: return "\(descriptor.activeTitle) · \(count)"
         }
     }
 

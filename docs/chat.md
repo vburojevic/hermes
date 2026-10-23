@@ -31,8 +31,11 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
    12s" after 10 s), still words once the reply streams ("Working · 3 tools"), a raised hand while
    it waits for an approval ("Waiting for your approval") or for an answer on a request card
    ("Waiting for your answer", in place of the asking tool's "Asking a question…"), and when finished a summary such as
-   "Worked for 14s · 2 tools" or "Thought for 3s". Tapping a header with steps opens or closes
-   them. A running step shows its tool's glyph and a time that counts up; nothing spins.
+   "Worked for 14s · 2 tools" or "Thought for 3s". A turn that used tools and wrote nothing says
+   what it did instead, from its steps: "Ran the tests and a command · no reply" ("no reply
+   needed" when the Bot answered with a silence marker), two kinds of work named and "and N more"
+   after that (`WorkLine`). A bare count read as a reply gone missing, and a reply is never made
+   up. Tapping a header with steps opens or closes them. A running step shows its tool's glyph and a time that counts up; nothing spins.
 3. Unfolded: the plan card (`planCard`) if the agent keeps a todo list, then the steps on a rail
    (tool calls, narration, reasoning, where Hermes read a steer). Folded and finished: only the
    diffs and risk notes stay in view, those from before the first steer here, and the files

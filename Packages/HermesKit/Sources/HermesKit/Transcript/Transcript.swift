@@ -149,6 +149,8 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
     public var providerProblem: ProviderProblem?
     /// What Hermes's background self-review of this reply did (`ReviewNote`), a quiet note after it.
     public var review: String?
+    /// The Bot ended the turn with a silence marker (`[SILENT]`, Bot Chats): it chose not to reply.
+    public var keptQuiet = false
 
     public init(id: String, steps: [AssistantStep] = [], answer: String = "", state: State = .complete, startedAt: Date? = nil, finishedAt: Date? = nil) {
         self.id = id
@@ -385,7 +387,10 @@ public enum TranscriptBuilder {
         }
 
         for (index, stored) in messages.enumerated() {
-            if silentRows.contains(index) { continue }
+            if silentRows.contains(index) {
+                if stored.role == "assistant" { turn?.keptQuiet = true }
+                continue
+            }
             var message = stored
             let rowID = message.id.map { "m\($0)" } ?? "i\(index)"
             let kind = message.displayKind
@@ -463,6 +468,7 @@ public enum TranscriptBuilder {
                     turn?.steps.append(.reasoning(id: "\(rowID)-r", text: reasoning))
                 }
                 let silenced = hidesSilence && BotMentions.isSilenceMarker(message.content.text)
+                if silenced { turn?.keptQuiet = true }
                 let media = AgentAudio.split(message.content.text)
                 if kind != "hidden", !silenced, !media.audio.isEmpty { turn?.audio += media.audio }
                 let text = kind == "hidden" || silenced ? "" : cleanAssistantText(media.text)
