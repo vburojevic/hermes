@@ -274,7 +274,7 @@ struct TaskDetailPane: View {
 
     private func open(_ run: CronRun) {
         guard let id = run.sessionID else { return }
-        var session = HermesSession(id: id)
+        var session = HermesSession.opened(id: id)
         session.title = current.name
         session.source = SessionSearch.taskSource
         session.startedAt = run.startedAt

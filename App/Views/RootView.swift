@@ -90,7 +90,7 @@ struct RootView: View {
                             for _ in 0..<40 where workspace.sessions.isEmpty {
                                 try? await Task.sleep(for: .milliseconds(250))
                             }
-                            workspace.open(workspace.session(forKey: id) ?? HermesSession(id: id))
+                            workspace.open(workspace.session(forKey: id) ?? .opened(id: id))
                             await openDebugCheckpoints(in: workspace)
                         case let page? where page.hasPrefix("project-chat:"):
                             workspace.sidebarMode = .chats
@@ -329,7 +329,7 @@ struct RootView: View {
                     } else if target.hasPrefix("chat:") {
                         workspace.sidebarMode = .chats
                         let id = String(target.dropFirst(5))
-                        workspace.open(workspace.session(forKey: id) ?? HermesSession(id: id))
+                        workspace.open(workspace.session(forKey: id) ?? .opened(id: id))
                     }
                     try? await Task.sleep(for: .seconds(4))
                     FrameMonitor.shared.mark("cycle: settled \(target)")

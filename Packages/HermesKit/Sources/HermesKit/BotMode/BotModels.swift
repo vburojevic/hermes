@@ -165,11 +165,22 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
         }
     }
 
+    /// The newest activity in any of the Bot's sessions, its routines' runs included: for "Active
+    /// now" and the Bot's unread watermark, never for its row's time.
     public var lastActive: Date? { activitySession?.lastActive }
 
-    /// Roster sort key: newest of creation and activity.
-    public var recency: Date {
-        max(meta.created ?? .distantPast, lastActive ?? .distantPast)
+    /// Hermes' activity for the chat the row's last line comes from: the Bot Chat when there is
+    /// one (its tip's heartbeat, else when it started), else the newest other session. It stands in
+    /// for the row's time until the line is read (`RowTime`).
+    public var chatActivity: Date? {
+        guard let chat = canonicalSession ?? lastSession else { return nil }
+        return chat.lastActive ?? chat.startedAt
+    }
+
+    /// The row's time and sort key (`docs/inbox.md` §2): the newest message its last line shows,
+    /// else its chat's activity, else when the Bot was made.
+    public func rowTime(line: LastLine?, live: Bool = false) -> Date? {
+        RowTime.of(line: line, live: live, activity: chatActivity, created: meta.created)
     }
 
     /// "Active now": wrote in the last 90 s, or a background worker beat in the last 150 s.
@@ -181,10 +192,10 @@ public struct BotProfile: Identifiable, Hashable, Sendable {
 
     /// Latest-message preview with bot-to-bot attribution turned into "Name: text". It describes
     /// what opening the row shows: the Bot Chat when there is one (Desktop, hermes-agent#88200).
-    /// A newer routine run or other session moves the row's activity time, not its preview.
+    /// A newer routine run or other session moves neither it nor the row's time.
     private var computedPreview: String? {
         guard let raw = (canonicalSession ?? lastSession)?.preview?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty, !BotMentions.isSilenceMarker(raw)
+              !raw.isEmpty, !BotMentions.isSilenceMarker(raw), !CompactionSummary.matches(raw)
         else { return nil }
         switch Self.controlFrame(raw) {
         case .named(let text)?: return text

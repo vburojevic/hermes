@@ -572,7 +572,7 @@ private struct BotTile: View {
         if roster.isActive(bot.name) {
             return (Theme.success, String(localized: "Active now"))
         }
-        if let date = bot.lastActive {
+        if let date = roster.rowTime(for: bot) {
             return (Theme.tertiaryText, String(localized: "Last active \(Formatting.relativePhrase(date))"))
         }
         return (Theme.tertiaryText, String(localized: "Say hi to start"))

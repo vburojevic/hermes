@@ -218,7 +218,7 @@ final class UnreadStore {
 
     private func botBadge(_ name: String, roster: BotRoster) -> UnreadBadge? {
         let key = Self.botKey(name)
-        guard let bot = roster.bot(named: name), let active = bot.lastActive, let chat = bot.canonicalSession else { return nil }
+        guard let bot = roster.bot(named: name), let active = bot.chatActivity, let chat = bot.canonicalSession else { return nil }
         let since = roster.readPoint(name) ?? .distantPast
         let cached = cache.counts[key]
         let fresh = cached.map { $0.since == since.timeIntervalSince1970 && $0.lastActive >= active.timeIntervalSince1970 } ?? false
@@ -227,7 +227,7 @@ final class UnreadStore {
                 guard let client = self?.workspace?.roster?.boardClient else { return nil }
                 let transcript = try await client.transcript(storedSessionID: chat.resolvedID, profile: name, limit: 100)
                 let tally = await Self.tally(transcript.messages, hidesSilence: true, after: since)
-                self?.noteLastLine(key, tally.lastLine, asOf: chat.lastActive ?? active)
+                self?.noteLastLine(key, tally.lastLine, asOf: active)
                 return Cache.Count(value: tally.count, lastActive: active.timeIntervalSince1970, since: since.timeIntervalSince1970)
             }
         }
@@ -307,7 +307,10 @@ final class UnreadStore {
             guard let kept = await LastLinesCache.load(gatewayID), let self else { return }
             self.book.merge(kept)
             let lines = self.book.entries.mapValues(\.line)
-            if lines != self.lastLines { self.lastLines = lines }
+            if lines != self.lastLines {
+                self.lastLines = lines
+                self.workspace?.roster?.reorder()
+            }
             LaunchTrace.mark("kept last lines shown (\(lines.count))", id: "kept last lines")
             self.readStaleLines()
         }
@@ -321,6 +324,8 @@ final class UnreadStore {
         guard book.entries[key] != before else { return }
         if changed, let line {
             lastLines[key] = line
+            // A Bot's row sorts by its line's time (`RowTime`); the chats sort as they're drawn.
+            if key.hasPrefix("bot:") { workspace?.roster?.reorder() }
             LaunchTrace.mark("last line \(key) (\(lastLines.count) rows have one)", id: "line \(key)")
             LoadTrace.mark(key, "row's last line now \(line.speaker), \(line.text.count) characters")
         }
@@ -342,7 +347,7 @@ final class UnreadStore {
         if let roster = workspace.roster {
             for bot in roster.visibleBots {
                 let key = Self.botKey(bot.name)
-                guard !isRunning(key), book.isStale(key, activity: bot.canonicalSession?.lastActive ?? bot.lastActive) else { continue }
+                guard !isRunning(key), book.isStale(key, activity: bot.chatActivity) else { continue }
                 needsBotLine(bot)
             }
         }
@@ -373,7 +378,7 @@ final class UnreadStore {
 
     private func needsBotLine(_ bot: BotProfile) {
         guard let chat = bot.canonicalSession, let client = workspace?.roster?.boardClient else { return }
-        readLine(Self.botKey(bot.name), activity: chat.lastActive ?? bot.lastActive) {
+        readLine(Self.botKey(bot.name), activity: bot.chatActivity) {
             let transcript = try await client.transcript(storedSessionID: chat.resolvedID, profile: bot.name, limit: 8)
             return LastLine.of(TranscriptBuilder.build(transcript.messages, hidesSilence: true))
         }
@@ -418,7 +423,7 @@ final class UnreadStore {
             if Self.botKey(profile) == open { return .now }
             guard let point = roster.readPoint(profile) else { return nil }
             if roster.unread.contains(profile) { return point }
-            return max(point, roster.bot(named: profile)?.lastActive ?? point).addingTimeInterval(slack)
+            return max(point, roster.bot(named: profile)?.chatActivity ?? point).addingTimeInterval(slack)
         }
         guard let session = workspace.sessions.first(where: { chat.ids.contains($0.id) || chat.ids.contains($0.stableID) })
         else { return nil }
@@ -440,7 +445,7 @@ final class UnreadStore {
             if key.hasPrefix("bot:") {
                 let name = String(key.dropFirst(4))
                 return UnreadChat(key: key, ids: botChats.filter { $0.value == name }.keys.sorted(),
-                                  since: workspace.roster?.bot(named: name)?.lastActive ?? .now)
+                                  since: workspace.roster?.bot(named: name)?.chatActivity ?? .now)
             }
             if key.hasPrefix("group:") {
                 let id = String(key.dropFirst(6))

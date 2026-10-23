@@ -12,30 +12,34 @@ public struct LastLine: Hashable, Sendable, Codable {
 
     public var speaker: Speaker
     public var text: String
+    /// When the message was written (a reply: when it ended). The row shows and sorts by it
+    /// (`RowTime`). Nil only in lines kept from before it was recorded.
+    public var at: Date?
 
-    public init(speaker: Speaker, text: String) {
+    public init(speaker: Speaker, text: String, at: Date? = nil) {
         self.speaker = speaker
         self.text = text
+        self.at = at
     }
 
-    /// The last message worth showing, newest first: replies, messages and commands; notices are
-    /// skipped.
+    /// The last message worth showing, newest first: replies, messages and commands; notices and
+    /// compaction summaries are skipped.
     public static func of(_ items: [TranscriptItem]) -> LastLine? {
-        for item in items.reversed() {
+        for item in items.reversed() where !item.isCompactionSummary {
             switch item {
             case .assistant(let turn):
                 let text = flatten(turn.previewText)
-                if !text.isEmpty { return LastLine(speaker: .hermes, text: text) }
+                if !text.isEmpty { return LastLine(speaker: .hermes, text: text, at: turn.finishedAt ?? turn.startedAt) }
             case .user(let entry):
                 // A widget answer reads as what it did ("Approved"), without its words: they may be private.
                 let text = WidgetAnswer.parse(entry.text).map { WidgetAnswer.pastTense($0.action) ?? String(localized: "Answered a widget") }
                     ?? flatten(entry.text)
                 guard !text.isEmpty else { continue }
-                if let sender = entry.sender { return LastLine(speaker: .named(sender.name), text: text) }
-                if let routine = entry.routineName { return LastLine(speaker: .named(routine), text: text) }
-                return LastLine(speaker: .you, text: text)
+                if let sender = entry.sender { return LastLine(speaker: .named(sender.name), text: text, at: entry.timestamp) }
+                if let routine = entry.routineName { return LastLine(speaker: .named(routine), text: text, at: entry.timestamp) }
+                return LastLine(speaker: .you, text: text, at: entry.timestamp)
             case .command(let command):
-                return LastLine(speaker: .you, text: "/" + command.name + (command.argument.map { " " + $0 } ?? ""))
+                return LastLine(speaker: .you, text: "/" + command.name + (command.argument.map { " " + $0 } ?? ""), at: command.timestamp)
             case .notice:
                 continue
             }
@@ -45,9 +49,11 @@ public struct LastLine: Hashable, Sendable, Codable {
 
     /// An open chat's last line: its rows, then what isn't stored yet (`tail`, oldest first): the
     /// message on its way and a reply that just ended. The reply is in the chat before Hermes
-    /// stores it, and the row follows the chat.
-    public static func of(_ items: [TranscriptItem], then tail: [TranscriptItem]) -> LastLine? {
-        of(tail) ?? of(items)
+    /// stores it, and the row follows the chat; what has no time yet is from now.
+    public static func of(_ items: [TranscriptItem], then tail: [TranscriptItem], now: Date = .now) -> LastLine? {
+        guard var line = of(tail) else { return of(items) }
+        if line.at == nil { line.at = now }
+        return line
     }
 
     /// The chat activity such a line stands for (`LastLineBook`): now when `tail` holds what isn't

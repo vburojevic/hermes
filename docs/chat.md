@@ -288,7 +288,9 @@ These have no surface here and are ignored: `tool.generating`, `notification.sho
 `status.update`, `layout.apply`, `tip.show`, `tour`, `display.*` (except `display.lease`, which
 the Inspector's Bot Screen follows), `browser.controller.*`, `pet.*` and `skin.changed`.
 `projects.changed` and `sessions.changed` trigger a refetch of projects and the chat list and draw
-nothing in the chat. `sessions.changed` also reads the Bots roster again (at most every 3 s), so a
+nothing in the chat. A compaction's handoff summary ("[CONTEXT COMPACTION — REFERENCE ONLY] …",
+stored as the person's message or Hermes') is never the chat's last line, its time in the list or
+its order, and never unread ([inbox.md](inbox.md) §1, §2). `sessions.changed` also reads the Bots roster again (at most every 3 s), so a
 message that reached an open, idle Bot Chat elsewhere (another Bot, a routine, another device)
 shows in seconds.
 

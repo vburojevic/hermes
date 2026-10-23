@@ -185,6 +185,104 @@ struct InboxTests {
         #expect(time(8 * 86_400) == .date(now.addingTimeInterval(-8 * 86_400)))
     }
 
+    // MARK: The time a row shows and sorts by
+
+    private static func line(_ text: String, at seconds: Double) -> LastLine {
+        LastLine(speaker: .hermes, text: text, at: t(seconds))
+    }
+
+    @Test func aRowsTimeIsItsLastMessages() {
+        let day: Double = 86_400
+        let line = Self.line("No first review now.", at: 0)
+        // Opening the chat, a compaction, a heartbeat or a routine's run move Hermes' activity,
+        // never the row's time.
+        #expect(RowTime.of(line: line, activity: Self.t(day), created: Self.t(-day)) == Self.t(0))
+        // While a reply streams, the row stands at its activity, then settles to the reply.
+        #expect(RowTime.of(line: line, live: true, activity: Self.t(day), created: nil) == Self.t(day))
+        #expect(RowTime.of(line: Self.line("Done.", at: day + 40), live: false, activity: Self.t(day + 60), created: nil) == Self.t(day + 40))
+        // Until its line is read, Hermes' activity stands in; with no messages, when it was made.
+        #expect(RowTime.of(line: nil, activity: Self.t(50), created: Self.t(10)) == Self.t(50))
+        #expect(RowTime.of(line: nil, activity: nil, created: Self.t(10)) == Self.t(10))
+        #expect(RowTime.of(line: nil, activity: nil, created: nil) == nil)
+        #expect(RowTime.of(messageAt: Self.t(5), live: false, activity: Self.t(90), created: nil) == Self.t(5))
+    }
+
+    @Test func openingADayOldChatLeavesItsTimeAndPlace() {
+        struct Row { var id: String; var pinned = false; var line: LastLine?; var activity: Date? }
+        let day: Double = 86_400
+        var rows = [
+            Row(id: "fresh", line: Self.line("Breakfast is agreed.", at: day - 300), activity: Self.t(day - 300)),
+            Row(id: "core", line: Self.line("No first review now.", at: 0), activity: Self.t(0)),
+            Row(id: "older", line: Self.line("Third round pushed.", at: -day), activity: Self.t(-day)),
+            Row(id: "pinned", pinned: true, line: Self.line("Pinned.", at: -2 * day), activity: Self.t(-2 * day)),
+        ]
+        func order() -> [String] {
+            RowTime.ordered(rows, pinned: \.pinned) { RowTime.of(line: $0.line, activity: $0.activity, created: nil) }.map(\.id)
+        }
+        #expect(order() == ["pinned", "fresh", "core", "older"])
+        // Opened a day later: Hermes stamps its activity (a resume, a heartbeat, a compaction).
+        rows[1].activity = Self.t(day)
+        #expect(order() == ["pinned", "fresh", "core", "older"])
+        #expect(RowTime.of(line: rows[1].line, activity: rows[1].activity, created: nil) == Self.t(0))
+        // A new message moves it up.
+        rows[1].line = Self.line("New reply.", at: day + 10)
+        #expect(order() == ["pinned", "core", "fresh", "older"])
+        // Rows without a time go last; ties keep their order.
+        rows.append(Row(id: "unknown"))
+        rows.append(Row(id: "tie", line: Self.line("Same time.", at: day + 10), activity: nil))
+        #expect(order() == ["pinned", "core", "tie", "fresh", "older", "unknown"])
+    }
+
+    @Test func aBotsRoutineRunMovesNeitherItsTimeNorItsPlace() throws {
+        let now = Self.base.timeIntervalSince1970
+        // CORE's Bot Chat last spoke yesterday; its routine ran in a session of its own 7 minutes ago.
+        let core = BotProfile(json: try #require(JSONValue.parse("""
+        {"name":"core","description":"","display_name":"",
+         "last_session":{"id":"cron1","title":"","preview":"[SILENT]","last_active":\(now - 420)},
+         "canonical_session":{"id":"c1","resolved_id":"c1","title":"Bot Chat","preview":"No first review now.","started_at":\(now - 9 * 86_400),"last_active":\(now - 86_400)},
+         "ui_meta":{"hermes-bots":{"created":\((now - 30 * 86_400) * 1000)}}}
+        """)))
+        #expect(core.lastActive == Date(timeIntervalSince1970: now - 420))
+        #expect(core.chatActivity == Date(timeIntervalSince1970: now - 86_400))
+        let line = LastLine(speaker: .hermes, text: "No first review now.", at: Date(timeIntervalSince1970: now - 86_400 - 60))
+        #expect(core.rowTime(line: line) == line.at)
+        // Before its line is read, the Bot Chat's own activity, not the routine's.
+        #expect(core.rowTime(line: nil) == Date(timeIntervalSince1970: now - 86_400))
+        // A Bot with no chats yet sorts by when it was made.
+        let fresh = BotProfile(json: try #require(JSONValue.parse(#"{"name":"new","ui_meta":{"hermes-bots":{"created":1760000000000}}}"#)))
+        #expect(fresh.rowTime(line: nil) == Date(timeIntervalSince1970: 1_760_000_000))
+    }
+
+    // MARK: Compaction summaries
+
+    @Test func compactionSummariesAreNobodysMessage() throws {
+        let summary = "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below."
+        #expect(CompactionSummary.matches(summary))
+        #expect(CompactionSummary.matches("\n  [CONTEXT SUMMARY]: the person asked about backups"))
+        #expect(!CompactionSummary.matches("Tell me about [CONTEXT COMPACTION]"))
+        #expect(!CompactionSummary.matches("[CONTEXT SUMMARY] without the colon"))
+        let reply = Self.reply("t0", from: 0, to: 5, answer: "Backups are fine.")
+        let asYours = TranscriptItem.user(UserEntry(id: "s1", text: summary, timestamp: Self.t(900)))
+        let asHermes = TranscriptItem.assistant(AssistantTurn(id: "s2", answer: summary, state: .complete, startedAt: Self.t(950), finishedAt: Self.t(950)))
+        // Never the row's last line or its time.
+        #expect(LastLine.of([reply, asYours]) == LastLine(speaker: .hermes, text: "Backups are fine.", at: Self.t(5)))
+        #expect(LastLine.of([reply, asHermes]) == LastLine(speaker: .hermes, text: "Backups are fine.", at: Self.t(5)))
+        #expect(LastLine.of([asYours]) == nil)
+        // Never unread, never counted.
+        #expect(!UnreadCounter.counts(asHermes))
+        #expect(UnreadCounter.count([reply, asYours, asHermes], after: Self.t(10)) == 0)
+        #expect(NewMessagesMarker.find(in: [reply, asYours, asHermes], since: Self.t(10), seenThrough: nil) == nil)
+        // Nor a chat's preview or title, nor a Bot's.
+        var chat = HermesSession(id: "c", preview: summary)
+        #expect(chat.listPreview == nil && chat.displayTitle == "New chat")
+        chat.preview = "Plan the trip"
+        #expect(chat.listPreview == "Plan the trip")
+        let bot = BotProfile(json: try #require(JSONValue.parse("""
+        {"name":"sysadmin","canonical_session":{"id":"c1","title":"Bot Chat","preview":"\(summary)","last_active":1760000000}}
+        """)))
+        #expect(bot.preview == nil)
+    }
+
     // MARK: Activity
 
     @Test func activityFollowsTheActiveListAcrossPolls() {
@@ -271,9 +369,9 @@ struct InboxTests {
 
     @Test func lastLineSaysWhoSpokeLast() {
         let reply = TranscriptItem.assistant(AssistantTurn(id: "t1", answer: "## Done\n\n**23 merged PRs**. Two need `your` eye.", startedAt: Self.t(0), finishedAt: Self.t(5)))
-        #expect(LastLine.of([Self.you("m0", at: 0), reply]) == LastLine(speaker: .hermes, text: "Done 23 merged PRs. Two need your eye."))
-        #expect(LastLine.of([reply, Self.you("m2", at: 10)]) == LastLine(speaker: .you, text: "question"))
-        #expect(LastLine.of([reply, Self.bot("m3", "Ada", at: 20), .notice(Notice(id: "n", kind: "model_switch", text: "x"))]) == LastLine(speaker: .named("Ada"), text: "Shipped it"))
+        #expect(LastLine.of([Self.you("m0", at: 0), reply]) == LastLine(speaker: .hermes, text: "Done 23 merged PRs. Two need your eye.", at: Self.t(5)))
+        #expect(LastLine.of([reply, Self.you("m2", at: 10)]) == LastLine(speaker: .you, text: "question", at: Self.t(10)))
+        #expect(LastLine.of([reply, Self.bot("m3", "Ada", at: 20), .notice(Notice(id: "n", kind: "model_switch", text: "x"))]) == LastLine(speaker: .named("Ada"), text: "Shipped it", at: Self.t(20)))
         #expect(LastLine.of([]) == nil)
         #expect(LastLine.flatten("```swift\nlet a = 1\n```").count <= 120)
     }
@@ -292,13 +390,16 @@ struct InboxTests {
         // The screenshot's case: the message is stored, the reply ended in the chat, Hermes hasn't stored it yet.
         let stored = [Self.reply("t0", from: 0, to: 5, answer: "Earlier."), Self.you("m1", at: 10)]
         let ended = Self.reply("t1", from: 10, to: 140, answer: "Primary default switched to **DeepSeek**.")
-        #expect(LastLine.of(stored) == LastLine(speaker: .you, text: "question"))
-        #expect(LastLine.of(stored, then: [ended]) == LastLine(speaker: .hermes, text: "Primary default switched to DeepSeek."))
+        #expect(LastLine.of(stored) == LastLine(speaker: .you, text: "question", at: Self.t(10)))
+        #expect(LastLine.of(stored, then: [ended]) == LastLine(speaker: .hermes, text: "Primary default switched to DeepSeek.", at: Self.t(140)))
         // The message on its way, before Hermes has it.
-        #expect(LastLine.of([Self.reply("t0", from: 0, to: 5)], then: [Self.you("m2", at: 20)]) == LastLine(speaker: .you, text: "question"))
+        #expect(LastLine.of([Self.reply("t0", from: 0, to: 5)], then: [Self.you("m2", at: 20)]) == LastLine(speaker: .you, text: "question", at: Self.t(20)))
         // A reply with no words yet leaves the message.
         let silent = TranscriptItem.assistant(AssistantTurn(id: "t2", answer: "", state: .complete))
-        #expect(LastLine.of(stored, then: [silent]) == LastLine(speaker: .you, text: "question"))
+        #expect(LastLine.of(stored, then: [silent]) == LastLine(speaker: .you, text: "question", at: Self.t(10)))
+        // What has no time yet is from now.
+        let sending = TranscriptItem.user(UserEntry(id: "m3", text: "on its way"))
+        #expect(LastLine.of(stored, then: [sending], now: Self.t(300))?.at == Self.t(300))
     }
 
     @Test func anOpenChatsLineStandsForItsNewestRow() {
@@ -340,12 +441,15 @@ struct InboxTests {
         var book = LastLineBook()
         #expect(book.isStale("chat:a", activity: Self.t(10)))
         #expect(book.isStale("chat:a", activity: nil))
-        book.note("chat:a", LastLine(speaker: .hermes, text: "Done."), asOf: Self.t(10))
+        book.note("chat:a", LastLine(speaker: .hermes, text: "Done.", at: Self.t(10)), asOf: Self.t(10))
         #expect(!book.isStale("chat:a", activity: Self.t(10)))
         // The gateway stamps a row a moment after the open chat showed it.
         #expect(!book.isStale("chat:a", activity: Self.t(10.8)))
         #expect(book.isStale("chat:a", activity: Self.t(12)))
         #expect(!book.isStale("chat:a", activity: nil))
+        // A line kept from before lines had their time is read again, once, for it.
+        book.note("chat:b", LastLine(speaker: .hermes, text: "Old copy"), asOf: Self.t(10))
+        #expect(book.isStale("chat:b", activity: Self.t(10)))
     }
 
     @Test func linesKeptOnTheDeviceGiveWayToNewerReads() throws {

@@ -256,8 +256,12 @@ final class LiveActivity {
         if next != lines {
             // A chat that stops running is counted now: `UnreadStore` waits out a running turn.
             let stopped = lines.contains { key, line in line.isLive && next[key]?.isLive != true }
+            let liveBotsMoved = Set(lines.filter { $0.key.hasPrefix("bot:") && $0.value.isLive }.keys)
+                != Set(next.filter { $0.key.hasPrefix("bot:") && $0.value.isLive }.keys)
             lines = next
             if stopped { workspace.unread.update() }
+            // A Bot row stands at its activity while its turn runs (`RowTime`).
+            if liveBotsMoved { workspace.roster?.reorder() }
         }
         return busy
     }

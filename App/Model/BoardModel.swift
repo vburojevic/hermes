@@ -710,7 +710,7 @@ final class BoardModel {
     func openChat(_ card: BoardCard) {
         guard let id = card.sessionID, let workspace else { return }
         workspace.sidebarMode = .chats
-        workspace.open(workspace.session(forKey: id) ?? HermesSession(id: id))
+        workspace.open(workspace.session(forKey: id) ?? .opened(id: id))
     }
 
     /// The run's live chat (Watch): the worker's chat in the card's folder, in its profile.
@@ -727,7 +727,7 @@ final class BoardModel {
     /// Opens a run's chat among the chats, for runs in this gateway's own profile.
     func openWorkerChat(_ sessionID: String, card: BoardCard) {
         guard let workspace else { return }
-        var session = HermesSession(id: sessionID)
+        var session = HermesSession.opened(id: sessionID)
         session.title = card.title
         session.source = "kanban"
         workspace.sidebarMode = .chats

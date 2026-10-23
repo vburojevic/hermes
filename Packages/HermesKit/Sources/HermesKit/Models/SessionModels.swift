@@ -127,11 +127,24 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         readMark?.isUnread(lastActive: lastActive) ?? false
     }
 
+    /// A chat opened from somewhere else (the Board, a task's run, a link) before the list has it.
+    /// It has no times of its own, so opening it never puts it at the top as "now": its row takes
+    /// its last message's time once that's read, and Hermes' when the list has it (`RowTime`).
+    public static func opened(id: String) -> HermesSession {
+        HermesSession(id: id, startedAt: nil, lastActive: nil)
+    }
+
     /// The name to show: title, else the first message, else a placeholder.
     public var displayTitle: String {
         if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
-        if let preview = preview?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty { return preview }
+        if let preview = listPreview?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty { return preview }
         return "New chat"
+    }
+
+    /// Hermes' preview (the first message), unless it's a compaction summary: a compacted chat
+    /// starts with one (`CompactionSummary`).
+    public var listPreview: String? {
+        preview.flatMap { CompactionSummary.matches($0) ? nil : $0 }
     }
 
     public var hasRealTitle: Bool {

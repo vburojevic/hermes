@@ -24,7 +24,7 @@ extension BotWorkspace {
         let shown = inboxFilter == .all
             ? sessions.filter { $0.pinned || !projects.isScoped($0) }
             : sessions.filter { matches(inboxFilter, key: $0.stableID) }
-        let ordered = Self.inboxOrder(shown)
+        let ordered = RowTime.ordered(shown, pinned: \.pinned) { self.rowTime($0) }
         // New chats whose first message waits for the gateway, under the pinned ones (`docs/chat.md` §4).
         guard inboxFilter == .all, !waitingChats.isEmpty else { return ordered }
         let waiting = WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
@@ -32,12 +32,19 @@ extension BotWorkspace {
         return Array(ordered[..<pinned]) + waiting + ordered[pinned...]
     }
 
-    static func inboxOrder(_ sessions: [HermesSession]) -> [HermesSession] {
-        sessions.enumerated().sorted { a, b in
-            if a.element.pinned != b.element.pinned { return a.element.pinned }
-            let (x, y) = (a.element.activityDate, b.element.activityDate)
-            return x != y ? x > y : a.offset < b.offset
-        }.map(\.element)
+    /// A chat's time on its row and in the order (`RowTime`, `docs/inbox.md` §2): its last line's
+    /// message, standing at its activity only while a turn runs in it.
+    /// A project chat's time, by the same rule.
+    func rowTime(_ row: ProjectSessionRow) -> Date? {
+        let key = row.stableID
+        return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
+                          activity: row.lastActive, created: row.startedAt)
+    }
+
+    func rowTime(_ session: HermesSession) -> Date? {
+        let key = session.stableID
+        return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
+                          activity: session.lastActive, created: session.startedAt)
     }
 
     func matches(_ filter: InboxFilter, key: String) -> Bool {

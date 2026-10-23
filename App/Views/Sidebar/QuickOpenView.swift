@@ -340,7 +340,9 @@ struct QuickOpenView: View {
             }
         }
 
-        let sessions = ranked(workspace.sessions, query) { [$0.displayTitle, $0.preview ?? ""] }
+        // Recent chats in the list's order (`RowTime`), the best matches first when searching.
+        let recent = RowTime.ordered(workspace.sessions, pinned: { _ in false }) { workspace.rowTime($0) }
+        let sessions = ranked(recent, query) { [$0.displayTitle, $0.listPreview ?? ""] }
         let sessionRows = sessions
             .prefix(query.isEmpty ? 6 : 30)
             .map { $0.element }
@@ -348,7 +350,7 @@ struct QuickOpenView: View {
                 Row(
                     item: .session(session.stableID),
                     title: session.displayTitle,
-                    subtitle: [SessionSource(session.source)?.label, Formatting.relativePhrase(session.activityDate)]
+                    subtitle: [SessionSource(session.source)?.label, workspace.rowTime(session).map { Formatting.relativePhrase($0) }]
                         .compactMap(\.self).joined(separator: " · ")
                 )
             }

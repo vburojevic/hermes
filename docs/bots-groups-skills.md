@@ -77,7 +77,11 @@ the roster, and treats `session.info {running: false}` as the turn having settle
 
 ### 1.2 The roster, the grid and unread
 
-- **Order:** pinned first, then by the newer of creation and last activity, then by title.
+- **Order:** pinned first, then by the row's time, then by title. The row's time is its last
+  line's message ([inbox.md](inbox.md) §2, `RowTime`): the Bot Chat's newest message, else its
+  activity until that's read, else when the Bot was made. A routine's run in a session of its own,
+  opening the chat or a compaction moves neither the time nor the place; a turn running in the Bot
+  Chat lifts the row until its reply ends.
   Hidden Bots fold under "Hidden · N" in the sidebar. The sidebar's "Your Bots" lists group chats
   first, then Bots. The context menu offers Edit Bot…, Routines…, Pin or Unpin, Hide from Roster
   or Show in Roster, and Copy @handle. Pin and Hide move the Bot at once; roster reads keep the
@@ -85,19 +89,22 @@ the roster, and treats `session.info {running: false}` as the turn having settle
 - **Names:** Desktop's precedence: the meta `title`, then `display_name`, then "Hermes" for the
   primary profile, then the profile name title-cased. The role line is the meta `description`,
   else the profile description without its "<title> — " prefix.
-- **"Active now":** the Bot wrote in the last 90 s, or one of its background workers beat in the
-  last 150 s. "Working" (and a working face) is the Bot Chat's turn running here, or a worker beat
+- **"Active now":** the Bot wrote in the last 90 s (in any of its sessions, a routine's run
+  included), or one of its background workers beat in the last 150 s. "Working" (and a working face) is the Bot Chat's turn running here, or a worker beat
   in the last 150 s.
 - **Grid tiles** (`BotsHomeView`) show the face, title, @handle, role and one status line:
-  "Working: <step>", "New: <preview>", "Active now", "Last active <time>" or "Say hi to start".
+  "Working: <step>", "New: <preview>", "Active now", "Last active <time>" (the row's time) or
+  "Say hi to start".
 - **Previews** describe the Bot Chat when there is one. Hermes's control frames read as what they
   mean ("Steered the reply", "Used the <name> skill") or are hidden, messages from other Bots read
-  "Name: text", and routine deliveries read "⏰ <routine>: <output>".
+  "Name: text", and routine deliveries read "⏰ <routine>: <output>". A compaction's summary is
+  never a preview or a last line (`CompactionSummary`).
 - **Fresh:** the roster is read on its poll and again on `sessions.changed` (at once, then at most
   every 3 s while changes keep coming), so a Bot that wrote where nothing streamed here (a
   routine's result, another Bot's message, a turn on another device) shows on its tile and in its
   open chat within seconds.
-- **Unread** is kept per device as an activity watermark (seeded on first sight) and shared through
+- **Unread** is kept per device as a watermark of the Bot Chat's activity (seeded on first sight;
+  other sessions, a routine's runs included, don't count) and shared through
   Hermes's own read mark, the one Desktop keeps (`last_read_at`). Opening a Bot Chat marks it read
   on the server, but only while the app is in front, so a Mac that keeps a Bot open all day doesn't
   mark everything read for the iPhone. A Bot unread here asks the server whether another device

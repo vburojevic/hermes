@@ -214,10 +214,12 @@ final class GroupRooms {
         return chat.activeMemberID.map { [$0] } ?? []
     }
 
-    /// The latest line and whether the room waits on the person, for the roster row.
-    func summary(for id: String) -> (preview: String?, needsYou: Bool) {
-        guard let chat = chats[id] else { return (nil, false) }
-        return (chat.preview, chat.pendingApproval != nil)
+    /// The latest line, when it was written and whether the room waits on the person, for the
+    /// roster row.
+    func summary(for id: String) -> (preview: String?, at: Date?, needsYou: Bool) {
+        guard let chat = chats[id] else { return (nil, nil, false) }
+        let latest = chat.latestMessage
+        return (latest?.text, latest?.at, chat.pendingApproval != nil)
     }
 }
 
@@ -318,11 +320,12 @@ final class GroupChatModel {
     }
     var currentRound: Int { RoomTranscript.currentRound(events) }
 
-    var preview: String? {
+    /// The newest message, a member's or the person's: the row's line and its time (`RowTime`).
+    var latestMessage: (text: String, at: Date?)? {
         for item in items.reversed() {
             switch item {
-            case .member(_, let memberID, let text, _): return "\(member(memberID)?.displayName ?? memberID): \(text)"
-            case .user(_, let text, _): return text
+            case .member(_, let memberID, let text, let date): return ("\(member(memberID)?.displayName ?? memberID): \(text)", date)
+            case .user(_, let text, let date): return (text, date)
             default: continue
             }
         }

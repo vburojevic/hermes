@@ -1300,9 +1300,10 @@ final class BotWorkspace: Identifiable {
     /// Opens a branch the gateway made (`session.branch`); `text` is sent in it once it loads
     /// (Edit and Resend).
     func openBranch(storedID: String, title: String?, from parent: HermesSession?, thenSend text: String?) {
-        var row = HermesSession(id: storedID)
+        // Made now, holding the parent's messages: its row's time is its newest message's
+        // (`RowTime`), the parent's until something is sent in it.
+        var row = HermesSession(id: storedID, lastActive: parent?.lastActive ?? .now)
         row.title = title
-        row.lastActive = .now
         row.source = parent?.source ?? PreviewBridge.sessionSource
         row.preview = parent?.preview
         if !sessions.contains(where: { $0.stableID == row.stableID }) {
@@ -1318,7 +1319,8 @@ final class BotWorkspace: Identifiable {
         guard let client else { return }
         let branch = try await client.forkSession(id: session.id)
         var row = branch
-        row.lastActive = .now
+        // Hermes' answer has the copied messages' activity; the row's time is theirs (`RowTime`).
+        row.lastActive = row.lastActive ?? session.lastActive
         row.preview = row.preview ?? session.preview
         sessions.insert(row, at: 0)
         if let index = sessions.firstIndex(where: { $0.stableID == session.stableID }) {

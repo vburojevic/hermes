@@ -262,10 +262,26 @@ final class BotRoster {
 
     // MARK: - Roster
 
-    private static func rosterOrder(_ a: BotProfile, _ b: BotProfile) -> Bool {
-        if a.meta.isPinned != b.meta.isPinned { return a.meta.isPinned }
-        if a.recency != b.recency { return a.recency > b.recency }
-        return a.title.localizedStandardCompare(b.title) == .orderedAscending
+    /// Pinned first, then by each row's time, then by title (`docs/bots-groups-skills.md` §1.2).
+    private func rosterOrder(_ bots: [BotProfile]) -> [BotProfile] {
+        let byTitle = bots.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        return RowTime.ordered(byTitle, pinned: \.meta.isPinned) { self.rowTime(for: $0) }
+    }
+
+    /// A Bot's time on its row, its tile and in the order (`RowTime`): its last line's message,
+    /// standing at the Bot Chat's activity only while a turn runs there. A routine's run in a
+    /// session of its own, or opening the chat, moves nothing.
+    func rowTime(for bot: BotProfile) -> Date? {
+        let key = UnreadStore.botKey(bot.name)
+        return bot.rowTime(line: workspace?.unread.lastLines[key], live: workspace?.activity.line(for: key)?.isLive == true)
+    }
+
+    /// Rows' times moved (a last line was read, a turn started or ended): the roster in order again.
+    func reorder() {
+        let visible = rosterOrder(profiles.filter { !$0.meta.isHidden })
+        let hidden = rosterOrder(profiles.filter(\.meta.isHidden))
+        if visible != visibleBots { visibleBots = visible }
+        if hidden != hiddenBots { hiddenBots = hidden }
     }
 
     func bot(named name: String) -> BotProfile? {
@@ -1520,10 +1536,7 @@ final class BotRoster {
         if fresh != profiles {
             profiles = fresh
             index = Dictionary(fresh.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
-            let visible = fresh.filter { !$0.meta.isHidden }.sorted(by: Self.rosterOrder)
-            let hidden = fresh.filter(\.meta.isHidden).sorted(by: Self.rosterOrder)
-            if visible != visibleBots { visibleBots = visible }
-            if hidden != hiddenBots { hiddenBots = hidden }
+            reorder()
         }
         guard fromGateway else { return }
         if !hasLoaded { hasLoaded = true }
@@ -1557,13 +1570,14 @@ final class BotRoster {
 
     // MARK: - Unread
 
-    /// A Bot's activity watermark is seeded on first sight; a later advance while its chat isn't
-    /// open makes it unread, unless the Bot Chat was read since on another device (`serverRead`).
+    /// A Bot's activity watermark is seeded on first sight; a later advance of its Bot Chat makes it
+    /// unread, unless the Bot Chat was read since on another device (`serverRead`). A routine's run
+    /// in a session of its own isn't news in the chat, and it's the Bot Chat Hermes' read mark is on.
     private func updateUnread() {
         var marks = watermarks
         var next = unread
         for bot in profiles {
-            guard let active = bot.lastActive?.timeIntervalSince1970 else { continue }
+            guard let active = bot.chatActivity?.timeIntervalSince1970 else { continue }
             guard let seen = marks[bot.name] else {
                 marks[bot.name] = active
                 continue
@@ -1590,7 +1604,7 @@ final class BotRoster {
             // Shared below once the watermark moves; a mark of 0 needs clearing even when it hasn't.
             serverRead[name] = 0
         }
-        guard let bot = bot(named: name), let active = bot.lastActive?.timeIntervalSince1970 else { return }
+        guard let bot = bot(named: name), let active = bot.chatActivity?.timeIntervalSince1970 else { return }
         if (watermarks[name] ?? 0) < active {
             watermarks[name] = active
             UserDefaults.standard.set(watermarks, forKey: Self.watermarkKey(botID))
@@ -1604,7 +1618,7 @@ final class BotRoster {
     /// outbox and goes when the gateway answers (`docs/inbox.md` §4).
     private func shareRead(_ bot: BotProfile) {
         let name = bot.name
-        guard Self.isInFront, let chat = bot.canonicalSession, let active = bot.lastActive?.timeIntervalSince1970,
+        guard Self.isInFront, let chat = bot.canonicalSession, let active = bot.chatActivity?.timeIntervalSince1970,
               (serverRead[name] ?? 0) + 0.5 < active, !sharingRead.contains(name) else { return }
         let wait = readThrottle.wait(for: name)
         guard wait == 0 else {
@@ -1640,7 +1654,7 @@ final class BotRoster {
 
     /// A read waiting in the outbox: sent now unless the Bot wrote since (`ReadOutbox.isCurrent`).
     func resendRead(_ name: String, through: Date) -> Bool {
-        guard let bot = bot(named: name), let active = bot.lastActive else { return false }
+        guard let bot = bot(named: name), let active = bot.chatActivity else { return false }
         guard active.timeIntervalSince(through) <= 0.5 else { return false }
         shareRead(bot)
         return true
@@ -1716,7 +1730,7 @@ final class BotRoster {
             let seconds = read.timeIntervalSince1970
             serverRead[name] = max(serverRead[name] ?? 0, seconds)
             if markedUnread.contains(name) { markedUnread.remove(name) }
-            guard let active = index[name]?.lastActive?.timeIntervalSince1970, seconds + 0.5 >= active,
+            guard let active = index[name]?.chatActivity?.timeIntervalSince1970, seconds + 0.5 >= active,
                   unread.contains(name) else { return }
             ConnectionLog.logger.notice("bots: \(name, privacy: .public) was read on another device")
             unread.remove(name)

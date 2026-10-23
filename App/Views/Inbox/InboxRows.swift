@@ -23,9 +23,10 @@ struct ChatInboxRow: View {
         let draft = isSelected ? nil : workspace.loadedConversation(forKey: key).flatMap { $0.hasDraftText ? $0.draft : nil }
         let lastLine = unread.lastLines[key]
         let strong = badge.isUnread || (line?.isLive ?? false)
+        let date = workspace.rowTime(session)
         InboxRowLayout(
             title: session.displayTitle,
-            date: session.activityDate,
+            date: date,
             strong: strong,
             live: line?.isLive == true && line?.needsYou == false,
             muted: muted,
@@ -42,13 +43,13 @@ struct ChatInboxRow: View {
             } else if let lastLine {
                 RowPreview(lastLine, bright: badge.isUnread)
             } else {
-                RowPreview(prefix: nil, text: session.preview ?? "", bright: badge.isUnread)
+                RowPreview(prefix: nil, text: session.listPreview ?? "", bright: badge.isUnread)
                     .onAppear { unread.needsLastLine(session) }
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.spoken(title: session.displayTitle, badge: badge, muted: muted, pinned: session.pinned, line: line,
-                                        date: session.activityDate, preview: waiting ?? lastLine?.text ?? session.preview))
+                                        date: date, preview: waiting ?? lastLine?.text ?? session.listPreview))
     }
 
     /// "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs" (`docs/inbox.md` §6).
@@ -86,6 +87,7 @@ struct BotInboxRow: View {
         let muted = unread.isMuted(key)
         let line = workspace.activity.line(for: key)
         let lastLine = unread.lastLines[key]
+        let date = roster.rowTime(for: bot)
         let mood = ActivityLine.faceMood(for: line, justReplied: workspace.activity.justReplied.contains(bot.name), muted: muted,
                                          otherwise: roster.faceMood(for: bot.name))
         HStack(spacing: 12) {
@@ -93,7 +95,7 @@ struct BotInboxRow: View {
                 .opacity(bot.meta.isHidden ? 0.75 : 1)
             InboxRowLayout(
                 title: bot.title,
-                date: bot.lastActive,
+                date: date,
                 strong: true,
                 emphasizeTime: badge.isUnread || (line?.isLive ?? false),
                 live: false,
@@ -114,7 +116,7 @@ struct BotInboxRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ChatInboxRow.spoken(title: bot.title, badge: badge, muted: muted, pinned: bot.meta.isPinned, line: line,
-                                                date: bot.lastActive, preview: lastLine?.text ?? bot.preview))
+                                                date: date, preview: lastLine?.text ?? bot.preview))
     }
 }
 
@@ -135,11 +137,14 @@ struct GroupInboxRow: View {
         let mentioned = !isSelected && roster.groupRooms.mentions[room.id] != nil
         let working = roster.groupRooms.workingMembers(room.id)
         let faces = Self.faces(room: room, working: working, roster: roster)
+        // The room's `updated_at` moves with every event in its log (a turn starting, a member's
+        // presence), so the row reads its newest message's time (`RowTime`).
+        let date = RowTime.of(messageAt: summary.at, live: !working.isEmpty, activity: room.updatedAt, created: nil)
         HStack(spacing: 12) {
             GroupAvatar(front: faces.front, back: faces.back, size: InboxMetrics.faceSize)
             InboxRowLayout(
                 title: room.name,
-                date: room.updatedAt,
+                date: date,
                 strong: true,
                 emphasizeTime: badge.isUnread || !working.isEmpty,
                 live: false,
@@ -158,7 +163,7 @@ struct GroupInboxRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ChatInboxRow.spoken(title: room.name, badge: badge, muted: muted, pinned: false, line: nil,
-                                                date: room.updatedAt, preview: summary.preview)
+                                                date: date, preview: summary.preview)
                             + (mentioned ? ", " + String(localized: "mentions you") : "")
                             + (summary.needsYou ? ", " + String(localized: "waiting for your approval") : ""))
     }

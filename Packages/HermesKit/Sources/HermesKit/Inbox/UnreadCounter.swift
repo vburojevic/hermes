@@ -5,7 +5,8 @@ import Foundation
 ///
 /// What counts as a message: each reply that ended a turn (the answer after the steps), each
 /// Bot's message in the chat (`message_agent`, a group member), each routine delivery and each
-/// command result. Narration, tool steps, reasoning, notices and your own messages don't.
+/// command result. Narration, tool steps, reasoning, notices, compaction summaries and your own
+/// messages don't.
 public enum UnreadCounter {
     /// The most a badge says: "99+".
     public static let cap = 99
@@ -14,9 +15,10 @@ public enum UnreadCounter {
         count > cap ? "\(cap)+" : "\(count)"
     }
 
-    /// Whether `item` is a message for the count.
+    /// Whether `item` is a message for the count. A compaction summary isn't, whoever it's stored as.
     public static func counts(_ item: TranscriptItem) -> Bool {
-        switch item {
+        if item.isCompactionSummary { return false }
+        return switch item {
         case .assistant(let turn): !turn.isWorking && !turn.answer.isEmpty
         case .user(let entry): entry.sender != nil || entry.routineName != nil
         case .command(let command): if case .running = command.outcome { false } else { true }

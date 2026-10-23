@@ -41,9 +41,10 @@ public struct LastLineBook: Codable, Sendable, Equatable {
         return changed
     }
 
-    /// The chat moved on since its line was read (or it has none): read it again.
+    /// The chat moved on since its line was read (or it has none, or one kept without its time):
+    /// read it again.
     public func isStale(_ key: String, activity: Date?) -> Bool {
-        guard let entry = entries[key] else { return true }
+        guard let entry = entries[key], entry.line.at != nil else { return true }
         guard let activity else { return false }
         return activity.timeIntervalSince(entry.asOf) > Self.slack
     }

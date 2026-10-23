@@ -270,16 +270,19 @@ struct ProjectHomeView: View {
     }
 
     private func laneSection(_ lane: ProjectLane) -> some View {
-        let sorted = lane.sessions.sorted { ($0.lastActive ?? .distantPast) > ($1.lastActive ?? .distantPast) }
+        let times = Dictionary(lane.sessions.compactMap { row in workspace.rowTime(row).map { (row.id, $0) } }, uniquingKeysWith: { a, _ in a })
+        let sorted = RowTime.ordered(lane.sessions, pinned: { _ in false }, time: { times[$0.id] })
         let isExpanded = expandedLanes.contains(lane.id)
         let rows = isExpanded ? sorted : Array(sorted.prefix(3))
         return VStack(alignment: .leading, spacing: 8) {
             LaneHeader(lane: lane, count: lane.sessions.count)
             ForEach(rows) { row in
-                LaneChatRow(row: row, isWorking: projects.isRunning(sessionID: row.id) || projects.isRunning(sessionID: row.stableID)) {
+                LaneChatRow(row: row, time: times[row.id],
+                            isWorking: projects.isRunning(sessionID: row.id) || projects.isRunning(sessionID: row.stableID)) {
                     open(row)
                 }
                 .contextMenu { chatMenu(row) }
+                .onAppear { workspace.unread.needsLastLine(row.session) }
             }
             if sorted.count > 3 {
                 Button {
@@ -430,6 +433,8 @@ struct LaneHeader: View {
 /// A chat in a lane (`laneChatRow`): title, its first line, the time and a working dot.
 struct LaneChatRow: View {
     let row: ProjectSessionRow
+    /// The row's time (`RowTime`): its last message's, as in the chat list.
+    let time: Date?
     let isWorking: Bool
     let action: () -> Void
 
@@ -441,7 +446,7 @@ struct LaneChatRow: View {
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.primaryText)
                         .lineLimit(1)
-                    if let preview = row.preview, !preview.isEmpty, preview != row.title {
+                    if let preview = row.listPreview, !preview.isEmpty, preview != row.title {
                         Text(preview)
                             .font(.footnote)
                             .foregroundStyle(Theme.secondaryText)
@@ -452,7 +457,7 @@ struct LaneChatRow: View {
                 if isWorking {
                     StatusDot(color: Theme.warning)
                 }
-                if let date = row.lastActive {
+                if let date = time {
                     Text(Self.time(date))
                         .font(.footnote)
                         .foregroundStyle(Theme.tertiaryText)
@@ -473,7 +478,7 @@ struct LaneChatRow: View {
     private var accessibilityText: String {
         var parts = [row.displayTitle]
         if isWorking { parts.append(String(localized: "working")) }
-        if let date = row.lastActive { parts.append(Formatting.relativePhrase(date)) }
+        if let date = time { parts.append(Formatting.relativePhrase(date)) }
         return parts.joined(separator: ", ")
     }
 

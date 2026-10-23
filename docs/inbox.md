@@ -48,8 +48,11 @@ The gateway has no count; the app counts (`UnreadCounter`).
   mark.
 - **Counted:** each reply that ended a turn (an answer after the steps), each Bot's message in the
   chat (`message_agent`, a group member), each routine delivery, each command result.
-- **Not counted:** narration, tool steps, reasoning, notices and your own messages. A chat whose
-  only news is your own message (sent from another device) or a heartbeat shows nothing.
+- **Not counted:** narration, tool steps, reasoning, notices, compaction summaries and your own
+  messages. A chat whose only news is your own message (sent from another device), a heartbeat or
+  a compaction shows nothing. Hermes stores a compaction's handoff summary as an ordinary message,
+  the person's or its own; the app knows it as Hermes' session search does (`CompactionSummary`,
+  mirroring `_is_compaction_summary` in `tools/session_search_tool.py`).
 - Capped at "99+". With a mark of 0, the dot.
 - A row is counted again when its `last_active` or its mark moves, at most every 2 s, and not while
   its turn runs (its row moves with every heartbeat; it's counted when the activity line ends). The
@@ -78,8 +81,8 @@ Per chat: the last row it showed (`seenThrough`, for the New Messages line next 
 chat was left scrolled up, the row at the top (it opens there next time unless there's something
 new). Each row's last message (`LastLineBook`): Hermes' list rows carry the first message, so
 the app reads the last one itself and keeps it on the device (`LastLinesCache`, in Caches with the
-transcripts), with the chat activity it was read at. A launch shows them before the gateway
-answers.
+transcripts), with the time it was written and the chat activity it was read at. A launch shows
+them before the gateway answers; a line kept without its time is read again once.
 
 - **The chats the app follows** (open, or opened this launch): the line follows the chat as it
   changes, the reply that just ended included, before Hermes stores it (`rowLastLine`: the rows,
@@ -110,9 +113,27 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
 | Failed | Title | Red triangle + "Stopped: …" until opened | – |
 | Mention (group chat) | Semibold | Last message or who's working | @ badge, then the count |
 
-- Pinned first, then by activity, newest first; no date sections. The time on each row: "now",
-  "2 min", "14:21", "Yesterday", "Thu", "12 Oct" (`InboxTime`). Rows from the last hour tick each
-  minute; older ones don't wake anything.
+- Pinned first, then by each row's time, newest first; no date sections (`RowTime.ordered`).
+- **A row's time is its last line's message** (`RowTime`): the newest message a person or a Bot
+  wrote (a reply: when it ended), the same one line 2 shows. It's also what the row sorts by, in
+  the chats, the Bots, group chats (their log's newest message) and a project's lanes. Hermes'
+  `last_active` moves for more than messages, so it only stands in until the line is read:
+  - it's the newer of the turn heartbeat (`last_activity_at`, stamped about once a minute by any
+    turn: API calls, tools, compaction, retries) and the newest stored row of any kind, a
+    compaction's summary and tool rows included (`hermes_state_common._sql_session_last_active`);
+  - a Bot's `canonical_session.last_active` is its tip's heartbeat alone, and a compaction starts a
+    new tip, so it moves too;
+  - a Bot's `last_session` is the profile's newest session of any kind but workers, so a routine's
+    run in a session of its own (`source='cron'`, also when it delivers nothing) moves the Bot's
+    `last_active` without a word in its chat.
+
+  Opening, reading, resuming or re-attaching a chat moves nothing, nor do notices ("Background
+  process finished"), tool steps, titles or compaction summaries. While a turn runs in the chat the
+  row stands at its activity (so it rises), and when the reply ends it settles at the reply's time.
+  A row with no messages uses its creation time (a Bot's `created`). A chat opened from elsewhere
+  before the list has it (the Board, a task's run) has no time until its line is read.
+- The time on each row: "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct" (`InboxTime`). Rows
+  from the last hour tick each minute; older ones don't wake anything.
 - Projects stay above the chats, collapsed with their count ("Projects · 3").
 - Bot rows (`BotInboxRow`) have the face at 44 pt (32 on the Mac) in the mood of what it's doing
   (`ActivityLine.faceMood`, `docs/bot-faces.md` §5.9). Group rows (`GroupInboxRow`) stack the
@@ -330,7 +351,10 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   /api/mock/room-say`).
 - A muted chat shows a grey count, isn't in the badges, and its pushes are quiet; approvals in it
   still alert.
-- Rows move to the top when they get activity; pinned rows stay on top.
+- Rows move to the top when they get a message; pinned rows stay on top. Opening a day-old chat,
+  compacting it (the mock's "Release notes draft" was compacted 12 minutes ago: it keeps its
+  reply as the last line and its date, with no badge) or a Bot's silent routine run (Ada's "Weekly
+  newsletter draft" ran 7 minutes ago) leaves its time and place alone.
 - A reply in the open chat shows on its row within a second of ending, a Bot's included, and
   stays when Hermes stores it; a reply in another chat (`POST /api/mock/room-say`, a routine, a
   reply read on another device) shows on its row within a second of the list moving. A cold launch
@@ -342,8 +366,8 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   actions open all scroll the chat and the drawer; a swipe left on a reply still replies, and one
   right from the edge still opens the drawer.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
-  reads, pill priority, activity, quotes, row times, Bot faces, group mentions, last lines and the
-  `LastLineBook`), `SidewaysSwipeTests`
+  reads, pill priority, activity, quotes, row times and their order, compaction summaries, Bot
+  faces, group mentions, last lines and the `LastLineBook`), `SidewaysSwipeTests`
   (which drags a row's swipe takes).
 
 ## 8. Setup
