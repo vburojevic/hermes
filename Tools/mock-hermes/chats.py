@@ -410,6 +410,10 @@ def summarise(result):
     return json.dumps(result)[:120]
 
 
+def clarify(sid, params, timeout=300):
+    return B["clarify_step"](sid, params, timeout=timeout)
+
+
 def run_request_turn(sid, stored, lower):
     """Scripted turns that stop to ask for something. Returns True when one ran."""
     ask = B["server_request"]
@@ -433,31 +437,50 @@ def run_request_turn(sid, stored, lower):
                                   "description": "Pipes a script into sudo", "smart_denied": True, "tool_name": "terminal",
                                   "allow_session": False, "allow_permanent": False})
         answer = f"Flagged command: {(r or {}).get('choice', 'none')}."
+    elif "clarify dose" in lower:
+        # A long question with short picks, like a supplement's dose: the dock shows it whole.
+        r = clarify(sid, {"questions": [B["CLARIFY_DOSE"]]})
+        answer = f"Saved with: {json.dumps((r or {}).get('answers'), ensure_ascii=False)}."
+    elif "clarify twice" in lower:
+        # Two questions at once (parallel tool calls): the dock says "1 of 2" and steps through them.
+        results = [None, None]
+        asks = [{"questions": [B["CLARIFY_DOSE"]]},
+                {"questions": [{"qid": "skip", "question": "Which topics should the daily digest skip from now on?"}]}]
+
+        def one(index):
+            results[index] = clarify(sid, asks[index])
+        threads = [threading.Thread(target=one, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+            time.sleep(0.15)
+        for t in threads:
+            t.join()
+        answer = "Answers: " + "; ".join(json.dumps((r or {}).get("answers"), ensure_ascii=False) for r in results) + "."
     elif "clarify steps" in lower:
-        r = ask(sid, "clarify", {"questions": [
+        r = clarify(sid, {"questions": [
             {"qid": "dates", "question": "Which dates?", "choices": ["14–17 Nov", "21–24 Nov"]},
             {"qid": "area", "question": "Where would you like to stay in Lisbon?", "choices": ["Alfama", "Chiado", "Príncipe Real"]},
             {"qid": "budget", "question": "What's the nightly budget?"}]})
         answer = f"Got it: {json.dumps((r or {}).get('answers'))}."
     elif "clarify multi" in lower:
-        r = ask(sid, "clarify", {"questions": [{"qid": "notes", "question": "Which changes should go in the 1.3 release notes?",
+        r = clarify(sid, {"questions": [{"qid": "notes", "question": "Which changes should go in the 1.3 release notes?",
                                                 "choices": ["Bot Chat routine cards", "Faster reconnects", "Typed throws migration", "Internal refactors"],
                                                 "multi_select": True}]})
         answer = f"Including: {json.dumps((r or {}).get('answers'))}."
     elif "clarify open" in lower:
-        r = ask(sid, "clarify", {"questions": [{"qid": "skip", "question": "Which topics should the daily digest skip from now on?"}]})
+        r = clarify(sid, {"questions": [{"qid": "skip", "question": "Which topics should the daily digest skip from now on?"}]})
         answer = f"Noted: {json.dumps((r or {}).get('answers'))}."
     elif "clarify pair" in lower:
-        r = ask(sid, "clarify", {"questions": B["CLARIFY_PAIR"]})
+        r = clarify(sid, {"questions": B["CLARIFY_PAIR"]})
         answer = f"Set up with: {json.dumps((r or {}).get('answers'), ensure_ascii=False)}."
     elif "clarify long" in lower:
         # A real ask: a long question, and picks too long for one line (three on an iPhone).
-        r = ask(sid, "clarify", {"questions": [{"qid": "swap", "question": "Pull Appeeky volume and difficulty for replacement keywords (e.g. carryon, camping, flight, beach, essentials) and bring you an exact keyword-field swap? Costs roughly 20–30 Appeeky credits.",
+        r = clarify(sid, {"questions": [{"qid": "swap", "question": "Pull Appeeky volume and difficulty for replacement keywords (e.g. carryon, camping, flight, beach, essentials) and bring you an exact keyword-field swap? Costs roughly 20–30 Appeeky credits.",
                                                 "choices": ["Yes, research and draft the swap, then note which keywords changed and why (Recommended, about 25 credits)", "Leave keywords as they are",
                                                             "Draft from judgement, no credit spend"]}]})
         answer = f"Going with: {json.dumps((r or {}).get('answers'))}."
     elif "clarify" in lower:
-        r = ask(sid, "clarify", {"questions": [{"qid": "db", "question": "Which database should I run the migration against first?",
+        r = clarify(sid, {"questions": [{"qid": "db", "question": "Which database should I run the migration against first?",
                                                 "choices": ["Staging — Safe to reset; refreshed nightly", "Production — Takes a backup first",
                                                             "A local copy — Docker, on this Mac"]}]})
         answer = f"Running against: {json.dumps((r or {}).get('answers'))}."
@@ -527,7 +550,7 @@ def run_request_turn(sid, stored, lower):
              "detail": "Render Mermaid diagrams to SVG."}])
         answer = f"Add-ons: {summarise(r)}."
     elif "timeout" in lower:
-        r = ask(sid, "clarify", {"questions": [{"qid": "x", "question": "Quick check: go ahead?", "choices": ["Yes", "No"]}]}, timeout=6)
+        r = clarify(sid, {"questions": [{"qid": "x", "question": "Quick check: go ahead?", "choices": ["Yes", "No"]}]}, timeout=6)
         answer = "No answer, so I carried on with the safe default."
     else:
         return False

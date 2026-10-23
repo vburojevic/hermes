@@ -242,6 +242,11 @@ with upstream #136220) or without (Hermes 0.22, the default), for Settings → S
 `-HERMES_SEND_HERE <text> -HERMES_SEND_HERE_ROUNDS 1` sends it once into the open chat.
 In a Bot Chat, "links" answers with addresses written out every way agents write them (bare on a
 line, in a sentence, `www.`, a Markdown link, `localhost`, one in code) to check that they open.
+"clarify dose" (a Bot Chat or a Hermes chat) asks a long question with three short picks, as a Bot
+does after a photo of a supplement box; "clarify open" in a Bot Chat asks one in words; "clarify
+twice" asks two at once (parallel tool calls). Each runs as a clarify step ("Asking a question"),
+as in Hermes, and "… later" (a Bot Chat) asks 4 s after the message, so it arrives while you type
+the next one (the dock, `docs/quick-actions.md` §1).
 "clarify pair" (a Bot Chat or a Hermes chat) asks two questions in one card, the first with a long
 pick; `-HERMES_CLARIFY_STEP 2` opens such a card at its second question with the first answered
 by its first pick, so its one-line summary shows without a click (the Mac).

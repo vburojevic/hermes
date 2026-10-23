@@ -948,6 +948,22 @@ CLARIFY_PAIR = [
      "choices": ["No or not sure (Recommended)", "Yes"]},
 ]
 
+# "clarify dose": a long question with short picks, as a Bot asks after a photo of a supplement box;
+# the dock shows it whole and its picks as chips (docs/quick-actions.md §1).
+CLARIFY_DOSE = {"qid": "dose", "question": "Omega-3 1000 mg: how many capsules a day, and when? The box says one or two "
+                                            "capsules daily with a meal, and not more than two.",
+                "choices": ["1 with breakfast (Recommended)", "1 with dinner", "2 with dinner"]}
+
+
+def clarify_step(sid, params, timeout=300):
+    """Hermes's clarify tool: a running step ("Asking a question") while its card waits."""
+    call = f"call_{uuid.uuid4().hex[:8]}"
+    emit(sid, "tool.start", {"tool_id": call, "name": "clarify", "context": params["questions"][0]["question"][:80], "args": params})
+    result = server_request(sid, "clarify", params, timeout=timeout)
+    emit(sid, "tool.complete", {"tool_id": call, "name": "clarify", "args": params, "duration_s": 0,
+                                "result": json.dumps(result or {}), "summary": None})
+    return result
+
 
 def run_turn(sid, text):
     runtime = RUNTIME[sid]
@@ -993,6 +1009,31 @@ def run_turn(sid, text):
                                               "your accounts.", "already_streamed": False})
         result = server_request(sid, "clarify", {"questions": CLARIFY_PAIR})
         answer = f"Set up with: {json.dumps((result or {}).get('answers'), ensure_ascii=False)}."
+        stream(sid, answer)
+        return finish(sid, stored, answer)
+
+    if any(word in visible.lower() for word in ("clarify dose", "clarify twice", "clarify open")):
+        # A Bot Chat's question, one asked in words, or two at once (parallel tool calls), each a
+        # running clarify step.
+        asks = [{"questions": [CLARIFY_DOSE]}]
+        if "clarify open" in visible.lower():
+            asks = [{"questions": [{"qid": "skip", "question": "Which topics should the daily digest skip from now on?"}]}]
+        if "clarify twice" in visible.lower():
+            asks.append({"questions": [{"qid": "when", "question": "Should I remind you to take it?",
+                                        "choices": ["Yes, at the meal", "No reminders"]}]})
+        if "later" in visible.lower():
+            time.sleep(4)  # "… later": it arrives while the person is typing their next message
+        results = [None] * len(asks)
+
+        def one(index):
+            results[index] = clarify_step(sid, asks[index])
+        threads = [threading.Thread(target=one, args=(i,)) for i in range(len(asks))]
+        for t in threads:
+            t.start()
+            time.sleep(0.15)
+        for t in threads:
+            t.join()
+        answer = "Saved with: " + "; ".join(json.dumps((r or {}).get("answers"), ensure_ascii=False) for r in results) + "."
         stream(sid, answer)
         return finish(sid, stored, answer)
 
