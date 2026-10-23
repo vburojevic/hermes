@@ -224,6 +224,10 @@ def seed():
     session_row("discord_77", "Release notes draft", "discord", NOW - 4 * DAY, NOW - 4 * DAY, "Draft release notes for 2.3")
     add_message("discord_77", "user", "Draft release notes for 2.3", timestamp=NOW - 4 * DAY)
     add_message("discord_77", "assistant", "## 2.3\n\n- Faster sync\n- New widgets\n- Bug fixes", timestamp=NOW - 4 * DAY + 20)
+    # Compacted 12 minutes ago with nothing after it: Hermes stores the handoff summary as the newest row,
+    # so the chat's `last_active` moved without a message anyone wrote (`agent/context_compressor.py`).
+    add_message("discord_77", "user", "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary "
+                "below.\n\n## Summary\nRelease notes for 2.3 were drafted.", timestamp=NOW - 12 * 60)
 
     session_row("api_old_1", "Trip to Lisbon", "api_server", NOW - 12 * DAY, NOW - 12 * DAY, "Plan 3 days in Lisbon")
     add_message("api_old_1", "user", "Plan 3 days in Lisbon", timestamp=NOW - 12 * DAY)
@@ -260,7 +264,7 @@ def seed_read_marks():
         "cli_2026_1011": SESSIONS["cli_2026_1011"]["_last"] + 1,        # read
         "slack_5521": 0.0,                                              # marked unread
         "cli_release_prep": NOW - 3 * HOUR + 100,                       # 3 replies since
-        "discord_77": SESSIONS["discord_77"]["_last"] + 1,              # read
+        "discord_77": NOW - 4 * DAY + 21,                               # read before the compaction, nothing new
     }
     for sid, mark in marks.items():
         SESSIONS[sid]["_last_read_at"] = mark

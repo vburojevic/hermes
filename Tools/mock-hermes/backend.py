@@ -43,6 +43,10 @@ NOW = time.time()
 HOUR = 3600
 DAY = 86400
 BOT_CHAT = "Bot Chat"
+# The start of Hermes' compaction handoff (`agent/context_compressor.py`).
+COMPACTION_SUMMARY = ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below. "
+                      "This is a handoff from a previous context window.\n\n## Summary\nThe person asked about the NAS backups; "
+                      "all checks passed.")
 
 
 def iso(timestamp):
@@ -51,7 +55,9 @@ def iso(timestamp):
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 PROFILES = {}      # name -> profile dict
-STORED = {}        # stored session id -> {profile, title, hidden, source, started_at, last_active, messages}
+# stored session id -> {profile, title, hidden, source, started_at, last_active, messages}. `last_active` is
+# Hermes' `last_activity_at`: the turn heartbeat (any API call, tool, compaction), not the newest message.
+STORED = {}
 LOSE_ANSWER = {}   # method -> taken: the next such request loses its answer (/api/mock/lose-answer)
 # /api/mock/stall {seconds}: the dashboard's event loop frozen, as Hermes logs it ("event loop
 # stalled N s (GIL pressure suspected)"). Requests, socket frames and pings wait, then all answer;
@@ -261,6 +267,11 @@ def seed():
         "schedule": "0 9 * * 5", "repeat": "forever", "deliver": "bot-chat", "enabled": True, "state": "scheduled",
         "next_run_at": "2026-10-16T09:00:00+02:00", "last_run_at": None, "last_status": None,
     }
+    # The routine ran 7 minutes ago with nothing to say ([SILENT]), so nothing reached the Bot Chat. Hermes
+    # runs it in a session of its own (`source='cron'`), which becomes the profile's `last_session`.
+    run = add_session("writer", None, source="cron", started=NOW - 7 * 60)
+    add_message(run, "user", "Draft this week's newsletter from my notes.", NOW - 7 * 60)
+    add_message(run, "assistant", "[SILENT]", NOW - 7 * 60 + 9)
 
     add_profile("ops", description="Ops — keeps an eye on servers, backups and deploys",
                 meta={"title": "Ops", "imageKind": "photo", "custom": True, "created": (NOW - 20 * DAY) * 1000},
@@ -287,6 +298,9 @@ def seed():
                         "```sh\nzpool status tank\n  state: ONLINE\n  scan: scrub repaired 0B with 0 errors\n```\n\n"
                         "- Snapshots rotated\n- Offsite copy verified\n- Nothing needs your attention", ts + 20)
     add_message(chat, "assistant", "Nightly backup finished: **212 GB**, 0 errors. Next run at 02:00.", NOW - 5 * HOUR)
+    # Hermes compacted the chat half an hour ago with nothing after it: the handoff summary is its newest
+    # row, stored as the person's (`agent/context_compressor.py`), and the compaction beat the heartbeat.
+    add_message(chat, "user", COMPACTION_SUMMARY, NOW - 31 * 60)
     worker = add_session("ops", "kanban: rotate certificates", source="kanban", started=NOW - 10 * 60)
     STORED[worker]["last_active"] = time.time()
 
@@ -303,9 +317,17 @@ def preview_of(session):
     return ""
 
 
+def freshest(session):
+    """Hermes' `_sql_session_last_active`: the newer of the heartbeat and the newest message row."""
+    return max([session["last_active"], *(row["timestamp"] for row in session["messages"])])
+
+
 def session_ref(session, *, canonical=False):
+    # As `tui_gateway/methods_profiles.py`: the Bot Chat's `last_active` is its tip's heartbeat
+    # (`last_activity_at`, else `started_at`); `last_session` is the newest session of any kind but
+    # workers (a routine's run included), by the newer of heartbeat and messages.
     ref = {"id": session["id"], "title": session["title"], "preview": preview_of(session),
-           "started_at": session["started_at"], "last_active": session["last_active"],
+           "started_at": session["started_at"], "last_active": session["last_active"] if canonical else freshest(session),
            "message_count": len(session["messages"]), "live_message_count": len(session["messages"])}
     if canonical:
         ref.update({"resolved_id": session["id"], "root_title": session["title"]})
@@ -319,7 +341,7 @@ def profile_row(profile, include_sessions=True):
                                    "skill_count", "previous_names")}
     if include_sessions:
         mine = [s for s in STORED.values() if s["profile"] == profile["name"]]
-        human = sorted((s for s in mine if not s["hidden"] and s["source"] != "kanban"), key=lambda s: -s["last_active"])
+        human = sorted((s for s in mine if not s["hidden"] and s["source"] != "kanban"), key=lambda s: -freshest(s))
         workers = sorted((s for s in mine if s["source"] == "kanban"), key=lambda s: -s["last_active"])
         canonical = next((s for s in mine if s["title"] == BOT_CHAT), None)
         row["last_session"] = session_ref(human[0]) if human else None
@@ -1533,6 +1555,9 @@ def method_session_compress(params):
     time.sleep(1.2)
     count = len(STORED.get(runtime["stored"], {"messages": []})["messages"])
     after = max(2, count // 3)
+    if runtime["stored"] in STORED:
+        # As Hermes: the handoff summary is stored now, and the compaction moves the heartbeat.
+        add_message(runtime["stored"], "user", COMPACTION_SUMMARY)
     emit(sid, "status.update", {"kind": "ready", "text": ""})
     return {"status": "compressed", "removed": count - after, "before_messages": count, "after_messages": after,
             "before_tokens": 18240, "after_tokens": 4410,

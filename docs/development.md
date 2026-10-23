@@ -279,6 +279,11 @@ makes Swift 6 migration plan look like it keeps writing (a 40 s cycle) and Disk 
 wait on an approval, for screenshots. Read marks change by `PATCH /api/sessions/{id} {unread}` on
 either server; `GET /api/sessions/{id}?profile=default` on the backend shows one. A chat a launch
 opened with `-HERMES_OPEN_SESSION` opens at its New Messages line when it has news.
+Activity moves as in Hermes, not only with messages (`docs/inbox.md` §2): a Bot Chat's
+`last_active` is its heartbeat, a Bot's `last_session` is any of its sessions but workers, and a
+compaction stores its summary as the newest row. Seeded, Ada's routine ran silently 7 minutes ago
+in a `cron` session of its own, Ops' Bot Chat and the chat Release notes draft were compacted with
+nothing after, and `session.compress` stores a summary too.
 
 It also has helpers (`Tools/mock-hermes/helpers.py`), shaped like Hermes' background delegation. A
 message with "helpers" (or "swift 6") runs a team of four: one auditing for over a minute, one done
