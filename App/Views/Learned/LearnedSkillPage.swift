@@ -10,6 +10,8 @@ struct LearnedSkillPage: View {
     @State private var text: String?
     @State private var confirmsArchive = false
     @State private var editing = false
+    /// A save the gateway refused after the editor closed: the text typed and why.
+    @State private var refusedEdit: (draft: String, error: String)?
     @State private var openedMemory: LearningNode?
     @State private var copied = false
     /// iPad: the SKILL.md in the Inspector's File tab, in a sheet.
@@ -62,7 +64,12 @@ struct LearnedSkillPage: View {
             #endif
         }
         .sheet(isPresented: $editing) {
-            if let skill { LearnedSkillEditor(model: model, skill: skill, text: $text) }
+            if let skill {
+                LearnedSkillEditor(model: model, skill: skill, text: $text, refused: refusedEdit) { draft, error in
+                    refusedEdit = (draft, error)
+                    editing = true
+                }
+            }
         }
         .sheet(item: $openedMemory) { memory in
             LearnedMemorySheet(model: model, memory: memory)
@@ -85,9 +92,9 @@ struct LearnedSkillPage: View {
         .confirmationDialog(String(localized: "Archive \(skill?.label ?? skillID)?"), isPresented: $confirmsArchive, titleVisibility: .visible) {
             Button("Archive", role: .destructive) {
                 guard let skill else { return }
-                Task {
-                    if await model.archive(skill) { dismiss() }
-                }
+                // The page closes at once; the map loses the skill when the gateway has archived it.
+                Task { await model.archive(skill) }
+                dismiss()
             }
         } message: {
             Text("Hermes stops using it. You can restore it from Tidying.")
@@ -180,16 +187,13 @@ struct LearnedSkillPage: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if model.busy.contains(skill.id) {
-                    Spinner()
-                }
                 Toggle("Keep As Is", isOn: Binding(
-                    get: { skill.pinned },
+                    get: { model.isPinned(skill) },
                     set: { pinned in Task { await model.setPinned(skill, pinned) } }
                 ))
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .disabled(model.busy.contains(skill.id) || !model.isOnline)
+                .disabled(!model.isOnline)
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 60)
@@ -266,6 +270,7 @@ struct LearnedSkillPage: View {
     /// Edit: the Inspector's File tab on iPad and the Mac (its own window on the Mac); a code
     /// editor sheet on iPhone.
     private func edit() {
+        refusedEdit = nil
         #if os(macOS)
         Task {
             if let target = await model.openInInspector(skillID) {
@@ -303,7 +308,7 @@ struct LearnedSkillPage: View {
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.capsule)
-            .disabled(skill.state == .archived || model.busy.contains(skill.id) || skill.pinned)
+            .disabled(skill.state == .archived || model.busy.contains(skill.id) || model.isPinned(skill))
             Button {
                 model.useInChat(skill)
             } label: {
@@ -322,14 +327,17 @@ struct LearnedSkillPage: View {
 }
 
 /// Editing a SKILL.md where the Inspector isn't (iPhone, or a gateway that won't say where the
-/// file is): the code editor, saved with `PUT /api/learning/node`.
+/// file is): the code editor, saved with `PUT /api/learning/node`. Save closes it at once and the
+/// page shows the new text; a refusal opens it again with the text typed and why.
 struct LearnedSkillEditor: View {
     let model: LearnedModel
     let skill: LearningNode
     @Binding var text: String?
+    /// What was typed and why the gateway refused it, when it did.
+    var refused: (draft: String, error: String)?
+    let onRefused: (String, String) -> Void
 
     @State private var draft = ""
-    @State private var isSaving = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -359,24 +367,27 @@ struct LearnedSkillEditor: View {
                     Button("Save") {
                         Task { await save() }
                     }
-                    .disabled(isSaving || draft == text || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(draft == text || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .onAppear { draft = text ?? "" }
+        .onAppear {
+            draft = refused?.draft ?? text ?? ""
+            error = refused?.error
+        }
         #if os(macOS)
         .frame(width: 640, height: 560)
         #endif
     }
 
     private func save() async {
-        isSaving = true
-        defer { isSaving = false }
-        if let failure = await model.save(skill, content: draft, expected: text ?? "") {
-            error = failure
-        } else {
-            text = draft
-            dismiss()
+        let expected = text ?? ""
+        let content = draft
+        text = content
+        dismiss()
+        if let failure = await model.save(skill, content: content, expected: expected) {
+            text = expected
+            onRefused(content, failure)
         }
     }
 }

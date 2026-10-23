@@ -201,53 +201,66 @@ final class LearnedModel {
         return text
     }
 
-    /// Keep As Is: the curator never merges, changes or archives a pinned skill.
-    func setPinned(_ skill: LearningNode, _ pinned: Bool) async {
-        busy.insert(skill.id)
-        defer { busy.remove(skill.id) }
-        do {
-            let reply = CuratorReply.outcome(try await curatorCommand("\(pinned ? "pin" : "unpin") \(skill.id)"), verb: pinned ? "pin" : "unpin")
-            if !reply.ok { message = reply.message.isEmpty ? String(localized: "\(gatewayName) didn't change it.") : reply.message }
-        } catch {
-            message = Self.describe(error)
-        }
-        await load()
+    /// Keep As Is switches still on their way (`docs/chat.md` §4a).
+    private var pinChanges = PendingChanges<PinChoice>()
+
+    /// Kept as is, with the switch the person just moved.
+    func isPinned(_ skill: LearningNode) -> Bool {
+        pinChanges.item(for: skill.id)?.pinned ?? skill.pinned
     }
 
-    /// Archive (restorable from Tidying).
-    func archive(_ skill: LearningNode) async -> Bool {
-        guard let backend else { return false }
+    /// Keep As Is: the curator never merges, changes or archives a pinned skill. The switch moves
+    /// at once; a refusal moves it back and says so.
+    func setPinned(_ skill: LearningNode, _ pinned: Bool) async {
+        let token = pinChanges.begin(.update(PinChoice(id: skill.id, pinned: pinned)), for: skill.id)
+        do {
+            let reply = CuratorReply.outcome(try await curatorCommand("\(pinned ? "pin" : "unpin") \(skill.id)"), verb: pinned ? "pin" : "unpin")
+            if !reply.ok, pinChanges.isNewest(token, for: skill.id) {
+                message = reply.message.isEmpty ? String(localized: "\(gatewayName) didn't change it.") : reply.message
+            }
+        } catch {
+            if pinChanges.isNewest(token, for: skill.id) { message = Self.describe(error) }
+        }
+        await load()
+        pinChanges.settle(token, for: skill.id)
+    }
+
+    /// Archive (restorable from Tidying), confirmed first: its page has already closed. A refusal
+    /// says so.
+    func archive(_ skill: LearningNode) async {
+        guard let backend else { return }
         busy.insert(skill.id)
         defer { busy.remove(skill.id) }
+        if selectedID == skill.id { selectedID = nil }
         do {
             try await backend.archiveLearnedSkill(id: skill.id, profile: profile)
-            if selectedID == skill.id { selectedID = nil }
             toast = String(localized: "Archived \(skill.label). Restore it from Tidying.")
             await load()
             if archived != nil { await loadArchived() }
-            return true
         } catch {
-            message = Self.describe(error)
-            return false
+            message = String(localized: "Couldn't archive \(skill.label). \(Self.describe(error))")
         }
     }
 
-    /// Restore archived skills (an archive, or a merge's originals), one at a time.
+    /// Restore archived skills (an archive, or a merge's originals), one at a time. Their rows say
+    /// Restored at once; one the gateway refuses offers Restore again, with why.
     func restore(_ names: [String]) async {
-        for name in names { busy.insert(name) }
-        defer { for name in names { busy.remove(name) } }
+        restoredNames.formUnion(names)
         var failures: [String] = []
         for name in names {
             do {
                 let reply = CuratorReply.outcome(try await curatorCommand("restore \(name)"), verb: "restore")
-                if !reply.ok { failures.append(reply.message.isEmpty ? name : reply.message) }
+                if !reply.ok {
+                    failures.append(reply.message.isEmpty ? name : reply.message)
+                    restoredNames.remove(name)
+                }
             } catch {
                 failures.append(Self.describe(error))
+                restoredNames.remove(name)
             }
         }
         if failures.isEmpty {
             toast = names.count == 1 ? String(localized: "Restored \(names[0])") : String(localized: "Restored \(names.count) skills")
-            restoredNames.formUnion(names)
         } else {
             message = failures.joined(separator: "\n")
         }
@@ -465,4 +478,10 @@ final class LearnedModel {
         if let error = error as? GatewayRPCError { return error.message }
         return error.localizedDescription
     }
+}
+
+/// A Keep As Is switch on its way (`LearnedModel.setPinned`).
+nonisolated struct PinChoice: Identifiable, Sendable {
+    var id: String
+    var pinned: Bool
 }

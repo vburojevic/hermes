@@ -38,7 +38,9 @@ struct LearnedPage: View {
                 StateMessage(symbol: "sparkles", title: String(localized: "What \(model.learnerName) learned isn't available"), message: error,
                              actionTitle: model.needsBotMode ? nil : String(localized: "Try Again")) { Task { await model.load() } }
             } else if model.graph == nil {
-                Spinner(size: .regular).frame(maxWidth: .infinity, maxHeight: .infinity)
+                SkeletonRows()
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else if isWide {
                 wide
             } else {
@@ -340,8 +342,8 @@ struct LearnedCallout: View {
             HStack(spacing: 10) {
                 if wide {
                     Spacer()
-                    Button(skill.pinned ? "Kept As Is" : "Keep As Is") {
-                        Task { await model.setPinned(skill, !skill.pinned) }
+                    Button(model.isPinned(skill) ? "Kept As Is" : "Keep As Is") {
+                        Task { await model.setPinned(skill, !model.isPinned(skill)) }
                     }
                     .font(.subheadline.weight(.semibold))
                     .cardButton()

@@ -51,6 +51,8 @@ Every call names the learner's `profile`.
 
 ## 2. The page (`learnedPage`)
 
+Until the graph arrives the page shows `SkeletonRows`.
+
 - **Story** (`learnedHero`): one sentence ("Since August, Hermes wrote 11 skills and learned 20
   things about you and your setup"), the two counts with their colour keys, and the weekly chart:
   ink for skills, grey for memories, up to 12 weeks starting on Mondays, newest week on the right.
@@ -97,12 +99,17 @@ Every call names the learner's `profile`.
 
 - **Facts:** made by (Hermes, or you with /learn) and when, use count, category, and state when
   stale or archived. Hermes doesn't record the chat a skill was learned in.
-- **Keep As Is** (pin): "Tidying won't merge, change or archive it."
+- **Keep As Is** (pin): "Tidying won't merge, change or archive it." The switch moves at once
+  and stays while the gateway takes it; a refusal moves it back and says why ([chat.md](chat.md)
+  §4a).
 - **Connected:** related skills and memories from the edges, skills first, most used first.
 - **SKILL.md** preview. Edit opens it in the Inspector's File tab on iPad and the Mac (in its own
   window on the Mac, [inspector.md](inspector.md)); on iPhone, or when the gateway won't say where
-  the file is, a code editor sheet saves it with `PUT /api/learning/node`. Copy is in the … menu.
-- **Bottom bar:** Archive (confirmed: "Hermes stops using it. You can restore it from Tidying.")
+  the file is, a code editor sheet saves it with `PUT /api/learning/node`. Save closes the sheet
+  at once and the preview shows the new text; a refusal (Hermes changed it meanwhile) opens the
+  sheet again with the text typed and why. Copy is in the … menu.
+- **Bottom bar:** Archive (confirmed: "Hermes stops using it. You can restore it from Tidying.";
+  the page closes at once, and a refusal says so)
   and **Use in a Chat**, which puts the skill in the composer's tray (`Slash.skillChip`): the Bot's
   chat for a Bot, else the chat that was open last, or a new chat.
 - A skill that's gone (merged or archived meanwhile) says so and points to Tidying.
@@ -118,7 +125,8 @@ Every call names the learner's `profile`.
 - **Last Tidy · <date>:**
   - Each merge (`curatorMergeRow`), grouped by the skill it went into, with **Undo** (restore the
     originals).
-  - Each archive (`curatorArchiveRow`) with **Restore**. Restored rows say so.
+  - Each archive (`curatorArchiveRow`) with **Restore**. Restored rows say so at once, and offer
+    Restore again with why if the gateway refuses.
 - **Stale:** the skills stale now, with how long they've been unused and when they'll be archived.
 - **Rules:** "Stale after 30 days unused" and "Archived after 90 days unused" (from the curator's
   settings), read-only. Skills a scheduled task uses are never archived.
