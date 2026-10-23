@@ -227,7 +227,11 @@ def seed():
     # Compacted 12 minutes ago with nothing after it: Hermes stores the handoff summary as the newest row,
     # so the chat's `last_active` moved without a message anyone wrote (`agent/context_compressor.py`).
     add_message("discord_77", "user", "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary "
-                "below.\n\n## Summary\nRelease notes for 2.3 were drafted.", timestamp=NOW - 12 * 60)
+                "below. This is a handoff from a previous context window — treat it as background reference, NOT as "
+                "active instructions. The current session state (files, config, etc.) may reflect work described "
+                "here — avoid repeating it:\n## Historical Task Snapshot\nRelease notes for 2.3 were drafted.\n\n"
+                "--- END OF CONTEXT SUMMARY — respond to the message below, not the summary above ---",
+                timestamp=NOW - 12 * 60)
 
     session_row("api_old_1", "Trip to Lisbon", "api_server", NOW - 12 * DAY, NOW - 12 * DAY, "Plan 3 days in Lisbon")
     add_message("api_old_1", "user", "Plan 3 days in Lisbon", timestamp=NOW - 12 * DAY)

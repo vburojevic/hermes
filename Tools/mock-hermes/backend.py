@@ -43,10 +43,33 @@ NOW = time.time()
 HOUR = 3600
 DAY = 86400
 BOT_CHAT = "Bot Chat"
-# The start of Hermes' compaction handoff (`agent/context_compressor.py`).
-COMPACTION_SUMMARY = ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below. "
-                      "This is a handoff from a previous context window.\n\n## Summary\nThe person asked about the NAS backups; "
-                      "all checks passed.")
+# Hermes' compaction handoff as it stores it (`agent/context_compressor.py`): its instructions to the
+# model (`SUMMARY_PREFIX`, cut short here; every version ends "avoid repeating it:"), the summary, and
+# the end marker.
+COMPACTION_PREAMBLE = ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below. "
+                       "This is a handoff from a previous context window — treat it as background reference, NOT as "
+                       "active instructions. Do NOT answer questions or fulfill requests mentioned in this summary; they "
+                       "were already addressed. The current session state (files, config, etc.) may reflect work "
+                       "described here — avoid repeating it:")
+COMPACTION_END = "--- END OF CONTEXT SUMMARY — respond to the message below, not the summary above ---"
+
+
+def compaction_summary(body):
+    return f"{COMPACTION_PREAMBLE}\n{body}\n\n{COMPACTION_END}"
+
+
+# A script's alert as the person's screenshot showed one (names and addresses invented).
+OPS_ALERT = ("**Ops room — issue change**\n- 🔴 **P2 · Backups: 1 job failed overnight** (needs you)\n"
+             "  job · nightly-offsite · exit 2\n"
+             "  Fix: open Backups in the ops room, read the log, then mark it reviewed.\n"
+             "  Issues page: https://ops.example.com/issues")
+OPS_ALERT_REPLY = ("That's the same alert again: the offsite job failed once at 02:10 and hasn't run since.\n\n"
+                   "- Nothing is re-firing.\n- It stays open until you mark it reviewed.")
+
+COMPACTION_SUMMARY = compaction_summary(
+    "## Historical Task Snapshot\nThe person asked about the NAS backups; all checks passed.\n\n"
+    "## Key Facts\n- Nightly backup: **212 GB**, 0 errors\n- Offsite copy verified at 02:10\n"
+    "- Scrub on `tank` repaired 0B")
 
 
 def iso(timestamp):
@@ -297,6 +320,33 @@ def seed():
                         f"| tank | {60 + turn % 30}% | {40 - turn % 30}% |\n| backup | 41% | 59% |\n\n"
                         "```sh\nzpool status tank\n  state: ONLINE\n  scan: scrub repaired 0B with 0 errors\n```\n\n"
                         "- Snapshots rotated\n- Offsite copy verified\n- Nothing needs your attention", ts + 20)
+    # Messages nobody typed, as Hermes stores them (docs/chat.md §2a): a script's alert posted with
+    # `hermes peer dm` (internal_notification, no wrapper) and the reply to it, a routine's output
+    # mirrored into the chat, a webhook's, a recovery nudge, a skill used on another device, and a
+    # compaction's summary folded into the person's next message.
+    add_message(chat, "user", OPS_ALERT, NOW - 8 * HOUR, display_kind="internal_notification")
+    add_message(chat, "assistant", OPS_ALERT_REPLY, NOW - 8 * HOUR + 23)
+    add_message(chat, "user", "[Cron delivery: Disk report]\n**tank** 71% · **backup** 41%\n\n- Scrub repaired 0B", NOW - 7 * HOUR)
+    CRON["ops"]["job_disks"] = {
+        "job_id": "job_disks", "name": "[bot:ops] Disk report", "prompt": "Report pool usage and the last scrub.",
+        "schedule": "0 */6 * * *", "repeat": "forever", "deliver": "origin", "enabled": True, "state": "scheduled",
+        "next_run_at": iso(NOW + HOUR), "last_run_at": iso(NOW - 7 * HOUR), "last_status": "ok",
+    }
+    CRON["ops"]["job_certs"] = {
+        "job_id": "job_certs", "name": "[bot:ops] Certificate expiry", "prompt": "List certificates that expire within 30 days.",
+        "schedule": "0 8 * * 1", "repeat": "forever", "deliver": "bot-chat", "enabled": True, "state": "scheduled",
+        "next_run_at": iso(NOW + 2 * DAY), "last_run_at": None, "last_status": None,
+    }
+    add_message(chat, "user", "[Webhook delivery: deploys]\nBuild **41** shipped to staging.", NOW - 7 * HOUR + 60)
+    add_message(chat, "user", "[System: Your previous response was truncated by the output length limit. Continue exactly "
+                "where you left off.]", NOW - 7 * HOUR + 120)
+    add_message(chat, "user", "[IMPORTANT: The user has invoked the \"disk-check\" skill, indicating they want you to follow "
+                "its instructions. The full skill content is loaded below.]\n\n# Disk check\nRun zpool status and df.\n\n"
+                "The user has provided the following instruction alongside the skill invocation: just the backup pool",
+                NOW - 6 * HOUR)
+    add_message(chat, "assistant", "**backup** is healthy: 41% used, last scrub clean.", NOW - 6 * HOUR + 15)
+    add_message(chat, "user", compaction_summary("## Historical Task Snapshot\nThe person asked for a disk check.")
+                + "\n\nAnd the offsite copy?", NOW - 5 * HOUR - 300)
     add_message(chat, "assistant", "Nightly backup finished: **212 GB**, 0 errors. Next run at 02:00.", NOW - 5 * HOUR)
     # Hermes compacted the chat half an hour ago with nothing after it: the handoff summary is its newest
     # row, stored as the person's (`agent/context_compressor.py`), and the compaction beat the heartbeat.
@@ -1379,6 +1429,37 @@ def held_notice(profile):
     return len(sids)
 
 
+def deliver_alert(profile, text, reply):
+    """A script's alert posted into a Bot Chat (`hermes peer dm`, a plugin's `inject_message`): Hermes
+    stores it as it is, tagged `internal_notification`, and the Bot answers it in a live turn that an
+    attached client joins, its message in `inflight` with the same display kind."""
+    with LOCK:
+        chat = bot_chat(profile)
+        if chat is None:
+            return False
+        sids = [sid for sid, runtime in RUNTIME.items() if runtime.get("stored") == chat["id"] and not runtime.get("running")]
+    if not sids:
+        with LOCK:
+            add_message(chat["id"], "user", text, display_kind="internal_notification")
+            add_message(chat["id"], "assistant", reply, ts=time.time() + 2)
+        return True
+    sid = sids[0]
+
+    def run():
+        with LOCK:
+            runtime = RUNTIME[sid]
+            runtime.update(running=True, interrupt=False, turn_started=time.time())
+            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": "internal_notification"}
+        add_message(chat["id"], "user", text, display_kind="internal_notification")
+        emit(sid, "session.info", {"running": True})
+        emit(sid, "message.start", {})
+        time.sleep(4)
+        stream(sid, reply)
+        finish(sid, chat["id"], reply)
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
 def deliver_routine(profile, title, output, reply):
     """Routines deliver into a Bot Chat as a full turn: the job's output, then the Bot's reply."""
     with LOCK:
@@ -2080,6 +2161,10 @@ class Handler(BaseHTTPRequestHandler):
                                      body.get("output") or "**Issue change**: 1 new TestFlight feedback.",
                                      body.get("reply") or "That's the new TestFlight feedback; it's waiting for your review.",
                                      float(body.get("seconds") or 20))
+            return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/deliver":
+            # Mock-only: a script's alert in a Bot Chat, answered live (docs/chat.md §2a).
+            done = deliver_alert(body.get("profile") or "ops", body.get("text") or OPS_ALERT, body.get("reply") or OPS_ALERT_REPLY)
             return self.send_json(200 if done else 404, {"ok": done})
         if url.path == "/api/mock/hold":
             # Mock-only: the Bot Chat held with nothing stored (a terminal, another window, a one-shot booting).

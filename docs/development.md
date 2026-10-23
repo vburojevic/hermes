@@ -162,6 +162,14 @@ delivery with the sender's chat). That process holds the Bot Chat until it repli
 refused with Hermes's own sentence ([chat.md](chat.md), a chat another Hermes process holds).
 `POST /api/mock/routine-elsewhere {profile, title, output, reply, seconds}` is a routine's
 follow-up the same way (its output stored with no display kind, held `seconds`, default 20).
+`POST /api/mock/deliver {profile, text, reply}` (profile `ops` by default) is a script's alert
+posted into a Bot Chat as `hermes peer dm` does: stored as is, tagged `internal_notification`, and
+answered in a live turn whose `inflight` carries the same display kind; with the chat open it shows
+as the "Automation" card from the start ([chat.md](chat.md) §2a). Ops' Bot Chat is seeded with one
+of each message nobody typed: that alert and its reply, a routine's delivery mirrored into the chat
+(its routine, Disk report, is in Ops' Routines), a webhook's, an untyped `[System: …]` nudge
+(hidden), a skill used from another device, a compaction summary folded into the person's next
+message and one on its own as the newest row.
 `POST /api/mock/hold {profile, seconds, surface, age, late}` holds a Bot Chat with nothing stored:
 `age` minutes ago (45 reads as a terminal, 0 as a one-shot booting), `surface` `cli` or
 `desktop`; `late: true` takes the next send, stores it and refuses the turn as it runs instead (the
