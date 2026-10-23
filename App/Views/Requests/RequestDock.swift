@@ -2,45 +2,94 @@ import HermesKit
 import HermesPush
 import SwiftUI
 
-/// The waiting card, stepped aside while the person types (`needsYouDock`): what's waiting, with
-/// Deny and Allow right here for an approval. Tap to bring the card back.
+/// The waiting card, stepped aside while the person types (`needsYouDock`,
+/// `docs/quick-actions.md` §1): the whole question, its picks as chips, Deny and Allow for a
+/// short command, and with several waiting, which one of how many. Tap the question to bring the
+/// card back.
 struct NeedsYouDock: View {
     let conversation: ConversationModel
     let onExpand: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: conversation.pendingApproval?.isMemorySave == true ? "brain" : (conversation.pendingApproval != nil ? "hand.raised.fill" : "questionmark.circle.fill"))
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.warning)
-                .frame(width: 32, height: 32)
-                .background(Theme.warningTint, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            Button(action: onExpand) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(conversation.askerName) is waiting for you")
-                        .font(.subheadline.weight(.semibold))
+        let items = conversation.waitingItems
+        if let shown = WaitingItem.shown(items, selected: conversation.shownWaitingID) {
+            VStack(alignment: .leading, spacing: 8) {
+                header(shown.item, index: shown.index, count: items.count)
+                Button(action: onExpand) {
+                    Text(subject(shown.item))
+                        .font(isCommand(shown.item) ? .footnote.monospaced() : .footnote)
                         .foregroundStyle(Theme.primaryText)
-                        .lineLimit(1)
-                    Text(subject)
-                        .font(conversation.pendingApproval?.command != nil ? .footnote.monospaced() : .footnote)
-                        .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(answersHere ? 2 : 1)
-                        .truncationMode(.middle)
+                        // Never cut in the middle: it wraps, and the rest is in the card.
+                        .lineLimit(showsWhole(shown.item) ? nil : (isLarge ? 2 : RequestDock.questionLines))
+                        .truncationMode(.tail)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the full card")
+                answers(shown.item)
             }
-            .buttonStyle(.plain)
+            .id(shown.item.id)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: shown.item.id)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("needsYouDock")
+        }
+    }
+
+    // MARK: Parts
+
+    private func header(_ item: WaitingItem, index: Int, count: Int) -> some View {
+        HStack(spacing: 10) {
+            // Decorative: the title says what's waiting.
+            Image(systemName: symbol(item))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.warning)
+                .frame(width: 28, height: 28)
+                .background(Theme.warningTint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityHidden(true)
+            Text(isLarge ? String(localized: "Waiting for you") : String(localized: "\(conversation.askerName) is waiting for you"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(isLarge ? 1 : 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+            if count > 1 {
+                WaitingStepper(conversation: conversation, items: conversation.waitingItems, index: index)
+            }
+            Button(action: onExpand) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.primaryText)
+                    .frame(width: 32, height: 32)
+                    .background(Theme.controlFill, in: Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel("Show")
             .accessibilityHint("Shows the full card")
-            if let approval = conversation.pendingApproval, answersHere {
+        }
+    }
+
+    @ViewBuilder
+    private func answers(_ item: WaitingItem) -> some View {
+        switch item {
+        case .approval(let approval) where RequestDock.answersHere(approval):
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
                 Button {
                     conversation.respond(to: approval, with: .deny)
                 } label: {
                     Text(approval.isMemorySave ? String(localized: "Don't Save") : String(localized: "Deny"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.danger)
-                        .padding(.horizontal, 14)
-                        .frame(height: 34)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 34)
                         .background(Theme.controlFill, in: Capsule())
                 }
                 .buttonStyle(PressableStyle())
@@ -50,47 +99,132 @@ struct NeedsYouDock: View {
                     Text(approval.isMemorySave ? String(localized: "Save") : String(localized: "Allow"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.inkForeground)
-                        .padding(.horizontal, 14)
-                        .frame(height: 34)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 34)
                         .background(Theme.ink, in: Capsule())
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityHint(approval.isMemorySave ? "Saves this to memory" : "Allows this command once")
-            } else {
-                Button(action: onExpand) {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.primaryText)
-                        .frame(width: 34, height: 34)
-                        .background(Theme.controlFill, in: Circle())
+            }
+        case .approval(let approval):
+            Text(approval.smartDenied ? String(localized: "Flagged by Hermes's safety check. Open it to answer.") : String(localized: "Open it to read it whole and answer."))
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+        case .request(let request):
+            // At the largest text sizes the picks are on the card, one tap away: the dock stays
+            // short enough to sit between the keyboard and the toolbar.
+            let chips = isLarge ? [] : RequestDock.chips(for: request)
+            if !chips.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(chips) { chip in
+                        Button {
+                            guard let result = RequestDock.pickedAnswer(chip, to: request) else { return }
+                            conversation.answer(request, with: result, receipt: String(localized: "Answered · \(chip.label)"))
+                        } label: {
+                            Text(chip.label)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Theme.primaryText)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .frame(minHeight: 32)
+                                .background(Theme.controlFill, in: Capsule())
+                        }
+                        .buttonStyle(PressableStyle())
+                        .accessibilityHint("Answers with this")
+                    }
                 }
-                .buttonStyle(PressableStyle())
-                .accessibilityLabel("Show")
+            }
+            Text(hint(for: request, chips: chips))
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+        }
+    }
+
+    private var isLarge: Bool { dynamicTypeSize.isAccessibilitySize }
+
+    // MARK: Words
+
+    /// How this one is answered from here: a chip, words in the composer, or its card.
+    private func hint(for request: HermesRequest, chips: [RequestDock.Chip]) -> String {
+        guard let question = RequestDock.typedQuestion(for: request) else { return String(localized: "Open it to answer.") }
+        if !chips.isEmpty { return String(localized: "Or type your own answer below.") }
+        if !question.choices.isEmpty { return String(localized: "Open it to pick one, or type your answer below.") }
+        return String(localized: "Type your answer below and send it.")
+    }
+
+    private func symbol(_ item: WaitingItem) -> String {
+        switch item {
+        case .approval(let approval): approval.isMemorySave ? "brain" : "hand.raised.fill"
+        case .request(let request):
+            switch request.kind {
+            case .clarify, .choose: "questionmark.circle.fill"
+            case .secret, .sudo, .vaultUnlock, .vaultSaveLogin, .vaultCode: "key.fill"
+            case .connection: "link"
             }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .capsule)
     }
 
-    /// Deny and Allow right here only for one short command shown whole; anything longer (or
-    /// flagged, a card fill, or one of several) opens the card to be read first.
-    private var answersHere: Bool {
-        guard let approval = conversation.pendingApproval, conversation.waitingApprovals.isEmpty, !approval.smartDenied,
-              !approval.isPaymentFill else { return false }
-        return VisibleText.fitsAtAGlance(approval.isMemorySave ? approval.memoryText : approval.summary, limit: 44)
-    }
-
-    private var subject: String {
-        if let approval = conversation.pendingApproval {
+    private func subject(_ item: WaitingItem) -> String {
+        switch item {
+        case .approval(let approval):
             if approval.isMemorySave { return approval.memoryText }
             if let fill = approval.paymentFill { return String(localized: "Fill your card on \(fill.site)?") }
-            let more = conversation.waitingApprovals.count
-            return more > 0 ? String(localized: "\(more + 1) commands") : approval.summary
+            return approval.summary
+        case .request(let request):
+            if case .clarify(let questions) = request.kind, questions.count > 1 {
+                return String(localized: "\(questions.count) questions. \(questions[0].question)")
+            }
+            return ConversationModel.title(of: request)
         }
-        guard let request = conversation.requests.first else { return "" }
-        return ConversationModel.title(of: request)
+    }
+
+    private func isCommand(_ item: WaitingItem) -> Bool {
+        if case .approval(let approval) = item { return approval.command != nil && !approval.isMemorySave }
+        return false
+    }
+
+    /// A command with Allow beside it is shown whole, whatever the text size.
+    private func showsWhole(_ item: WaitingItem) -> Bool {
+        if case .approval(let approval) = item { return RequestDock.answersHere(approval) }
+        return false
+    }
+}
+
+/// "‹ 1 of 3 ›": what's waiting, one at a time; each is answered by its own id.
+struct WaitingStepper: View {
+    let conversation: ConversationModel
+    let items: [WaitingItem]
+    let index: Int
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button {
+                conversation.shownWaitingID = items[max(index - 1, 0)].id
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 28, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .disabled(index == 0)
+            .accessibilityLabel("Previous")
+            Text("\(index + 1) of \(items.count)")
+                .font(.footnote.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize()
+                .accessibilityLabel("\(index + 1) of \(items.count) waiting")
+            Button {
+                conversation.shownWaitingID = items[min(index + 1, items.count - 1)].id
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 28, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .disabled(index >= items.count - 1)
+            .accessibilityLabel("Next")
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(Theme.primaryText)
+        .buttonStyle(.plain)
     }
 }
 

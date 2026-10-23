@@ -389,6 +389,8 @@ final class ConversationModel: Identifiable {
     }
     /// Approvals behind the one on the card (several commands at once).
     private(set) var waitingApprovals: [ApprovalRequest] = []
+    /// The waiting item the person stepped to in the dock (`WaitingItem.id`); the first when it's gone.
+    var shownWaitingID: String?
     /// Live states from `connection.update`, by op id then target name.
     private(set) var connectionStates: [String: [String: String]] = [:]
     /// "Allow everything in this chat" (the gateway's session `yolo`).
@@ -1686,6 +1688,7 @@ final class ConversationModel: Identifiable {
             runCommand(command, argument: argument.isEmpty ? nil : argument)
             return
         }
+        if editing == nil, editingQueued == nil, sendTypedAnswer() { return }
         if let editing, !isWorking {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return }
@@ -3786,6 +3789,14 @@ final class ConversationModel: Identifiable {
         // card offers more (`docs/web.md` §4).
         if approval.isPaymentFill, choice == .session || choice == .always { return }
         WelcomeProgress.shared.mark(.runCommand)
+        // One behind the card, stepped to in the dock: answered by its id, and the card's stays.
+        if let index = waitingApprovals.firstIndex(where: { $0.id == approval.id }), pendingApproval?.id != approval.id {
+            guard let roster = gatewayRoster, let requestID = approval.gatewayRequestID else { return }
+            waitingApprovals.remove(at: index)
+            if !quietly { addApprovalReceipt(for: approval, choice: choice) }
+            sendAnswer(.object(["choice": .string(choice.rawValue), "all": .bool(false)]), to: requestID, about: approval.summary, roster: roster)
+            return
+        }
         if !quietly { addApprovalReceipt(for: approval, choice: choice) }
         defer { showNextApproval() }
         if approval.gatewayRequestID != nil {
@@ -4733,6 +4744,38 @@ extension ConversationModel {
     /// Every approval waiting, the card's first.
     var approvalQueue: [ApprovalRequest] {
         (pendingApproval.map { [$0] } ?? []) + waitingApprovals
+    }
+
+    /// Everything waiting on the person, approvals first: what the dock steps through.
+    var waitingItems: [WaitingItem] {
+        WaitingItem.all(approvals: approvalQueue, requests: requests)
+    }
+
+    /// The request a card or the dock shows: the one stepped to, else the oldest. An approval
+    /// still takes the card first.
+    var shownRequest: HermesRequest? {
+        if case .request(let request)? = WaitingItem.shown(waitingItems, selected: shownWaitingID)?.item { return request }
+        return requests.first
+    }
+
+    /// The question a message from the composer answers, by its id (`docs/quick-actions.md` §1):
+    /// the request on show when it takes words.
+    var typedAnswerRequest: HermesRequest? {
+        guard case .request(let request)? = WaitingItem.shown(waitingItems, selected: shownWaitingID)?.item,
+              RequestDock.typedQuestion(for: request) != nil else { return nil }
+        return request
+    }
+
+    /// Sends what's in the composer as the answer to `typedAnswerRequest`, the way the card's own
+    /// field does. Pictures, files, commands and replies to a passage go as messages instead.
+    private func sendTypedAnswer() -> Bool {
+        guard let request = typedAnswerRequest, attachments.isEmpty, files.isEmpty, replyingTo == nil,
+              !draft.trimmingCharacters(in: .whitespaces).hasPrefix("/"),
+              let result = RequestDock.typedAnswer(draft, to: request) else { return false }
+        let said = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        answer(request, with: result, receipt: String(localized: "Answered · \(said)"))
+        return true
     }
 
     /// Who's asking, for card headers: "Hermes", or the Bot.

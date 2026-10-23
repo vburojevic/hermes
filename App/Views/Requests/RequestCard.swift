@@ -91,7 +91,7 @@ private struct ClarifyCard: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(question.choices, id: \.self) { choice in
-                        let parts = Self.split(choice)
+                        let parts = RequestDock.choiceParts(choice)
                         ChoiceRow(
                             label: parts.label,
                             detail: parts.detail,
@@ -237,21 +237,11 @@ private struct ClarifyCard: View {
                 result[question.id] = answers[question.id].map(JSONValue.string) ?? .null
             }
         }
-        let given = questions.compactMap { answers[$0.id].map { Self.split($0).label } }
+        let given = questions.compactMap { answers[$0.id].map { RequestDock.choiceParts($0).label } }
         let receipt = given.isEmpty
             ? String(localized: "Skipped · \(Self.short(questions[0].question))")
             : String(localized: "Answered · \(given.joined(separator: " · "))")
         conversation.answer(request, with: .object(["answers": .object(result)]), receipt: receipt)
-    }
-
-    /// "Staging — Safe to reset" → label and detail.
-    static func split(_ choice: String) -> (label: String, detail: String?) {
-        for separator in [" — ", " – ", ": ", "\n"] {
-            if let range = choice.range(of: separator) {
-                return (String(choice[..<range.lowerBound]), String(choice[range.upperBound...]))
-            }
-        }
-        return (choice, nil)
     }
 
     static func short(_ question: String) -> String {

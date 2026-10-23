@@ -69,6 +69,8 @@ struct ComposerView: View {
         }
         if isWaitingOnBusyMac { return String(localized: "\(workspace.bot.name) is busy") }
         if let target = conversation.helperSteerTarget { return String(localized: "Note for helper \(target.number)") }
+        // Sending answers the question on show (`docs/quick-actions.md` §1).
+        if conversation.typedAnswerRequest != nil { return String(localized: "Answer \(conversation.askerName)") }
         if let roster, let name = conversation.botName {
             let title = roster.bot(named: name)?.title ?? name
             return String(localized: "Message \(title)")
@@ -432,9 +434,10 @@ struct ComposerView: View {
     private var collapsesChipSlot: Bool { conversation.isBotChat && !showsModeChip }
 
     /// While a turn runs and there's something to send, the send mode takes Think's place: Think
-    /// applies to the next turn anyway.
+    /// applies to the next turn anyway. Not while Send answers a question: there's no mode to pick.
     private var showsModeChip: Bool {
         (conversation.canSendFollowUp || conversation.editingQueued != nil) && !dictation.isActive
+            && !(conversation.typedAnswerRequest != nil && conversation.editingQueued == nil)
     }
 
     /// A row coming into the composer or the bar (the queue, a strip, attachments, a card): it
@@ -1021,7 +1024,9 @@ private struct TrailingButton: View {
 
     /// What Send does while a turn runs: "Send, Steer".
     private var sendLabel: LocalizedStringKey {
-        "Send, \(conversation.followUpMode.title)"
+        // A question on show takes what's typed as its answer (`docs/quick-actions.md` §1).
+        if conversation.typedAnswerRequest != nil { return "Send Answer" }
+        return "Send, \(conversation.followUpMode.title)"
     }
 
     var body: some View {

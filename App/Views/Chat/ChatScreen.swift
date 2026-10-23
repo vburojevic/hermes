@@ -172,6 +172,16 @@ struct ChatScreen: View {
         .onChange(of: docksWhileTyping) { _, docks in
             withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Theme.cardMotion) { docksRequest = docks }
         }
+        // Something new to answer over an empty composer: the keyboard steps aside for its card.
+        // Mid-typing it docks, and the typing carries on (`docs/quick-actions.md` §1).
+        .onChange(of: conversation.waitingItems.map(\.id)) { old, new in
+            guard new.contains(where: { !old.contains($0) }) else { return }
+            let draftIsEmpty = conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && conversation.attachments.isEmpty && conversation.files.isEmpty
+            if RequestDock.keyboardStepsAside(forArrivalWith: composerFocused, draftIsEmpty: draftIsEmpty, isWide: isWide) {
+                composerFocused = false
+            }
+        }
         .onChange(of: conversation.id) {
             // Another chat in the same screen: nothing of the last one's carries over.
             composerFocused = false
@@ -235,9 +245,9 @@ struct ChatScreen: View {
 
     // MARK: Requests
 
-    /// While typing on a phone, the card steps aside for a one-line dock.
+    /// While typing on a phone, the card steps aside for the dock.
     private var docksWhileTyping: Bool {
-        composerFocused && !isWide
+        RequestDock.docks(composerFocused: composerFocused, isWide: isWide)
     }
 
     @ViewBuilder
@@ -271,10 +281,19 @@ struct ChatScreen: View {
                 ChatPermissionsSheet(conversation: conversation)
             }
             .modifier(DockSlot(id: "approval", glass: bottomGlass))
-        } else if let request = conversation.requests.first {
-            RequestCard(request: request, conversation: conversation)
-                .id(request.id)
-                .modifier(DockSlot(id: "approval", glass: bottomGlass))
+        } else if let request = conversation.shownRequest {
+            VStack(alignment: .trailing, spacing: 6) {
+                // Several waiting: which one of how many, stepped through as in the dock.
+                let requests = conversation.requests.map(WaitingItem.request)
+                if requests.count > 1, let index = requests.firstIndex(where: { $0.id == "r:" + request.id }) {
+                    WaitingStepper(conversation: conversation, items: requests, index: index)
+                        .padding(.horizontal, 4)
+                        .glassEffect(.regular, in: .capsule)
+                }
+                RequestCard(request: request, conversation: conversation)
+                    .id(request.id)
+                    .modifier(DockSlot(id: "approval", glass: bottomGlass))
+            }
         }
     }
 

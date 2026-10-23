@@ -31,10 +31,29 @@ the design's component names, used in code comments.
   requests carry one (`deadline_at` or `timeout_seconds`); other requests do when their params
   include `timeout_seconds`.
 - While the person types in the composer on iPhone (and iPad in compact width), the card steps
-  aside for the compact `needsYouDock` bar: "Hermes is waiting for you" (or the Bot's name) and
-  what is waiting. Tapping it brings the card back. For a single short command shown whole (and
-  not flagged), the dock also offers Deny and Allow right there; for a memory save, Don't Save and
-  Save.
+  aside for the `needsYouDock` (`RequestDock` in HermesKit decides when, and what it offers):
+  "Hermes is waiting for you" (or the Bot's name), then what is waiting, whole: the question wraps
+  over up to four lines (two at the largest text sizes) and is never cut in the middle; the rest
+  is on the card, one tap on the question or the chevron away. VoiceOver reads the whole question.
+  - A request that arrives while the keyboard is up over an empty composer gets its full card: the
+    keyboard steps aside. One that arrives mid-typing docks, and the typing carries on.
+  - A `clarify` of one question with a single pick shows its picks as chips (up to four, each
+    short enough for a chip; a pick's detail after " — " stays on the card). A tap answers with that
+    pick, by the request's id, as Send on the card would. At the largest text sizes the chips stay
+    on the card. Several questions or several picks open the card.
+  - Hermes takes words for any single question that isn't multi-select (the "Other" row under the
+    picks, or an open question). While such a question is on show, docked or not, the dock says
+    "Or type your own answer below." (or "Type your answer below and send it."), the composer
+    reads "Answer <name>", has no send mode, and Send answers that question by its id
+    (`{answers: {qid: text}}`, receipt "Answered · …"). Pictures, files, a `/command` or a reply to
+    a passage go as messages instead.
+  - An approval offers Deny and Allow (Don't Save and Save for a memory save) only for a short
+    command shown whole (`VisibleText.fitsAtAGlance`, 44 characters, one line), never for a
+    flagged command or a card fill: those say "Open it to answer." Other requests say the same.
+  - Several waiting (approvals first, then the rest, oldest first): "‹ 1 of 3 ›" beside the title
+    steps through them, and each is answered by its own id. The full card shows the same stepper
+    above it when several requests other than approvals wait; approvals keep their batch card.
+    The card shows the request stepped to.
 - When a request is settled, the card leaves and a one-line receipt is added to the transcript
   (`ReceiptRow`). Receipts are the app's own; Hermes doesn't store them. No secret, password or
   code ever goes into a receipt.
@@ -251,11 +270,17 @@ yes such as "yes", "go ahead", "run it"), "allow in this chat", or "deny" (any n
   (push rules: [notifications.md](notifications.md)).
 - Flagged commands can only be run from their card in the app.
 - Cards work with VoiceOver, Dynamic Type and a hardware keyboard.
+- On an iPhone, "clarify dose" sent with the keyboard up shows the full card and the keyboard goes;
+  "clarify dose later" with something typed meanwhile docks with the whole question and its chips,
+  and the typing carries on. A chip answers it; so does Send with words in the composer ("clarify
+  open later"). "clarify twice" says "1 of 2" on the card and in the dock, and steps through them.
+  The line above the card reads "Waiting for your answer" and holds still.
 - No card is wider than the screen: "clarify pair", answered with its long first pick, shows
   "Question 2 of 2" whole on the smallest iPhone, an iPad and the Mac (`RequestCardUITests`).
 - Against the mock backend (`Tools/mock-hermes/chats.py`), words in a message ask for each card:
   "approve", "batch", "flagged", "clarify" (and "clarify steps", "clarify multi", "clarify open",
-  "clarify long" for picks of three lines, "clarify pair" for two questions with a long first answer),
+  "clarify long" for picks of three lines, "clarify pair" for two questions with a long first answer,
+  "clarify dose" for a long question with short picks, "clarify twice" for two at once),
   "secret", "sudo", "unlock", "save login", "2fa", "choose accent", "choose theme", "choose apps",
   "connect linear", "sign in", "install" and "timeout".
 
