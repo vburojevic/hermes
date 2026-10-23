@@ -184,6 +184,7 @@
 		8F16C0A0D025C8C9B126B753 /* ContentWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA76434C707E63E4F7A6DC7 /* ContentWidgets.swift */; };
 		8F1D15B20B90A1A195A6F2B7 /* ImageAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */; };
 		8F2AE4ED6EC7B2BA91EBCE9D /* ToolbarButtonsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544BA2966BE8A104F675577A /* ToolbarButtonsUITests.swift */; };
+		8F9624C5B62EEE356173629C /* TurnChangesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C542600A88454B154E05BE3E /* TurnChangesViews.swift */; };
 		8FDC36B962A236B74A64FE64 /* InspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49754DAF3A39AF8263328677 /* InspectorPanel.swift */; };
 		91085A56DD3EFCAFD635893D /* CheckpointsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B7F146A3F863763C495CEF0 /* CheckpointsModel.swift */; };
 		910B30724D5821C4D20AC9B1 /* TalkShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B83C2D7B4FEAF12F2B50F155 /* TalkShortcuts.swift */; };
@@ -596,6 +597,7 @@
 		C302CBEF687D8075AB273EBB /* GatewayVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayVoice.swift; sourceTree = "<group>"; };
 		C345608D385B87D80B70485E /* WidgetsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetsUITests.swift; sourceTree = "<group>"; };
 		C525BD3D40E9B9708B9886AA /* QuickOpenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenView.swift; sourceTree = "<group>"; };
+		C542600A88454B154E05BE3E /* TurnChangesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnChangesViews.swift; sourceTree = "<group>"; };
 		C7B7B8F42380EB1FB57518F8 /* GraphAudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphAudioDevice.swift; sourceTree = "<group>"; };
 		C8037ADEB48C6AD7870A4F59 /* CodeTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeTextView.swift; sourceTree = "<group>"; };
 		C83C6DFB0F7C15C310B85F37 /* ProjectTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTile.swift; sourceTree = "<group>"; };
@@ -1110,6 +1112,7 @@
 				0DC4B53D1793821CF9E229CD /* ModelPicker.swift */,
 				7848810B51D87C981F281C08 /* ProcessViews.swift */,
 				C83E87D6FB065DBE46D0E67A /* TranscriptView.swift */,
+				C542600A88454B154E05BE3E /* TurnChangesViews.swift */,
 				61C5334C16DEA85C688B84F4 /* TurnExtras.swift */,
 				3C3CC94EB12ABAA772C0C9A5 /* UserBubble.swift */,
 				30BD9C8D91A07905086C591E /* VoiceMessageViews.swift */,
@@ -1924,6 +1927,7 @@
 				AC178049990D093B97A545F0 /* TranscriptCache.swift in Sources */,
 				6847AB2F4BE7257C5FDFD77D /* TranscriptView.swift in Sources */,
 				89BBF2D076CAF94E7DCAF569 /* TurnActivityController.swift in Sources */,
+				8F9624C5B62EEE356173629C /* TurnChangesViews.swift in Sources */,
 				EEBB26CBEA825B506837FF01 /* TurnExtras.swift in Sources */,
 				23B57873A2D3008FDE703B31 /* UnreadStore.swift in Sources */,
 				CCB83E5FDF3DEA9C3FBB3032 /* UserBubble.swift in Sources */,

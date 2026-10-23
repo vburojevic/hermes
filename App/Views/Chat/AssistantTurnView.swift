@@ -46,7 +46,6 @@ struct AssistantTurnView: View, Equatable {
     @Environment(\.checkpoints) private var checkpoints
     /// Artifacts and pages open in the chat's Inspector (`docs/inspector.md`).
     @Environment(\.inspectorModel) private var inspector
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(PreferenceKey.showUsage) private var alwaysShowsUsage = false
     @AppStorage(PreferenceKey.expandAgentActivity) private var expandWhileWorking = false
     @State private var showsUsage = false
@@ -132,20 +131,8 @@ struct AssistantTurnView: View, Equatable {
             if let helperStore, !teams.isEmpty {
                 TurnTeams(slots: teams, turnIsWorking: turn.isWorking, store: helperStore)
             }
-            // A turn that changed files and has a checkpoint: Review and Undo (`turnCheckpoint`).
-            if let checkpoints, let edits = fileEdits, checkpoints.checkpoint(beforeTurn: turn.id) != nil {
-                TurnCheckpointBar(
-                    edits: edits,
-                    isWorking: checkpoints.chatIsWorking,
-                    canUndo: checkpoints.isOnline,
-                    isRefused: checkpoints.refusal != nil,
-                    onReview: { review(checkpoints) },
-                    onUndo: { checkpoints.undo(turnID: turn.id) }
-                )
-                .transition(.opacity)
-            }
             // Steers Hermes read come before what it went on to say. With the steps folded, the
-            // files changed after each steer show after it, where they changed.
+            // risk notes from after each steer show after it, where the page was read.
             let afterSteers = showsWork && !isExpanded && !turn.isWorking ? Array(turn.foldedAttachmentGroups.dropFirst()) : []
             ForEach(Array(steerBubbles.filter { !$0.isPending }.enumerated()), id: \.element.id) { index, bubble in
                 steerBubble(bubble)
@@ -237,21 +224,6 @@ struct AssistantTurnView: View, Equatable {
     private func replyText(_ text: String) -> String {
         guard inspector != nil else { return text }
         return ArtifactDetector.liftingArtifacts(from: text).text
-    }
-
-    /// Review (`turnCheckpoint`): on iPad and Mac the latest turn's changes open in the
-    /// Inspector's Changes tab (This Turn); otherwise, and for older turns, the Review sheet.
-    private func review(_ checkpoints: CheckpointsModel) {
-        #if os(macOS)
-        let wide = true
-        #else
-        let wide = horizontalSizeClass == .regular
-        #endif
-        if wide, let inspector, inspector.turnBase != nil, inspector.workingFolder != nil, checkpoints.latestEditingTurnID == turn.id {
-            inspector.openChanges(scope: .lastTurn)
-        } else {
-            checkpoints.sheet = .review(turnID: turn.id)
-        }
     }
 
     /// The files this reply's tools wrote, when it wrote any.
@@ -550,6 +522,8 @@ struct WorkSummaryView: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            // What the turn did to files: one row, the diffs a tap away (`turnChanges`).
+            TurnChangesRow(turn: turn)
             if isExpanded {
                 VStack(alignment: .leading, spacing: 14) {
                     if !turn.plan.isEmpty {
@@ -563,8 +537,7 @@ struct WorkSummaryView: View, Equatable {
             } else if !turn.isWorking {
                 // Only steps with something to keep in view: an empty one would still take the
                 // stack's spacing, and a turn of a hundred tool calls left a screen of blank space.
-                // One card per file (`foldedAttachments`): a file written twice isn't shown twice.
-                // Those changed after a steer show after it, in the reply (`foldedAttachmentGroups`).
+                // Risk notes from after a steer show after it, in the reply (`foldedAttachmentGroups`).
                 ForEach(turn.foldedAttachmentGroups[0]) { tool in
                     ToolAttachments(tool: tool)
                 }
@@ -1642,21 +1615,14 @@ private struct SubagentsRow: View {
     }
 }
 
-/// What a folded turn keeps in view: the files it changed and any risk note. The rest (commands,
-/// output, results) is in the steps.
+/// What a folded turn keeps in view: a risk note. Its changes are the Changes row; the rest
+/// (commands, output, results, each edit's diff) is in the steps.
 struct ToolAttachments: View {
     let tool: ToolActivity
 
     var body: some View {
-        if tool.status != .running {
-            VStack(alignment: .leading, spacing: 10) {
-                if let risk = tool.risk {
-                    RiskNote(risk: risk)
-                }
-                if let diff = tool.displayDiff {
-                    DiffCard(path: tool.filePath ?? tool.preview ?? "file", diff: diff, disclosureKey: "diff:\(tool.id)")
-                }
-            }
+        if tool.status != .running, let risk = tool.risk {
+            RiskNote(risk: risk)
         }
     }
 }

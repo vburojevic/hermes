@@ -196,9 +196,9 @@ struct TranscriptTests {
     }
 
     /// The owner's chat (2026-10-17): the Bot wrote a file, read it back and wrote it again with a
-    /// few lines changed. Folded, that's one card for the file, its last content; opened, the second
-    /// write shows only what it changed.
-    @Test func aFileWrittenTwiceShowsOnceFolded() {
+    /// few lines changed. Folded, that's one file in the turn's changes; opened, the second write
+    /// shows only what it changed.
+    @Test func aFileWrittenTwiceIsOneChangedFile() {
         func content(_ third: String) -> String {
             (1...12).map { $0 == 3 ? third : "line \($0)" }.joined(separator: "\n")
         }
@@ -212,11 +212,12 @@ struct TranscriptTests {
         var turn = AssistantTurn(id: "t", steps: [write("a", content("first draft")), read, write("b", content("second draft"))])
         turn.relateRewrites()
 
-        let folded = turn.foldedAttachments
-        #expect(folded.count == 1)
-        #expect(folded.first?.displayDiff?.hasPrefix("--- /dev/null") == true)
-        #expect(folded.first?.displayDiff?.contains("+second draft") == true)
-        #expect(folded.first?.displayDiff?.contains("first draft") == false)
+        // Nothing of the diffs stays in view folded: the turn's changes are one row.
+        #expect(turn.foldedAttachments.isEmpty)
+        let changes = TurnChanges.of(turn)
+        #expect(changes.files.map(\.path) == ["/tmp/brief.md"])
+        #expect(changes.files.first?.edits == 2)
+        #expect(changes.files.first?.rows.contains { $0.text == "second draft" } == true)
 
         guard case .tool(let second) = turn.steps[2], let diff = second.displayDiff else {
             Issue.record("no diff for the second write")
@@ -228,9 +229,9 @@ struct TranscriptTests {
         #expect(first.displayDiff?.hasPrefix("--- /dev/null") == true)
     }
 
-    /// Two different files, and a patch: each keeps its card.
-    @Test func differentFilesKeepTheirCards() {
-        var turn = AssistantTurn(id: "t", steps: [
+    /// Two different files, and a patch: each file once, the patch merged into its file.
+    @Test func differentFilesAreEachOneFile() {
+        let turn = AssistantTurn(id: "t", steps: [
             .tool(ToolActivity(id: "a", name: "write_file", arguments: .object(["path": .string("/tmp/a.md"), "content": .string("a")]),
                                result: "{}", status: .succeeded)),
             .tool(ToolActivity(id: "b", name: "write_file", arguments: .object(["path": .string("/tmp/b.md"), "content": .string("b")]),
@@ -238,8 +239,10 @@ struct TranscriptTests {
             .tool(ToolActivity(id: "c", name: "patch", arguments: .object(["path": .string("/tmp/a.md"), "old_string": .string("a"), "new_string": .string("A")]),
                                result: "{}", status: .succeeded)),
         ])
-        turn.relateRewrites()
-        #expect(turn.foldedAttachments.map(\.id) == ["a", "b", "c"])
+        let changes = TurnChanges.of(turn)
+        #expect(changes.files.map(\.path) == ["/tmp/a.md", "/tmp/b.md"])
+        #expect(changes.files.first?.edits == 2)
+        #expect(changes.files.first?.rows.map(\.text) == ["A"])
     }
 
     /// A routine delivered while a turn waited on a tool (the mock's Daily digest, 2026-10-20): the
@@ -277,11 +280,13 @@ struct TranscriptTests {
     }
 
     /// The owner's chat (2026-10-19): two files and a failing check, a steer read after it, then a
-    /// third file. Folded, the third file's card goes after the steer, where it was written.
-    @Test func filesChangedAfterASteerFoldAfterIt() throws {
-        func write(_ id: String, _ path: String) -> AssistantStep {
-            .tool(ToolActivity(id: id, name: "write_file", arguments: .object(["path": .string(path), "content": .string("import SwiftUI")]),
-                               result: "{}", status: .succeeded))
+    /// third file. The steer is read where it came; folded, a risk note after it stays after it.
+    @Test func notesAfterASteerFoldAfterIt() throws {
+        func page(_ id: String) -> AssistantStep {
+            var tool = ToolActivity(id: id, name: "web_extract", arguments: .object(["url": .string("https://\(id).example")]),
+                                    result: "page", status: .succeeded)
+            tool.risk = ToolRisk(risk: "high", findings: ["prompt_injection"], redacted: false, tool: "web_extract")
+            return .tool(tool)
         }
         let check = AssistantStep.tool(ToolActivity(id: "check", name: "terminal", arguments: .object(["command": .string("swiftc -typecheck")]),
                                                     result: #"{"output": "error", "exit_code": 1}"#, status: .succeeded))
@@ -302,10 +307,14 @@ struct TranscriptTests {
             return
         }
         #expect(stored.steers.map(\.text) == ["Man just a simple one example like 20 lines"])
-        #expect(stored.foldedAttachmentGroups.map { $0.map(\.filePath) } == [["/w/Widgets.swift", "/w/main.swift"], ["/w/Simple.swift"]])
+        #expect(stored.foldedAttachmentGroups == [[], []])
+        #expect(TurnChanges.of(stored).files.map(\.path) == ["/w/Widgets.swift", "/w/main.swift", "/w/Simple.swift"])
 
-        // A turn without steers keeps every card in its one group.
-        let plain = AssistantTurn(id: "t", steps: [write("a", "/w/a.swift"), check, write("b", "/w/b.swift")])
+        var steered = AssistantTurn(id: "t", steps: [page("a"), check, page("b")])
+        steered.steers = [SteerNote(id: "s", text: "only the second", afterStep: 2)]
+        #expect(steered.foldedAttachmentGroups.map { $0.map(\.id) } == [["a"], ["b"]])
+        // A turn without steers keeps every note in its one group.
+        let plain = AssistantTurn(id: "t", steps: [page("a"), check, page("b")])
         #expect(plain.foldedAttachmentGroups.map { $0.map(\.id) } == [["a", "b"]])
     }
 

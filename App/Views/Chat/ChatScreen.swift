@@ -141,6 +141,16 @@ struct ChatScreen: View {
         #endif
         // Review, Undo, the timeline and the off state (`docs/checkpoints.md`).
         .modifier(CheckpointSheets(model: conversation.checkpoints))
+        // A turn's Changes row (`docs/chat.md` §1).
+        .sheet(item: Binding(get: { conversation.inspector.changesSheet }, set: { conversation.inspector.changesSheet = $0 })) { target in
+            TurnChangesSheet(target: target, changes: { conversation.changes(forTurn: $0) }) { path in
+                // The sheet goes first: the Inspector's own sheet rises once it's down.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(450))
+                    conversation.inspector.openFile(path)
+                }
+            }
+        }
         // Hermes asks before switching to an expensive model (`config.set` → `confirm_required`).
         .alert(
             String(localized: "Switch to \(ModelNames.display(conversation.modelConfirmation?.selection.model ?? ""))?"),

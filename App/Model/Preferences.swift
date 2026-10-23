@@ -16,6 +16,8 @@ enum PreferenceKey {
     static let openChatsAt = "openChatsAt"
     /// Settings → Chat → Sounds: soft "sent" and "received" sounds, off until turned on.
     static let chatSounds = "chatSounds"
+    /// A turn's diffs wrap their lines instead of scrolling sideways (`docs/chat.md` §1).
+    static let wrapsDiffLines = "wrapsDiffLines"
 }
 
 /// Where a chat with unread messages opens (`docs/inbox.md` §4).

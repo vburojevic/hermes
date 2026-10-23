@@ -346,6 +346,16 @@ struct RootView: View {
             await app.refreshInBackground()
             return
         }
+        // `-HERMES_SHOW_CHANGES <s>`: that long after launch, the open chat's latest turn's changes
+        // open as its Changes row opens them (the Inspector's tab, or the sheet; `docs/chat.md` §2).
+        let showChanges = UserDefaults.standard.double(forKey: "HERMES_SHOW_CHANGES")
+        if showChanges > 0 {
+            Task {
+                try? await Task.sleep(for: .seconds(showChanges))
+                let conversation = workspace.currentConversation
+                if let key = conversation.latestChangesKey { conversation.inspector.showChanges(turn: key) }
+            }
+        }
         #endif
         // `-HERMES_SEND_HERE <text>` sends into the chat that's open, `-HERMES_SEND_HERE_AFTER <s>`
         // after launch (default 6), three times 20 s apart (send-animation checks), or

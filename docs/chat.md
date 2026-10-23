@@ -36,15 +36,18 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
    needed" when the Bot answered with a silence marker), two kinds of work named and "and N more"
    after that (`WorkLine`). A bare count read as a reply gone missing, and a reply is never made
    up. Tapping a header with steps opens or closes them. A running step shows its tool's glyph and a time that counts up; nothing spins.
+   Under it, when the turn edited files, the Changes row (`turnChanges`, `TurnChangesRow`): "Changed
+   3 files · +106 −1", the files' names in small type, and Undo when the turn has an undo point
+   (`turnCheckpoint`, [checkpoints.md](checkpoints.md) §2). It is the turn's only trace of its
+   diffs: tapped, it opens them (§2, "File changes"). While the turn runs it keeps its count
+   current without moving.
 3. Unfolded: the plan card (`planCard`) if the agent keeps a todo list, then the steps on a rail
    (tool calls, narration, reasoning, where Hermes read a steer). Folded and finished: only the
-   diffs and risk notes stay in view, those from before the first steer here, and the files
-   changed after a steer just after that steer's bubble (7), where they changed
-   (`foldedAttachmentGroups`).
+   risk notes stay in view, those from before the first steer here, and those from after a steer
+   just after that steer's bubble (7) (`foldedAttachmentGroups`).
 4. A models card when several models answer at once (`modelsCard`).
 5. The helpers' team card (`Subagents.teamCard`, [helpers.md](helpers.md)).
-6. The checkpoint bar when the turn changed files and a checkpoint exists (`turnCheckpoint`,
-   Review and Undo; [checkpoints.md](checkpoints.md)).
+6. Nothing: the checkpoint bar that stood here is the Changes row's Undo now (2).
 7. Steers Hermes read, as captioned bubbles ([follow-ups.md](follow-ups.md) §2).
 8. The reply as Markdown (§3). While Hermes works with the steps folded, the last thing it said
    between steps stays here, muted, until it says more. That narration is the turn's progress, never
@@ -238,7 +241,7 @@ instead. The mock's holds are in `docs/development.md`.
 |---|---|---|
 | `tool.start` (`tool_id`, `name`, `preview` / `context` / `args`) | A running step: present-tense title, a one-line preview of what it works on | `toolStepRunning` |
 | `tool.complete` (`tool_id`, `duration_s`, `summary`, `result_text`) | The step finishes: past-tense title, duration, the summary as preview. A result that reads as a failure marks it failed (red node, "Command failed" for `terminal`, the exit code and last line kept in view) | `toolStep`, `toolStepFailed` |
-| `tool.complete` with `inline_diff` | Hermes renders it for a terminal: a "┊ review diff" header, each file as "a/path → b/path" and every line in ANSI colour; the app reads it as a plain unified diff (`InlineDiff.unified`). A diff card: path, lines added and removed, the first 6 lines with "Show N more lines" (up to 400) and Open (in the Inspector). It stays in view when the turn folds, one card per file: a file written whole twice shows its last content, as created if the turn created it, and a card the same as another isn't shown twice (`AssistantTurn.foldedAttachments`). Opened, a second whole-file write of the same file shows what it changed since the first, three lines around each change with ⋯ between (`relateRewrites`), not the whole file again. Open files and the Inspector's Changes catch up | `diffCard`, `DiffCard` |
+| `tool.complete` with `inline_diff` | Hermes renders it for a terminal: a "┊ review diff" header, each file as "a/path → b/path", every line in ANSI colour, and no more than 80 lines or 6 files ("… omitted N diff line(s)" after); the app reads it as a plain unified diff (`InlineDiff.unified`). The turn's Changes row counts it (§1, "File changes" below). Behind the edit's own step, a diff card: path, lines added and removed, the first 6 lines with "Show N more lines" (up to 400) and Open (in the Inspector); a second whole-file write of the same file shows what it changed since the first, three lines around each change with ⋯ between (`relateRewrites`), not the whole file again. Open files and the Inspector's Changes catch up | `turnChanges`; `diffCard`, `DiffCard` |
 | `tool.complete` with `result_text` from a command | An output block behind the step: the command, the last 6 lines, the line count, and Show All (up to the last 400) | `outputBlock`, `OutputBlock` |
 | `tool.complete` with `todos`, and `todo.updated` | The plan card, replaced whole on each update; the Inspector's Plan tab shows the latest | `planCard`, `PlanCard` |
 | `tool.output_risk` (`risk`, `findings`, `redacted`) | A note under the step that says what Hermes's scanner found (`ToolRisk.Concern`, below), with the findings in words behind a disclosure; `redacted` changes the wording. Stays in view when the turn folds | `riskNote`, `RiskNote` |
@@ -273,6 +276,45 @@ names what was found and claims instructions only for instruction-shaped finding
 
 The details list the findings that earned the note, characters by name ("Right-to-left override
 (U+202E)"). The mock's "page risks" turn plays the first, second and fourth rows.
+
+#### File changes
+
+A turn's edits are one Changes row under its header (`turnChanges`), never a card per edit: a long
+turn that patched one file twenty times buried its reply under twenty cards. Hermes Desktop folds a
+turn's edits the same way ("N files changed", `changed-files.ts`). The logic is `TurnChanges` in
+HermesKit, read from the turn itself, so it reads the same live and from history:
+
+- **Which calls:** `write_file`, `patch` (both modes) and any call that sent an `inline_diff`
+  (`skill_manage`). A running call isn't counted until it finishes.
+- **Where each edit's diff comes from**, best first: the `patch` result's `diff` (difflib, numbered
+  hunks, never capped; a V4A patch can hold several files, a deletion against `/dev/null` and a
+  move as `# Moved: a -> b`), then `inline_diff` (capped at 80 lines: the file then says "Hermes
+  sent part of this change"), then the call's arguments (`write_file`'s `content`, `patch`'s
+  `old_string`/`new_string` or V4A `patch`). Live events carry no arguments; the stored turn does,
+  so once it's stored the sheet and tab read that.
+- **One file, every edit merged.** The same file named two ways (the call's full path, the diff's
+  path from the working folder) is one file. Its edits are combined into one diff from the file
+  before the turn to the file after it: through the whole text when the turn knows it (it created
+  or wrote the file), else by composing the numbered hunks. An edit that doesn't follow from the
+  ones before it (Hermes matched loosely, a diff without numbers, part of a diff) can't be placed;
+  that file's edits then show one by one, in order, each under "Edit 2 of 5".
+- **What happened to it:** New (a creation, `@@ -0,0`), Deleted, Renamed from (a move), Written
+  whole (a `write_file` with no diff: what the file held before isn't in the chat), or changed. An
+  edit taken back later in the turn leaves "no change". A failed edit (the call failed, or its
+  result says `success: false` or has an `error`) changed nothing: it's counted ("1 failed", in
+  orange) and its error shows on the file, never as a change.
+- **Limits:** a binary file says so; a file whose change passes 512 KB is summarised with its size
+  and Open; a diff shows its first 2,000 lines and says how many more there are.
+- **Counts:** "Changed 3 files · +106 −1" counts the files left different and their net lines.
+  VoiceOver reads "Changed 3 files, 106 lines added, 1 removed".
+
+Tapping the row opens the turn's changes in the Changes sheet (`TurnChangesSheet`): the files, each once, with its folder
+shortened against the turn's other files ("scripts", "…/Sources/Chat"), what happened to it and
+its +/−. Tapping one shows its diff: old and new line numbers, the lines in their language's
+colours (`CodeHighlighter`), gaps that say how many unchanged lines they skip, lines that scroll
+sideways or wrap (the toolbar's Wrap Lines, remembered), and Open, which opens the file read-only
+in the chat's Inspector through the gateway (as `GatewayFileLink` does, never through the system).
+The mock's "many edits" plays such a turn ([development.md](development.md)).
 
 Tools whose name starts with `_` are internal and never shown. Each tool has a present and past
 title and an SF Symbol (`ToolDescriptor`: "Running a command" / "Ran a command", `terminal`).
@@ -548,9 +590,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   after a gap of more than an hour. A chat opened with its history dates its first message
   today too; a chat started here gets none until there is a gap.
 - **Collapsing.** Steps fold behind the header by default. Settings → "Show agent steps while
-  working" keeps them open while a turn runs. A folded, finished turn keeps its diffs and risk
-  notes in view. Each step opens to its details (the full command, output, diff, results);
-  diffs and outputs show their first or last 6 lines with a way to show more.
+  working" keeps them open while a turn runs. A folded, finished turn keeps its risk notes in
+  view; its diffs are the Changes row under the header. Each step opens to its details (the full
+  command, output, diff, results); diffs and outputs show their first or last 6 lines with a way
+  to show more.
 - **Folds stay as the person left them.** Only a tap opens or closes one. The chat keeps them
   (`DisclosureState`), not each row's view, keyed by Hermes's call ids (a turn by its first
   call's): a reply handing over to its stored rows, a reload, the page window moving or a cached
@@ -628,8 +671,9 @@ typing bubbles, no waving dots and no spinners for agent work.
   then the text with its pills spoken by kind.
 - The turn header reads its title ("Worked for 14 s · 2 tools") with the hint "Shows the steps"
   or "Hides the steps". Each step row reads as one element with a hint when it opens to details.
-- Diff lines are read as "Added" or "Removed" plus the line; the + and − stay visible, so colour
-  is never the only signal. Task list items read "Done" or "Not done". Headings and time
+- Diff lines are read as "Added" or "Removed" plus the line (and its number in the Changes
+  sheet); the + and − stay visible, so colour is never the only signal. The Changes row reads
+  "Changed 3 files, 106 lines added, 1 removed" with the hint "Shows the changes". Task list items read "Done" or "Not done". Headings and time
   separators carry the header trait.
 - Reduce Motion: no shimmer on the working header, no streaming fade (text appears as it
   arrives), and folds and title changes cross-fade instead of sliding.

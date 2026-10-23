@@ -67,6 +67,14 @@ struct InspectorTab: Identifiable, Hashable, Codable {
     }
 }
 
+/// A turn's changes to show in the Changes sheet, and the file to open on.
+struct TurnChangesTarget: Identifiable, Hashable {
+    var turnKey: String
+    var file: String?
+
+    var id: String { turnKey }
+}
+
 /// Tabs pinned to stay across every chat on a gateway.
 @MainActor
 @Observable
@@ -145,6 +153,8 @@ final class InspectorModel {
     var terminalOpenRow: String?
     /// ⌘. on the Mac: the process waiting for Stop's confirmation.
     var confirmingStop: String?
+    /// A turn's changes in their own sheet.
+    var changesSheet: TurnChangesTarget?
     /// A process wrote in the last moments: the Terminal tab's ink dot.
     private(set) var terminalWriting = false
     @ObservationIgnored private var terminalQuiet: Task<Void, Never>?
@@ -581,6 +591,11 @@ final class InspectorModel {
     func openFile(_ path: String) {
         let full = path.hasPrefix("/") || path.hasPrefix("~") ? path : ((workingFolder ?? "") as NSString).appendingPathComponent(path)
         open(.file, key: full, title: ProjectPath.lastComponent(full))
+    }
+
+    /// A turn's Changes row (`docs/chat.md` §1): its files and diffs in a sheet of their own.
+    func showChanges(turn key: String, file: String? = nil) {
+        changesSheet = TurnChangesTarget(turnKey: key, file: file)
     }
 
     func openChanges(scope: ReviewScope = .lastTurn, file: String? = nil) {

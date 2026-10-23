@@ -20,7 +20,7 @@ Design component names: `turnCheckpoint` (+ `Busy`), `fileChangeRow` (+ `New`), 
 `checkpointsTimeline`, `checkpointDetail`, `checkpointsOffSheet`, `macCheckpoints`,
 `ipadCheckpoints`. The diff itself is the chat's `DiffCard`.
 
-**Entry points:** the undo bar's Review and Undo; the reply menu's "Undo File Changes…"; a chat's
+**Entry points:** Undo on a turn's Changes row; the reply menu's "Undo File Changes…"; a chat's
 menu in the sidebar and in a project home's lanes → "Checkpoints…"; and on the Mac the Chat menu →
 Checkpoints… and Undo File Changes… (⌥⌘Z, the newest reply that changed files).
 
@@ -88,21 +88,21 @@ so their split is approximate; a stat path shortened to `.../tail` can't be rest
 
 ## 2. In the chat
 
-- A reply whose tools wrote files (`write_file`, `patch`, or any tool that sent a diff) shows
-  **`turnCheckpoint`** after its steps and helpers, above the reply text: "3 files changed · +41
-  −12 · undo available", with **Review** and **Undo**. The counts come from the turn itself, so
-  they read the same live and from history.
+- A reply whose tools wrote files (`write_file`, `patch`, or any tool that sent a diff) shows its
+  Changes row under the turn header ([chat.md](chat.md) §1): "Changed 3 files · +41 −12". When the
+  reply has an undo point, **Undo** (`turnCheckpoint`) sits at the row's end; the row itself is
+  the review (its files and diffs, from the turn). The counts come from the turn itself, so they
+  read the same live and from history.
   - It shows only when checkpoints are on and the reply has an undo point (§1.2).
   - The list loads when a chat with file edits opens, as an edit lands, and when a turn ends.
   - When checkpoints are off the bar is hidden, and the reply menu's "Undo File Changes…" opens
     the off sheet. When no checkpoint matches, it opens the timeline.
-- While Hermes is still working, Undo is dimmed: "Undo is available when Hermes stops"
-  (`turnCheckpointBusy`). Review still works. Offline, Undo is disabled too; for a chat the gateway
+- While Hermes is still working, Undo is dimmed, its hint "Undo is available when Hermes stops"
+  (`turnCheckpointBusy`). The row still opens the changes. Offline, Undo is disabled too; for a chat the gateway
   refuses (a container), there is no Undo at all.
-- **Review:** on iPad (regular width) and Mac, the newest reply's Review opens the Inspector's
-  **Changes** tab with the "This Turn" scope (`docs/inspector.md`) when the Inspector knows the
-  chat's folder and the turn's base; otherwise, and for older replies, it opens the two-column
-  checkpoints sheet on that reply's checkpoint (§3). iPhone opens `reviewChanges`.
+- **Review:** the Changes row opens the turn's own files and diffs (the Changes sheet). What changed since a checkpoint, as git
+  sees it, is the timeline's checkpoint detail (§3) and the Inspector's **Changes** tab on This
+  Turn.
 - **Review** (`reviewChanges`, full-height sheet): the files with +/− and "new" for files Hermes
   created, the selected file's diff ("Tap a file to see its diff. Undo puts all three back as they
   were at 14:31."), and Done / **Undo This Turn** in a bottom glass bar. A shortened diff says
@@ -163,8 +163,8 @@ so their split is approximate; a stat path shortened to `.../tail` can't be rest
 
 ## 5. Accessibility
 
-- The undo bar reads "3 files changed, 41 lines added, 12 removed." (adding "Undo is available
-  when Hermes stops." while it works), then Review and Undo as buttons.
+- The Changes row reads "Changed 3 files, 41 lines added, 12 removed" as one button, then Undo
+  as its own (hint "Undo is available when Hermes stops" while it works).
 - The confirmation puts VoiceOver focus on Cancel first; Undo Turn is destructive. Escape cancels.
 - A file row reads its path and "new file", "deleted" or "41 lines added, 12 removed".
 - Diffs use the chat's `DiffCard`: Dynamic Type, and each line announced as "Added" or "Removed".

@@ -130,7 +130,8 @@ commands, the reply and a `review.summary` 2 s after the turn, "many edits" is a
 about 15 s for the Changes row (`Tools/mock-hermes/edits.py`, `docs/chat.md` §2): a 100-line
 script created (its `inline_diff` shortened at 80 lines, as Hermes does) and patched four times, a
 helper patched twice, a patch that fails to match, a new note, an old script deleted with a V4A
-patch, two checks between, "page risks" reads three pages with what Hermes's scanner reports for each: a zero-width space
+patch, two checks between (`-HERMES_SHOW_CHANGES <s>` opens the open chat's latest changes that
+long after launch, as tapping its row does), "page risks" reads three pages with what Hermes's scanner reports for each: a zero-width space
 only, a right-to-left override, instructions; "page risks with a digest" also delivers Research
 Buddy's Daily digest while the second page is read, "overnight" plays a night of a Bot working on its
 own, as Hermes stores it: a message to Ada and two background checks, then over about 12 s a failed

@@ -937,6 +937,9 @@ final class ConversationModel: Identifiable {
     private(set) var livePlan: [PlanItem] = []
     /// How many files the running turn has edited (checkpoints are read again as it changes).
     private(set) var liveEditedFiles = 0
+    /// The running turn's file changes, by the key its row folds by: the Changes sheet and tab
+    /// follow its edits from here, not from `live`, which changes with every streamed word.
+    private(set) var liveChanges: KeyedTurnChanges?
     /// The live turn's id while it runs: views that only need to know which row is live read
     /// this, not `live`, which changes with every streamed word.
     private(set) var liveTurnID: String?
@@ -1021,6 +1024,8 @@ final class ConversationModel: Identifiable {
         if status != liveStatus { liveStatus = status }
         let edited = live.map { TurnFileEdits.paths(in: $0.turn).count } ?? 0
         if edited != liveEditedFiles { liveEditedFiles = edited }
+        let changes = live.map { KeyedTurnChanges(key: $0.turn.changesKey, changes: TurnChanges.of($0.turn)) }
+        if changes != liveChanges { liveChanges = changes }
         let runningID = working ? live?.turn.id : nil
         if runningID != liveTurnID { liveTurnID = runningID }
         let outline = live?.turn.outline
@@ -2452,6 +2457,26 @@ final class ConversationModel: Identifiable {
 
     /// The reply being written right now, if a turn is running or just finished.
     var liveTurn: AssistantTurn? { liveRow }
+
+    /// What the turn whose row folds by `key` did to files (`docs/chat.md` §1): the running one's
+    /// from its mirror, a stored one's from its steps. Once stored, the stored copy wins: it has
+    /// each call's arguments and full result, which live events don't carry.
+    func changes(forTurn key: String) -> TurnChanges? {
+        if isWorking, let liveChanges, liveChanges.key == key { return liveChanges.changes }
+        for item in items.reversed() {
+            if case .assistant(let turn) = item, turn.changesKey == key { return TurnChanges.of(turn) }
+        }
+        return liveChanges?.key == key ? liveChanges?.changes : nil
+    }
+
+    /// The newest turn that changed files, by its key.
+    var latestChangesKey: String? {
+        if let liveChanges, !liveChanges.changes.isEmpty { return liveChanges.key }
+        for item in items.reversed() {
+            if case .assistant(let turn) = item, !TurnFileEdits.paths(in: turn).isEmpty { return turn.changesKey }
+        }
+        return nil
+    }
 
     /// The newest reply in the chat.
     var latestAssistantTurn: AssistantTurn? {

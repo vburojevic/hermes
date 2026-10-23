@@ -98,9 +98,10 @@ extension ToolActivity {
         }
     }
 
-    /// Something a folded turn keeps in view: a risk note or a change.
+    /// Something a folded turn keeps in view: a risk note. Its changes are one row for the turn
+    /// (`TurnChanges`, `docs/chat.md` §1).
     public var keepsAttachmentFolded: Bool {
-        status != .running && (risk != nil || displayDiff != nil)
+        status != .running && risk != nil
     }
 
     // MARK: Command output
@@ -232,41 +233,16 @@ extension AssistantTurn {
         }
     }
 
-    /// What a folded turn keeps in view: risk notes and changes, one card per file. A file written
-    /// whole several times shows the last content, as created when the turn's first write created
-    /// it; a card the same as one already kept (same file, same change) isn't shown twice.
+    /// What a folded turn keeps in view: its risk notes.
     public var foldedAttachments: [ToolActivity] {
-        let tools = steps.compactMap { step -> ToolActivity? in
+        steps.compactMap { step -> ToolActivity? in
             if case .tool(let tool) = step, tool.keepsAttachmentFolded { tool } else { nil }
         }
-        var lastWrite: [String: String] = [:]
-        var firstWrite: [String: ToolActivity] = [:]
-        for tool in tools where tool.name == "write_file" && tool.status == .succeeded {
-            guard let path = tool.filePath else { continue }
-            lastWrite[path] = tool.id
-            if firstWrite[path] == nil { firstWrite[path] = tool }
-        }
-        var kept: [ToolActivity] = []
-        var shown: Set<String> = []
-        for var tool in tools {
-            if tool.name == "write_file", tool.status == .succeeded, let path = tool.filePath, let last = lastWrite[path] {
-                guard tool.id == last || tool.risk != nil else { continue }
-                if tool.id == last, let first = firstWrite[path], first.id != tool.id,
-                   first.diff?.isEmpty != false, let content = tool.arguments?["content"]?.stringValue {
-                    tool.diff = ToolActivity.creationDiff(path: path, content: content)
-                }
-            }
-            if tool.risk == nil, let diff = tool.displayDiff {
-                guard shown.insert("\(tool.filePath ?? "")\u{0}\(diff)").inserted else { continue }
-            }
-            kept.append(tool)
-        }
-        return kept
     }
 
-    /// `foldedAttachments` split where the person's steers were read: the cards before the first,
-    /// then those after each steer, so a file changed after a steer shows after it, not above it
-    /// as if it changed before. One group more than there are steers.
+    /// `foldedAttachments` split where the person's steers were read: the notes before the first,
+    /// then those after each steer, so a page read after a steer shows its note after it, not
+    /// above it as if it was read before. One group more than there are steers.
     public var foldedAttachmentGroups: [[ToolActivity]] {
         var groups = Array(repeating: [ToolActivity](), count: steers.count + 1)
         let bounds = steers.map(\.afterStep)
