@@ -1200,6 +1200,9 @@ def run_turn(sid, text):
         stream(sid, answer)
         return finish(sid, stored, answer)
 
+    if "overnight" in visible.lower():
+        return overnight(sid, stored, profile)
+
     if "upgrade" in visible.lower():
         # Shaped like the ARGUS turn of 2026-10-22 (docs/chat.md §2, one turn in one place): narration, three
         # commands of a few seconds each, the reply, then Hermes's background self-review of it a moment after
@@ -1427,6 +1430,109 @@ def held_notice(profile):
     for sid in sids:
         emit(sid, "error", {"message": hold_refusal(chat["id"])})
     return len(sids)
+
+
+# A night of a Bot working on its own (docs/chat.md §2a), stored as Hermes stores it: background
+# processes' completion notices (tools/process_registry_notifications.py, `process_complete` with its
+# `display_text`), a message to another Bot whose reply comes back as its delivery's completion
+# (tools/bot_mode_dm.py), a follow-up with tools and no reply, helpers' results
+# (`async_delegation_complete`) and the other Bot's machine-style brief (`internal_notification`).
+OVERNIGHT_MESSAGE = ("Can you draft the release notes for 2.4 tonight? Keep it to what people will notice:\n\n"
+                     "- Sync no longer drops edits made offline\n- The share sheet opens in under a second\n"
+                     "- Exports keep their folders\n\nSkip the refactors. I need it by 9:00 so I can post it.")
+OVERNIGHT_REPLY = ("Done. The draft is in `docs/releases/2.4.md`, about 120 words, with the three changes "
+                   "in the order you gave them. I left the refactors out.")
+OVERNIGHT_BRIEF = ("[HANDOFF] Release 2.4 notes: status and open items\n\n## Status\nDraft written and checked "
+                   "against the merged changes since 2.3. Nothing in it is unshipped.\n\n## Done\n"
+                   "- Draft: docs/releases/2.4.md (118 words)\n- Screenshots: share sheet, export dialog\n"
+                   "- Spelling and tone pass\n\n## Open items\n- Owner: you. Decide whether the sync fix "
+                   "names the bug report number.\n- Owner: me. Shorten the export line if you want it under "
+                   "100 words.\n\n## Facts\nRelease: 2.4\nDeadline: 09:00\nChannel: the blog and the "
+                   "changelog\nRisk: low; the only claim with numbers is the share sheet's timing, measured "
+                   "on the build from last night.\n\n## Next\nIf nothing changes, I'll post the draft at "
+                   "08:30 for a last look.")
+
+
+def process_notice(proc, command, exit_code, output, outcome="completed normally"):
+    text = (f"[IMPORTANT: Background process {proc} {outcome} (exit code {exit_code}).\n"
+            f"Command: {command}\nOutput:\n{output}]")
+    short = " ".join(command.split())
+    short = short[:77] + "..." if len(short) > 80 else short
+    title = "Finished" if exit_code == 0 else f"Failed (exit {exit_code})"
+    return text, {"display_text": f"Background Process {title}: {short}"}
+
+
+def overnight(sid, stored, profile):
+    """The word "overnight" in a Bot Chat: this Bot messages Ada, starts two background checks and
+    ends its turn; then, a few seconds apart, what Hermes stores while nobody watches."""
+    target = "writer" if profile != "writer" else "ops"
+    recipient = bot_title(target)
+    delivery = f"proc_{uuid.uuid4().hex[:12]}"
+    tests = f"proc_{uuid.uuid4().hex[:12]}"
+    fetch = f"proc_{uuid.uuid4().hex[:12]}"
+    runner = ("/Users/sam/.hermes/hermes-agent/venv/bin/python /Users/sam/.hermes/hermes-agent/tools/bot_mode_dm.py "
+              f"--run-delivery query-file /tmp/dm-{delivery[5:11]}.json /Users/sam/.local/bin/hermes -p {target} chat "
+              f"-c 'Bot Chat' --create-if-missing -Q")
+    tool(sid, stored, "message_agent", {"target": target, "message": OVERNIGHT_MESSAGE},
+         json.dumps({"status": "queued", "delivery_id": f"dm_{uuid.uuid4().hex[:8]}", "to": f"@{target}",
+                     "reply_delivery": "notification", "detail": f"Message queued for {recipient}.",
+                     "process_id": delivery, "queued_at": int(time.time())}), 0.5, recipient)
+    unittest = "python3 -B -m unittest discover -s tests"
+    tool(sid, stored, "terminal", {"command": unittest, "background": True, "notify": True},
+         json.dumps({"output": "Background process started", "session_id": tests, "pid": 41000, "exit_code": 0,
+                     "error": None, "notify_on_complete": True}), 0.4, unittest)
+    tool(sid, stored, "terminal", {"command": "git fetch origin && git status -sb", "background": True, "notify": True},
+         json.dumps({"output": "Background process started", "session_id": fetch, "pid": 41007, "exit_code": 0,
+                     "error": None, "notify_on_complete": True}), 0.4, "git fetch origin")
+    answer = f"I've asked {recipient} for the release notes and started the tests and a fetch. I'll pick it up from here."
+    stream(sid, answer)
+    finish(sid, stored, answer)
+
+    def night():
+        time.sleep(3)
+        text, meta = process_notice(tests, unittest, 1, "..........F.\n"
+                                    "FAIL: test_offline_edit_survives_sync (tests.test_sync.SyncTests)\n"
+                                    "AssertionError: 2 != 3\n\nRan 12 tests in 0.84s\n\nFAILED (failures=1)",
+                                    outcome="exited")
+        add_message(stored, "user", text, display_kind="process_complete", display_metadata=meta)
+        text, meta = process_notice(fetch, "git fetch origin && git status -sb", 0, "## main...origin/main [behind 2]")
+        add_message(stored, "user", text, display_kind="process_complete", display_metadata=meta)
+        # The follow-up Hermes runs for them: two commands, and the Bot chose not to write (`[SILENT]`).
+        for command, output in (("python3 -B -m unittest tests.test_sync -v", "test_offline_edit_survives_sync ... ok\n\nOK"),
+                                ("git pull --ff-only", "Fast-forward\n 2 files changed")):
+            call = f"call_{uuid.uuid4().hex[:8]}"
+            add_message(stored, "assistant", "", tool_calls=[{"id": call, "type": "function", "function": {
+                "name": "terminal", "arguments": json.dumps({"command": command})}}], finish_reason="tool_calls")
+            add_message(stored, "tool", json.dumps({"output": output, "exit_code": 0}), tool_call_id=call, tool_name="terminal")
+        add_message(stored, "assistant", "[SILENT]", finish_reason="stop")
+        time.sleep(3)
+        text, meta = process_notice(delivery, runner, 0, f"Reply from {recipient}:\n{OVERNIGHT_REPLY}")
+        add_message(stored, "user", text, display_kind="process_complete", display_metadata=meta)
+        add_message(stored, "assistant", f"{recipient} has the draft ready in `docs/releases/2.4.md`.", finish_reason="stop")
+        time.sleep(3)
+        delegation = f"deleg_{uuid.uuid4().hex[:8]}"
+        add_message(stored, "user", (
+            f"[ASYNC DELEGATION BATCH COMPLETE — {delegation}]\nA background fan-out unit you dispatched earlier — "
+            "2 subagent(s) — has finished; its consolidated results are below. Any other units from the same "
+            "delegate_task call report separately as they finish. You may have moved on since dispatching — act on "
+            "these or re-dispatch if things have changed. If you are still waiting on siblings, end your turn after "
+            "acting on this one.\n\nRole: leaf   Model: mock-model   Total duration: 212s\n\n"
+            "--- ✓ TASK 1/2: Research how other apps word offline sync fixes  (status=completed, api_calls=6, 98s) ---\n"
+            "Most say what now works, not what broke: \"Edits you make offline now sync\". Three of five name no bug number.\n\n"
+            "--- ✗ TASK 2/2: Review the 2.4 draft for claims we can't back up  (status=timeout, 600s) ---\n"
+            "(no summary — status=timeout: hit the 600s limit)"),
+            display_kind="async_delegation_complete",
+            display_metadata={"display_text": "Subagent Tasks Finished with Issues: Research how other apps word offline "
+                              "sync fixes; Review the 2.4 draft for claims we can't back up (2 tasks)",
+                              "delegation_id": delegation, "task_count": 2, "completed_count": 1, "failed_count": 1})
+        add_message(stored, "assistant", "One helper came back: keep the wording plain and skip the bug number. "
+                    "The review timed out; I'll run it again in the morning.", finish_reason="stop")
+        time.sleep(3)
+        handle = "hermes" if PROFILES[target]["is_default"] else target
+        add_message(stored, "user", f"Message from 🤖 {recipient} (@{handle}): {OVERNIGHT_BRIEF}",
+                    display_kind="internal_notification")
+        add_message(stored, "assistant", f"Thanks, {recipient}. I'll leave the bug number out.", finish_reason="stop")
+    threading.Thread(target=night, daemon=True).start()
 
 
 def deliver_alert(profile, text, reply):

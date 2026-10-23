@@ -128,7 +128,11 @@ during the check is read after it, "late reply" ends its turn saying nothing and
 later, "upgrade" is the ARGUS turn from `docs/chat.md` §2 (one turn, one place): narration, three
 commands, the reply and a `review.summary` 2 s after the turn, "page risks" reads three pages with what Hermes's scanner reports for each: a zero-width space
 only, a right-to-left override, instructions; "page risks with a digest" also delivers Research
-Buddy's Daily digest while the second page is read), and `@mentioning`
+Buddy's Daily digest while the second page is read, "overnight" plays a night of a Bot working on its
+own, as Hermes stores it: a message to Ada and two background checks, then over about 12 s a failed
+test run's and a fetch's completion notices, a follow-up with two commands and `[SILENT]`, Ada's reply
+carried back by the delivery's notice, a batch of helpers' results with one timed out, and Ada's
+machine-style brief; `docs/chat.md` §2a), and `@mentioning`
 another Bot drops a message in its chat. `--drop-after-reply` cuts every socket right after a turn's
 `message.complete`, `--late-store <s>` writes a turn's reply that long after `message.complete` (its
 `persisted_turn` then has no `final_assistant_row_id`), `POST /api/mock/restart-gateway` kills the
