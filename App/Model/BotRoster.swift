@@ -1982,7 +1982,8 @@ final class BotRoster {
         return result["scoped"] == nil ? routines.filter { $0.taggedBot == name } : routines
     }
 
-    func addRoutine(for name: String, title: String, prompt: String, schedule: String, deliverToBotChat: Bool) async throws {
+    /// The routine the gateway made (`job` in the answer), when it says.
+    func addRoutine(for name: String, title: String, prompt: String, schedule: String, deliverToBotChat: Bool) async throws -> BotRoutine? {
         let result = try await request("cron.manage", [
             "action": .string("add"),
             "profile": .string(name),
@@ -1992,13 +1993,16 @@ final class BotRoster {
             "deliver": .string(deliverToBotChat ? "bot-chat" : "local"),
         ])
         try Self.checkCron(result)
+        return result["job"].flatMap(BotRoutine.init(json:))
     }
 
-    func setRoutine(_ routine: BotRoutine, paused: Bool, for name: String) async throws {
+    /// The routine as the gateway has it now (`job` in the answer), when it says.
+    func setRoutine(_ routine: BotRoutine, paused: Bool, for name: String) async throws -> BotRoutine? {
         let result = try await request("cron.manage", [
             "action": .string(paused ? "pause" : "resume"), "profile": .string(name), "name": .string(routine.id),
         ])
         try Self.checkCron(result)
+        return result["job"].flatMap(BotRoutine.init(json:))
     }
 
     func removeRoutine(_ routine: BotRoutine, for name: String) async throws {

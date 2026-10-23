@@ -106,15 +106,17 @@ the roster, and treats `session.info {running: false}` as the turn having settle
 
 ### 1.3 Routines
 
-A Bot's routines are cron jobs in its profile (`RoutinesView`, `BotRoutine`).
+A Bot's routines are cron jobs in its profile (`RoutinesView`, `RoutinesModel`, `BotRoutine`).
+Every change shows at once and settles when the gateway answers (`PendingChanges`,
+[chat.md](chat.md) §4a); a refusal puts it back and says what and why.
 
 | Action | Call | Notes |
 |---|---|---|
 | List | `cron.manage {action: "list", profile, include_disabled: true}` | A backend that ignores `profile` answers without a `scoped` key; the app then keeps only jobs named `[bot:<name>] …`. |
-| Add | `cron.manage {action: "add", profile, name: "[bot:<name>] <title>", schedule, prompt, deliver}` | `deliver` is `bot-chat` ("Post results in the Bot Chat") or `local`. Schedules: every day, weekdays or every week at a time, every N hours, once after a delay, or a cron expression. |
-| Pause, resume | `cron.manage {action: "pause" \| "resume", profile, name: <job id>}` | |
-| Delete | `cron.manage {action: "remove", profile, name: <job id>}` | Asks first; past results stay in the chat. |
-| Run now | `POST /api/cron/jobs/<id>/trigger?profile=` | REST only; there is no RPC for it. |
+| Add | `cron.manage {action: "add", profile, name: "[bot:<name>] <title>", schedule, prompt, deliver}` | `deliver` is `bot-chat` ("Post results in the Bot Chat") or `local`. Schedules: every day, weekdays or every week at a time, every N hours, once after a delay, or a cron expression. Save goes back to the list at once; the routine shows "Adding…" until the `job` in the answer replaces it. A refusal takes it away and offers Edit Routine with what was chosen. |
+| Pause, resume | `cron.manage {action: "pause" \| "resume", profile, name: <job id>}` | The switch flips at once; the `job` in the answer settles the row. |
+| Delete | `cron.manage {action: "remove", profile, name: <job id>}` | Asks first; past results stay in the chat. The row goes once confirmed. |
+| Run now | `POST /api/cron/jobs/<id>/trigger?profile=` | REST only; there is no RPC for it. The row says "Starting…" until it's answered. |
 
 `success: false` with an `error` is shown as the gateway's words. Scheduled tasks outside Bots are
 in [tasks.md](tasks.md).

@@ -7,18 +7,21 @@ struct RoutinesView: View {
     let botName: String
     let onDone: () -> Void
 
-    @State private var routines: [BotRoutine] = []
-    @State private var phase = Phase.loading
+    @State private var model: RoutinesModel
     @State private var isAdding = false
-    @State private var actionError: HermesError?
+    /// What New Routine opens with: a routine the gateway refused, to edit and try again.
+    @State private var draft: RoutineDraft?
     @State private var removing: BotRoutine?
-    @State private var busy: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    enum Phase: Equatable {
-        case loading, loaded
-        case failed(String)
+    init(roster: BotRoster, botName: String, onDone: @escaping () -> Void) {
+        self.roster = roster
+        self.botName = botName
+        self.onDone = onDone
+        _model = State(initialValue: RoutinesModel(roster: roster, botName: botName))
     }
+
+    private var routines: [BotRoutine] { model.routines }
 
     private var bot: BotProfile? { roster.bot(named: botName) }
 
@@ -44,25 +47,36 @@ struct RoutinesView: View {
                     }
                 }
                 .navigationDestination(isPresented: $isAdding) {
-                    NewRoutineView(roster: roster, botName: botName) {
+                    // Save comes straight back here: the routine shows in the list and settles there.
+                    NewRoutineView(roster: roster, botName: botName, draft: draft ?? RoutineDraft()) { saved in
                         isAdding = false
-                        Task { await load() }
+                        draft = nil
+                        Task { await model.add(saved) }
                     }
                 }
         }
-        .task { await load() }
+        .task { await model.load() }
         #if os(iOS)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         #endif
-        .alert("Something went wrong", isPresented: errorBinding, presenting: actionError) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { error in
-            Text(error.errorDescription ?? "")
+        .alert(model.refusal?.title ?? "", isPresented: refusalBinding, presenting: model.refusal) { _ in
+            if let refused = model.refusedDraft {
+                Button("Edit Routine") {
+                    model.refusedDraft = nil
+                    draft = refused
+                    isAdding = true
+                }
+                Button("Discard", role: .cancel) { model.refusedDraft = nil }
+            } else {
+                Button("OK", role: .cancel) {}
+            }
+        } message: { refusal in
+            Text(refusal.message)
         }
         .confirmationDialog("Delete this routine?", isPresented: removeBinding, titleVisibility: .visible, presenting: removing) { routine in
             Button("Delete", role: .destructive) {
-                run(routine) { try await roster.removeRoutine(routine, for: botName) }
+                Task { await model.remove(routine) }
             }
         } message: { routine in
             Text("“\(routine.title)” stops running. Its past results stay in the chat.")
@@ -71,7 +85,7 @@ struct RoutinesView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch phase {
+        switch model.phase {
         case .loading where routines.isEmpty:
             SkeletonRows()
                 .padding()
@@ -82,7 +96,7 @@ struct RoutinesView: View {
                 title: String(localized: "Couldn't load routines"),
                 message: message,
                 actionTitle: String(localized: "Try Again"),
-                action: { Task { await load() } }
+                action: { Task { await model.load() } }
             )
         default:
             #if os(macOS)
@@ -132,22 +146,27 @@ struct RoutinesView: View {
                 } else {
                     Section {
                         ForEach(routines) { routine in
-                            RoutineRow(routine: routine, isBusy: busy.contains(routine.id)) { paused in
-                                run(routine) { try await roster.setRoutine(routine, paused: paused, for: botName) }
+                            let adding = model.isAdding(routine)
+                            RoutineRow(routine: routine, isAdding: adding, isStarting: model.starting.contains(routine.id)) { paused in
+                                Task { await model.setPaused(routine, paused) }
                             }
-                            .contextMenu { actions(for: routine) }
+                            .contextMenu {
+                                if !adding { actions(for: routine) }
+                            }
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    removing = routine
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                                if !adding {
+                                    Button(role: .destructive) {
+                                        removing = routine
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                    Button {
+                                        Task { await model.runNow(routine) }
+                                    } label: {
+                                        Label("Run Now", systemImage: "play")
+                                    }
+                                    .tint(Theme.success)
                                 }
-                                Button {
-                                    run(routine) { try await roster.runRoutineNow(routine, for: botName) }
-                                } label: {
-                                    Label("Run Now", systemImage: "play")
-                                }
-                                .tint(Theme.success)
                             }
                         }
                     }
@@ -158,7 +177,7 @@ struct RoutinesView: View {
             #else
             .listStyle(.insetGrouped)
             #endif
-            .refreshable { await load() }
+            .refreshable { await model.load() }
     }
 
     private var header: some View {
@@ -180,10 +199,10 @@ struct RoutinesView: View {
     @ViewBuilder
     private func actions(for routine: BotRoutine) -> some View {
         Button("Run Now", systemImage: "play") {
-            run(routine) { try await roster.runRoutineNow(routine, for: botName) }
+            Task { await model.runNow(routine) }
         }
         Button(routine.isPaused ? "Resume" : "Pause", systemImage: routine.isPaused ? "play.circle" : "pause.circle") {
-            run(routine) { try await roster.setRoutine(routine, paused: !routine.isPaused, for: botName) }
+            Task { await model.setPaused(routine, !routine.isPaused) }
         }
         Divider()
         Button("Delete…", systemImage: "trash", role: .destructive) {
@@ -191,39 +210,8 @@ struct RoutinesView: View {
         }
     }
 
-    private func load() async {
-        if routines.isEmpty { phase = .loading }
-        do {
-            let fresh = try await roster.routines(for: botName).sorted { lhs, rhs in
-                if lhs.isPaused != rhs.isPaused { return !lhs.isPaused }
-                return (lhs.nextRunAt ?? .distantFuture) < (rhs.nextRunAt ?? .distantFuture)
-            }
-            withAnimation(phase == .loaded ? Theme.spring : nil) {
-                routines = fresh
-            }
-            phase = .loaded
-        } catch {
-            phase = .failed(BotRoster.describe(error))
-        }
-    }
-
-    private func run(_ routine: BotRoutine, _ action: @escaping () async throws -> Void) {
-        busy.insert(routine.id)
-        Task {
-            defer { busy.remove(routine.id) }
-            do {
-                try await action()
-                await load()
-            } catch {
-                let failure = HermesError.botMode(error)
-                actionError = failure
-                AccessibilityNotification.Announcement(failure.errorDescription ?? "").post()
-            }
-        }
-    }
-
-    private var errorBinding: Binding<Bool> {
-        Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
+    private var refusalBinding: Binding<Bool> {
+        Binding(get: { model.refusal != nil }, set: { if !$0 { model.refusal = nil } })
     }
 
     private var removeBinding: Binding<Bool> {
@@ -233,7 +221,10 @@ struct RoutinesView: View {
 
 private struct RoutineRow: View {
     let routine: BotRoutine
-    let isBusy: Bool
+    /// New Routine's row before the gateway has made the routine.
+    let isAdding: Bool
+    /// Run Now before the gateway has the run.
+    let isStarting: Bool
     let setPaused: (Bool) -> Void
 
     var body: some View {
@@ -253,7 +244,14 @@ private struct RoutineRow: View {
                         .lineLimit(2)
                 }
                 HStack(spacing: 8) {
-                    if routine.hasFailed {
+                    // Still words, not a spinner: the change is shown, the gateway settles it.
+                    if isAdding {
+                        Label("Adding…", systemImage: "arrow.up.circle")
+                            .foregroundStyle(Theme.tertiaryText)
+                    } else if isStarting {
+                        Label("Starting…", systemImage: "play.circle")
+                            .foregroundStyle(Theme.tertiaryText)
+                    } else if routine.hasFailed {
                         Label("Last run failed", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.danger)
                     } else if routine.isPaused {
@@ -278,14 +276,11 @@ private struct RoutineRow: View {
                 }
             }
             Spacer(minLength: 8)
-            if isBusy {
-                Spinner()
-            } else {
-                Toggle("Enabled", isOn: Binding(get: { !routine.isPaused }, set: { setPaused(!$0) }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .tint(Theme.success)
-            }
+            Toggle("Enabled", isOn: Binding(get: { !routine.isPaused }, set: { setPaused(!$0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Theme.success)
+                .disabled(isAdding)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
@@ -293,31 +288,47 @@ private struct RoutineRow: View {
 }
 
 /// Builds a routine: what to do, and when.
+/// Save comes straight back to the list, where the routine settles (`docs/tasks.md` §5).
 struct NewRoutineView: View {
     let roster: BotRoster
     let botName: String
-    let onDone: () -> Void
+    let onSave: (RoutineDraft) -> Void
 
-    @State private var title = ""
-    @State private var prompt = ""
-    @State private var kind = RoutineSchedule.Kind.daily
-    @State private var time = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: .now) ?? .now
-    @State private var weekday = 2
-    @State private var hours = 6
-    @State private var delay = RoutineSchedule.Delay.thirtyMinutes
-    @State private var cron = "0 8 * * *"
-    @State private var postsInChat = true
-    @State private var isSaving = false
-    @State private var error: String?
+    @State private var title: String
+    @State private var prompt: String
+    @State private var kind: RoutineSchedule.Kind
+    @State private var time: Date
+    @State private var weekday: Int
+    @State private var hours: Int
+    @State private var delay: RoutineSchedule.Delay
+    @State private var cron: String
+    @State private var postsInChat: Bool
 
-    private var schedule: String {
-        RoutineSchedule(kind: kind, time: time, weekday: weekday, hours: hours, delay: delay, cron: cron).expression
+    init(roster: BotRoster, botName: String, draft: RoutineDraft, onSave: @escaping (RoutineDraft) -> Void) {
+        self.roster = roster
+        self.botName = botName
+        self.onSave = onSave
+        _title = State(initialValue: draft.title)
+        _prompt = State(initialValue: draft.prompt)
+        _kind = State(initialValue: draft.schedule.kind)
+        _time = State(initialValue: draft.schedule.time)
+        _weekday = State(initialValue: draft.schedule.weekday)
+        _hours = State(initialValue: draft.schedule.hours)
+        _delay = State(initialValue: draft.schedule.delay)
+        _cron = State(initialValue: draft.schedule.cron)
+        _postsInChat = State(initialValue: draft.postsInChat)
     }
+
+    private var routineSchedule: RoutineSchedule {
+        RoutineSchedule(kind: kind, time: time, weekday: weekday, hours: hours, delay: delay, cron: cron)
+    }
+
+    private var schedule: String { routineSchedule.expression }
 
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespaces).isEmpty
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !schedule.isEmpty && !isSaving
+            && !schedule.isEmpty
     }
 
     var body: some View {
@@ -367,12 +378,7 @@ struct NewRoutineView: View {
             Section {
                 Toggle("Post results in the Bot Chat", isOn: $postsInChat)
             } footer: {
-                if let error {
-                    Label(error, systemImage: "xmark.octagon.fill")
-                        .foregroundStyle(Theme.danger)
-                } else {
-                    Text(RoutineSchedule.describe(schedule))
-                }
+                Text(RoutineSchedule.describe(schedule))
             }
         }
         .formStyle(.grouped)
@@ -382,40 +388,21 @@ struct NewRoutineView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                if isSaving {
-                    Spinner()
-                } else {
-                    Button("Save", action: save)
-                        .disabled(!canSave)
-                }
+                Button("Save", action: save)
+                    .disabled(!canSave)
             }
         }
     }
 
     private func save() {
         guard canSave else { return }
-        isSaving = true
-        error = nil
-        Task {
-            do {
-                try await roster.addRoutine(
-                    for: botName, title: title, prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
-                    schedule: schedule, deliverToBotChat: postsInChat
-                )
-                AccessibilityNotification.Announcement(String(localized: "Routine saved")).post()
-                onDone()
-            } catch {
-                self.error = BotRoster.describe(error)
-                AccessibilityNotification.Announcement(self.error ?? "").post()
-            }
-            isSaving = false
-        }
+        onSave(RoutineDraft(title: title, prompt: prompt, schedule: routineSchedule, postsInChat: postsInChat))
     }
 }
 
 /// Hermes schedules: cron expressions, `every 6h`, and one-shots like `in 30m`
 /// (a bare `30m` would repeat).
-struct RoutineSchedule {
+struct RoutineSchedule: Equatable {
     enum Kind: String, CaseIterable, Identifiable {
         case daily, weekdays, weekly, hourly, once, custom
         var id: String { rawValue }

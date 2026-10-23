@@ -134,7 +134,11 @@ Run Now and Pause), swipe left for Delete and Pause, and a context menu adds Run
 - Swipe for Delete and Run Now; the context menu has Run Now, Pause or Resume, and Delete….
 - With none: "No routines yet" and New Routine.
 - New Routine: Name, "What should it do?", When (the pickers in §2), Post results in the Bot Chat,
-  and the schedule in words under it. Errors appear in place and are announced.
+  and the schedule in words under it. Save goes straight back to the list, where the routine shows
+  "Adding…" until the gateway has made it. A refusal is announced and offers Edit Routine, which
+  opens New Routine again with everything as it was.
+- The Enabled switch, Pause, Resume and Delete show at once and settle when the gateway answers;
+  Run Now shows "Starting…". A refusal puts the row back and says so ([chat.md](chat.md) §4a).
 
 ## 6. Setup
 

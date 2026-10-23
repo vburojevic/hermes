@@ -212,6 +212,15 @@ struct BotMentionTests {
 
 @Suite("Bot routines")
 struct BotRoutineTests {
+    @Test func aRoutineShowsBeforeTheGatewayAnswers() throws {
+        let made = BotRoutine(making: "Digest", for: "researcher", prompt: "Summarise", schedule: "0 8 * * *", deliver: "bot-chat", id: "new-1")
+        #expect(made.deliversToBotChat && !made.isPaused && made.taggedBot == "researcher")
+        let json = try #require(JSONValue.parse(#"{"job_id":"r1","name":"[bot:researcher] Digest","enabled":true,"state":"scheduled"}"#))
+        let routine = try #require(BotRoutine(json: json))
+        #expect(routine.paused(true).isPaused)
+        #expect(!routine.paused(true).paused(false).isPaused)
+    }
+
     @Test func parsesTaggedJobs() throws {
         let json = try #require(JSONValue.parse("""
         {"job_id":"j1","name":"[bot:researcher] Morning digest","prompt_preview":"Summarise arXiv","schedule":"0 8 * * *",

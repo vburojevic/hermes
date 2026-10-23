@@ -192,6 +192,7 @@
 		939C2DCE6237310CE1960BEE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1F1848A93EBD13325AEB3483 /* SwiftUI.framework */; };
 		93C65D710F17956F27B7FC14 /* IndicatorsGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 202B1FF9B6247201C0904CDF /* IndicatorsGallery.swift */; };
 		94D6A0B26085F3D0CA57EDA1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 23137A90C3B1CD64BA1D3CBD /* PrivacyInfo.xcprivacy */; };
+		965C2708E588D051FC6EB350 /* RoutinesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A9032046947526C76D5936 /* RoutinesModel.swift */; };
 		9790C1B520CFAEA47DF74211 /* PillTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE63B9B4552E01494E93B76 /* PillTextView.swift */; };
 		98112A10BE3264D8D04B3E9D /* ScrollRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD9CCD2676A19F67EE33509 /* ScrollRun.swift */; };
 		99606B3FDCB20E4089D0AE30 /* WidgetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4F106CAC359F3400EEB893 /* WidgetHost.swift */; };
@@ -447,6 +448,7 @@
 		4592DD87397620D7427C349D /* AppsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppsViews.swift; sourceTree = "<group>"; };
 		47DA1B46CB416DB576111EB8 /* BrowserTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTabView.swift; sourceTree = "<group>"; };
 		482C95B9926E755A073D07C3 /* TalkPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkPreferences.swift; sourceTree = "<group>"; };
+		48A9032046947526C76D5936 /* RoutinesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutinesModel.swift; sourceTree = "<group>"; };
 		49754DAF3A39AF8263328677 /* InspectorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorPanel.swift; sourceTree = "<group>"; };
 		49A26C4633CBC4FA0472A87C /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = SDKROOT; };
 		49D00A93727ACE5AB8AE4B10 /* ReferenceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceContext.swift; sourceTree = "<group>"; };
@@ -746,6 +748,7 @@
 				BD6BD8207EE8F9466A5B0CDC /* ProjectsModel.swift */,
 				4C0236D483FE387F98D69F83 /* QuoteMemory.swift */,
 				DB15EAEFAB7E7C3B22F6B3FF /* ReadRecheck.swift */,
+				48A9032046947526C76D5936 /* RoutinesModel.swift */,
 				A20B62887DA33B2D81F9CE7A /* SetupCenter.swift */,
 				DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */,
 				1C3EC43231CE0C77CA20F7BE /* SpokenMessages.swift */,
@@ -1872,6 +1875,7 @@
 				E6F685CDCB30D7E5DAFBA413 /* RequestParts.swift in Sources */,
 				E1FB61F088B0D428B68DA446 /* RootView.swift in Sources */,
 				754CE3123B70512394D85830 /* RouteWatcher.swift in Sources */,
+				965C2708E588D051FC6EB350 /* RoutinesModel.swift in Sources */,
 				E68F2F493BCBC14B3BCE29BF /* RoutinesView.swift in Sources */,
 				D4BCCDD0BBD1A880DA1F9418 /* ScreenController.swift in Sources */,
 				6645AF31D60F00E646F58226 /* ScreenLock.swift in Sources */,

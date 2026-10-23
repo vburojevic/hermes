@@ -261,6 +261,29 @@ public struct BotRoutine: Identifiable, Hashable, Sendable {
             .compactMap { $0?.stringValue }.first { !$0.isEmpty }
     }
 
+    /// A routine the gateway hasn't made yet, as New Routine sent it: shown until the gateway's job
+    /// replaces it (`docs/tasks.md` §5). Its next run comes with that answer.
+    public init(making title: String, for bot: String, prompt: String, schedule: String, deliver: String, id: String) {
+        self.id = id
+        self.title = title
+        taggedBot = bot
+        promptPreview = prompt
+        self.schedule = schedule
+        self.deliver = deliver
+        enabled = true
+        state = "scheduled"
+    }
+
+    /// The routine as it will be once the gateway has paused or resumed it; the next run comes
+    /// with the gateway's answer.
+    public func paused(_ paused: Bool) -> BotRoutine {
+        var routine = self
+        routine.enabled = !paused
+        routine.state = paused ? "paused" : "scheduled"
+        routine.nextRunAt = nil
+        return routine
+    }
+
     public var isPaused: Bool { !enabled || state == "paused" }
     public var deliversToBotChat: Bool { deliver.hasPrefix("bot-chat") }
     public var hasFailed: Bool {
