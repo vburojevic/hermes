@@ -21,19 +21,31 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         PushCenter.shared.didFailToRegister(error)
     }
 
-    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
-        guard let notice = NotificationDelegate.notice(from: userInfo, isRemote: true) else { return .noData }
-        switch notice.kind {
-        case .withdraw:
-            await PushCenter.shared.withdraw(notice)
-        case .sync:
-            await PushCenter.shared.sync(notice)
-        case .read:
-            await PushCenter.shared.read(notice)
-        default:
-            return .noData
+    /// Finishes on the main thread, as `NotificationDelegate.didReceive` does: UIKit updates the
+    /// app's snapshot in the completion handler and stops the app if that runs anywhere else, and
+    /// the `async` form called it wherever the work finished.
+    func application(
+        _ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping @Sendable (UIBackgroundFetchResult) -> Void
+    ) {
+        guard let notice = NotificationDelegate.notice(from: userInfo, isRemote: true) else {
+            completionHandler(.noData)
+            return
         }
-        return .newData
+        Task { @MainActor in
+            switch notice.kind {
+            case .withdraw:
+                await PushCenter.shared.withdraw(notice)
+            case .sync:
+                await PushCenter.shared.sync(notice)
+            case .read:
+                await PushCenter.shared.read(notice)
+            default:
+                completionHandler(.noData)
+                return
+            }
+            completionHandler(.newData)
+        }
     }
 }
 #else
