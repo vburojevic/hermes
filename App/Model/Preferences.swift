@@ -82,6 +82,8 @@ struct WindowAppearance: UIViewRepresentable {
     }
 
     final class StyleView: UIView {
+        private static let canvas = UIColor(Theme.canvas)
+
         var style = UIUserInterfaceStyle.unspecified {
             didSet { apply() }
         }
@@ -101,8 +103,12 @@ struct WindowAppearance: UIViewRepresentable {
         }
 
         private func apply() {
-            guard let window, window.overrideUserInterfaceStyle != style else { return }
-            window.overrideUserInterfaceStyle = style
+            guard let window else { return }
+            // The window's own background is the canvas too, as the launch screen is
+            // (`LaunchBackground`): left clear, anything iOS shows of it before or around SwiftUI's
+            // views isn't in the app's appearance.
+            if window.backgroundColor !== Self.canvas { window.backgroundColor = Self.canvas }
+            if window.overrideUserInterfaceStyle != style { window.overrideUserInterfaceStyle = style }
         }
     }
 }
