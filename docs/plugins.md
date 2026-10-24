@@ -8,7 +8,7 @@ run inside the person's own Hermes, and are published to public repositories tha
 | Plugin | What it adds | Source | State |
 |---|---|---|---|
 | `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.5 |
-| `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.2.2 |
+| `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.2.2; 1.3.0 here, not published yet (§2.3) |
 
 Everything else the app does runs on a stock Hermes Agent: the API server for chats, and
 `hermes serve` for Bot Mode ([architecture.md](architecture.md)). Hermes's own bundled plugins
@@ -172,6 +172,20 @@ hermes gateway restart
   root's plugins and their settings. A Bot made from scratch has none: install them for it too.
 - An install by hand isn't pinned. The app leaves it as long as its version meets the app's
   minimum.
+
+### 2.3 Widgets in a Bot's chats
+
+A Bot's turns hear only the plugins of its own profile (§2), so a Bot Chat gets widgets only when
+`hermes-app-widgets` is installed and on in that Bot's profile. The app marks each Bot Chat through
+that profile ([widgets.md](widgets.md) §11), and Settings → Setup → Widgets reads "Missing in
+<Bot>" (or older, or turned off) with **Install**, the same fix as the plugin's page here.
+
+`hermes-app-widgets` 1.3.0 (in this repository) keeps a chat the app's after Hermes compacts it into a
+new session, and tells the agent plainly that a short question ("Weather today?") gets its widget,
+again in chats that heard the older rules. It asks for no more access than 1.2.2. It isn't
+published yet: the app stays pinned to 1.2.2 and works with either. To ship it, publish it
+(`Scripts/publish-widgets-plugin.sh`), then move `AppPlugin.widgets`'s `ref` to the published commit
+and its `version` and `minimumVersion` to 1.3.0; the app then updates every profile quietly.
 
 ## 3. Updating
 

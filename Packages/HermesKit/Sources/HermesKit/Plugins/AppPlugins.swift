@@ -281,6 +281,30 @@ public struct AppPluginsSurvey: Sendable, Hashable {
         entries(for: plugin).filter { if case .current = $0.state { true } else { false } }.map(\.profile)
     }
 
+    /// Profiles whose turns `plugin` runs in: installed and on, older copies included (the app copes
+    /// with an older plugin until it updates it).
+    public func profilesRunning(_ plugin: AppPlugin) -> [String] {
+        entries(for: plugin).filter { runs(plugin, in: $0.profile) == true }.map(\.profile)
+    }
+
+    /// The profile to send `plugin`'s own commands through: Hermes itself when it runs there, else a
+    /// Bot that runs it, one whose chat is open (`open`) first. Nil when no profile does.
+    public func commandProfile(for plugin: AppPlugin, open: Set<String> = []) -> String? {
+        let running = profilesRunning(plugin)
+        if running.contains("default") { return "default" }
+        return running.first(where: open.contains) ?? running.first
+    }
+
+    /// Whether `plugin` runs in `profile`'s turns: installed and on there, older ones included.
+    /// Nil when the survey didn't read that profile.
+    public func runs(_ plugin: AppPlugin, in profile: String) -> Bool? {
+        guard let entry = entries(for: plugin).first(where: { $0.profile == profile }) else { return nil }
+        switch entry.state {
+        case .current, .outdated: return true
+        case .missing, .off: return false
+        }
+    }
+
     /// Profiles a step would install into or update.
     public var profilesNeedingWork: [String] { Self.profiles(of: plan()) }
 

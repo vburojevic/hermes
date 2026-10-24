@@ -133,7 +133,10 @@ The app's sessions can't be told apart by platform. Bot Mode chats send `source:
 Hermes Desktop does, and gateway chats are always `api_server`, as any OpenAI-compatible client is.
 So the app marks each chat before its first prompt (`/app-widgets session`), and `app_platforms`
 covers gateways the app reaches without Bot Mode. The prompt section and the kept directives
-follow the mark. Cron sessions are identified with `ctx.current_cron_execution()` and the job's
+follow the mark. Hermes compacts a long chat into a new session with a new id (a Bot Chat compacts
+often, sometimes mid-turn), so a session compacted from a marked one is the app's too: the plugin
+reads its compression lineage from Hermes's session store (`get_compression_lineage`) and marks it.
+A branch is a new conversation and needs its own mark. Cron sessions are identified with `ctx.current_cron_execution()` and the job's
 `deliver` from `cron.jobs.get_job`.
 
 `pre_gateway_dispatch` only runs for messaging adapters. When exactly one widget is open in the

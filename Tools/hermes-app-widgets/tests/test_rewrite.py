@@ -219,7 +219,8 @@ def test_the_prompt_section_renders_only_for_the_apps_sessions(live):
     assert "hermes-app-widgets" in rendered
     text = live.prompt_section({"platform": "api_server", "session_id": "sess-app-2"})
     assert len(text) <= 4000 and text.rstrip().splitlines()[-1].startswith("Answer ")  # examples last
-    for name, cue in ((t, e["cue"]) for t, e in live.spec.catalog.items()):
+    cues = plugin_module("prompt").CUES
+    for name, cue in ((t, cues.get(t) or e["cue"]) for t, e in live.spec.catalog.items()):
         assert f"- {name}: {cue}" in text
     assert "hermes-app-widgets" not in sections("api_server", "sess-someone-else")
     assert "hermes-app-widgets" not in sections("telegram", "sess-tg")
@@ -324,3 +325,69 @@ def test_the_app_can_mark_every_chat_at_once(live):
     result = live.command("session", {"session_ids": [f"sess-batch-{n}" for n in range(40)]})
     assert result["ok"] and len(result["session_ids"]) == 40
     assert all(f"sess-batch-{n}" in live._marked_sessions() for n in range(40))
+
+
+# ---- a Bot Chat Hermes compacted
+
+
+def compacted(*ids: str, source: str = "tui") -> None:
+    """A conversation Hermes compacted from one session into the next, as its session store keeps it."""
+    from hermes_state_registry import acquire, release_or_close
+    db = acquire()
+    try:
+        for parent, child in zip((None, *ids), ids):
+            db.create_session(child, source, parent_session_id=parent)
+            if child != ids[-1]:
+                db.end_session(child, "compression")
+    finally:
+        release_or_close(db)
+
+
+def test_a_bot_chat_the_app_marked_stays_its_own_after_compaction(live):
+    """CORE's Bot Chat: the app marked it under one id, then Hermes compacted it into a new session
+    mid-turn. The new session still gets the section, the hint and its directives."""
+    compacted("sess-core-1", "sess-core-2", "sess-core-3")
+    live.mark_session("sess-core-1")
+    assert "Widgets are the default here" in live.prompt_section({"platform": "tui", "session_id": "sess-core-3"})
+    [hint] = reminders("sess-core-3", "tui")
+    assert "Weather today?" in hint["context"]
+    reply = 'Drizzle until 3, then dry.\n\n::widget{id="w_core0001" alt="Zagreb weather"}'
+    assert transform(reply, "tui", "sess-core-3") == reply
+    assert "sess-core-3" in live._marked_sessions()  # marked for the next time, and for the app
+
+
+def test_a_compaction_of_a_chat_that_isnt_the_apps_stays_text(live):
+    compacted("sess-desktop-1", "sess-desktop-2", source="desktop")
+    assert live.prompt_section({"platform": "desktop", "session_id": "sess-desktop-2"}) == ""
+    assert reminders("sess-desktop-2", "desktop") == []
+    # A branch of an app chat is a conversation of its own: the app marks it when it opens it.
+    from hermes_state_registry import acquire, release_or_close
+    db = acquire()
+    try:
+        db.create_session("sess-app-root", "tui")
+        db.create_session("sess-app-branch", "tui", parent_session_id="sess-app-root")
+    finally:
+        release_or_close(db)
+    live.mark_session("sess-app-root")
+    assert live.prompt_section({"platform": "tui", "session_id": "sess-app-branch"}) == ""
+
+
+def test_a_bot_mode_chat_the_app_marks_gets_the_section(live):
+    """The app marks a Bot Chat over the socket before its first prompt; Hermes then renders the
+    section for the agent's session (platform tui, or desktop under Hermes Desktop)."""
+    from hermes_cli.plugins import render_system_prompt_sections
+    with session(source="tui", session_id="sess-bot-chat", session_key="sess-bot-chat"):
+        assert live.command("session", {"session_id": "ui-bot", "stored_session_id": "sess-bot-chat"})["ok"]
+    ids = [s.id for s in render_system_prompt_sections({"platform": "tui", "session_id": "sess-bot-chat"})]
+    assert "hermes-app-widgets" in ids
+    text = live.prompt_section({"platform": "tui", "session_id": "sess-bot-chat"})
+    assert '"Weather today?" is a `weather` card' in text
+    assert "- weather: any weather question" in text
+
+
+def test_a_chat_reminded_by_an_older_plugin_hears_the_new_rules(live):
+    live.mark_session("sess-reminded-v1")
+    live.mark_session("sess-reminded-v1", "reminded", version=1)
+    [hint] = reminders("sess-reminded-v1", "tui")
+    assert "Weather today?" in hint["context"]
+    assert reminders("sess-reminded-v1", "tui") == []

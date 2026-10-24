@@ -155,6 +155,47 @@ struct PluginRegistryTests {
         #expect(off.fixes.map(\.action) == [.turnOn, .install, .install])
     }
 
+    /// A Bot Chat is marked for widgets through its own Bot's profile, whatever Hermes itself has.
+    @Test func whereWidgetsRunIsReadPerProfile() async {
+        let survey = await survey(["default": [row("hermes-app-widgets", version: AppPlugin.widgets.version)],
+                                   "ada": [row("hermes-app-widgets", version: "1.1.1")],
+                                   "ops": [row("hermes-app-widgets", version: AppPlugin.widgets.version, status: "not enabled")]])
+        #expect(survey.runs(.widgets, in: "default") == true)
+        #expect(survey.runs(.widgets, in: "ada") == true, "an older copy still runs")
+        #expect(survey.runs(.widgets, in: "ops") == false, "turned off")
+        #expect(survey.runs(.widgets, in: "core") == nil, "a profile the survey didn't read")
+        let missing = await self.survey([:])
+        #expect(missing.runs(.widgets, in: "ada") == false)
+        #expect(survey.profilesRunning(.widgets) == ["default", "ada"])
+        #expect(survey.commandProfile(for: .widgets) == "default", "Hermes itself first")
+        #expect(missing.commandProfile(for: .widgets) == nil)
+    }
+
+    /// Only a Bot has the plugin (an older copy counts): its commands go through that Bot.
+    @Test func aBotOnlyPluginIsReachedThroughTheBot() async {
+        let survey = await survey(["ada": [row("hermes-app-widgets", version: "1.2.1")],
+                                   "ops": [row("hermes-app-widgets", version: AppPlugin.widgets.version, status: "not enabled")]])
+        #expect(survey.profilesRunning(.widgets) == ["ada"])
+        #expect(survey.commandProfile(for: .widgets) == "ada")
+    }
+
+    /// Several Bots have it and Hermes doesn't: the one whose chat is open is the way in.
+    @Test func aBotWithAnOpenChatIsPreferred() async {
+        let survey = await survey(["ada": [row("hermes-app-widgets", version: AppPlugin.widgets.version)],
+                                   "ops": [row("hermes-app-widgets", version: AppPlugin.widgets.version)]])
+        #expect(survey.commandProfile(for: .widgets) == "ada")
+        #expect(survey.commandProfile(for: .widgets, open: ["ops"]) == "ops")
+        #expect(survey.commandProfile(for: .widgets, open: ["scout"]) == "ada", "a chat without the plugin doesn't count")
+        let rooted = await self.survey(["default": [row("hermes-app-widgets", version: AppPlugin.widgets.version)],
+                                        "ops": [row("hermes-app-widgets", version: AppPlugin.widgets.version)]])
+        #expect(rooted.commandProfile(for: .widgets, open: ["ops"]) == "default", "Hermes itself needs no open chat")
+    }
+
+    @Test func the130PluginAsksForNoMoreAccess() {
+        let widgets = AppPlugin.widgets
+        #expect(widgets.capabilities["1.3.0"] == widgets.capabilities["1.2.2"], "a published 1.3.0 updates quietly")
+    }
+
     @Test func anOlderCopyThatsOffIsReplacedOff() async {
         let survey = await survey(["default": [row("hermes-app-widgets", version: AppPlugin.widgets.version)],
                                    "ada": [row("hermes-app-widgets", version: "1.1.1", status: "not enabled")]])

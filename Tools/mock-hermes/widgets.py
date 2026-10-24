@@ -7,10 +7,13 @@ keys.remove, keys.list and status. Signed answers are checked for real (P-256 in
 
 Turns run over the API server's runs (server.py: the stored tool row has the whole result, the
 ``tool.completed`` event a 500-character preview) and over the socket (chats.py: ``tool.complete``
-carries the result, as with tool progress on), so both of the app's paths get payloads the real way.
+carries the result, as with tool progress on; Bot Chats too, through backend.py's ``run_turn``, their
+widgets the Bot's), so both of the app's paths get payloads the real way.
 Examples come from the app's bundled spec, moved to now (``as_of`` and every time in them).
 
 Words in a message:
+  weather ("Weather today?")   what an agent told about widgets does (plugin 1.3.0): looks the forecast
+                               up, reads widget_examples("weather"), answers one sentence and the card
   widgets / widgets 2 …        every example, three per reply, page by page
   widget <type>                that type's examples ("widget checklist", "widget stack"…)
   widget publish               an approval that needs no Face ID (a reversible post)
@@ -24,6 +27,10 @@ Words in a message:
   widget invalid               a payload missing a required field (shown as text, with why)
   widget suggestions           a reply ending in suggested follow-ups
   [widget <id> rev <n>] …      an answer: claim it (first answer wins, a repeated mid replays), then act
+
+Over the socket, a chat the app hasn't marked (``/app-widgets session``) gets each directive's
+``fallback_text`` instead, as the plugin's ``transform_llm_output`` does: that's how an unmarked chat
+reads on a real gateway.
 
 In a Bot group chat the app marked (``/app-widgets room``), "widget …" makes Ops answer with the
 widget as an inline block, the way the plugin writes it for rooms; answers there are claimed alike.
@@ -50,7 +57,7 @@ from datetime import date, datetime, timedelta
 
 HERE = pathlib.Path(__file__).resolve().parent
 EXAMPLES = HERE.parent.parent / "Packages/HermesKit/Sources/HermesKit/Widgets/Spec/examples"
-VERSION = "1.2.2"
+VERSION = "1.3.0"
 ID_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 RESOLUTIONS = ("done", "failed", "rejected", "cancelled", "expired", "elsewhere")
 BUILT_IN = {"choice": {"answer"}, "form": {"submit", "cancel"}, "checklist": {"check"}, "control": {"set"},
@@ -627,12 +634,28 @@ def command(raw):
 # ---------------------------------------------------------------- scripts
 
 
+WEATHER = re.compile(r"\b(weather|forecast)\b")
+
+
 def matches(text):
-    return ENABLED["on"] and (text.lstrip().startswith("[widget ") or re.search(r"\bwidgets?\b", text.lower()) is not None)
+    lower = text.lower()
+    return ENABLED["on"] and (text.lstrip().startswith("[widget ") or re.search(r"\bwidgets?\b", lower) is not None
+                              or WEATHER.search(lower) is not None)
 
 
-def script(text, session=""):
-    """A turn as steps: ("tool", args, result JSON) and ("text", words)."""
+def examples_result(kind):
+    """``widget_examples(type)``: the type's catalogue entry and its examples as tool input."""
+    catalog = json.loads((EXAMPLES.parent / "catalog.json").read_text())
+    entry = next((t for t in catalog["types"] if t["type"] == kind), {})
+    return dump({"type": kind, "summary": entry.get("summary"), "use": entry.get("use"), "avoid": entry.get("avoid"),
+                 "limits": entry.get("limits"), "fallback": entry.get("fallback"),
+                 "examples": [raw for _, raw in examples(kind)[:1]],
+                 "note": "Examples are tool input: no id, rev or producer; fallback_text is optional."})
+
+
+def script(text, session="", producer=None):
+    """A turn as steps: ("tool", args, result JSON[, tool name]) and ("text", words). ``producer`` is
+    the Bot whose turn it is (a Bot Chat), as the plugin stamps it from the profile."""
     stripped = text.strip()
     if stripped.startswith("[widget "):
         return answer_script(stripped)
@@ -640,6 +663,8 @@ def script(text, session=""):
     steps = []
 
     def create(raw):
+        if producer and "__producer" not in raw:
+            raw = {**raw, "__producer": producer}
         outcome = op_create(raw, session)
         shown = {k: v for k, v in raw.items() if k != "__producer"}
         steps.append(("tool", {"op": "create", "payload": shown}, dump(outcome)))
@@ -653,6 +678,20 @@ def script(text, session=""):
         steps.append(("tool", {"op": "create", "payload": raw}, dump(result(payload))))
         return payload
 
+    if WEATHER.search(lower) and re.search(r"\bwidgets?\b", lower) is None:
+        # "Weather today?": the forecast looked up, the type's examples read before its first use, then
+        # one sentence that says what matters and the card (the plugin's prompt section, 1.3.0).
+        _, raw = examples("weather")[0]
+        # Today, not the example's day (its times are already moved to now).
+        weekday = now().strftime("%A")
+        raw["fallback_text"] = (raw.get("fallback_text") or "").replace(raw.get("subtitle") or "\0", weekday)
+        raw["subtitle"] = weekday
+        place = (raw.get("place") or {}).get("name") or raw.get("title")
+        steps.append(("tool", {"query": f"{place} weather today hourly"},
+                      f"{place} today: {raw['now']['temp']}°, partly cloudy, rain likely this afternoon.", "web_search"))
+        steps.append(("tool", {"type": "weather"}, examples_result("weather"), "widget_examples"))
+        payload = create(raw)
+        return steps + [("text", "Mild for now, with rain likely later today, so take an umbrella.\n\n" + directive(payload))]
     if "fence" in lower:
         _, raw = examples("metric")[0]
         block = json.dumps({**raw, "id": "w_fence00001", "rev": 1}, indent=2, ensure_ascii=False)
@@ -842,14 +881,15 @@ def play_run(run, gateway):
         if kind == "sleep":
             time.sleep(rest[0])
         elif kind == "tool":
-            args, outcome = rest
+            args, outcome, *named = rest
+            name = named[0] if named else "widget"
             call = f"call_{uuid.uuid4().hex[:8]}"
             gateway.add_message(sid, "assistant", "", finish_reason="tool_calls",
-                                tool_calls=[{"id": call, "type": "function", "function": {"name": "widget", "arguments": json.dumps(args)}}])
-            run.emit("tool.started", tool="widget", preview=args.get("op"))
+                                tool_calls=[{"id": call, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}])
+            run.emit("tool.started", tool=name, preview=args.get("op") or args.get("type") or args.get("query"))
             time.sleep(0.3)
-            gateway.add_message(sid, "tool", outcome, tool_call_id=call, tool_name="widget")
-            run.emit("tool.completed", tool="widget", duration=0.3, error=False, preview=outcome[:500])
+            gateway.add_message(sid, "tool", outcome, tool_call_id=call, tool_name=name)
+            run.emit("tool.completed", tool=name, duration=0.3, error=False, preview=outcome[:500])
         else:
             out, _ = gateway.stream_text(run, rest[0], chunk=8, delay=0.015)
             gateway.add_message(sid, "assistant", out, finish_reason="stop")
@@ -875,14 +915,53 @@ def play_socket(sid, text):
         if kind == "sleep":
             time.sleep(rest[0])
         elif kind == "tool":
-            args, outcome = rest
-            if not C.tool(sid, stored, "widget", args, 0.3, context=args.get("op"), result=outcome):
+            args, outcome, *named = rest
+            name = named[0] if named else "widget"
+            if not C.tool(sid, stored, name, args, 0.3, context=args.get("op") or args.get("type") or args.get("query"),
+                          result=outcome):
                 return C.finish(sid, stored, answer, status="interrupted")
         else:
-            answer = rest[0]
+            answer = rest[0] if marked(sid, stored) else as_text(rest[0])
             if not C.stream(sid, answer):
                 return C.finish(sid, stored, answer, status="interrupted")
     return C.finish(sid, stored, answer)
+
+
+def marked(*ids):
+    with LOCK:
+        return any(i in MARKED for i in ids if i)
+
+
+def as_text(words):
+    """The plugin's ``transform_llm_output`` for a chat that isn't the app's: each directive becomes
+    its widget's plain text."""
+    def text(match):
+        payload = newest_payload(match.group(1))
+        return (payload or {}).get("fallback_text") or (match.group(2) or "").replace("\\\"", "\"")
+    return re.sub(r'^::widget\{id="(w_[A-Za-z0-9]+)"(?: alt="((?:[^"\\]|\\.)*)")?[^\n]*\}$', text, words, flags=re.M)
+
+
+def play_bot_chat(sid, text):
+    """A Bot Chat (backend.py's ``run_turn``): the same turn in the Bot's own chat, its widgets the Bot's."""
+    runtime = B["RUNTIME"][sid]
+    stored = B["ensure_row"](sid)
+    profile = runtime["profile"]
+    B["begin_turn"](sid, stored, text, B["add_message"])
+    time.sleep(0.25)
+    answer = ""
+    producer = {"name": B["bot_title"](profile)[:40], "bot": "hermes" if B["PROFILES"][profile]["is_default"] else profile}
+    for kind, *rest in script(text, stored, producer):
+        if kind == "sleep":
+            time.sleep(rest[0])
+        elif kind == "tool":
+            args, outcome, *named = rest
+            B["tool"](sid, stored, named[0] if named else "widget", args, outcome, 0.3,
+                      args.get("op") or args.get("type") or args.get("query"))
+        else:
+            answer = rest[0] if marked(sid, stored) else as_text(rest[0])
+            if B["stream"](sid, answer) is False:
+                return B["finish"](sid, stored, answer, status="interrupted")
+    return B["finish"](sid, stored, answer)
 
 
 def inline_block(payload):
@@ -990,7 +1069,8 @@ def install_backend(backend_globals, chats, push=None):
         if body.get("hold"):
             HOLD[line["mid"]] = float(body["hold"])
         text = f"[widget {payload['id']} rev {payload['rev']}] {body.get('action') or 'approve'}\n{dump(line)}"
-        backend_globals["start_turn"](sid, text, chats.run_chat_turn)
+        runner = chats.run_chat_turn if backend_globals["RUNTIME"][sid].get("kind") == "chat" else backend_globals["run_turn"]
+        backend_globals["start_turn"](sid, text, runner)
         return 200, {"ok": True, "session_id": sid, "rev": payload["rev"]}
 
     methods["tools.list"] = tools_list
@@ -1002,6 +1082,16 @@ def install_backend(backend_globals, chats, push=None):
         if matches(text):
             return play_socket(sid, text)
         return original_turn(sid, text)
+
+    # Bot Chats run through backend.py's own run_turn (prompt.submit looks it up at each turn).
+    original_bot_turn = backend_globals["run_turn"]
+
+    def run_turn(sid, text):
+        if matches(text):
+            return play_bot_chat(sid, text)
+        return original_bot_turn(sid, text)
+
+    backend_globals["run_turn"] = run_turn
 
     chats.run_chat_turn = run_chat_turn
     original_discussion = chats.run_discussion

@@ -67,7 +67,10 @@ extension AppPlugin {
         words: pushWords
     )
 
-    /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.2.2 is 1.2.1
+    /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.3.0 keeps a
+    /// chat Hermes compacted into a new session the app's, says that a short question ("Weather
+    /// today?") gets its widget and tells marked chats so again, with the same access; it isn't
+    /// published yet, so the pin stays on 1.2.2 and the app copes with either. 1.2.2 is 1.2.1
     /// with its examples in a US demo world, from the repository rewritten to one commit, same
     /// access; 1.2.1 closes
     /// ways a reply could plant a widget (look-alike fences, a directive's alt), matches `for` by
@@ -79,7 +82,8 @@ extension AppPlugin {
         ref: "7cbce1b0c249112feeff2a9c370b5c2169178654", version: "1.2.2", minimumVersion: "1.2.2",
         capabilities: ["1.0.0": widgetsAccess(since111: false), "1.1.0": widgetsAccess(since111: false),
                        "1.1.1": widgetsAccess(since111: true), "1.2.0": widgetsAccess(since111: true),
-                       "1.2.1": widgetsAccess(since111: true), "1.2.2": widgetsAccess(since111: true)],
+                       "1.2.1": widgetsAccess(since111: true), "1.2.2": widgetsAccess(since111: true),
+                       "1.3.0": widgetsAccess(since111: true)],
         moments: [.ask, .whatsNew, .checklist],
         words: widgetsWords
     )

@@ -280,7 +280,10 @@ reply, "widgets 2"…), "widget <type>" shows one type's examples, "widget publi
 without Face ID, "widget lunch" one with it, "widget expiring" one that expires in 60 s, "widget
 silent" one whose first answer gets no update (Try Again), "widget private", "widget fence" (an
 agent-typed block, shown as code), "widget unknown", "widget invalid" and "widget suggestions".
-In a Bot group chat the app marked, the same words make Ops answer with an inline block. `POST
+"Weather today?" (any message with "weather" or "forecast") is what an agent told about widgets
+does: it looks the forecast up, reads the weather examples and answers one sentence and the
+weather card. Over the socket, a chat the app didn't mark gets each widget's plain text instead,
+as on a real gateway. In a Bot group chat the app marked, the same words make Ops answer with an inline block. `POST
 /api/mock/widget-answer {id?, action, device?, hold?}` answers the newest widget from another
 device; `--no-widgets` leaves the plugin out. On a simulator, enrol Face ID with `xcrun simctl
 spawn <udid> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1` (then `-p` the same name)

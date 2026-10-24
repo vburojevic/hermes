@@ -326,6 +326,27 @@ widgets.
   never opens (a Bot Chat a routine writes to) gets widgets too. Unmarked chats get
   `fallback_text` in place of directives. Gateways without Bot Mode rely on the plugin's
   `app_platforms` setting.
+- **Which profile:** a Bot Chat is marked through its own Bot's profile (the plugin survey,
+  [plugins.md](plugins.md) §2.1, says whether the plugin runs there), so a Bot with the plugin gets
+  widgets even where Hermes itself has none, and a Bot without it shows in Settings → Setup as
+  partly set up, with Install. Commands about no one chat (the signing key, marking known chats) go
+  through a profile that runs the plugin, an older copy included: Hermes itself, else such a Bot
+  through its open chat, because Hermes runs a command without a session in the profile it was
+  launched in. The plugin keeps its data in the Hermes root, so any profile's copy marks for all.
+  Where only a Bot has it, those wait until that Bot's chat opens here. A first message sent before the gateway's tool list answered marks
+  its chat anyway; a gateway without the plugin says so (4018) and nothing changes.
+- **Compaction:** Hermes compacts a long chat into a new session with a new id, often in the
+  middle of a turn, and a Bot Chat never ends, so it compacts often. From plugin 1.3.0 a session
+  Hermes compacted from a marked one is the app's too (`Widgets.ancestors`, Hermes's
+  `get_compression_lineage`), and is marked in turn. With 1.2.2 the new session was the app's only
+  once the app marked it before its next message, so a reply in the turn that compacted lost its
+  widgets, and the rules reached the agent again only at the next compaction.
+- **What the agent hears:** the prompt section (`prompt.py`) in a chat's system prompt, and in a
+  chat whose prompt was built before it was marked, the same rules once as turn context
+  (`pre_llm_call`, again whenever `REMINDER_VERSION` moves: 2 in 1.3.0). Both say that a short
+  question still gets its widget ("Weather today?" is a `weather` card); the catalogue's one-word
+  cue for weather read as a topic, and the skill used a forecast as its example of a fact for
+  prose, so a weather question came back as bullets.
 - **Inline blocks** (`WidgetSettings`): in routine deliveries on a gateway with the plugin; in
   Debug builds anywhere a delivery has them; in any reply only with Settings → Developer → Render
   Inline Widgets (`widgets.renderInline`, for the mock and tests).
@@ -358,13 +379,16 @@ widgets.
 - `WidgetPrivacyTests`: when a signature is needed, the signing input against the plugin's,
   previews, what the transcript cache keeps, and the `/app-widgets` client.
 
-The mock (`Tools/mock-hermes/widgets.py`) plays the plugin: `widget` create, update, resolve,
+The mock (`Tools/mock-hermes/widgets.py`) plays the plugin, in chats and Bot Chats alike: `widget` create, update, resolve,
 claim and get, and `/app-widgets` session, room, get and keys, with the plugin's results and
 messages, signatures checked for real. Its words are in its docstring and
 [development.md](development.md): "widgets" pages through every example, "widget <type>",
 "widget publish" (an approval without Face ID), "widget lunch" (with it), "widget expiring",
 "widget silent" (Try Again), "widget private", "widget fence", "widget unknown", "widget
-invalid", "widget suggestions", and in a marked room the same words. `POST
+invalid", "widget suggestions", "Weather today?" (a lookup, `widget_examples`, then the weather card,
+as an agent with plugin 1.3.0's rules answers), and in a marked room the same words. Over the socket
+a chat the app didn't mark gets each widget's `fallback_text`, as the plugin's
+`transform_llm_output` gives it. `POST
 /api/mock/widget-answer {id, action}` answers from another device. `--no-widgets` leaves the
 plugin out. Every payload, update and resolution the mock makes passes the plugin's own validator.
 
@@ -374,6 +398,7 @@ plugin out. Every payload, update and resolution the mock makes passes the plugi
 Against the mock (`backend.py --gateway-port …`; the words are in §13), on iPhone, iPad and Mac, in
 light, dark and Increase Contrast:
 
+- "Weather today?" in a Bot Chat and in a chat: one sentence, then the weather card.
 - "widgets 1" … "widgets 35": every example draws as a card, none as text; the gallery
   (Settings → Developer → Widgets) matches them at both densities.
 - "widget publish": Publish → your action bubble → "Publish · done" with who and when, the buttons
