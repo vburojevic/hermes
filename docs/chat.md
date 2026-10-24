@@ -314,8 +314,8 @@ HermesKit, read from the turn itself, so it reads the same live and from history
 Tapping the row opens the turn's changes where the Inspector is. Beside the chat (Mac, iPad
 landscape) that's the Changed Files tab ([inspector.md](inspector.md) §2.7); elsewhere (iPhone,
 iPad portrait) the Changes sheet (`TurnChangesSheet`): the files, each once, with its folder
-shortened against the turn's other files ("scripts", "…/Sources/Chat"), what happened to it and
-its +/−. Tapping one shows its diff: old and new line numbers, the lines in their language's
+shortened against the turn's other files ("scripts", "…/Sources/Chat"), what happened to it as a
+tag (New, Deleted, Renamed from…, Written whole) and its +/− (`fileChangeRow`). Tapping one shows its diff: old and new line numbers, the lines in their language's
 colours (`CodeHighlighter`), gaps that say how many unchanged lines they skip, lines that scroll
 sideways or wrap (the toolbar's Wrap Lines, remembered), and Open, which opens the file read-only
 in the chat's Inspector through the gateway (as `GatewayFileLink` does, never through the system).

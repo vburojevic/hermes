@@ -220,30 +220,39 @@ struct TurnChangesList: View {
     }
 }
 
-/// One file of a turn's changes (`fileChangeRow`).
+/// One file of a turn's changes (`fileChangeRow`): its name, what happened to it as a tag, its
+/// folder, its net +/−, and a chevron unless it's the one selected.
 struct ChangedFileRow: View {
     let file: ChangedFile
     var isSelected = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 14))
+                .font(.system(size: 17))
                 .foregroundStyle(symbolColor)
-                .frame(width: 18)
+                .frame(width: 21)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(file.name)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Theme.primaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(Theme.tertiaryText)
-                        .lineLimit(1)
-                        .truncationMode(.head)
+                if kind != nil || detail != nil {
+                    HStack(spacing: 6) {
+                        if let kind {
+                            TagLabel(title: kind, isSmall: true)
+                                .layoutPriority(1)
+                        }
+                        if let detail {
+                            Text(detail)
+                                .font(.caption)
+                                .foregroundStyle(Theme.tertiaryText)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,7 +269,13 @@ struct ChangedFileRow: View {
                         .foregroundStyle(Theme.warning)
                 }
             }
-            .font(.footnote.monospacedDigit())
+            .font(.footnote.monospacedDigit().weight(.medium))
+            if !isSelected {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.placeholderText)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
@@ -286,22 +301,28 @@ struct ChangedFileRow: View {
         }
     }
 
-    /// "New · Sources/Chat", "Renamed from old.py", the folder.
-    private var detail: String? {
-        let folder = file.folder.isEmpty ? nil : file.folder
-        let kind: String? = switch file.change {
+    /// What happened to it, as its tag: New, Deleted, Renamed from old.py, Written whole.
+    private var kind: String? {
+        switch file.change {
         case .created: String(localized: "New")
         case .deleted: String(localized: "Deleted")
         case .renamed(let from): String(localized: "Renamed from \(ProjectPath.lastComponent(from))")
         case .rewritten: String(localized: "Written whole")
-        case .modified: file.edits > 1 ? String(localized: "\(file.edits) edits") : nil
+        case .modified: nil
         }
-        let parts = [kind, folder].compactMap { $0 }
+    }
+
+    /// "3 edits · Sources/Chat", or the folder.
+    private var detail: String? {
+        let folder = file.folder.isEmpty ? nil : file.folder
+        let edits: String? = file.change == .modified && file.edits > 1 ? String(localized: "\(file.edits) edits") : nil
+        let parts = [edits, folder].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private var spoken: String {
         var parts = [file.name]
+        if let kind { parts.append(kind) }
         if let detail { parts.append(detail) }
         if file.isBinary {
             parts.append(String(localized: "binary"))

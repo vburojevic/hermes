@@ -344,6 +344,8 @@ struct TagLabel: View {
     let title: String
     var symbol: String?
     var style: Style = .neutral
+    /// 18 pt high, for a tag inside a list row's detail line (`fileChangeRow`).
+    var isSmall = false
 
     private var foreground: Color {
         switch style {
@@ -376,8 +378,8 @@ struct TagLabel: View {
                 .lineLimit(1)
         }
         .foregroundStyle(foreground)
-        .padding(.horizontal, 7)
-        .frame(minHeight: 20)
+        .padding(.horizontal, isSmall ? 6 : 7)
+        .frame(minHeight: isSmall ? 18 : 20)
         .background(fill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
