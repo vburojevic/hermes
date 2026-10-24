@@ -1,3 +1,4 @@
 # Release notes come from commit subjects (Scripts/release_notes.py). When a subject reaches main
 # in the wrong words, its notes line is corrected here: "<commit> <subject>", one per line.
 9f9f7a4 Appearance: the launch screen and the window behind Hermes follow Dark Mode explicitly
+962b90f Bot Chats: a Bot answers with the widget its answer calls for, so "Weather today?" gets the weather card
