@@ -471,7 +471,8 @@ page, starts `npm run dev`, opens it in the Preview and drives it (`preview.act`
 "pricing" adds an artifact version; "terminal" reads the Terminal. Mock-only: `POST
 /api/mock/inspector/screen {action: evict|stop|start}` (close codes 4000 and 4001; Start Screen
 in the app is `display.start`), `{action: uninstall|install|unsupported|supported}` (the Screen's
-setup states, [setup.md](setup.md) §4.21),
+setup states, [setup.md](setup.md) §4.21), `GET …/screen/keys` (the keys the screen received
+during Take Control, and what they typed into its sign-in form; `POST` clears them),
 `…/gh {authenticated, available}`, `…/touch {path, text}` (a change on the gateway), `…/dev
 {running}`, `…/pace {seconds}` (slower driving, for screenshots) and `…/turn {session, text}`.
 

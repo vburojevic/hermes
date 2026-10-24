@@ -9,7 +9,9 @@
 - The Bot Screen: `display.status`, `display.start`, `display.observe` (a single-use ticket),
   `display.lease.acquire` / `release` (broadcast as `display.lease`), and `WS
   /api/display/ws?display_ticket=` speaking RFB 3.8 with a drawn desktop. Pointer input from the
-  lease holder leaves dots. Starting and stopping broadcast `display.status`, as Hermes's watcher does. It runs from the start, so a chat with no Inspector tabs has a Screen to open.
+  lease holder leaves dots. Keys from the lease holder are logged and typed into the sign-in form's
+  field that was clicked last (BackSpace deletes, Tab moves on), drawn as a block per character.
+  Starting and stopping broadcast `display.status`, as Hermes's watcher does. It runs from the start, so a chat with no Inspector tabs has a Screen to open.
 - A dev server on `127.0.0.1:5173` (`--dev-port`) serving the beta sign-up page.
 
 Scripted chat turns (on top of chats.py) by message content:
@@ -27,6 +29,8 @@ Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
                                   {action: uninstall|install}   the host without TigerVNC and Xfce, or with
                                   {action: unsupported|supported} a macOS host (no Screen), or Linux again
+  GET  /api/mock/inspector/screen/keys                         the keys the screen received, and its fields
+  POST /api/mock/inspector/screen/keys                         clears both
   POST /api/mock/inspector/gh {authenticated: bool, available: bool}
   POST /api/mock/inspector/touch {path, text}                  a change on the "gateway" (conflicts)
   POST /api/mock/inspector/dev {running: bool}                 stop or start the dev server
@@ -160,6 +164,8 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
     routes[("GET", "/api/git/review/commit-context")] = commit_context
     routes[("GET", "/api/git/gh-auth")] = lambda q, b: (200, dict(STATE["gh"]))
     routes[("POST", "/api/mock/inspector/screen")] = mock_screen
+    routes[("GET", "/api/mock/inspector/screen/keys")] = lambda q, b: (200, key_log())
+    routes[("POST", "/api/mock/inspector/screen/keys")] = clear_keys
     routes[("POST", "/api/mock/inspector/gh")] = mock_gh
     routes[("POST", "/api/mock/inspector/touch")] = mock_touch
     routes[("POST", "/api/mock/inspector/dev")] = mock_dev
@@ -801,7 +807,7 @@ def run_rewrite_turn(sid, text):
 # ---------------------------------------------------------------- the Bot Screen
 
 DISPLAY = {"running": True, "installed": True, "supported": True, "lease": {"holder": "agent", "viewer_id": None, "reason": "", "epoch": 0, "since": time.time()},
-           "tickets": {}, "viewers": set(), "sockets": [], "dots": []}
+           "tickets": {}, "viewers": set(), "sockets": [], "dots": [], "keys": [], "fields": ["", ""], "field": 0}
 WIDTH, HEIGHT = 1280, 800
 
 
@@ -913,6 +919,50 @@ def mock_screen(query, body):
     return 200, display_snapshot()
 
 
+# Keysym names for the key log (X11's keysymdef.h).
+KEYSYM_NAMES = {0xFF08: "BackSpace", 0xFF09: "Tab", 0xFF0D: "Return", 0xFF1B: "Escape", 0xFFFF: "Delete",
+                0xFF50: "Home", 0xFF51: "Left", 0xFF52: "Up", 0xFF53: "Right", 0xFF54: "Down", 0xFF55: "Prior",
+                0xFF56: "Next", 0xFF57: "End", 0xFFE1: "Shift_L", 0xFFE3: "Control_L", 0xFFE9: "Alt_L"}
+FIELD_TOPS = (200, 252)
+
+
+def keysym_name(keysym):
+    if keysym in KEYSYM_NAMES:
+        return KEYSYM_NAMES[keysym]
+    if 0xFFBE <= keysym <= 0xFFC9:
+        return f"F{keysym - 0xFFBE + 1}"
+    code = keysym - 0x01000000 if keysym >= 0x01000000 else keysym
+    return chr(code) if 0x20 <= code < 0x110000 else hex(keysym)
+
+
+def key_event(keysym, down):
+    """A KeyEvent from the lease holder: logged, and typed into the focused field on the way down."""
+    DISPLAY["keys"].append({"keysym": f"0x{keysym:04x}", "name": keysym_name(keysym), "down": down, "at": round(time.time(), 3)})
+    del DISPLAY["keys"][:-500]
+    if keysym in (0xFFE3, 0xFFE4):
+        DISPLAY["control"] = down
+    if not down or DISPLAY.get("control"):
+        return
+    fields, focus = DISPLAY["fields"], DISPLAY["field"]
+    if keysym == 0xFF08:
+        fields[focus] = fields[focus][:-1]
+    elif keysym == 0xFF09:
+        DISPLAY["field"] = (focus + 1) % len(fields)
+    elif keysym < 0xFF00 or keysym >= 0x01000000:
+        code = keysym - 0x01000000 if keysym >= 0x01000000 else keysym
+        if code >= 0x20:
+            fields[focus] = (fields[focus] + chr(code))[:48]
+
+
+def key_log():
+    return {"keys": DISPLAY["keys"], "fields": DISPLAY["fields"], "field": DISPLAY["field"]}
+
+
+def clear_keys(query, body):
+    DISPLAY.update(keys=[], fields=["", ""], field=0)
+    return 200, key_log()
+
+
 def close_sockets(code, reason):
     for sock in list(DISPLAY["sockets"]):
         sock.close(code, reason)
@@ -1004,6 +1054,11 @@ def draw_desktop():
         rect(170, top, 420, 40, (0x9A, 0x96, 0x94, 0xFF))
         rect(172, top + 2, 416, 36, (0xFF, 0xFF, 0xFF, 0xFF))
     rect(170, 312, 160, 40, (0xF6, 0x8C, 0x2F, 0xFF))
+    # What was typed: a block per character, a space as a gap.
+    for index, top in enumerate(FIELD_TOPS):
+        for i, character in enumerate(DISPLAY["fields"][index]):
+            if not character.isspace():
+                rect(182 + i * 8, top + 12, 6, 16, (0x22, 0x22, 0x22, 0xFF))
     for x, y in DISPLAY["dots"][-40:]:
         rect(x - 4, y - 4, 8, 8, (0x2D, 0x15, 0xD7, 0xFF))
     return bytes(pixels)
@@ -1070,19 +1125,29 @@ def display_socket(handler, query):
                 blink = int(time.time() * 2) % 2
                 full = draw_desktop()
                 if blink:
+                    # The caret, after the focused field's text.
                     full = bytearray(full)
-                    for row in range(214, 230):
-                        start = (row * WIDTH + 182) * 4
+                    top = FIELD_TOPS[DISPLAY["field"]]
+                    x = min(182 + len(DISPLAY["fields"][DISPLAY["field"]]) * 8, 584)
+                    for row in range(top + 14, top + 30):
+                        start = (row * WIDTH + x) * 4
                         full[start:start + 8] = b"\x11\x11\x11\xff" * 2
                     full = bytes(full)
                 peer.send(frame_update(170, 200, 440, 160, full))
         elif kind == 4:
-            peer.read(7)
+            down, keysym = struct.unpack(">BxxI", peer.read(7))
+            lease = DISPLAY["lease"]
+            if lease["holder"] == "human" and lease.get("viewer_id") == viewer:
+                key_event(keysym, bool(down))
         elif kind == 5:
             buttons, x, y = struct.unpack(">BHH", peer.read(5))
             lease = DISPLAY["lease"]
             if buttons & 1 and lease["holder"] == "human" and lease.get("viewer_id") == viewer:
                 DISPLAY["dots"].append((x, y))
+                # A click in a field focuses it.
+                for index, top in enumerate(FIELD_TOPS):
+                    if 170 <= x < 590 and top <= y < top + 40:
+                        DISPLAY["field"] = index
         elif kind == 6:
             length = struct.unpack(">xxxI", peer.read(7))[0]
             peer.read(length)

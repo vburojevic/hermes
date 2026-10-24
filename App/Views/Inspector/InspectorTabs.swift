@@ -415,8 +415,8 @@ struct ScreenTabView: View {
     let inspector: InspectorModel
     let screen: ScreenController
 
-    @State private var keyboardText = ""
-    @FocusState private var typing: Bool
+    /// The keyboard is up for the screen (Take Control, a tap on it).
+    @State private var typing = false
 
     var body: some View {
         Group {
@@ -486,29 +486,18 @@ struct ScreenTabView: View {
                     .padding(.bottom, 16)
                     .padding(.horizontal, 16)
                 if screen.personInControl {
-                    TextField("", text: $keyboardText)
-                        .focused($typing)
-                        .opacity(0.01)
+                    ScreenKeyInput(screen: screen, isActive: $typing)
                         .frame(width: 1, height: 1)
-                        .onChange(of: keyboardText) { _, text in
-                            guard !text.isEmpty else { return }
-                            screen.type(text)
-                            keyboardText = ""
-                        }
-                        .onSubmit { screen.key(0xFF0D); typing = true }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
-            #if os(macOS)
-            .focusable(screen.personInControl)
-            .onKeyPress(phases: .down) { press in
-                guard screen.personInControl else { return .ignored }
-                if let keysym = Self.keysym(press.key) { screen.key(keysym) } else { screen.type(press.characters) }
-                return .handled
-            }
-            #endif
+        }
+        .onChange(of: screen.personInControl) { _, inControl in
+            if !inControl { typing = false }
         }
     }
 
@@ -555,28 +544,12 @@ struct ScreenTabView: View {
         let scale = fitted.width > 0 ? screen.size.width / fitted.width : 1
         return CGPoint(x: max(0, (point.x - origin.x) * scale), y: max(0, (point.y - origin.y) * scale))
     }
-
-    #if os(macOS)
-    private static func keysym(_ key: KeyEquivalent) -> UInt32? {
-        switch key {
-        case .return: 0xFF0D
-        case .delete: 0xFF08
-        case .tab: 0xFF09
-        case .escape: 0xFF1B
-        case .leftArrow: 0xFF51
-        case .upArrow: 0xFF52
-        case .rightArrow: 0xFF53
-        case .downArrow: 0xFF54
-        default: nil
-        }
-    }
-    #endif
 }
 
 /// `screenBar`: live, who's in control, Take Control or Hand Back. Clear glass over the video.
 private struct ScreenBar: View {
     let screen: ScreenController
-    var typing: FocusState<Bool>.Binding
+    @Binding var typing: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -593,7 +566,7 @@ private struct ScreenBar: View {
             }
             Button {
                 Task {
-                    if screen.personInControl { await screen.handBack() } else { await screen.takeControl(); typing.wrappedValue = true }
+                    if screen.personInControl { await screen.handBack() } else { await screen.takeControl(); typing = true }
                 }
             } label: {
                 Text(screen.personInControl ? "Hand Back" : "Take Control")

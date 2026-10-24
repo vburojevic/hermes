@@ -291,17 +291,12 @@ final class ScreenController {
         pointer(at: point, buttons: 0)
     }
 
-    func type(_ text: String) {
-        for character in text {
-            guard let keysym = RFBMessages.keysym(for: character) else { continue }
-            key(keysym)
-        }
-    }
-
-    func key(_ keysym: UInt32) {
+    /// Keys from the person's keyboard (`ScreenKeyboard`), in order.
+    func send(_ strokes: [ScreenKeyboard.Stroke]) {
         guard personInControl else { return }
-        socket?.send(.data(RFBMessages.key(keysym, down: true))) { _ in }
-        socket?.send(.data(RFBMessages.key(keysym, down: false))) { _ in }
+        for stroke in strokes {
+            socket?.send(.data(RFBMessages.key(stroke.keysym, down: stroke.down))) { _ in }
+        }
     }
 
     private func releaseButtons() {

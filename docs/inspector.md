@@ -248,6 +248,14 @@ the whole disk.
   `display.lease.release {viewer_id}`. `display.lease`, broadcast to every client, moves the
   controls on every device ("Live · Someone else is in control"). Taps, drags and keys reach the
   screen only while this device holds the lease.
+- **Keys** during Take Control (`ScreenKeyInput`, `ScreenKeyboard`): Take Control and a tap on the
+  screen bring up the keyboard. What's typed goes to the screen as X11 keysyms, each pressed and
+  released (RFB KeyEvent): text as typed, Backspace as BackSpace (also with nothing typed yet, so
+  it deletes what's on the screen), Return, Tab, Escape, Delete, the arrows, Home, End, Page Up and
+  Down and F1–F12 where the keyboard has them, and ⌃ with a letter as Control and the letter.
+  Shift, ⌃ and ⌥ wrap the keys that aren't text. On iPad a held hardware key stays down on the
+  screen until it comes up, so the screen repeats it; on the Mac each repeat is sent. ⌘ shortcuts stay the app's. Nothing is corrected
+  on the way: no autocorrect, capitals, smart quotes or dashes, or predictions.
 - Close codes: 4000 someone else took control, 4001 the desktop stopped, 4401 the ticket expired
   (the app asks for another once), 4403 viewing isn't allowed from here. Each closed state offers
   Reconnect. The socket closes when the tab leaves the screen.
@@ -384,6 +392,10 @@ rebinding) isn't caught.
 - Terminal streams live output and Stop ends the process.
 - Screen shows the live desktop, and Take Control / Hand Back move the lease (the mock's `POST
   /api/mock/inspector/screen` with `evict` and `stop` shows 4000 and 4001).
+- During Take Control, typing into a field on the screen and Backspace deleting it reach the
+  screen (the mock types into its sign-in form and logs every key at `GET
+  /api/mock/inspector/screen/keys`), from the iPhone keyboard and a hardware keyboard on iPad and
+  Mac, with nothing autocorrected.
 - In a Bot Chat with no Inspector tabs, the ··· menu's Open Screen opens the running Screen (on
   iPhone, the sheet rises with it). Stopped (`stop`), the tab offers Start Screen, and Start
   Screen brings the desktop up; `uninstall` shows the install line; `unsupported` takes Open
