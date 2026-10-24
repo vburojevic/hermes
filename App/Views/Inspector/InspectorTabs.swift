@@ -419,6 +419,38 @@ struct ScreenTabView: View {
     @FocusState private var typing: Bool
 
     var body: some View {
+        Group {
+            if let setup = shownSetup {
+                // Not running, not installed, or no screen on this host (`docs/setup.md` §4.21).
+                SetupMessage(status: setup, symbol: InspectorTab.Kind.screen.symbol,
+                             check: { await screen.refreshStatus(); await connectIfRunning() },
+                             fix: { Task { await screen.start() } })
+                    .background(Theme.canvas)
+            } else {
+                live
+            }
+        }
+        .task {
+            await screen.refreshStatus()
+            await connectIfRunning()
+        }
+        .onDisappear { screen.disconnect() }
+    }
+
+    /// The setup in place of the screen while it doesn't run, with Hermes's words when Start
+    /// Screen was refused. Nothing while it starts, so the spinner shows.
+    private var shownSetup: SetupStatus? {
+        guard !screen.isStarting, screen.phase != .live, var setup = screen.setup else { return nil }
+        if let error = screen.startError { setup.detail = error }
+        return setup
+    }
+
+    /// Without a status (no answer), it tries anyway and shows why it couldn't.
+    private func connectIfRunning() async {
+        if screen.status == nil || screen.isAvailable { await screen.connect() }
+    }
+
+    private var live: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Hermes's screen on \(inspector.gatewayMachineName)")
                 .font(.footnote)
@@ -478,11 +510,6 @@ struct ScreenTabView: View {
             }
             #endif
         }
-        .task {
-            await screen.refreshStatus()
-            await screen.connect()
-        }
-        .onDisappear { screen.disconnect() }
     }
 
     @ViewBuilder

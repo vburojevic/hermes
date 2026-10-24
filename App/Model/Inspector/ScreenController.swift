@@ -19,18 +19,11 @@ final class ScreenController {
         case closed(String)
     }
 
-    struct Status: Equatable {
-        var supported: Bool
-        var installed: Bool
-        var running: Bool
-        var geometry: String?
-        var holder: String
-        var viewerHash: String?
-        var reason: String?
-    }
-
     @ObservationIgnored private weak var inspector: InspectorModel?
-    private(set) var status: Status?
+    private(set) var status: BotScreenStatus?
+    /// Starting the screen (`display.start`), and why it didn't.
+    private(set) var isStarting = false
+    var startError: String?
     private(set) var phase = Phase.idle
     private(set) var image: CGImage?
     private(set) var size = CGSize.zero
@@ -64,6 +57,13 @@ final class ScreenController {
     /// The screen is worth a tab: the gateway can run one and it's running.
     var isAvailable: Bool { status?.running == true }
 
+    /// What's missing while it doesn't run: stopped, not installed, or no screen on this host
+    /// (`docs/setup.md` §4.21).
+    var setup: SetupStatus? {
+        guard let status, let inspector else { return nil }
+        return GatewaySetup.screen(status, profile: inspector.profile, gatewayName: inspector.gatewayMachineName)
+    }
+
     private static func hash(_ viewerID: String) -> String {
         SHA256.hash(data: Data(viewerID.utf8)).map { String(format: "%02x", $0) }.joined().prefix(12).description
     }
@@ -78,22 +78,32 @@ final class ScreenController {
 
     /// `display.lease`, broadcast to every client when control moves.
     func leaseChanged(_ payload: JSONValue) {
-        guard let lease = payload["lease"], status != nil else { return }
-        status?.holder = lease["holder"]?.stringValue ?? "agent"
-        status?.viewerHash = lease["viewer_hash"]?.stringValue
-        status?.reason = lease["reason"]?.stringValue
+        status?.apply(lease: payload)
     }
 
     private func apply(status json: JSONValue) {
-        status = Status(
-            supported: json["supported"]?.boolValue ?? false,
-            installed: json["installed"]?.boolValue ?? false,
-            running: json["running"]?.boolValue ?? false,
-            geometry: json["geometry"]?.stringValue,
-            holder: json["lease"]?["holder"]?.stringValue ?? "agent",
-            viewerHash: json["lease"]?["viewer_hash"]?.stringValue,
-            reason: json["lease"]?["reason"]?.stringValue
-        )
+        status = BotScreenStatus(json: json)
+    }
+
+    /// Start Screen (`display.start`): Hermes starts the Bot's desktop and answers with its
+    /// status, or says why it can't (missing packages, too little memory).
+    func start() async {
+        guard let roster = inspector?.workspace?.roster, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+        do {
+            let result = try await roster.request("display.start", profileParams, timeout: .seconds(45))
+            apply(status: result)
+            startError = nil
+        } catch {
+            startError = error.localizedDescription
+            await refreshStatus()
+            return
+        }
+        if isAvailable {
+            phase = .idle
+            await connect()
+        }
     }
 
     private var profileParams: [String: JSONValue] {
@@ -162,6 +172,8 @@ final class ScreenController {
         } catch {
             guard attempt == attempts else { return }
             phase = .closed(error.localizedDescription)
+            // Refused because it isn't running: the tab says so, with Start Screen.
+            await refreshStatus()
         }
     }
 
@@ -221,6 +233,8 @@ final class ScreenController {
         case 4000:
             phase = .closed(String(localized: "Someone else took control of the screen."))
         case 4001:
+            // The tab shows Start Screen in its place.
+            status?.running = false
             phase = .closed(String(localized: "Hermes's screen stopped."))
         case 4401 where !retriedTicket:
             // The ticket expired on the way: ask for another once.

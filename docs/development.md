@@ -464,11 +464,14 @@ And the Inspector (`Tools/mock-hermes/inspector.py`): a "Hermes Site" project
 (`/Users/studio/Code/hermes-site`) with files (`/api/fs/*`), git status and review with four
 changed files, staging, commits, pushes and pull requests (`/api/git/*`), a dev server on
 `127.0.0.1:5173` (`--dev-port`) serving the beta sign-up page, `preview.restart`, `llm.oneshot`
-drafts, and the Bot Screen over RFB (`display.*`, `WS /api/display/ws`) with the lease. Its chat
+drafts, and the Bot Screen over RFB (`display.*`, `WS /api/display/ws`) with the lease, running from
+the start so a Bot Chat with no Inspector tabs has one to open from its ··· menu. Its chat
 "Pricing card" has two versions of an HTML artifact. In a chat, "… sign-up" or "… beta" writes the
 page, starts `npm run dev`, opens it in the Preview and drives it (`preview.act`, `preview.read`);
 "pricing" adds an artifact version; "terminal" reads the Terminal. Mock-only: `POST
-/api/mock/inspector/screen {action: evict|stop|start}` (close codes 4000 and 4001),
+/api/mock/inspector/screen {action: evict|stop|start}` (close codes 4000 and 4001; Start Screen
+in the app is `display.start`), `{action: uninstall|install|unsupported|supported}` (the Screen's
+setup states, [setup.md](setup.md) §4.21),
 `…/gh {authenticated, available}`, `…/touch {path, text}` (a change on the gateway), `…/dev
 {running}`, `…/pace {seconds}` (slower driving, for screenshots) and `…/turn {session, text}`.
 

@@ -93,6 +93,8 @@ public struct GatewaySetupFacts: Sendable, Equatable {
     public var vaultMissing = false
     /// Why a chat couldn't make this app Hermes's browser, last time it tried (`docs/web.md` §6).
     public var inAppBrowserRefusal: BrowserControlRefusal?
+    /// `display.status` for the gateway's default profile: whether its host can give a Bot a screen.
+    public var botScreen: BotScreenStatus?
 
     public init(gatewayName: String, gatewayOnline: Bool, botMode: BotMode) {
         self.gatewayName = gatewayName
@@ -120,6 +122,7 @@ public enum GatewaySetup {
         public static let groupChats = "groupChats"
         public static let priority = "priority"
         public static let botReplies = "botReplies"
+        public static let botScreen = "botScreen"
     }
 
     public enum Docs {
@@ -135,6 +138,7 @@ public enum GatewaySetup {
         public static let cron = HermesDocs.page("user-guide/features/cron")
         public static let cronDelivery = URL(string: "https://hermes-agent.nousresearch.com/docs/user-guide/features/cron#delivery-options")!
         public static let desktop = HermesDocs.page("user-guide/desktop")
+        public static let botScreen = HermesDocs.page("user-guide/features/bot-screen")
         /// Hermes's fix for deliveries dying with the sender's chat (upstream, not merged yet).
         public static let botDeliveryFix = URL(string: "https://github.com/NousResearch/hermes-agent/pull/136220")!
     }

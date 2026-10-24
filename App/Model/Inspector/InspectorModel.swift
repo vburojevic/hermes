@@ -291,10 +291,8 @@ final class InspectorModel {
         editors[id] = nil
         trees[id] = nil
         reviews[id] = nil
-        if id.hasPrefix("screen:") {
-            screen?.disconnect()
-            screen = nil
-        }
+        // The controller stays: its status is what the Bot's ··· menu reads for Open Screen.
+        if id.hasPrefix("screen:") { screen?.disconnect() }
         if id.hasPrefix("team:") { conversation?.helpers.shownTeam = nil; conversation?.helpers.shownHelper = nil }
         if id.hasPrefix("terminal:") { terminalPage = nil }
         if wasSelected {
@@ -424,6 +422,18 @@ final class InspectorModel {
         screen = controller
         return controller
     }
+
+    /// `display.status`, broadcast when a screen starts or stops on the gateway: the status is
+    /// read again (it's per Bot, and the broadcast names a Hermes home, not a Bot).
+    func screenStatusChanged() {
+        guard let screen else { return }
+        Task { await screen.refreshStatus() }
+    }
+
+    /// Open Screen in the Bot's ··· menu (`docs/inspector.md` §2.6): wherever the gateway can give
+    /// the Bot a screen, whether or not this chat has Inspector tabs, so the iPhone, whose
+    /// Inspector otherwise opens only from the pill, can reach it.
+    var offersOpenScreen: Bool { BotScreenStatus.offersOpenScreen(screen?.status) }
 
     // MARK: The chat's folder and gateway
 

@@ -564,6 +564,26 @@ Edit Gateway); **turned off** on the gateway though the page says In this app (c
 anything else in Hermes's words. A refusal for a chat Hermes doesn't know yet stays Ready: the next
 turn registers again.
 
+### 4.21 Bot Screen
+
+`display.status {profile}` (backend socket, `tui_gateway/methods_display.py`;
+`tools/bot_desktop/runtime.py` `DesktopStatus`): a Bot's own desktop on the gateway, shown in the
+Inspector's Screen tab ([inspector.md](inspector.md) §2.6). Hermes offers it only on Linux hosts:
+macOS and Windows already have a display, so there's no row and no Open Screen there
+(`supported: false`), nor on a Hermes without `display.*`.
+
+| State | Told by | The app shows |
+|---|---|---|
+| Not set up | `installed: false` | "Lab needs TigerVNC and the Xfce core to give a Bot its own screen.", the `install_command` Hermes reports (else `hermes computer-use screen install`), then `hermes computer-use screen start` |
+| Ready | `installed: true` | "Each Bot can have its own screen on Lab, which you can watch and take over." |
+
+Each Bot starts its own screen, so stopped isn't a setup state on the row; the Screen tab shows it
+(`GatewaySetup.screen`): Start Screen (`display.start`, refused in `runtime.start()`'s words), or
+`hermes -p <profile> computer-use screen start`; a `blocker` (memory, a sandbox image without the
+desktop) is shown in Hermes's words with no Start. Installing from the app (`display.install`) asks
+for the host's sudo password through a server request and isn't built, so the app gives the line
+to run. Docs: `user-guide/features/bot-screen`.
+
 ## 5. Mocks and launch flags
 
 `Tools/mock-hermes/setup.py` serves each "not set up" state: start the backend with `--setup
@@ -590,6 +610,7 @@ turn registers again.
 | `search-index` | `/api/status.fts_rebuild` while the index rebuilds |
 | `delivery-failed`, `missed-run` | The morning briefing's results didn't arrive, or its last run didn't start |
 | `apps-off`, `apps-not-included` | `tools.connectors.enabled: false`; or signed in to Nous without apps in the plan |
+| (inspector mock) | `POST /api/mock/inspector/screen {action}`: `stop` (Start Screen), `uninstall` / `install` (the packages), `unsupported` / `supported` (a macOS host), `start` |
 
 Fixes write through `PUT /api/config`, which the mock deep-merges like Hermes, so Turn On and Turn
 Off change what the next check reads. Other states have flags of their own: `--checkpoints off`,

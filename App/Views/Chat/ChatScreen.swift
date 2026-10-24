@@ -249,6 +249,12 @@ struct ChatScreen: View {
             shown.screenChanged(shown: false)
             inspector.chatLeftScreen()
         }
+        // Whether the Bot's ··· menu offers Open Screen: asked once the chat shows and Bot Mode is up
+        // (`docs/inspector.md` §2.6); starts and stops elsewhere arrive as `display.status`.
+        .task(id: "\(conversation.id)-\(roster?.isConnected == true)") {
+            guard roster?.isConnected == true else { return }
+            await conversation.inspector.screenController().refreshStatus()
+        }
         .task(id: conversation.id) {
             guard workspace.voiceModeRequested else { return }
             workspace.voiceModeRequested = false
@@ -543,6 +549,11 @@ struct ChatScreen: View {
                     BotActions(roster: roster, bot: bot)
                 }
                 Divider()
+                if conversation.inspector.offersOpenScreen {
+                    Button("Open Screen", systemImage: InspectorTab.Kind.screen.symbol) {
+                        conversation.inspector.open(.screen)
+                    }
+                }
                 Button("Compact Chat", systemImage: "arrow.down.right.and.arrow.up.left") {
                     conversation.draft = "/compact"
                     conversation.send()

@@ -72,7 +72,10 @@ follows its behaviour where this doc is silent.
     Large (`inspectorChanges`) is full height on the sheet's solid fill, with a title bar.
   - `inspectorPill` above the composer shows the current tab, an ink dot while Hermes uses it, and
     "+N" for the others. Tapping it opens the sheet. It shows only while the chat has tabs and the
-    sheet is closed.
+    sheet is closed. A Bot's Screen running on the gateway doesn't bring it up on its own (it may
+    run for hours, Hermes not using it, and the pill would sit over every one of that Bot's chats);
+    Open Screen in the Bot's ··· menu opens it (§2.6), and from then the Screen is a tab like any
+    other.
   - When Hermes opens something, the sheet doesn't rise over the chat: the tab waits behind the
     pill. On the Mac and iPad landscape the panel opens.
 - **Toolbar** (Mac, iPad): an Inspector button, ink-filled while the panel is open.
@@ -109,7 +112,7 @@ follows its behaviour where this doc is silent.
 | **Changes** | Review on the latest file-changing turn's `turnCheckpoint` (iPad and Mac; elsewhere Review is its own sheet, [checkpoints.md](checkpoints.md)), Show in Changes on a diff card, + menu, `pane.reveal review` | `GET /api/git/review/list?path&scope&base` with scope `lastTurn` (This Turn), `branch` or `uncommitted`; `GET /api/git/review/diff?path&file&scope&base&staged`; `POST /api/git/review/stage` / `unstage {path, file}`; `commit {path, message, push}`; `create-pr {path}`. `GET /api/git/review/ship-info` finds the branch's open pull request; `GET /api/git/gh-auth` says whether Create Pull Request can work (§2.5) |
 | **Changed Files** | A turn's Changes row in the chat, on the Mac and iPad landscape (iPhone and iPad portrait open the Changes sheet instead, [chat.md](chat.md) §2), + menu (the latest turn's) | None: the turn's own edits (`TurnChanges`), so it works without Bot Mode (§2.7) |
 | **Terminal** | A process step or the composer's process chip, + menu, `pane.reveal terminal`, ⌥⌘P | One tab for the chat's processes: running first with Stop, then Finished with Clear; a process's page with all its output ([background-processes.md](background-processes.md) §6). Live output from `agent.terminal.output {process_id, chunk}`; `process.list {session_id}` when the tab shows. Stop is `process.kill {session_id, process_id}` |
-| **Screen** (the Bot Screen) | + menu | `display.status`, `display.observe` → a single-use ticket → `WS /api/display/ws?display_ticket=` (§2.6) |
+| **Screen** (the Bot Screen) | + menu, Open Screen in a Bot's ··· menu, `pane.reveal screen` | `display.status`, `display.observe` → a single-use ticket → `WS /api/display/ws?display_ticket=`; `display.start` (§2.6) |
 | **Team** | `teamCard`, + menu | As in [helpers.md](helpers.md): the team, or one helper's transcript |
 | **Plan** | + menu | The latest plan (`todo.updated`), the running turn's first |
 | **Sources** | + menu | The latest turn's search results (no gateway call) |
@@ -224,6 +227,18 @@ the whole disk.
 
 ### 2.6 The Bot Screen
 
+- **Open Screen** in a Bot's ··· menu (the chat toolbar's More, on every device) opens the Screen
+  tab whether or not the chat has tabs, as Hermes Desktop's roster menu does. It shows wherever
+  `display.status` says the host can have one (`supported`: a Linux gateway), running or not
+  (`BotScreenStatus.offersOpenScreen`); macOS and Windows hosts have no Bot Screen, and Hermes
+  offers none there. The chat asks `display.status` when it opens with Bot Mode up, and again when
+  the gateway broadcasts `display.status` (a screen started or stopped outside the app).
+- **Not running:** the tab shows the Screen's setup in place of the video ([setup.md](setup.md)
+  §4.21): stopped, Start Screen (`display.start {profile}`, which answers the new status, then the
+  tab connects); without TigerVNC and Xfce, the install line Hermes reports (`install_command`),
+  with Check Again; a `blocker` (too little memory, a sandbox image without the desktop) in
+  Hermes's words. A refused start shows Hermes's reason there. The socket closing with 4001 brings
+  the same setup back.
 - `display.status {profile}` says whether the gateway can run Hermes's own desktop and whether it
   runs, and who holds the lease (`holder: agent | human`, `viewer_hash`).
 - `display.observe` gives a ticket, a `viewer_id` and the socket path. The socket carries raw RFB
@@ -369,10 +384,15 @@ rebinding) isn't caught.
 - Terminal streams live output and Stop ends the process.
 - Screen shows the live desktop, and Take Control / Hand Back move the lease (the mock's `POST
   /api/mock/inspector/screen` with `evict` and `stop` shows 4000 and 4001).
+- In a Bot Chat with no Inspector tabs, the ··· menu's Open Screen opens the running Screen (on
+  iPhone, the sheet rises with it). Stopped (`stop`), the tab offers Start Screen, and Start
+  Screen brings the desktop up; `uninstall` shows the install line; `unsupported` takes Open
+  Screen out of the menu.
 - Tabs come back with the chat; pinned tabs stay across chats; a tab dragged out on the Mac returns
   when its window closes.
 - Light, dark and Increase Contrast match the design.
 
 ## 7. Setup
 
-Most tabs need Bot Mode ([setup.md](setup.md) §4.1).
+Most tabs need Bot Mode ([setup.md](setup.md) §4.1). The Screen needs a Linux gateway with TigerVNC
+and Xfce, and the Bot's screen started ([setup.md](setup.md) §4.21).

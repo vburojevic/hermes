@@ -1161,6 +1161,13 @@ final class BotRoster {
             }
             return
         }
+        // A Bot Screen started or stopped outside this app (`display.status`, to every client).
+        if event.type == "display.status" {
+            for conversation in allConversations {
+                conversation.inspectorIfLoaded?.screenStatusChanged()
+            }
+            return
+        }
         // Hey Hermes (`docs/voice.md` §4.6): the gateway heard its wake word.
         if event.type == "wake.detected" {
             if let detection = WakeDetection(payload: event.payload) { HeyHermes.shared.detected(detection) }

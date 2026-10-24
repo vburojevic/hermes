@@ -59,6 +59,7 @@ final class SetupCenter {
         var hostIsThisMac = false
         var vaultSources: [VaultSource]?
         var vaultMissing = false
+        var botScreen: BotScreenStatus?
     }
 
     init(workspace: BotWorkspace) {
@@ -96,6 +97,7 @@ final class SetupCenter {
         facts.vaultSources = reads.vaultSources
         facts.vaultMissing = reads.vaultMissing
         facts.inAppBrowserRefusal = workspace.inAppBrowser.refusal
+        facts.botScreen = reads.botScreen
         if let projects = workspace.projects, projects.hasLoaded, !projects.isAvailable { facts.projectsMissing = true }
         return facts
     }
@@ -135,6 +137,7 @@ final class SetupCenter {
             GatewaySetup.board(facts),
             GatewaySetup.groupChats(facts),
             GatewaySetup.botReplies(facts),
+            GatewaySetup.botScreen(facts),
             GatewaySetup.learned(facts),
         ].compactMap { $0 }.map(shown)
     }
@@ -294,7 +297,7 @@ final class SetupCenter {
     private(set) var pending: Set<Read> = []
 
     enum Read: Hashable {
-        case status, config, update, board, memory, curator, setup, groups, widgets, models, jobs, plugins, host, vault
+        case status, config, update, board, memory, curator, setup, groups, widgets, models, jobs, plugins, host, vault, screen
     }
 
     /// Statuses that wait on each read while it's out.
@@ -306,6 +309,7 @@ final class SetupCenter {
         .board: [GatewaySetup.ID.board],
         .memory: [GatewaySetup.ID.memory],
         .vault: [GatewaySetup.ID.passwords],
+        .screen: [GatewaySetup.ID.botScreen],
         .curator: [GatewaySetup.ID.learned],
         .setup: [GatewaySetup.ID.models],
         .groups: [GatewaySetup.ID.groupChats],
@@ -421,6 +425,12 @@ final class SetupCenter {
                 // The app's plugins in every profile (`docs/plugins.md` §2).
                 Task { await self.read(.plugins) { await workspace.plugins.check() } },
                 Task { self.land(await self.read(.host) { await self.readHostPriority(roster: roster) }) },
+                Task {
+                    // Whether the host can give a Bot a screen (`docs/setup.md` §4.21); an older
+                    // Hermes answers "unknown method", and the row stays away.
+                    let status = await self.read(.screen) { try? await roster.request("display.status", profile.map { ["profile": .string($0)] } ?? [:], timeout: .seconds(20)) }
+                    self.reads.botScreen = status.map(BotScreenStatus.init(json:))
+                },
             ]
         }
         // Voice keeps its own statuses (`docs/voice.md` §6.1), Can't check without Bot Mode.

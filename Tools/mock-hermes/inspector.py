@@ -6,9 +6,10 @@
   ship-info,commit-context}`, `/api/git/gh-auth`, against that project's committed copy.
 - `llm.oneshot` (template `commit_message`) drafts a fixed message; `preview.restart` starts the dev
   server and reports `preview.restart.complete`.
-- The Bot Screen: `display.status`, `display.observe` (a single-use ticket), `display.lease.acquire` /
-  `release` (broadcast as `display.lease`), and `WS /api/display/ws?display_ticket=` speaking RFB 3.8
-  with a drawn desktop. Pointer input from the lease holder leaves dots.
+- The Bot Screen: `display.status`, `display.start`, `display.observe` (a single-use ticket),
+  `display.lease.acquire` / `release` (broadcast as `display.lease`), and `WS
+  /api/display/ws?display_ticket=` speaking RFB 3.8 with a drawn desktop. Pointer input from the
+  lease holder leaves dots. Starting and stopping broadcast `display.status`, as Hermes's watcher does. It runs from the start, so a chat with no Inspector tabs has a Screen to open.
 - A dev server on `127.0.0.1:5173` (`--dev-port`) serving the beta sign-up page.
 
 Scripted chat turns (on top of chats.py) by message content:
@@ -24,6 +25,8 @@ Scripted chat turns (on top of chats.py) by message content:
 
 Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
+                                  {action: uninstall|install}   the host without TigerVNC and Xfce, or with
+                                  {action: unsupported|supported} a macOS host (no Screen), or Linux again
   POST /api/mock/inspector/gh {authenticated: bool, available: bool}
   POST /api/mock/inspector/touch {path, text}                  a change on the "gateway" (conflicts)
   POST /api/mock/inspector/dev {running: bool}                 stop or start the dev server
@@ -167,6 +170,7 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
     methods["llm.oneshot"] = llm_oneshot
     methods["preview.restart"] = preview_restart
     methods["display.status"] = lambda params: display_snapshot()
+    methods["display.start"] = display_start
     methods["display.observe"] = display_observe
     methods["display.lease.acquire"] = lease_acquire
     methods["display.lease.release"] = lease_release
@@ -796,7 +800,7 @@ def run_rewrite_turn(sid, text):
 
 # ---------------------------------------------------------------- the Bot Screen
 
-DISPLAY = {"running": True, "lease": {"holder": "agent", "viewer_id": None, "reason": "", "epoch": 0, "since": time.time()},
+DISPLAY = {"running": True, "installed": True, "supported": True, "lease": {"holder": "agent", "viewer_id": None, "reason": "", "epoch": 0, "since": time.time()},
            "tickets": {}, "viewers": set(), "sockets": [], "dots": []}
 WIDTH, HEIGHT = 1280, 800
 
@@ -808,11 +812,40 @@ def lease_view():
             "since": lease["since"], "viewer_hash": hashlib.sha256(vid.encode()).hexdigest()[:12] if vid else None}
 
 
+SCREEN_BINARIES = ["Xvnc", "xfwm4", "xfce4-panel", "xfdesktop", "xfsettingsd", "dbus-run-session"]
+INSTALL_COMMAND = ("sudo apt-get install -y --no-install-recommends tigervnc-standalone-server xfce4-panel xfwm4 "
+                   "xfdesktop4 xfce4-settings xfce4-terminal dbus-x11 x11-xserver-utils x11-utils xauth fonts-dejavu-core")
+
+
 def display_snapshot():
-    return {"profile": "default", "supported": True, "installed": True, "missing": [], "running": DISPLAY["running"],
-            "pid": 51234 if DISPLAY["running"] else None, "display": ":1", "socket": "/tmp/.X11-unix/X1",
-            "geometry": f"{WIDTH}x{HEIGHT}", "install_command": None, "browser": "chromium", "blocker": None,
+    """`tools/bot_desktop/runtime.py` DesktopStatus.as_dict(), with the lease."""
+    supported, installed, running = DISPLAY["supported"], DISPLAY["supported"] and DISPLAY["installed"], DISPLAY["running"]
+    missing = [] if installed else list(SCREEN_BINARIES)
+    return {"profile": "default", "supported": supported, "installed": installed, "missing": missing, "running": running,
+            "pid": 51234 if running else None, "display": ":1" if running else None,
+            "socket": "/tmp/.X11-unix/X1" if running else None, "geometry": f"{WIDTH}x{HEIGHT}",
+            "install_command": INSTALL_COMMAND if supported and not installed else None,
+            "browser": "chromium" if supported else None, "blocker": None,
+            "memory_available_mb": 6144, "memory_limit_mb": None,
             "placement": "gateway", "lease": lease_view(), "profile_key": f"{HOME}/.hermes"}
+
+
+def display_start(params):
+    """`display.start`: refusals in `runtime.start()`'s words, as error 5300."""
+    if not DISPLAY["supported"]:
+        raise B["RPCError"](5300, "Bot Desktop runs on Linux gateway hosts only")
+    if not DISPLAY["installed"]:
+        raise B["RPCError"](5300, f"Bot Desktop needs {', '.join(SCREEN_BINARIES)} on the gateway host. Install: {INSTALL_COMMAND}")
+    if not DISPLAY["running"]:
+        time.sleep(1.5)
+        DISPLAY["running"] = True
+        broadcast_status()
+    return display_snapshot()
+
+
+def broadcast_status():
+    """`display.status`, as Hermes's runtime watcher sends it when a screen starts or stops."""
+    broadcast("display.status", display_snapshot())
 
 
 def display_observe(params):
@@ -826,8 +859,11 @@ def display_observe(params):
 
 
 def broadcast_lease():
-    frame = {"jsonrpc": "2.0", "method": "event", "params": {"type": "display.lease", "session_id": "",
-                                                             "payload": {"profile_key": f"{HOME}/.hermes", "lease": lease_view()}}}
+    broadcast("display.lease", {"profile_key": f"{HOME}/.hermes", "lease": lease_view()})
+
+
+def broadcast(kind, payload):
+    frame = {"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": "", "payload": payload}}
     with B["LOCK"]:
         peers = list(B["CLIENTS"])
     for peer in peers:
@@ -855,11 +891,21 @@ def lease_release(params):
 
 def mock_screen(query, body):
     action = body.get("action")
-    if action == "stop":
+    if action in ("stop", "uninstall", "unsupported"):
+        was_running = DISPLAY["running"]
         DISPLAY["running"] = False
+        DISPLAY["installed"] = DISPLAY["installed"] and action != "uninstall"
+        DISPLAY["supported"] = DISPLAY["supported"] and action != "unsupported"
         close_sockets(4001, "Bot Desktop is not running")
+        if was_running:
+            broadcast_status()
     elif action == "start":
-        DISPLAY["running"] = True
+        DISPLAY.update(running=True, installed=True, supported=True)
+        broadcast_status()
+    elif action == "install":
+        DISPLAY["installed"] = True
+    elif action == "supported":
+        DISPLAY["supported"] = True
     elif action == "evict":
         DISPLAY["lease"] = {"holder": "human", "viewer_id": "viewer_someone_else", "reason": "", "epoch": DISPLAY["lease"]["epoch"] + 1, "since": time.time()}
         broadcast_lease()

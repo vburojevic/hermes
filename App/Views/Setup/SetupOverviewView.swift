@@ -128,6 +128,7 @@ struct SetupOverviewView: View {
         case GatewaySetup.ID.board: "rectangle.split.3x1"
         case GatewaySetup.ID.groupChats: "bubble.left.and.bubble.right"
         case GatewaySetup.ID.botReplies: "arrowshape.turn.up.left.2"
+        case GatewaySetup.ID.botScreen: "desktopcomputer"
         case GatewaySetup.ID.learned: "sparkles"
         case SetupCenter.notificationsID: "bell.badge"
         case SetupCenter.widgetsID: "square.grid.2x2"
