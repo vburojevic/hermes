@@ -1376,7 +1376,7 @@ struct TranscriptView: View {
         case .notice(let notice) where notice.kind.hasPrefix("receipt:"):
             ReceiptRow(notice: notice, conversation: conversation)
         case .notice(let notice) where notice.kind == Notice.compactionKind:
-            CompactionDivider(summary: notice.text)
+            CompactionDivider(summary: notice.text, date: notice.timestamp)
         case .notice(let notice) where !notice.work.isEmpty:
             FinishedWorkRow(
                 notice: notice, botName: { conversation.botTitle($0) },

@@ -54,10 +54,20 @@ struct MachineMessageTests {
         guard case .notice(let divider) = items[2] else { Issue.record("not a divider"); return }
         #expect(divider.kind == Notice.compactionKind)
         #expect(divider.text == Self.summary)
+        // The divider says when Hermes compacted the chat: the summary's stored time.
+        #expect(divider.timestamp == Date(timeIntervalSince1970: 1_003))
         #expect(items[2].isCompactionSummary)
         // Never counted, never the last line.
         #expect(!UnreadCounter.counts(items[2]))
         #expect(LastLine.of(Array(items.prefix(3)))?.text == "All fine.")
+    }
+
+    /// Opened, the summary is plain text: Hermes's Markdown loses its syntax, keeps its lines.
+    @Test func anOpenedSummaryIsPlainText() {
+        let summary = "## Key Facts\n- Nightly backup: **212 GB**, 0 errors\n- Scrub on `tank` repaired 0B\n\nSee [the log](https://example.com/log) and _the_ notes."
+        #expect(CompactionSummary.plainText(summary) == "Key Facts\n• Nightly backup: 212 GB, 0 errors\n• Scrub on tank repaired 0B\n\nSee the log and the notes.")
+        // Words with underscores and maths keep their characters.
+        #expect(CompactionSummary.plainText("snake_case_name and 2 * 3 * 4") == "snake_case_name and 2 * 3 * 4")
     }
 
     /// Stored as Hermes's reply too, and folded into one: its words stay a reply, the summary a divider.
@@ -66,6 +76,7 @@ struct MachineMessageTests {
             + "\(Self.preamble)\n\(Self.summary)\n\n\(CompactionSummary.endMarker)"
         let items = TranscriptBuilder.build([row(1, "user", "Run the backups"), row(2, "assistant", merged)])
         #expect(items.map(\.id) == ["m1", "tm2-p", "m2-s"])
+        if case .notice(let divider) = items[2] { #expect(divider.timestamp == Date(timeIntervalSince1970: 1_002)) }
         if case .assistant(let turn) = items[1] { #expect(turn.answer == "Done: the backups ran.") }
         let leading = "\(Self.preamble)\n\(Self.summary)\n\n\(CompactionSummary.endMarker)\n\nAnd the offsite copy?"
         let asked = TranscriptBuilder.build([row(1, "user", leading), row(2, "assistant", "Copied at 02:10.")])

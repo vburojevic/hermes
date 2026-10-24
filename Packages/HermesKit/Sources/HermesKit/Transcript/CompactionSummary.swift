@@ -88,6 +88,33 @@ public enum CompactionSummary {
     }
 }
 
+extension CompactionSummary {
+    /// The summary as the opened divider shows it (`compactionDividerOpen`): plain text, read-only.
+    /// Hermes writes it in Markdown for the model; its headings, emphasis, code marks and links
+    /// lose their syntax, list items become "• " lines, and the line breaks stay.
+    public static func plainText(_ summary: String) -> String {
+        summary.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            var line = String(line)
+            for (regex, template) in plainRules {
+                line = regex.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: template)
+            }
+            return line
+        }
+        .joined(separator: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let plainRules: [(NSRegularExpression, String)] = [
+        ("^\\s*#{1,6}\\s+", ""),                    // headings
+        ("^(\\s*)[-*+]\\s+", "$1• "),                  // list items
+        ("^\\s*>\\s?", ""),                          // block quotes
+        ("`{1,3}", ""), ("\\*\\*|__", ""), ("(^|[\\s(])[*_]([^*_\\s][^*_]*)[*_]", "$1$2"),
+        ("\\[([^\\]]+)\\]\\([^)]*\\)", "$1"),
+    ].map { pattern, template in
+        (try! NSRegularExpression(pattern: pattern), template)
+    }
+}
+
 extension TranscriptItem {
     /// A compaction summary: its divider, or (before it was built into one) the person's message
     /// or Hermes' reply that holds it.

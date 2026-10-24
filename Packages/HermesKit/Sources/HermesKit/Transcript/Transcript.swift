@@ -405,9 +405,12 @@ public enum TranscriptBuilder {
                 // message Hermes folded it into before it and the one it leads after it. Hermes's
                 // projection hides a summary on its own, but keeps its words (`_project_for_display`).
                 closeTurn()
+                // The divider says when Hermes compacted the chat (`compactionDivider`).
+                var divider = Notice(id: "\(rowID)-s", kind: Notice.compactionKind, text: parts.summary)
+                divider.timestamp = message.timestamp
                 if kind == "hidden" {
                     if !parts.summary.isEmpty {
-                        items.append(.notice(Notice(id: "\(rowID)-s", kind: Notice.compactionKind, text: parts.summary)))
+                        items.append(.notice(divider))
                     }
                     continue
                 }
@@ -423,7 +426,7 @@ public enum TranscriptBuilder {
                     }
                 }
                 if !parts.summary.isEmpty {
-                    items.append(.notice(Notice(id: "\(rowID)-s", kind: Notice.compactionKind, text: parts.summary)))
+                    items.append(.notice(divider))
                 }
                 guard !parts.after.isEmpty || !message.toolCalls.isEmpty else { continue }
                 message.content = .text(parts.after)

@@ -2,10 +2,13 @@ import HermesKit
 import SwiftUI
 
 /// `compactionDivider` (`docs/chat.md` §2a): where Hermes compacted the chat, a quiet divider in
-/// place of its handoff summary, which nobody wrote. Folded by default; it opens to the summary's
-/// own words, read-only, without Hermes's instructions to the model.
+/// place of its handoff summary, which nobody wrote, with the time it did. Folded by default; it
+/// opens to the summary's own words as plain text, read-only, without Hermes's instructions to
+/// the model.
 struct CompactionDivider: View {
     let summary: String
+    /// When Hermes compacted the chat: the summary's stored time.
+    var date: Date?
 
     @State private var isOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,7 +23,7 @@ struct CompactionDivider: View {
                     HStack(spacing: 6) {
                         Image(systemName: "rectangle.compress.vertical")
                             .accessibilityHidden(true)
-                        Text("Earlier messages were summarized")
+                        Text(line)
                         Image(systemName: "chevron.right")
                             .font(Theme.Typography.caption.weight(.semibold))
                             .rotationEffect(.degrees(isOpen ? 90 : 0))
@@ -45,23 +48,29 @@ struct CompactionDivider: View {
 
             if isOpen {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Hermes keeps this summary in place of the earlier messages.")
+                    Text("Hermes keeps this summary in place of the earlier messages. It can't be edited.")
                         .font(Theme.Typography.caption)
                         .foregroundStyle(Theme.tertiaryText)
                         .fixedSize(horizontal: false, vertical: true)
-                    MarkdownView(text: summary, tone: .secondary)
-                        .environment(\.markdownBodyFont, Theme.Typography.compactMessage)
+                    // Plain text: a handoff for the model, not a reply to render.
+                    Text(verbatim: CompactionSummary.plainText(summary))
+                        .font(Theme.Typography.compactMessage)
+                        .foregroundStyle(Theme.secondaryText)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                        .strokeBorder(Theme.hairline)
-                )
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                 .transition(.opacity)
             }
         }
+    }
+
+    /// "Earlier messages were summarized · 14:02".
+    private var line: String {
+        guard let date else { return String(localized: "Earlier messages were summarized") }
+        return String(localized: "Earlier messages were summarized · \(date.formatted(date: .omitted, time: .shortened))")
     }
 }
 
