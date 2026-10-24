@@ -173,7 +173,7 @@ struct FinishedWorkRow: View {
             .accessibilityIdentifier("finishedNotice")
 
             if isOpen {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(notice.work.enumerated()), id: \.offset) { _, work in
                         switch work {
                         case .process(let process): processDetail(process)
@@ -183,19 +183,23 @@ struct FinishedWorkRow: View {
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                        .strokeBorder(Theme.hairline)
-                )
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                 .transition(.opacity)
             }
         }
     }
 
+    /// `finishedProcessDetail`: how it ended, with a glyph that says it too, Show Step, the command
+    /// and the last lines of its output.
     private func processDetail(_ process: FinishedProcess) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                if let glyph = Self.glyph(process) {
+                    Image(systemName: glyph.symbol)
+                        .font(.system(size: 12))
+                        .foregroundStyle(glyph.color)
+                        .accessibilityHidden(true)
+                }
                 Text(process.line(botName: botName))
                     .font(Theme.Typography.caption.weight(.semibold))
                     .foregroundStyle(process.isFailure ? Theme.danger : Theme.primaryText)
@@ -226,21 +230,32 @@ struct FinishedWorkRow: View {
                 }
                 if !process.output.isEmpty {
                     let tail = LongText.tail(process.output, lines: 8)
+                    // Secondary even when it failed: the glyph and the words say so, and the
+                    // failing lines stay readable as they came.
                     Text(verbatim: tail.text)
                         .font(Theme.Typography.code)
-                        .foregroundStyle(process.isFailure ? Theme.danger : Theme.secondaryText)
+                        .foregroundStyle(Theme.secondaryText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 10)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
         }
         .accessibilityElement(children: .contain)
     }
 
+    /// A passed process gets a green check, a failed one the red triangle; a stopped one or a
+    /// pattern it printed, none.
+    private static func glyph(_ process: FinishedProcess) -> (symbol: String, color: Color)? {
+        if process.isFailure { return ("exclamationmark.triangle.fill", Theme.danger) }
+        if process.outcome == .succeeded { return ("checkmark.circle.fill", Theme.success) }
+        return nil
+    }
+
+    /// `finishedHelperDetail`: the goal in full, what happened when it didn't finish, its result.
     private func helperDetail(_ helper: FinishedHelper) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(helper.goal.isEmpty ? helper.title : helper.goal)
@@ -248,12 +263,17 @@ struct FinishedWorkRow: View {
                 .foregroundStyle(Theme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
             if !helper.succeeded {
-                Text(String(localized: "This helper \(helper.outcomeWord)."))
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.danger)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .accessibilityHidden(true)
+                    Text(String(localized: "This helper \(helper.outcomeWord)."))
+                }
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.danger)
             }
             if !helper.result.isEmpty {
-                ExpandableText(text: helper.result, markdown: true)
+                ExpandableText(text: helper.result, markdown: true, small: true)
             }
         }
         .accessibilityElement(children: .contain)
@@ -268,12 +288,16 @@ struct ExpandableText: View {
     var lines = LongText.messageLines
     /// The text of a message itself (a Bot's card), not a detail under a line.
     var prominent = false
+    /// A detail in footnote size (a helper's result in finished work).
+    var small = false
 
     @State private var isOpen = false
 
-    private var font: Font { prominent ? Theme.Typography.message : Theme.Typography.compactMessage }
+    private var font: Font {
+        prominent ? Theme.Typography.message : small ? .footnote : Theme.Typography.compactMessage
+    }
     /// A folded line's height, about, at that font.
-    private var lineHeight: CGFloat { prominent ? 22 : 19 }
+    private var lineHeight: CGFloat { prominent ? 22 : small ? 17 : 19 }
 
     var body: some View {
         let long = LongText.isLong(text, lines: lines)
