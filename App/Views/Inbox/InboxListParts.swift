@@ -291,7 +291,9 @@ struct DrawerSwipeActions: ViewModifier {
             content
                 // Opaque, so the actions stay under the row until it uncovers them.
                 .background(Theme.sidebar)
-                .offset(x: offset)
+                // A tap on the open row closes it. Laid on the row before it slides, so it moves
+                // with the row: after the offset it stayed where the row had been, over the
+                // actions, and a tap on Mute or Archive only closed the row.
                 .overlay {
                     if resting != 0 {
                         Color.clear
@@ -299,6 +301,7 @@ struct DrawerSwipeActions: ViewModifier {
                             .onTapGesture { close() }
                     }
                 }
+                .offset(x: offset)
                 .background { if offset != 0 { actions } }
                 .gesture(SidewaysSwipePan(began: began, changed: changed, ended: ended))
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }

@@ -306,6 +306,8 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   - A row swiped toward the drawer's edge claims the drag (`RowSwipe`), so a leftward swipe on a row
     shows its actions instead of closing the drawer; the drawer still closes from its header, the
     chat beside it, or a tap. A press that ends as the drawer is swiped shut doesn't open the row.
+  - A tap on an open row closes it; a tap on an action runs it. What catches the row's tap slides
+    with the row: left where the row had been, it lay over the actions and took their taps.
 - **Archive:** `PATCH /api/sessions/{id} {archived: true}` (the same as `session.archive`), with
   Undo for 5 s. Archived chats leave the list (Hermes' lists leave them out). The row goes and
   Undo shows at once; Undo brings the row back at once and sends its call after the archive's,

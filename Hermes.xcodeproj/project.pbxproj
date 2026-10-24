@@ -135,6 +135,7 @@
 		6A33CCD6B11FC60D6A3270AE /* MemoryChatViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00F509B5DBD669F7AA2E736 /* MemoryChatViews.swift */; };
 		6AF564FBE420E5E43FA5F787 /* ChatSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832AE24D1F65FAF1CD8E69DF /* ChatSearch.swift */; };
 		6B0380B5F5B1DC89E5E66795 /* PluginComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7CD891FDBE3C7248CBECFA /* PluginComponents.swift */; };
+		6C2E828D72843EF0F511DB5E /* DrawerSwipeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 326922485F50767B91357FB5 /* DrawerSwipeUITests.swift */; };
 		6C68940B53D9FC3FB44AB75E /* WindowRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2195C5DC577A37D518BC540 /* WindowRouter.swift */; };
 		6CE2677C8EF16FD873C73F5F /* BrowserControllerScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF76A388D2E519CBAC430D21 /* BrowserControllerScript.swift */; };
 		6D1C85BCF2EE0D4E99325B95 /* TaskSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3D2825DBC3AEF1CEB79DAE /* TaskSplitViews.swift */; };
@@ -427,6 +428,7 @@
 		30BD9C8D91A07905086C591E /* VoiceMessageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageViews.swift; sourceTree = "<group>"; };
 		3147A0598D3E1B2EFE059C6B /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		323D6625E6C8E75666E70022 /* HeyHermes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeyHermes.swift; sourceTree = "<group>"; };
+		326922485F50767B91357FB5 /* DrawerSwipeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerSwipeUITests.swift; sourceTree = "<group>"; };
 		32FEB6EC4505CB736C4449D6 /* HermesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesApp.swift; sourceTree = "<group>"; };
 		330FBC1003F4899C51BE0895 /* HermesMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMark.swift; sourceTree = "<group>"; };
 		3439C275B99D8ACDCA4C022F /* PushPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPresentation.swift; sourceTree = "<group>"; };
@@ -1034,6 +1036,7 @@
 		4D74E421870554CD8F27C90C /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				326922485F50767B91357FB5 /* DrawerSwipeUITests.swift */,
 				046D1E4B59DB7D9451678644 /* InboxUITests.swift */,
 				1110800A83B6C987DEA232F2 /* IndicatorsUITests.swift */,
 				0B7007FFF1EBBE3208FDDC9F /* PluginsUITests.swift */,
@@ -1672,6 +1675,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6C2E828D72843EF0F511DB5E /* DrawerSwipeUITests.swift in Sources */,
 				B6089EF266E89EED286C7A33 /* InboxUITests.swift in Sources */,
 				4F1145F47475D2CFEED8157E /* IndicatorsUITests.swift in Sources */,
 				EB0A522033F38EFED652E5FD /* PluginsUITests.swift in Sources */,
