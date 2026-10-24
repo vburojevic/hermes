@@ -336,8 +336,8 @@ struct AssistantTurnView: View, Equatable {
         if !turn.isWorking, !memoryChanges.isEmpty {
             MemoryNotes(changes: memoryChanges, context: memoryContext)
         }
-        // What Hermes's background self-review of this reply did (`review.summary`): quietly here,
-        // never a row of its own between the turn and the next (`docs/chat.md` §1, 13).
+        // What Hermes's background self-review of this reply did (`review.summary`, `reviewNote`):
+        // quietly here, never a row of its own between the turn and the next (`docs/chat.md` §1, 13).
         if !turn.isWorking, let review = turn.review {
             TurnNote(symbol: "checkmark.seal", text: String(localized: "Reviewed this reply · \(review)"))
         }

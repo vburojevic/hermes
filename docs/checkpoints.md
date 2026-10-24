@@ -15,7 +15,7 @@ The code lives in `Packages/HermesKit/Sources/HermesKit/Checkpoints/` (`Checkpoi
 `Tools/mock-hermes/checkpoints.py`; its demo chat, switches and debug flags are in
 [development.md](development.md).
 
-Design component names: `turnCheckpoint` (+ `Busy`), `fileChangeRow` (+ `New`), `checkpointRow`
+Design component names: `turnCheckpoint` (+ `Busy`), `checkpointFileRow` (+ `New`), `checkpointRow`
 (+ `Now`), `restoredNote`, `checkpointsOff`; screens `reviewChanges`, `undoConfirm`, `afterUndo`,
 `checkpointsTimeline`, `checkpointDetail`, `checkpointsOffSheet`, `macCheckpoints`,
 `ipadCheckpoints`. The diff itself is the chat's `DiffCard`.

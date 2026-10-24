@@ -39,7 +39,7 @@ struct RestoredNoteRow: View {
     }
 }
 
-/// One file of a checkpoint (`fileChangeRow`, `fileChangeRowNew`): the path, +/− or "new", then
+/// One file of a checkpoint (`checkpointFileRow`, `checkpointFileRowNew`): the path, +/− or "new", then
 /// a chevron or an action.
 struct CheckpointFileRow<Accessory: View>: View {
     let file: CheckpointFileChange
