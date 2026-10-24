@@ -91,13 +91,25 @@ def notes(version, build, tag, previous_tag):
     return "\n".join(lines) + "\n"
 
 
+# App Store Connect refuses What to Test with emoji, pictographic symbols (dingbats such as ✓),
+# variation selectors or private-use characters. A few read as words; the rest are dropped.
+SYMBOL_WORDS = {"✓": "a check mark", "✔": "a check mark", "✗": "a cross", "✘": "a cross", "★": "a star"}
+REFUSED = [(0x2600, 0x27BF), (0x2B00, 0x2BFF), (0xE000, 0xF8FF), (0xFE00, 0xFE0F), (0x1F000, 0x1FAFF)]
+
+
+def plain_for_testflight(text):
+    for symbol, words in SYMBOL_WORDS.items():
+        text = text.replace(symbol, words)
+    return "".join(c for c in text if not any(low <= ord(c) <= high for low, high in REFUSED))
+
+
 def testflight(version, build, previous_tag, limit=4000):
     """What to Test: TestFlight shows plain text, so no Markdown, and caps it at 4,000 characters."""
     head = (f"Hermes {version} beta, build {build}. It's a beta: expect rough edges. Send feedback with a "
             f"screenshot from TestFlight, or report bugs at github.com/{SOURCE_REPO}/issues. Leave keys "
             f"and addresses out of both.")
     rows = changes(previous_tag)
-    lines = [f"- {area}: {text}" for area, text in rows] or ["- Fixes and polish."]
+    lines = [plain_for_testflight(f"- {area}: {text}") for area, text in rows] or ["- Fixes and polish."]
     tail = f"Every change: github.com/{SOURCE_REPO}/releases"
     kept = []
     for i, line in enumerate(lines):
