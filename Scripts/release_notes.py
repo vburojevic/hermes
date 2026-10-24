@@ -28,15 +28,31 @@ SKIP_AREAS = {
     "Mocks", "README", "Release", "Repo", "Scripts", "Tests",
 }
 SUBJECT = re.compile(r"([^:]{1,40}):\s*(.+)")
+# A subject that reached main in the wrong words, corrected here instead of rewriting public
+# history: one "<commit> <subject>" per line, the commit as a full or short hash.
+CORRECTIONS = "Scripts/release-note-corrections.txt"
+
+
+def corrections():
+    try:
+        with open(CORRECTIONS, encoding="utf-8") as file:
+            lines = [line.strip() for line in file]
+    except FileNotFoundError:
+        return {}
+    pairs = (line.split(maxsplit=1) for line in lines if line and not line.startswith("#"))
+    return {sha: subject for sha, subject in pairs}
 
 
 def changes(previous_tag):
     """(area, text) for each commit since previous_tag (the whole history when there's none)."""
     rev = f"{previous_tag}..HEAD" if previous_tag else "HEAD"
-    log = subprocess.run(["git", "log", "--reverse", "--no-merges", "--format=%s", rev],
+    log = subprocess.run(["git", "log", "--reverse", "--no-merges", "--format=%H %s", rev],
                          check=True, capture_output=True, text=True).stdout
+    fixed = corrections()
     rows = []
-    for subject in log.splitlines():
+    for line in log.splitlines():
+        sha, _, subject = line.partition(" ")
+        subject = next((text for prefix, text in fixed.items() if sha.startswith(prefix)), subject)
         match = SUBJECT.match(subject)
         if not match:
             continue  # the first public commit ("Hermes 1.0 beta") and anything without an area
