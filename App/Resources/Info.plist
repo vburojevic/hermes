@@ -24,6 +24,13 @@
 			</array>
 		</dict>
 	</array>
+	<!-- The launch screen (iOS; the Mac ignores it): the canvas, white or black with the phone's
+	     appearance (docs/design-to-swiftui.md §1). -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!-- Sparkle (the Mac DMG's updater; iOS ignores these). Background checks notify; the

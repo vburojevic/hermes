@@ -268,6 +268,7 @@
 		CCB83E5FDF3DEA9C3FBB3032 /* UserBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3CC94EB12ABAA772C0C9A5 /* UserBubble.swift */; };
 		CCD321BE251D78E5B059A8C4 /* CheckpointParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDBB658DBE0F6CCA6754823A /* CheckpointParts.swift */; };
 		CCD91EC4B3194FDAA5D3B539 /* TalkControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = A098A4F67CC9E04D4C5C020D /* TalkControl.swift */; };
+		CCDCC63080B55001CEF70EA7 /* LaunchAppearanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853B2C74C57A90FAAC0F230A /* LaunchAppearanceUITests.swift */; };
 		CDF879DCCA703B317CB97A91 /* WidgetParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53191845B72BC623978DE9BC /* WidgetParts.swift */; };
 		CFB7B3EC2F5545DD1F0A7FB5 /* HermesWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE123807FB792EEE6DB6EBF /* HermesWidgets.swift */; };
 		D02D16FC17FDFF26E9E9EDF2 /* BotEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909DF8FB8ED51CE235B0C2CD /* BotEditorView.swift */; };
@@ -522,6 +523,7 @@
 		832AE24D1F65FAF1CD8E69DF /* ChatSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSearch.swift; sourceTree = "<group>"; };
 		838A0DCB68F713AD1796A723 /* SetupOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupOverviewView.swift; sourceTree = "<group>"; };
 		839FF3E221883A5EDD627181 /* BuiltInViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuiltInViews.swift; sourceTree = "<group>"; };
+		853B2C74C57A90FAAC0F230A /* LaunchAppearanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAppearanceUITests.swift; sourceTree = "<group>"; };
 		86E4A92BEB6DE53CC4A8B656 /* ProjectSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSheets.swift; sourceTree = "<group>"; };
 		8784642FF3F7763D4A1B0D46 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		882F4E9AE99A6D1804941B46 /* MacWelcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacWelcome.swift; sourceTree = "<group>"; };
@@ -1039,6 +1041,7 @@
 				326922485F50767B91357FB5 /* DrawerSwipeUITests.swift */,
 				046D1E4B59DB7D9451678644 /* InboxUITests.swift */,
 				1110800A83B6C987DEA232F2 /* IndicatorsUITests.swift */,
+				853B2C74C57A90FAAC0F230A /* LaunchAppearanceUITests.swift */,
 				0B7007FFF1EBBE3208FDDC9F /* PluginsUITests.swift */,
 				7F281FE5600EDDA0A9346D0D /* ProcessesUITests.swift */,
 				15FE26933154EBF12B5A749D /* RequestCardUITests.swift */,
@@ -1678,6 +1681,7 @@
 				6C2E828D72843EF0F511DB5E /* DrawerSwipeUITests.swift in Sources */,
 				B6089EF266E89EED286C7A33 /* InboxUITests.swift in Sources */,
 				4F1145F47475D2CFEED8157E /* IndicatorsUITests.swift in Sources */,
+				CCDCC63080B55001CEF70EA7 /* LaunchAppearanceUITests.swift in Sources */,
 				EB0A522033F38EFED652E5FD /* PluginsUITests.swift in Sources */,
 				88437626B47FBF14208587E1 /* ProcessesUITests.swift in Sources */,
 				1D29FFEFED30AD19557D7263 /* RequestCardUITests.swift in Sources */,
@@ -2202,7 +2206,6 @@
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphone*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsMultipleScenes[sdk=iphone*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphone*]" = UIStatusBarStyleDefault;
 				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad[sdk=iphone*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone[sdk=iphone*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -2299,7 +2302,6 @@
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphone*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsMultipleScenes[sdk=iphone*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphone*]" = UIStatusBarStyleDefault;
 				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad[sdk=iphone*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone[sdk=iphone*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

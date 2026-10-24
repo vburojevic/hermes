@@ -111,7 +111,6 @@ targets:
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]": YES
         "INFOPLIST_KEY_UIApplicationSupportsMultipleScenes[sdk=iphone*]": YES
         "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphone*]": YES
-        "INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]": YES
         "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad[sdk=iphone*]": "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone[sdk=iphone*]": "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         "INFOPLIST_KEY_UIStatusBarStyle[sdk=iphone*]": UIStatusBarStyleDefault

@@ -71,6 +71,8 @@ xcodebuild -project Hermes.xcodeproj -scheme HermesUITests -destination 'platfor
 
 They cover opening at the New Messages line, the jump pill marking a chat read, and Mark as Read /
 Unread syncing with another client (`docs/inbox.md` §7). Each test resets the mock's read marks.
+`LaunchAppearanceUITests` switches the simulator between Light and Dark Mode and puts it back as it
+was when each test ends (`docs/design-to-swiftui.md` §1).
 
 A test that stops mid-call must end the call: its Live Activity outlives the app, and installing
 the next build makes the system launch the app for it, without launch arguments, just as the next

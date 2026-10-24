@@ -22,13 +22,25 @@ Increase Contrast.
   `Color(light:dark:increasedContrastLight:increasedContrastDark:)` (`Theme.swift`), a dynamic
   `UIColor`/`NSColor` provider that switches with the appearance and Increase Contrast. A token an
   appearance doesn't override falls back to dark, then light. There are no asset-catalog colour
-  sets apart from `AccentColor`.
+  sets apart from `AccentColor` and `LaunchBackground` (the launch screen's, below).
 - Settings → Appearance (System, Light, Dark) is set on iPhone and iPad as the window's
   `overrideUserInterfaceStyle` (`WindowAppearance`), not with `.preferredColorScheme`. iOS draws the
   app switcher's picture of the app with the window's style. With the SwiftUI preference, an app
   set to Dark on a phone in Light Mode (or the reverse) left a picture in the phone's appearance:
   the switcher showed it light, and it turned dark as it opened. The Mac keeps
   `.preferredColorScheme`. Check: `Scripts/check-switcher-snapshots.sh`.
+- From the tap to the first frame, every step is in the appearance Hermes opens in, set explicitly
+  rather than left to iOS's defaults. The launch screen is `LaunchBackground` (`UILaunchScreen` in
+  `App/Resources/Info.plist`), the canvas: white, or black in Dark Mode. The window's own
+  background is the canvas too (`WindowAppearance`), and the window takes the Appearance setting as
+  it appears, before SwiftUI draws into it. iOS draws the launch screen before Hermes runs, so it
+  follows the phone: with Hermes set to Dark on a phone in Light Mode (or the reverse) a cold
+  launch shows the phone's white (or black) launch screen, then Hermes in its own appearance.
+  Opening from the background, iOS shows its picture of the app, which is already in Hermes's
+  appearance. Check the launch frames with a `simctl io recordVideo` of each launch, stepped
+  through frame by frame (ffmpeg to stills): cold and from the background, the phone dark and
+  light, the phone turned dark while Hermes was away, and Hermes set opposite to the phone.
+  `LaunchAppearanceUITests` checks the same cases once Hermes has settled, not the launch frames.
 - Views use the names in `Theme` (`Theme.canvas`, `Theme.primaryText`, `Theme.ink`), not `Palette`
   directly. Colours that aren't design tokens live in `Theme` with the same initializer
   (`rowSelected`, `rowHover`).
