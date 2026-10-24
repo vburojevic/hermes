@@ -66,35 +66,47 @@ struct TurnChangesRow: View {
         }
     }
 
+    /// "Changed 4 files · +115 −7" over the names. "1 failed" leads the names line, not the title
+    /// line: beside Undo on an iPhone the title line has no room for it.
     private func label(_ changes: TurnChanges) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "plus.forwardslash.minus")
-                .font(.system(size: 14))
+                .font(.system(size: 15))
                 .foregroundStyle(Theme.secondaryText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(changes.title)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.primaryText)
                     if !changes.changedFiles.isEmpty {
-                        DiffCounts(added: changes.added, removed: changes.removed)
+                        Text(verbatim: "·")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.tertiaryText)
+                        DiffCounts(added: changes.added, removed: changes.removed, spacing: 5)
                             .font(.footnote.monospacedDigit().weight(.medium))
                     }
+                }
+                .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     if !changes.changedFiles.isEmpty, changes.failedEdits > 0 {
                         Text(changes.failedEdits == 1 ? "1 failed" : "\(changes.failedEdits) failed")
-                            .font(.footnote)
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.warning)
+                            .fixedSize()
+                        Text(verbatim: "·")
+                            .font(.caption)
+                            .foregroundStyle(Theme.tertiaryText)
                     }
+                    Text(changes.names())
+                        .font(.caption)
+                        .foregroundStyle(Theme.tertiaryText)
                 }
-                Text(changes.names())
-                    .font(.caption)
-                    .foregroundStyle(Theme.tertiaryText)
-                    .lineLimit(1)
+                .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
         }
@@ -114,9 +126,10 @@ struct TurnChangesRow: View {
 struct DiffCounts: View {
     let added: Int
     let removed: Int
+    var spacing: CGFloat = 4
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: spacing) {
             Text("+\(added)").foregroundStyle(Theme.Syntax.inserted)
             Text("−\(removed)").foregroundStyle(Theme.Syntax.deleted)
         }

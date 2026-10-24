@@ -307,7 +307,9 @@ HermesKit, read from the turn itself, so it reads the same live and from history
 - **Limits:** a binary file says so; a file whose change passes 512 KB is summarised with its size
   and Open; a diff shows its first 2,000 lines and says how many more there are.
 - **Counts:** "Changed 3 files · +106 −1" counts the files left different and their net lines.
-  VoiceOver reads "Changed 3 files, 106 lines added, 1 removed".
+  Failed edits ("1 failed", orange) lead the names line under it, never the title line, which on
+  an iPhone has no room for them beside Undo. VoiceOver reads "Changed 3 files, 106 lines added, 1
+  removed", and "1 edit failed".
 
 Tapping the row opens the turn's changes where the Inspector is. Beside the chat (Mac, iPad
 landscape) that's the Changed Files tab ([inspector.md](inspector.md) §2.7); elsewhere (iPhone,
