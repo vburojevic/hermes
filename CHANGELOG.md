@@ -31,6 +31,16 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610232348 (October 23, 2026)
+
+- **Chat:** a compaction's summary is a quiet divider that opens to the summary, never a message from you
+- **Chat:** what a routine, a webhook, a script or Hermes itself puts in a chat is never shown as your message
+- **Chat:** a turn that used tools and wrote nothing says what it did, not a bare "Worked for 6s · 2 tools"
+- **Chat:** a finished background process or helper says which and how it ended, and notices in a row are one line
+- **Chat:** a turn's file edits are one Changes row, its files and full diffs a tap away
+- **Bot Chats:** a message between Bots shows what was said and what came back, never an empty preview
+- **Inspector:** a turn's changed files and diffs open beside the chat on the Mac and iPad
+
 ### Build 2610231809 (October 23, 2026)
 
 - **Chats:** a row's time and place follow its last message, not an opened chat, a compaction or a Bot's routine run
