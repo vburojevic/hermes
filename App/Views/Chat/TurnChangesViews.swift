@@ -161,7 +161,9 @@ struct TurnChangesSheet: View {
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
+                        Button("Done", systemImage: "checkmark") { dismiss() }
+                            .buttonStyle(.glassProminent)
+                            .tint(Theme.ink)
                     }
                 }
                 .navigationDestination(for: String.self) { filePath in
@@ -199,6 +201,10 @@ struct TurnChangesList: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
                     .textCase(nil)
+            } footer: {
+                Text("What this turn's edits did, read from the chat. Tap a file for its diff.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tertiaryText)
             }
         }
         #if os(iOS)
@@ -360,10 +366,7 @@ struct ChangedFileDiffPage: View {
         #endif
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Toggle(isOn: $wraps) {
-                    Label("Wrap Lines", systemImage: "text.word.spacing")
-                }
-                .toggleStyle(.button)
+                WrapLinesToggle(isOn: $wraps)
                 if let onOpen, file.change != .deleted {
                     Button("Open", action: onOpen)
                         .accessibilityLabel(Text("Open \(file.name) in the Inspector"))
@@ -373,7 +376,31 @@ struct ChangedFileDiffPage: View {
     }
 }
 
-/// What the diff below can't say by itself: the path, failed edits, a shortened or unmerged diff.
+/// `wrapLinesToggle`: Wrap Lines in the diff page's toolbar, a glass button that fills with ink
+/// while on, never the system blue a toggle takes.
+private struct WrapLinesToggle: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        let button = Button {
+            isOn.toggle()
+        } label: {
+            Label("Wrap Lines", systemImage: "text.word.spacing")
+        }
+        .accessibilityValue(isOn ? Text("On") : Text("Off"))
+        .accessibilityAddTraits(.isToggle)
+        if isOn {
+            button
+                .buttonStyle(.glassProminent)
+                .tint(Theme.ink)
+        } else {
+            button
+        }
+    }
+}
+
+/// What the diff below can't say by itself (`diffNote`): the path, failed edits, a shortened or
+/// unmerged diff.
 struct ChangedFileNotes: View {
     let file: ChangedFile
 
@@ -430,8 +457,8 @@ struct ChangedFileNotes: View {
     }
 }
 
-/// The diff itself: numbers before and after, the sign, the line in its language's colours.
-/// Lines run off to the side and scroll, or wrap.
+/// The diff itself (`fileDiff`): numbers before and after, the sign, the line in its language's
+/// colours. Lines run off to the side and scroll, or wrap.
 struct ChangedFileDiff: View {
     let file: ChangedFile
     var wraps = false
@@ -544,7 +571,8 @@ private struct SyntaxPalette: Sendable {
     nonisolated func color(_ kind: CodeHighlighter.Token.Kind) -> Color? { colors[kind] }
 }
 
-/// One row of a diff.
+/// One row of a diff: a line (`diffLine`), the unchanged lines it skips (`diffGap`), or an edit's
+/// header when they show one by one (`diffEditHeader`).
 private struct DiffRowView: View {
     let row: DiffRow
     let text: AttributedString?
@@ -556,14 +584,22 @@ private struct DiffRowView: View {
     var body: some View {
         switch row.kind {
         case .gap(let skipped):
-            Text(skipped.map { $0 == 1 ? String(localized: "⋯ 1 unchanged line") : String(localized: "⋯ \($0) unchanged lines") } ?? "⋯")
-                .font(.caption)
-                .foregroundStyle(Theme.tertiaryText)
-                .padding(.leading, numberWidth * 2 + 22)
-                .padding(.vertical, 5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface)
-                .accessibilityLabel(skipped.map { String(localized: "\($0) unchanged lines") } ?? String(localized: "Unchanged lines"))
+            HStack(spacing: 6) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityHidden(true)
+                if let skipped {
+                    Text(skipped == 1 ? String(localized: "1 unchanged line") : String(localized: "\(skipped) unchanged lines"))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Theme.tertiaryText)
+            .padding(.leading, numberWidth * 2 + 22)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(skipped.map { String(localized: "\($0) unchanged lines") } ?? String(localized: "Unchanged lines"))
         case .edit(let number, let count, let failure):
             VStack(alignment: .leading, spacing: 2) {
                 Text("Edit \(number) of \(count)")

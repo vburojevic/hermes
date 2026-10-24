@@ -312,13 +312,16 @@ HermesKit, read from the turn itself, so it reads the same live and from history
   removed", and "1 edit failed".
 
 Tapping the row opens the turn's changes where the Inspector is. Beside the chat (Mac, iPad
-landscape) that's the Changed Files tab ([inspector.md](inspector.md) §2.7); elsewhere (iPhone,
-iPad portrait) the Changes sheet (`TurnChangesSheet`): the files, each once, with its folder
-shortened against the turn's other files ("scripts", "…/Sources/Chat"), what happened to it as a
-tag (New, Deleted, Renamed from…, Written whole) and its +/− (`fileChangeRow`). Tapping one shows its diff: old and new line numbers, the lines in their language's
-colours (`CodeHighlighter`), gaps that say how many unchanged lines they skip, lines that scroll
-sideways or wrap (the toolbar's Wrap Lines, remembered), and Open, which opens the file read-only
-in the chat's Inspector through the gateway (as `GatewayFileLink` does, never through the system).
+landscape) that's the Changed Files tab ([inspector.md](inspector.md) §2.7, `changedFilesPanel`);
+elsewhere (iPhone, iPad portrait) the Changes sheet (`TurnChangesSheet`): the files, each once,
+with its folder shortened against the turn's other files ("scripts", "…/Sources/Chat"), what
+happened to it as a tag (New, Deleted, Renamed from…, Written whole) and its +/−
+(`fileChangeRow`), under a footer line saying what it is; ✓ (Done) closes it. Tapping one shows its
+diff: its notes (`diffNote`), old and new line numbers, the lines in their language's colours
+(`CodeHighlighter`, `diffLine`), gaps that say after the ellipsis glyph how many unchanged lines
+they skip (`diffGap`), lines that scroll sideways or wrap (Wrap Lines, a glass button filled with
+ink while on, never the system blue; remembered), and Open, which opens the file read-only in the
+chat's Inspector through the gateway (as `GatewayFileLink` does, never through the system).
 The mock's "many edits" plays such a turn ([development.md](development.md)).
 
 Tools whose name starts with `_` are internal and never shown. Each tool has a present and past

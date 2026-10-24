@@ -1,7 +1,7 @@
 import HermesKit
 import SwiftUI
 
-/// The Changed Files tab (`docs/inspector.md` §2.7): what one turn did to files, from the chat
+/// The Changed Files tab (`changedFilesPanel`, `docs/inspector.md` §2.7): what one turn did to files, from the chat
 /// itself, so it works without Bot Mode. The files on top, the selected one's diff below. On the
 /// Mac ↑ and ↓ move between files and Esc closes the tab.
 struct TurnChangesTabView: View {
@@ -109,13 +109,22 @@ struct TurnChangesTabView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
-            Toggle(isOn: $wraps) {
-                Label("Wrap Lines", systemImage: "text.word.spacing")
-                    .labelStyle(.iconOnly)
+            // Ink while on, never the system blue a toggle takes (`wrapLinesToggle`).
+            Button {
+                wraps.toggle()
+            } label: {
+                Image(systemName: "text.word.spacing")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(wraps ? Theme.inkForeground : Theme.primaryText)
+                    .frame(width: 28, height: 28)
+                    .background(wraps ? Theme.ink : Theme.controlFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(.rect)
             }
-            .toggleStyle(.button)
-            .controlSize(.small)
+            .buttonStyle(.plain)
             .help("Wrap Lines")
+            .accessibilityLabel("Wrap Lines")
+            .accessibilityValue(wraps ? Text("On") : Text("Off"))
+            .accessibilityAddTraits(.isToggle)
             if file.change != .deleted {
                 Button("Open") { inspector.openFile(file.path) }
                     .font(.footnote.weight(.medium))
