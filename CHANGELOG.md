@@ -31,6 +31,27 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610242018 (October 24, 2026)
+
+- **Chats:** Mute and Archive behind a swiped row in the iPhone drawer answer a tap again
+- **Chats:** on iOS 27 a muted chat's swipe offers Unmute, and a read or pinned one says so too
+- **Notifications:** a push that updates the app in the background finishes on the main thread
+- **Appearance:** the launch screen and the window behind Hermes follow Dark Mode explicitly
+- **Bot Chats:** a Bot answers with the widget its answer calls for, so "Weather today?" gets the weather card
+- **Bot Chats:** a message to another Bot says Replied, Waiting or Not delivered, with the speech bubbles
+- **Bot Chats:** another Bot's message card has a smaller face and spans the chat, on a hairline only
+- **Plugins:** the app installs widgets 1.3.0
+- **Chat:** Show More and Show Step are ink, like every other text action in a chat
+- **Chat:** a summarized chat says when Hermes summarized it, and its summary reads as plain text
+- **Chat:** finished work shows a check or a warning beside each process, and its output stays readable
+- **Chat:** the live header counts the running step's time, as it does thinking's
+- **Chat:** a reply the app lost track of says so in its header, with Reload there
+- **Changes:** "1 failed" leads the row's names line, so the row fits beside Undo on iPhone
+- **Changes:** a file's row tags it New, Deleted, Renamed or Written whole
+- **Changes:** Wrap Lines fills with ink when on, gaps lead with an ellipsis, and the sheet closes with ✓
+- **Requests:** Deny and Allow sit beside the command in the dock, and a flagged one shows a shield
+- **Mac:** the priority notice is 11 pt with Fix… in ink, and says Hermes is back at full priority after it
+
 ### Build 2610232348 (October 23, 2026)
 
 - **Chat:** a compaction's summary is a quiet divider that opens to the summary, never a message from you
