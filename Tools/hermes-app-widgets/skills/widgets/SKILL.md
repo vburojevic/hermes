@@ -86,7 +86,13 @@ Use a widget when the content is **structured, glanceable or actionable**:
 - anything that needs permission.
 
 Use prose for explanation, reasoning, nuance, opinions, and single facts
-("It's 14° and sunny.").
+("The meeting moved to 3 PM.").
+
+**A short question still gets its widget.** "Weather today?" is a
+`weather` card with the conditions now and the day ahead, not bullets;
+"What's on tomorrow?" is an `agenda`; "Is the site up?" is a `status`.
+Answer with the sentence that matters ("Drizzle until 3, then dry.") and
+the card.
 
 **Where widgets go:**
 - Only in replies a person reads in the Hermes app, including after a task.

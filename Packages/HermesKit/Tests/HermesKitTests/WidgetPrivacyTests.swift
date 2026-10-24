@@ -139,6 +139,21 @@ struct WidgetPrivacyTests {
         #expect(params["arg"]?.stringValue == #"keys.register {"device_id":"d1","name":"iPhone","public_key":"BASE64"}"#)
     }
 
+    /// Where only a Bot has the plugin, commands about no chat go through that Bot's open chat:
+    /// Hermes runs a command without a session in the profile it was launched in.
+    @Test func commandsAboutNoChatGoThroughTheBotsOpenChat() async throws {
+        let sent = Mutex<[[String: JSONValue]]>([])
+        let client = AppWidgetsClient(profile: "core", session: "rt-core") { _, params in
+            sent.withLock { $0.append(params) }
+            return ["type": "plugin", "output": #"{"ok":true,"session_ids":["a"]}"#]
+        }
+        try await client.markSessions(["a"])
+        try await client.markSession(runtimeID: "rt-other", storedID: "b")
+        let calls = sent.withLock { $0 }
+        #expect(calls.map { $0["session_id"]?.stringValue } == ["rt-core", "rt-other"], "a chat's own command keeps its chat")
+        #expect(calls.allSatisfy { $0["profile"] == "core" })
+    }
+
     @Test func aMissingPluginAndARefusalAreTold() async {
         let missing = AppWidgetsClient { _, _ in throw GatewayRPCError(code: 4018, message: "not a quick/plugin/bundle/skill command") }
         await #expect(throws: AppWidgetsClient.Failure.notInstalled) { try await missing.markRoom("room_1") }

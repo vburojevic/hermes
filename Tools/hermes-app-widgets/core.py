@@ -24,9 +24,9 @@ from .validate import MAX_PAYLOAD, Checks, Spec, WidgetError, schema_issues
 
 logger = logging.getLogger("hermes_app_widgets")
 
-VERSION = "1.2.2"
+VERSION = "1.3.0"
 # Bumped when the one-time reminder (prompt.REMINDER) changes enough to send again.
-REMINDER_VERSION = 1
+REMINDER_VERSION = 2
 OPS = ("create", "update", "resolve", "claim", "get")
 RESOLUTIONS = ("done", "failed", "rejected", "cancelled", "expired", "elsewhere")
 # The answers each primitive has without declaring them (payload-contract.md §6.1).
@@ -39,6 +39,8 @@ APP_SOURCES = ("api_server", "desktop", "tui")
 # type Hermes adds later included), so `for` is never skipped where others can answer.
 PRIVATE_CHAT_TYPES = ("dm", "private", "")
 MAX_SESSIONS = 5000
+# Sessions whose compression ancestors were read, kept per process: a session's ancestors never change.
+MAX_LINEAGES = 2000
 
 
 def _session_env(name: str) -> str:
@@ -120,6 +122,7 @@ class Widgets:
         self._cron_execution = cron_execution
         self._profile = profile
         self._subagents: set[str] = set()
+        self._ancestors: dict[str, tuple[str, ...]] = {}
 
     # ---- settings
 
@@ -201,7 +204,36 @@ class Widgets:
             return self.in_marked_room(s.id)
         if s.platform in self.app_platforms():
             return True
-        return bool(s.id) and s.id in self._marked_sessions()
+        if not s.id:
+            return False
+        marked = self._marked_sessions()
+        if s.id in marked:
+            return True
+        # Hermes compacts a long chat into a new session with a new id (a Bot Chat never ends, so it
+        # compacts often), often in the middle of a turn. The app marked the chat under an earlier id,
+        # so the new one is the app's too, and is marked for the next time.
+        if s.messaging or not any(a in marked for a in self.ancestors(s.id)):
+            return False
+        self.mark_session(s.id, inherited=True)
+        return True
+
+    def ancestors(self, session_id: str) -> tuple[str, ...]:
+        """The sessions Hermes compacted into this one, oldest first, from its session store (the
+        profile's, then the root's). Empty when Hermes can't say: then only marks count."""
+        if session_id in self._ancestors:
+            return self._ancestors[session_id]
+        found: tuple[str, ...] | None = None
+        for path in _state_dbs():
+            lineage = _compression_lineage(path, session_id)
+            if lineage:
+                found = tuple(lineage[:lineage.index(session_id)]) if session_id in lineage else ()
+                break
+        if found is None:
+            return ()  # not stored yet: asked again next time
+        if len(self._ancestors) >= MAX_LINEAGES:
+            self._ancestors.pop(next(iter(self._ancestors)))
+        self._ancestors[session_id] = found
+        return found
 
     def _marks(self, kind: str = "sessions") -> dict:
         try:
@@ -974,6 +1006,39 @@ def room_of(session_id: str) -> str | None:
         if isinstance(task, dict) and task.get("room_id"):
             return str(task["room_id"])
     return None
+
+
+def _state_dbs() -> list[Path | None]:
+    """The session stores to look in: this profile's (``None``, Hermes's default), then the root's."""
+    paths: list[Path | None] = [None]
+    try:
+        from hermes_constants import get_default_hermes_root, get_hermes_home
+        root = Path(get_default_hermes_root()) / "state.db"
+        if root.resolve() != (Path(get_hermes_home()) / "state.db").resolve() and root.exists():
+            paths.append(root)
+    except Exception:
+        pass
+    return paths
+
+
+def _compression_lineage(path: Path | None, session_id: str) -> list[str]:
+    """``SessionDB.get_compression_lineage``: the compression chain through this session, oldest
+    first. Empty when the session isn't in that store or Hermes has no such call."""
+    db = None
+    try:
+        from hermes_state_registry import acquire, release_or_close
+        db = acquire(path)
+        lineage = db.get_compression_lineage(session_id)
+        return [str(i) for i in lineage] if isinstance(lineage, list) else []
+    except Exception:
+        logger.debug("widgets: couldn't read the compression lineage", exc_info=True)
+        return []
+    finally:
+        if db is not None:
+            try:
+                release_or_close(db)
+            except Exception:
+                pass
 
 
 def _job_from_session(session_id: str) -> str | None:

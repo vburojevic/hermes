@@ -1,13 +1,14 @@
 """The system prompt section (payload-contract.md §8.4): ≤ 4,000 characters, only for the Hermes
 app's sessions. The decision rule, one line per primitive from its catalogue ``cue``, the payload and
 claim rules, then two short examples last. The full guide is the plugin's ``widgets`` skill. Widgets
-are the default in the app's chats: an agent uses one unprompted whenever the content fits a type."""
+are the default in the app's chats: an agent uses one unprompted whenever the content fits a type,
+even for a short question ("Weather today?")."""
 from __future__ import annotations
 
 MAX_CHARS = 4000
 
 HEAD = """## Widgets (Hermes app)
-The person reads this chat in the Hermes app, which draws widgets: native cards for weather, lists, schedules, statuses, numbers, comparisons, choices, approvals and the rest below. Widgets are the default here. Whenever what you're about to say fits one of these types, create that widget with the `widget` tool, unprompted, and put the returned `directive` on its own line after one plain sentence that says what matters. Don't wait to be asked, and don't write as Markdown what a widget shows (a forecast, a table, a list to tick, a status). Prose is for explanation, reasoning, opinion and a single fact in a sentence. At most 3 widgets per reply (a scheduled report: one `stack`). Never in files, commits, tool input or progress notes. Call `widget_examples(type)` before a type's first use; the `widgets` skill has the full guide.
+The person reads this chat in the Hermes app, which draws widgets: native cards of the types below. Widgets are the default here. Whenever what you're about to say fits one of these types, create that widget with the `widget` tool, unprompted, and put the returned `directive` on its own line after one plain sentence that says what matters. Don't wait to be asked, and don't write as Markdown what a widget shows (a forecast, a table, a list to tick, a status). A short question still gets its widget: "Weather today?" is a `weather` card, "What's on tomorrow?" an `agenda`, "Is the site up?" a `status`. Prose is for explanation, reasoning and opinion. At most 3 widgets per reply (a scheduled report: one `stack`). Never in files, commits, tool input or progress notes. Call `widget_examples(type)` before a type's first use; the `widgets` skill has the full guide.
 
 Types, and when to use each:
 """
@@ -33,13 +34,22 @@ REMINDER = (
     "[Hermes app widgets] This chat is read in the Hermes app, which draws widgets. Use them by default, "
     "unprompted: whenever a reply has weather, a list, a schedule, a status, numbers, a comparison, a "
     "choice, steps or anything that needs permission, create the matching widget with the `widget` tool "
-    "and put its directive on its own line after one plain sentence. Prose is for explanation. The "
+    "and put its directive on its own line after one plain sentence, even for a short question (\"Weather "
+    "today?\" is a `weather` card). Prose is for explanation. The "
     "`widgets` skill has the rules; call `widget_examples(type)` before a type's first use."
 )
 
 
+# Where the catalogue's cue names a topic but not the questions that call for it, the section says
+# which questions do: "weather" alone read as a topic, and a weather question was answered in prose.
+CUES = {
+    "weather": "any weather question: now, today, the days ahead, rain, warnings",
+}
+
+
 def render(catalog: dict[str, dict]) -> str:
-    table = "\n".join(f"- {name}: {entry.get('cue') or entry.get('summary', '')}" for name, entry in catalog.items())
+    table = "\n".join(f"- {name}: {CUES.get(name) or entry.get('cue') or entry.get('summary', '')}"
+                      for name, entry in catalog.items())
     text = HEAD + table + "\n" + RULES + EXAMPLES
     if len(text) > MAX_CHARS:  # Hermes skips an oversized section rather than cutting it
         text = HEAD + table + "\n" + RULES

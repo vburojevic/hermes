@@ -18,6 +18,8 @@ final class WidgetStore {
     /// The gateway has the `hermes-app-widgets` plugin: the `widget` tool is in its tool list
     /// (`docs/widgets.md` §11).
     private(set) var isAvailable = false
+    /// The tool list has answered once (`checkSupport`): until then a chat is marked anyway.
+    @ObservationIgnored private var supportChecked = false
 
     /// The newest revision read of each widget, by id (stack children included).
     private(set) var results: [String: WidgetReader.Result] = [:]
@@ -155,6 +157,9 @@ final class WidgetStore {
                 found = tools.values.contains { $0.contains(WidgetToolResult.widgetTool) }
             }
         }
+        // A Bot's own profile can have the plugin when Hermes itself doesn't.
+        if !found, workspace?.plugins.survey?.profilesRunning(.widgets).isEmpty == false { found = true }
+        supportChecked = true
         if found != isAvailable { isAvailable = found }
         if found {
             await registerKeyIfNeeded()
@@ -178,9 +183,17 @@ final class WidgetStore {
         var opensSettings = false
     }
 
+    /// The plugin's commands that aren't about one chat (the signing key, marking known chats) go
+    /// through a profile that runs it: Hermes itself, else a Bot that has it, through that Bot's open
+    /// chat, since Hermes runs a command without a session in the profile it was launched in. Its
+    /// data is the Hermes root's, so any profile's copy marks for all of them.
     private func pluginClient() -> AppWidgetsClient? {
         guard let roster = workspace?.roster, roster.isConnected else { return nil }
-        return AppWidgetsClient { method, params in try await roster.request(method, params) }
+        let open = Set(roster.botConversations.filter { $0.value.runtimeSessionID != nil }.keys)
+        let profile = workspace?.plugins.survey?.commandProfile(for: .widgets, open: open)
+        let bot = profile == "default" ? nil : profile
+        let session = bot.flatMap { roster.botConversations[$0]?.runtimeSessionID }
+        return AppWidgetsClient(profile: bot, session: session) { method, params in try await roster.request(method, params) }
     }
 
     /// Gives the gateway this device's key, once per key (contract §6.3). Without a Secure
@@ -268,6 +281,14 @@ final class WidgetStore {
                 }
             }
         }
+    }
+
+    /// Whether a chat of `profile` can be marked: what the plugin survey read of that profile, else
+    /// the gateway's tool list. A first message sent before either answered marks its chat anyway, so
+    /// it isn't answered in plain text for being early (a gateway without the plugin says 4018).
+    func reaches(profile: String?) -> Bool {
+        if let runs = workspace?.plugins.survey?.runs(.widgets, in: profile ?? "default") { return runs }
+        return isAvailable || !supportChecked
     }
 
     func needsMark(_ sessionID: String) -> Bool {

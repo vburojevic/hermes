@@ -18,16 +18,20 @@ public struct AppWidgetsClient: Sendable {
     let transport: Transport
     /// The profile a chat runs under, for commands about one chat.
     let profile: String?
+    /// A live chat of that profile, for commands about none: Hermes runs a plugin command without a
+    /// session in the profile it was launched in, whatever `profile` says (`command.dispatch`).
+    let session: String?
 
-    public init(profile: String? = nil, transport: @escaping Transport) {
+    public init(profile: String? = nil, session: String? = nil, transport: @escaping Transport) {
         self.profile = profile
+        self.session = session
         self.transport = transport
     }
 
     /// Runs `/app-widgets <command> <json>` and returns the plugin's JSON answer.
     public func run(_ command: String, _ arguments: [String: JSONValue], sessionID: String? = nil) async throws -> JSONValue {
         var params: [String: JSONValue] = ["name": .string("app-widgets"), "arg": .string(command + " " + WidgetAnswer.canonical(.object(arguments)))]
-        if let sessionID { params["session_id"] = .string(sessionID) }
+        if let sessionID = sessionID ?? session { params["session_id"] = .string(sessionID) }
         if let profile { params["profile"] = .string(profile) }
         let result: JSONValue
         do {

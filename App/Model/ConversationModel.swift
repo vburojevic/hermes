@@ -5693,11 +5693,17 @@ extension ConversationModel {
     }
 
     /// Tells the plugin this chat is the app's, before its first prompt: Hermes builds a chat's
-    /// system prompt once, and only the app's chats keep their directives (§11).
+    /// system prompt once, and only the app's chats keep their directives (§11). A Bot Chat asks its
+    /// own Bot's profile, which can have the plugin when Hermes itself doesn't, and the other way round.
     fileprivate func markForWidgets(runtime: String, roster: BotRoster) async {
-        guard let widgets = workspace?.widgets, widgets.isAvailable, let stored = sessionID, widgets.needsMark(stored) else { return }
+        guard let widgets = workspace?.widgets, widgets.reaches(profile: gatewayProfile), let stored = sessionID,
+              widgets.needsMark(stored) else { return }
         // The agent runs under the stored id; the plugin marks every id it's given (§11).
         let client = AppWidgetsClient(profile: gatewayProfile) { method, params in try await roster.request(method, params) }
-        if (try? await client.markSession(runtimeID: runtime, storedID: stored)) != nil { widgets.noteMarked(stored) }
+        guard (try? await client.markSession(runtimeID: runtime, storedID: stored)) != nil else { return }
+        widgets.noteMarked(stored)
+        // Where only a Bot has the plugin, its open chat is the way in for the rest (`pluginClient`).
+        widgets.markKnownChats()
+        await widgets.registerKeyIfNeeded()
     }
 }
