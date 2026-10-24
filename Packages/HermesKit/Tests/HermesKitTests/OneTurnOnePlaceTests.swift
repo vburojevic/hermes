@@ -143,6 +143,20 @@ struct OneTurnOnePlaceTests {
         #expect(liveTurn().heldTurn.state == .complete)
     }
 
+    /// The header's live words count the running step's time from when it started ("Running the
+    /// tests… · 12s"); a finished step, or a turn that ended, counts nothing.
+    @Test func theRunningStepCountsFromItsStart() {
+        var live = LiveTurn(id: "live-1", sessionID: "rt", startedAt: at(-60))
+        live.apply(SequencedTurnEvent(seq: 1, event: .toolStarted(id: "c1", name: "terminal", preview: nil, at: nil)), now: at(-12))
+        #expect(live.turn.runningStepStart == at(-12))
+        live.apply(SequencedTurnEvent(seq: 2, event: .toolFinished(id: "c1", name: "terminal", failed: false, duration: 12, resultPreview: nil, at: nil)), now: now)
+        #expect(live.turn.runningStepStart == nil)
+        live.apply(SequencedTurnEvent(seq: 3, event: .toolStarted(id: "c2", name: "web_search", preview: nil, at: nil)), now: now)
+        #expect(live.turn.runningStepStart == now)
+        live.settleUnheard(now: now)
+        #expect(live.turn.runningStepStart == nil)
+    }
+
     /// The stored rows went further than what the lost turn heard: the turn keeps those steps, in
     /// its own place, and still says it lost track.
     @Test func aLostTurnKeepsTheStepsHermesStored() {

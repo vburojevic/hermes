@@ -27,8 +27,8 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
 1. Warnings Hermes raised as the turn started (a compression setting, a refusal), one quiet line
    each, with any how-to-fix lines behind a disclosure (`TurnWarnings`).
 2. The turn header (`turnHeader`, `WorkSummaryView`): the turn's one live line (§4a). A still
-   sparkle and words that shimmer while it runs ("Thinking…", then the running step, "Thinking… ·
-   12s" after 10 s), still words once the reply streams ("Working · 3 tools"), a raised hand while
+   sparkle and words that shimmer while it runs ("Thinking…", then the running step, with its time
+   after 10 s: "Thinking… · 12s", "Running the tests… · 12s"), still words once the reply streams ("Working · 3 tools"), a raised hand while
    it waits for an approval ("Waiting for your approval") or for an answer on a request card
    ("Waiting for your answer", in place of the asking tool's "Asking a question…"), and when finished a summary such as
    "Worked for 14s · 2 tools" or "Thought for 3s". A turn that used tools and wrote nothing says
@@ -651,7 +651,8 @@ typing bubbles, no waving dots and no spinners for agent work.
   and with Reduce Motion it isn't there. Its accessibility label is its words.
 - **Timing:** the header appears the moment the message is sent, so there's never an empty gap.
   Its words change at most 4 times a second, cross-faded. After 10 s of thinking it adds the
-  time: "Thinking… · 12s".
+  time: "Thinking… · 12s"; a step that runs past 10 s adds its own, from when it started
+  ("Running the tests… · 12s", `turnHeaderRunning`).
 - **Face dots** only where the face stands alone (`BotFace(dots: true)`): a group's face strip,
   Talk, the compact Dynamic Island.
 - **The app's own waiting is different.** `Spinner` (a `ProgressView`, `Chips.spinner`) is only for

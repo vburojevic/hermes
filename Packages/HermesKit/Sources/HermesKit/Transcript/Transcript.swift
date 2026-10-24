@@ -192,6 +192,13 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
         state == .streaming || state == .waitingForApproval
     }
 
+    /// When the step running now started, so the header's live words count its time ("Running the
+    /// tests… · 12s", `docs/chat.md` §4a); nil unless the last step is a tool still running.
+    public var runningStepStart: Date? {
+        guard isWorking, case .tool(let tool)? = steps.last, tool.status == .running else { return nil }
+        return tool.startedAt
+    }
+
     /// Ended with nothing in it: no word, step, plan, sound, warning or steer, and no failure. A
     /// turn on screen never ends like that (`docs/chat.md` §2): Hermes is still taking it, or its
     /// reply isn't stored yet.

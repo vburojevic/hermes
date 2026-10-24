@@ -480,13 +480,16 @@ struct WorkSummaryView: View, Equatable {
         return helpersWorking
     }
 
-    /// Thinking for more than 10 s says for how long: "Thinking… · 12s".
-    private var countsThinking: Bool {
-        turn.isWorking && turn.answer.isEmpty && status == nil && !isStopping && !isWaiting && !helpersWorking
-            && shownTitle == String(localized: "Thinking…")
+    /// What the live words count from, shown past 10 s (`turnHeaderRunning`): the running step's own
+    /// start ("Running the tests… · 12s"), or the turn's while it thinks ("Thinking… · 12s").
+    private var countsFrom: Date? {
+        guard turn.isWorking, turn.answer.isEmpty, status == nil, !isStopping, !isWaiting, !helpersWorking,
+              let shownTitle, shownTitle == workingTitle else { return nil }
+        if let step = turn.runningStepStart { return step }
+        return shownTitle == String(localized: "Thinking…") ? turn.startedAt : nil
     }
 
-    static func thinking(_ title: String, since started: Date, now: Date) -> String {
+    static func counting(_ title: String, since started: Date, now: Date) -> String {
         let elapsed = now.timeIntervalSince(started)
         guard elapsed >= 10 else { return title }
         return "\(title) · \(Formatting.duration(elapsed))"
@@ -571,13 +574,12 @@ struct WorkSummaryView: View, Equatable {
             HStack(spacing: 6) {
                 TurnGlyph(isWaiting: isWaiting)
                 let shown = shownTitle ?? title
-                let started = turn.startedAt
-                let counts = countsThinking && started != nil
+                let from = countsFrom
                 // One title throughout, so its words cross-fade; it ticks each second only while
-                // "Thinking…" counts.
-                TimelineView(.periodic(from: started ?? .now, by: counts ? 1 : 86_400)) { context in
+                // "Thinking…" or the running step counts.
+                TimelineView(.periodic(from: from ?? .now, by: from != nil ? 1 : 86_400)) { context in
                     TickerTitle(
-                        id: shown, text: counts ? Self.thinking(shown, since: started ?? context.date, now: context.date) : shown,
+                        id: shown, text: from.map { Self.counting(shown, since: $0, now: context.date) } ?? shown,
                         shimmers: shimmers, tint: isWaiting ? Theme.warning : Theme.tertiaryText
                     )
                 }
