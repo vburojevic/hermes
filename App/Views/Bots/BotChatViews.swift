@@ -255,7 +255,8 @@ struct AgentMessageRow: View {
 }
 
 /// `botMessageCard`: a Bot's message in someone else's chat — its face, name, @handle and time
-/// over the text, on a hairline card. Bot Chats' hand-offs and the welcome tour (`welcomeBots`).
+/// over the text, on a hairline card with no fill, the chat's full width. Bot Chats' hand-offs and
+/// the welcome tour (`welcomeBots`).
 struct BotMessageCard: View {
     let appearance: BotAppearance?
     let name: String
@@ -263,14 +264,12 @@ struct BotMessageCard: View {
     var date: Date?
     let text: String
     var look: CGVector?
-    /// Room on the right, as a chat leaves for the person's side.
-    var trailingInset: CGFloat = 40
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if let appearance {
-                    BotFace(appearance: appearance, size: 28, look: look)
+                    BotFace(appearance: appearance, size: 22, look: look)
                 } else {
                     Image(systemName: "bubble.left.and.text.bubble.right")
                         .font(.caption)
@@ -278,16 +277,20 @@ struct BotMessageCard: View {
                         .accessibilityHidden(true)
                 }
                 Text(name)
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
                 Text("@\(handle)")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(Theme.tertiaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 if let date {
                     Spacer(minLength: 4)
                     Text(date, format: .dateTime.hour().minute())
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(Theme.tertiaryText)
+                        .fixedSize()
                 }
             }
             // A Bot writes Markdown, rendered with a reply's rules (links through `WebLink`). A
@@ -295,18 +298,15 @@ struct BotMessageCard: View {
             if let summary = HandoffBrief.summary(text) {
                 HandoffBriefRow(summary: summary, text: text)
             } else {
-                ExpandableText(text: text, markdown: true, prominent: true)
+                ExpandableText(text: text, markdown: true, tone: .primary)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .strokeBorder(Theme.hairline)
         )
-        .padding(.trailing, trailingInset)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Message from \(name)"))
     }

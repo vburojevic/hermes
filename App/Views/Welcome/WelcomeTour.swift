@@ -94,7 +94,7 @@ private struct BotsVignette: View {
             .padding(.top, 14)
             let researcher = WelcomeDemo.bots[1]
             BotMessageCard(appearance: researcher.appearance, name: researcher.name, handle: researcher.handle,
-                           date: WelcomeDemo.digestTime, text: WelcomeDemo.digest, trailingInset: 0)
+                           date: WelcomeDemo.digestTime, text: WelcomeDemo.digest)
         }
     }
 }

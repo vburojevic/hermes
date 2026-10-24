@@ -286,32 +286,29 @@ struct ExpandableText: View {
     let text: String
     var markdown = false
     var lines = LongText.messageLines
-    /// The text of a message itself (a Bot's card), not a detail under a line.
-    var prominent = false
     /// A detail in footnote size (a helper's result in finished work).
     var small = false
-    /// A detail's colour; a reply carried back reads in the primary colour.
+    /// Its colour: a message itself (a Bot's card) or a reply carried back reads in the primary
+    /// colour, a detail under a line in the secondary.
     var tone: MarkdownView.Tone = .secondary
 
     @State private var isOpen = false
 
-    private var font: Font {
-        prominent ? Theme.Typography.message : small ? .footnote : Theme.Typography.compactMessage
-    }
+    private var font: Font { small ? .footnote : Theme.Typography.compactMessage }
     /// A folded line's height, about, at that font.
-    private var lineHeight: CGFloat { prominent ? 22 : small ? 17 : 19 }
+    private var lineHeight: CGFloat { small ? 17 : 19 }
 
     var body: some View {
         let long = LongText.isLong(text, lines: lines)
         VStack(alignment: .leading, spacing: 6) {
             Group {
                 if markdown {
-                    MarkdownView(text: text, tone: prominent ? .primary : tone)
+                    MarkdownView(text: text, tone: tone)
                         .environment(\.markdownBodyFont, font)
                 } else {
                     Text(linking: text)
                         .font(font)
-                        .foregroundStyle(prominent || tone == .primary ? Theme.primaryText : Theme.secondaryText)
+                        .foregroundStyle(tone == .primary ? Theme.primaryText : Theme.secondaryText)
                         .textSelection(.enabled)
                 }
             }
