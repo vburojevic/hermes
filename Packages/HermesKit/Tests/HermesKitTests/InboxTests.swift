@@ -187,8 +187,8 @@ struct InboxTests {
 
     @Test func rowTimesReadAcrossDaysYearsAndTimeZones() {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Zagreb")!
-        // 00:05 on Thursday 1 January 2026 in Zagreb.
+        calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
+        // 00:05 on Thursday 1 January 2026 in Berlin.
         let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 0, minute: 5))!
         // Ten minutes ago was last year, but it reads in minutes; 23:00 the night before reads "Yesterday".
         #expect(InboxTime(now.addingTimeInterval(-600), now: now, calendar: calendar) == .minutes(10))
@@ -201,7 +201,7 @@ struct InboxTests {
         let sameYear = calendar.date(from: DateComponents(year: 2026, month: 3, day: 9, hour: 12))!
         let april = calendar.date(from: DateComponents(year: 2026, month: 4, day: 20, hour: 12))!
         #expect(InboxTime(sameYear, now: april, calendar: calendar) == .date(sameYear))
-        // The same moment is "Yesterday" in Zagreb and still today in New York.
+        // The same moment is "Yesterday" in Berlin and still today in New York.
         var newYork = calendar
         newYork.timeZone = TimeZone(identifier: "America/New_York")!
         #expect(InboxTime(now.addingTimeInterval(-65 * 60), now: now, calendar: newYork) == .time(now.addingTimeInterval(-65 * 60)))
@@ -211,7 +211,7 @@ struct InboxTests {
 
     @Test func rowTimesWakeOnlyWhenTheirWordsChange() {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Zagreb")!
+        calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
         let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 23, hour: 15, minute: 30, second: 20))!
         func next(_ ago: Double) -> Date? { InboxTime.nextChange(for: now.addingTimeInterval(-ago), after: now, calendar: calendar) }
         let midnight = calendar.date(from: DateComponents(year: 2026, month: 10, day: 24))!

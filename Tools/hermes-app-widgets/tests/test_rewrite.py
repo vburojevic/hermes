@@ -351,7 +351,7 @@ def test_a_bot_chat_the_app_marked_stays_its_own_after_compaction(live):
     assert "Widgets are the default here" in live.prompt_section({"platform": "tui", "session_id": "sess-core-3"})
     [hint] = reminders("sess-core-3", "tui")
     assert "Weather today?" in hint["context"]
-    reply = 'Drizzle until 3, then dry.\n\n::widget{id="w_core0001" alt="Zagreb weather"}'
+    reply = 'Drizzle until 3, then dry.\n\n::widget{id="w_core0001" alt="Lisbon weather"}'
     assert transform(reply, "tui", "sess-core-3") == reply
     assert "sess-core-3" in live._marked_sessions()  # marked for the next time, and for the app
 
