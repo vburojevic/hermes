@@ -44,12 +44,14 @@ the design's component names, used in code comments.
   - Hermes takes words for any single question that isn't multi-select (the "Other" row under the
     picks, or an open question). While such a question is on show, docked or not, the dock says
     "Or type your own answer below." (or "Type your answer below and send it."), the composer
-    reads "Answer <name>", has no send mode, and Send answers that question by its id
+    (`composerAnswer`) reads "Answer <name>", has no send mode and no Think, and Send answers that question by its id
     (`{answers: {qid: text}}`, receipt "Answered · …"). Pictures, files, a `/command` or a reply to
     a passage go as messages instead.
-  - An approval offers Deny and Allow (Don't Save and Save for a memory save) only for a short
-    command shown whole (`VisibleText.fitsAtAGlance`, 44 characters, one line), never for a
-    flagged command or a card fill: those say "Open it to answer." Other requests say the same.
+  - An approval offers Deny and Allow (Don't Save and Save for a memory save) beside the command,
+    only for a short command shown whole (`VisibleText.fitsAtAGlance`, 44 characters, one line),
+    never for a flagged command or a card fill: those say "Open it to answer." Other requests say
+    the same. A flagged command's tile shows the shield (`exclamationmark.shield`) in place of the
+    raised hand.
   - Several waiting (approvals first, then the rest, oldest first): "‹ 1 of 3 ›" beside the title
     steps through them, and each is answered by its own id. The full card shows the same stepper
     above it when several requests other than approvals wait; approvals keep their batch card.

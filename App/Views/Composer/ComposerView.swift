@@ -431,13 +431,20 @@ struct ComposerView: View {
         hold.isHolding && (recorder.phase == .preparing || recorder.phase == .holding)
     }
 
-    private var collapsesChipSlot: Bool { conversation.isBotChat && !showsModeChip }
+    /// A Bot Chat has no Think, and neither has the answer composer (`composerAnswer`): Send
+    /// answers the question, so there's no turn to think about.
+    private var collapsesChipSlot: Bool { (conversation.isBotChat || answersQuestion) && !showsModeChip }
+
+    /// Send answers the question on show, not a new message.
+    private var answersQuestion: Bool {
+        conversation.typedAnswerRequest != nil && conversation.editingQueued == nil
+    }
 
     /// While a turn runs and there's something to send, the send mode takes Think's place: Think
     /// applies to the next turn anyway. Not while Send answers a question: there's no mode to pick.
     private var showsModeChip: Bool {
         (conversation.canSendFollowUp || conversation.editingQueued != nil) && !dictation.isActive
-            && !(conversation.typedAnswerRequest != nil && conversation.editingQueued == nil)
+            && !answersQuestion
     }
 
     /// A row coming into the composer or the bar (the queue, a strip, attachments, a card): it
@@ -457,15 +464,15 @@ struct ComposerView: View {
                 ZStack(alignment: .leading) {
                     if !conversation.isBotChat {
                         EffortMenu(conversation: conversation, workspace: workspace)
-                            .modifier(ChipSlot(isShown: !showsModeChip))
+                            .modifier(ChipSlot(isShown: !showsModeChip && !answersQuestion))
                     }
                     FollowUpModeChip(conversation: conversation, focused: focused)
                         .modifier(ChipSlot(isShown: showsModeChip))
                         // The first time the person types while Hermes works (`SteerTip.typedWhileWorking`).
                         .hermesTip(SteerTip(), arrowEdge: .bottom)
                 }
-                // A Bot Chat has no Think: the slot takes no room until the send mode shows in it, so
-                // what follows (the process chip) sits next to +.
+                // A Bot Chat and the answer composer have no Think: the slot takes no room until the
+                // send mode shows in it, so what follows (the process chip) sits next to +.
                 .frame(width: collapsesChipSlot ? 0 : nil, alignment: .leading)
                 .padding(.trailing, collapsesChipSlot ? -6 : 0)
                 .animation(.smooth(duration: 0.2), value: collapsesChipSlot)

@@ -3,7 +3,7 @@ import HermesPush
 import SwiftUI
 
 /// The waiting card, stepped aside while the person types (`needsYouDock`,
-/// `docs/quick-actions.md` §1): the whole question, its picks as chips, Deny and Allow for a
+/// `docs/quick-actions.md` §1): the whole question, its picks as chips, Deny and Allow beside a
 /// short command, and with several waiting, which one of how many. Tap the question to bring the
 /// card back.
 struct NeedsYouDock: View {
@@ -15,22 +15,28 @@ struct NeedsYouDock: View {
     var body: some View {
         let items = conversation.waitingItems
         if let shown = WaitingItem.shown(items, selected: conversation.shownWaitingID) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 9) {
                 header(shown.item, index: shown.index, count: items.count)
-                Button(action: onExpand) {
-                    Text(subject(shown.item))
-                        .font(isCommand(shown.item) ? .footnote.monospaced() : .footnote)
-                        .foregroundStyle(Theme.primaryText)
-                        // Never cut in the middle: it wraps, and the rest is in the card.
-                        .lineLimit(showsWhole(shown.item) ? nil : (isLarge ? 2 : RequestDock.questionLines))
-                        .truncationMode(.tail)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                HStack(spacing: 10) {
+                    Button(action: onExpand) {
+                        Text(subject(shown.item))
+                            .font(isCommand(shown.item) ? .footnote.monospaced() : .footnote)
+                            .foregroundStyle(Theme.primaryText)
+                            // Never cut in the middle: it wraps, and the rest is in the card.
+                            .lineLimit(showsWhole(shown.item) ? nil : (isLarge ? 2 : RequestDock.questionLines))
+                            .truncationMode(.tail)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows the full card")
+                    // Deny and Allow beside the command they answer.
+                    if case .approval(let approval) = shown.item, RequestDock.answersHere(approval) {
+                        decision(approval)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Shows the full card")
                 answers(shown.item)
             }
             .id(shown.item.id)
@@ -76,36 +82,41 @@ struct NeedsYouDock: View {
         }
     }
 
+    /// Deny and Allow (Don't Save and Save for a memory), answering this request by its id.
+    private func decision(_ approval: ApprovalRequest) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                conversation.respond(to: approval, with: .deny)
+            } label: {
+                Text(approval.isMemorySave ? String(localized: "Don't Save") : String(localized: "Deny"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.danger)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 34)
+                    .background(Theme.controlFill, in: Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            Button {
+                conversation.respond(to: approval, with: .once)
+            } label: {
+                Text(approval.isMemorySave ? String(localized: "Save") : String(localized: "Allow"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.inkForeground)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 34)
+                    .background(Theme.ink, in: Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityHint(approval.isMemorySave ? "Saves this to memory" : "Allows this command once")
+        }
+        .fixedSize()
+    }
+
     @ViewBuilder
     private func answers(_ item: WaitingItem) -> some View {
         switch item {
         case .approval(let approval) where RequestDock.answersHere(approval):
-            HStack(spacing: 8) {
-                Spacer(minLength: 0)
-                Button {
-                    conversation.respond(to: approval, with: .deny)
-                } label: {
-                    Text(approval.isMemorySave ? String(localized: "Don't Save") : String(localized: "Deny"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.danger)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 34)
-                        .background(Theme.controlFill, in: Capsule())
-                }
-                .buttonStyle(PressableStyle())
-                Button {
-                    conversation.respond(to: approval, with: .once)
-                } label: {
-                    Text(approval.isMemorySave ? String(localized: "Save") : String(localized: "Allow"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.inkForeground)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 34)
-                        .background(Theme.ink, in: Capsule())
-                }
-                .buttonStyle(PressableStyle())
-                .accessibilityHint(approval.isMemorySave ? "Saves this to memory" : "Allows this command once")
-            }
+            EmptyView()
         case .approval(let approval):
             Text(approval.smartDenied ? String(localized: "Flagged by Hermes's safety check. Open it to answer.") : String(localized: "Open it to read it whole and answer."))
                 .font(.caption)
@@ -154,7 +165,9 @@ struct NeedsYouDock: View {
 
     private func symbol(_ item: WaitingItem) -> String {
         switch item {
-        case .approval(let approval): approval.isMemorySave ? "brain" : "hand.raised.fill"
+        case .approval(let approval):
+            // A flagged command is answered on its card, never from here (`needsYouDockFlagged`).
+            approval.isMemorySave ? "brain" : approval.smartDenied ? "exclamationmark.shield" : "hand.raised.fill"
         case .request(let request):
             switch request.kind {
             case .clarify, .choose: "questionmark.circle.fill"
