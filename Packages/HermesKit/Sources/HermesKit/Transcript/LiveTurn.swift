@@ -261,7 +261,7 @@ public struct LiveTurn: Sendable, Equatable {
     }
 
     /// What a turn that lost its run says until the stored chat shows how it ended (`docs/chat.md`
-    /// §2): one line, with Reload on the chat's error card. Never an endless shimmer.
+    /// §2): one line, with Reload, in the turn's header (`turnHeaderLost`). Never an endless shimmer.
     public static var lostTrack: String {
         String(localized: "Lost track of this reply. Reload to see how it ended.")
     }

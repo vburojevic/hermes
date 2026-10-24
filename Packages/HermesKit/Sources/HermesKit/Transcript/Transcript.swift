@@ -199,6 +199,10 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
         return tool.startedAt
     }
 
+    /// The run ended while the app couldn't hear it, and the stored chat doesn't say how yet
+    /// (`LiveTurn.heldTurn`): the header says so, with Reload (`turnHeaderLost`).
+    public var lostTrack: Bool { state == .failed(LiveTurn.lostTrack) }
+
     /// Ended with nothing in it: no word, step, plan, sound, warning or steer, and no failure. A
     /// turn on screen never ends like that (`docs/chat.md` §2): Hermes is still taking it, or its
     /// reply isn't stored yet.

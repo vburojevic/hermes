@@ -212,7 +212,8 @@ struct TranscriptView: View {
                                 .animation(.smooth(duration: 0.32)))
                     }
                     // While a turn runs the card is about an earlier one, and its Try Again can't act yet.
-                    if let failure = conversation.turnError, !conversation.isWorking {
+                    // A turn the app lost track of says so in its own header, with Reload.
+                    if let failure = conversation.turnError, !conversation.isWorking, failure.message != LiveTurn.lostTrack {
                         TurnErrorRow(
                             failure: failure,
                             conversation: conversation,

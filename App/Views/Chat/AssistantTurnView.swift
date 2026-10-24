@@ -85,7 +85,7 @@ struct AssistantTurnView: View, Equatable {
     }
 
     private var showsWork: Bool {
-        !turn.steps.isEmpty || !turn.plan.isEmpty || (turn.isWorking && turn.answer.isEmpty)
+        !turn.steps.isEmpty || !turn.plan.isEmpty || (turn.isWorking && turn.answer.isEmpty) || turn.lostTrack
     }
 
     /// What the memory tool did during the turn (`memoryNote`).
@@ -311,6 +311,9 @@ struct AssistantTurnView: View, Equatable {
             if !turn.copyableText.isEmpty {
                 MessageActions(text: turn.copyableText, listen: listenReading, onBranch: onBranch) { replyMenu }
             }
+        case .failed where turn.lostTrack:
+            // Its header says it, with Reload (`turnHeaderLost`).
+            EmptyView()
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle")
                 .font(Theme.Typography.caption.weight(.medium))
@@ -458,6 +461,7 @@ struct WorkSummaryView: View, Equatable {
     @State private var pendingTitle: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.disclosureWillToggle) private var willToggle
+    @Environment(\.inspectorModel) private var inspector
 
     private static let titleHold: TimeInterval = 0.25
 
@@ -565,7 +569,45 @@ struct WorkSummaryView: View, Equatable {
     /// Steps or usage to show: a tap opens them.
     private var opens: Bool { hasSteps || turn.usage != nil }
 
-    private var header: some View {
+    @ViewBuilder private var header: some View {
+        if turn.lostTrack {
+            lostHeader
+        } else {
+            liveHeader
+        }
+    }
+
+    /// The run ended while the app couldn't hear it (`turnHeaderLost`): one still line instead of
+    /// an endless shimmer, with Reload in it. The chat reads itself again meanwhile, and the stored
+    /// turn takes this one's place.
+    private var lostHeader: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.tertiaryText)
+                .frame(width: 14, height: 20)
+                .accessibilityHidden(true)
+            Text(LiveTurn.lostTrack)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Theme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let conversation = inspector?.conversation {
+                Button {
+                    conversation.reload()
+                } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
+                }
+                .font(.footnote.weight(.semibold))
+                .cardButton()
+                .controlSize(.small)
+                .accessibilityHint("Reads the chat again to see how this reply ended")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var liveHeader: some View {
         Button {
             guard opens else { return }
             willToggle()

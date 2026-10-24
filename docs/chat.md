@@ -135,8 +135,9 @@ stored after the newest row from before the turn. Never by words, and never by b
   showed one turn twice, "Thinking… · 4m 19s" over its own narration above "Worked for 3m 57s".
 - A live header never outlives its run. When the session says it's idle and the turn never heard
   its end (it ended while the socket was down, or the gateway restarted under it), the stored chat
-  says how it ended; until it does, the turn says "Lost track of this reply. Reload to see how it
-  ended." with Reload on its card, and the chat reads itself again (`LiveTurn.settleUnheard`,
+  says how it ended; until it does, the turn's header says "Lost track of this reply. Reload to see how it
+  ended." in still words, with Reload beside them (`turnHeaderLost`; no error card under the
+  chat), and the chat reads itself again (`LiveTurn.settleUnheard`,
   `heldTurn`). "Stopped" and failures say so. A lost turn keeps the steps Hermes stored when they
   went further than what it heard.
 - A turn this device joins while it runs (back from the background, a dropped stream, another

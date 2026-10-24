@@ -139,8 +139,11 @@ struct OneTurnOnePlaceTests {
             return
         }
         #expect(line == LiveTurn.lostTrack)
+        // Its header says so, with Reload (`turnHeaderLost`).
+        #expect(live.heldTurn.lostTrack)
         // One that heard its end is held as it ended.
         #expect(liveTurn().heldTurn.state == .complete)
+        #expect(!liveTurn().heldTurn.lostTrack)
     }
 
     /// The header's live words count the running step's time from when it started ("Running the
