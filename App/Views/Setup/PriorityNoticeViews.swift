@@ -131,6 +131,7 @@ struct MacPriorityNotice: View {
                 Spacer(minLength: 0)
             } else {
                 Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 13))
                     .foregroundStyle(Theme.warning)
                     .accessibilityHidden(true)
                 Text(notice.label)
@@ -150,8 +151,8 @@ struct MacPriorityNotice: View {
                     }
                 }
                 .buttonStyle(.borderless)
-                .foregroundStyle(Theme.link)
-                .fontWeight(.medium)
+                .foregroundStyle(Theme.ink)
+                .fontWeight(.semibold)
                 .fixedSize()
                 .help(notice.canFixHere ? String(localized: "Run at Full Priority…") : String(localized: "Show the steps in Settings → Setup"))
                 .accessibilityHint(notice.canFixHere ? String(localized: "Runs Hermes at full priority, after asking.") : String(localized: "Opens the steps in Settings."))
@@ -159,9 +160,9 @@ struct MacPriorityNotice: View {
                     setup.dismissPriorityNotice()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.caption2.weight(.semibold))
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(Theme.tertiaryText)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -170,18 +171,42 @@ struct MacPriorityNotice: View {
                 .accessibilityLabel("Not Now")
             }
         }
-        .font(.footnote)
+        .font(.system(size: 11))
         .lineLimit(1)
         .padding(.leading, 18)
         .padding(.trailing, 12)
         .padding(.top, 9)
         .accessibilityElement(children: .contain)
+        // `macPriorityConfirm`: Fix… asks first, as replies in progress stop.
         .confirmationDialog(SetupConfirmation.runAtFullPriority.title, isPresented: $confirming, titleVisibility: .visible) {
             Button(SetupConfirmation.runAtFullPriority.action) { setup.runAtFullPriority() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(SetupConfirmation.runAtFullPriority.message)
         }
+    }
+}
+
+/// `macPriorityNoticeRestored`: for 4 s after Fix… put Hermes back at full priority, the notice's
+/// place says so, still, then goes.
+struct MacPriorityPutBack: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.success)
+                .accessibilityHidden(true)
+            Text("Put Hermes back at full priority, as it was")
+                .foregroundStyle(Theme.secondaryText)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 11))
+        .lineLimit(1)
+        .padding(.leading, 18)
+        .padding(.trailing, 12)
+        .padding(.top, 9)
+        .accessibilityElement(children: .combine)
     }
 }
 #endif

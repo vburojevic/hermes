@@ -199,6 +199,9 @@ struct SidebarFooter: View {
             // (`docs/setup.md` §4.17).
             if let notice = workspace.setup.priorityNotice {
                 MacPriorityNotice(setup: workspace.setup, notice: notice)
+            } else if workspace.setup.priorityPutBack {
+                MacPriorityPutBack()
+                    .transition(.opacity)
             }
             #endif
             row

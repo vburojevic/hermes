@@ -615,6 +615,10 @@ final class SetupCenter {
     #if os(macOS)
     /// Run at Full Priority is restarting Hermes's services on this Mac.
     private(set) var isRaisingPriority = false
+    /// Fix… just put Hermes back at full priority: the Mac's notice says so for a moment
+    /// (`macPriorityNoticeRestored`) before it goes.
+    private(set) var priorityPutBack = false
+    @ObservationIgnored private var putBackShown: Task<Void, Never>?
 
     /// Run at Full Priority (`docs/setup.md` §4.17): Hermes's throttled jobs on this Mac get
     /// `ProcessType Interactive` and are reloaded. The person confirms first: replies in progress
@@ -627,6 +631,18 @@ final class SetupCenter {
                 fixError = String(localized: "launchd didn't start \(failed.joined(separator: ", ")) again. Check Again in a minute, or use the steps on this page in Terminal.")
             }
             await check()
+            if failed.isEmpty, GatewaySetup.priorityNotice(facts) == nil { showPutBack() }
+        }
+    }
+
+    /// "Put Hermes back at full priority, as it was" in the Mac's notice for 4 s.
+    private func showPutBack() {
+        putBackShown?.cancel()
+        priorityPutBack = true
+        putBackShown = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.priorityPutBack = false
         }
     }
 

@@ -500,12 +500,14 @@ merged); until it's in, the app puts it back only after its own runs.
 - **Beside Settings, on the Mac** (`macPriorityNotice`): while the gateway runs throttled (or will
   from its next start) and Bot Mode is online, one line in the sidebar's footer, above the
   connection and Settings: the warning glyph, "Background priority" ("Priority drops at next
-  start"), Fix… and × (Not Now). It never wraps: the words truncate, so it can't change the
+  start"), Fix… (ink) and × (Not Now), in 11 pt. It never wraps: the words truncate, so it can't change the
   window's layout at any sidebar width or text size. Its help and VoiceOver label carry the
   headline and what it means ("Hermes runs at background priority. When <gateway> is busy, Hermes
   answers late or not at all. Hermes Agent writes its plist without it on every restart and
   update; the fix is hermes-agent pull request 72211."). Fix… is Run at Full Priority… with its
-  confirmation on this Mac, and opens Settings → Setup (the steps) for another. Not Now puts it
+  confirmation (`macPriorityConfirm`) on this Mac, and opens Settings → Setup (the steps) for
+  another. When it worked, the line says "Put Hermes back at full priority, as it was" with a green
+  check for 4 s, then goes (`macPriorityNoticeRestored`). Not Now puts it
   away on this Mac until a read sees the gateway at full priority again, so it comes back only
   after something resets it, never on a timer. The Mac reads `/app-push host` when Bot Mode
   connects (at most hourly), so the line doesn't wait for Settings. The iPhone and iPad keep it to
