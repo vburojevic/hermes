@@ -296,8 +296,10 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   grey in Dark Mode (`Theme.swipeAction`; white ink hid its envelope), the others a quieter grey
   (`Theme.swipeActionQuiet`). The iPhone drawer isn't a `List`: from
   iOS 27 its rows use the system's swipe actions too, coordinated by `swipeActionsContainer()` (one
-  row open at a time, closed by scrolling or a tap elsewhere). Before iOS 27, only `List` rows
-  swipe, so the drawer's draw their own (`DrawerSwipeActions`): the row, opaque, slides over its
+  row open at a time, closed by scrolling or a tap elsewhere). That container keeps the actions a
+  row first showed, so a row becomes a new row to it when they change: read, pinned or muted
+  (`DrawerSwipeState`); muted, it offered Mute again until the app was opened anew. Before iOS 27,
+  only `List` rows swipe, so the drawer's draw their own (`DrawerSwipeActions`): the row, opaque, slides over its
   actions, which share the room it uncovers and grow in; pulled past them the first fills the room
   and runs (a tap of haptics). Never both on one row: they fought over the drag, drew over each
   other and stopped the list scrolling.

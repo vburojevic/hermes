@@ -92,6 +92,7 @@ struct BotRosterSections: View {
                 SwipeTile(title: muted ? String(localized: "Unmute") : String(localized: "Mute"), symbol: muted ? "bell" : "bell.slash") { toggleMute(key, muted: muted) },
             ]
         ))
+        .modifier(DrawerSwipeState(isInDrawer: inStack, value: [isUnread, bot.meta.isPinned, muted]))
         .accessibilityAction(named: isUnread ? Text("Mark as Read") : Text("Mark as Unread")) { toggleRead(key, isUnread: isUnread) }
         .accessibilityAction(named: bot.meta.isPinned ? Text("Unpin") : Text("Pin")) { togglePin(bot) }
         .accessibilityAction(named: muted ? Text("Unmute") : Text("Mute")) { toggleMute(key, muted: muted) }

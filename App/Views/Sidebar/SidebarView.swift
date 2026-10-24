@@ -329,6 +329,7 @@ struct SidebarView: View {
                     SwipeTile(title: String(localized: "Archive"), symbol: "archivebox") { archive(session) },
                 ]
             ))
+            .modifier(DrawerSwipeState(isInDrawer: style == .drawer, value: [isUnread, session.pinned, muted]))
             .accessibilityAction(named: isUnread ? Text("Mark as Read") : Text("Mark as Unread")) { toggleRead(key, isUnread: isUnread) }
             .accessibilityAction(named: session.pinned ? Text("Unpin") : Text("Pin")) { togglePin(session) }
             .accessibilityAction(named: muted ? Text("Unmute") : Text("Mute")) { toggleMute(key, muted: muted) }

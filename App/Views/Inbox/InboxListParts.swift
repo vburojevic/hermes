@@ -461,6 +461,22 @@ final class DrawerSwipe {
     }
 }
 
+/// A drawer row's system swipes (iOS 27) follow what they say. The swipe container keeps the
+/// actions a row first showed: muted, the row still offered Mute, which muted it again, until the
+/// app was opened anew. A row whose actions change is a new row to it.
+struct DrawerSwipeState<Value: Hashable>: ViewModifier {
+    let isInDrawer: Bool
+    let value: Value
+
+    func body(content: Content) -> some View {
+        if isInDrawer && DrawerSwipe.isSystems {
+            content.id(value)
+        } else {
+            content
+        }
+    }
+}
+
 /// The drawer's list coordinates its rows' system swipes (iOS 27): one row open at a time,
 /// closed by scrolling or a tap elsewhere.
 struct DrawerSwipeContainer: ViewModifier {
