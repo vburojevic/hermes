@@ -415,7 +415,8 @@ notices, these are never counted, unread, a last line or read aloud.
 **A message to another Bot** (`message_agent`) is a step in the turn that sent it ("Message to
 Engineer", [background-processes.md](background-processes.md) §4), never an empty preview: the
 words it sent (three lines, Show More) and, once its delivery finished, "Engineer replied" with the
-reply, or why it wasn't delivered. With no notice for it, the reply is the first message from that
+reply ("Replied · 4 min"), or why it wasn't delivered; while it waits, "Waiting · 2 min" and a
+still line saying the answer shows there when it comes. With no notice for it, the reply is the first message from that
 Bot in the chat after the turn (`BotMessageStep`).
 
 **A reply to a delivery or another Bot** says so: "Replying to the routine Disk report" (or the

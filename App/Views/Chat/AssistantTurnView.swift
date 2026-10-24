@@ -1288,7 +1288,10 @@ private struct ProcessStepLine: View {
         case nil: break
         }
         if let error = message.error { return (error, true) }
-        return message.reply(in: rows, sentBy: tool.id).map { ($0.text, false) }
+        if let reply = message.reply(in: rows, sentBy: tool.id) { return (reply.text, false) }
+        // The delivery failed before its notice came: why, in plain words, from its output.
+        if process?.state == .failed, let reason = latest { return (reason, true) }
+        return nil
     }
 
     /// No process here: the gateway no longer lists it (or never got asked).
@@ -1300,6 +1303,16 @@ private struct ProcessStepLine: View {
     private var latest: String? {
         process?.latestLine(botName: { conversation?.botTitle($0) })
     }
+
+    /// A message's state in words: "Replied · 4 min", "Waiting · 2 min", "Not delivered"
+    /// (`processStepMessage`), in place of its delivery process's own.
+    private var delivery: BotMessageStep.Delivery? {
+        guard message != nil else { return nil }
+        let answer = answer
+        return BotMessageStep.delivery(state: state, replied: answer?.failed == false, failed: answer?.failed == true)
+    }
+
+    private var failed: Bool { delivery == .notDelivered || (delivery == nil && state == .failed) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1332,13 +1345,13 @@ private struct ProcessStepLine: View {
 
     private var node: some View {
         ZStack {
-            Circle().fill(state == .failed ? Theme.dangerTint : Theme.surface)
-            if state != .failed {
+            Circle().fill(failed ? Theme.dangerTint : Theme.surface)
+            if !failed {
                 Circle().strokeBorder(Theme.hairline, lineWidth: 0.5)
             }
-            Image(systemName: state == .failed ? "xmark" : "terminal")
+            Image(systemName: failed ? "xmark" : message != nil ? "bubble.left.and.text.bubble.right" : "terminal")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(state == .failed ? Theme.danger : Theme.secondaryText)
+                .foregroundStyle(failed ? Theme.danger : Theme.secondaryText)
                 .contentTransition(.opacity)
         }
         .frame(width: 26, height: 26)
@@ -1352,7 +1365,25 @@ private struct ProcessStepLine: View {
                 .foregroundStyle(Theme.primaryText)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let state {
+            if let delivery {
+                switch delivery {
+                case .waiting:
+                    StatusDot(color: Theme.placeholderText)
+                        .frame(width: 13, height: 13)
+                case .replied:
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.success)
+                case .notDelivered:
+                    EmptyView()
+                }
+                Text(BotMessageStep.stateLabel(delivery, duration: process?.duration(now: now)))
+                    .font(.footnote)
+                    .foregroundStyle(delivery == .notDelivered ? Theme.danger : Theme.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .contentTransition(.opacity)
+            } else if let state {
                 ProcessStateGlyph(state: state)
                 Text(process?.stateLabel(now: now) ?? String(localized: "Ended"))
                     .font(.footnote)
@@ -1376,24 +1407,41 @@ private struct ProcessStepLine: View {
         }
     }
 
-    /// What the message said, a few lines with Show More, and the answer under it.
+    /// What the message said, a few lines with Show More, and under a hairline the answer, or
+    /// while it waits a still line saying where it will show (`processStepMessage`).
     private func messageSnippet(_ message: BotMessageStep) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let name = message.name(botName: { conversation?.botTitle($0) })
+        return VStack(alignment: .leading, spacing: 6) {
             if !message.text.isEmpty {
                 ExpandableText(text: message.text, markdown: true, lines: 3)
             }
             if let answer {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label(answer.failed ? String(localized: "Not delivered") : String(localized: "\(message.name(botName: { conversation?.botTitle($0) })) replied"),
-                          systemImage: answer.failed ? "exclamationmark.triangle" : "arrowshape.turn.up.left")
-                        .font(Theme.Typography.caption.weight(.semibold))
-                        .foregroundStyle(answer.failed ? Theme.danger : Theme.secondaryText)
-                    ExpandableText(text: answer.text, markdown: !answer.failed, lines: 3)
+                    HStack(spacing: 5) {
+                        Image(systemName: answer.failed ? "exclamationmark.triangle" : "arrowshape.turn.up.left")
+                            .font(.system(size: 12))
+                            .accessibilityHidden(true)
+                        Text(answer.failed ? String(localized: "Not delivered") : String(localized: "\(name) replied"))
+                            .font(Theme.Typography.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(answer.failed ? Theme.danger : Theme.secondaryText)
+                    ExpandableText(text: answer.text, markdown: !answer.failed, lines: 3, tone: answer.failed ? .secondary : .primary)
                 }
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                }
+            } else if delivery == .waiting {
+                // Still: the turn's header is the one live line, and this turn may be long done.
+                Text("No reply yet. \(name)'s answer shows here when it comes.")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .padding(.horizontal, 10)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -1433,7 +1481,14 @@ private struct ProcessStepLine: View {
     /// "Release build, running for 3 minutes, make release, latest: Signing Hermes.app" (§9).
     private var spoken: String {
         var parts = [name]
-        if let process {
+        if let delivery {
+            // "Message to Ada, replied, <words>, reply: <reply>" (`processStepMessage`).
+            switch delivery {
+            case .waiting: parts.append(String(localized: "waiting for a reply"))
+            case .replied: parts.append(String(localized: "replied"))
+            case .notDelivered: parts.append(String(localized: "not delivered"))
+            }
+        } else if let process {
             let time = process.duration().map(BackgroundProcess.spokenDuration)
             switch process.state {
             case .running:

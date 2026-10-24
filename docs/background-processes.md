@@ -90,10 +90,15 @@ their rail, under the header. The step shows the name; the state with how long (
 "Finished · 4 min", "Failed · exit 1", "Stopped · 12 min", "Stopping…"); the command (`$ …`) and
 the latest line.
 
-A message to another Bot (`message_agent`) shows what it said instead of a command: its words, three
-lines with Show More, and once the delivery finished "Engineer replied" with the reply, or "Not
-delivered" with why. Its name is the Bot's ("Message to Engineer", never the handle Hermes answers
-with). A step with neither a command nor a line shows no empty box.
+A message to another Bot (`message_agent`, `processStepMessage`) shows what it said instead of a
+command, with the speech bubbles on its node: its words, three lines with Show More (ink), and once
+the delivery finished, under a hairline, "Engineer replied" with the reply, or "Not delivered" with
+why. Its state says where the message stands, not what its delivery process did: "Replied · 4 min"
+with a green check; "Waiting · 2 min" with a still grey dot and "No reply yet. Engineer's answer
+shows here when it comes." (nothing shimmers); "Not delivered" in red on a red node with ×. A
+delivery that ended some other way shows the process's own state. Its name is the Bot's ("Message
+to Engineer", never the handle Hermes answers with). A step with neither a command nor a line shows
+no empty box.
 
 When a process finishes, Hermes tells the chat with a notice the app shows as one line saying which
 and how ("Tests failed · exit 1", "Engineer replied"); notices in a row fold into one, and each

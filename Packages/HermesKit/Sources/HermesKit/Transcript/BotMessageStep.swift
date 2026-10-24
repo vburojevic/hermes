@@ -46,6 +46,36 @@ public struct BotMessageStep: Hashable, Sendable {
         return profile.isEmpty ? String(localized: "a Bot") : ProcessNaming.bot(profile, botName: botName)
     }
 
+    /// Where a message stands, as its step's title row says it (`processStepMessage`,
+    /// `docs/background-processes.md` §4): what came back, not the delivery process's own state.
+    public enum Delivery: Hashable, Sendable {
+        /// Delivered and no reply yet: still, nothing shimmers.
+        case waiting
+        case replied
+        case notDelivered
+    }
+
+    /// From the delivery process's state, when the chat knows it, and what came back. A delivery
+    /// that ended some other way (stopped, finished without a reply, no longer listed) has none:
+    /// the step says what the process did.
+    public static func delivery(state: BackgroundProcess.State?, replied: Bool, failed: Bool) -> Delivery? {
+        if failed || state == .failed { return .notDelivered }
+        if replied { return .replied }
+        if state == .running { return .waiting }
+        return nil
+    }
+
+    /// "Replied · 4 min", "Waiting · 2 min", "Not delivered": the time is the delivery's, from
+    /// sending to the reply or to now.
+    public static func stateLabel(_ delivery: Delivery, duration: TimeInterval?) -> String {
+        let time = duration.map(BackgroundProcess.durationText)
+        switch delivery {
+        case .waiting: return time.map { String(localized: "Waiting · \($0)") } ?? String(localized: "Waiting")
+        case .replied: return time.map { String(localized: "Replied · \($0)") } ?? String(localized: "Replied")
+        case .notDelivered: return String(localized: "Not delivered")
+        }
+    }
+
     /// The recipient's answer: the first message from that Bot in this chat after the turn whose
     /// step `stepID` sent it. Hermes carries a reply back into the sender's chat as the
     /// recipient's message (`reply_delivery`).

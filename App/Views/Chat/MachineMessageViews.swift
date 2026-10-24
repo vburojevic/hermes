@@ -290,6 +290,8 @@ struct ExpandableText: View {
     var prominent = false
     /// A detail in footnote size (a helper's result in finished work).
     var small = false
+    /// A detail's colour; a reply carried back reads in the primary colour.
+    var tone: MarkdownView.Tone = .secondary
 
     @State private var isOpen = false
 
@@ -304,12 +306,12 @@ struct ExpandableText: View {
         VStack(alignment: .leading, spacing: 6) {
             Group {
                 if markdown {
-                    MarkdownView(text: text, tone: prominent ? .primary : .secondary)
+                    MarkdownView(text: text, tone: prominent ? .primary : tone)
                         .environment(\.markdownBodyFont, font)
                 } else {
                     Text(linking: text)
                         .font(font)
-                        .foregroundStyle(prominent ? Theme.primaryText : Theme.secondaryText)
+                        .foregroundStyle(prominent || tone == .primary ? Theme.primaryText : Theme.secondaryText)
                         .textSelection(.enabled)
                 }
             }

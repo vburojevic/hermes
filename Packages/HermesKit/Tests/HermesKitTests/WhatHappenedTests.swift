@@ -208,6 +208,27 @@ struct WhatHappenedTests {
         #expect(BotMessageStep(tool)?.error == "Engineer is busy with another message.")
     }
 
+    /// The step says where the message stands, not what its delivery process did
+    /// (`processStepMessage`): "Replied · 4 min", "Waiting · 2 min", "Not delivered".
+    @Test func aMessageStepSaysWhetherItWasAnswered() {
+        #expect(BotMessageStep.delivery(state: .running, replied: false, failed: false) == .waiting)
+        #expect(BotMessageStep.delivery(state: .finished, replied: true, failed: false) == .replied)
+        // A reply found in the chat counts, whatever the process list says now.
+        #expect(BotMessageStep.delivery(state: .ended, replied: true, failed: false) == .replied)
+        #expect(BotMessageStep.delivery(state: nil, replied: true, failed: false) == .replied)
+        #expect(BotMessageStep.delivery(state: .finished, replied: false, failed: true) == .notDelivered)
+        #expect(BotMessageStep.delivery(state: .failed, replied: false, failed: false) == .notDelivered)
+        // Ended some other way, or not listed yet: the process's own state says it.
+        #expect(BotMessageStep.delivery(state: .stopped, replied: false, failed: false) == nil)
+        #expect(BotMessageStep.delivery(state: .finished, replied: false, failed: false) == nil)
+        #expect(BotMessageStep.delivery(state: nil, replied: false, failed: false) == nil)
+
+        #expect(BotMessageStep.stateLabel(.replied, duration: 240) == "Replied · 4 min")
+        #expect(BotMessageStep.stateLabel(.waiting, duration: 130) == "Waiting · 2 min")
+        #expect(BotMessageStep.stateLabel(.waiting, duration: nil) == "Waiting")
+        #expect(BotMessageStep.stateLabel(.notDelivered, duration: 30) == "Not delivered")
+    }
+
     @Test func aMachineStyleBriefFoldsToItsSummary() {
         let brief = "[HANDOFF] Release 2.4 notes: status and open items\n\n## Status\nDraft written.\n\n## Done\n- Draft\n- Screenshots\n\n"
             + "## Open items\n- Owner: you. Decide on the bug number.\n\n## Facts\nRelease: 2.4\nDeadline: 09:00\nChannel: blog\n"
