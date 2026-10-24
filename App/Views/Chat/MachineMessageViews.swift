@@ -193,9 +193,9 @@ struct FinishedWorkRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let row = stepRow(process.id) {
                     Button("Show Step") { showRow(row) }
-                        .font(Theme.Typography.caption)
+                        .font(Theme.Typography.caption.weight(.medium))
                         .buttonStyle(.plain)
-                        .foregroundStyle(Theme.link)
+                        .foregroundStyle(Theme.ink)
                         .accessibilityHint("Shows the step that started it")
                 }
             }
@@ -293,7 +293,7 @@ struct ExpandableText: View {
                 Button(isOpen ? String(localized: "Show Less") : String(localized: "Show More")) { isOpen.toggle() }
                     .font(Theme.Typography.caption.weight(.medium))
                     .buttonStyle(.plain)
-                    .foregroundStyle(Theme.link)
+                    .foregroundStyle(Theme.ink)
             }
         }
     }
