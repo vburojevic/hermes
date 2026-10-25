@@ -186,11 +186,29 @@ reordering characters show as their codes (`⟨U+202E⟩`) and the person sees w
   that commands always allowed apply in every chat and are reviewed with `/approvals`. Hermes has
   no call to revoke a single session permission, so the list can't remove one.
 - Over the API server (no backend socket), only approvals exist:
-  `POST /v1/runs/{id}/approval {choice, request_id}`, one at a time; `approval.responded` in the
-  run's events clears the card, and a 409 means it was already settled. The … menu then offers
-  only Copy Command. A busy or unreachable gateway gets the answer when it can: it's asked again
-  after 2, 4, 8, 16, then every 30 s, for up to four minutes (Hermes waits five; a repeat that lands
-  after the first is that 409); only then does the card come back with the error.
+  `POST /v1/runs/{id}/approval {request_id, execution_generation, choice}`, one at a time
+  (`RunPromptAnswer`; a question's answer goes to `/clarify` with `answer`). Hermes takes exactly
+  those keys and refuses any other body with 400 `invalid_params`. The generation is the one the
+  approval was asked in: `approval.request` carries it, and the run's status
+  (`execution_generation`, with the prompts it waits on in `pending_controls`) supplies it when
+  the event didn't. A gateway whose runs have no generation gets `{choice, request_id}`.
+  `approval.responded` in the run's events clears the card. The … menu then offers only Copy
+  Command.
+  - `stale_generation` (409): the run moved on (claimed again after a restart or a drain). Its
+    status is read again. Hermes drops a prompt with its generation, so it's usually gone: the card
+    settles as below, and the claimed turn asks again on a new card. Only if the same prompt still
+    waits does the answer go once more, with the new generation. Stale a second time, or refused as
+    `invalid_params`, the card comes back with the reason in words, never the code.
+  - When the approval's event carried no generation, the run's status is read for it; a read that
+    fails is retried as below (a gateway that wants the generation refuses the short body for
+    good), and a run the gateway doesn't list gets the short body.
+  - `approval_not_pending` (409), or a 200 that says `already_resolved`: it was answered on another
+    device, timed out, or the turn ended. The card goes, and the chat says "Hermes stopped waiting
+    before your answer got there · …", never a code.
+  - A busy or unreachable gateway gets the answer when it can: it's asked again after 2, 4, 8, 16,
+    then every 30 s, for up to four minutes (Hermes waits five). A repeat that lands after the first
+    may find its own first answer settled, so it says nothing. Only then does the card come back
+    with the error.
 - **Answers the gateway can't take yet** (`AnswerLedger`). Hermes acknowledges no answer: it
   resolves the request id it's given if that request is still open and drops it otherwise. So an
   approval, question or choice answered over the socket is kept by its id until the next attach

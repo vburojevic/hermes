@@ -3876,14 +3876,16 @@ final class ConversationModel: Identifiable {
         apply(.approvalResolved(requestID: approval.requestID))
         Task {
             // A busy or unreachable gateway gets the answer when it can: asked again for up to four
-            // minutes (Hermes waits five for it). A repeat that lands after the first is a 409.
+            // minutes (Hermes waits five for it). A repeat that lands after the first finds nothing
+            // waiting, which may be its own first answer, so only the first says so.
             let began = Date.now
             for attempt in 0... {
                 do {
-                    try await client.respondToApproval(runID: runID, requestID: approval.requestID, choice: choice)
-                    return
-                } catch HermesError.server(409, _, _) {
-                    // Already answered, timed out (a deny) or the run ended: nothing is waiting.
+                    let outcome = try await client.answer(.approval(approval, choice: choice), runID: runID)
+                    if outcome == .notPending, attempt == 0 {
+                        // Answered on another device, timed out, or the turn ended.
+                        addReceipt(String(localized: "Hermes stopped waiting before your answer got there · \(approval.summary)"), symbol: "clock")
+                    }
                     return
                 } catch let error as HermesError where error.isTransient && Date.now.timeIntervalSince(began) < 240 && self.live?.runID == runID {
                     try? await Task.sleep(for: .seconds(min(30, 2 << min(attempt, 4))))

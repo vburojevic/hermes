@@ -95,6 +95,19 @@ Then add `localhost:18642` with that key, or launch a Debug build with
 Messages containing "approve" ask for permission, "slow" runs a long multi-tool turn, and
 "fail" fails.
 
+The mock answers approvals as Hermes's run store does (`docs/quick-actions.md` §3): `POST
+/v1/runs/{id}/approval` (and `/clarify`) takes exactly `{request_id, execution_generation,
+choice}` (`answer`), and anything else is 400 `invalid_params`. A generation other than the run's
+is 409 `stale_generation`, and a prompt it isn't waiting on is 409 `approval_not_pending`; each
+refusal's message is its bare reason, as Hermes's. `GET /v1/runs/{id}` carries
+`execution_generation` and the prompts in `pending_controls`. "approve stale" moves the run's
+generation as soon as the card is up and drops the prompt with it, as Hermes does: the card's answer
+is refused stale, the run no longer lists it, so the card settles, and the turn asks again 30 s
+later. "approve stale retry" keeps the prompt under the new generation, which Hermes never does,
+to exercise the app's one defensive retry. "approve
+elsewhere" allows it on another device after 5 s without a word on the run's events, then runs the
+command for 20 s (the card's answer in that time finds nothing waiting).
+
 Onboarding (`Tools/mock-hermes/onboarding.py`): `setup.status`, `model.options`,
 `model.save_key` and `free_tier.provision`. `--no-model` starts the backend with no model
 provider, so setup asks for one. `POST /api/mock/onboarding {provider_configured, jobs:
