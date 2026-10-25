@@ -62,8 +62,11 @@ design's component names, used in code comments.
 1. On Send, a dashed bubble appears at the end of the running turn, captioned "Steer · Hermes
    reads it after this step" (`followUpBubble`). No spinner: the dashed border is the sign it
    hasn't been read ([chat.md](chat.md) §4a). `session.steer` answering
-   `queued` (or `steered`) means Hermes accepted it; any other answer, or an error, turns it
-   into `steerMissed` at once.
+   `queued` (or `steered`) means Hermes accepted it. When the turn can't take it (`rejected`, 4010
+   while its agent is built, 409 over the API server while it waits on an approval, or the chat
+   never came back while it waited), it goes first in Up Next as the next message, noted so; a
+   lost answer leaves it waiting, and the stored turn says whether it was read
+   ([chat.md](chat.md) §4c).
 2. Hermes has no event for a steer being read: it goes in with the result of the step that was
    running. So a tool finishing arms the steers waiting at that moment, and whatever Hermes does
    next (a tool starts, text, reasoning, narration, a subagent) marks them read. The bubble turns

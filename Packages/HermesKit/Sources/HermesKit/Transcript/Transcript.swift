@@ -475,6 +475,9 @@ public enum TranscriptBuilder {
                 if stored.role == "assistant" { turn?.keptQuiet = true }
                 continue
             }
+            // A message waiting in Hermes's queue, or one Stop cleared from it, isn't a turn: the Up
+            // Next tray shows it while it waits, and Up Next gives it back after a Stop.
+            if stored.role == "user", stored.isWaitingInQueue { continue }
             var message = stored
             let rowID = message.id.map { "m\($0)" } ?? "i\(index)"
             let kind = message.displayKind

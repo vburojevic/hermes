@@ -327,9 +327,20 @@ final class ConversationModel: Identifiable {
         }
     }
 
-    /// Messages the gateway holds itself (with images or files, or a fall-back while it compacts):
-    /// shown in the tray, read-only, until it sends them.
-    private(set) var gatewayQueued: [String] = []
+    /// Messages the gateway holds itself (with images or files, a fall-back while it compacts, one it
+    /// queued behind a turn this device hadn't seen): shown in the tray, read-only, until it sends
+    /// them. Each keeps the whole message, so one Stop clears from Hermes's queue comes back whole.
+    private(set) var gatewayHeld = GatewayHeldQueue<QueuedFollowUp>()
+
+    /// The tray's lines for what the gateway holds.
+    var gatewayQueued: [String] { gatewayHeld.lines }
+
+    /// Gives back what Stop cleared from Hermes's queue once the stopped turn settled.
+    @ObservationIgnored private var stopGiveBack: Task<Void, Never>?
+
+    /// How many of this chat's messages wait in the gateway's own queue, behind work the gateway
+    /// runs in this chat (`session.info` `pending_submissions`), for the tray to say so.
+    private(set) var waitingOnGateway = 0
 
     /// Mid-turn messages and what became of them: steers (waiting, read, carried over, missed),
     /// redirects and background runs.
@@ -1922,12 +1933,13 @@ final class ConversationModel: Identifiable {
     /// free: when its stored turn is seen to end, else after 30 s, 1 and 2 minutes, then every 5.
     /// - Parameter holder: what holds it, when Hermes's refusal says (the gateway's own turn, its chat
     ///   limit) rather than the chat's stored rows (`SendRefusal.holder`).
-    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment], hold: ChatHold?, holder: ChatHolder? = nil) {
+    private func waitForChat(_ item: QueuedFollowUp, hold: ChatHold?, holder: ChatHolder? = nil) {
         endDelivery()
         pendingUser = nil
         live = nil
         isStopping = false
-        animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files), at: 0) }
+        // It was going: first in line, with its skills and mentions.
+        animateRows { queue.insert(item, at: 0) }
         waitsForChat = true
         if let hold {
             chatHold = hold
@@ -1951,7 +1963,7 @@ final class ConversationModel: Identifiable {
         case .waitsForChat:
             var hold: ChatHold?
             if case .chatHeld(let held) = refusal.reason { hold = held }
-            waitForChat(text: text, images: images, files: files, hold: hold, holder: refusal.holder)
+            waitForChat(sentItem(text: text, images: images, files: files, note: .refused(refusal)), hold: hold, holder: refusal.holder)
         case .settleOnGateway:
             // Only the gateway settles what blocks it: the message waits, held, and never goes by
             // itself (retrying every few minutes only repeated the refusal).
@@ -1959,12 +1971,20 @@ final class ConversationModel: Identifiable {
             pendingUser = nil
             live = nil
             isStopping = false
-            animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files, isHeld: true), at: 0) }
+            var item = sentItem(text: text, images: images, files: files, note: .refused(refusal))
+            item.isHeld = true
+            animateRows { queue.insert(item, at: 0) }
             banner = .server(status: 0, code: nil, message: refusal.line)
         case .checkTheChat, .tryAgain:
             // `.checkTheChat` only before the prompt left (it can't): handled with the turn above.
             restoreDraft(text: text, images: images, files: files, error: HermesError.server(status: 0, code: nil, message: refusal.line))
         }
+    }
+
+    /// The message this turn sent, whole: its skills and mentions with its words and attachments.
+    private func sentItem(text: String, images: [ImageAttachment], files: [FileAttachment], note: UpNextNote? = nil) -> QueuedFollowUp {
+        QueuedFollowUp(text: text, parts: turnParts?.hasStructure == true ? turnParts : nil, skills: turnSkills,
+                       images: images, files: files, note: note)
     }
 
     /// What holds the chat, from the refusal and what its stored rows show running. Once Hermes's
@@ -1997,7 +2017,7 @@ final class ConversationModel: Identifiable {
         isRemoteTurn = false
         isBotTurnOpen = false
         if fromHere {
-            waitForChat(text: lastUserText, images: lastUserImages, files: lastUserFiles, hold: hold)
+            waitForChat(sentItem(text: lastUserText, images: lastUserImages, files: lastUserFiles), hold: hold)
         } else {
             endDelivery()
             animateRows {
@@ -2518,11 +2538,21 @@ final class ConversationModel: Identifiable {
 
     /// Send Again: the same message as a new turn.
     func sendAgain(_ entry: UserEntry) {
-        guard !isWorking, !isFinishing, !isBotTurnOpen else {
-            queue.append(QueuedFollowUp(text: entry.text, parts: entry.parts, skills: entry.skillNames, images: images(for: entry)))
+        sendOrQueue(QueuedFollowUp(text: entry.text, parts: entry.parts, skills: entry.skillNames, images: images(for: entry)))
+    }
+
+    /// The one way in for a message that goes as a turn of its own from anywhere but the composer
+    /// (Send Again, Talk, Send as Message, Try Again): it goes now, or waits in Up Next behind a
+    /// running turn, a chat something else holds and what already waits there, never ahead of
+    /// them, with its skills, mentions and attachments (`UpNext.goesNow`).
+    private func sendOrQueue(_ item: QueuedFollowUp, voice: VoiceTurn? = nil) {
+        let goesNow = UpNext.goesNow(turnRunning: isWorking || isFinishing || isBotTurnOpen, waitsForChat: waitsForChat,
+                                     othersWaiting: queue.contains { !$0.isHeld }, queuePaused: queuePaused)
+        guard goesNow else {
+            animateRows { queue.append(item) }
             return
         }
-        start(text: entry.text, images: images(for: entry), files: [], skills: entry.skillNames, parts: entry.parts)
+        start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts, voice: voice)
     }
 
     func sendWhenLoaded(_ text: String) {
@@ -2585,12 +2615,12 @@ final class ConversationModel: Identifiable {
     func sendSpoken(_ text: String, voice: VoiceTurn? = nil) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return true }
-        if isWorking {
-            if !isStopping { steer(text) } else { queue.append(QueuedFollowUp(text: text)) }
+        if isWorking, !isStopping, !waitsForChat {
+            steer(text)
             return true
         }
-        if isFinishing || isBotTurnOpen {
-            queue.append(QueuedFollowUp(text: text))
+        if isWorking || isFinishing || isBotTurnOpen || waitsForChat {
+            sendOrQueue(QueuedFollowUp(text: text))
             return true
         }
         let reachable = isBotChat ? roster?.isConnected == true : usesGateway || workspace?.client != nil
@@ -2598,7 +2628,7 @@ final class ConversationModel: Identifiable {
             draft = draft.isEmpty ? text : draft + " " + text
             return false
         }
-        start(text: text, images: [], files: [], voice: voice)
+        sendOrQueue(QueuedFollowUp(text: text), voice: voice)
         return true
     }
 
@@ -2714,7 +2744,9 @@ final class ConversationModel: Identifiable {
         }
     }
 
-    /// Steer: Hermes reads the note after the step it's on and keeps going (`session.steer`).
+    /// Steer: Hermes reads the note after the step it's on and keeps going (`session.steer`). It
+    /// only ever goes into the running turn; when that turn can't take it, it goes as the next
+    /// message instead, in Up Next (`SteerOutcome`, `docs/chat.md` §4c).
     private func steer(_ text: String) {
         let record = addSteer(text)
         if turnUsesGateway, gatewayRoster != nil {
@@ -2726,41 +2758,75 @@ final class ConversationModel: Identifiable {
                 }
                 guard let self else { return }
                 guard let roster = gatewayRoster, let runtime = runtimeSessionID, isWorking else {
-                    missSteer(record)
+                    // It never went: the turn ended, or the chat isn't attached again yet.
+                    settleSteer(record, .nextMessage)
                     return
                 }
-                let result = try? await roster.request("session.steer", ["session_id": .string(runtime), "text": .string(text)])
-                switch FollowUpStatus(result: result) {
-                case .queued?, .steered?:
-                    break // accepted; the next step after this one reads it
-                default:
-                    missSteer(record) // too late, or it never got there: never lost quietly
+                var result: JSONValue?
+                var failure: (any Error)?
+                do {
+                    result = try await roster.request("session.steer", ["session_id": .string(runtime), "text": .string(text)])
+                } catch {
+                    failure = error
                 }
+                settleSteer(record, SteerOutcome.steer(result: result, error: failure))
             }
         } else if let runID = live?.runID, let client = workspace?.client {
             Task {
+                var failure: (any Error)?
                 do {
                     try await client.steerRun(runID: runID, text: text)
                 } catch {
-                    missSteer(record)
+                    failure = error
                 }
+                settleSteer(record, SteerOutcome.apiServer(error: failure))
             }
         } else {
-            missSteer(record)
+            settleSteer(record, .nextMessage)
         }
     }
 
-    @discardableResult
-    private func addSteer(_ text: String, wasRedirect: Bool = false) -> String {
-        let record = FollowUpRecord(text: text, state: isWorking ? .steerWaiting : .steerMissed, turnID: live?.turn.id, wasRedirect: wasRedirect)
-        animateRows { followUps.append(record) }
-        return record.id
+    /// What Hermes did with a steer or a redirect sent while a tool ran (`SteerOutcome`).
+    private func settleSteer(_ id: String, _ outcome: SteerOutcome) {
+        switch outcome {
+        case .accepted, .redirected:
+            break // the next step after this one reads it
+        case .unknown:
+            // The answer was lost and Hermes may have read it: it stays waiting, and the stored
+            // turn says whether it was read (`settleSteers`). Never sent again by itself.
+            break
+        case .heldByHermes:
+            guard let record = followUps.first(where: { $0.id == id }) else { return }
+            animateRows {
+                followUps.removeAll { $0.id == id }
+                holdOnGateway(record.text)
+            }
+        case .nextMessage:
+            sendsNextInstead(id)
+        }
     }
 
-    private func missSteer(_ id: String) {
+    /// The running turn couldn't take the steer (it ended, its agent was still being built, it
+    /// waits on an approval, or the chat never came back while it waited): it goes as the next
+    /// message, first in Up Next, and its row says so.
+    private func sendsNextInstead(_ id: String) {
         guard let index = followUps.firstIndex(where: { $0.id == id }), followUps[index].isPending else { return }
-        animateRows { followUps[index].state = .steerMissed }
+        let record = followUps[index]
         armedSteers.removeAll { $0 == id }
+        let before = queue.prefix { $0.note == .sendsNextInstead }.count
+        animateRows {
+            followUps.remove(at: index)
+            queue.insert(QueuedFollowUp(text: record.text, note: .sendsNextInstead), at: before)
+        }
+        drainQueueIfIdle()
+    }
+
+    @discardableResult
+    private func addSteer(_ text: String, wasRedirect: Bool = false, answerLost: Bool = false) -> String {
+        let record = FollowUpRecord(text: text, state: isWorking ? .steerWaiting : .steerMissed, turnID: live?.turn.id,
+                                    wasRedirect: wasRedirect, answerLost: answerLost)
+        animateRows { followUps.append(record) }
+        return record.id
     }
 
     /// Fallback for a steer being read (Hermes has no event for it): a step finishing arms the
@@ -2804,25 +2870,34 @@ final class ConversationModel: Identifiable {
             return
         }
         Task {
-            let result = try? await roster.request("session.redirect", ["session_id": .string(runtime), "text": .string(text)])
-            switch FollowUpStatus(result: result) {
-            case .redirected?, .steered?:
+            var result: JSONValue?
+            var failure: (any Error)?
+            do {
+                result = try await roster.request("session.redirect", ["session_id": .string(runtime), "text": .string(text)])
+            } catch {
+                failure = error
+            }
+            switch SteerOutcome.redirect(result: result, error: failure) {
+            case .redirected, .accepted:
                 if live?.turn.steps.contains(where: { if case .tool(let tool) = $0 { tool.status == .running } else { false } }) == true {
                     // Hermes never stops a tool for a redirect: it goes in with the tool's result.
                     addSteer(text, wasRedirect: true)
                 } else {
                     changeCourse(text)
                 }
-            case .queued?:
+            case .heldByHermes:
                 // The agent was still starting, or the chat is being compacted: next turn.
                 animateRows { holdOnGateway(text) }
-            case .rejected?, .streaming?:
-                // The reply ended first: it goes as the next message.
-                animateRows { queue.insert(QueuedFollowUp(text: text), at: 0) }
+            case .nextMessage:
+                // The reply ended first, or Hermes refused it: it goes as the next message.
+                let before = queue.prefix { $0.note == .sendsNextInstead }.count
+                animateRows { queue.insert(QueuedFollowUp(text: text, note: .sendsNextInstead), at: before) }
                 drainQueueIfIdle()
-            case nil:
-                if draft.isEmpty { draft = text }
-                banner = HermesError.invalidResponse(String(localized: "Couldn't redirect Hermes. Your message is back in the field."))
+            case .unknown:
+                // The answer was lost: Hermes may have changed course with it, so it isn't given
+                // back to send again. It waits like a steer, and the stored turn says whether it
+                // was read (`settleSteers`).
+                addSteer(text, wasRedirect: true, answerLost: true)
             }
         }
     }
@@ -2872,44 +2947,68 @@ final class ConversationModel: Identifiable {
             queue.append(item)
             return
         }
-        holdOnGateway(item.line)
+        holdOnGateway(item.line, item: item)
         Task {
+            var staged = StagedImages()
+            var stagedOn: String?
+            var sent = false
             do {
                 let runtime = try await ensureRuntime()
+                stagedOn = runtime
                 for (index, image) in item.images.enumerated() {
-                    _ = try await roster.request("image.attach_bytes", [
+                    staged.staged(try await roster.request("image.attach_bytes", [
                         "session_id": .string(runtime),
                         "content_base64": .string(image.jpegData.base64EncodedString()),
                         "filename": .string("image-\(index + 1).jpg"),
-                    ])
+                    ]))
                 }
                 if !item.images.isEmpty, let key = stableKey {
                     workspace?.imageStore.remember(item.images, conversation: key, text: item.text)
                 }
                 var references: [String] = []
                 for file in item.files {
-                    references.append(try await attach(file, runtime: runtime, roster: roster))
+                    references.append(try await attach(file, runtime: runtime, roster: roster, staged: &staged))
                 }
                 let prompt = ([item.text] + references).filter { !$0.isEmpty }.joined(separator: "\n")
+                sent = true
                 let result = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt), "queued": .bool(true)])
-                if FollowUpStatus(result: result) == .streaming {
+                if SubmitAnswer(result: result).startedItsTurn {
                     // The reply had ended: it started a turn of its own.
-                    animateRows { gatewayQueued.removeAll { $0 == item.line } }
+                    animateRows { _ = gatewayHeld.release(item.line) }
                 }
             } catch {
+                if sent, SendFailure.overSocket(error) == .mayHaveArrived {
+                    // The answer was lost: Hermes may hold it, so it stays in the tray, never sent
+                    // again by itself (its turn, or the next attach, says what became of it).
+                    return
+                }
+                // Hermes didn't take it: its photos would ride on the next message (`StagedImages`).
+                if let stagedOn, StagedImages.takeBack(after: error, promptSent: sent) {
+                    await takeBack(staged, runtime: stagedOn, roster: roster)
+                }
                 // It stays on this device and goes when the reply is done.
                 expectedFromGateway.removeAll { $0.text == item.line }
                 animateRows {
-                    gatewayQueued.removeAll { $0 == item.line }
+                    gatewayHeld.release(item.line)
                     queue.append(item)
                 }
             }
         }
     }
 
-    /// A message the gateway holds: shown in the tray until its turn starts.
-    private func holdOnGateway(_ text: String) {
-        gatewayQueued.append(text)
+    /// Takes back photos staged for a prompt Hermes didn't take (`image.detach`): Hermes keeps them
+    /// for whichever prompt comes next.
+    private func takeBack(_ staged: StagedImages, runtime: String, roster: BotRoster) async {
+        for path in staged.paths {
+            _ = try? await roster.request("image.detach", ["session_id": .string(runtime), "path": .string(path)])
+        }
+    }
+
+    /// A message the gateway holds: shown in the tray until its turn starts. `item` is the whole
+    /// message, given back if Hermes drops it (Stop).
+    private func holdOnGateway(_ text: String, item: QueuedFollowUp? = nil) {
+        // Words alone join Hermes's head envelope; photos, files and skills are envelopes of their own.
+        gatewayHeld.hold(text, item: item, isTextOnly: item.map { !$0.hasAttachments && $0.skills.isEmpty } ?? true)
         captionsByText[text] = .fromQueue
         expectedFromGateway.append((text, .fromQueue))
     }
@@ -2917,7 +3016,8 @@ final class ConversationModel: Identifiable {
     /// Ask Aside: a side question answered while the turn keeps going (`prompt.btw`).
     private func askAside(_ text: String) {
         guard let roster = gatewayRoster, let runtime = runtimeSessionID else {
-            queue.append(QueuedFollowUp(text: text))
+            // No live chat to ask beside: it goes as the next message, and its row says so.
+            animateRows { queue.append(QueuedFollowUp(text: text, note: .sendsNextInstead)) }
             return
         }
         Task {
@@ -2934,7 +3034,12 @@ final class ConversationModel: Identifiable {
 
     /// Run in Background: another Hermes works on it (`prompt.background`); the answer lands here.
     private func runInBackground(_ prompt: String) {
-        guard let roster = gatewayRoster else { return }
+        guard let roster = gatewayRoster else {
+            // Over the API server nothing runs beside the chat: it goes as the next message
+            // instead of being dropped, and its row says so.
+            animateRows { queue.append(QueuedFollowUp(text: prompt, note: .sendsNextInstead)) }
+            return
+        }
         var record = FollowUpRecord(text: prompt, state: .background(answer: nil), turnID: nil)
         followUps.append(record)
         Task {
@@ -2976,11 +3081,7 @@ final class ConversationModel: Identifiable {
     /// Send as Message: a missed steer goes as a message of its own.
     func sendMissed(_ record: FollowUpRecord) {
         followUps.removeAll { $0.id == record.id }
-        if isWorking || isFinishing || isBotTurnOpen {
-            queue.insert(QueuedFollowUp(text: record.text), at: 0)
-        } else {
-            start(text: record.text, images: [], files: [])
-        }
+        sendOrQueue(QueuedFollowUp(text: record.text))
     }
 
     func discardMissed(_ record: FollowUpRecord) {
@@ -2990,18 +3091,24 @@ final class ConversationModel: Identifiable {
     /// Unread steers when the turn ends. Hermes sends one it never read as the next turn by
     /// itself, right away, as it does what it holds in its queue; if that turn doesn't come, or
     /// the turn was stopped (Stop drops unread steers), the steer is missed.
-    private func settleSteers(stopped: Bool, readLive: [SteerNote]) {
+    /// - Parameter newest: the newest stored message before this turn.
+    private func settleSteers(stopped: Bool, after newest: Int?, readLive: [SteerNote]) {
         armedSteers = []
         // The steers the stored reply has (the last few rows: a redirect splits it).
         let storedSteers = Set(items.suffix(8).flatMap { item -> [String] in
             if case .assistant(let turn) = item { turn.steers.map(\.text) } else { [] }
         })
+        // A redirect whose answer was lost is stored as a message of its own if Hermes took it: a
+        // message from the person stored since this turn's own, never an earlier one with the same words.
+        let storedSince = Set(rawMessages.filter { message in
+            message.role == "user" && !message.isWaitingInQueue && (message.id ?? 0) > (newest ?? Int.max)
+        }.map(\.content.text).dropFirst())
         // Shown as read but not in what Hermes stored: it never got there. Never lose one quietly.
         for note in readLive where !storedSteers.contains(note.text) {
             followUps.append(FollowUpRecord(text: note.text, state: .steerWaiting, turnID: nil))
         }
         // Read after all, by the stored transcript: the reply shows it in place.
-        followUps.removeAll { $0.isPending && storedSteers.contains($0.text) }
+        followUps.removeAll { $0.isPending && (storedSteers.contains($0.text) || ($0.answerLost && storedSince.contains($0.text))) }
         for index in followUps.indices where followUps[index].isPending {
             if stopped || !turnUsesGateway {
                 followUps[index].state = .steerMissed
@@ -3023,21 +3130,31 @@ final class ConversationModel: Identifiable {
                 }
             }
             expectedFromGateway = []
-            animateRows { gatewayQueued = [] }
+            animateRows { gatewayHeld.removeAll() }
             drainQueueIfIdle()
         }
     }
 
-    /// A turn the gateway started by itself: the carried-over steer or held message it sends.
+    /// A turn the gateway started by itself: the carried-over steers or held message it sends. Hermes
+    /// sends one envelope of its queue per turn, the steers it couldn't deliver joined to the head
+    /// (`GatewayHeldQueue`): this turn carries those and the head, and the rest stay held for the
+    /// turns after it.
     private func takeExpectedFromGateway() {
         guard !expectedFromGateway.isEmpty else { return }
         carryOverTimeout?.cancel()
-        // Hermes runs its held messages as one turn.
-        let texts = expectedFromGateway.map(\.text)
-        let caption = expectedFromGateway[0].caption
-        expectedFromGateway = []
+        let steers = expectedFromGateway.filter { $0.caption == .steerAfterReply }.map(\.text)
+        var held = gatewayHeld.taken().map(\.line)
+        if held.isEmpty, steers.isEmpty, let first = expectedFromGateway.first { held = [first.text] }
+        for line in held {
+            if let index = expectedFromGateway.firstIndex(where: { $0.caption == .fromQueue && $0.text == line }) {
+                expectedFromGateway.remove(at: index)
+            }
+        }
+        expectedFromGateway.removeAll { $0.caption == .steerAfterReply }
         followUps.removeAll { $0.state == .steerCarriedOver }
-        gatewayQueued = []
+        let texts = steers + held
+        guard !texts.isEmpty else { return }
+        let caption: FollowUpCaption = steers.isEmpty ? .fromQueue : .steerAfterReply
         let text = texts.joined(separator: "\n\n")
         let lastUser = items.last { if case .user = $0 { true } else { false } }
         if case .user(let entry)? = lastUser, texts.contains(entry.text) { return } // already stored (Hermes keeps it at once)
@@ -3152,9 +3269,11 @@ final class ConversationModel: Identifiable {
     func retryLastMessage() {
         guard !isWorking, !isFinishing, !isBotTurnOpen else { return }
         if !lastUserText.isEmpty || !lastUserImages.isEmpty || !lastUserFiles.isEmpty {
-            start(text: lastUserText, images: lastUserImages, files: lastUserFiles)
+            // With its skills and mentions, as it was sent.
+            sendOrQueue(QueuedFollowUp(text: lastUserText, parts: turnParts?.hasStructure == true ? turnParts : nil,
+                                       skills: turnSkills, images: lastUserImages, files: lastUserFiles))
         } else if let text = lastSentText {
-            start(text: text, images: [], files: [])
+            sendOrQueue(QueuedFollowUp(text: text))
         }
     }
 
@@ -3792,7 +3911,7 @@ final class ConversationModel: Identifiable {
             pendingUser = nil
             redirectedParts = []
             live = nil
-            settleSteers(stopped: stoppedByUser, readLive: transcript == nil ? [] : (shownRows.flatMap { row -> [SteerNote] in
+            settleSteers(stopped: stoppedByUser, after: newestBefore, readLive: transcript == nil ? [] : (shownRows.flatMap { row -> [SteerNote] in
                 if case .assistant(let turn) = row { turn.steers } else { [] }
             }))
         }
@@ -4102,13 +4221,18 @@ final class ConversationModel: Identifiable {
         live = nil
         isStopping = false
         if draft.isEmpty, attachments.isEmpty, self.files.isEmpty {
+            // As it was sent: its skills and mentions too.
             draft = text
+            draftReferences = MessageParts.valid(turnParts?.references ?? [], in: text)
             attachments = images
             self.files = files
+            skills = turnSkills
         } else {
             // Something new is in the field (typed while it waited): the message goes to the top
             // of Up Next, held for a Send, rather than being lost.
-            animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files, isHeld: true), at: 0) }
+            var item = sentItem(text: text, images: images, files: files)
+            item.isHeld = true
+            animateRows { queue.insert(item, at: 0) }
         }
         // A stop pressed before the run started is not an error.
         if !(error is CancellationError) {
@@ -4253,6 +4377,7 @@ final class ConversationModel: Identifiable {
         notifiedCatchUp?.cancel()
         quietRetry?.cancel()
         chatWaitRetry?.cancel()
+        stopGiveBack?.cancel()
         processesPublish?.cancel()
         justFinishedReset?.cancel()
         outputFlush?.cancel()
@@ -4419,14 +4544,14 @@ extension ConversationModel {
             }
             if let inflight { adopt(inflight) }
             // What Hermes holds for the next turn (`queued`): in the tray, read-only.
-            if let held = GatewayQueue.queuedPrompt(in: snapshot) {
-                if !gatewayQueued.contains(held) {
-                    gatewayQueued = [held]
-                    captionsByText[held] = .fromQueue
-                    expectedFromGateway = [(held, .fromQueue)]
-                }
-            } else if !gatewayQueued.isEmpty {
-                gatewayQueued = []
+            // Hermes shows only the first it holds: what this device sent stays, whole (`GatewayHeldQueue`).
+            let head = GatewayQueue.queuedPrompt(in: snapshot)
+            let heldNone = gatewayHeld.isEmpty
+            gatewayHeld.attached(head: head)
+            if let head, heldNone {
+                captionsByText[head] = .fromQueue
+                expectedFromGateway.append((head, .fromQueue))
+            } else if head == nil, !heldNone {
                 expectedFromGateway.removeAll { $0.caption == .fromQueue }
             }
             if let pending = snapshot["pending_connection"], let connection = HermesRequest.connection(from: pending) {
@@ -4508,6 +4633,9 @@ extension ConversationModel {
         defer { transcription?.cancel() }
         var submitted: SentPrompt?
         var tries = 0
+        // Photos staged for this message and not taken back yet (`StagedImages`).
+        var staged = StagedImages()
+        var stagedOn: String?
         // Until Hermes has the message, a busy or away gateway makes it wait, not fail: with no
         // socket it waits for the Bots (for as long as it takes; Stop gives it back) and goes again.
         // Nothing can run twice: it goes again only when the prompt never left (`SendFailure`).
@@ -4531,19 +4659,25 @@ extension ConversationModel {
                 if !isBotChat {
                     await applyRunSettings(runtime: runtime, roster: roster)
                 }
+                if !staged.isEmpty {
+                    // A try before this one staged them and never sent its prompt: not twice.
+                    await takeBack(staged, runtime: runtime, roster: roster)
+                    staged = StagedImages()
+                }
+                stagedOn = runtime
                 for (index, image) in images.enumerated() {
-                    _ = try await roster.request("image.attach_bytes", [
+                    staged.staged(try await roster.request("image.attach_bytes", [
                         "session_id": .string(runtime),
                         "content_base64": .string(image.jpegData.base64EncodedString()),
                         "filename": .string("image-\(index + 1).jpg"),
-                    ])
+                    ]))
                 }
                 if !images.isEmpty, let key = stableKey {
                     workspace?.imageStore.remember(images, conversation: key, text: text)
                 }
                 var references: [String] = []
                 for file in files {
-                    references.append(try await attach(file, runtime: runtime, roster: roster))
+                    references.append(try await attach(file, runtime: runtime, roster: roster, staged: &staged))
                 }
                 if let transcription, text.isEmpty {
                     // Hermes reads the words, not the recording: the prompt waits for them.
@@ -4618,6 +4752,15 @@ extension ConversationModel {
                 if live?.runID == nil { apply(.runStarted(runID: runtime)) }
                 break sending
             } catch {
+                // Photos staged for a prompt Hermes didn't take would ride on the next message.
+                if !staged.isEmpty, StagedImages.takeBack(after: error, promptSent: submitted != nil) {
+                    if let stagedOn, roster.isConnected {
+                        await takeBack(staged, runtime: stagedOn, roster: roster)
+                        staged = StagedImages()
+                    }
+                } else {
+                    staged = StagedImages() // the prompt may have them
+                }
                 // Nothing reached Hermes (no socket, or one gone before the prompt left): a Bot's chat
                 // waits for its Bots and sends again; a normal chat goes over the API server below.
                 let failure = SendFailure.overSocket(error)
@@ -4726,7 +4869,7 @@ extension ConversationModel {
         animateRows {
             pendingUser = nil
             // In the tray until its turn starts; Hermes sends it after the one running.
-            if outcome.isQueued { holdOnGateway(item.line) }
+            if outcome.isQueued { holdOnGateway(item.line, item: item) }
         }
         if outcome == .steered || outcome == .redirected {
             addSteer(item.text, wasRedirect: outcome == .redirected)
@@ -4802,13 +4945,14 @@ extension ConversationModel {
     /// Uploads a file for the next prompt and returns what goes into the prompt for it: a PDF's
     /// pages go as images (`pdf.attach`, which needs pdftoppm on the gateway), anything else, or
     /// a PDF the gateway can't render, as an `@file:` reference (`file.attach`).
-    private func attach(_ file: FileAttachment, runtime: String, roster: BotRoster) async throws -> String {
+    private func attach(_ file: FileAttachment, runtime: String, roster: BotRoster, staged: inout StagedImages) async throws -> String {
         if file.isPDF {
             if let result = try? await roster.request("pdf.attach", [
                 "session_id": .string(runtime),
                 "content_base64": .string(file.data.base64EncodedString()),
                 "filename": .string(file.name),
             ], timeout: .seconds(120)), result["attached"]?.boolValue != false {
+                staged.staged(result) // its pages go as photos
                 return AttachedFiles.pdfNote(name: file.name)
             }
         }
@@ -4991,6 +5135,10 @@ extension ConversationModel {
             return
         case "session.info":
             if let yolo = event.payload["yolo"]?.boolValue, yolo != allowsEverything { allowsEverything = yolo }
+            // A message waiting in the gateway's own queue (`SubmitAnswer.queuedOnGateway`).
+            if let pending = GatewayQueue.pendingOnGateway(in: event.payload), pending.count != waitingOnGateway {
+                waitingOnGateway = pending.count
+            }
             // A move (`session.workspace.move`) or `session.cwd.set` names the new folder.
             if let info = LiveWorkspace(info: event.payload), info != liveWorkspace { liveWorkspace = info }
         case "review.summary":
@@ -5676,12 +5824,70 @@ extension ConversationModel {
             return
         }
         let turnID = live?.turn.id
+        let baseline = turnBaseline?.newest
         Task {
-            _ = try? await roster.request("session.interrupt", ["session_id": .string(runtime)])
+            do {
+                _ = try await roster.request("session.interrupt", ["session_id": .string(runtime)])
+                // Hermes empties its queue with the turn: nothing it held for the next one runs.
+                giveBackClearedByStop(baseline: baseline)
+            } catch where !(error is GatewayRPCError) {
+                // The stop never got there, or its answer was lost: the turn may still be running,
+                // so it isn't shown as stopped (its events, or the next attach, say how it ends).
+                ConnectionLog.logger.notice("chat: a stop wasn't answered (\(BotRoster.describe(error), privacy: .public))")
+                if self.live?.turn.id == turnID { self.isStopping = false }
+                banner = .server(status: 0, code: nil, message: String(localized: "Couldn't reach \(gatewayName) to stop this. It may still be running."))
+                return
+            } catch {
+                // Hermes answered with a refusal: the chat has nothing running to stop.
+            }
             try? await Task.sleep(for: .seconds(12))
             if self.live?.turn.id == turnID, self.isWorking {
                 self.live?.markStopped()
                 self.settle()
+            }
+        }
+    }
+
+    /// Stop emptied Hermes's queue (`session.interrupt`): what the tray showed comes back to the top
+    /// of Up Next, whole, held for a Send. Not at once: a turn Hermes started from its queue just
+    /// before the Stop got there shows first and takes its envelope out of the tray
+    /// (`takeExpectedFromGateway`); then, once the stopped turn settled, the stored chat says which
+    /// of the rest ran after all (a row of their own turn) and which never did (`GatewayHeldQueue.
+    /// purged(ranSince:)`). Only those come back, so nothing that ran is offered to run again.
+    /// `baseline`: the newest stored message before the stopped turn.
+    private func giveBackClearedByStop(baseline: Int?) {
+        guard !gatewayHeld.isEmpty else { return }
+        stopGiveBack?.cancel()
+        stopGiveBack = Task { [weak self] in
+            let deadline = Date.now.addingTimeInterval(15)
+            while let self, self.isWorking || self.isFinishing, Date.now < deadline, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled, !self.gatewayHeld.isEmpty else { return }
+            var stored: [SessionMessage]?
+            if let id = self.sessionID { stored = try? await self.fetchLatest(id).messages }
+            guard !Task.isCancelled else { return }
+            let cleared: [GatewayHeldQueue<QueuedFollowUp>.Entry]
+            if let stored {
+                // The person's messages since the stopped turn began, past that turn's own.
+                let since = stored.filter { $0.role == "user" && ($0.id ?? 0) > (baseline ?? -1) }
+                let ownIndex = since.firstIndex { !$0.isWaitingInQueue }
+                cleared = self.gatewayHeld.purged(ranSince: ownIndex.map { Array(since[since.index(after: $0)...]) } ?? since)
+            } else {
+                // The chat couldn't be read: they come back held, for the person to decide.
+                cleared = self.gatewayHeld.purged()
+            }
+            self.expectedFromGateway.removeAll { $0.caption == .fromQueue }
+            guard !cleared.isEmpty else { return }
+            ConnectionLog.logger.notice("chat: Stop cleared \(cleared.count) message(s) from the gateway's queue; back in Up Next")
+            self.animateRows {
+                self.queue.insert(contentsOf: cleared.map { entry in
+                    var item = entry.item ?? QueuedFollowUp(text: entry.line)
+                    item.isHeld = true
+                    item.note = .clearedByStop
+                    return item
+                }, at: 0)
             }
         }
     }

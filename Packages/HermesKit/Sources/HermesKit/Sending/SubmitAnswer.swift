@@ -57,3 +57,14 @@ public enum SubmitAnswer: Sendable, Equatable {
         }
     }
 }
+
+extension GatewayQueue {
+    /// The messages from this chat still waiting in the gateway's own queue, as `session.info`
+    /// lists them while a forwarded message waits (`pending_submissions`, hermes-agent
+    /// `tui_gateway/owner_forward.py`): their words, empty once its turn starts. Nil when the event
+    /// doesn't say.
+    public static func pendingOnGateway(in info: JSONValue) -> [String]? {
+        guard case .array(let rows)? = info["pending_submissions"] else { return nil }
+        return rows.filter { $0["status"]?.stringValue == "queued" }.map { $0["user"]?.stringValue ?? "" }
+    }
+}

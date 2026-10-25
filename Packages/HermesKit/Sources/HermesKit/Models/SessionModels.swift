@@ -216,6 +216,11 @@ public struct SessionMessage: Codable, Sendable, Hashable {
     public var displayKind: String?
     /// What to show instead of `content` (a steer's own words without Hermes' marker).
     public var displayContent: String?
+    /// The row Hermes writes for a message as it takes it into its queue (`display_metadata`
+    /// `_queued_prompt`, hermes-agent `_persist_queued_user_row`): the message waits there, or Stop
+    /// emptied the queue before it ran. Hermes swaps it for a row of the turn's own when the message
+    /// runs, so a marked row is never a turn (`docs/chat.md` §4c).
+    public var isWaitingInQueue = false
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, timestamp, reasoning
@@ -226,6 +231,7 @@ public struct SessionMessage: Codable, Sendable, Hashable {
         case reasoningContent = "reasoning_content"
         case displayKind = "display_kind"
         case displayContent = "display_content"
+        case displayMetadata = "display_metadata"
     }
 
     public init(
@@ -258,7 +264,13 @@ public struct SessionMessage: Codable, Sendable, Hashable {
         reasoning = thinking?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? thinking : nil
         displayKind = try? c.decodeIfPresent(String.self, forKey: .displayKind)
         displayContent = try? c.decodeIfPresent(String.self, forKey: .displayContent)
+        // An object, or the column's JSON text as the stored rows carry it.
+        var metadata = try? c.decodeIfPresent(JSONValue.self, forKey: .displayMetadata)
+        if let text = metadata?.stringValue { metadata = JSONValue.parse(text) }
+        isWaitingInQueue = metadata?[Self.queuedMarker]?.boolValue == true
     }
+
+    static let queuedMarker = "_queued_prompt"
 
     /// The same shape as the server's rows, so a cached transcript decodes like a fetched one.
     public func encode(to encoder: any Encoder) throws {
@@ -274,6 +286,7 @@ public struct SessionMessage: Codable, Sendable, Hashable {
         try c.encodeIfPresent(reasoning, forKey: .reasoning)
         try c.encodeIfPresent(displayKind, forKey: .displayKind)
         try c.encodeIfPresent(displayContent, forKey: .displayContent)
+        if isWaitingInQueue { try c.encode(JSONValue.object([Self.queuedMarker: .bool(true)]), forKey: .displayMetadata) }
     }
 }
 

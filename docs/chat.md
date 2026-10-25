@@ -804,6 +804,39 @@ answer says what became of it (`SubmitAnswer`, hermes-agent `tui_gateway/methods
 | `steered` / `redirected` | It went into the running turn (an older client's busy mode): it shows as a steer of that turn |
 | `voice_stopped` | A typed stop phrase ended the voice chat: nothing was sent and no turn starts |
 
+What becomes of a message is decided from Hermes's answers and events only, never guessed, so a
+message is always in one of these states:
+
+- **Sending**: on its way, or waiting for the gateway (§4, "Sending on a busy or away gateway").
+- **Queued**, and behind what: the turn running here (the tray, read-only, `GatewayHeldQueue`), the
+  gateway's own queue (`waitingOnGateway`, from `session.info` `pending_submissions`), or, in Up
+  Next, a chat something else holds or Hermes's chat limit (`waitsForChat`, `chatHolder`, §4d).
+- **Steered in**: a steer goes only into the running turn. When that turn can't take it (it ended,
+  its agent was still being built, it waits on an approval, the chat never came back while it
+  waited) it goes first in Up Next as the next message instead, its row noting why
+  (`UpNextNote.sendsNextInstead`); a steer or redirect whose answer was lost waits, and the stored
+  turn says whether it was read (`SteerOutcome`).
+- **Delivered**: its own turn started, or Hermes sent it as one.
+- **Refused**, with Hermes's reason and its one action (§4d).
+- **Failed**: the turn's card, with Try Again only where a second copy can't run.
+
+Nothing is sent twice. Up Next keeps its order: Send Again, Talk, Send as Message and Try Again wait
+behind a running turn, a held chat and what already waits (`UpNext.goesNow`), with their skills,
+mentions and attachments. Photos staged for a prompt Hermes refused, or one that never went, are
+taken back (`image.detach`, `StagedImages`), so they never ride on the next message. Hermes sends
+its queue one envelope per turn: words join a text-only head while nothing waits behind it, and a
+message with photos or files is always a turn of its own, so the tray lets go of only what each turn
+carries (`GatewayHeldQueue`). Stop empties Hermes's queue with the turn. Once the stopped turn
+settled, what the tray held comes back to the top of Up Next, whole, held for a Send
+(`UpNextNote.clearedByStop`), except a message the stored chat shows ran after all (its turn started
+just before the Stop got there). A Stop that never got an answer says it couldn't reach the gateway
+and leaves the turn running. Hermes writes a row for each message as it takes it into its queue
+(`display_metadata` `_queued_prompt`) and swaps it for the turn's own row when it runs; after a Stop
+the marked row stays until Hermes next mounts the chat, so the chat never shows a marked row as a
+message (`SessionMessage.isWaitingInQueue`). A message that falls back from Ask Aside or Run in Background with no
+live chat goes as the next message, never dropped. A group chat's posts on their way are kept on the
+device and go again after a relaunch under the same `event_id` (`KeptPost`).
+
 ## 4d. When Hermes refuses a message
 
 Hermes refuses a `prompt.submit` with 4090 and says why in `data.reason`. Each reason has its own

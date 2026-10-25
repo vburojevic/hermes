@@ -112,13 +112,17 @@ struct FollowUpRecord: Identifiable, Equatable {
     var wasRedirect = false
     /// `prompt.background`'s task id.
     var taskID: String?
+    /// A redirect whose answer was lost: if Hermes took it, the stored chat has it as a message of
+    /// its own rather than a steer.
+    var answerLost = false
 
-    init(text: String, state: State, turnID: String?, wasRedirect: Bool = false) {
+    init(text: String, state: State, turnID: String?, wasRedirect: Bool = false, answerLost: Bool = false) {
         id = "followup-\(UUID().uuidString)"
         self.text = text
         self.state = state
         self.turnID = turnID
         self.wasRedirect = wasRedirect
+        self.answerLost = answerLost
     }
 
     /// The bubble's caption (`followUpBubble*`).
@@ -176,8 +180,11 @@ struct QueuedFollowUp: Identifiable, Equatable {
     /// It may never have been sent, or may have reached Hermes (kept from before a relaunch, or
     /// taken back by Stop while it waited): it waits for Send, and never goes by itself.
     var isHeld: Bool
+    /// Why it's here when it wasn't sent here (a steer the turn couldn't take, Stop clearing the
+    /// gateway's queue, a refusal), for its row. Not kept across a relaunch.
+    var note: UpNextNote?
 
-    init(id: UUID = UUID(), text: String, parts: MessageParts? = nil, skills: [String] = [], images: [ImageAttachment] = [], files: [FileAttachment] = [], isHeld: Bool = false) {
+    init(id: UUID = UUID(), text: String, parts: MessageParts? = nil, skills: [String] = [], images: [ImageAttachment] = [], files: [FileAttachment] = [], isHeld: Bool = false, note: UpNextNote? = nil) {
         self.id = id
         self.text = text
         self.parts = parts
@@ -185,6 +192,7 @@ struct QueuedFollowUp: Identifiable, Equatable {
         self.images = images
         self.files = files
         self.isHeld = isHeld
+        self.note = note
     }
 
     var hasAttachments: Bool { !images.isEmpty || !files.isEmpty }
