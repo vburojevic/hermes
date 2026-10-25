@@ -16,6 +16,8 @@ Scripted Bot Chat behaviour by message content:
   contains "slow"     -> a long multi-tool turn (good for testing stop and reconnect)
   contains "ponder"   -> thinks for about 14 s before a word (the live line's elapsed time)
   contains "marathon" -> the same, for about 45 s (outlasts the app's half minute of re-attaching)
+  contains "flood"    -> sixteen sources and about 4,800 events in under a minute, more than the replay ring
+                         keeps (512): drop the socket for ten seconds of it and the replay is `truncated`
   an @mention note    -> uses message_agent and drops a DM into the other Bot's chat
   anything else       -> thinks, searches, then answers in Markdown
 """
@@ -545,6 +547,10 @@ def err(rid, code, message, data=None):
     return {"jsonrpc": "2.0", "id": rid, "error": error}
 
 
+REPLAY_EVENTS_MAX = 512  # Hermes' _REPLAY_BUFFER_MAX
+REPLAY_BYTES_MAX = 4 * 1024 * 1024  # Hermes' _REPLAY_BUFFER_BYTES_MAX
+
+
 def emit(sid, kind, payload):
     with LOCK:
         runtime = RUNTIME.get(sid)
@@ -555,8 +561,19 @@ def emit(sid, kind, payload):
         if kind == "message.delta" and runtime.get("inflight"):
             runtime["inflight"]["assistant"] += str(payload.get("text") or "")
         event = {"type": kind, "session_id": sid, "seq": runtime["seq"], "payload": payload}
-        runtime["ring"].append(event)
-        del runtime["ring"][:-400]
+        # Like Hermes' replay ring (tui_gateway/event_replay.py): 512 events or 4 MiB a session, oldest out
+        # first, and a watermark of the newest one evicted, so a client that missed it hears `truncated`.
+        frozen = {"type": kind, "session_id": sid, "payload": payload}
+        size = len(json.dumps(frozen, ensure_ascii=False, separators=(",", ":")).encode("utf-8", errors="surrogatepass"))
+        if size > REPLAY_BYTES_MAX:
+            runtime["evicted_through"] = runtime["seq"]
+        else:
+            runtime["ring"].append((event, size))
+            runtime["ring_bytes"] = runtime.get("ring_bytes", 0) + size
+        while len(runtime["ring"]) > REPLAY_EVENTS_MAX or runtime.get("ring_bytes", 0) > REPLAY_BYTES_MAX:
+            evicted, evicted_size = runtime["ring"].pop(0)
+            runtime["ring_bytes"] -= evicted_size
+            runtime["evicted_through"] = max(runtime.get("evicted_through", 0), evicted["seq"])
         # Like the real gateway: session events go to the transports attached to the session.
         peers = [p for p in runtime["peers"] if p in CLIENTS]
     for peer in peers:
@@ -1276,6 +1293,25 @@ def run_turn(sid, text):
         stream(sid, answer)
         return finish(sid, stored, answer)
 
+    if "flood" in visible.lower():
+        # More events than the replay ring keeps: sixteen sources, each read with 300 progress lines sent
+        # in bursts of 50 (about 90 events a second for close to a minute), so a socket down for
+        # ten seconds of it misses events Hermes no longer has and its replay comes back `truncated`.
+        steps = 16
+        for step in range(1, steps + 1):
+            if runtime["interrupt"]:
+                break
+            tool(sid, stored, "web_search", {"query": f"source {step}"}, f"Result {step}: three relevant pages.", 1.0, f"source {step}")
+            for page in range(1, 301):
+                emit(sid, "status.update", {"kind": "status", "text": f"Reading source {step} of {steps}, page {page}…"})
+                if page % 50 == 0:
+                    time.sleep(0.2)
+        if runtime["interrupt"]:
+            return finish(sid, stored, "", status="interrupted")
+        answer = f"All {steps} sources read: **ship it on Friday**."
+        stream(sid, answer)
+        return finish(sid, stored, answer)
+
     if "slow" in visible.lower() or "marathon" in visible.lower():
         steps, pause = (12, 3.6) if "marathon" in visible.lower() else (6, 1.4)
         for step in range(1, steps + 1):
@@ -1867,8 +1903,8 @@ def method_events_since(params):
     sid, runtime = runtime_for(params)
     last = int(params.get("last_seen") or 0)
     with LOCK:
-        frames = [e for e in runtime["ring"] if e["seq"] > last]
-        truncated = bool(runtime["ring"]) and last < runtime["ring"][0]["seq"] - 1
+        frames = [e for e, _size in runtime["ring"] if e["seq"] > last]
+        truncated = last < runtime.get("evicted_through", 0)
         return {"events": frames, "latest_seq": runtime["seq"], "truncated": truncated, "count": len(frames),
                 "epoch": EPOCH, "open_requests": open_requests(sid)}
 
