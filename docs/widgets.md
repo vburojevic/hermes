@@ -263,7 +263,11 @@ widgets.
   "Waiting" (pending), and an approval's tapped tile says "Approving…" and "Sent"
   (`Asking.approvalPending`).
 - **Density:** compact on the Mac and inside a stack of four or more (`WidgetDensity`).
-- **Width:** at most 560 pt, 720 for wide layouts (`lanes`, `grid`).
+- **Width:** at most 560 pt, 720 for wide layouts (`lanes`, `grid`), and never wider than the
+  reply: nothing inside a card may make it wider. Long words wrap in the card, a tag with a long
+  word wraps inside its pill, a `details` value moves under its label when the two don't fit on
+  one line (`Collections.details`), and a table reflows into blocks. Only a code snippet keeps
+  its lines and scrolls sideways inside its well; output and logs wrap (`Things.code`).
 - **Surfaces:** cards are `surface`, never glass; an unresolved alert is tinted by its severity.
 - **Loading:** a skeleton in the type's shape while a payload is on its way; "Couldn't load this
   widget" with Try Again when it never comes; text with "Shown as text" for an unknown type, a
@@ -385,7 +389,7 @@ messages, signatures checked for real. Its words are in its docstring and
 [development.md](development.md): "widgets" pages through every example, "widget <type>",
 "widget publish" (an approval without Face ID), "widget lunch" (with it), "widget expiring",
 "widget silent" (Try Again), "widget private", "widget fence", "widget unknown", "widget
-invalid", "widget suggestions", "Weather today?" (a lookup, `widget_examples`, then the weather card,
+invalid", "widget suggestions", "widget wide" and "widget wide table" (one of everything long, §9), "Weather today?" (a lookup, `widget_examples`, then the weather card,
 as an agent with plugin 1.3.0's rules answers), and in a marked room the same words. Over the socket
 a chat the app didn't mark gets each widget's `fallback_text`, as the plugin's
 `transform_llm_output` gives it. `POST

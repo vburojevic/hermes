@@ -476,6 +476,12 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
 - **Horizontal rule**: a hairline with 6 pt above and below.
 - **Wide tables and long code lines** scroll sideways inside their block; the page never scrolls
   sideways. Table cells are 60 to 320 pt wide.
+- **Nothing widens the reply.** Every part of a reply is laid out at the column's width: a long
+  word, address or inline code path (no spaces) breaks where the line ends, code without a hyphen
+  added that would read as part of it, and a widget card wraps its words inside the card
+  ([widgets.md](widgets.md) §9). One part laid out at its own width once widened the whole reply,
+  so its words ran off the screen. "widget wide" in the mock has one of everything
+  ([development.md](development.md)).
 - **Raw HTML blocks** show as text in the code font. LaTeX and Mermaid are not rendered; in a
   fenced block they show as code.
 - **Bots and gateway files** named in a reply draw as pills (`mentionInline`,

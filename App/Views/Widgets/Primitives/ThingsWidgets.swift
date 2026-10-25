@@ -611,26 +611,36 @@ struct CodeBody: View {
                 .accessibilityLabel(String(localized: "Copy"))
             }
             if let command = model.command {
-                Text("$ \(command)").font(WidgetFont.mono).foregroundStyle(Theme.secondaryText)
+                Text(code: "$ \(command)").font(WidgetFont.mono).foregroundStyle(Theme.secondaryText)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
-                    if model.kind == .snippet {
+            if model.kind == .snippet {
+                // A snippet keeps its lines and scrolls sideways inside the well, never widening it.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .trailing, spacing: 0) {
                             ForEach(0..<shown.count, id: \.self) { index in
                                 Text("\(first + index)").font(WidgetFont.mono).foregroundStyle(Theme.tertiaryText)
                             }
                         }
                         .accessibilityHidden(true)
+                        Text(CodeBlockView.highlight(shown.joined(separator: "\n"), language: model.language))
+                            .font(WidgetFont.mono)
+                            .foregroundStyle(Theme.primaryText)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
-                    Text(model.kind == .snippet ? CodeBlockView.highlight(shown.joined(separator: "\n"), language: model.language) : AttributedString(shown.joined(separator: "\n")))
-                        .font(WidgetFont.mono)
-                        .foregroundStyle(Theme.primaryText)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: true, vertical: false)
                 }
+                .environment(\.layoutDirection, .leftToRight)
+            } else {
+                // Output wraps its long lines (`Things.code`).
+                Text(code: shown.joined(separator: "\n"))
+                    .font(WidgetFont.mono)
+                    .foregroundStyle(Theme.primaryText)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .environment(\.layoutDirection, .leftToRight)
             }
-            .environment(\.layoutDirection, .leftToRight)
             if all.count > 12 {
                 ShowAllButton(total: all.count, isExpanded: context.view.showsAll) {
                     withAnimation(.spring(response: 0.3)) { context.updateView { $0.showsAll.toggle() } }
@@ -741,11 +751,11 @@ struct CodeBody: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         words
-                        Text(output).font(WidgetFont.mono).foregroundStyle(Theme.primaryText).lineLimit(1)
+                        Text(code: output).font(WidgetFont.mono).foregroundStyle(Theme.primaryText).lineLimit(1)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         words
-                        Text(output).font(WidgetFont.mono).foregroundStyle(Theme.primaryText).textSelection(.enabled)
+                        Text(code: output).font(WidgetFont.mono).foregroundStyle(Theme.primaryText).textSelection(.enabled)
                     }
                 }
             } else {
