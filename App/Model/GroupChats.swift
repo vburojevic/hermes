@@ -270,7 +270,16 @@ final class GroupChatModel {
         /// Its event in the room's log, when Hermes said.
         var seq: Int?
     }
-    private(set) var pendingPosts: [PendingPost] = []
+    private(set) var pendingPosts: [PendingPost] = [] {
+        didSet {
+            // Kept on the device until Hermes takes them (`KeptPost`): a relaunch sends them again
+            // under the same id.
+            let kept = pendingPosts.filter { !$0.isTaken }.map { KeptPost(eventID: $0.id, text: $0.text) }
+            if kept != oldValue.filter({ !$0.isTaken }).map({ KeptPost(eventID: $0.id, text: $0.text) }) {
+                GroupPostStore.save(kept, room: room.id)
+            }
+        }
+    }
     @ObservationIgnored private var postTasks: [String: Task<Void, Never>] = [:]
     /// Log rows that took over from a pending row keep its identity, so the row doesn't go and
     /// come back as the log catches up: `e<seq>` → `post-<event id>`.
@@ -307,6 +316,17 @@ final class GroupChatModel {
         self.room = room
         self.roster = roster
         self.rooms = rooms
+        // Messages that were on their way when the app last ran: they go again, under their ids.
+        // Each may have been written to the socket already, so none can be taken back.
+        for kept in GroupPostStore.load(room: room.id) {
+            let post = PendingPost(id: kept.eventID, text: kept.text, isWaiting: true, isWritten: true)
+            pendingPosts.append(post)
+            isWorking = true
+            postTasks[post.id] = Task { [weak self] in
+                await self?.deliver(post)
+                self?.postTasks[post.id] = nil
+            }
+        }
     }
 
     var memberStates: [String: RoomTranscript.MemberState] { RoomTranscript.memberStates(events) }
@@ -644,3 +664,29 @@ final class GroupChatModel {
 }
 
 extension GroupChatModel: WidgetAnswerSender {}
+
+/// Each group chat's messages on their way, on the device (Application Support), until Hermes
+/// takes them (`KeptPost`).
+enum GroupPostStore {
+    private static func file(room: String) -> URL? {
+        let safe = room.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" ? String($0) : "_" }.joined()
+        return (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
+            .appending(path: "GroupPosts", directoryHint: .isDirectory)
+            .appending(path: "\(safe).json")
+    }
+
+    static func load(room: String) -> [KeptPost] {
+        guard let file = file(room: room), let data = try? Data(contentsOf: file) else { return [] }
+        return KeptPost.decode(data)
+    }
+
+    static func save(_ posts: [KeptPost], room: String) {
+        guard let file = file(room: room) else { return }
+        guard !posts.isEmpty, let data = KeptPost.encode(posts) else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+}
