@@ -21,6 +21,9 @@ public struct LiveTurn: Sendable, Equatable {
     /// The turn ended without hearing how: the session said it was idle with no end of the turn
     /// before it (a gateway restart, a stream that never came back).
     public private(set) var endedUnheard = false
+    /// The steps still running when it ended unheard (`settleUnheard`): the calls and helpers a
+    /// Reload may find cut off (`AssistantTurn.settledAfterLoss`).
+    public private(set) var cutOff: Set<String> = []
 
     public init(id: String, sessionID: String?, startedAt: Date = .now) {
         self.turn = AssistantTurn(id: id, state: .streaming, startedAt: startedAt)
@@ -257,6 +260,13 @@ public struct LiveTurn: Sendable, Equatable {
     public mutating func settleUnheard(now: Date = .now) {
         guard !isFinished else { return }
         endedUnheard = true
+        cutOff = Set(turn.steps.compactMap { step in
+            switch step {
+            case .tool(let tool) where tool.status == .running: tool.id
+            case .subagent(let agent) where agent.status == .running: agent.id
+            default: nil
+            }
+        })
         finish(.complete, now: now)
     }
 

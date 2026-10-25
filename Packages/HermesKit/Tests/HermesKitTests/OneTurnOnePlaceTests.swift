@@ -175,6 +175,71 @@ struct OneTurnOnePlaceTests {
         #expect(turn?.state == .failed(LiveTurn.lostTrack))
     }
 
+    /// The gateway restarted under the turn: Hermes stored its message and calls up to the one
+    /// running, and never will store more. Reload reads that chat and the turn settles as it ended,
+    /// stopped partway, rather than saying it lost track until the app relaunches.
+    @Test func reloadSettlesALostTurnFromTheStoredChat() throws {
+        var heard = LiveTurn(id: "live-1", sessionID: "rt", startedAt: at(-259))
+        heard.apply(SequencedTurnEvent(seq: 1, event: .commentary(Self.narration, alreadyStreamed: false)), now: at(-250))
+        heard.apply(SequencedTurnEvent(seq: 2, event: .toolStarted(id: "c1", name: "terminal", preview: nil, at: nil)), now: at(-250))
+        heard.settleUnheard(now: now)
+        var messages = Array(rows(withReply: false).prefix(7))
+        messages.append(SessionMessage(id: 15, role: "assistant", content: .text(""),
+                                       toolCalls: [ToolCall(id: "c3", name: "terminal", arguments: #"{"command": "argus import --help"}"#)], timestamp: at(-60)))
+        #expect(!TranscriptBuilder.holdsTurn(messages, after: 9))
+        let built = TranscriptBuilder.build(messages)
+        let lost = try #require(assistantTurns(TurnPlacement.place([.assistant(heard.heldTurn)], userRowID: nil, after: 9, in: built, messages: messages)).last)
+        #expect(lost.lostTrack)
+
+        let settled = try #require(lost.settledAfterLoss(cutOff: heard.cutOff, messages: messages))
+        #expect(settled.id == "live-1")
+        #expect(settled.state == .stopped)
+        #expect(!settled.lostTrack && !settled.isWorking)
+        // What Hermes stored stays, and the call it never stored a result for ended with the turn;
+        // the one still running when the app lost track (c1) has its result stored.
+        #expect(heard.cutOff == ["c:c1"])
+        #expect(settled.toolCount == 3)
+        let calls = settled.steps.compactMap { step -> ToolActivity? in if case .tool(let tool) = step { tool } else { nil } }
+        #expect(calls.last?.callID == "c3" && calls.last?.status == .failed)
+        #expect(calls.dropLast().allSatisfy { $0.status == .succeeded })
+        // A later read of the same chat keeps it settled, in its place under its message.
+        let again = TurnPlacement.place([.assistant(settled)], userRowID: nil, after: 9, in: built, messages: messages)
+        #expect(assistantTurns(again).last == settled)
+        #expect(again.last?.id == "live-1")
+        // Only a lost turn settles this way.
+        #expect(liveTurn().turn.settledAfterLoss(cutOff: [], messages: messages) == nil)
+        #expect(settled.settledAfterLoss(cutOff: [], messages: messages) == nil)
+    }
+
+    /// The stored chat stops before what the turn heard (its message only): the heard steps stay,
+    /// and only what was still running when the app lost track ends with the turn. A call heard to
+    /// its end without a preview is still a call that finished.
+    @Test func reloadEndsOnlyWhatWasCutOff() throws {
+        var heard = LiveTurn(id: "live-1", sessionID: "rt", startedAt: at(-60))
+        heard.apply(SequencedTurnEvent(seq: 1, event: .toolStarted(id: "c1", name: "web_search", preview: nil, at: nil)), now: at(-50))
+        heard.apply(SequencedTurnEvent(seq: 2, event: .toolFinished(id: "c1", name: "web_search", failed: false, duration: 3, resultPreview: nil, at: nil)), now: at(-47))
+        heard.apply(SequencedTurnEvent(seq: 3, event: .toolStarted(id: "c2", name: "web_search", preview: nil, at: nil)), now: at(-40))
+        heard.apply(SequencedTurnEvent(seq: 4, event: .subagentStarted(id: "h1", goal: "Read the release notes")), now: at(-40))
+        heard.settleUnheard(now: now)
+        let messages = Array(rows(withReply: false).prefix(3))
+        let placed = TurnPlacement.place([.assistant(heard.heldTurn)], userRowID: nil, after: 9, in: TranscriptBuilder.build(messages), messages: messages)
+        let lost = try #require(assistantTurns(placed).last)
+        #expect(lost.lostTrack && lost.steps.count == 3)
+
+        let settled = try #require(lost.settledAfterLoss(cutOff: heard.cutOff, messages: messages))
+        #expect(settled.state == .stopped)
+        let status = Dictionary(uniqueKeysWithValues: settled.steps.compactMap { step -> (String, ToolActivity.Status)? in
+            switch step {
+            case .tool(let tool): (tool.callID ?? tool.id, tool.status)
+            case .subagent(let agent): (agent.id, agent.status)
+            default: nil
+            }
+        })
+        #expect(status["c1"] == .succeeded)
+        #expect(status["c2"] == .failed && status["h1"] == .failed)
+        #expect(status.count == 3 && status.filter { $0.value == .failed }.count == 2)
+    }
+
     // MARK: Joining a turn that runs (back from the background, a dropped stream, another device)
 
     /// The stored chat stops partway through the turn running now, and its events arrive: the

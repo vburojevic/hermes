@@ -579,7 +579,7 @@ struct WorkSummaryView: View, Equatable {
 
     /// The run ended while the app couldn't hear it (`turnHeaderLost`): one still line instead of
     /// an endless shimmer, with Reload in it. The chat reads itself again meanwhile, and the stored
-    /// turn takes this one's place.
+    /// turn takes this one's place; Reload settles it from the stored chat (`reloadLostTurn`).
     private var lostHeader: some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "exclamationmark.circle")
@@ -594,7 +594,7 @@ struct WorkSummaryView: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let conversation = inspector?.conversation {
                 Button {
-                    conversation.reload()
+                    conversation.reloadLostTurn()
                 } label: {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }

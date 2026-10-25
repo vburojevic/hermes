@@ -139,7 +139,16 @@ stored after the newest row from before the turn. Never by words, and never by b
   ended." in still words, with Reload beside them (`turnHeaderLost`; no error card under the
   chat), and the chat reads itself again (`LiveTurn.settleUnheard`,
   `heldTurn`). "Stopped" and failures say so. A lost turn keeps the steps Hermes stored when they
-  went further than what it heard.
+  went further than what it heard. Reload is the person asking how it ended, and it settles the
+  turn in place: when the stored chat holds the turn whole (its reply, or a failed turn's
+  notice), the stored rows take over; when it still stops partway (the gateway restarted under
+  the turn, so nothing more will be stored), the turn ended there and says "Stopped", with the
+  steps Hermes stored. What was cut off ends with it (a call stored without a result, or a step
+  still running when the app lost track), while a call heard to its end stays as it was
+  (`AssistantTurn.settledAfterLoss`, `LiveTurn.cutOff`). Should the rest be stored later after
+  all, the stored rows still take over. The chat's own reads meanwhile never settle it: a reply
+  written late by a busy database is still on its way, and a Reload asked for one turn never
+  settles the next.
 - A turn this device joins while it runs (back from the background, a dropped stream, another
   device) carries on the part the stored chat holds, under that part's identity (`LiveTurn.joining`):
   Hermes takes one writer per chat, so stored rows that stop partway are the turn running now. One
