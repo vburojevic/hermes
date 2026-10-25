@@ -87,6 +87,11 @@ public enum ChatHolder: Hashable, Sendable {
     case working
     /// A terminal or another window: Hermes's own sentence.
     case elsewhere(String)
+    /// The gateway runs a turn in this chat and couldn't queue the message behind it
+    /// (`SESSION_OWNER_BUSY`): it goes when that turn ends.
+    case gatewayTurn
+    /// Hermes runs as many chats at once as it's set to allow (`MAX_CONCURRENT_SESSIONS`).
+    case chatLimit(active: Int?, limit: Int?)
 
     /// Hermes's own work, which lets the chat go by itself when it's done.
     public var isHermesWork: Bool {

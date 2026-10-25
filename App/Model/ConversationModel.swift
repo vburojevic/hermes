@@ -1844,7 +1844,9 @@ final class ConversationModel: Identifiable {
     /// chat (4090 `SESSION_NOT_OWNED`, or the turn refused once taken). The message waits at the
     /// top of Up Next, nothing lost, which says what holds the chat, and goes once the chat is
     /// free: when its stored turn is seen to end, else after 30 s, 1 and 2 minutes, then every 5.
-    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment], hold: ChatHold?) {
+    /// - Parameter holder: what holds it, when Hermes's refusal says (the gateway's own turn, its chat
+    ///   limit) rather than the chat's stored rows (`SendRefusal.holder`).
+    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment], hold: ChatHold?, holder: ChatHolder? = nil) {
         endDelivery()
         pendingUser = nil
         live = nil
@@ -1854,12 +1856,38 @@ final class ConversationModel: Identifiable {
         if let hold {
             chatHold = hold
             describeHold()
+        } else if let holder {
+            chatHold = nil
+            chatHolder = holder
         }
         chatWaitAttempts += 1
         let delays: [Double] = [30, 60, 120]
         retryChat(after: chatWaitAttempts <= delays.count ? delays[chatWaitAttempts - 1] : 300)
         // The stored rows say what holds it, and watch for it to let go (`watchMidTurn`).
         if !isFetching { reload() }
+    }
+
+    /// Hermes refused the message with a reason (4090, `SendRefusal`): it waits for the chat, waits
+    /// held for the person, or comes back to them with Hermes's words.
+    private func refused(_ refusal: SendRefusal, text: String, images: [ImageAttachment], files: [FileAttachment]) {
+        ConnectionLog.logger.notice("chat: Hermes refused a message (\(String(describing: refusal.reason), privacy: .public))")
+        switch refusal.action {
+        case .waitsForChat:
+            var hold: ChatHold?
+            if case .chatHeld(let held) = refusal.reason { hold = held }
+            waitForChat(text: text, images: images, files: files, hold: hold, holder: refusal.holder)
+        case .settleOnGateway:
+            // Only the gateway settles what blocks it: the message waits, held, and never goes by
+            // itself (retrying every few minutes only repeated the refusal).
+            endDelivery()
+            pendingUser = nil
+            live = nil
+            isStopping = false
+            animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files, isHeld: true), at: 0) }
+            banner = .server(status: 0, code: nil, message: refusal.line)
+        case .checkTheChat, .tryAgain:
+            restoreDraft(text: text, images: images, files: files, error: HermesError.server(status: 0, code: nil, message: refusal.line))
+        }
     }
 
     /// What holds the chat, from the refusal and what its stored rows show running. Once Hermes's
@@ -4427,11 +4455,12 @@ extension ConversationModel {
                         return
                     }
                 }
-                if let refusal = error as? GatewayRPCError, refusal.isHeldElsewhere, live?.runID == nil,
+                if let refusal = (error as? GatewayRPCError).flatMap(SendRefusal.init), live?.runID == nil,
                    !(live?.turn.steps.isEmpty == false) {
-                    // Never around the hold (the API server would make a second writer): it waits.
+                    // Hermes said why (`docs/chat.md` §4d). Never around it: the API server would be
+                    // a second writer, or a second copy of a message the gateway may hold.
                     isBotTurnOpen = false
-                    waitForChat(text: text, images: images, files: files, hold: ChatHold(refusal: refusal.message))
+                    refused(refusal, text: text, images: images, files: files)
                     return
                 }
                 if !isBotChat, submitted == nil || error is GatewayRPCError || error is GatewaySocket.Failure {

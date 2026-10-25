@@ -243,7 +243,7 @@ run, with nothing shown for it. Either way the chat is read again, so what holds
 
 Once Hermes's own work was seen holding it, the line stays until the message goes. A 4090 for
 Hermes's own cap (`MAX_CONCURRENT_SESSIONS`, only when `max_concurrent_sessions` is set) says so
-instead. The mock's holds are in `docs/development.md`.
+instead (§4d). The mock's holds are in `docs/development.md`.
 
 ### Tools
 
@@ -728,6 +728,26 @@ out with a message waiting in Up Next, and the queue never sent either.
   /api/mock/turn-elsewhere`), then drop the sockets past the reap (`POST /api/mock/drop-sockets
   {"outage": 25, "reap": 20}`, `docs/development.md`). Typed text queues while the chat is held, and
   within about 10 s of the socket coming back the chat settles and Up Next sends, once.
+
+## 4d. When Hermes refuses a message
+
+Hermes refuses a `prompt.submit` with 4090 and says why in `data.reason`. Each reason has its own
+line and one action (`SendRefusal`); none of them shows as a generic error, none goes around the
+refusal over the API server, and a reason the app doesn't know shows Hermes's own first line,
+never another reason's words.
+
+| `data.reason` | What the person reads | What happens to the message |
+|---|---|---|
+| `SESSION_NOT_OWNED` (another Hermes process) | What holds the chat, from its stored rows: a Bot answering another Bot, a routine, a terminal | Waits at the top of Up Next and goes once the chat is free (`waitForChat`) |
+| `SESSION_NOT_OWNED` (the gateway's queue, "durable queue") | "The gateway has unfinished work in this chat it couldn't confirm. Open the chat where the gateway runs … Nothing was sent." | Waits at the top of Up Next, held: only the person sends it again |
+| `SESSION_OWNER_BUSY` | "The gateway is running a turn in this chat. Your message sends when that turn ends." (with its photo, when Hermes took the photo off) | Waits at the top of Up Next and goes when that turn ends |
+| `SESSION_OWNER_UNCONFIRMED` | Hermes's sentence: "… It may already be queued there: check the chat before sending it again." | Never sent again by itself, never offered as Retry |
+| `MAX_CONCURRENT_SESSIONS` | "Hermes is running as many chats at once as it's set to allow (n of m). Your message sends when one finishes." | Waits at the top of Up Next and goes when a chat finishes |
+| `SESSION_COORDINATION_UNAVAILABLE`, none, or one the app doesn't know | Hermes's own first line | Back in the field, with Hermes's words, to send again |
+
+Hermes sends `MAX_CONCURRENT_SESSIONS` only when `max_concurrent_sessions` is set on the gateway.
+A message that waits for the chat goes again after 30 s, 1 and 2 minutes, then every 5, and at
+once when the chat's stored rows show the other turn ending.
 
 ## 5. Accessibility
 
