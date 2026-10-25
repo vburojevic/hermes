@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610251952 (October 25, 2026)
+
+- **Chat:** answering an approval over the API server reaches the gateway, so the reply goes on
+- **Chat:** Send never greys out behind a turn, and a turn the app never heard end clears by itself
+
 ### Build 2610251725 (October 25, 2026)
 
 - **Bot Chats:** Open Screen in a Bot's ··· menu opens its Screen, even in a chat with no Inspector tabs
