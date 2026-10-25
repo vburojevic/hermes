@@ -165,6 +165,11 @@ struct QueueTray: View {
         if isEditing { return nil }
         // Another Hermes process holds the chat (a Bot answering another Bot, a routine).
         if conversation.waitsForChat {
+            switch conversation.chatHolder {
+            case .gatewayTurn?: return String(localized: "sends when that turn ends")
+            case .chatLimit?: return String(localized: "sends when a chat finishes")
+            default: break
+            }
             return conversation.isBotChat ? String(localized: "sends when \(conversation.askerName) is free") : String(localized: "sends when this chat is free")
         }
         if conversation.queuePaused, !conversation.isWorking { return String(localized: "Send sends the first") }
@@ -186,6 +191,12 @@ struct QueueTray: View {
                 : String(localized: "Hermes is busy with this chat in another process.")
         case .elsewhere(let sentence):
             return sentence
+        case .gatewayTurn:
+            return String(localized: "The gateway is running a turn in this chat.")
+        case .chatLimit(let active?, let limit?):
+            return String(localized: "Hermes is running as many chats at once as it's set to allow (\(active) of \(limit)).")
+        case .chatLimit:
+            return String(localized: "Hermes is running as many chats at once as it's set to allow.")
         }
     }
 
