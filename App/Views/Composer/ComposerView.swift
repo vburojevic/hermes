@@ -442,8 +442,9 @@ struct ComposerView: View {
 
     /// While a turn runs and there's something to send, the send mode takes Think's place: Think
     /// applies to the next turn anyway. Not while Send answers a question: there's no mode to pick.
+    /// A turn that can't take a note shows Send Next alone: what's typed waits in Up Next.
     private var showsModeChip: Bool {
-        (conversation.canSendFollowUp || conversation.editingQueued != nil) && !dictation.isActive
+        (conversation.canSendFollowUp || conversation.canQueue || conversation.editingQueued != nil) && !dictation.isActive
             && !answersQuestion
     }
 
@@ -844,14 +845,14 @@ struct ComposerView: View {
                 return true
             }
             guard sendWithReturn else { return false }
-            if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
+            if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.canQueue || conversation.editingQueued != nil {
                 conversation.send()
             }
             return true
         case .commandSend:
             if let choice = selectedSlashChoice {
                 choose(choice)
-            } else if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
+            } else if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.canQueue || conversation.editingQueued != nil {
                 conversation.send()
             }
             return true
@@ -871,7 +872,7 @@ struct ComposerView: View {
             // ⌘Return: Redirect while a turn runs (where the gateway can); otherwise Send.
             if conversation.canSendFollowUp, sendWithReturn, conversation.availableFollowUpModes.contains(.redirect) {
                 conversation.sendFollowUp(.redirect)
-            } else if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.editingQueued != nil {
+            } else if conversation.canSteerHelper || conversation.canSend || conversation.canSendFollowUp || conversation.canQueue || conversation.editingQueued != nil {
                 conversation.send()
             }
             return true
@@ -986,7 +987,8 @@ private struct TrailingButton: View {
     private enum Mode { case voice, send, stop }
 
     private var mode: Mode {
-        if conversation.helperSteerTarget != nil { return .send }
+        // A note for a helper; with nothing typed, the button is what it'd be without one.
+        if conversation.canSteerHelper { return .send }
         if conversation.isWorking {
             let hasContent = conversation.hasDraftText || !conversation.attachments.isEmpty || !conversation.files.isEmpty
             return hasContent || conversation.draftCommand != nil || conversation.editingQueued != nil ? .send : .stop
@@ -1019,17 +1021,19 @@ private struct TrailingButton: View {
         switch mode {
         case .stop: return !conversation.isStopping
         case .send:
-            if conversation.helperSteerTarget != nil { return conversation.hasDraftText }
+            if conversation.canSteerHelper { return true }
             // A command waits for its argument before Send turns on (`composerCommand`).
             if conversation.draftCommand != nil { return conversation.canSendCommand }
             if conversation.editingQueued != nil { return true }
-            return conversation.isWorking ? conversation.canSendFollowUp : conversation.canSend || conversation.canSendQueued
+            // Never dead: a turn that can't take it queues it (`ComposerSend`, docs/chat.md §4b).
+            return conversation.canSendFollowUp || conversation.canQueue || conversation.canSend || conversation.canSendQueued
         // Talk needs the gateway there; a message waits for it.
         case .voice: return !isOffline
         }
     }
 
-    /// What Send does while a turn runs: "Send, Steer".
+    /// What Send does while a turn runs: "Send, Steer", or "Send, Send Next" behind a turn that
+    /// can't take it.
     private var sendLabel: LocalizedStringKey {
         // A question on show takes what's typed as its answer (`docs/quick-actions.md` §1).
         if conversation.typedAnswerRequest != nil { return "Send Answer" }
@@ -1060,7 +1064,7 @@ private struct TrailingButton: View {
         .disabled(!isEnabled)
         // While a turn runs ⌘Return redirects; the field handles it.
         .keyboardShortcut(mode == .send && !conversation.isWorking ? KeyboardShortcut(.return, modifiers: .command) : nil)
-        .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? (conversation.helperSteerTarget != nil ? "Send to helper" : conversation.isWorking ? sendLabel : "Send") : "Talk")
+        .accessibilityLabel(mode == .stop ? "Stop" : mode == .send ? (conversation.canSteerHelper ? "Send to helper" : conversation.isWorking || conversation.canQueue ? sendLabel : "Send") : "Talk")
         .help(mode == .stop ? "Stop (⌘.)" : mode == .send ? "Send (⌘↩)" : "Talk (⌥⌘V)")
     }
 }

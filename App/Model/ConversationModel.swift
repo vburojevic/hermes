@@ -88,7 +88,12 @@ final class ConversationModel: Identifiable {
     }
     private(set) var isStopping = false
     /// The turn has ended and its transcript is being fetched; sending waits for it.
-    private(set) var isFinishing = false
+    private(set) var isFinishing = false {
+        didSet { if isFinishing != oldValue { watchStuckTurn() } }
+    }
+    /// The turn `finishTurn` is reading the stored rows of: only that call clears `isFinishing`,
+    /// not one a stuck-turn settle already gave up on (`settleStuckTurn`).
+    @ObservationIgnored private var finishingTurn: UUID?
     /// The message going out hasn't been taken by the gateway yet (`docs/chat.md` §4): its bubble
     /// says "Sending…", then after a moment "Waiting for <Mac>…", until Hermes has it. A busy or
     /// away Mac only makes it wait; it's never given back for that.
@@ -347,6 +352,9 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var captionsByText: [String: FollowUpCaption] = [:]
     /// Stop was pressed: the queue waits for a Send instead of draining.
     private(set) var queuePaused = false
+    /// Something was queued after Stop, with Send: the person wants it sent once the stopped
+    /// turn ends, so the queue doesn't wait (`docs/chat.md` §4b).
+    @ObservationIgnored private var sendsAfterStop = false
     /// Hermes refused a message because another of its processes holds this chat (`waitForChat`):
     /// Up Next waits for it, and says so.
     private(set) var waitsForChat = false
@@ -417,20 +425,39 @@ final class ConversationModel: Identifiable {
     var followUpMode: FollowUpMode {
         // A queued message being edited goes back in the queue unless another mode is picked.
         if editingQueued != nil { return isWorking ? followUpPick ?? .sendNext : .sendNext }
+        // A turn that can't take a note: what's typed waits for it in Up Next.
+        if canQueue { return .sendNext }
         let mode = followUpPick ?? FollowUpMode.preferredDefault
         return availableFollowUpModes.contains(mode) ? mode : .steer
     }
 
+    /// What Send does with what's in the field now (`ComposerSend`, `docs/chat.md` §4b): send,
+    /// steer the running turn, queue it behind a turn that can't take it, or send the first
+    /// queued message. Never nothing while there's something to send.
+    var sendAction: ComposerSend? {
+        // Skills go with a new turn; a running one can't be steered with them alone.
+        let hasContent = hasDraftText || !attachments.isEmpty || !files.isEmpty || (!skills.isEmpty && !isWorking)
+        return ComposerSend.decide(ComposerSend.State(
+            hasContent: hasContent, hasQueued: !queue.isEmpty && editingQueued == nil, isWorking: isWorking,
+            isStopping: isStopping, isFinishing: isFinishing, isTurnOpen: isBotTurnOpen,
+            steersHelper: canSteerHelper, isReachable: isReachable
+        ))
+    }
+
     /// Something typed while a turn runs can go out now.
     var canSendFollowUp: Bool {
-        isWorking && (hasDraftText || !attachments.isEmpty || !files.isEmpty) && !isStopping && draftCommand == nil
-            && helperSteerTarget == nil
+        sendAction == .steer && draftCommand == nil
+    }
+
+    /// A turn holds the chat and can't take what's typed (it runs elsewhere, it's finishing or
+    /// stopping): Send puts it in Up Next, and it goes when the turn ends.
+    var canQueue: Bool {
+        sendAction == .queue && draftCommand == nil
     }
 
     /// With the field empty and nothing running, Send sends the first queued message.
     var canSendQueued: Bool {
-        !queue.isEmpty && !isWorking && !isFinishing && !isBotTurnOpen && !hasDraftText && attachments.isEmpty && files.isEmpty
-            && editingQueued == nil && isReachable
+        sendAction == .sendQueued
     }
 
     /// The caption of a stored message that was sent mid-turn (queue, redirect, carried-over steer).
@@ -498,7 +525,19 @@ final class ConversationModel: Identifiable {
     /// The Bot Chat's message count and preview as the roster last showed them; `nil` after our own turn.
     @ObservationIgnored private var seenChat: BotChatMark?
     /// A Bot Chat turn is open on the backend until it settles; nothing new can start.
-    private(set) var isBotTurnOpen = false
+    private(set) var isBotTurnOpen = false {
+        didSet {
+            guard isBotTurnOpen != oldValue else { return }
+            if isBotTurnOpen { botTurnGeneration &+= 1 }
+            watchStuckTurn()
+        }
+    }
+    /// Which opening of `isBotTurnOpen` this is: a turn's end clears only its own, never one a
+    /// stuck-turn settle let start meanwhile (`finishBotTurn`).
+    @ObservationIgnored private var botTurnGeneration = 0
+    /// Asks the gateway about a turn flag that holds the chat with nothing streaming
+    /// (`watchStuckTurn`).
+    @ObservationIgnored private var stuckTurnWatch: Task<Void, Never>?
     /// Events that arrive while catching up after a reconnect wait here.
     @ObservationIgnored private var catchUpBuffer: [GatewayEvent]?
     /// The re-attach after a reconnect, and the runtime id it can replay missed events from.
@@ -749,8 +788,19 @@ final class ConversationModel: Identifiable {
     /// The send-mode menu is open (the chip, or ⌥Return on an iPad's keyboard).
     var showsFollowUpMenu = false
 
-    /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`.
-    var helperSteerTarget: HelperSteerTarget?
+    /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`. Only
+    /// while that helper can still read a note: once it finishes or stops taking notes, the
+    /// composer writes to Hermes again, so a helper long gone never holds up Send or Up Next
+    /// (`docs/chat.md` §4b). The strip above the field names it and clears it with one tap.
+    var helperSteerTarget: HelperSteerTarget? {
+        get {
+            guard let pickedHelperTarget, let helper = helpers.helper(pickedHelperTarget.helperID),
+                  helper.status.isLive, helper.acceptingSteer else { return nil }
+            return pickedHelperTarget
+        }
+        set { pickedHelperTarget = newValue }
+    }
+    private var pickedHelperTarget: HelperSteerTarget?
 
     /// A note for the helper being steered is ready to go.
     var canSteerHelper: Bool { helperSteerTarget != nil && hasDraftText }
@@ -932,7 +982,9 @@ final class ConversationModel: Identifiable {
     // Mirrors of `live` that change only when their value does, so the sidebar, composer and
     // chat chrome don't re-render for every streamed token.
     private(set) var isEmpty = true
-    private(set) var isWorking = false
+    private(set) var isWorking = false {
+        didSet { if isWorking != oldValue { watchStuckTurn() } }
+    }
     private(set) var pendingApproval: ApprovalRequest?
     private(set) var liveStatus: String?
     /// The running turn's plan (the Inspector's Plan).
@@ -1038,8 +1090,7 @@ final class ConversationModel: Identifiable {
 
     var canSend: Bool {
         if draftCommand != nil { return canSendCommand }
-        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || !files.isEmpty || !skills.isEmpty
-        guard hasContent, !isWorking, !isFinishing, !isBotTurnOpen else { return false }
+        guard sendAction == .send else { return false }
         // Not the connection: a message to a busy or away Mac shows at once and waits for it
         // (`delivery`). Only a sign-in it could never get past without the person stops it.
         if isBotChat {
@@ -1695,13 +1746,22 @@ final class ConversationModel: Identifiable {
     }
 
     func send() {
-        if let target = helperSteerTarget {
+        if let target = helperSteerTarget, hasDraftText {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
             draft = ""
             helperSteerTarget = nil
             if let helper = helpers.helper(target.helperID) { helpers.steer(helper, text: text) }
             return
+        }
+        // The helper stopped taking notes before this Send: the note stays in the field rather
+        // than going to Hermes as a steer it wasn't written as, and the composer writes to Hermes
+        // from now on.
+        if let lapsed = pickedHelperTarget, helperSteerTarget == nil {
+            pickedHelperTarget = nil
+            if hasDraftText {
+                addReceipt(String(localized: "Not sent · helper \(lapsed.number) finished. Send again to send it to Hermes"), symbol: "info.circle")
+                return
+            }
         }
         if let command = draftCommand {
             let argument = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1727,7 +1787,8 @@ final class ConversationModel: Identifiable {
             sendQueued(first)
             return
         }
-        guard canSend else { return }
+        let queues = canQueue
+        guard canSend || queues else { return }
         var parts = draftParts
         // A typed "/skill …" is the same as one chosen from the menu.
         if let catalog = slashCatalog, catalog.isLoaded, usesGateway {
@@ -1764,8 +1825,10 @@ final class ConversationModel: Identifiable {
         attachments = []
         files = []
         skills = []
-        if waitsForChat {
-            // Another Hermes process holds the chat: this waits behind what already does.
+        if waitsForChat || queues {
+            // Another Hermes process holds the chat, or a turn this one can't steer: this waits
+            // behind what already does, and goes when the chat is free.
+            if isStopping { sendsAfterStop = true }
             animateRows {
                 queue.append(QueuedFollowUp(text: parts.body, parts: parts.hasStructure ? parts : nil, skills: parts.skills,
                                             images: images, files: documents))
@@ -3076,6 +3139,7 @@ final class ConversationModel: Identifiable {
         userImages[entry.id] = images
         armedSteers = []
         queuePaused = false
+        sendsAfterStop = false
         turnQueued = queued
         animateRows {
             pendingUser = entry
@@ -3402,8 +3466,15 @@ final class ConversationModel: Identifiable {
         connectionNote = nil
         settleFallback?.cancel()
         guard let finished = live else { return }
+        let finishing = UUID()
+        finishingTurn = finishing
         isFinishing = true
-        defer { isFinishing = false }
+        defer {
+            if finishingTurn == finishing {
+                finishingTurn = nil
+                isFinishing = false
+            }
+        }
         if let newID = finished.sessionID, newID != sessionID {
             sessionID = newID
         }
@@ -3516,7 +3587,8 @@ final class ConversationModel: Identifiable {
             workspace?.turnFinished(in: self)
         }
         if !queue.isEmpty {
-            if stoppedByUser { queuePaused = true } // Stop leaves the queue for a Send
+            // Stop leaves the queue for a Send, unless one was pressed since.
+            if stoppedByUser { queuePaused = !sendsAfterStop }
             Task { @MainActor in
                 // After the gateway has settled the turn.
                 try? await Task.sleep(for: .milliseconds(300))
@@ -3822,6 +3894,7 @@ final class ConversationModel: Identifiable {
         guard let live, !live.isFinished, !isStopping else { return }
         isStopping = true
         queuePaused = true
+        sendsAfterStop = false
         // The prompt already left: it may be with Hermes, so the turn is stopped there; the bubble
         // no longer says it waits. (Before it left, Stop gives the message back: `restoreDraft`.)
         if turnGate.sent || live.runID != nil { endDelivery() }
@@ -3942,6 +4015,8 @@ final class ConversationModel: Identifiable {
         subscription?.cancel()
         backoff?.cancel()
         settleFallback?.cancel()
+        stuckTurnWatch?.cancel()
+        stuckTurnWatch = nil
         processWatch?.cancel()
         processWatch = nil
         processGeneration += 1
@@ -4489,7 +4564,8 @@ extension ConversationModel {
     }
 
     private func finishBotTurn() async {
-        defer { isBotTurnOpen = false }
+        let generation = botTurnGeneration
+        defer { if botTurnGeneration == generation { isBotTurnOpen = false } }
         endDelivery()
         if roster != nil || workspace?.client != nil || gatewayRoster != nil {
             await finishTurn { try await self.fetchLatest($0) }
@@ -5158,6 +5234,8 @@ extension ConversationModel {
         }
         if let live { turnBaseline = (live.turn.id, newestBeforeTurn) }
         isRemoteTurn = true
+        // Its events come over the socket, so a steer goes there too.
+        turnUsesGateway = true
         isBotTurnOpen = true
         turnGate.take()
     }
@@ -5212,6 +5290,96 @@ extension ConversationModel {
             Task { await finishBotTurn() }
         }
     }
+
+    /// Arms the stuck-turn check while a turn flag holds the chat with nothing streaming, and
+    /// disarms it as soon as one streams or the flags clear (`StuckTurn`, `docs/chat.md` §4b).
+    private func watchStuckTurn() {
+        guard StuckTurn.holds(isTurnOpen: isBotTurnOpen, isFinishing: isFinishing, isWorking: isWorking) else {
+            stuckTurnWatch?.cancel()
+            stuckTurnWatch = nil
+            return
+        }
+        // Over the API server alone there's no gateway to ask; its reads end by their timeouts.
+        guard stuckTurnWatch == nil, gatewayRoster != nil else { return }
+        let heldSince = Date.now
+        let newestBefore = rawMessages.last?.id
+        stuckTurnWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: StuckTurn.grace)
+                guard !Task.isCancelled, let self,
+                      StuckTurn.holds(isTurnOpen: isBotTurnOpen, isFinishing: isFinishing, isWorking: isWorking) else { return }
+                let running = await gatewayRunning()
+                guard !Task.isCancelled,
+                      StuckTurn.holds(isTurnOpen: isBotTurnOpen, isFinishing: isFinishing, isWorking: isWorking) else { return }
+                switch StuckTurn.outcome(running: running) {
+                case .settle:
+                    // This check is done: what settling changes may arm the next one.
+                    stuckTurnWatch = nil
+                    await settleStuckTurn(heldSince: heldSince, newestBefore: newestBefore)
+                    return
+                case .follow, .askAgain:
+                    // Still running (attached now, it streams on here) or not asked: messages wait
+                    // in Up Next, and it's asked again after another grace.
+                    continue
+                }
+            }
+        }
+    }
+
+    /// Whether a turn runs in this chat on the gateway now: `session.resume`'s `running`, which
+    /// also attaches the chat, so a turn still running streams on here. `nil` when it couldn't
+    /// be asked.
+    private func gatewayRunning() async -> Bool? {
+        guard sessionID != nil, gatewayRoster?.isConnected == true else { return nil }
+        return await attachGatewayChat()
+    }
+
+    /// Nothing runs on the gateway, yet a turn flag held the chat past the grace: the app never
+    /// heard that turn end (it ended while the socket was down, past the moment Hermes lets a
+    /// detached session go). The flags clear, the chat reads its stored rows, and Up Next sends,
+    /// once: a queued message the stored chat already has from since the hold began stays in Up
+    /// Next held for a Send, rather than going twice.
+    private func settleStuckTurn(heldSince: Date, newestBefore: Int?) async {
+        ConnectionLog.logger.notice("chat: a turn held the chat for \(Int(Date.now.timeIntervalSince(heldSince)))s with nothing running on the gateway (open: \(self.isBotTurnOpen, privacy: .public), finishing: \(self.isFinishing, privacy: .public), remote: \(self.isRemoteTurn, privacy: .public)); settled from the stored chat")
+        settleFallback?.cancel()
+        settleFallback = nil
+        // A send of ours waiting for the end it'll never hear goes on: with no live turn left it
+        // only clears its own flags.
+        if let botTurnDone {
+            self.botTurnDone = nil
+            botTurnDone.resume()
+        }
+        isRemoteTurn = false
+        if live != nil || pendingUser != nil {
+            endDelivery()
+            animateRows {
+                pendingUser = nil
+                redirectedParts = []
+                live = nil
+            }
+        }
+        finishingTurn = nil
+        isFinishing = false
+        isBotTurnOpen = false
+        reload()
+        await loadTask?.value
+        guard !isWorking, !isFinishing, !isBotTurnOpen else { return }
+        for index in queue.indices where !queue[index].isHeld
+            && SubmitCheck.arrived(queue[index].text, sentAt: heldSince, knownNewestID: newestBefore, in: rawMessages) {
+            queue[index].isHeld = true
+        }
+        drainQueueIfIdle()
+    }
+
+    #if DEBUG
+    /// `-HERMES_STUCK_TURN <s>`: the chat holds as a missed turn end leaves it, a turn open on the
+    /// gateway with nothing streaming (`docs/chat.md` §4b, `docs/development.md`).
+    func holdAsIfATurnEndWasMissed() {
+        guard live == nil, !isFinishing else { return }
+        isRemoteTurn = true
+        isBotTurnOpen = true
+    }
+    #endif
 
     private func stopBotTurn() {
         guard let roster = gatewayRoster, let runtime = runtimeSessionID, turnGate.sent else {

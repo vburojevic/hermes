@@ -692,6 +692,43 @@ typing bubbles, no waving dots and no spinners for agent work.
 - **Checks:** `IndicatorsUITests` counts the shimmers on screen in each state against the mock
   (`-HERMES_MOTION_PROBE YES`) and snapshots `-HERMES_GALLERY indicators` in every look.
 
+## 4b. Send is never dead
+
+Whatever the chat's state, what's in the field has somewhere to go, and the composer says where
+(`ComposerSend`, HermesKit). Before this, a turn the app never heard end could leave Send greyed
+out with a message waiting in Up Next, and the queue never sent either.
+
+| The chat | Send does | The composer shows |
+|---|---|---|
+| Nothing runs | **Send**: a new turn | Send; VoiceOver "Send" |
+| A turn streams here and takes notes | **Steer** (or the mode picked on the chip, `docs/follow-ups.md` §1) | the mode chip; "Send, Steer" |
+| A turn holds the chat and can't take a note: open on the gateway with nothing streaming (started elsewhere, or its end missed), finishing, or stopping | **Queue**: the message goes to Up Next and sends when the turn ends (after Stop too: a Send pressed since Stop lets the queue go on) | the chip, locked on Send Next; "Send, Send Next" |
+| The field is empty, nothing runs, Up Next has messages | sends the first one | Send |
+| Writing to a helper (`helperSteer`) | the note goes to that helper (`subagent.steer`) | the strip "To helper 2 · …" with its close button |
+
+- **A helper target clears itself.** The composer writes to a helper only while that helper can
+  read a note (running, and taking notes). Once it finishes, the strip goes and the composer
+  writes to Hermes again, so a helper long gone never holds up Send or Up Next. A note still in the
+  field when that happens isn't sent anywhere: it stays there, and a receipt says "Not sent · helper
+  2 finished. Send again to send it to Hermes". The strip's close button clears it at any time, in
+  one tap.
+- **A stuck turn clears by itself** (`StuckTurn`). A chat can say a turn is open on the gateway,
+  or that one is finishing, while nothing streams: the app missed the turn's end. That happens to a
+  turn started elsewhere (a routine, another device, a turn Hermes starts when a background
+  process finishes) that ends while the socket is down for longer than Hermes keeps a detached
+  session (20 s, `ws_orphan_reap_grace_s`): the next resume gets a fresh session and nothing to
+  replay. After 10 s of that, the app asks the gateway (`session.resume`, its `running`):
+  - Nothing runs: the turn settles. The chat reads its stored rows, and Up Next sends, one message
+    per turn as always. A queued message the stored chat already has from since the chat was held
+    isn't sent again: it stays in Up Next, held for a Send ("Not sent").
+  - A turn still runs: the chat is attached to it, so it streams on here, and Up Next sends when it
+    ends.
+  - The gateway can't be asked (offline): it asks again 10 s later. Meanwhile Send queues.
+- **Checks:** with the mock, start a turn elsewhere in an open chat (`POST
+  /api/mock/turn-elsewhere`), then drop the sockets past the reap (`POST /api/mock/drop-sockets
+  {"outage": 25, "reap": 20}`, `docs/development.md`). Typed text queues while the chat is held, and
+  within about 10 s of the socket coming back the chat settles and Up Next sends, once.
+
 ## 5. Accessibility
 
 - The person's bubble reads as one element: "You:", then its skills ("Skill, github-pr-workflow"),

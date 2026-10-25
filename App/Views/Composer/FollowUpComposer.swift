@@ -18,9 +18,10 @@ struct FollowUpModeChip: View {
     @State private var picks = 0
 
     private var mode: FollowUpMode { conversation.followUpMode }
-    /// With nothing running, a queued message being edited can only go back in the queue.
+    /// With nothing running, a queued message being edited can only go back in the queue, and
+    /// behind a turn that can't take a note what's typed can only wait in it.
     private var modes: [FollowUpMode] {
-        conversation.isWorking ? conversation.availableFollowUpModes : [.sendNext]
+        conversation.isWorking && !conversation.canQueue ? conversation.availableFollowUpModes : [.sendNext]
     }
     private var isLocked: Bool { modes.count < 2 }
 

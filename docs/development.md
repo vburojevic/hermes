@@ -166,8 +166,14 @@ the session is idle that long after it (the turn's
 end handing over: `-HERMES_SEND "write swift widgets" -HERMES_SEND_AFTER 6 -HERMES_FOLLOWUP <text>
 -HERMES_FOLLOWUP_MODE steer -HERMES_FOLLOWUP_SEND YES -HERMES_FOLLOWUP_AFTER 12` in `bot:default`, and
 `-HERMES_LOAD_LOG YES` says "held for a later load" when it didn't). Connection trouble on demand: `POST
-/api/mock/drop-sockets {settle, outage}` cuts every socket (the next `settle` resumes of a running
-chat answer 4009, new sockets are cut for `outage` seconds), `POST /api/mock/freeze-sockets`
+/api/mock/drop-sockets {settle, outage, reap}` cuts every socket (the next `settle` resumes of a running
+chat answer 4009, new sockets are cut for `outage` seconds, and with `reap` (Hermes's is 20) a
+session no socket came back for in that many seconds is interrupted and let go, so the next resume
+gets a fresh, idle one with nothing to replay), `POST /api/mock/turn-elsewhere {session_id | profile,
+seconds, text, reply}` has Hermes start a turn in that chat by itself, as when a background process
+finishes (about 8 s; with `{"outage": 25, "reap": 20}` above in its middle, the app never hears it
+end: a stuck turn, `docs/chat.md` §4b; `-HERMES_STUCK_TURN <s>` holds the open chat that way that
+long after launch, without the mock's help), `POST /api/mock/freeze-sockets`
 leaves them half-open, `POST /api/mock/stall {seconds}` freezes the backend the way Hermes's
 dashboard freezes on a loaded Mac (requests, frames and pings wait, then all answer; the gateway
 mock keeps answering), `POST /api/mock/starve {seconds, gap, slice, health}` starves the whole
