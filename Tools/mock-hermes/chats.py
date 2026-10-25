@@ -155,6 +155,9 @@ def turn_elsewhere(stored, text, reply, seconds):
 
 
 def submit_chat(sid, runtime, text, queued=False):
+    gated = B["submit_gate"](sid, runtime, text)
+    if gated is not None:
+        return gated
     with B["LOCK"]:
         busy = runtime["running"]
     if busy:

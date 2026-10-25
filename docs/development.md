@@ -203,6 +203,21 @@ of each message nobody typed: that alert and its reply, a routine's delivery mir
 (its routine, Disk report, is in Ops' Routines), a webhook's, an untyped `[System: …]` nudge
 (hidden), a skill used from another device, a compaction summary folded into the person's next
 message and one on its own as the newest row.
+Every reason Hermes gives for refusing a message (`docs/chat.md` §4c, §4d), shaped like the
+gateway's own: `POST /api/mock/owner {mode, profile | session_id, seconds, ack}` lets the gateway's
+own queue own a chat (a Bot Chat by profile, else a stored id) for `seconds`, its own turn running
+there. `forward` queues a text-only send in that queue (`{status: queued, admission_id, forwarded:
+true}`, then `session.info {pending_submissions}`, and once the owner's turn ends only
+`message.start` and `message.complete` for it; the mock prints `owner: ran a forwarded message` each
+time one runs, to count them); a photo can't join it (4090 `SESSION_OWNER_BUSY`, "an image cannot
+join its queue, so it was removed from this message", the photo unstaged). `ack` makes the owner
+answer that late, and past 30 s it is `SESSION_OWNER_UNCONFIRMED` while the message still runs, as
+mode `unconfirmed` does at once. `busy` (`SESSION_OWNER_BUSY`), `ledger-unknown`
+(`SESSION_NOT_OWNED`, "outcome-unknown work in the gateway's durable queue"), `coordination`
+(`SESSION_COORDINATION_UNAVAILABLE`) and `no-reason` (a bare 4090) refuse with Hermes's words;
+`unknown-reason` refuses with a reason no Hermes sends yet, for a reason newer than the app; `off`
+lets go. `POST /api/mock/limit {seconds, active, limit}` puts Hermes at its chat limit
+(`MAX_CONCURRENT_SESSIONS`, "(3/3)") for `seconds`.
 `POST /api/mock/hold {profile, seconds, surface, age, late}` holds a Bot Chat with nothing stored:
 `age` minutes ago (45 reads as a terminal, 0 as a one-shot booting), `surface` `cli` or
 `desktop`; `late: true` takes the next send, stores it and refuses the turn as it runs instead (the
