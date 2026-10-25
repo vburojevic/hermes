@@ -64,6 +64,29 @@ final class VoiceUITests: XCTestCase {
         app.buttons["End call"].tap()
     }
 
+    /// Three turns in one call, each answered in three sentences: every reply is read, once. The
+    /// call's player reads them all in one queue, and the second used to wait there unread.
+    @MainActor
+    func testTalkReadsEveryReplyInACall() async throws {
+        let app = launch([
+            "-HERMES_TALK_TO", "hermes",
+            "-HERMES_VOICE_INPUT", [2.0, 26, 50].map { mock.clip("essay", at: $0) }.joined(separator: ","),
+        ])
+        XCTAssertTrue(app.buttons["End call"].waitForExistence(timeout: 60), "no call")
+        let lastSentence = "Nothing older than a month"
+        try await eventually(timeout: 120) {
+            try await self.mock.audio().spoken.filter { $0.contains(lastSentence) }.count >= 3
+        }
+        // Long enough for a reply read twice to have been asked of the gateway's voice again.
+        try await Task.sleep(for: .seconds(8))
+        let audio = try await mock.audio()
+        XCTAssertEqual(audio.turns, Array(repeating: "Write me a short essay about backups.", count: 3), "not three voice turns")
+        let replies = audio.spoken.filter { $0.contains(lastSentence) }.count
+        XCTAssertEqual(replies, 3, "a reply was read more than once: \(audio.spoken)")
+        XCTAssertEqual(audio.spoken.filter { $0 == "Yes." }.count, 3, "a reply wasn't read from its start: \(audio.spoken)")
+        app.buttons["End call"].tap()
+    }
+
     /// "Stop" said over a long reply stops it (`TalkEars`): the Bot dips as the word starts, stops
     /// when it's heard, and the rest of the reply is never asked of the gateway's voice.
     @MainActor
