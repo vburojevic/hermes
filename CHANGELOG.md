@@ -31,6 +31,12 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610252214 (October 25, 2026)
+
+- **Chat:** Hermes refusing a message says why in its own words, and a busy gateway or a full chat limit makes it wait, never the "as many chats at once" banner
+- **Chat:** a message the gateway didn't confirm is checked for in the chat, never sent a second time
+- **Chat:** a message sent while Hermes is busy with a turn this device hasn't seen waits for it, and never shows as that turn or steers it
+
 ### Build 2610251952 (October 25, 2026)
 
 - **Chat:** answering an approval over the API server reaches the gateway, so the reply goes on
