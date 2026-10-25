@@ -511,6 +511,11 @@ Bot's `tts` and `voice` sections; with `{"direct": true}` voice-config points pr
 own `/mock-provider/…` (never a real provider), and `GET /api/mock/audio/turns` lists them. Setup:
 `GET /api/env` lists the voice keys per profile; `{"env_refusal": "…"}` makes `PUT /api/env` refuse
 with Hermes's 400; `{"tts": "broken"}` makes the gateway's voice fail so Talk and Listen say why.
+voice-config answers Hermes's verdict for the profile's providers (set them with `PUT /api/config`);
+a provider without credentials is refused as Hermes refuses it (`speak` 400, `speak-stream`
+`fallback`, `transcribe` "No STT provider available. …"). `{"xai_oauth": true}` signs the gateway in
+to xAI Grok (`GET /api/providers/oauth` lists `xai-oauth`): with `tts.provider` and `stt.provider`
+`xai` and no key, it speaks and transcribes voice messages, never live.
 Transcribe on: The gateway (launch with `-voice.transcribeOn gateway`): `{"stt_streaming": true,
 "transcript": "…"}` makes `transcribe-stream` answer with those words (or set `stt.provider` to
 openai, xai or elevenlabs and `stt.streaming: true` with `PUT /api/config`, plus the key with

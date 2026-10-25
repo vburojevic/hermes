@@ -618,7 +618,9 @@ Off change what the next check reads. Other states have flags of their own: `--c
 `--password <pw>` (a backend that needs a sign-in); leave out `-HERMES_BOOTSTRAP_BACKEND` for a
 gateway without Bot Mode. Voice has its own switches (`Tools/mock-hermes/audio.py`): `PUT
 /api/config` sets a profile's `tts.provider`, `POST /api/mock/audio {"realtime": false}` takes
-Realtime away and `{"env_refusal": "…"}` makes `PUT /api/env` refuse with that reason.
+Realtime away, `{"env_refusal": "…"}` makes `PUT /api/env` refuse with that reason, and
+`{"xai_oauth": true}` signs the gateway in to xAI Grok (with `tts.provider` and `stt.provider` set
+to `xai` and no key: speech and voice messages ready, Transcribe on the gateway asking for the key).
 
 `-HERMES_SETTINGS_SETUP YES` opens Settings → Setup (with `-HERMES_OPEN settings` on iPhone and
 iPad; the Mac opens its Settings window on the Setup tab), and `-HERMES_SETTINGS_SETUP <id>`

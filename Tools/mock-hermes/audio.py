@@ -5,20 +5,26 @@ Shaped like `hermes serve` (hermes_cli/web_routers/audio.py, tools/voice_live.py
 tools/voice_client_config.py, tools/tts_streaming.py):
   - GET /api/audio/voice-live/status: {ok, mode, available, reason, model, voice}; chained unless
     Realtime is switched on ("no OpenAI API key (…)" when it's gpt-live without a key).
-  - GET /api/audio/voice-config: relay verdicts by default; "direct" hands out a fake key
-    ("mock-key-not-real"), never a real one.
+  - GET /api/audio/voice-config: Hermes's verdict for the profile's providers
+    (tools/voice_client_config.py): relay with its reason ("local provider", "no credentials",
+    "provider 'edge' has no client wire", "xai oauth (server-managed) or no credentials"), or
+    direct for a provider with a key and a wire, pointing at this mock with a fake key
+    ("mock-key-not-real"), never a real one. "direct" hands out OpenAI's whatever is configured.
   - POST /api/audio/voice-live/session {sdp, history}: 400 without an offer, 503 without a key,
     else a fake SDP answer (WebRTC can't connect to it: Talk falls back to Hermes Voice).
   - WS /api/audio/speak-stream: {"text"}/{"done"}/{"stop"} in; {"type":"start","sample_rate":24000,
     "channels":1}, little-endian int16 PCM frames (not sample-aligned, like real providers'
     chunks) and {"type":"end"} out; {"type":"fallback"} when switched to fallback.
     The audio is speech-like (syllables of a voiced tone), about 65 ms per character.
-  - POST /api/audio/speak {text} → {ok, data_url: data:audio/wav;base64,…, mime_type, provider}.
+  - POST /api/audio/speak {text} → {ok, data_url: data:audio/wav;base64,…, mime_type, provider};
+    400 with Hermes's words when the provider has no credentials ("TTS configuration error (xai):
+    No xAI credentials found. …"), and speak-stream answers {"type":"fallback"} then.
   - POST /api/audio/tts-lease, /api/audio/stt-lease {lease, active}.
   - POST /api/audio/transcribe {data_url}: the transcript set with the switch (Talk's fallback for
     a turn the live socket lost, and a voice message the device heard no words in), after
     "transcribe_delay" seconds; "" is no speech heard, as Hermes answers it. "transcribe_refusal"
-    answers 400 with those words instead, as Hermes does for "No STT provider available. …".
+    answers 400 with those words instead, and a provider without credentials gets Hermes's own
+    "No STT provider available. …".
   - WS /api/audio/transcribe-stream, as Hermes's transcription_streaming: {"sample_rate": N} first
     (else it closes without a word), then int16 mono PCM, {"partial", text} with everything heard
     so far, and {"eos": true} → {"final", transcript, provider} and a close. Live only with the
@@ -48,10 +54,13 @@ message from text_to_speech: `[[audio_as_voice]]`, then `MEDIA:<path>`, then the
 
 Setup (`docs/voice.md` §6.1): GET /api/env lists the voice keys (is_set, a redacted preview);
 {"env_refusal": "…"} makes PUT /api/env refuse with that 400, as Hermes does for a pinned key.
+{"xai_oauth": true} signs the gateway in to xAI Grok (GET /api/providers/oauth lists `xai-oauth`
+logged in): xAI then speaks and transcribes whole recordings with no XAI_API_KEY, as Hermes's
+resolve_xai_http_credentials does, but never transcribes as you speak (API key only).
 
 Switches: POST /api/mock/audio {"realtime": bool, "key": bool, "tts": "stream" | "fallback"
 | "broken" | "slow", "direct": bool, "elevenlabs": bool, "stt_streaming": bool, "transcript": str,
-"transcribe_delay": seconds, "transcribe_refusal": str | null};
+"transcribe_delay": seconds, "transcribe_refusal": str | null, "xai_oauth": bool};
 POST /api/mock/audio/reset.
 
 Voices: GET/PUT /api/config keep each Bot's `tts` and `voice` sections. With "direct" on,
@@ -95,7 +104,7 @@ GPT_LIVE_VOICES = ["marin", "cedar", "quartz", "ripple", "vesper", "willow", "st
 def reset():
     with LOCK:
         STATE.clear()
-        STATE.update({"realtime": False, "key": True, "tts": "stream", "direct": False, "elevenlabs": True,
+        STATE.update({"realtime": False, "key": True, "tts": "stream", "direct": False, "elevenlabs": True, "xai_oauth": False,
                       "stt_streaming": False, "transcript": "", "env_refusal": None, "stt_live_fail": None,
                       "transcribe_delay": 0.0, "transcribe_refusal": None})
         TURNS.clear()
@@ -192,18 +201,104 @@ def live_stt(profile):
     return bool(stt.get("streaming")) and any(key in ENV_SET.get(profile, set()) for key in keys)
 
 
+# The keys each provider takes (tools/tts_tool.py, tools/transcription_tools.py), and the ones
+# voice-config can hand out (its client wires).
+TTS_KEYS = {"openai": ("OPENAI_API_KEY", "VOICE_TOOLS_OPENAI_KEY"), "elevenlabs": ("ELEVENLABS_API_KEY",),
+            "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"), "xai": ("XAI_API_KEY",),
+            "minimax": ("MINIMAX_API_KEY", "MINIMAX_CN_API_KEY"), "mistral": ("MISTRAL_API_KEY",),
+            "deepinfra": ("DEEPINFRA_API_KEY",)}
+STT_KEYS = {"openai": ("OPENAI_API_KEY", "VOICE_TOOLS_OPENAI_KEY"), "groq": ("GROQ_API_KEY",),
+            "mistral": ("MISTRAL_API_KEY",), "xai": ("XAI_API_KEY",), "elevenlabs": ("ELEVENLABS_API_KEY",),
+            "deepinfra": ("DEEPINFRA_API_KEY",)}
+TTS_WIRES = {"openai": "openai-speech", "elevenlabs": "elevenlabs-tts", "deepinfra": "openai-speech"}
+STT_WIRES = {"openai": "openai-multipart", "groq": "openai-multipart", "mistral": "openai-multipart",
+             "xai": "xai-stt", "elevenlabs": "elevenlabs-stt", "deepinfra": "openai-multipart"}
+
+
+def providers(profile):
+    """The profile's (tts, stt) providers, as GET /api/config shows them (call with LOCK held)."""
+    saved = PROFILE_CONFIG.get(profile, {})
+    return ((saved.get("tts") or {}).get("provider", "edge"), (saved.get("stt") or {}).get("provider", "local"))
+
+
+def has_key(profile, keys):
+    return any(key in ENV_SET.get(profile, set()) for key in keys)
+
+
+def can_speak(profile):
+    """Whether text_to_speech has credentials: xAI takes the xAI Grok sign-in in place of its key
+    (resolve_xai_http_credentials). Call with LOCK held."""
+    provider, _ = providers(profile)
+    keys = TTS_KEYS.get(provider)
+    return not keys or has_key(profile, keys) or (provider == "xai" and STATE["xai_oauth"])
+
+
+def can_transcribe(profile):
+    """Whether transcribe_recording has a provider: the same sign-in rule (_has_xai_stt_credentials)."""
+    _, provider = providers(profile)
+    keys = STT_KEYS.get(provider)
+    return not keys or has_key(profile, keys) or (provider == "xai" and STATE["xai_oauth"])
+
+
+def speech_refusal(profile):
+    """text_to_speech's error for a provider without credentials (call with LOCK held)."""
+    provider, _ = providers(profile)
+    if provider == "xai":
+        return "TTS configuration error (xai): No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY."
+    return f"TTS configuration error ({provider}): {TTS_KEYS[provider][0]} not set"
+
+
+NO_STT = ("No STT provider available. Install faster-whisper for free local transcription, configure "
+          "HERMES_LOCAL_STT_COMMAND or install a local whisper CLI, set GROQ_API_KEY for free Groq Whisper, set "
+          "MISTRAL_API_KEY for Mistral Voxtral Transcribe, configure xAI OAuth or set XAI_API_KEY for xAI Grok STT, "
+          "set ELEVENLABS_API_KEY for ElevenLabs Scribe, or set VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY for the "
+          "OpenAI Whisper API.")
+
+
+def resolved_verdicts(profile, base):
+    """voice-config as Hermes resolves it with voice.client_direct on, its default (call with LOCK
+    held): direct only for a provider with its own key and a wire the client speaks."""
+    tts_provider, stt_provider = providers(profile)
+    if tts_provider not in TTS_WIRES:
+        tts = {"mode": "relay", "reason": f"provider {tts_provider!r} has no client wire"}
+    elif not has_key(profile, TTS_KEYS[tts_provider]):
+        tts = ({"mode": "relay", "reason": "openai resolution failed: no OpenAI API key or managed gateway"}
+               if tts_provider == "openai" else {"mode": "relay", "reason": "no credentials"})
+    elif tts_provider == "elevenlabs":
+        tts = {"mode": "direct", "wire": "elevenlabs-tts", "provider": "elevenlabs", "base_url": f"{base}/elevenlabs/v1",
+               "api_key": "mock-key-not-real", "model": "eleven_multilingual_v2", "voice": "pNInz6obpgDQGcFmaJgB"}
+    else:
+        tts = {"mode": "direct", "wire": "openai-speech", "provider": tts_provider, "base_url": f"{base}/openai/v1",
+               "api_key": "mock-key-not-real", "model": "gpt-4o-mini-tts", "voice": "alloy", "speed": 1.0}
+    if stt_provider in ("local", "local_command"):
+        stt = {"mode": "relay", "reason": "local provider"}
+    elif stt_provider not in STT_WIRES:
+        stt = {"mode": "relay", "reason": "command/plugin provider"}
+    elif not has_key(profile, STT_KEYS[stt_provider]):
+        # xAI: API key only, so a sign-in reads the same as nothing at all.
+        reason = {"xai": "xai oauth (server-managed) or no credentials",
+                  "openai": "openai resolution failed: no OpenAI API key or managed gateway"}.get(stt_provider, "no credentials")
+        stt = {"mode": "relay", "reason": reason}
+    else:
+        stt = {"mode": "direct", "wire": STT_WIRES[stt_provider], "provider": stt_provider,
+               "base_url": f"{base}/{stt_provider}/v1", "api_key": "mock-key-not-real", "model": "mock-transcribe"}
+    return stt, tts
+
+
 def voice_config(query, body):
     refusal = profile_or_404(query)
     if refusal:
         return refusal
-    with LOCK:
-        direct = STATE["direct"]
-        streaming = live_stt(profile_name(query))
-    if not direct:
-        return 200, {"ok": True, "stt": {"mode": "relay", "reason": "local provider", "streaming": streaming},
-                     "tts": {"mode": "relay", "reason": "no credentials"}}
     # The "provider" is this mock (/mock-provider/…): previews never reach a real one.
     base = f"http://127.0.0.1:{B['CONFIG']['port']}/mock-provider"
+    profile = profile_name(query)
+    with LOCK:
+        direct = STATE["direct"]
+        streaming = live_stt(profile)
+        if not direct:
+            stt, tts = resolved_verdicts(profile, base)
+    if not direct:
+        return 200, {"ok": True, "stt": dict(stt, streaming=streaming), "tts": tts}
     tts_provider = (PROFILE_CONFIG.get(profile_name(query), {}).get("tts") or {}).get("provider", "openai")
     tts = ({"mode": "direct", "wire": "elevenlabs-tts", "provider": "elevenlabs", "base_url": f"{base}/elevenlabs/v1",
             "api_key": "mock-key-not-real", "model": "eleven_multilingual_v2", "voice": "pNInz6obpgDQGcFmaJgB"}
@@ -242,13 +337,18 @@ def speak(query, body):
     text = str((body or {}).get("text") or "").strip()
     if not text:
         return 400, {"detail": "Text is required"}
+    profile = profile_name(query, body)
     with LOCK:
         broken = STATE["tts"] == "broken"
+        refusal = None if can_speak(profile) else speech_refusal(profile)
+        provider, _ = providers(profile)
     if broken:
         return 500, {"detail": "Speech synthesis failed"}
+    if refusal:
+        return 400, {"detail": refusal}
     data = wav_bytes(speechlike(text))
     return 200, {"ok": True, "data_url": "data:audio/wav;base64," + base64.b64encode(data).decode(),
-                 "mime_type": "audio/wav", "provider": "edge"}
+                 "mime_type": "audio/wav", "provider": provider}
 
 
 def lease(kind):
@@ -274,16 +374,18 @@ def transcribe(query, body):
     url = str((body or {}).get("data_url") or "")
     if not url.startswith("data:"):
         return 400, {"detail": "Invalid audio payload"}
+    profile = profile_name(query, body)
     with LOCK:
         transcript = STATE["transcript"]
         delay = STATE["transcribe_delay"]
-        refusal = STATE["transcribe_refusal"]
+        refusal = STATE["transcribe_refusal"] or (None if can_transcribe(profile) else NO_STT)
+        _, provider = providers(profile)
         WHOLE.append({"mime_type": url[5:url.find(";")] if ";" in url else "", "transcript": transcript})
     if delay:
         time.sleep(delay)
     if refusal:
         return 400, {"detail": refusal}
-    return 200, {"ok": True, "transcript": transcript, "provider": "local"}
+    return 200, {"ok": True, "transcript": transcript, "provider": provider}
 
 
 def elevenlabs_voices(query, body):
@@ -299,7 +401,7 @@ def elevenlabs_voices(query, body):
 
 def mock_switch(query, body):
     with LOCK:
-        for key in ("realtime", "key", "direct", "elevenlabs", "stt_streaming"):
+        for key in ("realtime", "key", "direct", "elevenlabs", "stt_streaming", "xai_oauth"):
             if key in (body or {}):
                 STATE[key] = bool(body[key])
         if (body or {}).get("tts") in ("stream", "fallback", "broken", "slow"):
@@ -567,6 +669,9 @@ def speak_stream(handler, query):
     threading.Thread(target=reader, daemon=True).start()
     with LOCK:
         mode = STATE["tts"]
+        # No credentials: Hermes's sentence synthesis fails and produced nothing.
+        if not can_speak(profile_name(query)):
+            mode = "fallback"
     started = False
     while peer.alive and not stop.is_set():
         with arrived:
@@ -682,6 +787,7 @@ def install(backend_globals, gateway_module, chats_module):
     install_scenario()
     install_config()
     install_env()
+    install_sign_in()
 
     methods = B["METHODS"]
     submit = methods["prompt.submit"]
@@ -806,6 +912,28 @@ def install_env():
 
     routes[("GET", "/api/env")] = get_env
     routes[("PUT", "/api/env")] = put_env
+
+
+def install_sign_in():
+    """GET /api/providers/oauth lists the xAI Grok sign-in too (hermes_cli/web_routers/oauth.py,
+    `get_xai_oauth_auth_status`), logged in with {"xai_oauth": true}."""
+    routes = B["HTTP_ROUTES"]
+    previous = routes.get(("GET", "/api/providers/oauth"))
+
+    def oauth_providers(query, body):
+        status, payload = previous(query, body) if previous else (200, {"providers": []})
+        with LOCK:
+            signed_in = STATE["xai_oauth"]
+        rows = [row for row in (payload or {}).get("providers", []) if row.get("id") != "xai-oauth"]
+        rows.append({"id": "xai-oauth", "name": "xAI Grok OAuth (SuperGrok Subscription)", "flow": "device_code",
+                     "cli_command": "hermes auth add xai-oauth", "docs_url": "", "disconnect_hint": None,
+                     "disconnect_command": None, "disconnectable": True,
+                     "status": {"logged_in": signed_in, "source": "xai_oauth", "source_label": "xAI Grok OAuth",
+                                "token_preview": "…mock" if signed_in else None, "expires_at": None,
+                                "has_refresh_token": True}})
+        return status, dict(payload or {}, providers=rows)
+
+    routes[("GET", "/api/providers/oauth")] = oauth_providers
 
 
 def mock_provider(handler, path, body):

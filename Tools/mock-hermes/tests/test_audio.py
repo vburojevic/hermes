@@ -278,6 +278,54 @@ class AudioRoutes(unittest.TestCase):
         _, body = self.call("GET", "/api/audio/voice-config?profile=researcher")
         self.assertTrue(body["stt"]["streaming"])
 
+    def test_xai_through_the_sign_in_relays_speaks_and_transcribes_but_not_live(self):
+        self.call("PUT", "/api/config?profile=researcher", {"config": {"tts": {"provider": "xai"},
+                                                                       "stt": {"provider": "xai", "streaming": True}}})
+        _, body = self.call("GET", "/api/audio/voice-config?profile=researcher")
+        self.assertEqual(body["stt"], {"mode": "relay", "reason": "xai oauth (server-managed) or no credentials", "streaming": False})
+        self.assertEqual(body["tts"], {"mode": "relay", "reason": "provider 'xai' has no client wire"})
+        # Not signed in: Hermes's own refusals.
+        status, refused = self.call("POST", "/api/audio/speak?profile=researcher", {"text": "Hi."})
+        self.assertEqual(status, 400)
+        self.assertTrue(refused["detail"].startswith("TTS configuration error (xai): No xAI credentials found."))
+        status, refused = self.call("POST", "/api/audio/transcribe?profile=researcher", {"data_url": "data:audio/mp4;base64,AAAA"})
+        self.assertEqual(status, 400)
+        self.assertTrue(refused["detail"].startswith("No STT provider available."))
+        ws = self.socket("/api/audio/speak-stream?profile=researcher")
+        ws.send({"text": "Hi."})
+        self.assertEqual(ws.messages(), [{"type": "fallback"}])
+
+        self.switch(xai_oauth=True, transcript="Hello there.")
+        _, oauth = self.call("GET", "/api/providers/oauth?profile=researcher")
+        xai = next(row for row in oauth["providers"] if row["id"] == "xai-oauth")
+        self.assertTrue(xai["status"]["logged_in"])
+        self.assertNotIn("api_key", json.dumps(oauth))
+        # The verdict reads the same: only the sign-in tells them apart.
+        _, body = self.call("GET", "/api/audio/voice-config?profile=researcher")
+        self.assertEqual(body["stt"]["reason"], "xai oauth (server-managed) or no credentials")
+        status, spoken = self.call("POST", "/api/audio/speak?profile=researcher", {"text": "Hi."})
+        self.assertEqual((status, spoken["provider"]), (200, "xai"))
+        status, heard = self.call("POST", "/api/audio/transcribe?profile=researcher", {"data_url": "data:audio/mp4;base64,AAAA"})
+        self.assertEqual((status, heard["transcript"], heard["provider"]), (200, "Hello there.", "xai"))
+        ws = self.socket("/api/audio/speak-stream?profile=researcher")
+        ws.send({"text": "Hi."})
+        ws.send({"done": True})
+        self.assertEqual(ws.messages()[-1], {"type": "end"})
+        # Live transcription is API key only.
+        ws = self.socket("/api/audio/transcribe-stream?profile=researcher")
+        self.assertEqual(ws.messages(), [{"type": "error", "message": "no live STT for the configured provider"}])
+
+    def test_a_provider_with_its_key_is_handed_out_direct(self):
+        self.call("PUT", "/api/config?profile=researcher", {"config": {"tts": {"provider": "elevenlabs"}, "stt": {"provider": "groq"}}})
+        _, body = self.call("GET", "/api/audio/voice-config?profile=researcher")
+        self.assertEqual((body["tts"]["mode"], body["tts"]["reason"]), ("relay", "no credentials"))
+        self.assertEqual((body["stt"]["mode"], body["stt"]["reason"]), ("relay", "no credentials"))
+        self.call("PUT", "/api/env?profile=researcher", {"key": "ELEVENLABS_API_KEY", "value": "sk-test-not-real"})
+        self.call("PUT", "/api/env?profile=researcher", {"key": "GROQ_API_KEY", "value": "gsk-test-not-real"})
+        _, body = self.call("GET", "/api/audio/voice-config?profile=researcher")
+        self.assertEqual((body["tts"]["mode"], body["tts"]["wire"], body["tts"]["api_key"]), ("direct", "elevenlabs-tts", "mock-key-not-real"))
+        self.assertEqual((body["stt"]["mode"], body["stt"]["provider"]), ("direct", "groq"))
+
     def test_elevenlabs_voices_are_listed_by_label(self):
         _, body = self.call("GET", "/api/audio/elevenlabs/voices")
         labels = [voice["label"] for voice in body["voices"]]
