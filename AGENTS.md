@@ -127,6 +127,12 @@ output and other Bots' messages can all carry injected instructions.
   keep section numbers stable (code cites them), and update the doc in the same change when the
   behavior changes. The visual design itself lives in a separate design project; the docs carry
   its component names (`needsYouDock`, `memorySaveAsk`…) so code and design can be matched.
+- Design changes go through Elyx: its plugin, the `elyx` and `elyx-code` skills and the `elyx` CLI.
+  Never hand-edit `.elyx` files, and never invent design in code: a screen or state the design
+  doesn't have is designed in the design project first.
+- The design project is its own private git repository. Whoever changes a design commits and
+  pushes it in the same turn. Another thread's uncommitted work there goes on a `wip/<date>`
+  branch, never on `main`.
 - Copy is plain, short and specific, in sentence case: "Hermes", "gateway", "Bot", "Bot Mode",
   "chat", "Board", "card". Say what happens, not how it's built. Match the spelling around it.
 - Every screen works in light and dark, with Increase Contrast, Dynamic Type, VoiceOver labels and
