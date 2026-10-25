@@ -178,7 +178,7 @@ struct SearchPalette: View {
     private func label(for item: Item) -> some View {
         switch item {
         case .chat(let hit):
-            SearchResultRow(hit: hit, place: search.place(of: hit), isCompact: true) {}
+            SearchResultRow(hit: hit, time: search.time(of: hit), place: search.place(of: hit), isCompact: true) {}
                 .allowsHitTesting(false)
         case .recent(let session):
             actionLabel(symbol: "bubble.left", title: session.displayTitle, shortcut: nil)

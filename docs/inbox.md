@@ -116,7 +116,8 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
 - Pinned first, then by each row's time, newest first; no date sections (`RowTime.ordered`).
 - **A row's time is its last line's message** (`RowTime`): the newest message a person or a Bot
   wrote (a reply: when it ended), the same one line 2 shows. It's also what the row sorts by, in
-  the chats, the Bots, group chats (their log's newest message) and a project's lanes. Hermes'
+  the chats, the Bots, group chats (their log's newest message) and a project's lanes. A search
+  result takes its chat's row's ([search.md](search.md) §2). Hermes'
   `last_active` moves for more than messages, so it only stands in until the line is read:
   - it's the newer of the turn heartbeat (`last_activity_at`, stamped about once a minute by any
     turn: API calls, tools, compaction, retries) and the newest stored row of any kind, a

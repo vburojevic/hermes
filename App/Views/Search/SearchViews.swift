@@ -50,7 +50,7 @@ struct SearchResultsSection: View {
                 .accessibilityLabel(Text("Project \(project.name)"))
             }
             ForEach(search.hits) { hit in
-                SearchResultRow(hit: hit, place: search.place(of: hit), isSelected: isSelected(hit)) {
+                SearchResultRow(hit: hit, time: search.time(of: hit), place: search.place(of: hit), isSelected: isSelected(hit)) {
                     workspace.open(hit)
                     onNavigate()
                 }
@@ -129,6 +129,8 @@ struct SearchChips: View {
 /// bold, then where it lives.
 struct SearchResultRow: View {
     let hit: ChatSearch.Hit
+    /// `ChatSearch.time(of:)`: the chat's row time, not Hermes' activity.
+    let time: Date?
     let place: ChatSearch.Place?
     var isSelected = false
     var isCompact = false
@@ -151,7 +153,7 @@ struct SearchResultRow: View {
                     .foregroundStyle(Theme.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                if let date = hit.result.date {
+                if let date = time {
                     Text(Formatting.shortRelative(date))
                         .font(.caption)
                         .foregroundStyle(Theme.tertiaryText)
@@ -179,7 +181,7 @@ struct SearchResultRow: View {
 
     private var accessibilityText: String {
         var parts = [title]
-        if let date = hit.result.date { parts.append(Formatting.relativePhrase(date)) }
+        if let date = time { parts.append(Formatting.relativePhrase(date)) }
         let snippet = SnippetRun.plain(hit.result.snippet)
         parts.append(String(localized: "matched: \(author.map { "\($0): " } ?? "")\(snippet)"))
         if let place { parts.append(SearchPlaceLine.text(for: place)) }

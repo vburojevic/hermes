@@ -202,6 +202,14 @@ def seed():
     chat("prj_fork_1", "Profile-scoped projects", agent, NOW - 18 * DAY, "How are projects scoped per profile?", "Each profile has its own projects.db in its home.")
 
     chat("prj_dot_0", "zsh startup time", f"{HOME}/dotfiles", NOW - 32 * DAY, "Why is my shell slow to start?", "nvm was loading eagerly; it's lazy now. 640 ms → 90 ms.")
+    # Activity without a message (docs/inbox.md §2): Hermes' heartbeat in the dotfiles chat moved 7
+    # minutes ago (`last_activity_at`: any API call, tool or retry stamps it), and the blog post's
+    # chat was compacted 25 minutes ago, its handoff summary stored as the person's newest row. Their
+    # search results keep their last messages' times; "zsh" is a title hit for the dotfiles chat.
+    with G.LOCK:
+        G.SESSIONS["prj_dot_0"]["_last"] = NOW - 7 * 60
+    G.add_message("prj_blog_0", "user", B["compaction_summary"]("## Historical Task Snapshot\nThe person asked for a post outline."),
+                  timestamp=NOW - 25 * 60)
     chat("prj_folio_0", "Portfolio redesign", f"{HOME}/Sites/portfolio", NOW - 70 * DAY, "Redesign the portfolio", "New grid layout with case studies.")
 
     site = f"{HOME}/Code/caffeinated-site"

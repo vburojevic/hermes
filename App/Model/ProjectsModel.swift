@@ -121,6 +121,11 @@ final class ProjectsModel {
         }
     }
 
+    /// The chats the app has for a project: its lanes' once they're loaded, and the tree's newest few.
+    func chats(in projectID: String) -> [ProjectSessionRow] {
+        (details[projectID]?.hydratedSessions ?? []) + (tree.node(id: projectID)?.previewSessions ?? [])
+    }
+
     func node(_ id: String) -> ProjectNode? {
         details[id] ?? tree.node(id: id)
     }
@@ -151,8 +156,7 @@ final class ProjectsModel {
     /// The branch lane a chat sits in, once its project's chats are known.
     func lane(forSessionID id: String) -> String? {
         guard let projectID = projectID(forSessionID: id) else { return nil }
-        let rows = (details[projectID]?.hydratedSessions ?? []) + (tree.node(id: projectID)?.previewSessions ?? [])
-        return rows.first { $0.id == id || $0.stableID == id || $0.lineageRootID == id }?.gitBranch
+        return chats(in: projectID).first { $0.id == id || $0.stableID == id || $0.lineageRootID == id }?.gitBranch
     }
 
     /// Whether the flat history leaves this chat out (it's in a project); Pinned keeps it.
