@@ -39,6 +39,11 @@ struct HermesApp: App {
         // `-HERMES_ENGINE_START_DELAY 12`: the audio engine's first start takes that much longer, as
         // on a busy Mac.
         AudioGraph.engineStartDelay = UserDefaults.standard.double(forKey: "HERMES_ENGINE_START_DELAY")
+        // `-HERMES_SPEAKER_ECHO 25`: with the simulated microphone, what plays comes back that
+        // many dB quieter, its words heard, as a loudspeaker's echo past the echo canceller.
+        if UserDefaults.standard.object(forKey: "HERMES_SPEAKER_ECHO") != nil {
+            AudioGraph.simulatedEcho = UserDefaults.standard.float(forKey: "HERMES_SPEAKER_ECHO")
+        }
     }
     #endif
 

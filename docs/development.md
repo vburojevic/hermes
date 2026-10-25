@@ -553,7 +553,10 @@ wake word listens; until then the microphone hears a quiet room, so a call slow 
 its clips late rather than to no one. The clips and their words keep one clock:
 `-HERMES_ENGINE_START_DELAY <seconds>` holds the audio engine's first start back that long, as a
 busy Mac can, to check that nothing counts on a quick start.
-Voice activity, endpointing and barge-in run on that audio. `-HERMES_REALTIME_LOOPBACK YES`
+Voice activity, endpointing and barge-in run on that audio. `-HERMES_SPEAKER_ECHO 25` adds a
+loudspeaker's echo that got past the echo canceller: what the call plays comes back into the
+simulated microphone that many dB quieter, its words heard by the transcriber as they're said, so
+Talk's echo handling can be checked (the Bot's words must never come back as your turn). `-HERMES_REALTIME_LOOPBACK YES`
 (iPhone and iPad, with `{"realtime": true}` on the mock) answers Realtime's WebRTC offer with a
 peer in the app instead of OpenAI: it speaks in bursts (four seconds on, four off) and logs how
 loud what it hears is ("loopback heard -81 dB at 11.5 s, speaking", category `talk`), so the gate

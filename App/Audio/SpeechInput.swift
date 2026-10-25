@@ -342,6 +342,36 @@ actor SpeechInput {
     }
     #endif
 
+    #if DEBUG
+    private var echoWords: Task<Void, Never>?
+
+    /// Debug (`-HERMES_SPEAKER_ECHO`): the Bot's sentence heard back from the loudspeaker a word
+    /// at a time as it's said, as a transcriber that its echo got past would hear it.
+    func hearEcho(_ sentence: String) {
+        guard AudioGraph.simulatedEcho != nil, analyzer == nil, feed != nil else { return }
+        echoWords?.cancel()
+        let words = sentence.split(separator: " ")
+        echoWords = Task { [weak self] in
+            var said = ""
+            for word in words {
+                // About as fast as the mock's voice and the device's say it.
+                try? await Task.sleep(for: .seconds(Double(word.count + 1) * 0.065))
+                guard !Task.isCancelled else { return }
+                said += said.isEmpty ? String(word) : " " + word
+                await self?.apply(text: AttributedString(said), isFinal: false, finalizedThrough: .invalid)
+            }
+            guard !Task.isCancelled else { return }
+            await self?.apply(text: AttributedString(said + " "), isFinal: true, finalizedThrough: .invalid)
+        }
+    }
+
+    /// The Bot was stopped: its echo stops too.
+    func stopEcho() {
+        echoWords?.cancel()
+        echoWords = nil
+    }
+    #endif
+
     // MARK: Internals
 
     private func detach() {

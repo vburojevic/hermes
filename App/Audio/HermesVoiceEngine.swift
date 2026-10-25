@@ -220,9 +220,16 @@ final class HermesVoiceEngine {
             player.onSpeaking = { [weak self] speaking in self?.speakingChanged(speaking) }
             player.onFellBack = { [weak self] why in self?.onVoiceFellBack?(why) }
             player.onFinished = { [weak self] in self?.onFinishedSpeaking?() }
-            player.onSentence = { [weak self] _ in
+            player.onSentence = { [weak self] index in
                 guard let self else { return }
                 self.ears.botSaying(self.player?.textAround ?? "")
+                #if DEBUG
+                if AudioGraph.simulatedEcho != nil, let player = self.player, index < player.queued.count,
+                   let input = self.input as? SpeechInput {
+                    let sentence = player.queued[index].text
+                    Task { await input.hearEcho(sentence) }
+                }
+                #endif
             }
             self.player = player
             if let transcription {
@@ -336,6 +343,9 @@ final class HermesVoiceEngine {
 
     /// Stops the Bot at once (a tap, the end of the call). `fade` is barge-in's 80 ms fade.
     func stopSpeaking(fade: Bool = false) async {
+        #if DEBUG
+        await (input as? SpeechInput)?.stopEcho()
+        #endif
         await player?.stop(fade: fade)
     }
 
@@ -486,6 +496,9 @@ final class HermesVoiceEngine {
     }
 
     private func bargeInNow() {
+        #if DEBUG
+        if let input = input as? SpeechInput { Task { await input.stopEcho() } }
+        #endif
         Task {
             await player?.stop(fade: true)
             onBargeIn?()

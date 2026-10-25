@@ -32,7 +32,11 @@ public final class AudioGraph: @unchecked Sendable {
     /// `-HERMES_ENGINE_START_DELAY 12`: the engine's first start takes this many seconds more, as
     /// it can on a busy Mac (finding the audio units), to check that nothing counts on it.
     nonisolated(unsafe) public static var engineStartDelay: TimeInterval = 0
+    /// `-HERMES_SPEAKER_ECHO 25`: what plays comes back into the simulated microphone this many
+    /// dB quieter, as a loudspeaker's echo can get past the echo canceller (`docs/voice.md` §4.2).
+    nonisolated(unsafe) public static var simulatedEcho: Float?
     private var simulated: SimulatedMicrophone?
+    private var echoTapped = false
     /// Listening started before the simulated microphone had a consumer: its clips count from
     /// when it gets one.
     private var simulatedListening = false
@@ -142,6 +146,23 @@ public final class AudioGraph: @unchecked Sendable {
     }
     #endif
 
+    #if DEBUG
+    /// Debug: everything the engine plays goes into the simulated microphone, quieter.
+    private func tapEcho(into microphone: SimulatedMicrophone, decibels: Float) {
+        let gain = pow(10, -abs(decibels) / 20)
+        // The mixer's own format, whatever it is once the engine runs (before, it may have none).
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
+            guard let channel = buffer.floatChannelData?[0], buffer.format.sampleRate > 0 else { return }
+            // To the microphone's rate by picking the nearest sample: an echo needs no fidelity.
+            let step = buffer.format.sampleRate / SimulatedMicrophone.format.sampleRate
+            let count = Int(Double(buffer.frameLength) / step)
+            microphone.addEcho((0..<count).map { channel[min(Int(buffer.frameLength) - 1, Int(Double($0) * step))] * gain })
+        }
+        echoTapped = true
+        Logger(subsystem: "co.caffeinatedcode.hermes", category: "audio").info("simulated echo: what plays comes back \(abs(decibels), privacy: .public) dB quieter")
+    }
+    #endif
+
     /// Debug: spoken clips stand in for the microphone (`-HERMES_VOICE_INPUT`).
     public static var isSimulated: Bool {
         #if DEBUG
@@ -177,6 +198,7 @@ public final class AudioGraph: @unchecked Sendable {
                     if simulatedListening { microphone.begin() }
                     simulatedListening = false
                     simulated = microphone
+                    if let echo = Self.simulatedEcho { tapEcho(into: microphone, decibels: echo) }
                 }
                 return id
             }
@@ -205,6 +227,10 @@ public final class AudioGraph: @unchecked Sendable {
                 simulated?.stop()
                 simulated = nil
                 simulatedListening = false
+                if echoTapped {
+                    engine.mainMixerNode.removeTap(onBus: 0)
+                    echoTapped = false
+                }
                 #endif
                 removeTap()
                 if players.isEmpty { engine.stop() }
@@ -536,6 +562,8 @@ final class SimulatedMicrophone: @unchecked Sendable {
     private var played = 0
     private let clockState: OSAllocatedUnfairLock<SimulatedClock>
     private let consumers: OSAllocatedUnfairLock<[UUID: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void]>
+    /// What the loudspeaker sent back (`AudioGraph.simulatedEcho`), still to be heard.
+    private let echo = OSAllocatedUnfairLock<[Float]>(initialState: [])
 
     var clock: SimulatedClock { clockState.withLock { $0 } }
 
@@ -558,6 +586,14 @@ final class SimulatedMicrophone: @unchecked Sendable {
         timer.resume()
     }
 
+    /// The loudspeaker's echo, heard after what's waiting (a second at most: it never lags behind).
+    func addEcho(_ samples: [Float]) {
+        echo.withLock {
+            $0 += samples
+            if $0.count > Int(Self.format.sampleRate) { $0.removeFirst($0.count - Int(Self.format.sampleRate)) }
+        }
+    }
+
     /// Listening started: the clips count from now.
     func begin() {
         clockState.withLock { $0.begin(at: ProcessInfo.processInfo.systemUptime) }
@@ -576,11 +612,16 @@ final class SimulatedMicrophone: @unchecked Sendable {
             buffer.frameLength = AVAudioFrameCount(count)
             let out = buffer.floatChannelData![0]
             let first = clock.timelineIndex(ofSample: played, sampleRate: rate)
+            let echoed = echo.withLock { pending -> [Float] in
+                let taken = Array(pending.prefix(count))
+                pending.removeFirst(taken.count)
+                return taken
+            }
             for index in 0..<count {
                 let position = first.map { $0 + index } ?? -1
                 let sample = position >= 0 && position < samples.count ? samples[position] : 0
                 // A little room noise, so voice activity has a floor to stand on.
-                out[index] = sample + Float.random(in: -0.0005...0.0005)
+                out[index] = sample + (index < echoed.count ? echoed[index] : 0) + Float.random(in: -0.0005...0.0005)
             }
             let time = AVAudioTime(hostTime: AVAudioTime.hostTime(forSeconds: clock.uptime(ofSample: played, sampleRate: rate)))
             played += count
