@@ -862,6 +862,9 @@ final class ConversationModel: Identifiable {
     /// stored rows' place (`TurnPlacement`) until a later load brings them whole, then handing its
     /// identities over.
     @ObservationIgnored private var heldOver: HeldTurn?
+    /// The person tapped Reload on a turn the app lost track of: the load it started settles that
+    /// turn from the stored chat (`settleLostTurn`).
+    @ObservationIgnored private var settlesLostTurn = false
 
     private struct HeldTurn {
         /// What was on screen: the person's message while it wasn't stored, then the reply.
@@ -873,6 +876,8 @@ final class ConversationModel: Identifiable {
         /// It ended without hearing how (a lost run, a re-attach that never came back): a turn
         /// running on the chat again is this one.
         var endUnheard: Bool
+        /// Its steps still running when it ended unheard (`LiveTurn.cutOff`).
+        var cutOff: Set<String> = []
 
         var reply: AssistantTurn? {
             if case .assistant(let turn)? = shown.last { turn } else { nil }
@@ -1133,6 +1138,13 @@ final class ConversationModel: Identifiable {
         reload(attaching: true)
     }
 
+    /// Reload on a turn the app lost track of (`turnHeaderLost`, `docs/chat.md` §2): the person
+    /// asks how it ended, so this load settles it from the stored chat.
+    func reloadLostTurn() {
+        settlesLostTurn = true
+        reload()
+    }
+
     /// - Parameter attaching: over the gateway, attach the chat once loaded (turns started
     ///   elsewhere stream in); off for reads in the background (`readForSync`).
     func reload(attaching: Bool) {
@@ -1175,6 +1187,7 @@ final class ConversationModel: Identifiable {
                     send()
                 }
                 // The transcript now says how an uncertain turn really ended.
+                settleLostTurn()
                 settleUncertainTurn()
                 // Over the gateway protocol, hear about turns started elsewhere and requests
                 // still waiting for an answer.
@@ -3424,6 +3437,24 @@ final class ConversationModel: Identifiable {
         recoverSoon()
     }
 
+    /// The person's Reload on a turn the app lost track of, once the chat is read. Stored whole, it
+    /// has handed over to its rows already (`rebuild`); still partway, the session said it's idle,
+    /// so nothing more is coming and it ended there (`AssistantTurn.settledAfterLoss`). It stays
+    /// held as that: should the rest be stored after all, the stored rows still take over. The
+    /// chat's own reads never settle it, as a busy database's late reply is still on its way.
+    private func settleLostTurn() {
+        guard settlesLostTurn else { return }
+        settlesLostTurn = false
+        guard let held = heldOver, let reply = held.reply,
+              let index = items.lastIndex(where: { $0.id == reply.id }),
+              case .assistant(let placed) = items[index],
+              let settled = placed.settledAfterLoss(cutOff: held.cutOff, messages: rawMessages) else { return }
+        // As placed: with the steps Hermes stored when they went further than what it heard.
+        heldOver?.shown = Array(held.shown.dropLast()) + [.assistant(settled)]
+        animateRows { items[index] = .assistant(settled) }
+        if turnError?.message == LiveTurn.lostTrack { turnError = nil }
+    }
+
     /// A turn held on screen that the turn now running here continues: one kept as still working
     /// (the same one, come back, or the next), and one that never heard how it ended (it lost its
     /// run, or couldn't re-attach): a turn running on the chat now is that one, carrying on in its
@@ -3510,6 +3541,7 @@ final class ConversationModel: Identifiable {
         let stoppedByUser = wasStopping || finished.turn.state == .stopped
         let waitsForReply = !stoppedByUser && finished.turn.endedEmpty
         heldOver = nil // a turn before this one that never got its stored rows: too late to match
+        settlesLostTurn = false // a Reload asked for that turn, never for this one
         storedReplyWait?.cancel()
         // What was on screen, in order, to hand its identities to the stored rows.
         let shownRows = (pendingUser.map { [TranscriptItem.user($0)] } ?? []) + redirectedParts + [.assistant(finished.turn)]
@@ -3583,7 +3615,8 @@ final class ConversationModel: Identifiable {
                 // Failed without knowing how it ended ("Couldn't reconnect…"): the same, for a turn running again.
                 var uncertain = finished.endedUnheard
                 if case .failed = finished.turn.state, !failureIsRetryable { uncertain = true }
-                heldOver = HeldTurn(shown: held, after: newestBefore, persisted: finished.persisted, endUnheard: uncertain)
+                heldOver = HeldTurn(shown: held, after: newestBefore, persisted: finished.persisted, endUnheard: uncertain,
+                                     cutOff: finished.cutOff)
                 items = TurnPlacement.place(held, userRowID: finished.persisted?.userRowID, after: newestBefore, in: items, messages: rawMessages)
                 needsReconcile = true
                 if case .failed(let line)? = heldOver?.reply?.state, line == LiveTurn.lostTrack {
@@ -4139,6 +4172,7 @@ extension ConversationModel {
                 if stored != nil { settleOutbox() }
                 quietRetries = 0
                 needsReconcile = false
+                settleLostTurn()
                 settleUncertainTurn()
                 if attaching, sessionID != nil, runtimeSessionID == nil, roster.isConnected {
                     _ = await attachGatewayChat()

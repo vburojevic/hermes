@@ -203,6 +203,36 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
     /// (`LiveTurn.heldTurn`): the header says so, with Reload (`turnHeaderLost`).
     public var lostTrack: Bool { state == .failed(LiveTurn.lostTrack) }
 
+    /// A turn the app lost track of, after the person's Reload read a stored chat that still doesn't
+    /// hold it whole (`docs/chat.md` §2). The session said it's idle, so nothing more is coming: what
+    /// Hermes stored is how it ended, partway, and it says "Stopped" as an interrupted turn does
+    /// (`TurnPlacement` gave it the stored steps when they went further). What was cut off ended
+    /// with it: a call Hermes stored without a result, and a step still running when the app lost
+    /// track (`LiveTurn.cutOff`) that has no stored result either. A call heard to its end stays as
+    /// it was, with or without a preview. `nil` for a turn that didn't lose track.
+    public func settledAfterLoss(cutOff: Set<String>, messages: [SessionMessage]) -> AssistantTurn? {
+        guard lostTrack else { return nil }
+        let answered = Set(messages.compactMap { $0.role == "tool" ? $0.toolCallID : nil })
+        let called = Set(messages.flatMap { $0.toolCalls.map(\.id) })
+        var turn = self
+        turn.state = .stopped
+        turn.steps = steps.map { step in
+            switch step {
+            case .tool(var tool):
+                let stored = tool.callID.map(called.contains) ?? false
+                guard !(tool.callID.map(answered.contains) ?? false), stored || cutOff.contains(tool.id) else { return step }
+                tool.status = .failed
+                return .tool(tool)
+            case .subagent(var agent) where cutOff.contains(agent.id):
+                agent.status = .failed
+                return .subagent(agent)
+            default:
+                return step
+            }
+        }
+        return turn
+    }
+
     /// Ended with nothing in it: no word, step, plan, sound, warning or steer, and no failure. A
     /// turn on screen never ends like that (`docs/chat.md` §2): Hermes is still taking it, or its
     /// reply isn't stored yet.
