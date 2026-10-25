@@ -71,6 +71,23 @@ struct WaveformTests {
     }
 }
 
+struct LevelAccumulatorTests {
+    /// A player that ran out of audio keeps its clock going, so the levels of what comes after a
+    /// silence must sit where the clock will be when it plays (Talk tells its echo by them).
+    @Test func silenceKeepsLevelsWherePlayTimeFindsThem() {
+        var meter = LevelAccumulator()
+        for _ in 0..<15 { meter.add(sample: 0.5, window: 10) }
+        meter.addSilence(frames: 2_000, window: 10)
+        for _ in 0..<10 { meter.add(sample: 0.5, window: 10) }
+        // 15 loud frames, then silence to frame 2,015: the next audio's first window is the 201st.
+        #expect(meter.levels.count == 202)
+        #expect(meter.levels[0] > 0.5)
+        #expect(meter.levels[1] < meter.levels[0])
+        #expect(meter.levels[2..<200].allSatisfy { $0 == 0 })
+        #expect(meter.levels[201] > 0.5)
+    }
+}
+
 struct VoiceRepliesTests {
     private func user(_ id: String, voice: Bool) -> TranscriptItem {
         var entry = UserEntry(id: id, text: "words")

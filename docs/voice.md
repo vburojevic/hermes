@@ -213,7 +213,10 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
     last ten seconds that weren't the person, each the middle of 100 ms, so a TV, music or people
     across the room count and key clicks don't), and no more than 12 dB under the person's own
     turns (learned from each turn sent: up quickly, down slowly). Sound that follows the Bot's own
-    level, as the room returns it, isn't near.
+    level, as the room returns it, isn't near, and neither is its echo still dying away for half a
+    second after it goes quiet: the transcriber hands over the Bot's last words a moment late, and
+    without that they became your turn on the loudspeaker. A turn's words count only where they
+    rose above the echo.
   - **The gate** (`NearGate`): while the Bot speaks, the transcriber hears only near sound
     (everything else 40 dB down, with 100 ms of lookahead so a word's soft start passes, open for
     250 ms after). A transcriber hearing the Bot's echo or a TV takes it for one long utterance and
@@ -263,7 +266,11 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   gap in the microphone (a phone call, the engine restarting for AirPods) each stretch keeps its
   own origin; otherwise the person's words would land in the past and count as the room's.
 - **The face** moves with the real output level: RMS per 1/30 s of the audio being played,
-  looked up by play time, into `BotFace(voiceLevel:)`. While listening, the rings follow the
+  looked up by play time, into `BotFace(voiceLevel:)`. The same level is what `TalkEars` tells the
+  Bot's echo by. A player that runs out (the reply still coming, the person's turn) keeps its
+  clock going, so the silence goes on the level's timeline too (`AudioPlayerChain`); otherwise,
+  after the first pause in a call, the level read as nothing, the Bot's echo on the loudspeaker
+  counted as the person, and its own words came back as their turns. While listening, the rings follow the
   input level.
 - **Sounds** (`HermesVoiceEngine.cue`): a soft rise on start and after a phone call, a tick when
   a turn is sent, a fall on end. Off with Sounds and haptics off.

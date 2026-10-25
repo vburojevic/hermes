@@ -86,6 +86,9 @@ public struct TalkEars: Sendable {
         public var dropDistantAfter: TimeInterval = 1.2
         /// Above the Bot's echo, as the room returns it, by this much is the person.
         public var aboveEcho: Float = 9
+        /// The Bot's echo outlasts it (the room, the audio still on its way): for this long after
+        /// it goes quiet, sound under its echo is still its echo.
+        public var echoTail: TimeInterval = 0.5
         /// A turn whose words stopped this long after the pause ends, even if the room still sounds
         /// like someone talking.
         public var wordsStoppedAfter: TimeInterval = 0.6
@@ -147,6 +150,8 @@ public struct TalkEars: Sendable {
         var near: Bool
         /// Loud enough to be the person's turn (`turnThreshold`).
         var turn: Bool
+        /// The Bot's own voice as the room gave it back.
+        var echo = false
     }
 
     public var tuning: Tuning
@@ -172,6 +177,10 @@ public struct TalkEars: Sendable {
     private var botWords: Set<String> = []
     /// The room's return of the Bot's voice: input minus output, in dB.
     private var echoGain: Float = -30
+    /// The Bot's output level, held at its peaks and falling 1 dB a frame: what its echo can still
+    /// be between its syllables and just after it goes quiet.
+    private var botEnvelope: Float?
+    private var botStoppedAt: TimeInterval?
     private var nearSince: TimeInterval?
     private var nearLast: TimeInterval?
     private var duckedAt: TimeInterval?
@@ -261,6 +270,7 @@ public struct TalkEars: Sendable {
     public mutating func botStopped(at time: TimeInterval) -> [Decision] {
         guard botSince != nil else { return [] }
         botSince = nil
+        botStoppedAt = time
         var decisions: [Decision] = []
         if isDucked { decisions.append(restore("the Bot stopped", at: time)) }
         if !heard.text.isEmpty, !firedBargeIn, nearLast.map({ time - $0 > 0.2 }) ?? true {
@@ -287,17 +297,33 @@ public struct TalkEars: Sendable {
         let voiced = level >= Self.decibels(vad.threshold)
         // Not the Bot's own voice as the room gives it back.
         var echo = false
-        if isBotSpeaking, let botLevel, botLevel > -60 {
-            echo = level < botLevel + echoGain + tuning.aboveEcho
-            if botLevel > -40, nearSince == nil {
+        if isBotSpeaking {
+            // Judged against its recent peaks, not this frame alone: between its syllables the
+            // Bot is quiet while the echo of the last one is still arriving.
+            let loud = botLevel.flatMap { $0 > -60 ? $0 : nil }
+            botEnvelope = max(loud ?? -120, (botEnvelope ?? -120) - 1)
+            if let envelope = botEnvelope, envelope > -60 {
+                echo = level < envelope + echoGain + tuning.aboveEcho
+            }
+            if let botLevel = loud, botLevel > -40, nearSince == nil {
                 let warming = time - (botSince ?? time) < 0.5
-                echoGain += (level - botLevel - echoGain) * (warming ? 0.1 : 0.03)
+                // Up quickly, down slowly: the echo comes a little after the Bot's sound, so each
+                // syllable starts on a quiet microphone that would pull this under the real echo.
+                let sample = level - botLevel
+                let rate: Float = sample > echoGain ? (warming ? 0.2 : 0.1) : (warming ? 0.1 : 0.03)
+                echoGain += (sample - echoGain) * rate
                 echoGain = min(6, max(-60, echoGain))
             }
+        } else if let stopped = botStoppedAt, time - stopped <= tuning.echoTail, let envelope = botEnvelope, envelope > -60 {
+            // Just after the Bot went quiet its echo is still arriving: not the person's turn.
+            echo = level < envelope + echoGain + tuning.aboveEcho
+            botEnvelope = envelope - 1
+        } else {
+            botEnvelope = nil
         }
         let near = voiced && !echo && level >= nearThreshold
         let turn = voiced && !echo && level >= turnThreshold
-        frames.append(Frame(at: time, level: level, near: near, turn: turn))
+        frames.append(Frame(at: time, level: level, near: near, turn: turn, echo: echo))
         if frames.count > 600 { frames.removeFirst(frames.count - 600) }
         listenToTheRoom(level, at: time)
 
@@ -555,8 +581,9 @@ public struct TalkEars: Sendable {
             if frames.reversed().prefix(while: { time - $0.at <= 1.5 }).filter(\.turn).count >= 5 { return true }
         }
         let new = words.runs.filter { run in run.isTimed && !previous.runs.contains(run) }
+        // Said over the Bot's echo, the words are the person's only where they rose above it.
         return new.contains { run in
-            (run.confidence ?? 1) >= tuning.leastConfidence && (level(from: run.start, to: run.end) ?? -.infinity) >= gate
+            (run.confidence ?? 1) >= tuning.leastConfidence && (level(from: run.start, to: run.end, excludingEcho: true) ?? -.infinity) >= gate
         }
     }
 
@@ -568,9 +595,11 @@ public struct TalkEars: Sendable {
         return time
     }
 
-    /// The louder half of the frames between two times, or `nil` without frames there.
-    private func level(from start: TimeInterval, to end: TimeInterval) -> Float? {
-        let levels = frames.filter { $0.at >= start - 0.02 && $0.at <= end + 0.02 }.map(\.level).sorted(by: >)
+    /// The louder half of the frames between two times (leaving out the Bot's echo, if asked), or
+    /// `nil` without frames there.
+    private func level(from start: TimeInterval, to end: TimeInterval, excludingEcho: Bool = false) -> Float? {
+        let levels = frames.filter { $0.at >= start - 0.02 && $0.at <= end + 0.02 && !(excludingEcho && $0.echo) }
+            .map(\.level).sorted(by: >)
         guard !levels.isEmpty else { return nil }
         let louder = levels.prefix(max(1, levels.count / 2))
         return louder.reduce(0, +) / Float(louder.count)

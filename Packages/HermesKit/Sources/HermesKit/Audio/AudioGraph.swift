@@ -365,9 +365,9 @@ public final class AudioPlayerChain: @unchecked Sendable {
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     struct State {
-        /// Frames scheduled since the last stop.
+        /// Frames of the player's timeline scheduled since the last stop, silences included.
         var scheduledFrames: AVAudioFramePosition = 0
-        /// Levels of what's scheduled, one per 1/30 s of the timeline, found again by play time.
+        /// Levels of the player's timeline, one per 1/30 s, found again by play time.
         var meter = LevelAccumulator()
         /// Where the timeline starts in the file (after a seek), in seconds.
         var offset: TimeInterval = 0
@@ -395,7 +395,14 @@ public final class AudioPlayerChain: @unchecked Sendable {
     /// by a stop).
     public func schedule(_ buffer: AVAudioPCMBuffer, completion: (@Sendable () -> Void)? = nil) {
         let window = max(1, Int(format.sampleRate / 30))
+        let played = playedFrames
         state.withLock {
+            // A player that ran out keeps its clock going: the silence goes on the timeline, so
+            // levels are found again by play time (Talk tells its own echo by them).
+            if let played, played > $0.scheduledFrames {
+                $0.meter.addSilence(frames: Int(played - $0.scheduledFrames), window: window)
+                $0.scheduledFrames = played
+            }
             $0.scheduledFrames += AVAudioFramePosition(buffer.frameLength)
             $0.meter.add(buffer, window: window)
         }
@@ -460,13 +467,14 @@ public final class AudioPlayerChain: @unchecked Sendable {
     /// Seconds of audio queued and not yet played.
     public var queuedDuration: TimeInterval {
         let frames = state.withLock(\.scheduledFrames)
-        let played: Double
-        if let nodeTime = player.lastRenderTime, let time = player.playerTime(forNodeTime: nodeTime) {
-            played = Double(time.sampleTime)
-        } else {
-            played = 0
-        }
-        return max(0, (Double(frames) - played) / format.sampleRate)
+        return max(0, Double(frames - (playedFrames ?? 0)) / format.sampleRate)
+    }
+
+    /// Where the player's clock is, in frames of `format`, while it plays: it keeps counting
+    /// when there's nothing left to play.
+    private var playedFrames: AVAudioFramePosition? {
+        guard player.isPlaying, let nodeTime = player.lastRenderTime, let time = player.playerTime(forNodeTime: nodeTime) else { return nil }
+        return AVAudioFramePosition(Double(time.sampleTime) * format.sampleRate / time.sampleRate)
     }
 
 }
@@ -484,6 +492,18 @@ struct LevelAccumulator {
         } else if let samples = buffer.int16ChannelData?[0] {
             for index in 0..<frames { add(sample: Float(samples[index]) / 32768, window: window) }
         }
+    }
+
+    /// Silence on the timeline: the player had nothing to play.
+    mutating func addSilence(frames: Int, window: Int) {
+        var left = frames
+        // Finish the window in progress, then whole windows at once.
+        while left > 0, count > 0 {
+            add(sample: 0, window: window)
+            left -= 1
+        }
+        levels += [Float](repeating: 0, count: left / window)
+        for _ in 0..<(left % window) { add(sample: 0, window: window) }
     }
 
     mutating func add(sample: Float, window: Int) {

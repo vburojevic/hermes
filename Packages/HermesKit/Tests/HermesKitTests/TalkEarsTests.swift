@@ -257,6 +257,42 @@ struct TalkEarsTests {
         #expect(decisions.contains { $0.action == .discardHeard })
     }
 
+    /// On the loudspeaker the Bot's last words are still echoing as it goes quiet, and the
+    /// transcriber hands them over a moment later: they're its echo, never the person's turn
+    /// (the Bot's words came back as the person's, issue #27).
+    @Test func theBotsLastWordsHeardAfterItStopsAreNotATurn() {
+        var replay = Replay()
+        replay.botSpeaks()
+        let start = replay.time
+        // The room returns the Bot 10 dB down and 60 ms late, loud enough to be near: each
+        // syllable's echo lands while the Bot is already between syllables.
+        replay.run(until: start + 3, level: Self.syllables(-20, from: start + 0.06, to: start + 3.06, quiet: -58),
+                   bot: Self.syllables(-10, from: start, to: start + 3, quiet: -70))
+        let stopped = replay.time
+        replay.decisions += replay.ears.botStopped(at: stopped)
+        // Its echo dies away (about 100 dB a second); its last words arrive, still being heard,
+        // then settled.
+        replay.run(until: stopped + 3, level: { max(-60, -20 - Float($0 - stopped) * 100) },
+                   words: [(stopped + 0.4, HeardWords(volatile: "and nothing failed")),
+                           (stopped + 0.6, HeardWords(final: "and nothing failed", runs: [Self.run("and nothing failed", stopped - 0.6, stopped + 0.1)]))])
+        #expect(replay.count(.endTurn) == 0)
+        #expect(replay.count(.discardHeard) == 1)
+    }
+
+    @Test func thePersonAnsweringAsTheBotStopsIsStillHeard() throws {
+        var replay = Replay()
+        replay.botSpeaks()
+        let start = replay.time
+        replay.run(until: start + 3, level: Self.syllables(-20, from: start, to: start + 3, quiet: -58),
+                   bot: Self.syllables(-10, from: start, to: start + 3, quiet: -70))
+        let stopped = replay.time
+        replay.decisions += replay.ears.botStopped(at: stopped)
+        let said = stopped + 0.3
+        replay.run(until: said + 3, level: Self.syllables(-22, from: said, to: said + 0.8, quiet: -60),
+                   words: [(said + 1.2, HeardWords(final: "the second one", runs: [Self.run("the second one", said, said + 0.8)]))])
+        _ = try #require(replay.first(.endTurn))
+    }
+
     @Test func aRoomAsLoudAsThePersonIsLoudUntilItQuietensDown() {
         var replay = Replay()
         #expect(!replay.ears.isLoud)
