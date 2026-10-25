@@ -279,7 +279,11 @@ hermes-app-widgets plugin over both servers: "widgets" pages through every examp
 reply, "widgets 2"…), "widget <type>" shows one type's examples, "widget publish" an approval
 without Face ID, "widget lunch" one with it, "widget expiring" one that expires in 60 s, "widget
 silent" one whose first answer gets no update (Try Again), "widget private", "widget fence" (an
-agent-typed block, shown as code), "widget unknown", "widget invalid" and "widget suggestions".
+agent-typed block, shown as code), "widget unknown", "widget invalid", "widget suggestions" and
+"widget wide" (everything long in one reply: a long inline code path and name, a wide code block,
+a details card with long labels, values and a long state tag, a snippet and an output with lines
+of over 200 characters; nothing in it may widen the reply, [chat.md](chat.md) §3) and "widget
+wide table" (a table with long headings, text and mono values and a long state tag).
 "Weather today?" (any message with "weather" or "forecast") is what an agent told about widgets
 does: it looks the forecast up, reads the weather examples and answers one sentence and the
 weather card. Over the socket, a chat the app didn't mark gets each widget's plain text instead,

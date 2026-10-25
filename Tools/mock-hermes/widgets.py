@@ -26,6 +26,10 @@ Words in a message:
   widget unknown               a widget of a type this app doesn't know (a newer plugin)
   widget invalid               a payload missing a required field (shown as text, with why)
   widget suggestions           a reply ending in suggested follow-ups
+  widget wide                  everything long in one reply: a long inline code path and name, a wide code block,
+                               details with long labels, values and a long state tag, a snippet and output with
+                               200-character lines (nothing may widen the reply, docs/chat.md §3)
+  widget wide table            a table with long headings, text and mono values and a long state tag
   [widget <id> rev <n>] …      an answer: claim it (first answer wins, a repeated mid replays), then act
 
 Over the socket, a chat the app hasn't marked (``/app-widgets session``) gets each directive's
@@ -734,6 +738,10 @@ def script(text, session="", producer=None):
                                      {"id": "products", "label": "Break it down by product"},
                                      {"id": "month", "label": "What will this month end at?"}]})
         return steps + [("text", "Revenue is up today.\n\n" + directive(first) + "\n\n" + directive(follow))]
+    if re.search(r"\bwidget wide table\b", lower):
+        return steps + [("text", wide_table_reply(create))]
+    if re.search(r"\bwidget wide\b", lower):
+        return steps + [("text", wide_reply(create))]
     kinds = {name.rpartition("-")[0] for name, _ in examples()}
     kind = next((k for k in sorted(kinds) if re.search(rf"\bwidget {re.escape(k)}\b", lower)), None)
     if kind:
@@ -748,6 +756,91 @@ def script(text, session="", producer=None):
         lead = f"Widgets, page {page} of {pages}." if chosen else f"There are {pages} pages of widgets."
     parts = [f"{name}\n\n" + directive(create(raw)) for name, raw in chosen]
     return steps + [("text", "\n\n".join([lead] + parts))]
+
+
+WIDE_PATH = "~/projects/hermes-app/Packages/HermesKit/Sources/HermesKit/Transcript/LiveTurnReducer+FoldingHelpers.swift"
+WIDE_LINE = ("xcodebuild -project Hermes.xcodeproj -scheme Hermes -configuration Debug -destination 'generic/platform=iOS Simulator' "
+             "-derivedDataPath build/DerivedData -resultBundlePath build/Results/transcript-folding.xcresult build | tee build/ios.log")
+
+
+def wide_reply(create):
+    """"widget wide": a reply whose every part is longer than an iPhone is wide (#46). Each must wrap, or
+    scroll inside its own block, and never widen the reply."""
+    stamp = rfc3339(now())
+    details = create({
+        "type": "details", "v": 1, "title": "Transcript folding build", "subtitle": "Studio Mac, Debug, iOS Simulator",
+        "icon": "hammer.fill", "as_of": stamp,
+        "sections": [{"fields": [
+            {"label": "Working copy on the build machine", "value": WIDE_PATH, "mono": True, "copy": True},
+            {"label": "Last result", "value": "Failed: LiveTurnReducerFoldingTests.helperStepsFinishingOutOfOrderFoldIntoTheirParent (exit 65)",
+             "state": "critical"},
+            {"label": "Branch", "value": "feature/transcript-folding-helpers-that-finish-out-of-order", "mono": True},
+            {"label": "Why it failed, in the test log's words", "value": "The second helper's steps were folded under the first "
+             "helper because both finished in the same tick, so the parent lost track of which steps were its own.",
+             "detail": "Seen 3 times in the last 10 runs"},
+            {"label": "Status", "value": "Needs a look", "state": "warning"},
+            {"label": "Duration", "value": {"value": 41.2, "format": "duration"}},
+        ]}],
+        "fallback_text": "Transcript folding build on Studio Mac failed (exit 65): helper steps finishing out of order "
+                         "fold into the wrong parent.",
+    })
+    snippet = create({
+        "type": "code", "v": 1, "title": "The failing assertion", "subtitle": "LiveTurnReducerFoldingTests.swift",
+        "as_of": stamp, "kind": "snippet", "language": "swift",
+        "text": "@Test func helperStepsFinishingOutOfOrderFoldIntoTheirParent() async throws {\n"
+                "    #expect(folded.groups.map(\\.parentID) == [first.id, second.id], \"each helper's steps fold under the helper that "
+                "started them, even when both finish in the same tick of the reducer's clock\")\n}",
+        "fallback_text": "The failing assertion: each helper's steps fold under the helper that started them.",
+    })
+    output = create({
+        "type": "code", "v": 1, "title": "What the build printed", "as_of": stamp, "kind": "output", "language": "shell",
+        "command": WIDE_LINE,
+        "text": "Test Suite 'LiveTurnReducerFoldingTests' started.\n"
+                "LiveTurnReducerFoldingTests.swift:42: error: Expectation failed: (folded.groups.map(\\.parentID) → "
+                "[\"h_8f2c1a\", \"h_8f2c1a\"]) == ([first.id, second.id] → [\"h_8f2c1a\", \"h_3d9e7b\"])\n"
+                "** TEST FAILED ** (exit 65)",
+        "result": {"state": "critical", "label": "Failed in 41.2 s", "exit_code": 65, "duration": 41.2,
+                   "output": "1 of 214 tests failed: LiveTurnReducerFoldingTests.helperStepsFinishingOutOfOrderFoldIntoTheirParent"},
+        "fallback_text": "The build printed a failed expectation in LiveTurnReducerFoldingTests (exit 65).",
+    })
+    return "\n\n".join([
+        f"The reducer lives in `{WIDE_PATH}`, and the test that fails is "
+        "`LiveTurnReducerFoldingTests.helperStepsFinishingOutOfOrderFoldIntoTheirParent_whenBothFinishInTheSameTick`.",
+        "To build it the way the check does:",
+        f"```shell\n{WIDE_LINE}\n```",
+        directive(details),
+        directive(snippet),
+        "And what it printed:",
+        directive(output),
+    ])
+
+
+def wide_table_reply(create):
+    """"widget wide table": a table whose every column is longer than an iPhone is wide (#46): long
+    headings, text and mono values, and a cell drawn as a long state tag. It reflows, and wraps."""
+    table = create({
+        "type": "table", "v": 1, "title": "Flaky tests this week", "subtitle": "Transcript folding, Debug, iOS Simulator",
+        "icon": "exclamationmark.triangle.fill", "as_of": rfc3339(now()), "noun": "tests",
+        "columns": [
+            {"key": "test", "label": "Test that failed"},
+            {"key": "branch", "label": "Branch it failed on", "mono": True},
+            {"key": "result", "label": "Last result", "format": "text"},
+            {"key": "failures", "label": "Failures this week", "format": "integer"},
+        ],
+        "rows": [
+            {"test": "LiveTurnReducerFoldingTests.helperStepsFinishingOutOfOrderFoldIntoTheirParent",
+             "branch": "feature/transcript-folding-helpers-that-finish-out-of-order",
+             "result": {"value": "Failed: helper steps folded under the wrong parent (exit 65)", "state": "critical"},
+             "failures": 3},
+            {"test": "TranscriptFoldingSnapshotTests.aLongReplyWithThreeWidgetsKeepsItsHeightWhileStreaming",
+             "branch": "feature/transcript-folding-reserved-heights-for-widgets-in-replies",
+             "result": {"value": "Passed after a retry on the second run of the suite", "state": "warning"},
+             "failures": 1},
+        ],
+        "fallback_text": "Flaky tests this week: helper steps finishing out of order failed 3 times (exit 65); "
+                         "reserved heights while streaming failed once and passed on a retry.",
+    })
+    return "Two tests failed this week, one of them three times.\n\n" + directive(table)
 
 
 def answer_script(text):
