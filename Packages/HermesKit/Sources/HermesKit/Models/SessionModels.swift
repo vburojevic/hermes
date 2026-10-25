@@ -532,6 +532,10 @@ public struct TokenUsage: Decodable, Sendable, Hashable {
 public struct RunStatus: Decodable, Sendable, Hashable {
     public var runID: String
     public var status: String
+
+    /// Hermes took the run but runs it after the turn in front of it (its FIFO); `POST /v1/runs`
+    /// answers `started` for it all the same, and no event comes until it runs.
+    public var isQueued: Bool { status == "queued" }
     public var sessionID: String?
     public var output: String?
     public var error: String?

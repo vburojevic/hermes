@@ -809,8 +809,9 @@ message is always in one of these states:
 
 - **Sending**: on its way, or waiting for the gateway (§4, "Sending on a busy or away gateway").
 - **Queued**, and behind what: the turn running here (the tray, read-only, `GatewayHeldQueue`), the
-  gateway's own queue (`waitingOnGateway`, from `session.info` `pending_submissions`), or, in Up
-  Next, a chat something else holds or Hermes's chat limit (`waitsForChat`, `chatHolder`, §4d).
+  gateway's own queue (`waitingOnGateway`, from `session.info` `pending_submissions`), a run the
+  API server queued behind another (`runWaitsInQueue`, from `GET /v1/runs/{id}`), or, in Up Next,
+  a chat something else holds or Hermes's chat limit (`waitsForChat`, `chatHolder`, §4d).
 - **Steered in**: a steer goes only into the running turn. When that turn can't take it (it ended,
   its agent was still being built, it waits on an approval, the chat never came back while it
   waited) it goes first in Up Next as the next message instead, its row noting why
@@ -835,7 +836,9 @@ and leaves the turn running. Hermes writes a row for each message as it takes it
 the marked row stays until Hermes next mounts the chat, so the chat never shows a marked row as a
 message (`SessionMessage.isWaitingInQueue`). A message that falls back from Ask Aside or Run in Background with no
 live chat goes as the next message, never dropped. A group chat's posts on their way are kept on the
-device and go again after a relaunch under the same `event_id` (`KeptPost`).
+device and go again after a relaunch under the same `event_id` (`KeptPost`). Over the API server,
+a message only goes over it when it never left the socket, and a Stop while a send that may have
+reached Hermes is asked for again says it may still have it, never giving it back to send twice.
 
 ## 4d. When Hermes refuses a message
 

@@ -33,8 +33,9 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             "Hermes is restarting. Try again in a moment."
         case .requestTooLarge:
             "That message is too large for Hermes (10 MB limit). Try fewer or smaller images."
-        case .server(_, _, let message):
-            message ?? "Hermes ran into a problem."
+        case .server(_, let code, let message):
+            // The API server's store refusals carry their bare reason as the message.
+            code.flatMap { message == $0 ? Self.storeRefusals[$0] : nil } ?? message ?? "Hermes ran into a problem."
         case .unreachable(let host, let reason):
             switch reason {
             case .offline: "You're offline."
@@ -53,6 +54,15 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             "This Hermes gateway is too old for the app. Run `hermes update`, then restart the gateway."
         }
     }
+
+    /// The API server's refusals that come with only their reason (hermes-agent
+    /// `gateway/platforms/api_server_authority_runs.py`), in words.
+    static let storeRefusals: [String: String] = [
+        "permission_denied": "This chat belongs to the gateway's own chats, so it can't take a message over the API server. Send it again when the connection to the gateway is back.",
+        "queue_full": "Hermes already has as many messages waiting in this chat as it takes. Send it again when some have run.",
+        "admission_conflict": "Hermes is settling another message in this chat. Send it again in a moment.",
+        "not_found": "Hermes doesn't have this chat any more.",
+    ]
 
     public var recoverySuggestion: String? {
         switch self {

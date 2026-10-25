@@ -335,6 +335,10 @@ final class ConversationModel: Identifiable {
     /// The tray's lines for what the gateway holds.
     var gatewayQueued: [String] { gatewayHeld.lines }
 
+    /// The API server holds this chat's run behind another turn (`watchQueuedRun`): it hasn't
+    /// started, so the turn waits rather than thinks.
+    private(set) var runWaitsInQueue = false
+    @ObservationIgnored private var queuedRunWatch: Task<Void, Never>?
     /// Gives back what Stop cleared from Hermes's queue once the stopped turn settled.
     @ObservationIgnored private var stopGiveBack: Task<Void, Never>?
 
@@ -3425,6 +3429,10 @@ final class ConversationModel: Identifiable {
         let runEffort = reasoningEffort
         var attempt = 0
         var remembered = false
+        // A POST that may have reached Hermes (in flight, or its answer lost): Stop can't give the
+        // message back then, as Hermes may run it under the key.
+        var postInFlight = false
+        var mayHaveRun = false
         do {
             while true {
                 do {
@@ -3436,6 +3444,7 @@ final class ConversationModel: Identifiable {
                     }
                     waitingChatLeft()
                     if images.isEmpty {
+                        postInFlight = true
                         let runID = try await client.startRun(
                             sessionID: sessionID,
                             input: input,
@@ -3445,18 +3454,30 @@ final class ConversationModel: Identifiable {
                         )
                         endDelivery()
                         apply(.runStarted(runID: runID))
+                        watchQueuedRun(runID, client: client)
                         try await follow(runID: runID, client: client)
                     } else {
                         try await streamChat(sessionID: sessionID, text: input, images: images, client: client)
                     }
                     break
                 } catch where live?.runID == nil && images.isEmpty && !Task.isCancelled && SendFailure.overHTTP(error) == .sendAgain {
+                    if postInFlight, !Self.neverReached(error) { mayHaveRun = true }
+                    postInFlight = false
                     attempt += 1
                     markWaiting()
                     try await Task.sleep(for: SendFailure.pause(before: attempt))
                 }
             }
         } catch {
+            if error is CancellationError || Task.isCancelled, live?.runID == nil, mayHaveRun || postInFlight {
+                // Stopped while a send that may have reached Hermes was being asked for again: it may
+                // run there under its key, so it isn't given back to send twice. The chat says how it went.
+                failureIsRetryable = false
+                live?.markFailed(String(localized: "Stopped before Hermes answered. It may still have this message: reload to see."))
+                endDelivery()
+                await finishTurn { try await self.fetchLatest($0) }
+                return
+            }
             if live?.runID == nil, SendFailure.overHTTP(error) != .mayHaveArrived {
                 // Nothing started on the server; give the message back to the composer.
                 restoreDraft(text: text, images: images, files: files, error: error)
@@ -3474,6 +3495,34 @@ final class ConversationModel: Identifiable {
         }
         endDelivery() // a stream that ended with no event never said
         await finishTurn { try await self.fetchLatest($0) }
+    }
+
+    /// A run Hermes queued behind another turn in the chat answers `started` and sends nothing until
+    /// it runs: only its status says it waits (`RunStatus.isQueued`). Asked every 2 s until it runs.
+    private func watchQueuedRun(_ runID: String, client: HermesClient) {
+        queuedRunWatch?.cancel()
+        queuedRunWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.live?.runID == runID, self.isWorking else { break }
+                guard let status = try? await client.runStatus(runID: runID) else { break }
+                if status.isQueued != self.runWaitsInQueue { self.runWaitsInQueue = status.isQueued }
+                if !status.isQueued { break }
+                try? await Task.sleep(for: .seconds(2))
+            }
+            if self?.runWaitsInQueue == true { self?.runWaitsInQueue = false }
+        }
+    }
+
+    /// A request that certainly never reached the gateway (refused at connect, no network).
+    nonisolated static func neverReached(_ error: any Error) -> Bool {
+        switch error {
+        case HermesError.unreachable(_, .cannotConnect), HermesError.unreachable(_, .offline):
+            true
+        case let error as URLError:
+            [.cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .dnsLookupFailed].contains(error.code)
+        default:
+            false
+        }
     }
 
     private func ensureSession(client: HermesClient, workspace: BotWorkspace) async throws -> String {
@@ -4377,6 +4426,7 @@ final class ConversationModel: Identifiable {
         notifiedCatchUp?.cancel()
         quietRetry?.cancel()
         chatWaitRetry?.cancel()
+        queuedRunWatch?.cancel()
         stopGiveBack?.cancel()
         processesPublish?.cancel()
         justFinishedReset?.cancel()
@@ -4836,8 +4886,10 @@ extension ConversationModel {
                     refused(refusal, text: text, images: images, files: files)
                     return
                 }
-                if !isBotChat, submitted == nil || error is GatewayRPCError || error is GatewaySocket.Failure {
-                    // The socket couldn't take it; the API server still can, if nothing started.
+                if !isBotChat, submitted == nil, !(error is GatewayRPCError) || failure == .notSent {
+                    // The socket couldn't take it and the prompt never left; the API server still can,
+                    // if nothing started. Never around an answer Hermes gave: that would be a second
+                    // writer, or a second copy of a message it may hold.
                     if live?.runID == nil, workspace?.client != nil, !(error is CancellationError) {
                         isBotTurnOpen = false
                         turnUsesGateway = false
