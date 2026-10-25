@@ -106,6 +106,75 @@ struct VoiceFactsTests {
         #expect(VoiceFacts().gatewaySpeaks)
         #expect(!VoiceFacts(lastSpeechFailure: "The provider timed out.").gatewaySpeaks)
     }
+
+    /// Hermes's verdict for xAI through the xAI Grok sign-in: relay, the same words with or
+    /// without it (`tools/voice_client_config.py`), so the sign-in decides.
+    static func xaiSignedIn(_ signedIn: Bool = true) -> VoiceFacts {
+        var facts = VoiceFacts(speechProvider: "xai", transcriptionProvider: "xai")
+        facts.speechVerdict = VoiceVerdict(mode: "relay", reason: "provider 'xai' has no client wire")
+        facts.transcriptionVerdict = VoiceVerdict(mode: "relay", reason: "xai oauth (server-managed) or no credentials")
+        facts.signedIn = signedIn ? ["xai-oauth", "nous"] : ["nous"]
+        return facts
+    }
+
+    @Test func theXAISignInSpeaksAndTranscribesButNotLive() {
+        let facts = Self.xaiSignedIn()
+        #expect(facts.missingSpeechKey == nil)
+        #expect(facts.gatewaySpeaks)
+        #expect(facts.missingTranscriptionKey == nil)
+        #expect(facts.missingLiveTranscriptionKey == "XAI_API_KEY")
+        #expect(facts.transcriptionUsesSignIn)
+
+        let signedOut = Self.xaiSignedIn(false)
+        #expect(signedOut.missingSpeechKey == "XAI_API_KEY")
+        #expect(!signedOut.gatewaySpeaks)
+        #expect(signedOut.missingTranscriptionKey == "XAI_API_KEY")
+        #expect(!signedOut.transcriptionUsesSignIn)
+
+        // With the key, live transcription has what it needs too.
+        var keyed = facts
+        keyed.keysSet = ["XAI_API_KEY"]
+        #expect(keyed.missingLiveTranscriptionKey == nil)
+        #expect(!keyed.transcriptionUsesSignIn)
+    }
+
+    @Test func aDirectVerdictMeansTheGatewayHasCredentials() {
+        // A key from `hermes auth add elevenlabs` isn't in /api/env, but voice-config hands it out.
+        var pooled = VoiceFacts(speechProvider: "elevenlabs", transcriptionProvider: "elevenlabs")
+        pooled.speechVerdict = VoiceVerdict(mode: "direct", provider: "elevenlabs")
+        pooled.transcriptionVerdict = VoiceVerdict(mode: "direct", provider: "elevenlabs")
+        #expect(pooled.missingSpeechKey == nil)
+        #expect(pooled.missingTranscriptionKey == nil)
+        #expect(pooled.missingLiveTranscriptionKey == nil)
+
+        // OpenAI through a Nous subscription: whole recordings, never live.
+        var managed = VoiceFacts(speechProvider: "openai", transcriptionProvider: "openai")
+        managed.speechVerdict = VoiceVerdict(mode: "direct", provider: "openai")
+        managed.transcriptionVerdict = VoiceVerdict(mode: "direct", provider: "openai")
+        #expect(managed.missingSpeechKey == nil)
+        #expect(managed.missingTranscriptionKey == nil)
+        #expect(managed.missingLiveTranscriptionKey == "OPENAI_API_KEY")
+
+        // A verdict for another provider (the config changed since) proves nothing.
+        var stale = VoiceFacts(speechProvider: "elevenlabs")
+        stale.speechVerdict = VoiceVerdict(mode: "direct", provider: "openai")
+        #expect(stale.missingSpeechKey == "ELEVENLABS_API_KEY")
+
+        // "No credentials" is what it says.
+        var none = VoiceFacts(speechProvider: "deepinfra")
+        none.speechVerdict = VoiceVerdict(mode: "relay", reason: "no credentials")
+        #expect(none.missingSpeechKey == "DEEPINFRA_API_KEY")
+    }
+
+    @Test func miniMaxTakesEitherRegionsKey() {
+        #expect(VoiceFacts(speechProvider: "minimax").missingSpeechKey == "MINIMAX_API_KEY")
+        #expect(VoiceFacts(speechProvider: "minimax", keysSet: ["MINIMAX_CN_API_KEY"]).missingSpeechKey == nil)
+    }
+
+    @Test func signInsAreReadFromTheOAuthList() throws {
+        let json = try JSONValue.decode(Data(#"{"providers": [{"id": "xai-oauth", "status": {"logged_in": true}}, {"id": "nous", "status": {"logged_in": false}}, {"id": "minimax-oauth", "status": {}}]}"#.utf8))
+        #expect(GatewaySetup.signedIn(oauthProviders: json) == ["xai-oauth"])
+    }
 }
 
 struct VoiceSetupRulesTests {
@@ -137,6 +206,18 @@ struct VoiceSetupRulesTests {
         #expect(statuses[1].steps.map(\.command) == ["hermes -p researcher config set ELEVENLABS_API_KEY <your key>",
                                                      "hermes -p researcher config set tts.provider edge"])
         #expect(statuses[0].detail == "Hermes Voice, in this iPhone's voice")
+    }
+
+    @Test func theXAISignInAsksForNoKey() {
+        let statuses = VoiceSetupRules.statuses(VoiceFactsTests.xaiSignedIn(), device: "iPhone")
+        #expect(statuses[1].state == .ready)
+        #expect(statuses[1].detail == "xAI")
+        #expect(statuses[2].state == .ready)
+        #expect(statuses[2].detail == "On this iPhone, with xAI on the gateway as a backup")
+        // No Realtime here, but Talk answers in the gateway's voice and asks only for Realtime's key.
+        #expect(statuses[0].detail == "Hermes Voice · xAI")
+        #expect(statuses.allSatisfy { !($0.fallback ?? "").contains("XAI_API_KEY") })
+        #expect(statuses.allSatisfy { $0.steps.allSatisfy { !($0.command ?? "").contains("XAI_API_KEY") } })
     }
 
     @Test func transcriptionKey() {
@@ -180,6 +261,13 @@ struct VoiceSetupRulesTests {
         let off = status(VoiceFacts(transcriptionProvider: "xai", keysSet: ["XAI_API_KEY"]))
         #expect(off.fix?.title == "Turn On")
         #expect(off.steps.map(\.command) == ["hermes -p researcher config set stt.streaming true"])
+
+        var signedIn = VoiceFactsTests.xaiSignedIn()
+        signedIn.liveTranscriptionOn = true
+        let signIn = status(signedIn)
+        #expect(signIn.fix?.title == "Add Key…")
+        #expect(signIn.fallback == "Talk transcribes on this iPhone: the xAI sign-in doesn't cover transcribing as you speak, which needs XAI_API_KEY on the gateway.")
+        #expect(signIn.steps.map(\.command) == ["hermes -p researcher config set XAI_API_KEY <your key>"])
 
         let failed = status(VoiceFacts(transcriptionProvider: "openai", keysSet: ["OPENAI_API_KEY"], liveTranscriptionOn: true,
                                        liveTranscriptionAvailable: true, lastTranscriptionFailure: "live transcription failed: 401"))

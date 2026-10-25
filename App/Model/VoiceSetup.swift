@@ -9,8 +9,9 @@ import UIKit
 /// What voice has on a gateway and its Bots (`docs/voice.md` §6.1), as setup statuses for
 /// Settings → Voice & Audio, Edit Bot → Voice and the Setup hub (`docs/setup.md`). One per gateway.
 ///
-/// It reads `GET /api/config?profile=`, `GET /api/env?profile=` (key names only) and
-/// `GET /api/audio/voice-live/status`, and remembers when Talk or Listen had to fall back to the
+/// It reads `GET /api/config?profile=`, `GET /api/env?profile=` (key names only),
+/// `GET /api/audio/voice-live/status`, `GET /api/audio/voice-config` (its verdicts, never its keys)
+/// and `GET /api/providers/oauth` (which sign-ins it has), and remembers when Talk or Listen had to fall back to the
 /// device's voice. It never changes the gateway by itself: keys and voices change only when the
 /// person saves them in the app.
 @MainActor
@@ -181,10 +182,12 @@ final class VoiceSetup {
             async let keys = backend.envKeysSet(profile: asked)
             async let live = backend.voiceLiveStatus(profile: asked)
             async let clientConfig = backend.voiceConfig(profile: asked)
+            async let signIns = backend.signedInProviders(profile: asked)
             let (settings, keysSet) = try await (config, keys)
             let realtime = try? await live
-            // Only whether the gateway transcribes live: the keys voice-config carries aren't read.
-            let streams = (try? await clientConfig)?.stt.streaming ?? false
+            // Its verdicts and whether it transcribes live: the keys voice-config carries aren't read.
+            let verdicts = try? await clientConfig
+            let streams = verdicts?.stt.streaming ?? false
             let provider = settings["tts"]?["provider"]?.stringValue?.lowercased() ?? "edge"
             let voiceKey = BotVoiceModel.providers.first { $0.id == provider }?.voiceKey
             var facts = VoiceFacts(
@@ -201,6 +204,11 @@ final class VoiceSetup {
                 liveTranscriptionAvailable: streams,
                 lastTranscriptionFailure: transcriptionFailures[profile ?? ""]
             )
+            // What the gateway can do without a key: credentials it hands out or manages, and
+            // sign-ins (xAI Grok), so it never asks for a key it doesn't need.
+            facts.speechVerdict = verdicts?.tts.verdict
+            facts.transcriptionVerdict = verdicts?.stt.verdict
+            facts.signedIn = (try? await signIns) ?? []
             // Hey Hermes: one detector per gateway, asked over the socket when it's on.
             if profile == nil, TalkPreferences.heyHermes {
                 facts.wantsWake = true

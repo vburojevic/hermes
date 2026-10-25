@@ -40,6 +40,13 @@ extension BackendClient {
         return GatewaySetup.signedInToNous(oauthProviders: try await rest("api/providers/oauth", query: query))
     }
 
+    /// The provider sign-ins the gateway has (`GET /api/providers/oauth`): "xai-oauth" for xAI
+    /// Grok, "nous", …
+    public func signedInProviders(profile: String?) async throws -> Set<String> {
+        let query = profile.map { [URLQueryItem(name: "profile", value: $0)] } ?? []
+        return GatewaySetup.signedIn(oauthProviders: try await rest("api/providers/oauth", query: query))
+    }
+
     /// Turns the Board's plugin back on: `kanban` out of `plugins.disabled`. Its routes come back
     /// without a restart.
     public func enableBoard() async throws {
@@ -60,8 +67,14 @@ extension GatewaySetup {
 
     /// `nous`'s `status.logged_in` in `GET /api/providers/oauth`.
     public static func signedInToNous(oauthProviders: JSONValue) -> Bool {
-        let nous = oauthProviders["providers"].items.first { $0["id"]?.stringValue == "nous" }
-        return nous?["status"]?["logged_in"]?.boolValue ?? false
+        signedIn(oauthProviders: oauthProviders).contains("nous")
+    }
+
+    /// The ids whose `status.logged_in` is true in `GET /api/providers/oauth`.
+    public static func signedIn(oauthProviders: JSONValue) -> Set<String> {
+        Set(oauthProviders["providers"].items.compactMap { row in
+            row["status"]?["logged_in"]?.boolValue == true ? row["id"]?.stringValue : nil
+        })
     }
 }
 

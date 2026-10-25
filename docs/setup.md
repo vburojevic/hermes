@@ -413,15 +413,21 @@ a passcode: [widgets.md](widgets.md).
 Talk, Listen and voice messages, per gateway and per Bot (`VoiceSetup`, one per gateway,
 `workspace.voiceSetup`; the rules are `VoiceSetupRules` in HermesKit, tested in
 `VoiceMediaTests.swift`). Read from `GET /api/config?profile=` (the speech and transcription
-providers and voices), `GET /api/env?profile=` (which keys are set, by name only) and
-`GET /api/audio/voice-live/status`.
+providers and voices), `GET /api/env?profile=` (which keys are set, by name only),
+`GET /api/audio/voice-live/status`, `GET /api/audio/voice-config` (its verdicts, never its keys)
+and `GET /api/providers/oauth` (the sign-ins). A provider has what it needs when its key is set,
+when voice-config hands out its settings (`direct`: Hermes does that only with credentials, a key
+from `hermes auth add` or a Nous subscription's included), or when a sign-in covers it: xAI's
+speech and voice messages work through the xAI Grok sign-in (`xai-oauth`) with no `XAI_API_KEY`,
+so the app never asks for a key the gateway doesn't need. Transcribing as you speak takes a key
+of its own (Hermes: "API key only"), and its row says so.
 
 | Feature | Ready | Partly set up (and the fallback) |
 |---|---|---|
 | Talk | Realtime is offered ("Realtime · Cedar") | Hermes Voice answers, in the gateway's voice or the device's; Hermes's reason for no Realtime |
-| Listen | The speech provider has its key ("ElevenLabs · Adam") | Replies are read in the device's voice; also after a read fails on the gateway, in a sentence |
-| Voice messages | The transcription provider has its key, or needs none | The device transcribes; only "heard no words" needs the gateway |
-| Transcribe on the gateway (only while chosen) | "OpenAI, as you speak" (voice-config `stt.streaming`) | Calls transcribe on the device: the provider can't stream, its key is missing (Add Key…), `stt.streaming` is off (Turn On), or a call just failed |
+| Listen | The speech provider has its key or a sign-in that covers it ("ElevenLabs · Adam", "xAI") | Replies are read in the device's voice; also after a read fails on the gateway, in a sentence |
+| Voice messages | The transcription provider has its key or a sign-in that covers it, or needs none | The device transcribes; only "heard no words" needs the gateway |
+| Transcribe on the gateway (only while chosen) | "OpenAI, as you speak" (voice-config `stt.streaming`) | Calls transcribe on the device: the provider can't stream, its key is missing (Add Key…; with the xAI Grok sign-in: "the xAI sign-in doesn't cover transcribing as you speak, which needs XAI_API_KEY on the gateway"), `stt.streaming` is off (Turn On), or a call just failed |
 | Hey Hermes (only while on, the gateway's own) | Listening, or the gateway's own microphone listens (`wake.status`) | Waiting for charging (iPhone, iPad); another device is listening. Not set up: off on the gateway (Turn On, `wake.start {persist: true}`), kept for another surface, or no engine (Hermes's hint) |
 
 Without Bot Mode, while the gateway is out of reach, or on a Hermes too old to answer, all three

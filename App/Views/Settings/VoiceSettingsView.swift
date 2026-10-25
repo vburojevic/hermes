@@ -424,7 +424,7 @@ struct VoiceSetupSections: View {
             guard let key = facts?.missingTranscriptionKey else { return nil }
             return { keyEntry = VoiceKeyEntry(name: key) }
         case "voice.transcription":
-            if let key = facts?.missingTranscriptionKey { return { keyEntry = VoiceKeyEntry(name: key) } }
+            if let key = facts?.missingLiveTranscriptionKey { return { keyEntry = VoiceKeyEntry(name: key) } }
             return { Task { await setup.turnOnLiveTranscription(profile: profile) } }
         case "voice.wake":
             return { Task { await setup.turnOnWakeWord() } }

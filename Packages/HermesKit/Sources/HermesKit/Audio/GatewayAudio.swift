@@ -67,6 +67,9 @@ public struct VoiceConfig: Sendable, CustomStringConvertible {
 
         public var isDirect: Bool { mode == "direct" && key != nil && baseURL != nil }
 
+        /// What the gateway does for this side, without the key (`VoiceFacts`).
+        public var verdict: VoiceVerdict { VoiceVerdict(mode: mode, provider: provider, reason: reason) }
+
         /// The provider key, for the one request that needs it.
         public func withKey<T>(_ body: (String) throws -> T) rethrows -> T? {
             guard let key else { return nil }

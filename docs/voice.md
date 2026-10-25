@@ -413,9 +413,9 @@ Voice & Audio, and counts them):
 | Status | Ready | Partly set up (falls back) | How to fix |
 |---|---|---|---|
 | Talk (`voice.talk`) | Realtime and its voice | Hermes Voice in the gateway's voice when there's no Realtime (Hermes's reason, e.g. no OpenAI key); in this device's voice when the gateway can't speak either | Add the OpenAI key (in the app, `PUT /api/env`), or `hermes config set voice.gpt_live.api_key …` |
-| Listen (`voice.listen`) | The provider and voice (`tts.provider`, `tts.<provider>.<voice key>`) | This device's voice: the provider's key is missing, or it failed last time | Choose a provider and voice; add the provider's key; `hermes config set tts.provider edge` |
-| Voice messages (`voice.messages`) | Transcribed on this device | When the device hears nothing the gateway transcribes (`stt.provider`); its key may be missing | Add the key, or `hermes config set stt.provider local` |
-| Transcribe on the gateway (`voice.transcription`, only while it's chosen) | The provider, "OpenAI, as you speak" (voice-config `stt.streaming`) | This device hears the call: the provider can't stream (only OpenAI, xAI and ElevenLabs can), its key is missing, `stt.streaming` is off, or a call just failed | Add the key; Turn On (`PUT /api/config {stt: {streaming: true}}`); `hermes config set stt.provider openai`, `… stt.streaming true` |
+| Listen (`voice.listen`) | The provider and voice (`tts.provider`, `tts.<provider>.<voice key>`) | This device's voice: the provider has no key or sign-in, or it failed last time | Choose a provider and voice; add the provider's key; `hermes config set tts.provider edge` |
+| Voice messages (`voice.messages`) | Transcribed on this device | When the device hears nothing the gateway transcribes (`stt.provider`); its key (or sign-in) may be missing | Add the key, or `hermes config set stt.provider local` |
+| Transcribe on the gateway (`voice.transcription`, only while it's chosen) | The provider, "OpenAI, as you speak" (voice-config `stt.streaming`) | This device hears the call: the provider can't stream (only OpenAI, xAI and ElevenLabs can), its key is missing (a sign-in never streams), `stt.streaming` is off, or a call just failed | Add the key; Turn On (`PUT /api/config {stt: {streaming: true}}`); `hermes config set stt.provider openai`, `… stt.streaming true` |
 
 Code: `VoiceSetup` (one per gateway, `VoiceSetup.of(workspace)`), `VoiceSetupRules` and
 `VoiceFacts` in HermesKit, `VoiceSetupSections` and `VoiceKeySheet` (its sheet hangs off the
@@ -423,8 +423,15 @@ page's Form through `voiceSetup(_:profile:keyEntry:)`: on the sections it would 
 on the Talk screen (when the gateway can't speak) and over Listen's mini player.
 
 What's read: `GET /api/config?profile=` (providers and voices), `GET /api/env?profile=` (which keys
-are set, by name only), `GET /api/audio/voice-live/status` (Realtime and why not), and failures
-seen while speaking (the gateway's voice didn't answer). Keys typed in the app go straight to
+are set, by name only), `GET /api/audio/voice-live/status` (Realtime and why not),
+`GET /api/audio/voice-config` (its verdicts: `direct` means the gateway has the provider's
+credentials, whatever their source; its keys aren't read), `GET /api/providers/oauth` (sign-ins:
+`xai-oauth` covers xAI's speech and whole-recording transcription, as Hermes's
+`resolve_xai_http_credentials` falls back to it, but never live transcription, which is API key
+only in `transcription_streaming`), and failures seen while speaking (the gateway's voice didn't
+answer). A provider with a key, a direct verdict or a sign-in that covers it is never asked for a
+key: an xAI gateway signed in to xAI Grok speaks through `speak-stream`/`POST /api/audio/speak` and
+transcribes voice messages through `POST /api/audio/transcribe`. Keys typed in the app go straight to
 `PUT /api/env` and are kept nowhere. Can't reach Bot Mode: "Can't check", with how to turn it on.
 Steps name the `hermes` command (`hermes -p <bot> …` for a Bot) and link the Hermes docs
 (`user-guide/features/tts`, `voice-mode`), with Check Again. A key Hermes refuses (400: a pinned
@@ -503,7 +510,7 @@ one-time `?ticket=`; a Bot is `?profile=`.
 
 | Feature | Call |
 |---|---|
-| What's available | `GET /api/audio/voice-live/status`, `GET /api/audio/voice-config` |
+| What's available | `GET /api/audio/voice-live/status`, `GET /api/audio/voice-config`, `GET /api/providers/oauth` (sign-ins) |
 | Talk turn (Hermes Voice) | `prompt.submit {text, voice_turn: true, surface: "voice-live", voice_context, interrupted}` → `{status, user_row_id}` |
 | The Bot's voice | `WS /api/audio/speak-stream?profile=` (one sentence a socket: `{text, done}`, `{stop}`), `POST /api/audio/speak`, `POST /api/audio/tts-lease` |
 | Realtime | `POST /api/audio/voice-live/session {sdp, history}` + WebRTC to OpenAI; delegations as `prompt.submit {surface: "voice-live", voice_context}` |

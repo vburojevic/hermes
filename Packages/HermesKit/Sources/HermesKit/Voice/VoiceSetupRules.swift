@@ -140,8 +140,11 @@ public enum VoiceSetupRules {
                 SetupStep(String(localized: "Give it its key:"), command: command("config set OPENAI_API_KEY <your key>", profile: profile)),
                 turnOn,
             ]
-        } else if let key = facts.missingTranscriptionKey {
-            why = String(localized: "\(provider.title) needs \(key) on the gateway")
+        } else if let key = facts.missingLiveTranscriptionKey {
+            // Signed in to xAI Grok: voice messages transcribe on the gateway, a call can't.
+            why = facts.transcriptionUsesSignIn
+                ? String(localized: "the \(provider.title) sign-in doesn't cover transcribing as you speak, which needs \(key) on the gateway")
+                : String(localized: "\(provider.title) needs \(key) on the gateway")
             fix = SetupFix(title: String(localized: "Add Key…"))
             steps = [SetupStep(String(localized: "On the gateway's computer, add the key:"), command: command("config set \(key) <your key>", profile: profile))]
             if !facts.liveTranscriptionOn { steps.append(turnOn) }
