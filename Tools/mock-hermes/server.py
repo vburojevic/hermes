@@ -59,6 +59,10 @@ SESSIONS = {}
 ROUTES = {}  # (method, path) -> fn(handler, query) -> handled: routes other modules add (browser_control.py)
 MESSAGES = {}
 RUNS = {}
+# Hermes runs one turn per chat at a time (its session FIFO, hermes_state_runtime.py): a run posted
+# while another of the chat's runs is live waits as `queued`, sends nothing, and starts after it.
+FIFO = {}         # session id -> run ids in order
+IDEMPOTENCY = {}  # Idempotency-Key -> (body, run id): the same key and body replay the run
 # Deleted chats' ids: Hermes never makes a chat under one again.
 DELETED = set()
 JOBS = {}
@@ -320,6 +324,8 @@ class Run:
         self.generation = 1
         self.admission_id = f"adm_{uuid.uuid4().hex[:12]}"
         self.terminal = False
+        # Steers accepted and not read yet (`POST /v1/runs/{id}/steer`); read at the next step.
+        self.steers = []
 
     def emit(self, name, **fields):
         with self.cond:
@@ -355,11 +361,35 @@ def tool(run, name, preview, result, seconds):
             return False
         time.sleep(0.05)
     run.emit("tool.completed", tool=name, duration=round(seconds, 3), error=False, preview=result[:500])
+    with LOCK:
+        read, run.steers = run.steers, []
+    for text in read:
+        # Read with the tool's result, as Hermes does (`AIAgent.steer`).
+        add_message(run.session_id, "user", text, display_kind="steer")
     return True
+
+
+def wait_turn(run):
+    """Waits, `queued`, while an earlier run of the chat is live (Hermes's FIFO)."""
+    with LOCK:
+        order = FIFO.setdefault(run.session_id, [])
+        order.append(run.id)
+        ahead = order[:order.index(run.id)]
+    while not run.stop.is_set():
+        if all(r not in RUNS or RUNS[r].terminal for r in ahead):
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def agent_turn(run):
     sid, text = run.session_id, run.text
+    if not wait_turn(run):
+        # Stopped while it waited: only this run is cancelled; the ones behind it still run.
+        run.status = "cancelled"
+        run.emit("run.cancelled", completed=False, partial=False, interrupted=True)
+        run.finish()
+        return
     run.status = "running"
     add_message(sid, "user", text)
     s = SESSIONS[sid]
@@ -467,7 +497,10 @@ def agent_turn(run):
             run.emit("run.cancelled", completed=False, partial=True, interrupted=True)
         else:
             run.status = "completed"
+            with LOCK:
+                unread, run.steers = run.steers, []
             run.emit("run.completed", completed=True, partial=False, interrupted=False, output=run.output,
+                     **({"pending_steer": "\n".join(unread)} if unread else {}),
                      usage={"input_tokens": 1830, "output_tokens": 412, "total_tokens": 2242, "cache_read_tokens": 900, "cache_write_tokens": 0},
                      runtime={"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6", "route_source": "global"})
     finally:
@@ -711,10 +744,37 @@ class Handler(BaseHTTPRequestHandler):
             if sid not in SESSIONS:
                 with LOCK:
                     session_row(sid, None, "api_server", time.time(), time.time(), "")
-            run = Run(f"run_{uuid.uuid4().hex}", sid, text if isinstance(text, str) else str(text))
-            RUNS[run.id] = run
+            key = self.headers.get("Idempotency-Key")
+            with LOCK:
+                if key and key in IDEMPOTENCY:
+                    # The same key: the run it started, with its live status; another body is a conflict
+                    # (api_server_run_idempotency.py).
+                    first_body, run_id = IDEMPOTENCY[key]
+                    if first_body != body:
+                        return self.error(409, "Idempotency-Key was used with a different request", "idempotency_key_conflict")
+                    return self.send_json(202, {"run_id": run_id, "status": RUNS[run_id].status, "replayed": True})
+                run = Run(f"run_{uuid.uuid4().hex}", sid, text if isinstance(text, str) else str(text))
+                RUNS[run.id] = run
+                if key:
+                    IDEMPOTENCY[key] = (body, run.id)
             threading.Thread(target=agent_turn, args=(run,), daemon=True).start()
+            # `started` even for a run queued behind another: only GET says `queued` (api_server_runs.py).
             return self.send_json(202, {"run_id": run.id, "status": "started", "replayed": False})
+        m = re.fullmatch(r"/v1/runs/([^/]+)/steer", path)
+        if m:
+            run = RUNS.get(m.group(1))
+            if not run:
+                return self.error(404, "Run not found", "run_not_found")
+            text = (body.get("input") or body.get("text") or "").strip()
+            if not text:
+                return self.error(400, "Missing 'input' field")
+            if run.status != "running" or run.stop.is_set():
+                # Queued, waiting for an approval, stopping or over: nothing to steer (runs.py).
+                return self.error(409, f"Run is {run.status}; it can't take a steer now.", "run_not_accepting_steer")
+            with LOCK:
+                run.steers.append(text)
+            run.emit("run.steered", text=text)
+            return self.send_json(200, {"run_id": run.id, "accepted": True})
         m = re.fullmatch(r"/v1/runs/([^/]+)/stop", path)
         if m:
             run = RUNS.get(m.group(1))

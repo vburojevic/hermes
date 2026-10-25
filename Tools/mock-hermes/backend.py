@@ -732,6 +732,7 @@ def start_turn(sid, text, runner):
         runtime["running"] = True
         runtime["interrupt"] = False
         runtime["turn_started"] = time.time()
+        runtime.pop("attached_images", None)  # the turn takes the photos staged for it
         # Hermes' `_start_inflight_turn`: what the turn was asked, for clients that weren't the sender.
         runtime["inflight"] = {"user": text.split("\n\n[@mentions resolved", 1)[0].strip(), "assistant": "", "streaming": True}
     threading.Thread(target=guarded, args=(sid, text, runner), daemon=True).start()
@@ -775,9 +776,8 @@ def store_user(sid, stored, text):
 
 def store_row(sid, stored, role, text, **extra):
     if RUNTIME[sid].get("kind") == "chat":
-        CHATS_HOOKS["add_message"](stored, role, text, **extra)
-    else:
-        add_message(stored, role, text, **extra)
+        return CHATS_HOOKS["add_message"](stored, role, text, **extra)
+    return add_message(stored, role, text, **extra)
 
 
 def finish_any(sid, stored, text):
@@ -803,7 +803,7 @@ def busy_submit(sid, text, queued):
     for the next turn; plain text follows display.busy_input_mode (steer, interrupt → redirect, queue)."""
     with LOCK:
         runtime = RUNTIME[sid]
-        media = runtime.pop("attached_images", 0)
+        media = len(runtime.pop("attached_images", []))
         mode = "queue" if queued or media else BUSY["mode"]
         if mode == "steer":
             runtime.setdefault("steers", []).append(text)
@@ -811,8 +811,22 @@ def busy_submit(sid, text, queued):
         if mode == "interrupt" and time.time() - runtime.get("turn_started", 0) >= 0.5:
             redirect_or_steer(runtime, text)
             return {"status": "redirected"}
-        runtime.setdefault("queue", []).append({"text": text, "media": media})
-        return {"status": "queued"}
+        queue = runtime.setdefault("queue", [])
+        if not media and len(queue) == 1 and not queue[0]["media"]:
+            # `_enqueue_prompt`: words join a text-only head while nothing waits behind it, one turn.
+            head = queue[0]
+            head["text"] = f"{head['text']}\n\n{text}"
+            if head.get("row"):
+                head["row"]["content"] = head["text"]
+            return {"status": "queued"}
+        entry = {"text": text, "media": media}
+        queue.append(entry)
+        stored = runtime.get("stored")
+    # Durable at accept (`_persist_queued_user_row`): a row marked `_queued_prompt`, swapped for the
+    # turn's own row when it drains, and left as it is when Stop empties the queue.
+    if stored and (stored in STORED or runtime.get("kind") == "chat"):
+        entry["row"] = store_row(sid, stored, "user", text, display_metadata=json.dumps({"_queued_prompt": True}))
+    return {"status": "queued"}
 
 
 def after_turn(sid, runner):
@@ -829,6 +843,10 @@ def after_turn(sid, runner):
             return
         nxt = runtime["queue"].pop(0)
         runtime["running"] = True
+        if nxt.get("row"):
+            # Hermes deactivates the row it wrote at accept: the turn stores its own.
+            nxt["row"]["display_kind"] = "hidden"
+            nxt["row"].pop("display_metadata", None)
     threading.Timer(0.5, start_turn, args=(sid, nxt["text"], runner)).start()
 
 
@@ -857,9 +875,14 @@ def redirect_or_steer(runtime, text):
 def method_session_steer(params):
     sid, runtime = runtime_for(params)
     text = (params.get("text") or "").strip()
+    if not text:
+        raise RPCError(4002, "text is required")
     with LOCK:
         if not runtime["running"]:
             return {"status": "rejected", "text": text}
+        if time.time() - runtime.get("turn_started", 0) < 0.5:
+            # The turn's agent is still being built: only a redirect queues then (`methods_session_interrupt.py`).
+            raise RPCError(4010, "agent does not support steer")
         runtime.setdefault("steers", []).append(text)
     return {"status": "queued", "text": text}
 
@@ -2019,7 +2042,7 @@ def owner_submit(sid, runtime, owner, text):
     """A prompt to a chat the gateway's queue owns: refused, or forwarded into the owner's FIFO."""
     stored = runtime["stored"]
     with LOCK:
-        images = runtime.get("attached_images", 0)
+        images = runtime.get("attached_images", [])
     refusal = owner_refusal(stored, owner, text, images)
     if refusal is not None:
         # Only the owner's busy refusal takes the photos off; every other leaves them staged.
@@ -2072,7 +2095,7 @@ def own_chat(stored, mode, seconds, ack):
     if stored not in STORED and not any(r["stored"] == stored for r in RUNTIME.values()) \
             and not (GATEWAY and stored in GATEWAY[0].SESSIONS):
         return False
-    OWNERS[stored] ={"mode": mode, "until": time.time() + seconds, "ack": ack, "pending": []}
+    OWNERS[stored] = {"mode": mode, "until": time.time() + seconds, "ack": ack, "pending": []}
     if mode in ("forward", "busy", "unconfirmed"):
         def release():
             time.sleep(seconds)
@@ -2092,8 +2115,11 @@ def limit_refusal():
 
 
 def submit_gate(sid, runtime, text):
-    """What `prompt.submit` answers before a turn, for every chat: Hermes's chat limit, the gateway's
-    own queue owning the chat. None when the prompt goes on as usual."""
+    """What `prompt.submit` answers before a turn, for every chat: a typed stop phrase, Hermes's chat
+    limit, the gateway's own queue owning the chat. None when the prompt goes on as usual."""
+    if text.strip().lower() == "stop talking":
+        # A stop phrase typed while voice mode is on ends the voice chat; nothing is sent.
+        return {"voice_stopped": True}
     if time.time() < LIMIT["until"]:
         raise limit_refusal()  # the slot check refuses before anything runs: photos stay staged
     owner = OWNERS.get(runtime["stored"])
@@ -2143,9 +2169,13 @@ def method_prompt_submit(params):
 
 
 def method_session_interrupt(params):
+    """Hermes's `session.interrupt` (`session_lifecycle.py`): the turn stops, unread steers go, and the
+    whole queue held for the next turn is purged: nothing in it runs."""
     sid, runtime = runtime_for(params)
     with LOCK:
         runtime["interrupt"] = True
+        runtime["queue"] = []
+        runtime.pop("steers", None)
         cancelled = [rid for rid, e in PENDING.items() if e["sid"] == sid]
     for rid in cancelled:
         entry = PENDING.get(rid)
@@ -2183,10 +2213,25 @@ def method_events_since(params):
 
 
 def method_image_attach_bytes(params):
+    """Staged for whichever prompt comes next on the chat (Hermes's `attached_images`): a refused
+    prompt leaves them for the next one, until `image.detach` takes them back by path."""
     sid, runtime = runtime_for(params)
+    path = f"/tmp/hermes-mock/images/upload_{uuid.uuid4().hex[:8]}.jpg"
     with LOCK:
-        runtime["attached_images"] = runtime.get("attached_images", 0) + 1
-    return {"attached": True, "name": params.get("filename") or "image.png"}
+        runtime.setdefault("attached_images", []).append(path)
+        count = len(runtime["attached_images"])
+    return {"attached": True, "path": path, "count": count, "name": params.get("filename") or "image.png"}
+
+
+def method_image_detach(params):
+    sid, runtime = runtime_for(params)
+    path = (params.get("path") or "").strip()
+    if not path:
+        raise RPCError(4015, "path required")
+    with LOCK:
+        before = runtime.get("attached_images", [])
+        runtime["attached_images"] = [p for p in before if p != path]
+        return {"detached": len(runtime["attached_images"]) != len(before), "count": len(runtime["attached_images"])}
 
 
 def method_cron_manage(params):
@@ -2249,6 +2294,7 @@ METHODS = {
     "session.events.since": method_events_since,
     "prompt.submit": method_prompt_submit,
     "image.attach_bytes": method_image_attach_bytes,
+    "image.detach": method_image_detach,
     "session.redirect": method_session_redirect,
     "session.steer": method_session_steer,
     "config.get": method_config_get,

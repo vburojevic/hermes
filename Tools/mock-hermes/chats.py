@@ -207,12 +207,8 @@ def prompt_btw(params):
 
 
 def session_steer(params):
-    sid = params.get("session_id") or ""
-    runtime = B["RUNTIME"].get(sid)
-    if runtime is None or not runtime["running"]:
-        return {"status": "rejected"}
-    runtime.setdefault("steers", []).append(params.get("text") or "")
-    return {"status": "queued"}
+    # The same as a Bot's: rejected when idle, 4010 while the turn's agent is built, else queued.
+    return B["method_session_steer"](params)
 
 
 # ── Commands and skills ──────────────────────────────────────────────────────

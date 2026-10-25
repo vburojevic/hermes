@@ -242,6 +242,21 @@ mode `unconfirmed` does at once. `busy` (`SESSION_OWNER_BUSY`), `ledger-unknown`
 `unknown-reason` refuses with a reason no Hermes sends yet, for a reason newer than the app; `off`
 lets go. `POST /api/mock/limit {seconds, active, limit}` puts Hermes at its chat limit
 (`MAX_CONCURRENT_SESSIONS`, "(3/3)") for `seconds`.
+A message queued behind a running turn joins a text-only head while nothing waits behind it, and
+anything with a photo is its own envelope; each gets a stored row marked `_queued_prompt` at accept,
+swapped for the turn's own row when it drains and left as it is when Stop empties the queue, as
+Hermes does. Every refusal but the owner's busy one leaves staged photos for the next prompt, as Hermes does,
+until `image.detach` takes them back by the `path` `image.attach_bytes` answered, and a turn takes
+what was staged for it. A message that is exactly "stop talking" answers `{voice_stopped: true}`.
+`session.steer` refuses 4010 "agent does not support steer" in a turn's first half second (its
+agent being built) and answers `rejected` when idle; `session.interrupt` empties the queue held for
+the next turn. On the API server mock a chat's runs go one at a time: a run posted behind another
+answers `started` but sends nothing and reads `queued` until it runs, `POST /v1/runs/{id}/steer`
+answers `{accepted: true}` (and `run.steered`) or 409 `run_not_accepting_steer` for a run that isn't
+running, an unread steer comes back as `pending_steer` on `run.completed`, Stop on a queued run
+cancels only it, and the same `Idempotency-Key` replays its run (409 `idempotency_key_conflict` with
+another body). `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p test_sending.py`
+proves each of these against the mock.
 `POST /api/mock/hold {profile, seconds, surface, age, late}` holds a Bot Chat with nothing stored:
 `age` minutes ago (45 reads as a terminal, 0 as a one-shot booting), `surface` `cli` or
 `desktop`; `late: true` takes the next send, stores it and refuses the turn as it runs instead (the
