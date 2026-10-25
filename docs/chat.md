@@ -729,6 +729,23 @@ out with a message waiting in Up Next, and the queue never sent either.
   {"outage": 25, "reap": 20}`, `docs/development.md`). Typed text queues while the chat is held, and
   within about 10 s of the socket coming back the chat settles and Up Next sends, once.
 
+## 4c. What Hermes does with a message
+
+A message from the composer, Talk, Send Again, Try Again or an Up Next drain goes as
+`prompt.submit {queued: true}`: a chat this device thinks is idle can be busy with a turn it hasn't
+seen yet (a finished process's notice, a held message Hermes sends as a turn ends, another
+device's), and without `queued` Hermes would steer or redirect that turn with the message. Only the
+answer says what became of it (`SubmitAnswer`, hermes-agent `tui_gateway/methods_prompt.py` and
+`session_auto_continue.py` `_handle_busy_submit`):
+
+| Answer | What the app shows |
+|---|---|
+| `streaming` | The message's own turn: "Thinking…" |
+| `queued` | Hermes runs a turn in this chat: the turn on screen is that one (its message read from `session.activate`), and the message waits in the Up Next tray, read-only, until Hermes sends it as the next turn |
+| `queued` with `forwarded: true` | The gateway owns the chat and queued it behind its own work: the message waits in the tray; only its own turn's start and end reach this socket |
+| `steered` / `redirected` | It went into the running turn (an older client's busy mode): it shows as a steer of that turn |
+| `voice_stopped` | A typed stop phrase ended the voice chat: nothing was sent and no turn starts |
+
 ## 4d. When Hermes refuses a message
 
 Hermes refuses a `prompt.submit` with 4090 and says why in `data.reason`. Each reason has its own
