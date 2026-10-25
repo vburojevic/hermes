@@ -300,7 +300,9 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 - **The reply read** is the one to each turn sent during the call (spoken or typed into the call),
   followed by turn id (`SpokenReplyTracker`): a reply already in the chat is never read again, a
   later turn never takes over, and a turn that finishes and comes back as a stored row is read to
-  its end.
+  its end. Every reply in the call is read, one after another, however fast it came: the call's
+  player reads them all from one queue and, between two replies, carries on from the first
+  sentence not yet heard (`SpokenQueue`).
 - **Minimised** (the chevron, or swipe down; `talkMinimised`): the pill at the top of the chat
   (`callPill`) with Mute and End; the field says "Type into the call", and a typed message is a
   turn of the call (its reply is read). Spoken messages are marked Spoken.
@@ -534,6 +536,9 @@ one-time `?ticket=`; a Bot is `?profile=`.
   the engine (`SpokenPlayer`).
 - The reply read is tied to its turn id; a message queued behind a finishing turn no longer
   re-reads the previous reply.
+- Every reply in a call is read, not only the first: after a reply was heard to its end the
+  player asked for the next sentence only near the start of its queue, so the next reply waited
+  there unread.
 - Mute stops only the microphone, and unmuting doesn't restart anything.
 - Clarify questions are answered by voice; secrets, sudo and sign-ins ask to be typed.
 - Dictation shows its failures (with Try Again) and the model download's progress.
@@ -543,7 +548,8 @@ one-time `?ticket=`; a Bot is `?profile=`.
   with noise, echo, backchannels and untimed words, a loud room, a voice Realtime answered),
   `NearGateTests` (what the transcriber hears over the Bot, Realtime's shorter lookahead),
   `AnalyzerClockTests` (word times across gaps in the microphone),
-  `AudioCoordinatorTests` (role changes, interruptions, routes, resets), `SpokenReplyTests`.
+  `AudioCoordinatorTests` (role changes, interruptions, routes, resets), `SpokenReplyTests`,
+  `SpokenQueueTests` (replies one after another in one queue).
 
 ## 12. Acceptance checks
 

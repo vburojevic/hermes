@@ -82,15 +82,17 @@ nonisolated final class DeviceVoice: SentenceVoice, @unchecked Sendable {
 @Observable
 final class SpokenPlayer {
     /// The sentence being heard, by its place in what was queued.
-    private(set) var current: Int?
+    var current: Int? { queue.current }
     private(set) var isSpeaking = false {
         didSet { if isSpeaking != oldValue { onSpeaking?(isSpeaking) } }
     }
     private(set) var isPaused = false
     /// The level of what's playing, 0…1, about 30 times a second while speaking.
     private(set) var level: Float = 0
-    /// How many sentences have been queued.
-    private(set) var queued: [SpokenSentence] = []
+    /// The sentences queued, read and to read.
+    var queued: [SpokenSentence] { queue.sentences }
+    /// Where reading is in them, and which sentence the voice is asked for next.
+    private var queue = SpokenQueue()
     /// When the first audio of the current run started playing (for the latency overlay).
     private(set) var startedAt: Date?
     /// Lowered while Talk checks whether the person is talking over it (`TalkEars`).
@@ -116,7 +118,6 @@ final class SpokenPlayer {
     @ObservationIgnored private var chain: AudioPlayerChain?
     @ObservationIgnored private var fetching: Task<Void, Never>?
     @ObservationIgnored private var metering: Task<Void, Never>?
-    @ObservationIgnored private var nextToFetch = 0
     @ObservationIgnored private var generation = 0
     /// Stops under way: what's queued while one fades out is forgotten with the rest.
     @ObservationIgnored private var stopping = 0
@@ -125,8 +126,6 @@ final class SpokenPlayer {
     @ObservationIgnored private var ramp: Task<Void, Never>?
     /// About −14 dB: clearly yielding, still there if it was only the room.
     static let duckedVolume: Float = 0.2
-    /// Sentences fetched ahead of the one playing.
-    private let lookahead = 2
     static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)!
     static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "audio")
 
@@ -140,7 +139,7 @@ final class SpokenPlayer {
     func enqueue(_ sentences: [SpokenSentence]) {
         // Words of a reply being talked over still come in during barge-in's fade: never read on.
         guard !sentences.isEmpty, stopping == 0 else { return }
-        queued += sentences
+        queue.append(sentences)
         inputDone = false
         pump()
     }
@@ -207,10 +206,8 @@ final class SpokenPlayer {
         }
         chain?.volume = 1
         isDucked = false
-        queued = []
-        nextToFetch = 0
+        queue.reset()
         _ = converter.flush()
-        current = nil
         isSpeaking = false
         isPaused = false
         level = 0
@@ -251,10 +248,7 @@ final class SpokenPlayer {
         let generation = generation
         fetching = Task { [weak self] in
             // Fetch ahead of what's being heard, but not too far: a sentence ending pumps again.
-            while let self, generation == self.generation, self.nextToFetch < self.queued.count,
-                  self.nextToFetch <= (self.current ?? 0) + self.lookahead {
-                let index = self.nextToFetch
-                self.nextToFetch += 1
+            while let self, generation == self.generation, let index = self.queue.takeNextToFetch() {
                 await self.fetch(index, generation: generation)
             }
             guard let self, generation == self.generation else { return }
@@ -331,19 +325,17 @@ final class SpokenPlayer {
     }
 
     private func begin(_ sentence: Int) {
-        guard current != sentence else { return }
-        current = sentence
-        onSentence?(sentence)
+        if queue.begin(sentence) { onSentence?(sentence) }
     }
 
     private func sentenceEnded(_ sentence: Int, generation: Int) {
         guard generation == self.generation, current == sentence else { return }
-        if sentence + 1 < nextToFetch {
+        if let next = queue.ended(sentence) {
             // The next one is already on its way (or queued in the player).
-            begin(sentence + 1)
+            onSentence?(next)
         } else {
-            // Caught up: quiet until more is queued (Talk's reply still streaming) or done.
-            current = nil
+            // Caught up: quiet until more is queued (Talk's reply still streaming, or its next
+            // reply) or done.
             isSpeaking = false
             level = 0
             metering?.cancel()
@@ -354,7 +346,7 @@ final class SpokenPlayer {
     }
 
     private func finishIfDone() {
-        guard inputDone, current == nil, fetching == nil, nextToFetch >= queued.count else { return }
+        guard inputDone, current == nil, fetching == nil, queue.isFetched else { return }
         isSpeaking = false
         level = 0
         metering?.cancel()
