@@ -118,6 +118,8 @@ final class SpokenPlayer {
     @ObservationIgnored private var metering: Task<Void, Never>?
     @ObservationIgnored private var nextToFetch = 0
     @ObservationIgnored private var generation = 0
+    /// Stops under way: what's queued while one fades out is forgotten with the rest.
+    @ObservationIgnored private var stopping = 0
     @ObservationIgnored private var inputDone = false
     @ObservationIgnored private let converter = PCMConverter()
     @ObservationIgnored private var ramp: Task<Void, Never>?
@@ -136,7 +138,8 @@ final class SpokenPlayer {
 
     /// Adds sentences to read after the ones queued.
     func enqueue(_ sentences: [SpokenSentence]) {
-        guard !sentences.isEmpty else { return }
+        // Words of a reply being talked over still come in during barge-in's fade: never read on.
+        guard !sentences.isEmpty, stopping == 0 else { return }
         queued += sentences
         inputDone = false
         pump()
@@ -188,6 +191,8 @@ final class SpokenPlayer {
 
     /// Stops and forgets what's queued. `fade` is barge-in's 80 ms fade.
     func stop(fade: Bool = false) async {
+        stopping += 1
+        defer { stopping -= 1 }
         generation += 1
         fetching?.cancel()
         fetching = nil
