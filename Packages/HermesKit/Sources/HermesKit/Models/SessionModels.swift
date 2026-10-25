@@ -525,11 +525,17 @@ public struct RunStatus: Decodable, Sendable, Hashable {
     public var usage: TokenUsage?
     public var runtime: RuntimeInfo?
     public var approval: ApprovalRequest?
+    /// The run's execution generation: an answer to one of its prompts names it.
+    public var executionGeneration: Int?
+    /// The approvals and questions the run waits on.
+    public var pendingControls: [RunPrompt] = []
 
     enum CodingKeys: String, CodingKey {
         case status, output, error, usage, runtime, approval
         case runID = "run_id"
         case sessionID = "session_id"
+        case executionGeneration = "execution_generation"
+        case pendingControls = "pending_controls"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -541,7 +547,11 @@ public struct RunStatus: Decodable, Sendable, Hashable {
         error = try? c.decodeIfPresent(String.self, forKey: .error)
         usage = try? c.decodeIfPresent(TokenUsage.self, forKey: .usage)
         runtime = try? c.decodeIfPresent(RuntimeInfo.self, forKey: .runtime)
-        approval = try? c.decodeIfPresent(ApprovalRequest.self, forKey: .approval)
+        executionGeneration = try? c.decodeIfPresent(Int.self, forKey: .executionGeneration)
+        pendingControls = (try? c.decodeIfPresent([RunPrompt].self, forKey: .pendingControls)) ?? []
+        // Hermes's run store lists the approval among the prompts it waits on; older gateways name it.
+        approval = (try? c.decodeIfPresent(ApprovalRequest.self, forKey: .approval))
+            ?? pendingControls.lazy.compactMap(\.approval).first
     }
 
     public var isTerminal: Bool {
@@ -570,12 +580,16 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
     public var smartDenied = false
     /// The card's title when the asker names one ("Save to memory?").
     public var title: String?
+    /// The run's execution generation it was asked in (`/v1/runs`): the answer names it.
+    public var executionGeneration: Int?
 
     public var id: String { requestID ?? gatewayRequestID ?? (command ?? "") + (description ?? "") }
 
     enum CodingKeys: String, CodingKey {
         case command, description, choices
         case requestID = "request_id"
+        case promptID = "prompt_id"
+        case executionGeneration = "execution_generation"
         case allowSession = "allow_session"
         case allowPermanent = "allow_permanent"
         case smartDenied = "smart_denied"
@@ -594,7 +608,9 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        requestID = try? c.decodeIfPresent(String.self, forKey: .requestID)
+        // A run's event says `request_id`; its status lists the same prompt as `prompt_id`.
+        requestID = (try? c.decodeIfPresent(String.self, forKey: .requestID)) ?? (try? c.decodeIfPresent(String.self, forKey: .promptID))
+        executionGeneration = try? c.decodeIfPresent(Int.self, forKey: .executionGeneration)
         // Shown as they'd run: nothing invisible or reordering hides in them (`VisibleText`).
         command = VisibleText.of(try? c.decodeIfPresent(String.self, forKey: .command))
         description = VisibleText.of(try? c.decodeIfPresent(String.self, forKey: .description))
@@ -611,7 +627,8 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
         let allowPermanent = try? c.decodeIfPresent(Bool.self, forKey: .allowPermanent)
         if let raw = try? c.decodeIfPresent([String].self, forKey: .choices) {
             // Tiles follow both the offered choices and the allow_* flags.
-            choices = raw.compactMap(ApprovalChoice.init(rawValue:)).filter { choice in
+            // In the tiles' order, whichever order Hermes listed them in.
+            choices = ApprovalChoice.allCases.filter { raw.contains($0.rawValue) }.filter { choice in
                 switch choice {
                 case .session: allowSession != false && !flagged
                 case .always: allowPermanent != false && !flagged

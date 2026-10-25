@@ -133,11 +133,8 @@ enum PushResponder {
             // An API server run: its approval queue lives in the gateway process.
             guard let apiKey else { throw Failure.unknownGateway }
             let client = HermesClient(baseURL: workspace.bot.baseURL, apiKey: apiKey)
-            do {
-                try await client.respondToApproval(runID: runID, requestID: requestID, choice: choice)
-            } catch HermesError.server(409, _, _) {
-                throw Failure.expired
-            }
+            let answer = RunPromptAnswer(kind: .approval, requestID: requestID, value: choice.rawValue, generation: nil)
+            if try await client.answer(answer, runID: runID) == .notPending { throw Failure.expired }
             return
         }
         let session = notice.answer?.sessionID ?? notice.chatID ?? ""

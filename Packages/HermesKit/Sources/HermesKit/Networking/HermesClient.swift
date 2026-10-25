@@ -276,10 +276,46 @@ public struct HermesClient: Sendable {
         let _: JSONValue = try await send("POST", ["v1", "runs", runID, "steer"], body: body)
     }
 
-    public func respondToApproval(runID: String, requestID: String?, choice: ApprovalChoice) async throws {
-        var body: [String: JSONValue] = ["choice": .string(choice.rawValue)]
-        if let requestID { body["request_id"] = .string(requestID) }
-        let _: JSONValue = try await send("POST", ["v1", "runs", runID, "approval"], body: body)
+    /// Answers an approval or a question the run waits on (`RunPromptAnswer`), in the generation
+    /// it was asked in: read from the run's status when its event didn't say, and read again, to
+    /// send once more, if Hermes says it moved while the prompt still waits.
+    @discardableResult
+    public func answer(_ answer: RunPromptAnswer, runID: String) async throws -> RunPromptOutcome {
+        var generation = answer.generation
+        if generation == nil, answer.requestID != nil {
+            // A read that fails goes to the caller, which asks again: the short body it would send
+            // instead is refused for good by a gateway that wants the generation. A gateway that
+            // doesn't know the run (an older one's session stream) takes the short body.
+            do {
+                generation = try await runStatus(runID: runID).executionGeneration
+            } catch HermesError.notFound {
+                generation = nil
+            }
+        }
+        var retried = false
+        while true {
+            do {
+                let reply: JSONValue = try await send(
+                    "POST", ["v1", "runs", runID, answer.kind.rawValue], body: answer.body(generation: generation)
+                )
+                // Settled elsewhere between Hermes's check and the answer.
+                return reply["status"]?.stringValue == "already_resolved" ? .notPending : .answered
+            } catch let error as HermesError {
+                var status: RunStatus?
+                if case .server(409, "stale_generation", _) = error {
+                    status = try? await runStatus(runID: runID)
+                }
+                switch answer.next(after: error, status: status, retried: retried) {
+                case .retry(let fresh):
+                    generation = fresh
+                    retried = true
+                case .settled(let outcome):
+                    return outcome
+                case .fail:
+                    throw RunPromptAnswer.describing(error)
+                }
+            }
+        }
     }
 
     // MARK: - Session chat stream (multimodal turns)

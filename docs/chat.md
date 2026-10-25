@@ -367,7 +367,7 @@ that opens to them, and consecutive subagents share one row.
 | `tool.started`, `tool.completed` | Steps (`tool`, `preview`, `duration`, `error`); no call ids, so start and finish pair by tool name |
 | `reasoning.available` | The reasoning step |
 | `subagent.start`, `subagent.complete` | A "Delegated to subagents" row on the rail |
-| `approval.request`, `approval.responded` | The approval card; answered with `POST /v1/runs/{id}/approval` ([quick-actions.md](quick-actions.md) §3) |
+| `approval.request`, `approval.responded` | The approval card; answered with `POST /v1/runs/{id}/approval`, naming the prompt and the run's `execution_generation` ([quick-actions.md](quick-actions.md) §3) |
 | `run.completed` (`output`, `usage`), `run.failed`, `run.cancelled`, `run.interrupted` | The finished, failed, stopped or interrupted turn |
 | `replay.truncated` | The transcript is reloaded when the turn ends |
 | `run.steered` | Ignored: the steer shows as the person's message |
