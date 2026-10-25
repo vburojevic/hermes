@@ -288,6 +288,95 @@ public struct LiveTurn: Sendable, Equatable {
         return (Array(items.dropLast()), LiveTurn(continuing: stored, sessionID: sessionID, startedAt: startedAt))
     }
 
+    /// The part of this turn Hermes has stored so far (it stores as it goes): the rows after
+    /// `after`, the newest stored message from before the turn. `nil` while nothing of it is.
+    public static func storedPart(of messages: [SessionMessage], after: Int?) -> AssistantTurn? {
+        let rows = messages.filter { message in
+            guard let after else { return true }
+            return (message.id ?? .max) > after
+        }
+        guard case .assistant(let stored)? = TranscriptBuilder.build(rows).last else { return nil }
+        return stored
+    }
+
+    /// A re-attach's replay (`session.events.since`): one with a hole marks the turn for its stored
+    /// rows (`needsReload`), as a run's `replay.truncated` does.
+    public mutating func note(_ replay: EventReplay) {
+        if replay.truncated { needsReload = true }
+    }
+
+    /// A turn marked for its stored rows takes the steps it missed from them (`takeStored`): the
+    /// rows after `after`, the newest stored message from before the turn. Nothing while none of
+    /// it is stored; it stays marked then.
+    public mutating func takeStored(from messages: [SessionMessage], after: Int?) {
+        guard needsReload, !isFinished, let part = Self.storedPart(of: messages, after: after) else { return }
+        takeStored(part)
+    }
+
+    /// Takes the steps this turn missed (`needsReload`) from its stored part: the stored steps
+    /// in their order, each call and each piece of words already on screen kept as it was seen
+    /// (same identity; a call seen running that finished in the hole takes its stored end), words
+    /// seen that Hermes didn't store kept before the call they came before, then what streamed
+    /// in after the newest call seen (with none in common, from the live turn's first call: the
+    /// words before a call are stored with it; with no call at all, the words not stored yet).
+    /// A stored call without its result still runs.
+    /// Calls pair by their ids, which the socket's events carry and the API server's don't.
+    public mutating func takeStored(_ stored: AssistantTurn) {
+        let live = turn.steps
+        func callID(_ step: AssistantStep) -> String? {
+            if case .tool(let tool) = step { tool.callID } else { nil }
+        }
+        func words(_ step: AssistantStep) -> String? {
+            switch step {
+            case .narration(_, let text): "narration:" + text
+            case .reasoning(_, let text): "reasoning:" + text
+            case .tool, .subagent: nil
+            }
+        }
+        var kept: Set<String> = []
+        var newestSeen: Int?
+        var steps = stored.steps.map { step -> AssistantStep in
+            if case .tool(var tool) = step, let id = tool.callID {
+                if let index = live.firstIndex(where: { callID($0) == id }), case .tool(var seen) = live[index] {
+                    newestSeen = max(newestSeen ?? index, index)
+                    kept.insert(seen.id)
+                    if seen.status == .running, let result = tool.result {
+                        seen.status = tool.status
+                        seen.result = seen.result ?? result
+                    }
+                    return .tool(seen)
+                }
+                if tool.result == nil { tool.status = .running }
+                return .tool(tool)
+            }
+            if let stored = words(step), let same = live.first(where: { !kept.contains($0.id) && words($0) == stored }) {
+                kept.insert(same.id)
+                return same
+            }
+            return step
+        }
+        if let newestSeen {
+            for index in live.indices where index < newestSeen && words(live[index]) != nil && !kept.contains(live[index].id) {
+                let next = live[(index + 1)...].first { step in callID(step).map { id in steps.contains { callID($0) == id } } ?? false }
+                let at = next.flatMap { next in steps.firstIndex { $0.id == next.id } } ?? steps.count
+                steps.insert(live[index], at: at)
+                kept.insert(live[index].id)
+            }
+        }
+        let firstCall: Int? = live.firstIndex { step in
+            if case .tool = step { return true }
+            return false
+        }
+        if newestSeen == nil, firstCall == nil {
+            steps += live.filter { words($0) != nil && !kept.contains($0.id) }
+        } else {
+            steps += live[((newestSeen.map { $0 + 1 }) ?? firstCall ?? live.count)...].filter { !kept.contains($0.id) }
+        }
+        turn.steps = steps
+        if !stored.plan.isEmpty { turn.plan = stored.plan }
+        needsReload = false
+    }
+
     /// Marks the turn as stopped locally (e.g. the user cancelled before the server confirmed).
     public mutating func markStopped(now: Date = .now) {
         guard !isFinished else { return }
@@ -334,5 +423,25 @@ public struct LiveTurn: Sendable, Equatable {
         let cleaned = TranscriptBuilder.cleanAssistantText(media.text)
         guard !cleaned.isEmpty else { return }
         turn.steps.append(.narration(id: "\(turn.id)-s\(turn.steps.count)", text: cleaned))
+    }
+}
+
+/// What `session.events.since` answers a chat attaching again on the socket: the events it
+/// missed, newest last, and whether Hermes still held them all. It keeps 512 events or 4 MiB a
+/// session (tui_gateway/event_replay.py); older ones are gone, and `truncated` says the replay
+/// has a hole, so the turn takes its stored rows (`LiveTurn.takeStored`).
+public struct EventReplay: Sendable, Equatable {
+    public var events: [GatewayEvent]
+    public var truncated: Bool
+
+    public init?(_ result: JSONValue, runtime: String) {
+        guard case .array(let frames)? = result["events"] else { return nil }
+        events = frames.map { frame in
+            GatewayEvent(
+                type: frame["type"]?.stringValue ?? "", sessionID: runtime,
+                seq: frame["seq"]?.truncatedIntValue, payload: frame["payload"] ?? .object([:])
+            )
+        }
+        truncated = result["truncated"]?.boolValue ?? false
     }
 }

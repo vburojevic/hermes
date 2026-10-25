@@ -156,6 +156,15 @@ connection drops mid-turn (the socket, or a run's event stream twice in a row), 
 "Reconnecting…" while the app re-attaches and catches up; a lost connection never fails a turn
 that is still running on the gateway. A note sent meanwhile waits for the re-attach, then steers.
 
+Hermes keeps the newest 512 events or 4 MiB of each session for the replay. A socket down longer
+than that gets `truncated: true` from `session.events.since`: the replay has a hole. The turn then
+reads the stored chat at once (Hermes stores as it goes) and takes the steps it missed from it
+(`LiveTurn.takeStored`): the stored steps in order, each call it saw live kept as it saw it, a call
+stored without its result still running, then what streamed in since. Nothing it did while the
+socket was down waits for the turn's end to show. After a gateway restart the session's events
+start again under a new `epoch` and runtime id: nothing is replayed, and the turn reads as it did.
+Mock: "flood" in a Bot Chat, with `POST /api/mock/drop-sockets {"outage": 10}` in its middle.
+
 When Hermes keeps refusing the re-attach (half a minute of `4009` while a dropped socket's turn
 settles), the turn ends with "Couldn't reconnect to this chat. Reload to see how it ended." and
 the chat reloads by itself every few seconds, for up to two minutes, until it is attached again:

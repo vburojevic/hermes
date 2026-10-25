@@ -123,7 +123,10 @@ python3 Tools/mock-hermes/backend.py --port 19119 --password pw   # gated: admin
 
 and turn on **Bot Mode** for the gateway with `127.0.0.1:19119`, or add
 `HERMES_BOOTSTRAP_BACKEND=http://127.0.0.1:19119` to the Debug launch environment. "approve",
-"slow" and "fail" work in Bot Chats too ("marathon" is "slow" for about 45 s, "essay" streams a long
+"slow" and "fail" work in Bot Chats too ("marathon" is "slow" for about 45 s, "flood" reads sixteen
+sources with about 4,800 events in under a minute, more than the replay ring keeps (512 events or
+4 MiB a session, as Hermes): `POST /api/mock/drop-sockets {"outage": 10}` in its middle and the
+re-attach's `session.events.since` answers `truncated` (`docs/chat.md` §2), "essay" streams a long
 Markdown reply for about ten seconds, "widgets" is a coding turn of about 25 s: two files, a failing
 check, a third file and a passing one, with `inline_diff`s as Hermes renders them, and a steer sent
 during the check is read after it, "late reply" ends its turn saying nothing and stores the reply 12 s

@@ -507,6 +507,8 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var requestSyncTask: Task<Void, Never>?
     /// Fetching the chat again until it shows how a turn it lost track of ended (`recoverSoon`).
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
+    /// Reading the stored chat for the steps a replay with a hole missed (`takeStoredSteps`).
+    @ObservationIgnored private var storedStepsTask: Task<Void, Never>?
     /// A send whose answer was lost is being looked into (`arrival`): it re-attaches the chat
     /// itself, and the socket coming back leaves the turn to it.
     @ObservationIgnored private var confirmingSend = false
@@ -3934,6 +3936,7 @@ final class ConversationModel: Identifiable {
         storedReplyWait?.cancel()
         reattachTask?.cancel()
         recoveryTask?.cancel()
+        storedStepsTask?.cancel()
         subscription?.cancel()
         backoff?.cancel()
         settleFallback?.cancel()
@@ -5319,17 +5322,12 @@ extension ConversationModel {
             let running = await attachRetrying()
             guard !Task.isCancelled else { return }
             replayRuntime = nil
-            var frames: [GatewayEvent] = []
+            var replay: EventReplay?
             if live != nil, let roster = gatewayRoster, let runtime = runtimeSessionID, runtime == previous,
                let result = try? await roster.request("session.events.since", [
                    "session_id": .string(runtime), "last_seen": .number(Double(lastSeq ?? 0)),
-               ]), case .array(let replay)? = result["events"] {
-                frames = replay.map { frame in
-                    GatewayEvent(
-                        type: frame["type"]?.stringValue ?? "", sessionID: runtime,
-                        seq: frame["seq"]?.truncatedIntValue, payload: frame["payload"] ?? .object([:])
-                    )
-                }
+               ]) {
+                replay = EventReplay(result, runtime: runtime)
             }
             let held = catchUpBuffer ?? []
             catchUpBuffer = nil
@@ -5341,9 +5339,10 @@ extension ConversationModel {
                 reload()
                 return
             }
-            for event in frames + held {
+            for event in (replay?.events ?? []) + held {
                 receive(event)
             }
+            if let replay { takeStoredSteps(after: replay) }
             if running == nil, isWorking {
                 // Half a minute of refusals: the turn's outcome is on the gateway. Sending the
                 // message again could run it twice, so the card offers a reload, not a retry, and
@@ -5359,6 +5358,25 @@ extension ConversationModel {
             } else if running == false {
                 drainQueueIfIdle() // what waited while offline goes now
             }
+        }
+    }
+
+    /// The socket's replay is in. One with a hole (`session.events.since` answered `truncated`):
+    /// Hermes no longer held every event the turn sent while the socket was down. The turn is
+    /// marked for its stored rows as a run's `replay.truncated` marks it (`LiveTurn.note`), and the
+    /// steps it took meanwhile are read from the stored chat now (Hermes stores as it goes): the
+    /// live turn carries on from them, rather than without them until its end (`docs/chat.md` §2).
+    /// Over the API server the steps have no call ids to pair them by, so its turn waits for its end.
+    private func takeStoredSteps(after replay: EventReplay) {
+        live?.note(replay)
+        guard let turnID = live?.turn.id, live?.needsReload == true, let sessionID else { return }
+        let after = turnBaseline?.turnID == turnID ? turnBaseline?.newest : newestBeforeTurn
+        storedStepsTask?.cancel()
+        storedStepsTask = Task { [weak self] in
+            guard let page = try? await self?.fetchLatest(sessionID), let self, !Task.isCancelled,
+                  self.live?.turn.id == turnID else { return }
+            self.live?.takeStored(from: page.messages, after: after)
+            LoadTrace.mark(self.stableKey, "replay truncated: \(self.live?.needsReload == false ? "took the stored steps" : "nothing stored yet")")
         }
     }
 
@@ -5461,21 +5479,17 @@ extension ConversationModel {
             guard finding == .nothingYet, Date.now < deadline, !Task.isCancelled else { break }
             try? await Task.sleep(for: .seconds(3))
         }
-        var frames: [GatewayEvent] = []
+        var replay: EventReplay?
         if running == true, let roster = gatewayRoster, let runtime = runtimeSessionID, runtime == previous,
            let result = try? await roster.request("session.events.since", [
                "session_id": .string(runtime), "last_seen": .number(Double(lastSeq ?? 0)),
-           ]), case .array(let replay)? = result["events"] {
-            frames = replay.map { frame in
-                GatewayEvent(
-                    type: frame["type"]?.stringValue ?? "", sessionID: runtime,
-                    seq: frame["seq"]?.truncatedIntValue, payload: frame["payload"] ?? .object([:])
-                )
-            }
+           ]) {
+            replay = EventReplay(result, runtime: runtime)
         }
         let held = catchUpBuffer ?? []
         catchUpBuffer = nil
-        for event in frames + held { receive(event) }
+        for event in (replay?.events ?? []) + held { receive(event) }
+        if let replay { takeStoredSteps(after: replay) }
         // Not attached on this socket: the next reload attaches (`botChatReconnected` stood aside).
         if running == nil { runtimeSessionID = nil }
         switch finding {
