@@ -741,7 +741,7 @@ never another reason's words.
 | `SESSION_NOT_OWNED` (another Hermes process) | What holds the chat, from its stored rows: a Bot answering another Bot, a routine, a terminal | Waits at the top of Up Next and goes once the chat is free (`waitForChat`) |
 | `SESSION_NOT_OWNED` (the gateway's queue, "durable queue") | "The gateway has unfinished work in this chat it couldn't confirm. Open the chat where the gateway runs … Nothing was sent." | Waits at the top of Up Next, held: only the person sends it again |
 | `SESSION_OWNER_BUSY` | "The gateway is running a turn in this chat. Your message sends when that turn ends." (with its photo, when Hermes took the photo off) | Waits at the top of Up Next and goes when that turn ends |
-| `SESSION_OWNER_UNCONFIRMED` | Hermes's sentence: "… It may already be queued there: check the chat before sending it again." | Never sent again by itself, never offered as Retry |
+| `SESSION_OWNER_UNCONFIRMED` | Hermes's sentence: "… It may already be queued there: check the chat before sending it again." | Like a lost answer (`LostPrompt`, §2): the card offers Reload, and Send Again only as the person's choice; never Try Again, never sent again by itself or over the API server, and it settles once the stored chat shows it |
 | `MAX_CONCURRENT_SESSIONS` | "Hermes is running as many chats at once as it's set to allow (n of m). Your message sends when one finishes." | Waits at the top of Up Next and goes when a chat finishes |
 | `SESSION_COORDINATION_UNAVAILABLE`, none, or one the app doesn't know | Hermes's own first line | Back in the field, with Hermes's words, to send again |
 

@@ -1886,6 +1886,7 @@ final class ConversationModel: Identifiable {
             animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files, isHeld: true), at: 0) }
             banner = .server(status: 0, code: nil, message: refusal.line)
         case .checkTheChat, .tryAgain:
+            // `.checkTheChat` only before the prompt left (it can't): handled with the turn above.
             restoreDraft(text: text, images: images, files: files, error: HermesError.server(status: 0, code: nil, message: refusal.line))
         }
     }
@@ -4454,6 +4455,21 @@ extension ConversationModel {
                         recoverSoon()
                         return
                     }
+                }
+                if let refusal = (error as? GatewayRPCError).flatMap(SendRefusal.init), refusal.action == .checkTheChat, let submitted {
+                    // The gateway didn't confirm it in time and may have it queued (SESSION_OWNER_UNCONFIRMED):
+                    // like a lost answer, never sent again by itself and never around it over the API
+                    // server. The card says so, offers Reload, and Send Again only as the person's choice.
+                    ConnectionLog.logger.notice("chat: the gateway didn't confirm a message; it isn't sent again by itself")
+                    endDelivery()
+                    isBotTurnOpen = false
+                    failureIsRetryable = false
+                    live?.markFailed(refusal.line)
+                    await finishBotTurn()
+                    unconfirmed = LostPrompt(knownNewestID: submitted.knownNewestID, sentAt: submitted.at)
+                    turnError?.mayResend = true
+                    recoverSoon()
+                    return
                 }
                 if let refusal = (error as? GatewayRPCError).flatMap(SendRefusal.init), live?.runID == nil,
                    !(live?.turn.steps.isEmpty == false) {
