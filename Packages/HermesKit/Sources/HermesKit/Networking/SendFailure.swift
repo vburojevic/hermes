@@ -23,8 +23,11 @@ public enum SendFailure: Equatable, Sendable {
         case GatewaySocket.Failure.notConnected:
             .notSent
         case let refusal as GatewayRPCError:
-            // 5035: "backend is retiring; reconnect to continue", before it ran anything.
-            refusal.code == 5035 ? .notSent : .refused
+            // 5035: "backend is retiring; reconnect to continue", before it ran anything. The
+            // gateway not confirming it in time (SESSION_OWNER_UNCONFIRMED) may still have queued it.
+            if refusal.code == 5035 { .notSent }
+            else if SendRefusal(refusal)?.action == .checkTheChat { .mayHaveArrived }
+            else { .refused }
         case is CancellationError:
             .refused
         default:

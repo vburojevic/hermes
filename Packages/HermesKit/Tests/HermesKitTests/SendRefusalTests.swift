@@ -40,6 +40,14 @@ struct SendRefusalTests {
         #expect(error.errorDescription?.contains("check the chat before sending it again") == true)
     }
 
+    @Test func anUnconfirmedSendMayHaveArrivedSoItIsLookedForNotSentAgain() {
+        let unconfirmed = refusal("SESSION_OWNER_UNCONFIRMED", "The gateway is running a turn in this chat and did not confirm your message in time. It may already be queued there: check the chat before sending it again.")
+        #expect(SendFailure.overSocket(unconfirmed) == .mayHaveArrived)
+        // Refused outright: nothing was sent, so nothing can run twice.
+        #expect(SendFailure.overSocket(refusal("SESSION_OWNER_BUSY", "The gateway is running a turn in this chat and the gateway refused it. Nothing was sent. Send it again when the current turn ends.")) == .refused)
+        #expect(SendFailure.overSocket(refusal(nil, "Hermes could not safely reserve this session. Try again.")) == .refused)
+    }
+
     @Test func theRealChatLimitSaysHowManyAndWaits() throws {
         let error = refusal("MAX_CONCURRENT_SESSIONS", "Hermes is at the active session limit (3/3). Held by: 2 desktop, 1 cli, oldest 4m ago. Try again when another session finishes.")
         let refused = try #require(SendRefusal(error))
