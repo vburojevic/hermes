@@ -21,6 +21,15 @@ public enum RowTime {
         return messageAt ?? activity ?? created
     }
 
+    /// A project's time and its place among projects (`docs/projects.md` §2): the newest of its
+    /// chats' row times, by the rule above. Hermes' `lastActive` for the project is its chats'
+    /// activity, heartbeats and compactions included, so it stands in only while none of its chats
+    /// is known yet; a project with no chats uses its creation time.
+    public static func ofProject(chats: [Date?], chatCount: Int, activity: Date?, created: Date?) -> Date? {
+        if let newest = chats.compactMap(\.self).max() { return newest }
+        return chatCount > 0 ? activity ?? created : created
+    }
+
     /// A list's order: pinned first, then newest first by `time`; rows without one go last, and
     /// ties keep the order they came in.
     public static func ordered<Row>(_ rows: [Row], pinned: (Row) -> Bool, time: (Row) -> Date?) -> [Row] {

@@ -22,7 +22,8 @@ public struct SessionSearchResult: Identifiable, Hashable, Sendable {
     public var source: String?
     public var model: String?
     public var sessionStarted: Date?
-    /// Null on content matches; fall back to `sessionStarted`.
+    /// Hermes' activity for the chat (its session row's `last_active`): it moves with heartbeats
+    /// and compaction, so it's never the time a result shows (`time(row:)`).
     public var lastActive: Date?
     public var messageCount: Int
     public var archived: Bool
@@ -31,8 +32,10 @@ public struct SessionSearchResult: Identifiable, Hashable, Sendable {
 
     public var id: String { "\(profile ?? "default")|\(lineageRoot ?? sessionID)" }
 
-    /// The time to show on the right.
-    public var date: Date? { lastActive ?? sessionStarted }
+    /// The time a result shows and sorts by (`docs/search.md` §2): the chat's row time when the app
+    /// lists the chat (`RowTime`), else when the chat started. Hermes' search doesn't say when the
+    /// matched message was written, and its `last_active` moves for more than messages.
+    public func time(row: Date?) -> Date? { row ?? sessionStarted }
 
     /// A scheduled task's run (`source == "cron"`, as Hermes stores them).
     public var isTaskRun: Bool { source == SessionSearch.taskSource }

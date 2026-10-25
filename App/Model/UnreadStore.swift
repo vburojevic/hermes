@@ -339,8 +339,8 @@ final class UnreadStore {
     }
 
     /// Rows whose chat moved on since their last line was read, or that have none: their newest
-    /// few rows, the Bots and the most recent chats first (the rest as they come on screen,
-    /// `needsLastLine`). A chat in the middle of a turn shows what it's doing instead, and is read
+    /// few rows, the Bots, the most recent chats and each project's newest few first (the rest as
+    /// they come on screen, `needsLastLine`): a project's time is its chats' (`ProjectsModel.rowTime`). A chat in the middle of a turn shows what it's doing instead, and is read
     /// once it stops.
     func readStaleLines() {
         guard let workspace, lineFetches < lineFetchLimit else { return }
@@ -355,6 +355,10 @@ final class UnreadStore {
             let key = session.stableID
             guard !isRunning(key), book.isStale(key, activity: session.lastActive) else { continue }
             needsLastLine(session)
+        }
+        for row in (workspace.projects?.tree.explicitProjects ?? []).flatMap(\.previewSessions) {
+            guard !isRunning(row.stableID), book.isStale(row.stableID, activity: row.lastActive) else { continue }
+            needsLastLine(row.session)
         }
     }
 

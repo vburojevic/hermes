@@ -24,10 +24,31 @@ struct SessionSearchTests {
         """#)
         let result = try #require(json.flatMap(SessionSearchResult.init(json:)))
         #expect(result.sessionID == "s_tip" && result.lineageRoot == "s_root" && result.role == "assistant")
-        #expect(result.date == Date(timeIntervalSince1970: 1760531400.5) && result.lastActive == nil)
+        #expect(result.time(row: nil) == Date(timeIntervalSince1970: 1760531400.5) && result.lastActive == nil)
         #expect(result.matchedWords == ["reconnect"] && !result.isTaskRun)
         let task = try #require(JSONValue.parse(#"{"id": "cron_1", "source": "cron", "snippet": "x"}"#).flatMap(SessionSearchResult.init(json:)))
         #expect(task.isTaskRun && task.sessionID == "cron_1")
+    }
+
+    @Test func aResultsTimeIsItsRowsNotHermesActivity() {
+        let now = Date(timeIntervalSince1970: 1_760_600_000)
+        // Last spoken in yesterday; a heartbeat (or a compaction) 7 minutes ago moved `last_active`.
+        let line = LastLine(speaker: .hermes, text: "nvm loads lazily now.", at: now.addingTimeInterval(-86_400))
+        let started = now.addingTimeInterval(-90_000)
+        let titleHit = SessionSearchResult(sessionID: "s1", title: "zsh startup time", snippet: "zsh startup time",
+                                           sessionStarted: started, lastActive: now.addingTimeInterval(-420))
+        // A chat the list has: its row's time, so it never reads "7 min".
+        let row = RowTime.of(line: line, activity: titleHit.lastActive, created: started)
+        #expect(titleHit.time(row: row) == line.at)
+        // One the app doesn't list: when it started, never the activity.
+        #expect(titleHit.time(row: nil) == started)
+        // Sorted by the time they show.
+        let older = SessionSearchResult(sessionID: "s2", sessionStarted: now.addingTimeInterval(-3 * 86_400),
+                                        lastActive: now.addingTimeInterval(-60))
+        let fresh = SessionSearchResult(sessionID: "s3", sessionStarted: now.addingTimeInterval(-3600), lastActive: nil)
+        let times = ["s1": titleHit.time(row: row), "s2": older.time(row: nil), "s3": fresh.time(row: nil)]
+        #expect(RowTime.ordered([older, titleHit, fresh], pinned: { _ in false }) { times[$0.sessionID] ?? nil }
+            .map(\.sessionID) == ["s3", "s1", "s2"])
     }
 
     @Test func offlineMatchesTitlesOnly() {

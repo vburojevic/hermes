@@ -227,7 +227,7 @@ final class ChatSearch {
                 return all
             }
             found += perBot
-            found.sort { ($0.result.date ?? .distantPast) > ($1.result.date ?? .distantPast) }
+            found = RowTime.ordered(found, pinned: { _ in false }) { self.time(of: $0) }
         }
         return found
     }
@@ -246,6 +246,37 @@ final class ChatSearch {
               Date.now.timeIntervalSince(lastAnnouncement) >= 1 else { return }
         lastAnnouncement = .now
         AccessibilityNotification.Announcement(line).post()
+    }
+
+    // MARK: Its time
+
+    /// The time a result shows and sorts by (`docs/search.md` §2): the row's time for a chat the
+    /// app lists (the chat list, a project's chats, a Bot's chat), else when the chat started.
+    func time(of hit: Hit) -> Date? {
+        hit.result.time(row: workspace.flatMap { rowTime(of: hit, in: $0) })
+    }
+
+    private func rowTime(of hit: Hit, in workspace: BotWorkspace) -> Date? {
+        let result = hit.result
+        if let botName = hit.botName {
+            // A Bot's result opens its Bot Chat, but only the Bot Chat itself has the Bot's row time.
+            guard let roster = workspace.roster, let bot = roster.bot(named: botName), let chat = bot.canonicalSession,
+                  [chat.id, chat.resolvedID].contains(result.sessionID) || result.lineageRoot == chat.id else { return nil }
+            return roster.rowTime(for: bot)
+        }
+        let keys = [result.lineageRoot, result.sessionID].compactMap { $0 }
+        if let session = keys.lazy.compactMap(workspace.session(forKey:)).first
+            ?? workspace.sessions.first(where: { $0.id == result.sessionID }) {
+            return workspace.rowTime(session)
+        }
+        let projects = workspace.projects!
+        for id in keys {
+            guard let projectID = projects.projectID(forSessionID: id), let row = projects.chats(in: projectID).first(where: {
+                $0.id == id || $0.stableID == id
+            }) else { continue }
+            return workspace.rowTime(row)
+        }
+        return nil
     }
 
     // MARK: Where a chat lives

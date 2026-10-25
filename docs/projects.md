@@ -79,7 +79,8 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
 
 - **Sidebar / drawer (Chats mode):** New Chat, Tasks, Skills, then **Projects** (collapsible; the
   collapsed state is remembered), then the chat history. Projects lists pinned projects first, then
-  the most recently active, at most five, then **All Projects** with the project count. The history
+  the rest by their time (below), newest first, at most five, then **All Projects** with the
+  project count. The history
   lists only chats outside a project, except **Pinned**, which keeps any pinned chat. A search
   covers every chat. Bots mode removes the Projects section.
 - **Project row** (`projectRow`): tile (colour + glyph), name, then a pulsing orange working dot if
@@ -107,11 +108,17 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
     holds `projectMenu`.
   - A project that was archived or deleted elsewhere shows "Project not found" with a way back to
     All Projects.
-- **All Projects** (`allProjects`): projects by last activity, then "Found on <gateway>"
+- **A project's time** and its place in both lists (`ProjectsModel.rowTime`, `RowTime.ofProject`)
+  are the newest of its chats' row times ([inbox.md](inbox.md) §2: each chat's newest message, a
+  running turn lifting it until the reply ends), over the chats the app has for it: the tree's
+  newest three, its lanes once opened and its chats in the history. The tree's `lastActive` is
+  Hermes' activity for its chats, which a heartbeat or a compaction moves, so it stands in only
+  while none of its chats is known. A project with no chats uses its creation time.
+- **All Projects** (`allProjects`): projects by their time, newest first, then "Found on <gateway>"
   (`repoSuggestionRow`: Add creates a project from that folder, named after it, with a colour picked
   from the name, without making it active), then Archived (Restore, Delete). Pull to refresh. On
-  the Mac (`macAllProjects`) it is a grid of project cards (tile, name, folder in mono, chats, last
-  activity), the found folders, and New Project… in the toolbar.
+  the Mac (`macAllProjects`) it is a grid of project cards (tile, name, folder in mono, chats, its
+  time), the found folders, and New Project… in the toolbar.
 - Chats mode has no home row; a project home is reached from its row or the chip (§3).
 
 ## 3. Starting and moving chats
@@ -206,6 +213,9 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
 - Chats in a project don't appear again in the flat history, except under Pinned.
 - Moving a running chat keeps it running and moves it to the new project's lane.
 - Deleting a project never deletes chats.
+- A heartbeat or a compaction in a project's chat moves neither the project's time nor its place:
+  seeded, dotfiles (a heartbeat 7 minutes ago) stays last, at its message 32 days ago, and Blog
+  (compacted 25 minutes ago) stays at its last message, three days ago.
 - Project colours render in light, dark and Increase Contrast, with the white glyph at 3:1 or
   better.
 - VoiceOver reads a project row as "Hermes App, project, 9 chats" (or "working"), and a Mac lane

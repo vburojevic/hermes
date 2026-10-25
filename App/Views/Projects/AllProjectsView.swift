@@ -1,8 +1,8 @@
 import HermesKit
 import SwiftUI
 
-/// All Projects (`allProjects`): projects by last activity, the git folders Hermes found that
-/// aren't projects yet ("Found on Studio Mac"), then Archived.
+/// All Projects (`allProjects`): projects by their chats' newest message (`ProjectsModel.rowTime`),
+/// the git folders Hermes found that aren't projects yet ("Found on Studio Mac"), then Archived.
 struct AllProjectsView: View {
     let workspace: BotWorkspace
     var onToggleSidebar: (() -> Void)?
@@ -137,7 +137,7 @@ struct AllProjectsView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Text([ProjectCount.chats(node.sessionCount), node.lastActive.map(LaneChatRow.time)].compactMap { $0 }.joined(separator: " · "))
+                Text([ProjectCount.chats(node.sessionCount), projects.rowTime(node).map(LaneChatRow.time)].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
             }
@@ -243,7 +243,7 @@ struct AllProjectsView: View {
         var parts: [String] = []
         if let path = projects.project(node.id)?.primaryPath ?? node.path { parts.append(projects.displayPath(path)) }
         parts.append(ProjectCount.chats(node.sessionCount))
-        if let date = node.lastActive, node.sessionCount > 0 { parts.append(LaneChatRow.time(date)) }
+        if let date = projects.rowTime(node) { parts.append(LaneChatRow.time(date)) }
         return parts.joined(separator: " · ")
     }
 

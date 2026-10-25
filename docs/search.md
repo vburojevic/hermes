@@ -45,8 +45,11 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
   marker, even unbalanced ones (`SnippetRun.parse`). Markers never show.
 - `role`: who wrote the matched message (`user`, `assistant`); empty for ID and title matches.
   When it's `assistant` the snippet starts with "Hermes:" or the Bot's name.
-- `source`, `model`, `session_started`, `last_active` (may be null; the app falls back to
-  `session_started` for the time on the right), `message_count`, `archived`, `profile`.
+- `source`, `model`, `session_started`, `last_active`, `message_count`, `archived`, `profile`.
+  `last_active` comes from the chat's session row on every result Hermes finds a row for (else it
+  is the start): the newer of the turn heartbeat and the newest stored row, so a heartbeat or a
+  compaction moves it ([inbox.md](inbox.md) §2). No result says when the matched message was
+  written (the content search isn't asked for its `timestamp`). Neither is the time a row shows.
 
 ## 2. Behaviour
 
@@ -60,7 +63,7 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
 
   | Chip | Search |
   |---|---|
-  | All | The gateway's profile, plus one search per Bot (in parallel), newest first. Matching projects first |
+  | All | The gateway's profile, plus one search per Bot (in parallel), newest first by the time each row shows. Matching projects first |
   | Chats | The gateway's profile, without task runs |
   | Projects | Project names that contain every typed word (local, from `projects.list`), then chats that belong to a project |
   | Bots | One search per Bot; each row shows the Bot's face |
@@ -70,6 +73,11 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
 - **Row** (`searchResultRow`): title (else the preview, else "Untitled chat") and time, the
   highlighted snippet, then where it lives: the project tile and lane, the Bot's face and name, or
   "Task run · *task name*".
+- **The time** (`ChatSearch.time(of:)`, `SessionSearchResult.time(row:)`) is the one the chat's
+  row shows (`RowTime`, [inbox.md](inbox.md) §2) for a chat the app lists: in the chat list, among
+  a project's chats, or a Bot's own Bot Chat. A result the app doesn't list shows when its chat
+  started. Never `last_active`: a title hit for a chat last spoken in yesterday doesn't read
+  "7 min" because Hermes' heartbeat moved, and a result agrees with its chat's row.
 - **Matching projects** come before the chat rows, with their tile and folder; tapping one opens
   the project.
 - **Opening a result** opens the chat (a Bot's result opens that Bot's chat) and lands on the first
@@ -117,6 +125,9 @@ chat; `-HERMES_SEARCH` and `-HERMES_PALETTE` type for you):
 - The highlight matches the `>>>` and `<<<` markers, and the markers never show.
 - Opening a result lands on the message and flashes it, also when it's older than the first page.
 - Tasks lists only task runs; Bots shows faces; Search All clears a chip.
+- "zsh" finds zsh startup time (dotfiles) by its title, at its last message 32 days ago, not the
+  heartbeat 7 minutes ago; "outline" finds the blog post's chat at its last message, not its
+  compaction 25 minutes ago.
 - With Bot Mode off the status line says titles only; offline it says saved chats only.
 - ⌘K opens the palette from any Mac window, and it works with the keyboard alone.
 

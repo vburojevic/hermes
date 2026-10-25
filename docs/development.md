@@ -296,7 +296,10 @@ UI tests (`HermesUITests`, `UITests/`) run against the mock: start it first, the
 With `--gateway-port 18642` the backend also has projects (`Tools/mock-hermes/projects.py`): the
 design's Hermes App, Homelab, Blog, Hermes Agent fork and dotfiles, an archived Portfolio written
 by the desktop app, and the found repos caffeinated-site and pantry. "Fix the reconnect after
-sleep" runs a long test turn so Hermes App shows as working. Debug flags: `-HERMES_OPEN projects`,
+sleep" runs a long test turn so Hermes App shows as working. Activity moves without a message there
+too: zsh startup time (dotfiles, last spoken in 32 days ago) had a heartbeat 7 minutes ago, and Post:
+Building Hermes for iPhone (Blog) was compacted 25 minutes ago; search for "zsh" or "outline" to see
+their results' times. Debug flags: `-HERMES_OPEN projects`,
 `-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
 `-HERMES_OPEN project-chat:<id>`, `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin` and
 `-HERMES_DRAWER YES`.

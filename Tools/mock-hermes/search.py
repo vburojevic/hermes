@@ -4,7 +4,9 @@ backend REST API, shaped like hermes_cli/web_routers/sessions.py.
   - q is required (empty -> no results); each word is prefix-matched, quoted phrases match exactly.
   - ID matches first, then message content, then titles; one result per chat; limit (20, at most 100).
   - The snippet is about 40 words around the match with matched words between >>> and <<<.
-  - last_active is null on content hits (only ID and title hits carry it), session_started is set.
+  - Every result carries its chat's last_active from the session row (the newer of the heartbeat and
+    the newest stored row, compaction summaries included), else its start; none says when the matched
+    message was written. session_started is the matched row's.
   - profile=<bot> searches that Bot's chats; sources / exclude_sources filter by source (cron for
     scheduled task runs).
 
@@ -132,7 +134,7 @@ def search(query, body):
             for s in B["STORED"].values():
                 if s["profile"] == profile and not s.get("hidden"):
                     rows.append(({"id": s["id"], "title": s.get("title"), "source": s.get("source"), "model": None,
-                                  "started_at": s["started_at"], "last_active": s["last_active"], "preview": "",
+                                  "started_at": s["started_at"], "last_active": B["freshest"](s), "preview": "",
                                   "archived": False}, list(s["messages"])))
     else:
         with G.LOCK:
@@ -145,9 +147,11 @@ def search(query, body):
 
     results, seen = [], set()
 
-    def add(s, messages, snip, role, last_active):
+    def add(s, messages, snip, role):
         if s["id"] in seen or len(results) >= limit:
             return
+        # As add_lineage_result: the session's rich row overrides the hit's own last_active.
+        last_active = s["last_active"] or s["started_at"]
         seen.add(s["id"])
         results.append({
             "session_id": s["id"], "id": s["id"], "lineage_root": s["id"], "title": s["title"], "preview": s["preview"],
@@ -157,15 +161,15 @@ def search(query, body):
 
     for s, messages in rows:  # pasted ids
         if s["id"].startswith(q.strip()):
-            add(s, messages, s["preview"] or f"Session ID: {s['id']}", None, s["last_active"])
+            add(s, messages, s["preview"] or f"Session ID: {s['id']}", None)
     hits = []
     for s, messages in rows:
         for m in messages:
             if m["role"] in ("user", "assistant") and isinstance(m.get("content"), str) and matches(m["content"], terms):
                 hits.append((m.get("timestamp") or 0, s, messages, m))
     for _, s, messages, m in sorted(hits, key=lambda h: h[0], reverse=True):
-        add(s, messages, snippet(m["content"], terms), m["role"], None)
+        add(s, messages, snippet(m["content"], terms), m["role"])
     for s, messages in rows:  # titles fill the rest
         if matches(s["title"] or "", terms):
-            add(s, messages, snippet(s["title"], terms), None, s["last_active"])
+            add(s, messages, snippet(s["title"], terms), None)
     return 200, {"results": results}

@@ -91,7 +91,8 @@ them before the gateway answers; a line kept without its time is read again once
   newest row's time, so the copy kept on the device never puts back an older line.
 - **The others**: when a row's activity (the list's `last_active`, a Bot's chat's) moves past
   the activity its line was read at, by more than a second, the chat's newest 8 rows are read
-  again: the Bots and the 20 newest chats as soon as the lists move, rows further down as they
+  again: the Bots, the 20 newest chats and each project's newest three (the tree's preview rows)
+  as soon as the lists move, rows further down as they
   come on screen, 4 reads at a time (1 while the Mac is busy), once per activity. A chat in a
   turn shows its activity line and is read when it stops.
 - A line read at an earlier activity never replaces one read at a later activity: reads come
@@ -116,7 +117,9 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
 - Pinned first, then by each row's time, newest first; no date sections (`RowTime.ordered`).
 - **A row's time is its last line's message** (`RowTime`): the newest message a person or a Bot
   wrote (a reply: when it ended), the same one line 2 shows. It's also what the row sorts by, in
-  the chats, the Bots, group chats (their log's newest message) and a project's lanes. Hermes'
+  the chats, the Bots, group chats (their log's newest message) and a project's lanes. A project
+  takes the newest of its chats' times (`RowTime.ofProject`, [projects.md](projects.md) §2), and a
+  search result its chat's row's ([search.md](search.md) §2). Hermes'
   `last_active` moves for more than messages, so it only stands in until the line is read:
   - it's the newer of the turn heartbeat (`last_activity_at`, stamped about once a minute by any
     turn: API calls, tools, compaction, retries) and the newest stored row of any kind, a
