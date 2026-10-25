@@ -578,8 +578,6 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var skipBackoff = false
     /// The turn in flight runs over the gateway socket (decided when it starts).
     @ObservationIgnored private var turnUsesGateway = false
-    /// The turn in flight was a queued message: it goes as `prompt.submit {queued: true}`.
-    @ObservationIgnored private var turnQueued = false
 
     init(workspace: BotWorkspace, session: HermesSession? = nil) {
         self.workspace = workspace
@@ -2991,7 +2989,7 @@ final class ConversationModel: Identifiable {
         // The tray gives up the message as it appears in the chat, in one movement.
         animateRows {
             queue.removeAll { $0.id == item.id }
-            start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts, queued: true)
+            start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts)
             if let pendingUser { userCaptions[pendingUser.id] = .fromQueue }
         }
     }
@@ -3142,7 +3140,7 @@ final class ConversationModel: Identifiable {
         if turnError?.canRetry == false, heldOver?.endUnheard != true { turnError = nil }
     }
 
-    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, queued: Bool = false, voice: VoiceTurn? = nil) {
+    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, voice: VoiceTurn? = nil) {
         recoveryTask?.cancel() // a new turn: whatever an earlier one left uncertain shows with it
         settleBackgroundRuns()
         hasUndoneMessage = false
@@ -3169,7 +3167,6 @@ final class ConversationModel: Identifiable {
         armedSteers = []
         queuePaused = false
         sendsAfterStop = false
-        turnQueued = queued
         animateRows {
             pendingUser = entry
             redirectedParts = []
@@ -4378,7 +4375,10 @@ extension ConversationModel {
                 submitted = SentPrompt(at: .now, knownNewestID: rawMessages.last?.id)
                 waitingChatLeft()
                 var submit: [String: JSONValue] = ["session_id": .string(runtime), "text": .string(prompt)]
-                if turnQueued { submit["queued"] = .bool(true) } // a queued message never becomes a steer
+                // A new message never becomes a steer or a redirect of a turn this device hasn't
+                // seen yet (a process's notice, a held message Hermes sends as a turn ends, another
+                // device's): with `queued` a busy chat queues it, and the answer says so.
+                submit["queued"] = .bool(true)
                 if let voice = turnVoice { submit.merge(voice.submitParams) { $1 } }
                 // Patient: on an open socket the answer comes when a frozen backend wakes; a socket that
                 // dies fails it at once.
@@ -4393,13 +4393,21 @@ extension ConversationModel {
                     answer = try await roster.request("prompt.submit", submit, timeout: BotRoster.patientTimeout)
                 }
                 endDelivery()
-                if turnVoice != nil {
-                    // Spoken turns are marked in the chat (`docs/voice.md` §4.3), by the row Hermes stored.
-                    SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: answer["user_row_id"]?.truncatedIntValue, session: sessionID)
-                }
                 chatWaitAttempts = 0
                 chatHold = nil
                 chatHolder = nil
+                // Only Hermes's answer says whether the message started its own turn (`SubmitAnswer`).
+                let outcome = SubmitAnswer(result: answer)
+                guard case .started(let userRowID) = outcome else {
+                    hermesTook(outcome, item: QueuedFollowUp(
+                        text: text, parts: turnParts?.hasStructure == true ? turnParts : nil, skills: turnSkills, images: images, files: files
+                    ))
+                    return
+                }
+                if turnVoice != nil {
+                    // Spoken turns are marked in the chat (`docs/voice.md` §4.3), by the row Hermes stored.
+                    SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: userRowID, session: sessionID)
+                }
                 turnGate.take()
                 if live?.runID == nil { apply(.runStarted(runID: runtime)) }
                 break sending
@@ -4501,6 +4509,36 @@ extension ConversationModel {
         }
         await waitForBotTurn()
         await finishBotTurn()
+    }
+
+    /// Hermes didn't start a turn for the message (`SubmitAnswer`, `docs/chat.md` §4c). It holds it
+    /// behind a turn running in this chat, or in the gateway's own queue, and sends it as a turn of
+    /// its own later; or it put it into the running turn. The turn on screen, if there is one, is
+    /// Hermes's, never this message's: it carries on as a turn this device didn't start.
+    private func hermesTook(_ outcome: SubmitAnswer, item: QueuedFollowUp) {
+        ConnectionLog.logger.notice("chat: Hermes didn't start a turn for a message (\(String(describing: outcome), privacy: .public))")
+        animateRows {
+            pendingUser = nil
+            // In the tray until its turn starts; Hermes sends it after the one running.
+            if outcome.isQueued { holdOnGateway(item.line) }
+        }
+        if outcome == .steered || outcome == .redirected {
+            addSteer(item.text, wasRedirect: outcome == .redirected)
+        }
+        switch outcome {
+        case .queuedBehindTurn, .steered, .redirected:
+            // A turn runs here: the one on screen is it. Its message is read from the live session.
+            isRemoteTurn = true
+            turnGate.take()
+            Task { await readRemoteTurn() }
+        case .queuedOnGateway, .voiceStopped, .started:
+            // Nothing runs here for it: the gateway's turn reaches this socket only as the start and
+            // end of this message's own, which then shows as a turn of its own.
+            isBotTurnOpen = false
+            isRemoteTurn = false
+            turnGate = TurnSettleGate()
+            animateRows { live = nil }
+        }
     }
 
     /// The gateway's words for a voice message the device heard none in (`POST
