@@ -476,7 +476,7 @@ by the desktop app, and the found repos caffeinated-site and pantry. "Fix the re
 sleep" runs a long test turn so Hermes App shows as working. Activity moves without a message there
 too: zsh startup time (dotfiles, last spoken in 32 days ago) had a heartbeat 7 minutes ago, and Post:
 Building Hermes for iPhone (Blog) was compacted 25 minutes ago; search for "zsh" or "outline" to see
-their results' times. Debug flags: `-HERMES_OPEN projects`,
+their results' times, and All Projects to see dotfiles stay last. Debug flags: `-HERMES_OPEN projects`,
 `-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
 `-HERMES_OPEN project-chat:<id>`, `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin` and
 `-HERMES_DRAWER YES`.

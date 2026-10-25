@@ -100,25 +100,32 @@ final class ProjectsModel {
         projects.values.filter(\.archived).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// The sidebar's projects: pinned ones first, then the most recently active, at most five.
+    /// The sidebar's projects: pinned ones first, then by their time (`rowTime`), at most five.
     var sidebarProjects: [ProjectNode] {
         let nodes = tree.explicitProjects
         let pinned = pinnedIDs.compactMap { id in nodes.first { $0.id == id } }
-        let rest = byActivity(nodes.filter { !pinnedIDs.contains($0.id) })
+        let rest = byTime(nodes.filter { !pinnedIDs.contains($0.id) })
         return Array((pinned + rest).prefix(5))
     }
 
-    /// All Projects: projects someone made, newest activity first.
+    /// All Projects: projects someone made, newest first by their time (`rowTime`).
     var projectsByActivity: [ProjectNode] {
-        byActivity(tree.explicitProjects)
+        byTime(tree.explicitProjects)
     }
 
-    private func byActivity(_ nodes: [ProjectNode]) -> [ProjectNode] {
-        nodes.sorted { a, b in
-            let lhs = a.lastActive ?? projects[a.id]?.createdAt ?? .distantPast
-            let rhs = b.lastActive ?? projects[b.id]?.createdAt ?? .distantPast
-            return lhs > rhs
-        }
+    private func byTime(_ nodes: [ProjectNode]) -> [ProjectNode] {
+        RowTime.ordered(nodes, pinned: { _ in false }) { self.rowTime($0) }
+    }
+
+    /// A project's time and place (`RowTime.ofProject`, `docs/projects.md` §2): the newest row
+    /// time of the chats the app has for it, not the tree's `lastActive`, which a heartbeat or a
+    /// compaction in any of its chats moves.
+    func rowTime(_ node: ProjectNode) -> Date? {
+        guard let workspace else { return node.lastActive }
+        var times = chats(in: node.id).map(workspace.rowTime)
+        times += workspace.sessions.filter { projectID(forSession: $0) == node.id }.map(workspace.rowTime)
+        return RowTime.ofProject(chats: times, chatCount: node.sessionCount, activity: node.lastActive,
+                                 created: projects[node.id]?.createdAt)
     }
 
     /// The chats the app has for a project: its lanes' once they're loaded, and the tree's newest few.
@@ -300,7 +307,11 @@ final class ProjectsModel {
             if index[id] == project || fresh.scopedSessionIDs.contains(id) { placedSessions[id] = nil }
         }
         sessionIndex = index
-        if fresh != tree { tree = fresh }
+        if fresh != tree {
+            tree = fresh
+            // Its projects' newest chats, for the projects' times.
+            workspace?.unread.readStaleLines()
+        }
         let byID = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         if byID != projects { projects = byID }
         let known = Set(byID.keys)

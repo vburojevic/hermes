@@ -189,6 +189,31 @@ struct ProjectsTests {
         #expect(folders.contains("~/.Trash/"))
     }
 
+    @Test func aProjectsTimeAndPlaceAreItsChatsNewestMessage() {
+        let now = Date(timeIntervalSince1970: 1_760_600_000)
+        func ago(_ seconds: Double) -> Date { now.addingTimeInterval(-seconds) }
+        // dotfiles: last spoken in 32 days ago, a heartbeat 7 minutes ago. Blog: last spoken in 3 days
+        // ago, compacted 25 minutes ago. Homelab: a reply 3 hours ago.
+        let dotfiles = (rows: [RowTime.of(line: LastLine(speaker: .hermes, text: "Lazy now.", at: ago(32 * 86_400)), activity: ago(420), created: nil)],
+                        activity: ago(420), id: "dotfiles")
+        let blog = (rows: [RowTime.of(line: LastLine(speaker: .hermes, text: "Outline:", at: ago(3 * 86_400)), activity: ago(1500), created: nil),
+                           RowTime.of(line: LastLine(speaker: .you, text: "RSS dates?", at: ago(6 * 86_400)), activity: ago(6 * 86_400), created: nil)],
+                    activity: ago(1500), id: "blog")
+        let homelab = (rows: [RowTime.of(line: LastLine(speaker: .hermes, text: "Upgraded.", at: ago(3 * 3600)), activity: ago(3 * 3600), created: nil)],
+                       activity: ago(3 * 3600), id: "homelab")
+        let times = Dictionary(uniqueKeysWithValues: [dotfiles, blog, homelab].map { project in
+            (project.id, RowTime.ofProject(chats: project.rows, chatCount: project.rows.count, activity: project.activity, created: ago(60 * 86_400)))
+        })
+        // Neither the heartbeat nor the compaction moves its project.
+        #expect(times["dotfiles"] == ago(32 * 86_400) && times["blog"] == ago(3 * 86_400))
+        #expect(RowTime.ordered(["dotfiles", "blog", "homelab"], pinned: { _ in false }) { times[$0] ?? nil } == ["homelab", "blog", "dotfiles"])
+        // A chat whose line isn't read yet stands at its activity, as a chat row does.
+        #expect(RowTime.ofProject(chats: [RowTime.of(line: nil, activity: ago(420), created: nil)], chatCount: 1, activity: ago(420), created: nil) == ago(420))
+        // No chats known yet: Hermes' activity stands in. No chats at all: when it was made.
+        #expect(RowTime.ofProject(chats: [], chatCount: 4, activity: ago(420), created: ago(86_400)) == ago(420))
+        #expect(RowTime.ofProject(chats: [], chatCount: 0, activity: nil, created: ago(86_400)) == ago(86_400))
+    }
+
     @Test func abbreviatesHomeFolders() {
         #expect(ProjectPath.abbreviated("/Users/ada/Code/app") == "~/Code/app")
         #expect(ProjectPath.abbreviated("/home/ada/blog") == "~/blog")
