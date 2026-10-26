@@ -1,6 +1,6 @@
 import Foundation
 
-/// How Hermes stores the photos a message carried, so the bubble shows them again (`docs/chat.md` §2).
+/// How Hermes stores the photos a message carried, so the bubble shows them again (`docs/chat.md` §1).
 ///
 /// A turn with photos stores the words, then an `@image:<path>` line per photo (quoted when the path
 /// has spaces or brackets), then, when a vision model got the photos themselves, a `[screenshot]` line

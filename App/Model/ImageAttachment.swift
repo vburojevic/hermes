@@ -53,8 +53,8 @@ struct ImageAttachment: Identifiable, Hashable {
     }
 }
 
-/// Hermes stores sent images only as `[screenshot]` placeholders, so the app keeps
-/// its own copy to show them again when the conversation is reopened.
+/// Hermes stores sent images only as `@image:` paths and `[screenshot]` placeholders (``StoredImages``,
+/// `docs/chat.md` §1), so the app keeps its own copy to show them again when the conversation is reopened.
 @MainActor
 final class SentImageStore {
     private let directory: URL

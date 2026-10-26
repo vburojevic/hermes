@@ -1840,7 +1840,8 @@ final class ConversationModel: Identifiable {
         }
     }
 
-    /// Re-attaches locally kept images to user messages the server stored as `[screenshot]`.
+    /// Re-attaches locally kept images to user messages the server stored with photo lines
+    /// (`@image:` paths and `[screenshot]` placeholders, ``StoredImages``).
     private func resolveImages(in items: [TranscriptItem]) {
         guard let store = workspace?.imageStore, let key = stableKey else { return }
         var occurrences: [String: Int] = [:]
