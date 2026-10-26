@@ -45,7 +45,9 @@ extension AppPlugin {
         public init() {}
     }
 
-    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.5 sets a badge left
+    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.6 keeps the badge the
+    /// true unread count (news read before its notice goes isn't sent, reads ride on background pushes and
+    /// on each device's check-in), same access; 1.4.5 sets a badge left
     /// showing a count the person can't see, same access; 1.4.4 seals a card fill
     /// as flagged too, for older app builds, same access; 1.4.3 sends a card fill's notification as
     /// open-only, same access; 1.4.2 counts only chats the app lists in a sleeping
@@ -59,10 +61,10 @@ extension AppPlugin {
     /// Settings → Setup → Priority); 1.2.1 sent no notice for a turn that ends in "[SILENT]".
     public static let push = AppPlugin(
         name: "hermes-app-push", repo: "vburojevic/hermes-app-push",
-        ref: "75b06d277e8e274b6900e6d70fab4da7dfe9bf6e", version: "1.4.5", minimumVersion: "1.4.5",
+        ref: "16a6be499e1c1b223d8bf63f8af35ccb5517b0cd", version: "1.4.6", minimumVersion: "1.4.6",
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
                        "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess, "1.4.2": pushAccess,
-                       "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess],
+                       "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess, "1.4.6": pushAccess],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )
