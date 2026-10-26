@@ -23,7 +23,7 @@ appears only when it has content:
 
 1. The queue tray (Send Next, [follow-ups.md](follow-ups.md) §4)
 2. A strip for what the field is doing: editing a queued message (`composerQueueEditing`),
-   steering a helper (`helperSteer`), Edit and Resend ("Editing · sends as a new branch",
+   steering a helper (`helperSteer`), Edit and Resend ("Editing · goes in a new chat; this one stays",
    `composerEditing`), or a message given back by Undo ("Undone · your message is back to edit")
 3. Image thumbnails
 4. Skill chips (up to five, `composerSkills`), then file and PDF chips (`composerFiles`)

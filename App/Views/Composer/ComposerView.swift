@@ -311,7 +311,7 @@ struct ComposerView: View {
                     .transition(Self.rowAppears)
             }
             if conversation.editing != nil {
-                ComposerStrip(symbol: "pencil", text: String(localized: "Editing · sends as a new branch"), closeLabel: "Stop editing") {
+                ComposerStrip(symbol: "pencil", text: String(localized: "Editing · goes in a new chat; this one stays"), closeLabel: "Stop editing") {
                     conversation.cancelEditing()
                 }
                 .padding(.horizontal, 12)
