@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610261052 (October 26, 2026)
+
+- **Notifications:** the app icon and Dock badge always show the true unread count
+- **Notifications:** the app moves its push plugin to 1.4.6, so the badge's gateway-side fixes reach every device
+
 ### Build 2610260654 (October 26, 2026)
 
 - **Chat:** a finished background process says what ran, how it went and how long it took, and several in a row are one line that opens to a row each
