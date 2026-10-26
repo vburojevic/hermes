@@ -519,6 +519,12 @@ struct RootView: View {
             if index > 0 { try? await Task.sleep(for: .seconds(1.2)) }
             let mode = modes.indices.contains(index) ? FollowUpMode(rawValue: modes[index]) : modes.last.flatMap(FollowUpMode.init(rawValue:))
             conversation.followUpPick = mode
+            // `-HERMES_FOLLOWUP_IMAGE <path>` attaches that picture to the follow-up, as a paste does
+            // (a photo sent while a turn runs, without the system's picker or the clipboard).
+            if index == 0, let path = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_IMAGE"),
+               let data = FileManager.default.contents(atPath: path), let image = await ImageAttachment.make(from: data) {
+                conversation.attachments.append(image)
+            }
             conversation.draft = followUp
             if UserDefaults.standard.bool(forKey: "HERMES_FOLLOWUP_SEND") {
                 try? await Task.sleep(for: .milliseconds(600))
