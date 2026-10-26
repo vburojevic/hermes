@@ -21,10 +21,17 @@ public struct BotMessageStep: Hashable, Sendable {
         self.error = error
     }
 
-    /// The `message_agent` call `tool` made, or nil for any other step.
+    /// The message `tool` sent another Bot, or nil for any other step: a `message_agent` call, or
+    /// a `terminal` call running `hermes -p <bot> chat -q …` itself (`ProcessNaming.botMessage`).
     public init?(_ tool: ToolActivity) {
+        if tool.name == "terminal" {
+            guard let command = tool.startedCommand, let sent = ProcessNaming.botMessage(in: command) else { return nil }
+            target = sent.profile
+            text = sent.text
+            return
+        }
         guard tool.name == "message_agent" else { return nil }
-        let arguments = tool.arguments
+        let arguments = Self.arguments(tool.arguments)
         let target = (arguments?["target"]?.stringValue ?? arguments?["to"]?.stringValue ?? "")
             .trimmingCharacters(in: .whitespaces)
         let result = tool.result.flatMap(ToolDisplayCache.json)
@@ -37,6 +44,26 @@ public struct BotMessageStep: Hashable, Sendable {
             else { return nil }
             return ProcessOutput.errorMessage(in: result)
         }
+    }
+
+    /// The call's arguments as an object. A stored row holds them as a JSON string, which a
+    /// provider can encode twice (a string holding the object); a live event holds the object.
+    static func arguments(_ value: JSONValue?) -> JSONValue? {
+        switch value {
+        case .object?: return value
+        case .string(let text)?:
+            let parsed = JSONValue.parse(text)
+            if case .object? = parsed { return parsed }
+            return nil
+        default: return nil
+        }
+    }
+
+    /// Whether its step draws anything under the title row (`processStepMessage`): the words it
+    /// sent, the answer, or while it waits the line saying where the answer will show. With none
+    /// of them, the title row alone, never an empty box.
+    public func showsBody(hasAnswer: Bool, delivery: Delivery?) -> Bool {
+        !text.isEmpty || hasAnswer || delivery == .waiting
     }
 
     /// The name to show: the Bot's own title when the roster knows the profile, else its profile

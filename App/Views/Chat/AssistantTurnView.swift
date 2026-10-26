@@ -1443,17 +1443,26 @@ private struct ProcessStepLine: View {
         }
     }
 
+    /// Under the title row only what has something to read: a finished step never shows an empty
+    /// box (`ProcessSnippet`, `BotMessageStep.showsBody`).
     @ViewBuilder private var snippet: some View {
         if let message {
-            messageSnippet(message)
-        } else if !command.isEmpty || latest != nil {
-            commandSnippet
+            let answer = answer
+            if message.showsBody(hasAnswer: answer != nil, delivery: delivery) {
+                messageSnippet(message, answer: answer)
+            }
+        } else {
+            let snippet = ProcessSnippet(command: command, latest: latest)
+            if !snippet.isEmpty {
+                commandSnippet(snippet)
+            }
         }
     }
 
     /// What the message said, a few lines with Show More, and under a hairline the answer, or
-    /// while it waits a still line saying where it will show (`processStepMessage`).
-    private func messageSnippet(_ message: BotMessageStep) -> some View {
+    /// while it waits a still line saying where it will show (`processStepMessage`). Without the
+    /// words, the answer opens the box, with no hairline over nothing.
+    private func messageSnippet(_ message: BotMessageStep, answer: (text: String, failed: Bool)?) -> some View {
         let name = message.name(botName: { conversation?.botTitle($0) })
         return VStack(alignment: .leading, spacing: 6) {
             if !message.text.isEmpty {
@@ -1471,10 +1480,12 @@ private struct ProcessStepLine: View {
                     .foregroundStyle(answer.failed ? Theme.danger : Theme.secondaryText)
                     ExpandableText(text: answer.text, markdown: !answer.failed, lines: 3, tone: answer.failed ? .secondary : .primary)
                 }
-                .padding(.top, 8)
+                .padding(.top, message.text.isEmpty ? 0 : 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .top) {
-                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                    if !message.text.isEmpty {
+                        Rectangle().fill(Theme.hairline).frame(height: 1)
+                    }
                 }
             } else if delivery == .waiting {
                 // Still: the turn's header is the one live line, and this turn may be long done.
@@ -1490,13 +1501,13 @@ private struct ProcessStepLine: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private var commandSnippet: some View {
+    private func commandSnippet(_ snippet: ProcessSnippet) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            if !command.isEmpty {
+            if let command = snippet.command {
                 Text(verbatim: "$ " + command)
                     .foregroundStyle(Theme.tertiaryText)
             }
-            if let latest {
+            if let latest = snippet.latest {
                 Text(verbatim: latest)
                     .foregroundStyle(state == .failed ? Theme.danger : Theme.secondaryText)
             }
@@ -1625,7 +1636,7 @@ private struct ToolDetails: View {
         VStack(alignment: .leading, spacing: 10) {
             let output = tool.commandOutput
             // The output block opens with the command itself; without one, show it here in full.
-            if output == nil || output?.lines.isEmpty == true, let preview = tool.preview, !preview.isEmpty {
+            if output == nil || output?.lines.isEmpty == true, let preview = tool.detailsPreview {
                 Text(preview)
                     .font(Theme.Typography.code)
                     .foregroundStyle(Theme.secondaryText)
@@ -1723,16 +1734,6 @@ struct ToolAttachments: View {
         if tool.status != .running, let risk = tool.risk {
             RiskNote(risk: risk)
         }
-    }
-}
-
-extension ToolActivity {
-    /// Whether the step's row opens to anything: the full command, output, a diff, results.
-    var hasDetails: Bool {
-        guard status != .running else { return false }
-        if displayDiff != nil || !searchResults.isEmpty || commandOutput != nil { return true }
-        if preview?.isEmpty == false { return true }
-        return result?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 }
 

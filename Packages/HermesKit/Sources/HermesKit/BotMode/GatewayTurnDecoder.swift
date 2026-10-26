@@ -45,6 +45,7 @@ public enum GatewayTurnDecoder {
                 : nonEmpty(payload["preview"]?.stringValue) ?? nonEmpty(payload["context"]?.stringValue)
                     ?? ToolDescriptor.argumentPreview(name: name, arguments: payload["args"])
             events = name.hasPrefix("_") ? [] : [.toolStarted(id: payload["tool_id"]?.stringValue, name: name, preview: preview, at: nil)]
+                + arguments(payload, name: name)
         case "tool.complete":
             let name = payload["name"]?.stringValue ?? "tool"
             let resultText = nonEmpty(payload["result_text"]?.stringValue)
@@ -63,6 +64,7 @@ public enum GatewayTurnDecoder {
             if !finished.isEmpty, diff != nil || output != nil {
                 finished.append(.toolDetails(id: payload["tool_id"]?.stringValue, name: name, diff: diff, output: output))
             }
+            if !finished.isEmpty { finished += arguments(payload, name: name) }
             if let todos = PlanItem.list(from: payload["todos"]) {
                 finished.append(.plan(todos))
             }
@@ -127,6 +129,15 @@ public enum GatewayTurnDecoder {
             events = []
         }
         return events.map { SequencedTurnEvent(seq: event.seq, event: $0) }
+    }
+
+    /// The call's arguments (`args`), kept on the live step as its stored row has them. Never for
+    /// typing into a page or Passwords: those steps say what happened, not what was typed
+    /// (`docs/web.md` §4).
+    static func arguments(_ payload: JSONValue, name: String) -> [TurnEvent] {
+        guard !name.hasPrefix("_"), !WebStep.hidesArguments(name), case .object(let fields)? = payload["args"], !fields.isEmpty
+        else { return [] }
+        return [.toolArguments(id: payload["tool_id"]?.stringValue, name: name, arguments: .object(fields))]
     }
 
     /// Desktop's `providerWaitText`: wait notices the core emits after prolonged silence.

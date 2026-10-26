@@ -239,6 +239,31 @@ public enum ProcessNaming {
         return profile(in: words)
     }
 
+    /// A message to another Bot sent by running Hermes itself, `hermes -p <bot> chat -q <words>`
+    /// (`hermes_cli/_parser.py`: `-q`, `--query`): the Bot's profile and the words. Nil for any
+    /// other command. `--query-file` carries its words in a file: the message shows none.
+    public static func botMessage(in command: String) -> (profile: String, text: String)? {
+        var words = commandWords(command).map(\.value)
+        if let inner = shellCommandLine(words) { words = commandWords(inner).map(\.value) }
+        // Of `cd ~ && hermes …`, the command that sends it.
+        words = words.split(whereSeparator: { $0 == "&&" || $0 == ";" || $0 == "||" }).last.map(Array.init) ?? words
+        guard words.first.map(basename) == "hermes" else { return nil }
+        let args = Array(words.dropFirst())
+        guard argumentsSkippingProfile(args).first(where: { !$0.hasPrefix("-") }) == "chat" else { return nil }
+        var text = ""
+        for (index, word) in args.enumerated() {
+            if (word == "-q" || word == "--query"), index + 1 < args.count {
+                text = args[index + 1]
+                break
+            }
+            if word.hasPrefix("--query=") {
+                text = String(word.dropFirst("--query=".count))
+                break
+            }
+        }
+        return (profile(in: args) ?? "default", text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     private static func profile(in args: [String]) -> String? {
         for (index, word) in args.enumerated() {
             if (word == "-p" || word == "--profile"), index + 1 < args.count { return args[index + 1] }

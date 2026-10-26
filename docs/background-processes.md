@@ -97,8 +97,12 @@ why. Its state says where the message stands, not what its delivery process did:
 with a green check; "Waiting · 2 min" with a still grey dot and "No reply yet. Engineer's answer
 shows here when it comes." (nothing shimmers); "Not delivered" in red on a red node with ×. A
 delivery that ended some other way shows the process's own state. Its name is the Bot's ("Message
-to Engineer", never the handle Hermes answers with). A step with neither a command nor a line shows
-no empty box.
+to Engineer", never the handle Hermes answers with). A Bot running `hermes -p <bot> chat -q …` in
+the background is the same message step, its words the query ([chat.md](chat.md) §2a).
+
+Under the title row only what has something to read (`ProcessSnippet`, `BotMessageStep.showsBody`):
+a step with neither a command nor a line, or a message with no words, no answer and nothing waited
+for, is its title row alone. A finished step never shows an empty box.
 
 When a process finishes, Hermes tells the chat with a notice the app shows as one line saying which
 and how ("Tests failed · exit 1", "Engineer replied"); notices in a row fold into one, and each

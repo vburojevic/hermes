@@ -260,7 +260,8 @@ struct GatewayTurnDecoderTests {
         #expect(decode("reasoning.delta", #"{"text":"think"}"#) == [.reasoning("think", replacing: false)])
         #expect(decode("reasoning.available", #"{"text":"all of it"}"#) == [.reasoning("all of it", replacing: true)])
         #expect(decode("tool.start", #"{"tool_id":"call_1","name":"terminal","context":"ls -la","args":{"command":"ls -la"}}"#)
-            == [.toolStarted(id: "call_1", name: "terminal", preview: "ls -la", at: nil)])
+            == [.toolStarted(id: "call_1", name: "terminal", preview: "ls -la", at: nil),
+                .toolArguments(id: "call_1", name: "terminal", arguments: .object(["command": .string("ls -la")]))])
         #expect(decode("tool.complete", #"{"tool_id":"call_1","name":"terminal","duration_s":1.5,"summary":"2 files","result":{"output":"a b"}}"#)
             == [.toolFinished(id: "call_1", name: "terminal", failed: false, duration: 1.5, resultPreview: "2 files", at: nil)])
         #expect(decode("tool.start", #"{"tool_id":"x","name":"_internal"}"#).isEmpty)

@@ -15,6 +15,15 @@ Scripted turns, in Bot Chats and normal chats:
                                             it still runs
   "trailhead" or "deploy log"             -> a message to Ada through `message_agent` that fails
                                             (a JSON error, exit 1) and `tail -f` on the deploy log
+  "bot messages" (Bot Chats)              -> messages to other Bots in both shapes Hermes has, each
+                                            ending as Hermes stores it (docs/chat.md §2a):
+                                            `message_agent` to Ada, replied after ~3 s; to Ops,
+                                            waiting ~20 s, then "No reply"; the Bot running
+                                            `hermes -p writer chat -q …` itself, replied; and
+                                            `hermes -p ops chat … --query-file …` (no words here),
+                                            ended and no longer listed ("Ended"); and a
+                                            `message_agent` streamed without `args` (a mirrored row),
+                                            ended with no answer and no longer listed: no words live
 Controls:
   POST /api/mock/processes/exit  {process, code?, reason?}  ends one (by id or a word of its name), no event
   POST /api/mock/processes/close {process}                  `terminal.close` for one that still runs
@@ -52,7 +61,8 @@ def install(backend_globals, gateway_module, chats_module):
     def process_list(params):
         stored = stored_for(params.get("session_id") or "")
         with LOCK:
-            mine = [entry(pid, p) for pid, p in PROCS.items() if p["stored"] == stored]
+            # Hermes's registry lets go of a finished process after a while: the list no longer has it.
+            mine = [entry(pid, p) for pid, p in PROCS.items() if p["stored"] == stored and not (p.get("forget") and not p["running"])]
         others = previous_list(params).get("processes", []) if previous_list else []
         return {"processes": mine + others}
 
@@ -106,7 +116,8 @@ def install(backend_globals, gateway_module, chats_module):
 
         def run_chat_turn(sid, text):
             kind = scenario(text)
-            if kind is None:
+            # `message_agent` is offered in a Bot Chat only (tools/bot_mode_dm.py).
+            if kind is None or kind == "messages":
                 return original_chat(sid, text)
             stored = B["RUNTIME"][sid]["stored"]
             G.add_message(stored, "user", text)
@@ -121,6 +132,8 @@ def scenario(text):
         return "release"
     if "trailhead" in lower or "deploy log" in lower:
         return "message"
+    if "bot messages" in lower:
+        return "messages"
     return None
 
 
@@ -192,16 +205,19 @@ def running(pid):
         return PROCS.get(pid, {}).get("running", False)
 
 
-def call_tool(sid, stored, name, args, result, seconds, context):
-    """A tool call as Hermes stores and streams it (`tool.complete`'s `result` is the parsed JSON)."""
+def call_tool(sid, stored, name, args, result, seconds, context, live_args=True):
+    """A tool call as Hermes stores and streams it (`tool.complete`'s `result` is the parsed JSON).
+    `live_args=False` streams it without `args`, as a mirrored row or a room relay does
+    (tui_gateway/contracts/events.py `ToolCompletePayload`); the stored row keeps them."""
     call = f"call_{uuid.uuid4().hex[:8]}"
     B["store_row"](sid, stored, "assistant", "", tool_calls=[{"id": call, "type": "function",
                    "function": {"name": name, "arguments": json.dumps(args)}}], finish_reason="tool_calls")
-    B["emit"](sid, "tool.start", {"tool_id": call, "name": name, "context": context, "args": args})
+    live = {"args": args} if live_args else {}
+    B["emit"](sid, "tool.start", {"tool_id": call, "name": name, "context": context, **live})
     time.sleep(seconds)
     B["store_row"](sid, stored, "tool", json.dumps(result), tool_call_id=call, tool_name=name)
-    B["emit"](sid, "tool.complete", {"tool_id": call, "name": name, "args": args, "duration_s": seconds, "result": result,
-                                     "summary": f"Completed in {seconds:.1f}s"})
+    B["emit"](sid, "tool.complete", {"tool_id": call, "name": name, **live, "duration_s": seconds,
+                                     **B["tool_complete_fields"](name, result, seconds)})
 
 
 def run_scenario(kind, sid, stored, *, stream, finish):
@@ -211,6 +227,8 @@ def run_scenario(kind, sid, stored, *, stream, finish):
     for piece in ["The person wants ", "work to keep running ", "after this turn."]:
         B["emit"](sid, "reasoning.delta", {"text": piece})
         time.sleep(0.08)
+    if kind == "messages":
+        return run_messages(sid, stored, stream=stream, finish=finish)
     if kind == "release":
         docs = start(stored, f"cd {HOME}/Code/hermes-docs && npm run docs:dev", f"{HOME}/Code/hermes-docs")
         call_tool(sid, stored, "terminal", {"command": f"cd {HOME}/Code/hermes-docs && npm run docs:dev", "background": True},
@@ -241,6 +259,101 @@ def run_scenario(kind, sid, stored, *, stream, finish):
         answer = "I've asked Ada to rotate the Trailhead keys, and I'm keeping an eye on the deploy log."
     stream(sid, answer)
     return finish(sid, stored, answer)
+
+
+# The words of "bot messages" (invented).
+ADA_ASK = ("Could you draft the 2.4 release notes tonight? Three lines: offline edits sync, the share sheet "
+           "opens in under a second, exports keep their folders.")
+ADA_REPLY = "Done: the draft is in `docs/releases/2.4.md`, three lines in the order you gave them."
+OPS_ASK = "Can you check last night's offsite backup finished?"
+QUERY_ASK = "Is the blog post for 2.4 scheduled?"
+QUERY_REPLY = "Yes, for 9:00 tomorrow."
+UNHEARD_ASK = "Please rotate the staging keys when the backup is done."
+
+
+def delivery_runner(target, dm):
+    """Hermes's own delivery of a `message_agent` call (tools/bot_mode_dm.py `_delivery_command`):
+    the words are in a file, not in the command."""
+    return (f"{HOME}/.hermes/hermes-agent/venv/bin/python {HOME}/.hermes/hermes-agent/tools/bot_mode_dm.py "
+            f"--run-delivery --author '{{\"id\":\"bot:default\",\"name\":\"hermes\",\"is_bot\":true}}' query-file "
+            f"/tmp/hermes-dm/{dm}.txt --profile-home {HOME}/.hermes/profiles/{target} {HOME}/.local/bin/hermes -p {target}")
+
+
+def run_messages(sid, stored, *, stream, finish):
+    """The words "bot messages" in a Bot Chat: five messages to other Bots, as Hermes sends them.
+    `message_agent` answers with its delivery's process (`process_id`) and the reply comes back as
+    that process's completion notice (`process_complete`); a Bot can also run Hermes itself in the
+    background (the bundled hermes-agent skill's `hermes chat -q …`)."""
+    def message(target, words, title, live_args=True):
+        dm = f"dm_{uuid.uuid4().hex[:8]}"
+        pid = start(stored, delivery_runner(target, dm), HOME, notify=True, persist=DELIVERIES["persist"])
+        call_tool(sid, stored, "message_agent", {"target": target, "message": words},
+                  {"status": "queued", "delivery_id": dm, "to": f"@{target}", "reply_delivery": "notification",
+                   "detail": f"Message queued for @{target}: this acknowledges the hand-off to a background delivery "
+                             "process, not a delivery receipt — do NOT wait or poll.",
+                   "process_id": pid, "queued_at": int(time.time())}, 0.5, title, live_args=live_args)
+        return pid
+
+    def shell(command, title):
+        pid = start(stored, command, HOME, notify=True)
+        call_tool(sid, stored, "terminal", {"command": command, "background": True, "notify_on_complete": True},
+                  {"output": "Background process started", "session_id": pid, "pid": 40021, "exit_code": 0, "error": None,
+                   "notify_on_complete": True}, 0.4, title)
+        return pid
+
+    # A message whose words never reached this chat live (streamed without `args`): its delivery ends
+    # with no answer and the list lets it go, so while the turn runs it has no words, no answer and
+    # no wait. The stored row has its words.
+    unheard = message("ops", UNHEARD_ASK, "Ops", live_args=False)
+    with LOCK:
+        PROCS[unheard]["forget"] = True
+
+    def end_unheard():
+        time.sleep(2)
+        exit_process(unheard, 0)
+
+    threading.Thread(target=end_unheard, daemon=True).start()
+    ada = message("writer", ADA_ASK, "Ada")
+    ops = message("ops", OPS_ASK, "Ops")
+    query = f"hermes -p writer chat -q {json.dumps(QUERY_ASK)}"
+    asked = shell(query, query)
+    quiet = f"hermes -p ops chat --in ~ -c 'Bot Chat' --create-if-missing -Q --query-file /tmp/hermes-dm/dm_5c2e.txt"
+    silent = shell(quiet, quiet)
+    with LOCK:
+        PROCS[silent]["forget"] = True
+    # The model writes its answer: the steps stay live a while, as they would.
+    time.sleep(8)
+    answer = "I've messaged Ada and Ops, and asked Ada about the blog post. Their answers will show here."
+    stream(sid, answer)
+    finish(sid, stored, answer)
+
+    def notice(pid, output, code=0, outcome="completed normally"):
+        with LOCK:
+            command = PROCS[pid]["command"]
+        text, meta = B["process_notice"](pid, command, code, output, outcome=outcome)
+        B["add_message"](stored, "user", text, display_kind="process_complete", display_metadata=meta)
+
+    def later():
+        notice(unheard, "")
+        time.sleep(2)
+        exit_process(silent, 0)
+        notice(silent, "")
+        time.sleep(1.5)
+        reply = json.dumps({"reply": ADA_REPLY, "status": "delivered", "delivery_id": "dm"})
+        write(ada, reply + "\n")
+        exit_process(ada, 0)
+        notice(ada, reply)
+        time.sleep(1.5)
+        write(asked, QUERY_REPLY + "\n")
+        exit_process(asked, 0)
+        notice(asked, QUERY_REPLY)
+        time.sleep(15)
+        line = "No reply from @ops within 600s."
+        write(ops, line + "\n")
+        exit_process(ops, 0)
+        notice(ops, line)
+
+    threading.Thread(target=later, daemon=True).start()
 
 
 def run_docs(pid):

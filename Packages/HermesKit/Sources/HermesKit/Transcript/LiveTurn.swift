@@ -215,6 +215,12 @@ public struct LiveTurn: Sendable, Equatable {
             if let output { tool.output = output }
             turn.steps[index] = .tool(tool)
 
+        case .toolArguments(let callID, let name, let arguments):
+            guard let index = toolIndex(callID: callID, name: name), case .tool(var tool) = turn.steps[index],
+                  tool.arguments == nil else { break }
+            tool.arguments = arguments
+            turn.steps[index] = .tool(tool)
+
         case .toolRisk(let callID, let name, let risk):
             guard let index = toolIndex(callID: callID, name: name), case .tool(var tool) = turn.steps[index] else { break }
             tool.risk = risk
@@ -364,6 +370,8 @@ public struct LiveTurn: Sendable, Equatable {
                         seen.status = tool.status
                         seen.result = seen.result ?? result
                     }
+                    // A run's events carry no arguments: the stored call has them (a message's words).
+                    seen.arguments = seen.arguments ?? tool.arguments
                     return .tool(seen)
                 }
                 if tool.result == nil { tool.status = .running }

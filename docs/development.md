@@ -155,7 +155,16 @@ Buddy's Daily digest while the second page is read, "overnight" plays a night of
 own, as Hermes stores it: a message to Ada and two background checks, then over about 12 s a failed
 test run's and a fetch's completion notices, a follow-up with two commands and `[SILENT]`, Ada's reply
 carried back by the delivery's notice, a batch of helpers' results with one timed out, and Ada's
-machine-style brief; `docs/chat.md` §2a), and `@mentioning`
+machine-style brief; `docs/chat.md` §2a), "bot messages" sends five messages to other Bots in
+both shapes Hermes has (`Tools/mock-hermes/processes.py`): `message_agent` to Ada, replied about 3 s
+after the turn, and to Ops, waiting for about 20 s before "No reply"; the Bot running `hermes -p
+writer chat -q …` itself, replied; `hermes -p ops chat … --query-file …`, with no words to show,
+ended and no longer listed ("Ended", the title row alone); and a `message_agent` to Ops streamed
+without `args` (as a mirrored row is), ended with no answer 2 s later and no longer listed, so
+while the turn runs it is the title row alone (its stored row has the words). "every tool" plays one finished step of
+each kind of tool (commands, one that printed nothing and one that printed only blanks, files read,
+searched, patched and written, the web, the browser, typing into a page, images, code, a skill,
+session search, two MCP tools, one answering only blanks, memory, and a failure), and `@mentioning`
 another Bot drops a message in its chat. `--drop-after-reply` cuts every socket right after a turn's
 `message.complete`, `--late-store <s>` writes a turn's reply that long after `message.complete` (its
 `persisted_turn` then has no `final_assistant_row_id`), `POST /api/mock/restart-gateway` kills the

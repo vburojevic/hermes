@@ -282,7 +282,7 @@ instead (§4d). The mock's holds are in `docs/development.md`.
 
 | Event | Shown as | Component |
 |---|---|---|
-| `tool.start` (`tool_id`, `name`, `preview` / `context` / `args`) | A running step: present-tense title, a one-line preview of what it works on | `toolStepRunning` |
+| `tool.start` (`tool_id`, `name`, `preview` / `context` / `args`) | A running step: present-tense title, a one-line preview of what it works on. The step keeps `args` (here and on `tool.complete`) as its stored row will have them, so it reads the same live and stored (a message's words); never for typing into a page or Passwords | `toolStepRunning` |
 | `tool.complete` (`tool_id`, `duration_s`, `summary`, `result_text`) | The step finishes: past-tense title, duration, the summary as preview. A result that reads as a failure marks it failed (red node, "Command failed" for `terminal`, the exit code and last line kept in view) | `toolStep`, `toolStepFailed` |
 | `tool.complete` with `inline_diff` | Hermes renders it for a terminal: a "┊ review diff" header, each file as "a/path → b/path", every line in ANSI colour, and no more than 80 lines or 6 files ("… omitted N diff line(s)" after); the app reads it as a plain unified diff (`InlineDiff.unified`). The turn's Changes row counts it (§1, "File changes" below). Behind the edit's own step, a diff card: path, lines added and removed, the first 6 lines with "Show N more lines" (up to 400) and Open (in the Inspector); a second whole-file write of the same file shows what it changed since the first, three lines around each change with ⋯ between (`relateRewrites`), not the whole file again. Open files and the Inspector's Changes catch up | `turnChanges`; `diffCard`, `DiffCard` |
 | `tool.complete` with `result_text` from a command | An output block behind the step: the command, the last 6 lines, the line count, and Show All (up to the last 400) | `outputBlock`, `OutputBlock` |
@@ -466,7 +466,13 @@ Engineer", [background-processes.md](background-processes.md) §4), never an emp
 words it sent (three lines, Show More) and, once its delivery finished, "Engineer replied" with the
 reply ("Replied · 4 min"), or why it wasn't delivered; while it waits, "Waiting · 2 min" and a
 still line saying the answer shows there when it comes. With no notice for it, the reply is the first message from that
-Bot in the chat after the turn (`BotMessageStep`).
+Bot in the chat after the turn (`BotMessageStep`). The words come from the call's arguments
+(`target`, `message`): stored as a JSON string (some providers encode it twice), live from the
+socket's `args`, and taken from the stored call when a turn that missed events takes its rows. A
+Bot can also send one by running Hermes itself in the background (`hermes -p <bot> chat -q …`, as
+the bundled hermes-agent skill teaches): the same step, its words the query. With no words to show
+(`--query-file`), no reply and nothing waited for, the step is its title row alone, never an empty
+box (`BotMessageStep.showsBody`).
 
 **A reply to a delivery or another Bot** says so: "Replying to the routine Disk report" (or the
 webhook, "an automated message", or "Replying to Engineer") over the turn right after it

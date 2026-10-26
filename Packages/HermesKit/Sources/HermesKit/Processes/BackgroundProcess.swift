@@ -391,3 +391,22 @@ extension ToolActivity {
         return name == "terminal" ? preview : nil
     }
 }
+
+/// What a process step shows under its title (`processStep`, `docs/background-processes.md` §4):
+/// the command after `$` and its latest line, each only with something to read. With neither, the
+/// step is its title row alone, never an empty box.
+public struct ProcessSnippet: Equatable, Sendable {
+    public var command: String?
+    public var latest: String?
+
+    public init(command: String, latest: String?) {
+        self.command = Self.readable(command)
+        self.latest = latest.flatMap(Self.readable)
+    }
+
+    public var isEmpty: Bool { command == nil && latest == nil }
+
+    private static func readable(_ text: String) -> String? {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+    }
+}

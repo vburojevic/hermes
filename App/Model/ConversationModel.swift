@@ -6141,7 +6141,7 @@ extension ConversationModel {
     /// The widget tool's own steps never show: its run events are read here instead (§2).
     fileprivate func widgetToolEvent(_ event: TurnEvent) -> Bool {
         switch event {
-        case .toolStarted(_, let name, _, _), .toolDetails(_, let name, _, _):
+        case .toolStarted(_, let name, _, _), .toolDetails(_, let name, _, _), .toolArguments(_, let name, _):
             return WidgetToolResult.toolNames.contains(name)
         case .toolFinished(_, let name, _, _, _, _):
             guard WidgetToolResult.toolNames.contains(name) else { return false }

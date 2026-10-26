@@ -40,6 +40,9 @@ public enum TurnEvent: Sendable, Equatable {
     case replayTruncated
     /// Extra detail for a finished tool call: its diff and full output (gateway protocol).
     case toolDetails(id: String?, name: String, diff: String?, output: String?)
+    /// A call's arguments, which the socket's `tool.start` and `tool.complete` carry whole (`args`):
+    /// a live step reads them as its stored row will (the words of a message to another Bot).
+    case toolArguments(id: String?, name: String, arguments: JSONValue)
     /// The agent's checklist, replaced whole (`todo.updated`, `todos` on `tool.complete`).
     case plan([PlanItem])
     /// What a tool's result tried to do (`tool.output_risk`).

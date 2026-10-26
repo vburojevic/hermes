@@ -645,7 +645,7 @@ def socket_turn(sid, text):
     def done(call, name, args, result, seconds):
         B["store_row"](sid, stored, "tool", result, tool_call_id=call, tool_name=name)
         B["emit"](sid, "tool.complete", {"tool_id": call, "name": name, "args": args, "duration_s": round(seconds, 2),
-                                         "result": result, "summary": f"Completed in {seconds:.1f}s"})
+                                         **B["tool_complete_fields"](name, result, seconds)})
 
     steps = Steps(sid, start, done, lambda: bool(B["RUNTIME"][sid].get("interrupt")))
     steps.vault = lambda result: vault_step(start, done, result)

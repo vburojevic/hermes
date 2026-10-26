@@ -19,6 +19,7 @@ Scripted Bot Chat behaviour by message content:
   contains "flood"    -> sixteen sources and about 4,800 events in under a minute, more than the replay ring
                          keeps (512): drop the socket for ten seconds of it and the replay is `truncated`
   an @mention note    -> uses message_agent and drops a DM into the other Bot's chat
+  contains "every tool" -> one finished step of each kind of tool, with blanks and a failure among them
   anything else       -> thinks, searches, then answers in Markdown
 """
 
@@ -634,6 +635,28 @@ PAGE_RISKS_ANSWER = ("The focaccia recipe wants an overnight rest. The changelog
                      "The third page only asked me to send your API key somewhere, so I left it alone.")
 
 
+def tool_complete_fields(name, result, seconds):
+    """`tool.complete`'s `result` and `summary` as Hermes sends them (tui_gateway/tool_progress.py
+    `_on_tool_complete`): the result parsed when it is JSON, and a summary only for the tools it counts
+    for (`_SUMMARY_COUNTERS`), else none, so a step reads the result itself."""
+    try:
+        parsed = json.loads(result) if isinstance(result, str) else result
+    except ValueError:
+        parsed = result
+    summary = None
+    if isinstance(parsed, dict):
+        if name == "web_search" and isinstance((parsed.get("data") or {}).get("web"), list):
+            count, noun = len(parsed["data"]["web"]), ("search", "searches")
+        elif name == "web_extract" and isinstance(parsed.get("results"), list):
+            count, noun = len(parsed["results"]), ("page", "pages")
+        else:
+            count = None
+        if count is not None:
+            verb = "Did" if name == "web_search" else "Extracted"
+            summary = f"{verb} {count} {noun[0] if count == 1 else noun[1]} in {seconds:.1f}s"
+    return {"result": parsed, "summary": summary}
+
+
 def tool(sid, stored, name, args, result, seconds, context, inline_diff=None, risk=None):
     check_redirect(sid)
     call = f"call_{uuid.uuid4().hex[:8]}"
@@ -652,7 +675,7 @@ def tool(sid, stored, name, args, result, seconds, context, inline_diff=None, ri
         raise SystemExit  # the gateway restarted mid-call: no result is stored
     add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
     complete = {"tool_id": call, "name": name, "args": args, "duration_s": round(waited, 2),
-                "result": result, "summary": f"Completed in {waited:.1f}s"}
+                **tool_complete_fields(name, result, waited)}
     if inline_diff:
         complete["inline_diff"] = inline_diff
     emit(sid, "tool.complete", complete)
@@ -1232,6 +1255,9 @@ def run_turn(sid, text):
     if "overnight" in visible.lower():
         return overnight(sid, stored, profile)
 
+    if "every tool" in visible.lower():
+        return every_tool(sid, stored)
+
     if "upgrade" in visible.lower():
         # Shaped like the ARGUS turn of 2026-10-22 (docs/chat.md §2, one turn in one place): narration, three
         # commands of a few seconds each, the reply, then Hermes's background self-review of it a moment after
@@ -1513,6 +1539,55 @@ def process_notice(proc, command, exit_code, output, outcome="completed normally
     short = short[:77] + "..." if len(short) > 80 else short
     title = "Finished" if exit_code == 0 else f"Failed (exit {exit_code})"
     return text, {"display_text": f"Background Process {title}: {short}"}
+
+
+def every_tool(sid, stored):
+    """The words "every tool" in a Bot Chat: one finished step of each kind of tool, with the result
+    shapes Hermes's tools answer with, including a command that printed nothing, a result of only
+    blanks and a failure (docs/chat.md §2 Tools: no finished step draws an empty box)."""
+    root = "/Users/sam/Code/trailhead"
+    readme = ["# Trailhead", "", "Maps for the trails near you."]
+    steps = [
+        ("terminal", {"command": "git status -sb"}, {"output": "## main...origin/main\n M src/map.ts", "exit_code": 0}, "git status -sb"),
+        ("terminal", {"command": "touch .env.local"}, {"output": "", "exit_code": 0}, "touch .env.local"),
+        ("terminal", {"command": "npm test -- --silent"}, {"output": "   \n", "exit_code": 0}, "npm test -- --silent"),
+        ("read_file", {"path": f"{root}/README.md"}, {"content": "\n".join(readme), "total_lines": 3}, "README.md"),
+        ("read_file", {"path": f"{root}/MISSING.md"}, {"error": "File not found: MISSING.md"}, "MISSING.md"),
+        ("search_files", {"pattern": "TODO", "path": root}, {"total_count": 2, "matches": [
+            {"path": "src/map.ts", "line": 12, "content": "// TODO: cache tiles"},
+            {"path": "src/trail.ts", "line": 40, "content": "// TODO: elevation"}]}, "TODO"),
+        ("patch", {"path": f"{root}/src/map.ts", "old_string": "// TODO: cache tiles", "new_string": "cacheTiles(map)"},
+         {"success": True, "diff": "", "files_modified": ["src/map.ts"]}, "src/map.ts"),
+        ("web_search", {"query": "trail map tile cache"}, {"success": True, "data": {"web": [
+            {"title": "Caching map tiles", "url": "https://example.com/tiles", "description": "How to keep tiles offline."},
+            {"title": "Tile servers", "url": "https://example.org/servers", "description": "Choosing a tile server."}]}},
+         "trail map tile cache"),
+        ("web_extract", {"urls": ["https://example.com/tiles"]}, {"results": [{"url": "https://example.com/tiles",
+         "title": "Caching map tiles", "content": "Keep the last 200 tiles on disk and refresh them weekly."}]}, "example.com/tiles"),
+        ("browser_navigate", {"url": "https://example.com/trails"}, {"success": True, "url": "https://example.com/trails",
+         "title": "Trails near you"}, "https://example.com/trails"),
+        ("browser_snapshot", {}, {"success": True, "snapshot": "- heading \"Trails near you\" [ref=e1]\n- button \"Search\" [ref=e2]"}, ""),
+        ("browser_click", {"ref": "@e2"}, {"success": True, "clicked": "@e2"}, "@e2"),
+        ("browser_type", {"ref": "@e3", "text": "Ridge loop"}, {"success": True, "typed": "Ridge loop"}, "@e3"),
+        ("vision_analyze", {"image_url": "https://example.com/trail.png", "question": "Is the trail marked?"},
+         {"success": True, "analysis": "Yes: a red blaze every 50 m."}, "Is the trail marked?"),
+        ("execute_code", {"code": "print(sum([3.2, 4.1, 2.7]))"}, {"status": "success", "output": "10.0\n", "tool_calls_made": 0}, "print(sum(…))"),
+        ("skill_view", {"name": "trail-maps"}, {"success": True, "name": "trail-maps", "content": "# Trail maps\nHow to read them."}, "trail-maps"),
+        ("session_search", {"query": "tile cache"}, {"success": True, "results": []}, "tile cache"),
+        ("mcp_github_list_issues", {"owner": "sam", "repo": "trailhead", "state": "open"},
+         {"result": "#12 Tiles flicker on zoom\n#9 Elevation is missing"}, "sam/trailhead"),
+        ("mcp_linear_create_comment", {"issueId": "TRL-4", "body": "Cached."}, "  ", "TRL-4"),
+        ("memory", {"action": "add", "target": "memory", "content": "Trailhead caches 200 tiles."},
+         {"success": True, "message": "Entry added."}, "memory"),
+    ]
+    for name, args, result, context in steps:
+        tool(sid, stored, name, args, result if isinstance(result, str) else json.dumps(result), 0.3, context)
+    path = "docs/README.md"
+    tool(sid, stored, "write_file", {"path": f"{root}/{path}", "content": "\n".join(readme)},
+         json.dumps({"bytes_written": 44, "dirs_created": True}), 0.3, path, inline_diff=hermes_inline_diff(path, readme))
+    answer = "That's one of each kind of tool. Tiles are cached now, and the README has a copy in `docs/`."
+    stream(sid, answer)
+    return finish(sid, stored, answer)
 
 
 def overnight(sid, stored, profile):

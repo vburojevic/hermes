@@ -123,8 +123,27 @@ extension ToolActivity {
         } else if text == nil {
             text = result
         }
-        guard let text = text?.trimmingCharacters(in: .newlines), !text.isEmpty else { return nil }
+        // Output of only blanks is none: it drew an output block with nothing in it.
+        guard let text = text?.trimmingCharacters(in: .newlines), !text.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return nil }
         return CommandOutput(text: text, exitCode: exitCode)
+    }
+
+    // MARK: Details
+
+    /// The command or arguments the step's details show in full, when they have something to read.
+    public var detailsPreview: String? {
+        guard let preview, !preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return preview
+    }
+
+    /// Whether the step's row opens to anything: the full command, output, a diff, results. A row
+    /// that opens always shows something (`ToolDetails`), never an empty box.
+    public var hasDetails: Bool {
+        guard status != .running else { return false }
+        if displayDiff != nil || !searchResults.isEmpty || commandOutput != nil || detailsPreview != nil { return true }
+        // Typing into a page and Passwords never show their result (`docs/web.md` §4.1).
+        return !WebStep.hidesArguments(name) && result?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     // MARK: Search results
