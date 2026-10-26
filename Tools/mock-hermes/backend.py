@@ -16,6 +16,8 @@ Scripted Bot Chat behaviour by message content:
   contains "slow"     -> a long multi-tool turn (good for testing stop and reconnect)
   contains "ponder"   -> thinks for about 14 s before a word (the live line's elapsed time)
   contains "marathon" -> the same, for about 45 s (outlasts the app's half minute of re-attaching)
+  contains "flood"    -> sixteen sources and about 4,800 events in under a minute, more than the replay ring
+                         keeps (512): drop the socket for ten seconds of it and the replay is `truncated`
   an @mention note    -> uses message_agent and drops a DM into the other Bot's chat
   anything else       -> thinks, searches, then answers in Markdown
 """
@@ -125,6 +127,7 @@ PENDING = {}       # srq id -> {"event": Event, "result": dict | None, "sid": st
 CURRENT = threading.local()  # .peer: the socket whose request a METHODS handler is answering
 CLIENTS = set()    # connected WebSocket peers
 DROP = {"settle": 0, "refuse_until": 0.0}  # /api/mock/drop-sockets: resumes answered 4009, sockets refused
+HISTORY_DOWN = {"until": 0.0, "status": 502}  # /api/mock/history-down: stored chats' messages refused meanwhile
 TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
 STATUS_EXTRA = {}  # fields setup.py adds to /api/status (gateway_running, fts_rebuild)
@@ -545,6 +548,10 @@ def err(rid, code, message, data=None):
     return {"jsonrpc": "2.0", "id": rid, "error": error}
 
 
+REPLAY_EVENTS_MAX = 512  # Hermes' _REPLAY_BUFFER_MAX
+REPLAY_BYTES_MAX = 4 * 1024 * 1024  # Hermes' _REPLAY_BUFFER_BYTES_MAX
+
+
 def emit(sid, kind, payload):
     with LOCK:
         runtime = RUNTIME.get(sid)
@@ -555,8 +562,19 @@ def emit(sid, kind, payload):
         if kind == "message.delta" and runtime.get("inflight"):
             runtime["inflight"]["assistant"] += str(payload.get("text") or "")
         event = {"type": kind, "session_id": sid, "seq": runtime["seq"], "payload": payload}
-        runtime["ring"].append(event)
-        del runtime["ring"][:-400]
+        # Like Hermes' replay ring (tui_gateway/event_replay.py): 512 events or 4 MiB a session, oldest out
+        # first, and a watermark of the newest one evicted, so a client that missed it hears `truncated`.
+        frozen = {"type": kind, "session_id": sid, "payload": payload}
+        size = len(json.dumps(frozen, ensure_ascii=False, separators=(",", ":")).encode("utf-8", errors="surrogatepass"))
+        if size > REPLAY_BYTES_MAX:
+            runtime["evicted_through"] = runtime["seq"]
+        else:
+            runtime["ring"].append((event, size))
+            runtime["ring_bytes"] = runtime.get("ring_bytes", 0) + size
+        while len(runtime["ring"]) > REPLAY_EVENTS_MAX or runtime.get("ring_bytes", 0) > REPLAY_BYTES_MAX:
+            evicted, evicted_size = runtime["ring"].pop(0)
+            runtime["ring_bytes"] -= evicted_size
+            runtime["evicted_through"] = max(runtime.get("evicted_through", 0), evicted["seq"])
         # Like the real gateway: session events go to the transports attached to the session.
         peers = [p for p in runtime["peers"] if p in CLIENTS]
     for peer in peers:
@@ -1276,6 +1294,25 @@ def run_turn(sid, text):
         stream(sid, answer)
         return finish(sid, stored, answer)
 
+    if "flood" in visible.lower():
+        # More events than the replay ring keeps: sixteen sources, each read with 300 progress lines sent
+        # in bursts of 50 (about 90 events a second for close to a minute), so a socket down for
+        # ten seconds of it misses events Hermes no longer has and its replay comes back `truncated`.
+        steps = 16
+        for step in range(1, steps + 1):
+            if runtime["interrupt"]:
+                break
+            tool(sid, stored, "web_search", {"query": f"source {step}"}, f"Result {step}: three relevant pages.", 1.0, f"source {step}")
+            for page in range(1, 301):
+                emit(sid, "status.update", {"kind": "status", "text": f"Reading source {step} of {steps}, page {page}…"})
+                if page % 50 == 0:
+                    time.sleep(0.2)
+        if runtime["interrupt"]:
+            return finish(sid, stored, "", status="interrupted")
+        answer = f"All {steps} sources read: **ship it on Friday**."
+        stream(sid, answer)
+        return finish(sid, stored, answer)
+
     if "slow" in visible.lower() or "marathon" in visible.lower():
         steps, pause = (12, 3.6) if "marathon" in visible.lower() else (6, 1.4)
         for step in range(1, steps + 1):
@@ -1582,6 +1619,63 @@ def deliver_alert(profile, text, reply):
     return True
 
 
+PROCESS_NOTICE = "[Background process proc_7f3a finished with exit code 0: `npm run build` (2m 14s)]"
+PROCESS_REPLY = "The build finished cleanly: no warnings, and the bundle is 4% smaller than yesterday's."
+
+
+def turn_elsewhere(stored, text, reply, seconds):
+    """A turn Hermes starts in a chat by itself, the way a background process's completion notice or a
+    routine run in the live session does: no prompt from a client, its events go to whoever is attached
+    (the app joins it as a turn started elsewhere), and it runs about `seconds`. A reap
+    (`/api/mock/drop-sockets {reap}`) interrupts it where it is: nothing more is stored or sent."""
+    with LOCK:
+        if stored not in STORED:
+            return False
+        sids = [sid for sid, runtime in RUNTIME.items()
+                if runtime.get("stored") == stored and not runtime.get("dead") and not runtime.get("running")]
+    if not sids:
+        with LOCK:
+            add_message(stored, "user", text, display_kind="internal_notification")
+            add_message(stored, "assistant", reply, ts=time.time() + 2)
+        return True
+    sid = sids[0]
+
+    def run():
+        with LOCK:
+            runtime = RUNTIME[sid]
+            runtime.update(running=True, interrupt=False, turn_started=time.time())
+            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": "internal_notification"}
+        add_message(stored, "user", text, display_kind="internal_notification")
+        emit(sid, "session.info", {"running": True})
+        emit(sid, "message.start", {})
+        # Thinks for most of it, then streams the reply over the last two seconds.
+        deadline = time.time() + max(0.0, seconds - 2)
+        while time.time() < deadline:
+            if RUNTIME[sid]["interrupt"] or RUNTIME[sid].get("dead"):
+                return
+            time.sleep(0.2)
+        if not stream(sid, reply, delay=2 / max(1, len(reply) / 7)) or RUNTIME[sid].get("dead"):
+            return
+        finish(sid, stored, reply)
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+def reap_orphans():
+    """Hermes's orphan reap (tui_gateway/server.py `_WS_ORPHAN_REAP_GRACE_S`, 20 s): a session no socket
+    came back for is interrupted if it's still running and let go. A resume then gets a fresh runtime,
+    idle, with a new event sequence and nothing to replay: the app never hears how the turn ended."""
+    with LOCK:
+        for runtime in RUNTIME.values():
+            if runtime.get("dead") or any(peer in CLIENTS for peer in runtime["peers"]):
+                continue
+            runtime["dead"] = True
+            runtime["interrupt"] = True
+            runtime["running"] = False
+            runtime["inflight"] = None
+            runtime["peers"] = set()
+
+
 def deliver_routine(profile, title, output, reply):
     """Routines deliver into a Bot Chat as a full turn: the job's output, then the Bot's reply."""
     with LOCK:
@@ -1797,9 +1891,149 @@ def method_session_activate(params):
                 "status": "streaming" if runtime["running"] else "idle", **live_turn(runtime)}
 
 
+# The gateway's own queue (its durable ledger) owning a chat: stored id -> {"mode", "until", "ack",
+# "pending": [texts]}. hermes-agent `tui_gateway/methods_prompt.py` `_submit_to_ledger_owner` and
+# `owner_forward.py`: a text-only prompt is forwarded to the owner's FIFO and answered
+# `{status: queued, admission_id, forwarded: true}` (after up to ~35 s on a slow owner); only its
+# turn's `message.start` and `message.complete` come back, with `session.info {pending_submissions}`
+# while it waits. Anything that can't join that queue is refused 4090 SESSION_OWNER_BUSY.
+# `/api/mock/owner {mode, profile | session_id, seconds, ack}`; modes as `owner_refusal` below.
+OWNERS = {}
+# Hermes's chat limit (`max_concurrent_sessions`): until when every new prompt is refused, and the
+# counts its message names. `/api/mock/limit {seconds, active, limit}`.
+LIMIT = {"until": 0.0, "active": 3, "limit": 3}
+
+OWNER_UNCONFIRMED_TEXT = ("The gateway is running a turn in this chat and did not confirm your message in time. "
+                          "It may already be queued there: check the chat before sending it again.")
+
+
+def owner_busy_text(why):
+    return f"The gateway is running a turn in this chat and {why}. Nothing was sent. Send it again when the current turn ends."
+
+
+def owner_refusal(stored, owner, text, images):
+    """The refusals the owner path and the slot check send, word for word (`methods_prompt.py`,
+    `session_lifecycle.py`, `hermes_cli/active_sessions.py`); None when the prompt is forwarded."""
+    mode = owner["mode"]
+    if mode == "ledger-unknown":
+        return RPCError(4090, f"Session {stored} has outcome-unknown work in the gateway's durable queue. Resume it "
+                              "through the gateway (hermes chat --resume, Desktop or the TUI) to resolve it; nothing was run here.",
+                        {"reason": "SESSION_NOT_OWNED"})
+    if mode == "coordination":
+        return RPCError(4090, "Hermes could not read the active-session registry at ~/.hermes/active_sessions.json, so it "
+                              "cannot prove this session has no other live owner. Fix or remove that file and try again.",
+                        {"reason": "SESSION_COORDINATION_UNAVAILABLE"})
+    if mode == "no-reason":
+        return RPCError(4090, "Hermes could not safely reserve this session. Try again.")
+    if mode == "unknown-reason":
+        # Mock-only: a reason newer than the app, which shows Hermes's own words for it.
+        return RPCError(4090, "Hermes paused new turns in this chat for maintenance. Try again in a few minutes.",
+                        {"reason": "SESSION_PAUSED_FOR_MAINTENANCE"})
+    if images:
+        # A photo can't join the owner's queue: Hermes takes it off and says so.
+        return RPCError(4090, owner_busy_text("an image cannot join its queue, so it was removed from this message"),
+                        {"reason": "SESSION_OWNER_BUSY"})
+    if mode == "busy":
+        return RPCError(4090, owner_busy_text("the gateway refused it"), {"reason": "SESSION_OWNER_BUSY"})
+    if not text.strip():
+        return RPCError(4090, owner_busy_text("this kind of message cannot join its queue"), {"reason": "SESSION_OWNER_BUSY"})
+    return None
+
+
+def owner_submit(sid, runtime, owner, text):
+    """A prompt to a chat the gateway's queue owns: refused, or forwarded into the owner's FIFO."""
+    stored = runtime["stored"]
+    with LOCK:
+        images = runtime.get("attached_images", 0)
+    refusal = owner_refusal(stored, owner, text, images)
+    if refusal is not None:
+        # Only the owner's busy refusal takes the photos off; every other leaves them staged.
+        if images and (refusal.data or {}).get("reason") == "SESSION_OWNER_BUSY":
+            with LOCK:
+                runtime.pop("attached_images", None)
+        raise refusal
+    # A slow owner: the receipt takes `ack` seconds; past Hermes's 30 s it's unconfirmed, though
+    # the owner may have queued it (it then runs, as Hermes's would).
+    time.sleep(min(float(owner.get("ack") or 0), 31))
+    admission = f"adm-{uuid.uuid4().hex[:8]}"
+    with LOCK:
+        owner.setdefault("pending", []).append({"admission_id": admission, "status": "queued", "user": text})
+        listed = list(owner["pending"])
+    emit(sid, "session.info", {"stored_session_id": stored, "pending_submissions": listed})
+    threading.Thread(target=owner_relay, args=(sid, stored, owner, admission, text), daemon=True).start()
+    if float(owner.get("ack") or 0) > 30 or owner["mode"] == "unconfirmed":
+        raise RPCError(4090, OWNER_UNCONFIRMED_TEXT, {"reason": "SESSION_OWNER_UNCONFIRMED"})
+    return {"status": "queued", "admission_id": admission, "forwarded": True}
+
+
+def owner_relay(sid, stored, owner, admission, text):
+    """The owner runs the forwarded prompt once its own turn ends; only start and end are relayed."""
+    while time.time() < owner.get("until", 0):
+        time.sleep(0.2)
+    with LOCK:
+        owner["pending"] = [p for p in owner.get("pending", []) if p["admission_id"] != admission]
+        listed = list(owner["pending"])
+    emit(sid, "session.info", {"stored_session_id": stored, "pending_submissions": listed})
+    emit(sid, "message.start", {})
+    time.sleep(1.0)
+    answer = f"The gateway ran this after its own turn: **{text.strip()[:60]}**"
+    # Each run of a forwarded prompt, for counting that a message ran once.
+    print(f"owner: ran a forwarded message in {stored} ({admission})", flush=True)
+    if sid in RUNTIME:
+        store_row(sid, stored, "user", text)
+        store_row(sid, stored, "assistant", answer)
+    emit(sid, "message.complete", {"text": answer, "status": "complete"})
+    with LOCK:
+        if not owner.get("pending") and time.time() >= owner.get("until", 0):
+            OWNERS.pop(stored, None)
+
+
+def own_chat(stored, mode, seconds, ack):
+    """`/api/mock/owner`: the gateway's queue owns the chat for `seconds` (its own turn running there)."""
+    if mode == "off":
+        OWNERS.pop(stored, None)
+        return True
+    # A Bot Chat, a chat open on the socket, or a normal chat the gateway mock keeps.
+    if stored not in STORED and not any(r["stored"] == stored for r in RUNTIME.values()) \
+            and not (GATEWAY and stored in GATEWAY[0].SESSIONS):
+        return False
+    OWNERS[stored] ={"mode": mode, "until": time.time() + seconds, "ack": ack, "pending": []}
+    if mode in ("forward", "busy", "unconfirmed"):
+        def release():
+            time.sleep(seconds)
+            with LOCK:
+                owner = OWNERS.get(stored)
+                if owner is not None and owner["mode"] == mode and not owner.get("pending"):
+                    OWNERS.pop(stored, None)
+        threading.Thread(target=release, daemon=True).start()
+    return True
+
+
+def limit_refusal():
+    """Hermes's chat limit, word for word (`active_session_limit_message`)."""
+    return RPCError(4090, f"Hermes is at the active session limit ({LIMIT['active']}/{LIMIT['limit']}). "
+                          f"Held by: {LIMIT['active']} desktop. Try again when another session finishes.",
+                    {"reason": "MAX_CONCURRENT_SESSIONS"})
+
+
+def submit_gate(sid, runtime, text):
+    """What `prompt.submit` answers before a turn, for every chat: Hermes's chat limit, the gateway's
+    own queue owning the chat. None when the prompt goes on as usual."""
+    if time.time() < LIMIT["until"]:
+        raise limit_refusal()  # the slot check refuses before anything runs: photos stay staged
+    owner = OWNERS.get(runtime["stored"])
+    if owner is not None and (owner["mode"] in ("ledger-unknown", "coordination", "no-reason", "unknown-reason")
+                              or time.time() < owner["until"] or owner.get("pending")):
+        return owner_submit(sid, runtime, owner, text)
+    return None
+
+
 def method_prompt_submit(params):
     sid, runtime = runtime_for(params)
     text = params.get("text") or ""
+    gated = submit_gate(sid, runtime, text)
+    if gated is not None:
+        return gated
     held = HELD_CHATS.get(runtime["stored"])
     if held and not held.get("late"):
         # Like hermes_cli/active_sessions.py: one writer per chat, refused before anything is stored.
@@ -1867,8 +2101,8 @@ def method_events_since(params):
     sid, runtime = runtime_for(params)
     last = int(params.get("last_seen") or 0)
     with LOCK:
-        frames = [e for e in runtime["ring"] if e["seq"] > last]
-        truncated = bool(runtime["ring"]) and last < runtime["ring"][0]["seq"] - 1
+        frames = [e for e, _size in runtime["ring"] if e["seq"] > last]
+        truncated = last < runtime.get("evicted_through", 0)
         return {"events": frames, "latest_seq": runtime["seq"], "truncated": truncated, "count": len(frames),
                 "epoch": EPOCH, "open_requests": open_requests(sid)}
 
@@ -2059,6 +2293,10 @@ class Handler(BaseHTTPRequestHandler):
             profile = (query.get("profile", ["default"])[0] or "default")
             if CONFIG.get("slow_history"):
                 time.sleep(CONFIG["slow_history"])  # a dashboard on an overloaded Mac: read late, as it is then
+            if time.time() < HISTORY_DOWN["until"]:
+                # A proxy in front of a dashboard that stopped answering (502), or a chat Hermes no longer has (404).
+                gone = HISTORY_DOWN["status"] == 404
+                return self.send_json(HISTORY_DOWN["status"], {"detail": "Session not found" if gone else "Bad Gateway"})
             with LOCK:
                 session = STORED.get(sid)
                 if session is None or session["profile"] != profile:
@@ -2210,16 +2448,27 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 TICKETS[ticket] = time.time() + 30
             return self.send_json(200, {"ticket": ticket, "ttl_seconds": 30})
+        if url.path == "/api/mock/history-down":
+            # Mock-only: stored chats' messages are refused for `seconds` while the socket keeps working: a 502 as
+            # a proxy answers for a dashboard that stopped answering, or with `status: 404` as Hermes answers for a
+            # chat it no longer has. A reply the app lost track of then can't find out how it ended.
+            with LOCK:
+                HISTORY_DOWN["until"] = time.time() + float(body.get("seconds") or 60)
+                HISTORY_DOWN["status"] = 404 if int(body.get("status") or 502) == 404 else 502
+            return self.send_json(200, {"ok": True})
         if url.path == "/api/mock/drop-sockets":
             # Mock-only: the network blips. Every socket drops mid-whatever (turns keep running), the next
             # `settle` resumes of a running chat answer 4009 like Hermes' client-gone settling window, and
             # new sockets are cut for `outage` seconds.
+            # With `reap` (Hermes's is 20), sessions no socket came back for that long are let go.
             with LOCK:
                 peers = list(CLIENTS)
                 DROP["settle"] = int(body.get("settle") or 0)
                 DROP["refuse_until"] = time.time() + float(body.get("outage") or 0)
             for peer in peers:
                 peer.cut()
+            if body.get("reap") is not None:
+                threading.Timer(float(body["reap"]), reap_orphans).start()
             return self.send_json(200, {"ok": True, "dropped": len(peers)})
         if url.path == "/api/mock/restart-gateway":
             # Mock-only: Hermes restarts under a running turn (`hermes gateway restart`, a crash). Every socket
@@ -2284,6 +2533,15 @@ class Handler(BaseHTTPRequestHandler):
                                      body.get("reply") or "That's the new TestFlight feedback; it's waiting for your review.",
                                      float(body.get("seconds") or 20))
             return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/turn-elsewhere":
+            # Mock-only: Hermes starts a turn in a chat by itself (a background process finished, a
+            # routine in the live session), `session_id` a stored chat or `profile` a Bot's chat.
+            stored = body.get("session_id") or (bot_chat(body.get("profile") or "default") or {}).get("id")
+            # A normal chat is the API server's (chats.py); a Bot Chat is this mock's own.
+            run = turn_elsewhere if stored in STORED else globals().get("CHAT_TURN_ELSEWHERE")
+            done = bool(stored and run) and run(stored, body.get("text") or PROCESS_NOTICE,
+                                               body.get("reply") or PROCESS_REPLY, float(body.get("seconds") or 8))
+            return self.send_json(200 if done else 404, {"ok": done})
         if url.path == "/api/mock/deliver":
             # Mock-only: a script's alert in a Bot Chat, answered live (docs/chat.md §2a).
             done = deliver_alert(body.get("profile") or "ops", body.get("text") or OPS_ALERT, body.get("reply") or OPS_ALERT_REPLY)
@@ -2293,6 +2551,17 @@ class Handler(BaseHTTPRequestHandler):
             done = hold_chat(body.get("profile") or "researcher", float(body.get("seconds") or 60),
                              body.get("surface") or "cli", float(body.get("age") or 0), bool(body.get("late")))
             return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/owner":
+            # Mock-only: the gateway's own queue owns the chat (a Bot Chat by profile, or a stored id).
+            stored = body.get("session_id") or (bot_chat(body.get("profile") or "researcher") or {}).get("id")
+            done = bool(stored) and own_chat(stored, body.get("mode") or "forward", float(body.get("seconds") or 20),
+                                             float(body.get("ack") or 0))
+            return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/limit":
+            # Mock-only: Hermes at its chat limit for `seconds`: every new prompt is refused.
+            LIMIT.update(until=time.time() + float(body.get("seconds") or 30), active=int(body.get("active") or 3),
+                         limit=int(body.get("limit") or 3))
+            return self.send_json(200, {"ok": True})
         if url.path == "/api/mock/held-notice":
             # Mock-only: Hermes's own turn in a held Bot Chat, refused once taken.
             return self.send_json(200, {"ok": True, "clients": held_notice(body.get("profile") or "researcher")})

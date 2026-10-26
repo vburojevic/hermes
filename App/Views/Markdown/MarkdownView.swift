@@ -604,6 +604,9 @@ enum InlineRenderer {
         case .code(let code):
             // Narrow no-break spaces pad the tinted run without ever wrapping away from it.
             var run = AttributedString("\u{202F}\(code)\u{202F}")
+            // Code is no language ("zxx"): a long path or name breaks where the line ends, without
+            // a hyphen added to it that reads as part of the code.
+            run.languageIdentifier = "zxx"
             run.font = Theme.Typography.inlineCode
             run.backgroundColor = Theme.surfaceRaised
             if intent.contains(.stronglyEmphasized) { run.font = Theme.Typography.inlineCode.bold() }
@@ -671,6 +674,14 @@ extension Text {
     /// (`docs/widgets.md` §3). A tap asks first (`WidgetCard`).
     init(widgetLinking text: String) {
         self.init(linking: text) { $0.scheme?.lowercased() == "https" }
+    }
+
+    /// Code, a path or what a command printed: no language ("zxx"), so a long line breaks where it
+    /// ends without a hyphen added to it that reads as part of the code.
+    init(code text: String) {
+        var code = AttributedString(text)
+        code.languageIdentifier = "zxx"
+        self.init(code)
     }
 
     private init(linking text: String, allowing: (URL) -> Bool) {

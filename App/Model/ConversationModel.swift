@@ -88,7 +88,12 @@ final class ConversationModel: Identifiable {
     }
     private(set) var isStopping = false
     /// The turn has ended and its transcript is being fetched; sending waits for it.
-    private(set) var isFinishing = false
+    private(set) var isFinishing = false {
+        didSet { if isFinishing != oldValue { watchStuckTurn() } }
+    }
+    /// The turn `finishTurn` is reading the stored rows of: only that call clears `isFinishing`,
+    /// not one a stuck-turn settle already gave up on (`settleStuckTurn`).
+    @ObservationIgnored private var finishingTurn: UUID?
     /// The message going out hasn't been taken by the gateway yet (`docs/chat.md` §4): its bubble
     /// says "Sending…", then after a moment "Waiting for <Mac>…", until Hermes has it. A busy or
     /// away Mac only makes it wait; it's never given back for that.
@@ -239,6 +244,12 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var processWatchID = 0
     /// Fetches the chat again while its stored rows stop mid-turn (`watchMidTurn`).
     @ObservationIgnored private var midTurnWatch: Task<Void, Never>?
+    /// Finding out whether a stored turn that stops mid-work, with nothing running, died there
+    /// (`recoverStoredMidTurn`).
+    @ObservationIgnored private var midTurnRecovery: Task<Void, Never>?
+    /// The last stored row of a turn that died mid-work: it shows as stopped there, not working
+    /// (`TranscriptBuilder.settleMidTurn`), until a row is stored after it.
+    @ObservationIgnored private var midTurnEndedAt: Int?
     /// Bumped by `cancelAll`: a look still on its way doesn't start watching again.
     @ObservationIgnored private var processGeneration = 0
     @ObservationIgnored private var processRefreshing = false
@@ -347,6 +358,9 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var captionsByText: [String: FollowUpCaption] = [:]
     /// Stop was pressed: the queue waits for a Send instead of draining.
     private(set) var queuePaused = false
+    /// Something was queued after Stop, with Send: the person wants it sent once the stopped
+    /// turn ends, so the queue doesn't wait (`docs/chat.md` §4b).
+    @ObservationIgnored private var sendsAfterStop = false
     /// Hermes refused a message because another of its processes holds this chat (`waitForChat`):
     /// Up Next waits for it, and says so.
     private(set) var waitsForChat = false
@@ -417,20 +431,39 @@ final class ConversationModel: Identifiable {
     var followUpMode: FollowUpMode {
         // A queued message being edited goes back in the queue unless another mode is picked.
         if editingQueued != nil { return isWorking ? followUpPick ?? .sendNext : .sendNext }
+        // A turn that can't take a note: what's typed waits for it in Up Next.
+        if canQueue { return .sendNext }
         let mode = followUpPick ?? FollowUpMode.preferredDefault
         return availableFollowUpModes.contains(mode) ? mode : .steer
     }
 
+    /// What Send does with what's in the field now (`ComposerSend`, `docs/chat.md` §4b): send,
+    /// steer the running turn, queue it behind a turn that can't take it, or send the first
+    /// queued message. Never nothing while there's something to send.
+    var sendAction: ComposerSend? {
+        // Skills go with a new turn; a running one can't be steered with them alone.
+        let hasContent = hasDraftText || !attachments.isEmpty || !files.isEmpty || (!skills.isEmpty && !isWorking)
+        return ComposerSend.decide(ComposerSend.State(
+            hasContent: hasContent, hasQueued: !queue.isEmpty && editingQueued == nil, isWorking: isWorking,
+            isStopping: isStopping, isFinishing: isFinishing, isTurnOpen: isBotTurnOpen,
+            steersHelper: canSteerHelper, isReachable: isReachable
+        ))
+    }
+
     /// Something typed while a turn runs can go out now.
     var canSendFollowUp: Bool {
-        isWorking && (hasDraftText || !attachments.isEmpty || !files.isEmpty) && !isStopping && draftCommand == nil
-            && helperSteerTarget == nil
+        sendAction == .steer && draftCommand == nil
+    }
+
+    /// A turn holds the chat and can't take what's typed (it runs elsewhere, it's finishing or
+    /// stopping): Send puts it in Up Next, and it goes when the turn ends.
+    var canQueue: Bool {
+        sendAction == .queue && draftCommand == nil
     }
 
     /// With the field empty and nothing running, Send sends the first queued message.
     var canSendQueued: Bool {
-        !queue.isEmpty && !isWorking && !isFinishing && !isBotTurnOpen && !hasDraftText && attachments.isEmpty && files.isEmpty
-            && editingQueued == nil && isReachable
+        sendAction == .sendQueued
     }
 
     /// The caption of a stored message that was sent mid-turn (queue, redirect, carried-over steer).
@@ -498,7 +531,19 @@ final class ConversationModel: Identifiable {
     /// The Bot Chat's message count and preview as the roster last showed them; `nil` after our own turn.
     @ObservationIgnored private var seenChat: BotChatMark?
     /// A Bot Chat turn is open on the backend until it settles; nothing new can start.
-    private(set) var isBotTurnOpen = false
+    private(set) var isBotTurnOpen = false {
+        didSet {
+            guard isBotTurnOpen != oldValue else { return }
+            if isBotTurnOpen { botTurnGeneration &+= 1 }
+            watchStuckTurn()
+        }
+    }
+    /// Which opening of `isBotTurnOpen` this is: a turn's end clears only its own, never one a
+    /// stuck-turn settle let start meanwhile (`finishBotTurn`).
+    @ObservationIgnored private var botTurnGeneration = 0
+    /// Asks the gateway about a turn flag that holds the chat with nothing streaming
+    /// (`watchStuckTurn`).
+    @ObservationIgnored private var stuckTurnWatch: Task<Void, Never>?
     /// Events that arrive while catching up after a reconnect wait here.
     @ObservationIgnored private var catchUpBuffer: [GatewayEvent]?
     /// The re-attach after a reconnect, and the runtime id it can replay missed events from.
@@ -507,6 +552,8 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var requestSyncTask: Task<Void, Never>?
     /// Fetching the chat again until it shows how a turn it lost track of ended (`recoverSoon`).
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
+    /// Reading the stored chat for the steps a replay with a hole missed (`takeStoredSteps`).
+    @ObservationIgnored private var storedStepsTask: Task<Void, Never>?
     /// A send whose answer was lost is being looked into (`arrival`): it re-attaches the chat
     /// itself, and the socket coming back leaves the turn to it.
     @ObservationIgnored private var confirmingSend = false
@@ -537,8 +584,6 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var skipBackoff = false
     /// The turn in flight runs over the gateway socket (decided when it starts).
     @ObservationIgnored private var turnUsesGateway = false
-    /// The turn in flight was a queued message: it goes as `prompt.submit {queued: true}`.
-    @ObservationIgnored private var turnQueued = false
 
     init(workspace: BotWorkspace, session: HermesSession? = nil) {
         self.workspace = workspace
@@ -747,8 +792,19 @@ final class ConversationModel: Identifiable {
     /// The send-mode menu is open (the chip, or ⌥Return on an iPad's keyboard).
     var showsFollowUpMenu = false
 
-    /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`.
-    var helperSteerTarget: HelperSteerTarget?
+    /// The composer is writing to one helper (Steer): Send goes to it with `subagent.steer`. Only
+    /// while that helper can still read a note: once it finishes or stops taking notes, the
+    /// composer writes to Hermes again, so a helper long gone never holds up Send or Up Next
+    /// (`docs/chat.md` §4b). The strip above the field names it and clears it with one tap.
+    var helperSteerTarget: HelperSteerTarget? {
+        get {
+            guard let pickedHelperTarget, let helper = helpers.helper(pickedHelperTarget.helperID),
+                  helper.status.isLive, helper.acceptingSteer else { return nil }
+            return pickedHelperTarget
+        }
+        set { pickedHelperTarget = newValue }
+    }
+    private var pickedHelperTarget: HelperSteerTarget?
 
     /// A note for the helper being steered is ready to go.
     var canSteerHelper: Bool { helperSteerTarget != nil && hasDraftText }
@@ -935,7 +991,9 @@ final class ConversationModel: Identifiable {
     // Mirrors of `live` that change only when their value does, so the sidebar, composer and
     // chat chrome don't re-render for every streamed token.
     private(set) var isEmpty = true
-    private(set) var isWorking = false
+    private(set) var isWorking = false {
+        didSet { if isWorking != oldValue { watchStuckTurn() } }
+    }
     private(set) var pendingApproval: ApprovalRequest?
     private(set) var liveStatus: String?
     /// The running turn's plan (the Inspector's Plan).
@@ -1041,8 +1099,7 @@ final class ConversationModel: Identifiable {
 
     var canSend: Bool {
         if draftCommand != nil { return canSendCommand }
-        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || !files.isEmpty || !skills.isEmpty
-        guard hasContent, !isWorking, !isFinishing, !isBotTurnOpen else { return false }
+        guard sendAction == .send else { return false }
         // Not the connection: a message to a busy or away Mac shows at once and waits for it
         // (`delivery`). Only a sign-in it could never get past without the person stops it.
         if isBotChat {
@@ -1275,7 +1332,9 @@ final class ConversationModel: Identifiable {
         // A turn held on screen whose stored rows aren't whole yet: the stored rows that stop
         // partway are that turn, not another one still going somewhere else.
         let held = heldOver.flatMap { $0.isStored(in: messages) ? nil : $0 }
-        let midTurn = live == nil && held == nil && TranscriptBuilder.markMidTurn(&built, messages: messages)
+        let midTurn = live == nil && held == nil
+            && !TranscriptBuilder.settleMidTurn(&built, messages: messages, endedAt: midTurnEndedAt)
+            && TranscriptBuilder.markMidTurn(&built, messages: messages)
         watchMidTurn(lastRowAt: midTurn ? messages.last?.timestamp : nil)
         // The other process's turn ended: what waited for the chat goes now.
         if wasMidTurn, !midTurn, waitsForChat { retryChat(after: 1) }
@@ -1328,6 +1387,47 @@ final class ConversationModel: Identifiable {
                 return
             }
         }
+    }
+
+    /// Hermes says nothing runs on the chat (an attach: after a relaunch, back from the background)
+    /// while its stored rows stop mid-work in the person's own turn (`TranscriptBuilder.endsOwnMidTurn`):
+    /// the turn died there (a gateway restart), and showed as working for 20 minutes. The app looks
+    /// again on `TurnRecovery`'s backoff, quietly; nothing more stored, it ended there, "Stopped"
+    /// (`docs/chat.md` §2). A turn running here meanwhile, or rows stored after it, end the looks.
+    private func recoverStoredMidTurn() {
+        guard midTurnRecovery == nil, heldOver == nil, midTurnEndedAt != TranscriptBuilder.lastTurnRowID(rawMessages),
+              TranscriptBuilder.endsOwnMidTurn(rawMessages) else { return }
+        let began = Date.now
+        midTurnRecovery = Task { [weak self] in
+            defer { self?.midTurnRecovery = nil }
+            var recovery = TurnRecovery()
+            var step = recovery.next(after: .partway)
+            while case .wait(let seconds) = step {
+                try? await Task.sleep(for: .seconds(seconds))
+                guard let self, !Task.isCancelled, self.live == nil else { return }
+                let look = await self.lookAtStoredMidTurn(within: TurnRecovery.timeout(elapsed: Date.now.timeIntervalSince(began)))
+                step = recovery.next(after: look, elapsed: Date.now.timeIntervalSince(began))
+            }
+            guard let self, !Task.isCancelled, self.live == nil, step == .settle,
+                  let last = TranscriptBuilder.lastTurnRowID(self.rawMessages) else { return }
+            LoadTrace.mark(self.stableKey ?? "?", "a stored turn that stops mid-work, with nothing running, settled as stopped")
+            self.midTurnEndedAt = last
+            self.rebuild(from: self.rawMessages)
+        }
+    }
+
+    /// One look for `recoverStoredMidTurn`: the stored chat read again.
+    private func lookAtStoredMidTurn(within limit: TimeInterval) async -> TurnRecovery.Look {
+        guard let sessionID else { return .gone }
+        do {
+            let page = try await fetchLatest(sessionID, within: limit)
+            guard live == nil else { return .running }
+            await applyLoaded(page)
+        } catch {
+            return TurnRecovery.look(after: error)
+        }
+        if live != nil { return .running }
+        return TranscriptBuilder.endsOwnMidTurn(rawMessages) ? .partway : .stored
     }
 
     /// Events for the chat's turn arrived after all (the app attached to it): the stored copy
@@ -1457,6 +1557,22 @@ final class ConversationModel: Identifiable {
             rounds += 1
         }
         return page
+    }
+
+    /// `fetchLatest`, given up as a timeout after `limit` seconds (`nil`: as long as it takes). A
+    /// recovery's reads end within its minute however long a frozen backend holds them (`TurnRecovery`).
+    private func fetchLatest(_ id: String, within limit: TimeInterval?) async throws -> SessionTranscript {
+        guard let limit else { return try await fetchLatest(id) }
+        return try await withThrowingTaskGroup(of: SessionTranscript?.self) { group in
+            group.addTask { try await self.fetchLatest(id) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(limit))
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let page = first else { throw URLError(.timedOut) }
+            return page
+        }
     }
 
     /// A short page fetched while the kept copy went up (`fetchLatest(holding:)`) goes in below
@@ -1706,13 +1822,22 @@ final class ConversationModel: Identifiable {
     }
 
     func send() {
-        if let target = helperSteerTarget {
+        if let target = helperSteerTarget, hasDraftText {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
             draft = ""
             helperSteerTarget = nil
             if let helper = helpers.helper(target.helperID) { helpers.steer(helper, text: text) }
             return
+        }
+        // The helper stopped taking notes before this Send: the note stays in the field rather
+        // than going to Hermes as a steer it wasn't written as, and the composer writes to Hermes
+        // from now on.
+        if let lapsed = pickedHelperTarget, helperSteerTarget == nil {
+            pickedHelperTarget = nil
+            if hasDraftText {
+                addReceipt(String(localized: "Not sent · helper \(lapsed.number) finished. Send again to send it to Hermes"), symbol: "info.circle")
+                return
+            }
         }
         if let command = draftCommand {
             let argument = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1738,7 +1863,8 @@ final class ConversationModel: Identifiable {
             sendQueued(first)
             return
         }
-        guard canSend else { return }
+        let queues = canQueue
+        guard canSend || queues else { return }
         var parts = draftParts
         // A typed "/skill …" is the same as one chosen from the menu.
         if let catalog = slashCatalog, catalog.isLoaded, usesGateway {
@@ -1775,8 +1901,10 @@ final class ConversationModel: Identifiable {
         attachments = []
         files = []
         skills = []
-        if waitsForChat {
-            // Another Hermes process holds the chat: this waits behind what already does.
+        if waitsForChat || queues {
+            // Another Hermes process holds the chat, or a turn this one can't steer: this waits
+            // behind what already does, and goes when the chat is free.
+            if isStopping { sendsAfterStop = true }
             animateRows {
                 queue.append(QueuedFollowUp(text: parts.body, parts: parts.hasStructure ? parts : nil, skills: parts.skills,
                                             images: images, files: documents))
@@ -1792,7 +1920,9 @@ final class ConversationModel: Identifiable {
     /// chat (4090 `SESSION_NOT_OWNED`, or the turn refused once taken). The message waits at the
     /// top of Up Next, nothing lost, which says what holds the chat, and goes once the chat is
     /// free: when its stored turn is seen to end, else after 30 s, 1 and 2 minutes, then every 5.
-    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment], hold: ChatHold?) {
+    /// - Parameter holder: what holds it, when Hermes's refusal says (the gateway's own turn, its chat
+    ///   limit) rather than the chat's stored rows (`SendRefusal.holder`).
+    private func waitForChat(text: String, images: [ImageAttachment], files: [FileAttachment], hold: ChatHold?, holder: ChatHolder? = nil) {
         endDelivery()
         pendingUser = nil
         live = nil
@@ -1802,12 +1932,39 @@ final class ConversationModel: Identifiable {
         if let hold {
             chatHold = hold
             describeHold()
+        } else if let holder {
+            chatHold = nil
+            chatHolder = holder
         }
         chatWaitAttempts += 1
         let delays: [Double] = [30, 60, 120]
         retryChat(after: chatWaitAttempts <= delays.count ? delays[chatWaitAttempts - 1] : 300)
         // The stored rows say what holds it, and watch for it to let go (`watchMidTurn`).
         if !isFetching { reload() }
+    }
+
+    /// Hermes refused the message with a reason (4090, `SendRefusal`): it waits for the chat, waits
+    /// held for the person, or comes back to them with Hermes's words.
+    private func refused(_ refusal: SendRefusal, text: String, images: [ImageAttachment], files: [FileAttachment]) {
+        ConnectionLog.logger.notice("chat: Hermes refused a message (\(String(describing: refusal.reason), privacy: .public))")
+        switch refusal.action {
+        case .waitsForChat:
+            var hold: ChatHold?
+            if case .chatHeld(let held) = refusal.reason { hold = held }
+            waitForChat(text: text, images: images, files: files, hold: hold, holder: refusal.holder)
+        case .settleOnGateway:
+            // Only the gateway settles what blocks it: the message waits, held, and never goes by
+            // itself (retrying every few minutes only repeated the refusal).
+            endDelivery()
+            pendingUser = nil
+            live = nil
+            isStopping = false
+            animateRows { queue.insert(QueuedFollowUp(text: text, images: images, files: files, isHeld: true), at: 0) }
+            banner = .server(status: 0, code: nil, message: refusal.line)
+        case .checkTheChat, .tryAgain:
+            // `.checkTheChat` only before the prompt left (it can't): handled with the turn above.
+            restoreDraft(text: text, images: images, files: files, error: HermesError.server(status: 0, code: nil, message: refusal.line))
+        }
     }
 
     /// What holds the chat, from the refusal and what its stored rows show running. Once Hermes's
@@ -2910,7 +3067,7 @@ final class ConversationModel: Identifiable {
         // The tray gives up the message as it appears in the chat, in one movement.
         animateRows {
             queue.removeAll { $0.id == item.id }
-            start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts, queued: true)
+            start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts)
             if let pendingUser { userCaptions[pendingUser.id] = .fromQueue }
         }
     }
@@ -3061,7 +3218,7 @@ final class ConversationModel: Identifiable {
         if turnError?.canRetry == false, heldOver?.endUnheard != true { turnError = nil }
     }
 
-    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, queued: Bool = false, voice: VoiceTurn? = nil) {
+    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, voice: VoiceTurn? = nil) {
         recoveryTask?.cancel() // a new turn: whatever an earlier one left uncertain shows with it
         settleBackgroundRuns()
         hasUndoneMessage = false
@@ -3087,7 +3244,12 @@ final class ConversationModel: Identifiable {
         userImages[entry.id] = images
         armedSteers = []
         queuePaused = false
-        turnQueued = queued
+        sendsAfterStop = false
+        // A turn still being recovered is over, as far as Hermes stored it: one moving thing per place.
+        if heldOver?.endUnheard == true {
+            storedReplyWait?.cancel()
+            settleHeldTurn()
+        }
         animateRows {
             pendingUser = entry
             redirectedParts = []
@@ -3250,9 +3412,9 @@ final class ConversationModel: Identifiable {
                     apply(.approvalRequested(approval))
                 }
             } catch HermesError.notFound {
-                // Run status is kept for about an hour; past that the outcome is in the transcript.
-                failureIsRetryable = false
-                live?.markFailed(String(localized: "Lost track of this reply. It may have finished on the gateway."))
+                // Hermes keeps a run's status for an hour and not over a restart: nothing runs, and
+                // the stored chat says how the turn ended (`TurnRecovery`, `docs/chat.md` §2).
+                live?.settleUnheard()
                 return
             } catch {
                 try Task.checkCancellation()
@@ -3345,6 +3507,85 @@ final class ConversationModel: Identifiable {
         recoverSoon()
     }
 
+    /// A turn that never heard how it ended (`LiveTurn.settleUnheard`: Hermes reaped the session
+    /// while the socket was down, a run's status is gone) and whose stored rows weren't whole at its
+    /// end: the app finds out by itself (`TurnRecovery`, `docs/chat.md` §2). It keeps its last state
+    /// meanwhile, with nothing new moving, and looks again after 1, 2, 4, 8 and 15 s: a turn running
+    /// again carries on in its place, stored whole its rows take over, still partway it ended there
+    /// ("Stopped"). Only when no look could read the chat, or Hermes says it's gone, does the turn say
+    /// it lost track, and why, with Reload.
+    private func recoverHeldTurn(after found: TurnRecovery.Look, since unheardAt: Date) {
+        storedReplyWait?.cancel()
+        storedReplyWait = Task { [weak self] in
+            var recovery = TurnRecovery()
+            var step = recovery.next(after: found, elapsed: Date.now.timeIntervalSince(unheardAt))
+            while case .wait(let seconds) = step {
+                try? await Task.sleep(for: .seconds(seconds))
+                guard let self, !Task.isCancelled, self.heldOver?.endUnheard == true else { return }
+                // Another turn started here: this one is over, as far as Hermes stored it.
+                guard self.live == nil else {
+                    self.settleHeldTurn()
+                    return
+                }
+                let look = await self.lookAtHeldTurn(within: TurnRecovery.timeout(elapsed: Date.now.timeIntervalSince(unheardAt)))
+                step = recovery.next(after: look, elapsed: Date.now.timeIntervalSince(unheardAt))
+                LoadTrace.mark(self.stableKey ?? "?", "recovering a turn: look \(recovery.looks), \(step)")
+            }
+            guard let self, !Task.isCancelled, self.heldOver?.endUnheard == true, self.live == nil else { return }
+            switch step {
+            case .settle: self.settleHeldTurn()
+            case .lost(let reason): self.loseHeldTurn(reason)
+            case .follow, .handOver, .wait: break
+            }
+        }
+    }
+
+    /// One look at Hermes for a turn being recovered: the stored chat read and applied (whole, its
+    /// rows take over in `rebuild`), and over the gateway the chat attached again when it isn't (a
+    /// turn running carries on in its place, `reopenHeldTurn`).
+    private func lookAtHeldTurn(within limit: TimeInterval) async -> TurnRecovery.Look {
+        guard let sessionID else { return .gone }
+        do {
+            let page = try await fetchLatest(sessionID, within: limit)
+            guard heldOver != nil, live == nil else { return live == nil ? .stored : .running }
+            await applyLoaded(page)
+        } catch {
+            return TurnRecovery.look(after: error)
+        }
+        if heldOver == nil { return .stored }
+        if usesGateway, runtimeSessionID == nil, gatewayRoster?.isConnected == true {
+            _ = await attachGatewayChat()
+        }
+        if live != nil { return .running }
+        return heldOver == nil ? .stored : .partway
+    }
+
+    /// The turn being recovered ended where Hermes stored it (`AssistantTurn.endedPartway`). It stays
+    /// held as that: should the rest be stored after all, the stored rows still take over. A turn
+    /// running on the chat later is another one.
+    private func settleHeldTurn() {
+        guard let held = heldOver, let reply = held.reply, reply.isWorking,
+              let index = items.lastIndex(where: { $0.id == reply.id }),
+              case .assistant(let placed) = items[index] else { return }
+        let settled = placed.endedPartway(cutOff: held.cutOff, messages: rawMessages)
+        heldOver?.shown = Array(held.shown.dropLast()) + [.assistant(settled)]
+        heldOver?.endUnheard = false
+        animateRows { items[index] = .assistant(settled) }
+    }
+
+    /// The turn being recovered: the app couldn't find out how it ended, and says why
+    /// (`turnHeaderLost`); Reload asks again (`reloadLostTurn`).
+    private func loseHeldTurn(_ reason: LostTurn) {
+        guard let held = heldOver, let reply = held.reply,
+              let index = items.lastIndex(where: { $0.id == reply.id }),
+              case .assistant(let placed) = items[index] else { return }
+        let lost = placed.lost(reason)
+        heldOver?.shown = Array(held.shown.dropLast()) + [.assistant(lost)]
+        animateRows { items[index] = .assistant(lost) }
+        failureIsRetryable = false
+        turnError = TurnFailure(message: reason.line, canRetry: false)
+    }
+
     /// The person's Reload on a turn the app lost track of, once the chat is read. Stored whole, it
     /// has handed over to its rows already (`rebuild`); still partway, the session said it's idle,
     /// so nothing more is coming and it ended there (`AssistantTurn.settledAfterLoss`). It stays
@@ -3360,7 +3601,8 @@ final class ConversationModel: Identifiable {
         // As placed: with the steps Hermes stored when they went further than what it heard.
         heldOver?.shown = Array(held.shown.dropLast()) + [.assistant(settled)]
         animateRows { items[index] = .assistant(settled) }
-        if turnError?.message == LiveTurn.lostTrack { turnError = nil }
+        heldOver?.endUnheard = false
+        if let failure = turnError, LostTurn(line: failure.message) != nil { turnError = nil }
     }
 
     /// A turn held on screen that the turn now running here continues: one kept as still working
@@ -3372,7 +3614,9 @@ final class ConversationModel: Identifiable {
         guard let held = heldOver, var turn = held.reply, turn.isWorking || held.endUnheard,
               let index = items.lastIndex(where: { $0.id == turn.id }) else { return }
         heldOver?.shown = Array(held.shown.dropLast())
-        guard !turn.isWorking, index == items.indices.last else {
+        // One kept as still working because it waits for its reply goes: the turn running is the
+        // next. One being recovered (`recoverHeldTurn`) is the turn running.
+        guard !turn.isWorking || held.endUnheard, index == items.indices.last else {
             items.remove(at: index)
             return
         }
@@ -3431,8 +3675,15 @@ final class ConversationModel: Identifiable {
         connectionNote = nil
         settleFallback?.cancel()
         guard let finished = live else { return }
+        let finishing = UUID()
+        finishingTurn = finishing
         isFinishing = true
-        defer { isFinishing = false }
+        defer {
+            if finishingTurn == finishing {
+                finishingTurn = nil
+                isFinishing = false
+            }
+        }
         if let newID = finished.sessionID, newID != sessionID {
             sessionID = newID
         }
@@ -3455,12 +3706,28 @@ final class ConversationModel: Identifiable {
         // Folded off the main thread, the reply's Markdown parsed ahead: the swap below is then
         // only the swap, not a whole chat built in one frame as the reply ends.
         var prepared: (messages: [SessionMessage], items: [TranscriptItem])?
+        // What these reads found, for a turn that never heard its end (`TurnRecovery`): once one read
+        // the chat stopping partway, that's known, whatever the next ones say. Its reads end within
+        // the recovery's minute, however slow the backend is.
+        var found = TurnRecovery.Look.unreachable
+        let unheardAt = Date.now
         if let sessionID {
             for wait in [0, 500, 1500] {
                 if wait > 0 { try? await Task.sleep(for: .milliseconds(wait)) }
                 guard live?.turn.id == finished.turn.id else { return }
                 // Fetch in an unstructured task: a turn that ended by cancellation must still reconcile.
-                guard let fetched = try? await Task(operation: { try await fetch(sessionID) }).value else { continue }
+                let fetched: SessionTranscript
+                do {
+                    let limit = finished.endedUnheard ? TurnRecovery.timeout(elapsed: Date.now.timeIntervalSince(unheardAt)) : nil
+                    fetched = try await Task(operation: {
+                        if let limit { return try await self.fetchLatest(sessionID, within: limit) }
+                        return try await fetch(sessionID)
+                    }).value
+                } catch {
+                    if found != .partway { found = TurnRecovery.look(after: error) }
+                    continue
+                }
+                found = .partway
                 // By the rows Hermes said it stored the turn in, when it said; else a reply after its message.
                 guard finished.persisted?.isStored(in: fetched.messages)
                         ?? TranscriptBuilder.holdsTurn(fetched.messages, after: newestBefore, stopped: stoppedByUser) else { continue }
@@ -3503,7 +3770,8 @@ final class ConversationModel: Identifiable {
                 // in, in its stored rows' place (`TurnPlacement`), and read the chat again until
                 // they're whole (`awaitStoredReply`). A turn that ended with nothing in it stays a
                 // turn still working, never an empty space under the message; one that never heard
-                // how it ended says the app lost track of it (`LiveTurn.heldTurn`).
+                // how it ended stays as it last was while the app finds out (`LiveTurn.heldTurn`,
+                // `recoverHeldTurn`).
                 var held = shownRows
                 if let last = held.indices.last, case .assistant(var turn) = held[last] {
                     turn = ending.heldTurn
@@ -3520,10 +3788,6 @@ final class ConversationModel: Identifiable {
                                      cutOff: finished.cutOff)
                 items = TurnPlacement.place(held, userRowID: finished.persisted?.userRowID, after: newestBefore, in: items, messages: rawMessages)
                 needsReconcile = true
-                if case .failed(let line)? = heldOver?.reply?.state, line == LiveTurn.lostTrack {
-                    failureIsRetryable = false
-                    turnError = TurnFailure(message: line, canRetry: false)
-                }
             }
             pendingUser = nil
             redirectedParts = []
@@ -3537,7 +3801,11 @@ final class ConversationModel: Identifiable {
         if workspace?.currentConversation === self { ChatSounds.play(.received) }
         LoadTrace.mark(stableKey ?? "?", "turn end: \(shownRows.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(shownRows.count) rows kept their identity\(transcript == nil ? ", held for a later load" : "")")
         if transcript == nil, sessionID != nil {
-            awaitStoredReply()
+            if finished.endedUnheard {
+                recoverHeldTurn(after: found, since: unheardAt)
+            } else {
+                awaitStoredReply()
+            }
         }
         if let botName {
             seenActivity = .now
@@ -3547,7 +3815,8 @@ final class ConversationModel: Identifiable {
             workspace?.turnFinished(in: self)
         }
         if !queue.isEmpty {
-            if stoppedByUser { queuePaused = true } // Stop leaves the queue for a Send
+            // Stop leaves the queue for a Send, unless one was pressed since.
+            if stoppedByUser { queuePaused = !sendsAfterStop }
             Task { @MainActor in
                 // After the gateway has settled the turn.
                 try? await Task.sleep(for: .milliseconds(300))
@@ -3853,6 +4122,7 @@ final class ConversationModel: Identifiable {
         guard let live, !live.isFinished, !isStopping else { return }
         isStopping = true
         queuePaused = true
+        sendsAfterStop = false
         // The prompt already left: it may be with Hermes, so the turn is stopped there; the bubble
         // no longer says it waits. (Before it left, Stop gives the message back: `restoreDraft`.)
         if turnGate.sent || live.runID != nil { endDelivery() }
@@ -3907,14 +4177,16 @@ final class ConversationModel: Identifiable {
         apply(.approvalResolved(requestID: approval.requestID))
         Task {
             // A busy or unreachable gateway gets the answer when it can: asked again for up to four
-            // minutes (Hermes waits five for it). A repeat that lands after the first is a 409.
+            // minutes (Hermes waits five for it). A repeat that lands after the first finds nothing
+            // waiting, which may be its own first answer, so only the first says so.
             let began = Date.now
             for attempt in 0... {
                 do {
-                    try await client.respondToApproval(runID: runID, requestID: approval.requestID, choice: choice)
-                    return
-                } catch HermesError.server(409, _, _) {
-                    // Already answered, timed out (a deny) or the run ended: nothing is waiting.
+                    let outcome = try await client.answer(.approval(approval, choice: choice), runID: runID)
+                    if outcome == .notPending, attempt == 0 {
+                        // Answered on another device, timed out, or the turn ended.
+                        addReceipt(String(localized: "Hermes stopped waiting before your answer got there · \(approval.summary)"), symbol: "clock")
+                    }
                     return
                 } catch let error as HermesError where error.isTransient && Date.now.timeIntervalSince(began) < 240 && self.live?.runID == runID {
                     try? await Task.sleep(for: .seconds(min(30, 2 << min(attempt, 4))))
@@ -3965,11 +4237,15 @@ final class ConversationModel: Identifiable {
         turnTask?.cancel()
         loadTask?.cancel()
         storedReplyWait?.cancel()
+        midTurnRecovery?.cancel()
         reattachTask?.cancel()
         recoveryTask?.cancel()
+        storedStepsTask?.cancel()
         subscription?.cancel()
         backoff?.cancel()
         settleFallback?.cancel()
+        stuckTurnWatch?.cancel()
+        stuckTurnWatch = nil
         processWatch?.cancel()
         processWatch = nil
         processGeneration += 1
@@ -4138,6 +4414,8 @@ extension ConversationModel {
                 // Stored partway (Hermes stores as it goes): the stored part is this turn's when
                 // its message is, and carries on live.
                 beginRemoteTurn(startedAt: inflight?.startedAt, continuingStored: inflight?.isStored(in: items) ?? true)
+            } else if !running, live == nil {
+                recoverStoredMidTurn()
             }
             if let inflight { adopt(inflight) }
             // What Hermes holds for the next turn (`queued`): in the tray, read-only.
@@ -4303,7 +4581,10 @@ extension ConversationModel {
                 submitted = SentPrompt(at: .now, knownNewestID: rawMessages.last?.id)
                 waitingChatLeft()
                 var submit: [String: JSONValue] = ["session_id": .string(runtime), "text": .string(prompt)]
-                if turnQueued { submit["queued"] = .bool(true) } // a queued message never becomes a steer
+                // A new message never becomes a steer or a redirect of a turn this device hasn't
+                // seen yet (a process's notice, a held message Hermes sends as a turn ends, another
+                // device's): with `queued` a busy chat queues it, and the answer says so.
+                submit["queued"] = .bool(true)
                 if let voice = turnVoice { submit.merge(voice.submitParams) { $1 } }
                 // Patient: on an open socket the answer comes when a frozen backend wakes; a socket that
                 // dies fails it at once.
@@ -4318,13 +4599,21 @@ extension ConversationModel {
                     answer = try await roster.request("prompt.submit", submit, timeout: BotRoster.patientTimeout)
                 }
                 endDelivery()
-                if turnVoice != nil {
-                    // Spoken turns are marked in the chat (`docs/voice.md` §4.3), by the row Hermes stored.
-                    SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: answer["user_row_id"]?.truncatedIntValue, session: sessionID)
-                }
                 chatWaitAttempts = 0
                 chatHold = nil
                 chatHolder = nil
+                // Only Hermes's answer says whether the message started its own turn (`SubmitAnswer`).
+                let outcome = SubmitAnswer(result: answer)
+                guard case .started(let userRowID) = outcome else {
+                    hermesTook(outcome, item: QueuedFollowUp(
+                        text: text, parts: turnParts?.hasStructure == true ? turnParts : nil, skills: turnSkills, images: images, files: files
+                    ))
+                    return
+                }
+                if turnVoice != nil {
+                    // Spoken turns are marked in the chat (`docs/voice.md` §4.3), by the row Hermes stored.
+                    SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: userRowID, session: sessionID)
+                }
                 turnGate.take()
                 if live?.runID == nil { apply(.runStarted(runID: runtime)) }
                 break sending
@@ -4381,11 +4670,27 @@ extension ConversationModel {
                         return
                     }
                 }
-                if let refusal = error as? GatewayRPCError, refusal.isHeldElsewhere, live?.runID == nil,
-                   !(live?.turn.steps.isEmpty == false) {
-                    // Never around the hold (the API server would make a second writer): it waits.
+                if let refusal = (error as? GatewayRPCError).flatMap(SendRefusal.init), refusal.action == .checkTheChat, let submitted {
+                    // The gateway didn't confirm it in time and may have it queued (SESSION_OWNER_UNCONFIRMED):
+                    // like a lost answer, never sent again by itself and never around it over the API
+                    // server. The card says so, offers Reload, and Send Again only as the person's choice.
+                    ConnectionLog.logger.notice("chat: the gateway didn't confirm a message; it isn't sent again by itself")
+                    endDelivery()
                     isBotTurnOpen = false
-                    waitForChat(text: text, images: images, files: files, hold: ChatHold(refusal: refusal.message))
+                    failureIsRetryable = false
+                    live?.markFailed(refusal.line)
+                    await finishBotTurn()
+                    unconfirmed = LostPrompt(knownNewestID: submitted.knownNewestID, sentAt: submitted.at)
+                    turnError?.mayResend = true
+                    recoverSoon()
+                    return
+                }
+                if let refusal = (error as? GatewayRPCError).flatMap(SendRefusal.init), live?.runID == nil,
+                   !(live?.turn.steps.isEmpty == false) {
+                    // Hermes said why (`docs/chat.md` §4d). Never around it: the API server would be
+                    // a second writer, or a second copy of a message the gateway may hold.
+                    isBotTurnOpen = false
+                    refused(refusal, text: text, images: images, files: files)
                     return
                 }
                 if !isBotChat, submitted == nil || error is GatewayRPCError || error is GatewaySocket.Failure {
@@ -4410,6 +4715,36 @@ extension ConversationModel {
         }
         await waitForBotTurn()
         await finishBotTurn()
+    }
+
+    /// Hermes didn't start a turn for the message (`SubmitAnswer`, `docs/chat.md` §4c). It holds it
+    /// behind a turn running in this chat, or in the gateway's own queue, and sends it as a turn of
+    /// its own later; or it put it into the running turn. The turn on screen, if there is one, is
+    /// Hermes's, never this message's: it carries on as a turn this device didn't start.
+    private func hermesTook(_ outcome: SubmitAnswer, item: QueuedFollowUp) {
+        ConnectionLog.logger.notice("chat: Hermes didn't start a turn for a message (\(String(describing: outcome), privacy: .public))")
+        animateRows {
+            pendingUser = nil
+            // In the tray until its turn starts; Hermes sends it after the one running.
+            if outcome.isQueued { holdOnGateway(item.line) }
+        }
+        if outcome == .steered || outcome == .redirected {
+            addSteer(item.text, wasRedirect: outcome == .redirected)
+        }
+        switch outcome {
+        case .queuedBehindTurn, .steered, .redirected:
+            // A turn runs here: the one on screen is it. Its message is read from the live session.
+            isRemoteTurn = true
+            turnGate.take()
+            Task { await readRemoteTurn() }
+        case .queuedOnGateway, .voiceStopped, .started:
+            // Nothing runs here for it: the gateway's turn reaches this socket only as the start and
+            // end of this message's own, which then shows as a turn of its own.
+            isBotTurnOpen = false
+            isRemoteTurn = false
+            turnGate = TurnSettleGate()
+            animateRows { live = nil }
+        }
     }
 
     /// The gateway's words for a voice message the device heard none in (`POST
@@ -4518,7 +4853,8 @@ extension ConversationModel {
     }
 
     private func finishBotTurn() async {
-        defer { isBotTurnOpen = false }
+        let generation = botTurnGeneration
+        defer { if botTurnGeneration == generation { isBotTurnOpen = false } }
         endDelivery()
         if roster != nil || workspace?.client != nil || gatewayRoster != nil {
             await finishTurn { try await self.fetchLatest($0) }
@@ -5187,6 +5523,8 @@ extension ConversationModel {
         }
         if let live { turnBaseline = (live.turn.id, newestBeforeTurn) }
         isRemoteTurn = true
+        // Its events come over the socket, so a steer goes there too.
+        turnUsesGateway = true
         isBotTurnOpen = true
         turnGate.take()
     }
@@ -5229,7 +5567,7 @@ extension ConversationModel {
             } else {
                 // Idle without the turn's end (it ended while the socket was down, the gateway
                 // restarted): how it ended is read from the stored chat, and until that shows it
-                // the turn says the app lost track of it, never that it finished (`heldTurn`).
+                // the turn stays as it last was, never finished (`heldTurn`, `recoverHeldTurn`).
                 self.live?.settleUnheard()
             }
         }
@@ -5241,6 +5579,96 @@ extension ConversationModel {
             Task { await finishBotTurn() }
         }
     }
+
+    /// Arms the stuck-turn check while a turn flag holds the chat with nothing streaming, and
+    /// disarms it as soon as one streams or the flags clear (`StuckTurn`, `docs/chat.md` §4b).
+    private func watchStuckTurn() {
+        guard StuckTurn.holds(isTurnOpen: isBotTurnOpen, isFinishing: isFinishing, isWorking: isWorking) else {
+            stuckTurnWatch?.cancel()
+            stuckTurnWatch = nil
+            return
+        }
+        // Over the API server alone there's no gateway to ask; its reads end by their timeouts.
+        guard stuckTurnWatch == nil, gatewayRoster != nil else { return }
+        let heldSince = Date.now
+        let newestBefore = rawMessages.last?.id
+        stuckTurnWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: StuckTurn.grace)
+                guard !Task.isCancelled, let self,
+                      StuckTurn.holds(isTurnOpen: isBotTurnOpen, isFinishing: isFinishing, isWorking: isWorking) else { return }
+                let running = await gatewayRunning()
+                guard !Task.isCancelled,
+                      StuckTurn.holds(isTurnOpen: isBotTurnOpen, isFinishing: isFinishing, isWorking: isWorking) else { return }
+                switch StuckTurn.outcome(running: running, recovering: isFinishing && live?.endedUnheard == true) {
+                case .settle:
+                    // This check is done: what settling changes may arm the next one.
+                    stuckTurnWatch = nil
+                    await settleStuckTurn(heldSince: heldSince, newestBefore: newestBefore)
+                    return
+                case .follow, .askAgain:
+                    // Still running (attached now, it streams on here) or not asked: messages wait
+                    // in Up Next, and it's asked again after another grace.
+                    continue
+                }
+            }
+        }
+    }
+
+    /// Whether a turn runs in this chat on the gateway now: `session.resume`'s `running`, which
+    /// also attaches the chat, so a turn still running streams on here. `nil` when it couldn't
+    /// be asked.
+    private func gatewayRunning() async -> Bool? {
+        guard sessionID != nil, gatewayRoster?.isConnected == true else { return nil }
+        return await attachGatewayChat()
+    }
+
+    /// Nothing runs on the gateway, yet a turn flag held the chat past the grace: the app never
+    /// heard that turn end (it ended while the socket was down, past the moment Hermes lets a
+    /// detached session go). The flags clear, the chat reads its stored rows, and Up Next sends,
+    /// once: a queued message the stored chat already has from since the hold began stays in Up
+    /// Next held for a Send, rather than going twice.
+    private func settleStuckTurn(heldSince: Date, newestBefore: Int?) async {
+        ConnectionLog.logger.notice("chat: a turn held the chat for \(Int(Date.now.timeIntervalSince(heldSince)))s with nothing running on the gateway (open: \(self.isBotTurnOpen, privacy: .public), finishing: \(self.isFinishing, privacy: .public), remote: \(self.isRemoteTurn, privacy: .public)); settled from the stored chat")
+        settleFallback?.cancel()
+        settleFallback = nil
+        // A send of ours waiting for the end it'll never hear goes on: with no live turn left it
+        // only clears its own flags.
+        if let botTurnDone {
+            self.botTurnDone = nil
+            botTurnDone.resume()
+        }
+        isRemoteTurn = false
+        if live != nil || pendingUser != nil {
+            endDelivery()
+            animateRows {
+                pendingUser = nil
+                redirectedParts = []
+                live = nil
+            }
+        }
+        finishingTurn = nil
+        isFinishing = false
+        isBotTurnOpen = false
+        reload()
+        await loadTask?.value
+        guard !isWorking, !isFinishing, !isBotTurnOpen else { return }
+        for index in queue.indices where !queue[index].isHeld
+            && SubmitCheck.arrived(queue[index].text, sentAt: heldSince, knownNewestID: newestBefore, in: rawMessages) {
+            queue[index].isHeld = true
+        }
+        drainQueueIfIdle()
+    }
+
+    #if DEBUG
+    /// `-HERMES_STUCK_TURN <s>`: the chat holds as a missed turn end leaves it, a turn open on the
+    /// gateway with nothing streaming (`docs/chat.md` §4b, `docs/development.md`).
+    func holdAsIfATurnEndWasMissed() {
+        guard live == nil, !isFinishing else { return }
+        isRemoteTurn = true
+        isBotTurnOpen = true
+    }
+    #endif
 
     private func stopBotTurn() {
         guard let roster = gatewayRoster, let runtime = runtimeSessionID, turnGate.sent else {
@@ -5353,17 +5781,12 @@ extension ConversationModel {
             let running = await attachRetrying()
             guard !Task.isCancelled else { return }
             replayRuntime = nil
-            var frames: [GatewayEvent] = []
+            var replay: EventReplay?
             if live != nil, let roster = gatewayRoster, let runtime = runtimeSessionID, runtime == previous,
                let result = try? await roster.request("session.events.since", [
                    "session_id": .string(runtime), "last_seen": .number(Double(lastSeq ?? 0)),
-               ]), case .array(let replay)? = result["events"] {
-                frames = replay.map { frame in
-                    GatewayEvent(
-                        type: frame["type"]?.stringValue ?? "", sessionID: runtime,
-                        seq: frame["seq"]?.truncatedIntValue, payload: frame["payload"] ?? .object([:])
-                    )
-                }
+               ]) {
+                replay = EventReplay(result, runtime: runtime)
             }
             let held = catchUpBuffer ?? []
             catchUpBuffer = nil
@@ -5375,9 +5798,10 @@ extension ConversationModel {
                 reload()
                 return
             }
-            for event in frames + held {
+            for event in (replay?.events ?? []) + held {
                 receive(event)
             }
+            if let replay { takeStoredSteps(after: replay) }
             if running == nil, isWorking {
                 // Half a minute of refusals: the turn's outcome is on the gateway. Sending the
                 // message again could run it twice, so the card offers a reload, not a retry, and
@@ -5386,13 +5810,42 @@ extension ConversationModel {
                 live?.markFailed(String(localized: "Couldn't reconnect to this chat. Reload to see how it ended."))
                 settle()
                 recoverSoon()
-            } else if running == false, isWorking, turnGate.settles {
-                // Not running yet is not over: a prompt Hermes hasn't taken (the send finds out
-                // what became of it) or a chat's agent still being built.
-                settle()
             } else if running == false {
-                drainQueueIfIdle() // what waited while offline goes now
+                endAfterReattach()
             }
+        }
+    }
+
+    /// Attached again after a drop, and Hermes says nothing runs on the chat
+    /// (`TurnRecovery.afterReattach`). A turn on screen that hasn't heard its end by now never will:
+    /// Hermes reaps a session 20 s after its socket left, and the new runtime replays nothing. It
+    /// ends here and the stored chat says how (`recoverHeldTurn`). Not running yet is not over: a
+    /// prompt Hermes hasn't taken (the send finds out what became of it) or a chat's agent still
+    /// being built.
+    private func endAfterReattach() {
+        switch TurnRecovery.afterReattach(working: isWorking, promptTaken: turnGate.settles) {
+        case .recover: settle()
+        case .wait: break
+        case .idle: drainQueueIfIdle() // what waited while offline goes now
+        }
+    }
+
+    /// The socket's replay is in. One with a hole (`session.events.since` answered `truncated`):
+    /// Hermes no longer held every event the turn sent while the socket was down. The turn is
+    /// marked for its stored rows as a run's `replay.truncated` marks it (`LiveTurn.note`), and the
+    /// steps it took meanwhile are read from the stored chat now (Hermes stores as it goes): the
+    /// live turn carries on from them, rather than without them until its end (`docs/chat.md` §2).
+    /// Over the API server the steps have no call ids to pair them by, so its turn waits for its end.
+    private func takeStoredSteps(after replay: EventReplay) {
+        live?.note(replay)
+        guard let turnID = live?.turn.id, live?.needsReload == true, let sessionID else { return }
+        let after = turnBaseline?.turnID == turnID ? turnBaseline?.newest : newestBeforeTurn
+        storedStepsTask?.cancel()
+        storedStepsTask = Task { [weak self] in
+            guard let page = try? await self?.fetchLatest(sessionID), let self, !Task.isCancelled,
+                  self.live?.turn.id == turnID else { return }
+            self.live?.takeStored(from: page.messages, after: after)
+            LoadTrace.mark(self.stableKey, "replay truncated: \(self.live?.needsReload == false ? "took the stored steps" : "nothing stored yet")")
         }
     }
 
@@ -5495,21 +5948,17 @@ extension ConversationModel {
             guard finding == .nothingYet, Date.now < deadline, !Task.isCancelled else { break }
             try? await Task.sleep(for: .seconds(3))
         }
-        var frames: [GatewayEvent] = []
+        var replay: EventReplay?
         if running == true, let roster = gatewayRoster, let runtime = runtimeSessionID, runtime == previous,
            let result = try? await roster.request("session.events.since", [
                "session_id": .string(runtime), "last_seen": .number(Double(lastSeq ?? 0)),
-           ]), case .array(let replay)? = result["events"] {
-            frames = replay.map { frame in
-                GatewayEvent(
-                    type: frame["type"]?.stringValue ?? "", sessionID: runtime,
-                    seq: frame["seq"]?.truncatedIntValue, payload: frame["payload"] ?? .object([:])
-                )
-            }
+           ]) {
+            replay = EventReplay(result, runtime: runtime)
         }
         let held = catchUpBuffer ?? []
         catchUpBuffer = nil
-        for event in frames + held { receive(event) }
+        for event in (replay?.events ?? []) + held { receive(event) }
+        if let replay { takeStoredSteps(after: replay) }
         // Not attached on this socket: the next reload attaches (`botChatReconnected` stood aside).
         if running == nil { runtimeSessionID = nil }
         switch finding {

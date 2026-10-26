@@ -115,10 +115,14 @@ design's component names, used in code comments.
   protocol, the run's end over the API server) the first item goes as the next turn. Over the
   gateway protocol it is sent with `prompt.submit {queued: true}`, so Hermes never turns it into a
   steer. It appears captioned "Sent from the queue" and the rest move up. One at a time: the next
-  item waits for that turn to end too. Messages the gateway holds go before the app's queue.
+  item waits for that turn to end too. Messages the gateway holds go before the app's queue. A
+  turn whose end the app never heard doesn't hold the queue for long: after 10 s the gateway is
+  asked, and the chat settles ([chat.md](chat.md) §4b). Behind a turn that can't take a note
+  (finishing, stopping, or running elsewhere) Send queues what's typed, and the chip shows Send Next.
 - **Stop:** the trailing Stop interrupts the turn (`session.interrupt`, or
   `POST /v1/runs/{id}/stop`) and does **not** drain the queue. The tray stays, and Send with an
-  empty field sends the first item. The next turn that starts resumes draining.
+  empty field sends the first item. The next turn that starts resumes draining. A message sent
+  with Send while the turn is still stopping goes to Up Next, and the queue drains when it ends.
 - **Survives:** the queue is kept per chat on the device (Application Support,
   `FollowUpQueues/<chat>/`, attachments included) and survives app restarts. It waits while the
   gateway is unreachable and drains on reconnect, after a resumed turn ends. Removing the gateway

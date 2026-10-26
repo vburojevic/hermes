@@ -41,9 +41,10 @@ struct WidgetTagView: View {
         Text(tag.label)
             .font(.caption2.weight(.semibold))
             .strikethrough(tag.state == .removed)
-            .lineLimit(1)
             .foregroundStyle(prominent ? Theme.inkForeground : warns ? tone.color : Theme.secondaryText)
             .padding(.horizontal, 7)
+            // One line stays 20 pt tall; lines that wrap keep clear of the rounded edges.
+            .padding(.vertical, 3)
             .frame(minHeight: 20)
             .background(prominent ? Theme.ink : warns ? tone.tint : Theme.controlFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
@@ -52,7 +53,10 @@ struct WidgetTagView: View {
                         .strokeBorder(Theme.secondaryText, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
                 }
             }
-            .fixedSize()
+            // Whole beside what it tags, but a value drawn as a tag (a details field, a table cell)
+            // can be long: it wraps in its pill rather than widening the card and the reply.
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
             .accessibilityLabel(warns ? "\(tag.label), \(tone.word)" : tag.label)
     }
 }

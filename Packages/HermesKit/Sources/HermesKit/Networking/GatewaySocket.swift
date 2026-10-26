@@ -95,20 +95,18 @@ public struct GatewayRPCError: Error, Sendable, Equatable, LocalizedError {
         case 4062: "A Bot with that name already exists."
         case 4064: "That bot doesn't exist on this Hermes backend."
         case 4090:
-            // Hermes says why in `data.reason`; the message is its own.
-            switch refusalReason {
-            case "SESSION_NOT_OWNED": "Another Hermes process is answering in this chat right now (another Bot's message, or a routine). Send again when it's done."
-            case "SESSION_COORDINATION_UNAVAILABLE": "Hermes can't tell who's using this chat right now. Try again in a moment."
-            default: "Hermes is running as many chats at once as it's set to allow. Try again when one finishes."
-            }
+            // Hermes says why in `data.reason`: each reason has its own line, and one the app
+            // doesn't know shows Hermes's own message (`SendRefusal`).
+            SendRefusal(self)?.line ?? message
         case 5035: "Hermes is restarting. Reconnecting…"
         case -32601: HermesVersionGap.message
         default: message
         }
     }
 
-    /// Why Hermes refused a turn (4090): `SESSION_NOT_OWNED`, `MAX_CONCURRENT_SESSIONS`,
-    /// `SESSION_COORDINATION_UNAVAILABLE`.
+    /// Why Hermes refused a turn (4090): `SESSION_NOT_OWNED`, `SESSION_OWNER_BUSY`,
+    /// `SESSION_OWNER_UNCONFIRMED`, `MAX_CONCURRENT_SESSIONS`, `SESSION_COORDINATION_UNAVAILABLE`,
+    /// or none (`SendRefusal`).
     public var refusalReason: String? { data?["reason"]?.stringValue }
 
     /// The chat is held by another Hermes process (a Bot's one-shot `hermes chat` answering

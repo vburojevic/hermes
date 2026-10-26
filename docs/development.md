@@ -95,6 +95,19 @@ Then add `localhost:18642` with that key, or launch a Debug build with
 Messages containing "approve" ask for permission, "slow" runs a long multi-tool turn, and
 "fail" fails.
 
+The mock answers approvals as Hermes's run store does (`docs/quick-actions.md` §3): `POST
+/v1/runs/{id}/approval` (and `/clarify`) takes exactly `{request_id, execution_generation,
+choice}` (`answer`), and anything else is 400 `invalid_params`. A generation other than the run's
+is 409 `stale_generation`, and a prompt it isn't waiting on is 409 `approval_not_pending`; each
+refusal's message is its bare reason, as Hermes's. `GET /v1/runs/{id}` carries
+`execution_generation` and the prompts in `pending_controls`. "approve stale" moves the run's
+generation as soon as the card is up and drops the prompt with it, as Hermes does: the card's answer
+is refused stale, the run no longer lists it, so the card settles, and the turn asks again 30 s
+later. "approve stale retry" keeps the prompt under the new generation, which Hermes never does,
+to exercise the app's one defensive retry. "approve
+elsewhere" allows it on another device after 5 s without a word on the run's events, then runs the
+command for 20 s (the card's answer in that time finds nothing waiting).
+
 Onboarding (`Tools/mock-hermes/onboarding.py`): `setup.status`, `model.options`,
 `model.save_key` and `free_tier.provision`. `--no-model` starts the backend with no model
 provider, so setup asks for one. `POST /api/mock/onboarding {provider_configured, jobs:
@@ -123,7 +136,10 @@ python3 Tools/mock-hermes/backend.py --port 19119 --password pw   # gated: admin
 
 and turn on **Bot Mode** for the gateway with `127.0.0.1:19119`, or add
 `HERMES_BOOTSTRAP_BACKEND=http://127.0.0.1:19119` to the Debug launch environment. "approve",
-"slow" and "fail" work in Bot Chats too ("marathon" is "slow" for about 45 s, "essay" streams a long
+"slow" and "fail" work in Bot Chats too ("marathon" is "slow" for about 45 s, "flood" reads sixteen
+sources with about 4,800 events in under a minute, more than the replay ring keeps (512 events or
+4 MiB a session, as Hermes): `POST /api/mock/drop-sockets {"outage": 10}` in its middle and the
+re-attach's `session.events.since` answers `truncated` (`docs/chat.md` §2), "essay" streams a long
 Markdown reply for about ten seconds, "widgets" is a coding turn of about 25 s: two files, a failing
 check, a third file and a passing one, with `inline_diff`s as Hermes renders them, and a steer sent
 during the check is read after it, "late reply" ends its turn saying nothing and stores the reply 12 s
@@ -150,9 +166,17 @@ the session is idle that long after it (the turn's
 end handing over: `-HERMES_SEND "write swift widgets" -HERMES_SEND_AFTER 6 -HERMES_FOLLOWUP <text>
 -HERMES_FOLLOWUP_MODE steer -HERMES_FOLLOWUP_SEND YES -HERMES_FOLLOWUP_AFTER 12` in `bot:default`, and
 `-HERMES_LOAD_LOG YES` says "held for a later load" when it didn't). Connection trouble on demand: `POST
-/api/mock/drop-sockets {settle, outage}` cuts every socket (the next `settle` resumes of a running
-chat answer 4009, new sockets are cut for `outage` seconds), `POST /api/mock/freeze-sockets`
-leaves them half-open, `POST /api/mock/stall {seconds}` freezes the backend the way Hermes's
+/api/mock/drop-sockets {settle, outage, reap}` cuts every socket (the next `settle` resumes of a running
+chat answer 4009, new sockets are cut for `outage` seconds, and with `reap` (Hermes's is 20) a
+session no socket came back for in that many seconds is interrupted and let go, so the next resume
+gets a fresh, idle one with nothing to replay), `POST /api/mock/turn-elsewhere {session_id | profile,
+seconds, text, reply}` has Hermes start a turn in that chat by itself, as when a background process
+finishes (about 8 s; with `{"outage": 25, "reap": 20}` above in its middle, the app never hears it
+end: a stuck turn, `docs/chat.md` §4b; `-HERMES_STUCK_TURN <s>` holds the open chat that way that
+long after launch, without the mock's help), `POST /api/mock/freeze-sockets`
+leaves them half-open, `POST /api/mock/history-down {seconds, status}` refuses stored chats' messages that
+long while the socket keeps working (a 502, or `status: 404` for a chat Hermes no longer has: a reply the app
+lost track of then says why, `docs/chat.md` §2), `POST /api/mock/stall {seconds}` freezes the backend the way Hermes's
 dashboard freezes on a loaded Mac (requests, frames and pings wait, then all answer; the gateway
 mock keeps answering), `POST /api/mock/starve {seconds, gap, slice, health}` starves the whole
 Mac instead, both mocks at once (`Tools/mock-hermes/starve.py`, also on the gateway mock's port;
@@ -181,6 +205,21 @@ of each message nobody typed: that alert and its reply, a routine's delivery mir
 (its routine, Disk report, is in Ops' Routines), a webhook's, an untyped `[System: …]` nudge
 (hidden), a skill used from another device, a compaction summary folded into the person's next
 message and one on its own as the newest row.
+Every reason Hermes gives for refusing a message (`docs/chat.md` §4c, §4d), shaped like the
+gateway's own: `POST /api/mock/owner {mode, profile | session_id, seconds, ack}` lets the gateway's
+own queue own a chat (a Bot Chat by profile, else a stored id) for `seconds`, its own turn running
+there. `forward` queues a text-only send in that queue (`{status: queued, admission_id, forwarded:
+true}`, then `session.info {pending_submissions}`, and once the owner's turn ends only
+`message.start` and `message.complete` for it; the mock prints `owner: ran a forwarded message` each
+time one runs, to count them); a photo can't join it (4090 `SESSION_OWNER_BUSY`, "an image cannot
+join its queue, so it was removed from this message", the photo unstaged). `ack` makes the owner
+answer that late, and past 30 s it is `SESSION_OWNER_UNCONFIRMED` while the message still runs, as
+mode `unconfirmed` does at once. `busy` (`SESSION_OWNER_BUSY`), `ledger-unknown`
+(`SESSION_NOT_OWNED`, "outcome-unknown work in the gateway's durable queue"), `coordination`
+(`SESSION_COORDINATION_UNAVAILABLE`) and `no-reason` (a bare 4090) refuse with Hermes's words;
+`unknown-reason` refuses with a reason no Hermes sends yet, for a reason newer than the app; `off`
+lets go. `POST /api/mock/limit {seconds, active, limit}` puts Hermes at its chat limit
+(`MAX_CONCURRENT_SESSIONS`, "(3/3)") for `seconds`.
 `POST /api/mock/hold {profile, seconds, surface, age, late}` holds a Bot Chat with nothing stored:
 `age` minutes ago (45 reads as a terminal, 0 as a one-shot booting), `surface` `cli` or
 `desktop`; `late: true` takes the next send, stores it and refuses the turn as it runs instead (the
@@ -279,7 +318,11 @@ hermes-app-widgets plugin over both servers: "widgets" pages through every examp
 reply, "widgets 2"…), "widget <type>" shows one type's examples, "widget publish" an approval
 without Face ID, "widget lunch" one with it, "widget expiring" one that expires in 60 s, "widget
 silent" one whose first answer gets no update (Try Again), "widget private", "widget fence" (an
-agent-typed block, shown as code), "widget unknown", "widget invalid" and "widget suggestions".
+agent-typed block, shown as code), "widget unknown", "widget invalid", "widget suggestions" and
+"widget wide" (everything long in one reply: a long inline code path and name, a wide code block,
+a details card with long labels, values and a long state tag, a snippet and an output with lines
+of over 200 characters; nothing in it may widen the reply, [chat.md](chat.md) §3) and "widget
+wide table" (a table with long headings, text and mono values and a long state tag).
 "Weather today?" (any message with "weather" or "forecast") is what an agent told about widgets
 does: it looks the forecast up, reads the weather examples and answers one sentence and the
 weather card. Over the socket, a chat the app didn't mark gets each widget's plain text instead,

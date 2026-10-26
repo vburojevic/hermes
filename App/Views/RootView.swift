@@ -313,6 +313,15 @@ struct RootView: View {
     /// `-HERMES_SEND <text>` sends a message in a new chat once connected (turn screenshots and
     /// flow tests without driving the keyboard). Waits for Bot Mode so it runs over the socket.
     private func sendDebugMessage(in workspace: BotWorkspace) async {
+        // `-HERMES_STUCK_TURN <s>`: that long after launch, the open chat holds as if it never heard
+        // a turn end (`docs/chat.md` §4b): Send queues, and the chat settles from the gateway.
+        let stuckAfter = UserDefaults.standard.double(forKey: "HERMES_STUCK_TURN")
+        if stuckAfter > 0 {
+            Task {
+                try? await Task.sleep(for: .seconds(stuckAfter))
+                workspace.currentConversation.holdAsIfATurnEndWasMissed()
+            }
+        }
         #if os(iOS)
         // `-HERMES_OPEN_CYCLE bot:ops,chat:<id>,…` opens each in turn (`-HERMES_OPEN_CYCLE_ROUNDS`
         // times, 3 by default), marking the frame log (`-HERMES_FRAME_LOG`) as each opens and 4 s

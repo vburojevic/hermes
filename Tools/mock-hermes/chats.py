@@ -40,6 +40,7 @@ def install(backend_globals, gateway_module):
         return 200, {"ok": True, "room": room["room_id"]}
 
     B["HTTP_ROUTES"][("POST", "/api/mock/room-say")] = say_in_room
+    B["CHAT_TURN_ELSEWHERE"] = turn_elsewhere
     original = {name: methods[name] for name in ("session.create", "session.resume", "prompt.submit")}
 
     def create(params):
@@ -106,7 +107,9 @@ def create_chat(params):
 def resume_chat(params):
     stored = params["session_id"]
     with B["LOCK"]:
-        sid = next((k for k, r in B["RUNTIME"].items() if r["stored"] == stored), None) or new_chat_runtime(stored)
+        # A runtime Hermes let go (a reap, a restart) isn't resumed: the chat gets a fresh one.
+        sid = next((k for k, r in B["RUNTIME"].items() if r["stored"] == stored and not r.get("dead")), None) \
+            or new_chat_runtime(stored)
         runtime = B["RUNTIME"][sid]
     with G.LOCK:
         count = len(G.MESSAGES.get(stored, []))
@@ -117,7 +120,44 @@ def resume_chat(params):
             "queued": {"user": runtime["queue"][0]["text"]} if runtime.get("queue") else None}
 
 
+def turn_elsewhere(stored, text, reply, seconds):
+    """backend.py's `turn_elsewhere` for a normal chat (`/api/mock/turn-elsewhere`): Hermes starts a
+    turn by itself, its events go to whoever is attached, and a reap stops it where it is."""
+    with G.LOCK:
+        if stored not in G.SESSIONS:
+            return False
+    with B["LOCK"]:
+        sid = next((k for k, r in B["RUNTIME"].items()
+                    if r["stored"] == stored and not r.get("dead") and not r["running"]), None)
+    if sid is None:
+        G.add_message(stored, "user", text, display_kind="internal_notification")
+        G.add_message(stored, "assistant", reply, finish_reason="stop")
+        return True
+
+    def run():
+        with B["LOCK"]:
+            runtime = B["RUNTIME"][sid]
+            runtime.update(running=True, interrupt=False, turn_started=time.time())
+            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": "internal_notification"}
+        G.add_message(stored, "user", text, display_kind="internal_notification")
+        emit(sid, "session.info", {"running": True})
+        emit(sid, "message.start", {})
+        deadline = time.time() + max(0.0, seconds - 2)
+        while time.time() < deadline:
+            if interrupted(sid):
+                return
+            time.sleep(0.2)
+        if not stream(sid, reply, delay=2 / max(1, len(reply) / 7)) or B["RUNTIME"][sid].get("dead"):
+            return
+        finish(sid, stored, reply)
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
 def submit_chat(sid, runtime, text, queued=False):
+    gated = B["submit_gate"](sid, runtime, text)
+    if gated is not None:
+        return gated
     with B["LOCK"]:
         busy = runtime["running"]
     if busy:

@@ -31,6 +31,28 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610252214 (October 25, 2026)
+
+- **Chat:** Hermes refusing a message says why in its own words, and a busy gateway or a full chat limit makes it wait, never the "as many chats at once" banner
+- **Chat:** a message the gateway didn't confirm is checked for in the chat, never sent a second time
+- **Chat:** a message sent while Hermes is busy with a turn this device hasn't seen waits for it, and never shows as that turn or steers it
+
+### Build 2610251952 (October 25, 2026)
+
+- **Chat:** answering an approval over the API server reaches the gateway, so the reply goes on
+- **Chat:** Send never greys out behind a turn, and a turn the app never heard end clears by itself
+
+### Build 2610251725 (October 25, 2026)
+
+- **Bot Chats:** Open Screen in a Bot's ··· menu opens its Screen, even in a chat with no Inspector tabs
+- **Inspector:** Backspace deletes on the Bot Screen during Take Control, and keys reach it as typed
+- **Voice:** a gateway signed in to xAI Grok reads replies and transcribes voice messages in its own voice, without asking for XAI_API_KEY
+- **Talk:** on the loudspeaker the Bot's own words no longer come back as your turn
+- **Talk:** talking over a reply never lets its next words play after it stopped
+- **Talk:** every reply in a call is read aloud, not only the first
+- **Chat:** a reply that re-attaches after a long drop shows every step it took while the socket was down
+- **Chat:** a reply with a long code path or a wide card fits the screen
+
 ### Build 2610242018 (October 24, 2026)
 
 - **Chats:** Mute and Archive behind a swiped row in the iPhone drawer answer a tap again

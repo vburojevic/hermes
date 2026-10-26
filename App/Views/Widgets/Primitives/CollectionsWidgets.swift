@@ -469,7 +469,10 @@ struct TableBody: View {
                     Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                         ForEach(Array(model.columns.dropFirst().enumerated()), id: \.offset) { _, column in
                             GridRow {
+                                // As firm as a tag in the value column, so a long tag can't squeeze
+                                // the labels to a letter a line.
                                 Text(column.label).font(WidgetFont.caption).foregroundStyle(Theme.secondaryText)
+                                    .layoutPriority(1)
                                 TableGrid.cell(row[column.key], column, formatter)
                             }
                         }
@@ -576,6 +579,8 @@ private struct TableGrid: View {
                 .fontDesign(column.mono ? .monospaced : .default)
                 .foregroundStyle(cell?.value == nil ? Theme.tertiaryText : Theme.primaryText)
                 .lineLimit(column.width == .wide ? 3 : 2)
+                // Its lines, all of them, beside a label or tag a grid row is sized to.
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -636,7 +641,25 @@ struct DetailsBody: View {
 
     private func row(_ field: DetailsWidget.Section.Field) -> some View {
         let value = field.value.map { $0.string(formatter) } ?? WidgetFormatter.unknown
-        let stacked = typeSize.isAccessibilitySize
+        return Group {
+            if typeSize.isAccessibilitySize {
+                fieldLayout(field, value: value, stacked: true)
+            } else {
+                // Side by side while the label and the value fit on one line; otherwise the value
+                // moves under its label and wraps there (`Collections.details`), never widening the card.
+                ViewThatFits(in: .horizontal) {
+                    fieldLayout(field, value: value, stacked: false)
+                    fieldLayout(field, value: value, stacked: true)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(minHeight: 36)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(field.label), \(field.masked ? String(localized: "ending in \(value.filter(\.isNumber).suffix(4))") : value)")
+    }
+
+    private func fieldLayout(_ field: DetailsWidget.Section.Field, value: String, stacked: Bool) -> some View {
         let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 3)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 10))
         return layout {
             Text(field.label).font(WidgetFont.body).foregroundStyle(Theme.secondaryText)
@@ -652,8 +675,8 @@ struct DetailsBody: View {
                             .buttonStyle(.plain)
                     } else if field.mono {
                         // Codes stay on one line, a size down, so an IBAN reads in its groups
-                        // (`Collections.details`).
-                        Text(value)
+                        // (`Collections.details`); one too long for that wraps under its label.
+                        Text(code: value)
                             .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(field.value == nil ? Theme.tertiaryText : Theme.primaryText)
                             .lineLimit(stacked ? nil : 1)
@@ -683,10 +706,6 @@ struct DetailsBody: View {
                 }
             }
         }
-        .padding(.vertical, 8)
-        .frame(minHeight: 36)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(field.label), \(field.masked ? String(localized: "ending in \(value.filter(\.isNumber).suffix(4))") : value)")
     }
 }
 

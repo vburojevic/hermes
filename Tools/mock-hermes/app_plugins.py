@@ -43,8 +43,8 @@ APPS = {
                        "prompts, finished replies, scheduled tasks, background work and group chats.",
     },
     "hermes-app-widgets": {
-        "repo": "vburojevic/hermes-app-widgets", "version": "1.2.2",
-        "published": "7cbce1b0c249112feeff2a9c370b5c2169178654",
+        "repo": "vburojevic/hermes-app-widgets", "version": "1.3.0",
+        "published": "23b7a2d5e08e6284dad51b864256afe48fe7c4ff",
         "activation": {"activated_now": {"hooks": ["pre_llm_call", "subagent_start"],
                                          "gateway_transforms": ["transform_llm_output", "pre_gateway_dispatch"],
                                          "gateway_commands": ["app-widgets"]},

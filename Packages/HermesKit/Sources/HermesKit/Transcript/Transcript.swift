@@ -199,31 +199,69 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
         return tool.startedAt
     }
 
-    /// The run ended while the app couldn't hear it, and the stored chat doesn't say how yet
-    /// (`LiveTurn.heldTurn`): the header says so, with Reload (`turnHeaderLost`).
-    public var lostTrack: Bool { state == .failed(LiveTurn.lostTrack) }
+    /// The app couldn't find out how the run ended (`TurnRecovery` gave up): the header says why,
+    /// with Reload (`turnHeaderLost`).
+    public var lostTrack: Bool { lostReason != nil }
+
+    /// Why the app lost track of this turn, when it did.
+    public var lostReason: LostTurn? {
+        if case .failed(let line) = state { LostTurn(line: line) } else { nil }
+    }
+
+    /// The turn saying the app lost track of it, and why (`docs/chat.md` §2). What was still running
+    /// stops with it, as a failed turn's steps do; a Reload that finds it stored partway settles them.
+    public func lost(_ reason: LostTurn, now: Date = .now) -> AssistantTurn {
+        var turn = self
+        turn.state = .failed(reason.line)
+        turn.finishedAt = finishedAt ?? now
+        turn.steps = steps.map { step in
+            switch step {
+            case .tool(var tool) where tool.status == .running:
+                tool.status = .failed
+                return .tool(tool)
+            case .subagent(var agent) where agent.status == .running:
+                agent.status = .failed
+                return .subagent(agent)
+            default:
+                return step
+            }
+        }
+        return turn
+    }
 
     /// A turn the app lost track of, after the person's Reload read a stored chat that still doesn't
-    /// hold it whole (`docs/chat.md` §2). The session said it's idle, so nothing more is coming: what
-    /// Hermes stored is how it ended, partway, and it says "Stopped" as an interrupted turn does
-    /// (`TurnPlacement` gave it the stored steps when they went further). What was cut off ended
-    /// with it: a call Hermes stored without a result, and a step still running when the app lost
-    /// track (`LiveTurn.cutOff`) that has no stored result either. A call heard to its end stays as
-    /// it was, with or without a preview. `nil` for a turn that didn't lose track.
+    /// hold it whole (`docs/chat.md` §2): it ended there (`endedPartway`). `nil` for a turn that didn't
+    /// lose track.
     public func settledAfterLoss(cutOff: Set<String>, messages: [SessionMessage]) -> AssistantTurn? {
         guard lostTrack else { return nil }
+        return endedPartway(cutOff: cutOff, messages: messages)
+    }
+
+    /// A turn whose end the app didn't hear, and whose stored rows still stop partway with nothing
+    /// running (`TurnRecovery`): what Hermes stored is how it ended, and it says "Stopped" as an
+    /// interrupted turn does (`TurnPlacement` gave it the stored steps when they went further). What
+    /// was cut off ended with it: a call Hermes stored without a result, and a step still running
+    /// when the app stopped hearing (`LiveTurn.cutOff`) with no stored result either; one whose result
+    /// Hermes stored finished. A call heard to its end stays as it was, with or without a preview.
+    public func endedPartway(cutOff: Set<String>, messages: [SessionMessage], now: Date = .now) -> AssistantTurn {
         let answered = Set(messages.compactMap { $0.role == "tool" ? $0.toolCallID : nil })
         let called = Set(messages.flatMap { $0.toolCalls.map(\.id) })
         var turn = self
         turn.state = .stopped
+        turn.finishedAt = finishedAt ?? now
         turn.steps = steps.map { step in
             switch step {
             case .tool(var tool):
-                let stored = tool.callID.map(called.contains) ?? false
-                guard !(tool.callID.map(answered.contains) ?? false), stored || cutOff.contains(tool.id) else { return step }
-                tool.status = .failed
+                let cut = cutOff.contains(tool.id) || tool.status == .running
+                if tool.callID.map(answered.contains) ?? false {
+                    guard cut else { return step }
+                    tool.status = .succeeded
+                } else {
+                    guard cut || (tool.callID.map(called.contains) ?? false) else { return step }
+                    tool.status = .failed
+                }
                 return .tool(tool)
-            case .subagent(var agent) where cutOff.contains(agent.id):
+            case .subagent(var agent) where cutOff.contains(agent.id) || agent.status == .running:
                 agent.status = .failed
                 return .subagent(agent)
             default:
@@ -840,6 +878,36 @@ public enum TranscriptBuilder {
             turn.steps[open] = .tool(tool)
         }
         items[index] = .assistant(turn)
+        return true
+    }
+
+    /// The stored rows stop mid-work (`endsMidTurn`) in a turn that answers the person's own message,
+    /// not another Bot's or a routine's output (Hermes answers those in a one-shot `hermes chat` the
+    /// gateway knows nothing of): a turn of the chat's own session, which the gateway says is running
+    /// while it is (`session.resume`'s `running`). When it says nothing runs, the turn died where it
+    /// stopped (a gateway restart) and `TurnRecovery` settles it, rather than it showing as working
+    /// for 20 minutes after a relaunch (`docs/chat.md` §2).
+    public static func endsOwnMidTurn(_ messages: [SessionMessage], now: Date = .now) -> Bool {
+        guard endsMidTurn(messages, now: now),
+              let ask = messages.last(where: { $0.role == "user" && $0.displayKind != "hidden" && $0.displayKind != "steer" })
+        else { return false }
+        return answeredElsewhere(ask) == nil
+    }
+
+    /// The stored row the chat's last turn ends with so far (`settleMidTurn` keys on it).
+    public static func lastTurnRowID(_ messages: [SessionMessage]) -> Int? {
+        lastTurnRow(messages)?.id
+    }
+
+    /// A stored turn that stops mid-work, settled by `TurnRecovery` (nothing ran for it): it ended
+    /// where Hermes stored it, "Stopped" (`AssistantTurn.endedPartway`). It's known by its last
+    /// stored row, `endedAt`: a row stored after that is the turn going on after all, and it shows
+    /// as working again (`markMidTurn`). Returns whether it settled it.
+    @discardableResult
+    public static func settleMidTurn(_ items: inout [TranscriptItem], messages: [SessionMessage], endedAt rowID: Int?) -> Bool {
+        guard let rowID, let last = lastTurnRow(messages), last.id == rowID,
+              let index = items.indices.last, case .assistant(let turn) = items[index] else { return false }
+        items[index] = .assistant(turn.endedPartway(cutOff: [], messages: messages, now: last.timestamp ?? .now))
         return true
     }
 

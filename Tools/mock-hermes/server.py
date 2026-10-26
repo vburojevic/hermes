@@ -9,6 +9,11 @@ agent turns instead of a model, so no provider credentials or spend are needed.
 
 Scripted behaviour by message content:
   contains "approve"  -> asks for approval before running a command
+                         ("approve stale": the run's generation moves once the card is up and
+                         the prompt goes with it, asked again 30 s later; "approve stale retry"
+                         keeps the prompt under the new generation, which Hermes never does;
+                         "approve elsewhere": another device allows it after 5 s, unannounced,
+                         and the command then runs for 20 s)
   contains "fail"     -> the run fails
   contains "key expired" -> the run fails on the provider's key (Provider authentication failed)
   contains "slow"     -> a long multi-tool turn (good for testing stop/resume)
@@ -308,8 +313,12 @@ class Run:
         self.status = "queued"
         self.output = ""
         self.stop = threading.Event()
+        # The pending prompt as Hermes keeps it (session_pending_controls.py): kind, prompt_id,
+        # execution_generation. An answer must name both, or it's refused.
         self.approval = None
         self.approval_choice = None
+        self.generation = 1
+        self.admission_id = f"adm_{uuid.uuid4().hex[:12]}"
         self.terminal = False
 
     def emit(self, name, **fields):
@@ -374,18 +383,50 @@ def agent_turn(run):
             narration = "I'll clean the build folder first. "
             stream_text(run, narration)
             command = "rm -rf ./build && make release"
-            request_id = uuid.uuid4().hex
-            run.approval = {"command": command, "pattern_key": "rm_rf", "pattern_keys": ["rm_rf"], "description": "Recursive delete",
-                            "allow_permanent": True, "allow_session": True, "request_id": request_id,
-                            "choices": ["once", "session", "always", "deny"]}
-            run.status = "waiting_for_approval"
-            run.emit("approval.request", **run.approval)
+            choices = ["once", "deny", "session", "always"]
+
+            def ask():
+                request_id = uuid.uuid4().hex
+                run.approval = {"kind": "approval", "prompt_id": request_id, "execution_generation": run.generation,
+                                "command": command, "description": "Recursive delete", "choices": choices}
+                run.status = "waiting_for_approval"
+                # The run's event is the prompt as Hermes projects it (session_api_turn.run_api_turn):
+                # `request_id` for `prompt_id`, the allow_* flags, and its generation.
+                run.emit("approval.request", command=command, description="Recursive delete", pattern_key="rm_rf",
+                         pattern_keys=["rm_rf"], execution_generation=run.generation, request_id=request_id,
+                         allow_session=True, allow_permanent=True, choices=["once", "session", "always", "deny"])
+                return request_id
+
+            request_id = ask()
+            reask = None
+            if "stale" in lowered:
+                # The turn was claimed again (a restart, a drain): a new generation, so an answer
+                # with the event's is refused stale_generation.
+                run.generation += 1
+                if "retry" in lowered:
+                    # Never from Hermes: the same prompt under the new generation, to exercise the
+                    # app's one retry.
+                    run.approval["execution_generation"] = run.generation
+                else:
+                    # As Hermes does (PendingControls.snapshot): the prompt goes with its generation,
+                    # unannounced, and the claimed turn asks again 30 s later.
+                    run.approval = None
+                    run.status = "running"
+                    reask = time.time() + 30
+            elsewhere = time.time() + 5 if "elsewhere" in lowered else None
             while run.approval_choice is None and not run.stop.is_set():
+                if reask and time.time() > reask:
+                    reask = None
+                    request_id = ask()
+                if elsewhere and time.time() > elsewhere:
+                    # Allowed on another device: Hermes says nothing on this run's events.
+                    run.approval_choice = "once"
                 time.sleep(0.1)
             choice = run.approval_choice
             run.approval = None
             run.status = "running"
-            run.emit("approval.responded", choice=choice or "deny", request_id=request_id, resolved=1)
+            if not elsewhere:
+                run.emit("approval.responded", choice=choice or "deny", request_id=request_id, resolved=1)
             add_message(sid, "assistant", narration.strip(), finish_reason="tool_calls",
                         tool_calls=[{"id": "call_x", "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": command})}}])
             if choice == "deny" or choice is None:
@@ -394,7 +435,8 @@ def agent_turn(run):
                 add_message(sid, "tool", "BLOCKED: denied by user", tool_call_id="call_x", tool_name="terminal")
                 answer = "Okay — I didn't touch the build folder. Let me know if you want me to try a safer cleanup."
             else:
-                tool(run, "terminal", command, "Release build succeeded in 41.2s", 1.6)
+                # Answered elsewhere, the command runs a while: this device's card is still up to tap.
+                tool(run, "terminal", command, "Release build succeeded in 41.2s", 20 if elsewhere else 1.6)
                 add_message(sid, "tool", json.dumps({"output": "Release build succeeded in 41.2s", "exit_code": 0}), tool_call_id="call_x", tool_name="terminal")
                 answer = "Done. The release build **succeeded in 41.2 s** and the artifacts are in `./build/release`."
             out, ok = stream_text(run, answer)
@@ -457,6 +499,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def error(self, status, message, code=None, kind="invalid_request_error"):
         self.send_json(status, {"error": {"message": message, "type": kind, "param": None, "code": code}})
+
+    def respond_run(self, run, body, kind):
+        """POST /v1/runs/{id}/approval|clarify as Hermes answers it (api_server_authority_runs.respond_run):
+        exactly {request_id, execution_generation, choice|answer}; a refusal's message is its bare reason."""
+        field = "choice" if kind == "approval" else "answer"
+        if not isinstance(body, dict) or set(body) != {"request_id", "execution_generation", field}:
+            return self.error(400, "invalid_params", "invalid_params")
+        generation = body["execution_generation"]
+        if run.terminal or run.status not in ("running", "waiting_for_approval") or type(generation) is not int \
+                or generation != run.generation:
+            return self.error(409, "stale_generation", "stale_generation")
+        prompt = run.approval
+        if not prompt or prompt["prompt_id"] != body["request_id"] or prompt["kind"] != kind:
+            return self.error(409, "approval_not_pending", "approval_not_pending")
+        if not isinstance(body[field], str) or (kind == "approval" and body[field] not in prompt["choices"]):
+            return self.error(400, "invalid_params", "invalid_params")
+        run.approval_choice = body[field]
+        return self.send_json(200, {"run_id": run.id, "status": "resolved", "prompt_id": prompt["prompt_id"]})
 
     def body(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -556,10 +616,12 @@ class Handler(BaseHTTPRequestHandler):
             run = RUNS.get(m.group(1))
             if not run:
                 return self.error(404, f"Run not found: {m.group(1)}", "run_not_found")
+            # As Hermes projects a run (api_server_authority_runs.run_projection): its generation and
+            # the prompts it waits on, never a separate `approval`.
+            pending = [dict(run.approval)] if run.approval else []
             body = {"object": "hermes.run", "run_id": run.id, "status": run.status, "session_id": run.session_id,
+                    "admission_id": run.admission_id, "execution_generation": run.generation, "pending_controls": pending,
                     "model": "hermes-agent", "output": run.output if run.terminal else None}
-            if run.approval:
-                body["approval"] = run.approval
             return self.send_json(200, body)
         m = re.fullmatch(r"/v1/runs/([^/]+)/events", path)
         if m:
@@ -662,13 +724,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.error(409, "Run is not active", "run_not_active")
             run.stop.set()
             return self.send_json(200, {"run_id": run.id, "status": "stopping"})
-        m = re.fullmatch(r"/v1/runs/([^/]+)/approval", path)
+        m = re.fullmatch(r"/v1/runs/([^/]+)/(approval|clarify)", path)
         if m:
             run = RUNS.get(m.group(1))
-            if not run or not run.approval:
-                return self.error(409, "No approval pending", "approval_not_pending")
-            run.approval_choice = body.get("choice", "once")
-            return self.send_json(200, {"object": "hermes.run.approval_response", "run_id": run.id, "choice": run.approval_choice, "resolved": 1})
+            if not run:
+                return self.error(404, f"Run not found: {m.group(1)}", "run_not_found")
+            return self.respond_run(run, body, m.group(2))
         m = re.fullmatch(r"/api/jobs/([^/]+)/(pause|resume|run)", path)
         if m:
             job = JOBS.get(m.group(1))
