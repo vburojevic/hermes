@@ -24,8 +24,9 @@ public enum SteerOutcome: Sendable, Equatable {
     case unknown
 
     /// `session.steer`'s answer, or the error it failed with. `compacting`: Hermes was compacting
-    /// the chat, when its `queued` means it holds the note for the next turn, not that the turn
-    /// reads it.
+    /// the chat, when its `queued` means it put the note in its queue as the next turn
+    /// (`methods_session_interrupt.py`: `_session_compression_in_flight` → `_enqueue_prompt`), not
+    /// that the turn reads it.
     public static func steer(result: JSONValue?, error: (any Error)?, compacting: Bool = false) -> SteerOutcome {
         if let error { return failed(error) }
         switch FollowUpStatus(result: result) {

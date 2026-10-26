@@ -42,7 +42,11 @@ public enum UpNextNote: Sendable, Equatable {
         case .mayHaveArrived:
             return "Hermes may already have this. Check the chat before you send it."
         case .refused(let refusal):
-            return refusal.action == .waitsForChat ? nil : refusal.line
+            switch refusal.action {
+            case .waitsForChat: return nil // the tray's hold note says it
+            case .settleOnGateway: return "Not sent: only the gateway can settle this chat"
+            case .checkTheChat, .tryAgain: return refusal.line
+            }
         }
     }
 
@@ -78,6 +82,12 @@ public enum SendsNextReason: String, Sendable, Equatable {
     /// The turn waits on the person's approval (409 `run_not_accepting_steer` over the API
     /// server).
     case waitsOnApproval
+    /// The API server hasn't started the run yet: it waits behind another turn (409
+    /// `run_not_accepting_steer`).
+    case runQueued
+    /// The running turn couldn't take it, for a reason Hermes didn't give (409 while the turn
+    /// still runs).
+    case turnBusy
     /// The chat never came back while the steer waited for it.
     case notBack
     /// Ask Aside with no live chat to ask beside.
@@ -90,25 +100,38 @@ public enum SendsNextReason: String, Sendable, Equatable {
         case .turnEnded: "Hermes finished before reading it, so it sends next"
         case .turnStarting: "Hermes was still starting the reply, so it sends next"
         case .waitsOnApproval: "Hermes is waiting for your approval, so it sends next"
+        case .runQueued: "Hermes hasn't started this reply yet, so it sends next"
+        case .turnBusy: "Hermes couldn't take it into this reply, so it sends next"
         case .notBack: "Couldn't reach \(gateway) in time, so it sends next"
         case .noAside: "Ask Aside needs a live chat, so it sends next"
         case .noBackground: "Run in Background isn't available here, so it sends next"
         }
     }
 
-    /// Why a steer the turn couldn't take fell back, from what refused it.
+    /// Why a steer the turn couldn't take fell back, from what refused it first, then from the
+    /// turn's state. Never "finished" for a turn that still runs, unless Hermes said it isn't
+    /// running (`rejected`).
     /// - Parameters:
-    ///   - error: what the steer failed with, if it did.
-    ///   - turnRunning: the turn was still running when the answer came.
+    ///   - error: what the steer failed with; nil when Hermes answered `rejected`, or it never went.
+    ///   - turnRunning: the turn was still running here when the answer came.
     ///   - waitingForApproval: the turn was waiting on the person's approval.
-    ///   - attached: the chat was attached (it had a live session to steer).
-    public static func steer(error: (any Error)?, turnRunning: Bool, waitingForApproval: Bool, attached: Bool) -> SendsNextReason {
-        if !turnRunning { return .turnEnded }
-        if !attached { return .notBack }
-        if waitingForApproval { return .waitsOnApproval }
+    ///   - runQueued: the API server holds the run behind another turn (`runWaitsInQueue`).
+    ///   - attached: the chat was attached (it had a live session or run to steer).
+    public static func steer(error: (any Error)?, turnRunning: Bool, waitingForApproval: Bool, runQueued: Bool = false,
+                             attached: Bool) -> SendsNextReason {
         if let rpc = error as? GatewayRPCError, rpc.code == 4010 { return .turnStarting }
         if case GatewaySocket.Failure.notConnected? = error { return .notBack }
-        return .turnEnded
+        if case .server(409, _, _)? = error as? HermesError {
+            // `run_not_accepting_steer` doesn't say why (hermes-agent `api_server_runs.py`).
+            if waitingForApproval { return .waitsOnApproval }
+            if runQueued { return .runQueued }
+            return turnRunning ? .turnBusy : .turnEnded
+        }
+        if !turnRunning { return .turnEnded }
+        if !attached { return .notBack }
+        // Hermes answered `rejected`: its session isn't running, though this device hasn't heard the end yet.
+        if error == nil { return .turnEnded }
+        return waitingForApproval ? .waitsOnApproval : .turnBusy
     }
 }
 

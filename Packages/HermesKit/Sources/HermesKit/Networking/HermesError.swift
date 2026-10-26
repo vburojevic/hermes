@@ -68,6 +68,13 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
         return status == 409 || status == 429 || code.map { Self.storeRefusals[$0] != nil } ?? false
     }
 
+    /// Whether sending it again right away can help: not for a chat Hermes no longer has, or one
+    /// only the gateway's own connection can take (`refusedBanner` then has no Try Again).
+    public var refusalOffersRetry: Bool {
+        guard case .server(_, let code, _) = self else { return false }
+        return code != "not_found" && code != "permission_denied"
+    }
+
     /// The API server's refusals that come with only their reason (hermes-agent
     /// `gateway/platforms/api_server_authority_runs.py`), in words.
     static let storeRefusals: [String: String] = [

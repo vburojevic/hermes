@@ -1989,7 +1989,9 @@ final class ConversationModel: Identifiable {
             var item = sentItem(text: text, images: images, files: files, note: .refused(refusal))
             item.isHeld = true
             animateRows { queue.insert(item, at: 0) }
-            refusedNotice = RefusedNotice(line: refusal.line, heldItemID: item.id)
+            // Sending it again only repeats the refusal: the banner says what settles it, and the
+            // row's Send stays the person's choice.
+            refusedNotice = RefusedNotice(line: refusal.line, heldItemID: item.id, offersRetry: false)
         case .checkTheChat, .tryAgain:
             // `.checkTheChat` only before the prompt left (it can't): handled with the turn above.
             restoreDraft(text: text, images: images, files: files, error: HermesError.refused(refusal.line))
@@ -2805,7 +2807,7 @@ final class ConversationModel: Identifiable {
     /// Why a steer the running turn couldn't take goes as the next message instead, for its row.
     private func sendsNextReason(for failure: (any Error)?) -> SendsNextReason {
         SendsNextReason.steer(error: failure, turnRunning: isWorking, waitingForApproval: live?.turn.state == .waitingForApproval,
-                              attached: runtimeSessionID != nil || live?.runID != nil)
+                              runQueued: runWaitsInQueue, attached: runtimeSessionID != nil || live?.runID != nil)
     }
 
     /// What Hermes did with a steer or a redirect sent while a tool ran (`SteerOutcome`).
@@ -4308,7 +4310,7 @@ final class ConversationModel: Identifiable {
         // A stop pressed before the run started is not an error, and a refusal isn't a failure:
         // it shows in Hermes's words, with Try Again (`refusedBanner`, `docs/chat.md` §4d).
         if let refusal = error as? HermesError, refusal.isRefusal {
-            refusedNotice = RefusedNotice(line: refusal.errorDescription ?? "", heldItemID: heldID)
+            refusedNotice = RefusedNotice(line: refusal.errorDescription ?? "", heldItemID: heldID, offersRetry: refusal.refusalOffersRetry)
         } else if !(error is CancellationError) {
             banner = error as? HermesError ?? .invalidResponse(error.localizedDescription)
         }

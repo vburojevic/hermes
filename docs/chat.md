@@ -854,7 +854,7 @@ never another reason's words.
 | `data.reason` | What the person reads | What happens to the message |
 |---|---|---|
 | `SESSION_NOT_OWNED` (another Hermes process) | What holds the chat, from its stored rows: a Bot answering another Bot, a routine, a terminal | Waits at the top of Up Next and goes once the chat is free (`waitForChat`) |
-| `SESSION_NOT_OWNED` (the gateway's queue, "durable queue") | "The gateway has unfinished work in this chat it couldn't confirm. Open the chat where the gateway runs … Nothing was sent." in `refusedBanner` and on its row | Waits at the top of Up Next, Not sent, under "Send sends the first": only the person sends it again (Try Again, or Send) |
+| `SESSION_NOT_OWNED` (the gateway's queue, "durable queue") | "The gateway has unfinished work in this chat it couldn't confirm. Open the chat where the gateway runs … Nothing was sent." in `refusedBannerSettle` (no Try Again: sending again is refused again); its row says "Not sent: only the gateway can settle this chat" | Waits at the top of Up Next, Not sent, under "Send sends the first": only the person sends it again, with the row's Send |
 | `SESSION_OWNER_BUSY` | "The gateway is running a turn in this chat. Your message sends when that turn ends." (with its photo, when Hermes took the photo off) | Waits at the top of Up Next and goes when that turn ends |
 | `SESSION_OWNER_UNCONFIRMED` | Hermes's sentence: "… It may already be queued there: check the chat before sending it again." | Like a lost answer (`LostPrompt`, §2): the card offers Reload, and Send Again only as the person's choice; never Try Again, never sent again by itself or over the API server, and it settles once the stored chat shows it |
 | `MAX_CONCURRENT_SESSIONS` | "Hermes is running as many chats at once as it's set to allow (n of m). Your message sends when one finishes." | Waits at the top of Up Next and goes when a chat finishes |
@@ -863,7 +863,9 @@ never another reason's words.
 A refusal is never the red error banner. One the app waits out shows in Up Next (its header and
 the hold note); one it can't shows `refusedBanner` above the composer: a raised hand, "Hermes
 didn't take this message", Hermes's words, Try Again and Dismiss. The API server's refusals (409,
-429, its bare store reasons, `HermesError.isRefusal`) show the same way.
+429, its bare store reasons, `HermesError.isRefusal`) show the same way. Where sending again can't
+help now (the durable queue above, `not_found`, `permission_denied`: `refusalOffersRetry`) the
+banner has no Try Again (`refusedBannerSettle`).
 
 Hermes sends `MAX_CONCURRENT_SESSIONS` only when `max_concurrent_sessions` is set on the gateway.
 A message that waits for the chat goes again after 30 s, 1 and 2 minutes, then every 5, and at

@@ -463,7 +463,7 @@ struct ChatScreen: View {
                         .transition(reduceMotion ? .opacity : .risesFromComposer)
                 }
                 if let notice = conversation.refusedNotice {
-                    RefusedBanner(line: notice.line, onRetry: conversation.retryRefused) { conversation.refusedNotice = nil }
+                    RefusedBanner(line: notice.line, onRetry: notice.offersRetry ? conversation.retryRefused : nil) { conversation.refusedNotice = nil }
                         .glassEffectID("refused", in: bottomGlass)
                         .transition(ComposerView.rowAppears)
                 } else if let banner = conversation.banner {
@@ -766,10 +766,11 @@ struct ConnectionBanner: View {
 }
 
 /// Hermes refused a message for a reason the app can't wait out (`refusedBanner`,
-/// `docs/chat.md` §4d): its words, never red, Try Again and Dismiss.
+/// `docs/chat.md` §4d): its words, never red, Try Again where sending again can help, and Dismiss.
 struct RefusedBanner: View {
     let line: String
-    let onRetry: () -> Void
+    /// Nil where sending again can't help now (`refusedBannerSettle`).
+    let onRetry: (() -> Void)?
     let onDismiss: () -> Void
 
     var body: some View {
@@ -788,9 +789,11 @@ struct RefusedBanner: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-            Button("Try Again", action: onRetry)
-                .prominentGlassButton()
-                .controlSize(.small)
+            if let onRetry {
+                Button("Try Again", action: onRetry)
+                    .prominentGlassButton()
+                    .controlSize(.small)
+            }
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.bold))

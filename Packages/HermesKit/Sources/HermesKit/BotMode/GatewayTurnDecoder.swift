@@ -79,8 +79,10 @@ public enum GatewayTurnDecoder {
                 events = []
             } else {
                 events = ["status", "lifecycle", "compacting", "process"].contains(kind) ? text.map { [.status($0)] } ?? [] : []
-                // After the line, which clears it: Hermes holds steers while it compacts.
-                if kind == "compacting" { events.append(.compacting) }
+                // After the line, which clears it: Hermes holds steers while it compacts, until its
+                // `compacted` line (which isn't shown: the turn going on says it).
+                if kind == "compacting" { events.append(.compacting(true)) }
+                if kind == "compacted" { events.append(.compacting(false)) }
             }
         case "subagent.start":
             events = [.subagentStarted(id: payload["subagent_id"]?.stringValue, goal: payload["goal"]?.stringValue)]

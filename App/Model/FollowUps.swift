@@ -170,10 +170,13 @@ enum FollowUpCaption: Equatable {
 }
 
 /// A refusal shown above the composer (`refusedBanner`): Hermes's words, and the message Try Again
-/// sends from Up Next (nil: it's back in the field).
+/// sends from Up Next (nil: it's back in the field). `offersRetry` is false where sending again
+/// can't help now (`refusedBannerSettle`): only the gateway settles it, or Hermes no longer has the
+/// chat.
 struct RefusedNotice: Equatable {
     let line: String
     let heldItemID: UUID?
+    let offersRetry: Bool
 }
 
 /// One message waiting in the queue tray (Send Next).

@@ -72,9 +72,12 @@ design's component names, used in code comments.
    | Its agent was still being built (4010) | "Hermes was still starting the reply, so it sends next" |
    | It waits on an approval (409 `run_not_accepting_steer` over the API server) | "Hermes is waiting for your approval, so it sends next" |
    | The chat never came back while it waited (40 s) | "Couldn't reach <gateway> in time, so it sends next" |
+   | The API server hasn't started the run (it waits behind another turn) | "Hermes hasn't started this reply yet, so it sends next" |
+   | The running turn refused it without a reason the app can see (409) | "Hermes couldn't take it into this reply, so it sends next" (never "finished" while it runs) |
 
-   While Hermes compacts the chat (`status.update` kind `compacting`), its `queued` means it holds
-   the note for its next turn: it shows in the tray, on the gateway (`queueItemOnGateway`), never
+   While Hermes compacts the chat (`status.update` kind `compacting`, until kind `compacted`), its
+   `queued` means it put the note in its queue as the next turn (hermes-agent
+   `tui_gateway/methods_session_interrupt.py`, `_session_compression_in_flight` → `_enqueue_prompt`): it shows in the tray, on the gateway (`queueItemOnGateway`), never
    as a steer it will read. A lost answer leaves it waiting, and the stored turn says whether it
    was read ([chat.md](chat.md) §4c).
 2. Hermes has no event for a steer being read: it goes in with the result of the step that was

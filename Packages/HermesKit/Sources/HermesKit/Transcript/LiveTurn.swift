@@ -175,8 +175,8 @@ public struct LiveTurn: Sendable, Equatable {
             status = text
             isCompacting = false
 
-        case .compacting:
-            isCompacting = true
+        case .compacting(let compacting):
+            isCompacting = compacting
 
         case .completed(let output, let usage, let runtime):
             if let output, !output.isEmpty {
@@ -210,6 +210,7 @@ public struct LiveTurn: Sendable, Equatable {
 
         case .reasoning(let text, let replacing):
             guard !text.isEmpty else { break }
+            isCompacting = false
             if case .reasoning(let id, let existing)? = turn.steps.last {
                 turn.steps[turn.steps.count - 1] = .reasoning(id: id, text: replacing ? text : existing + text)
             } else {
