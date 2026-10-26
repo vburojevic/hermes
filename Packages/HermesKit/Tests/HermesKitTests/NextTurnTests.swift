@@ -11,8 +11,10 @@ struct NextTurnHoldTests {
     @Test("Before the turn ends, nothing waits")
     func beforeTheEnd() {
         var hold = NextTurnHold<String>()
-        #expect(!hold.holds("message.delta", startsTurn: true, turnEnded: false))
-        #expect(!hold.holds("tool.complete", startsTurn: false, turnEnded: false))
+        let delta = hold.holds("message.delta", startsTurn: true, turnEnded: false)
+        #expect(!delta)
+        let toolEnd = hold.holds("tool.complete", startsTurn: false, turnEnded: false)
+        #expect(!toolEnd)
         #expect(!hold.isHolding)
     }
 
@@ -20,23 +22,31 @@ struct NextTurnHoldTests {
     func endedTurnsNotices() {
         var hold = NextTurnHold<String>()
         // The idle notice and the turn's last status come after its end and belong to it.
-        #expect(!hold.holds("session.info", startsTurn: false, turnEnded: true))
-        #expect(!hold.holds("status.update", startsTurn: false, turnEnded: true))
+        let idle = hold.holds("session.info", startsTurn: false, turnEnded: true)
+        #expect(!idle)
+        let status = hold.holds("status.update", startsTurn: false, turnEnded: true)
+        #expect(!status)
         #expect(!hold.isHolding)
     }
 
     @Test("A turn starting after the end waits, with everything after it, in order")
     func nextTurnWaits() {
         var hold = NextTurnHold<String>()
-        #expect(hold.holds("message.start", startsTurn: true, turnEnded: true))
+        let start = hold.holds("message.start", startsTurn: true, turnEnded: true)
+        #expect(start)
         // Its first words, a step's end, its own idle notice: all the next turn's.
-        #expect(hold.holds("message.delta", startsTurn: true, turnEnded: true))
-        #expect(hold.holds("tool.complete", startsTurn: false, turnEnded: true))
+        let delta = hold.holds("message.delta", startsTurn: true, turnEnded: true)
+        #expect(delta)
+        let toolEnd = hold.holds("tool.complete", startsTurn: false, turnEnded: true)
+        #expect(toolEnd)
         // Still waiting even once the last turn is gone, until it is released.
-        #expect(hold.holds("session.info", startsTurn: false, turnEnded: false))
-        #expect(hold.release() == ["message.start", "message.delta", "tool.complete", "session.info"])
+        let idle = hold.holds("session.info", startsTurn: false, turnEnded: false)
+        #expect(idle)
+        let released = hold.release()
+        #expect(released == ["message.start", "message.delta", "tool.complete", "session.info"])
         #expect(!hold.isHolding)
-        #expect(hold.release().isEmpty)
+        let again = hold.release()
+        #expect(again.isEmpty)
     }
 }
 
