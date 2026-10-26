@@ -554,7 +554,12 @@ def offline_send(r):
     r.launch(["-HERMES_OPEN", "bot:default", "-HERMES_SEND", "offline: keep this one", "-HERMES_SEND_AFTER", "8"])
     time.sleep(5)
     r.post("/api/mock/drop-sockets", {"outage": 20})
-    time.sleep(6)
+    # The message says it waits once the gateway is away (a quick one takes it before anything shows).
+    for _ in range(12):
+        time.sleep(1)
+        labels, _ = r.ui()
+        if any("Waiting for" in label for label in labels):
+            break
     labels = r.shot("offline-send")
     time.sleep(30)
     labels_after = r.shot("offline-send-after")
@@ -597,7 +602,7 @@ def maybe_sent(r, tag=""):
     r.launch(["-HERMES_OPEN", "bot:default"])
     time.sleep(12)
     labels = r.shot(f"shot-maybe-sent{tag}")
-    r.record(f"maybe_sent{tag}", [("send", "relaunch·outbox")], labels, "", expect=[] if "before" in tag else ["Maybe sent"],
+    r.record(f"maybe_sent{tag}", [("send", "relaunch·outbox")], labels, "", expect=[] if "before" in tag else [("Maybe sent", "maybe sent")],
              stored=None if "before" in tag else ("did this one go?", 0))
 
 
