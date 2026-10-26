@@ -249,7 +249,10 @@ Hermes does. Every refusal but the owner's busy one leaves staged photos for the
 until `image.detach` takes them back by the `path` `image.attach_bytes` answered, and a turn takes
 what was staged for it. A message that is exactly "stop talking" answers `{voice_stopped: true}`.
 `session.steer` refuses 4010 "agent does not support steer" in a turn's first half second (its
-agent being built) and answers `rejected` when idle; `session.interrupt` empties the queue held for
+agent being built) and answers `rejected` when idle; while Hermes compacts the chat (a "snapshot"
+message with "compact", or a Bot Chat's "slow … compact", compacts for 8 s after its first step,
+`status.update` kind `compacting`) a steer or redirect is held for the next turn and answered
+`queued`; `session.interrupt` empties the queue held for
 the next turn. On the API server mock a chat's runs go one at a time: a run posted behind another
 answers `started` but sends nothing and reads `queued` until it runs, `POST /v1/runs/{id}/steer`
 answers `{accepted: true}` (and `run.steered`) or 409 `run_not_accepting_steer` for a run that isn't

@@ -941,6 +941,10 @@ def run_snapshots_turn(sid, stored, lower):
     if not tool(sid, stored, "terminal", {"command": listing}, 3.0, context=listing,
                 result=json.dumps({"output": "41 snapshots, 212 GB", "exit_code": 0})):
         return finish(sid, stored, "", status="interrupted")
+    if "compact" in lower:
+        # "… and compact": Hermes compacts the chat between steps, for 8 s; a steer or redirect sent
+        # then is held for the next turn (`status.update` kind `compacting`).
+        B["compact_between_steps"](sid, B["RUNTIME"][sid])
     think(sid, ["41 snapshots, 212 GB. ", "Most are older than a month, ", "so those can go."], 2.4)
     narration = "I'll delete everything older than 30 days."
     stream(sid, narration)

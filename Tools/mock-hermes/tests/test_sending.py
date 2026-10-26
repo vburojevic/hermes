@@ -237,6 +237,15 @@ class Sending(unittest.TestCase):
         time.sleep(0.6)
         self.assertEqual(self.rpc(ws, "session.steer", {"session_id": sid, "text": "now"})["result"]["status"], "queued")
 
+    def test_a_steer_while_hermes_compacts_waits_for_the_next_turn(self):
+        ws, sid, stored = self.open_chat()
+        self.submit(ws, sid, "clean up old snapshots and compact")
+        self.until_event(ws, "status.update", where=lambda p: p.get("kind") == "compacting")
+        self.assertEqual(self.rpc(ws, "session.steer", {"session_id": sid, "text": "only this week"})["result"]["status"], "queued")
+        resumed = self.rpc(ws, "session.resume", {"session_id": stored, "omit_messages": True})["result"]
+        self.assertEqual((resumed["queued"] or {}).get("user"), "only this week")
+        self.rpc(ws, "session.interrupt", {"session_id": sid})
+
     def test_stop_empties_the_queue(self):
         ws, sid, stored = self.open_chat()
         self.submit(ws, sid, "slow please")

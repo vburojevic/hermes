@@ -13,7 +13,8 @@ Scripted Bot Chat behaviour by message content:
   contains "approve"  -> asks for approval (a server->client JSON-RPC request) first
   contains "disk"     -> surveys Docker disk usage, then asks to prune it
   contains "fail"     -> the turn fails
-  contains "slow"     -> a long multi-tool turn (good for testing stop and reconnect)
+  contains "slow"     -> a long multi-tool turn (good for testing stop and reconnect); with "compact",
+                         Hermes compacts for 8 s after its first step (a steer then waits for the next turn)
   contains "ponder"   -> thinks for about 14 s before a word (the live line's elapsed time)
   contains "marathon" -> the same, for about 45 s (outlasts the app's half minute of re-attaching)
   contains "flood"    -> sixteen sources and about 4,800 events in under a minute, more than the replay ring
@@ -860,6 +861,9 @@ def method_session_redirect(params):
             # The agent is still being built: Hermes queues it for the next turn.
             runtime.setdefault("queue", []).append({"text": text, "media": 0})
             return {"status": "queued", "text": text}
+        if runtime.get("compacting"):
+            # Compression in flight: queued for the next turn, not a correction (`methods_session_interrupt.py`).
+            return {**busy_submit(sid, text, True), "text": text}
         redirect_or_steer(runtime, text)
     return {"status": "redirected", "text": text}
 
@@ -883,6 +887,9 @@ def method_session_steer(params):
         if time.time() - runtime.get("turn_started", 0) < 0.5:
             # The turn's agent is still being built: only a redirect queues then (`methods_session_interrupt.py`).
             raise RPCError(4010, "agent does not support steer")
+        if runtime.get("compacting"):
+            # Compression in flight: held for the next turn, answered with the same `queued` as a steer.
+            return {**busy_submit(sid, text, True), "text": text}
         runtime.setdefault("steers", []).append(text)
     return {"status": "queued", "text": text}
 
@@ -999,6 +1006,16 @@ def lifecycle(sid, text):
     compacting = ("compact" in lowered or "compress" in lowered or "context reduced to" in lowered) \
         and "compaction complete" not in lowered and "compression is currently blocked" not in lowered
     emit(sid, "status.update", {"kind": "compacting" if compacting else "lifecycle", "text": text})
+
+
+def compact_between_steps(sid, runtime, seconds=8):
+    """"… compact": Hermes compacts the chat between steps; a steer or redirect sent meanwhile is
+    held for the next turn (`status.update` kind `compacting`, `methods_session_interrupt.py`)."""
+    runtime["compacting"] = True
+    lifecycle(sid, "Compacting context…")
+    time.sleep(seconds)
+    runtime["compacting"] = False
+    lifecycle(sid, "Context compaction complete")
 
 
 def mock_warnings(sid, visible):
@@ -1369,6 +1386,8 @@ def run_turn(sid, text):
                 break
             tool(sid, stored, "web_search", {"query": f"source {step}"}, f"Result {step}: three relevant pages.", pause, f"source {step}")
             emit(sid, "status.update", {"kind": "status", "text": f"Reading source {step} of {steps}…"})
+            if step == 1 and "compact" in visible.lower():
+                compact_between_steps(sid, runtime)
         if runtime["interrupt"]:
             return finish(sid, stored, "", status="interrupted")
         answer = f"After {steps} sources, the consensus is clear: **ship it on Friday**."
