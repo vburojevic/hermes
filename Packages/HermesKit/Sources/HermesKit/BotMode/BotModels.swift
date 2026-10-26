@@ -225,7 +225,7 @@ extension BotProfile {
     /// The control frame `text` starts with, if any.
     static func controlFrame(_ text: String) -> ControlFrame? {
         if text.hasPrefix("[OUT-OF-BAND USER MESSAGE") { return .named("Steered the reply") }
-        if text.hasPrefix("[IMPORTANT: Background process") { return .named("Background process finished") }
+        if let finished = FinishedProcess.previewLine(text) { return .named(finished) }
         let skillPrefix = "[IMPORTANT: The user has invoked the \""
         if text.hasPrefix(skillPrefix) {
             let name = text.dropFirst(skillPrefix.count).prefix { $0 != "\"" }

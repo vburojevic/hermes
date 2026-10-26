@@ -150,7 +150,8 @@ public enum ProcessNaming {
         }
         if parts.first == "test" || parts.contains("test") { return String(localized: "Tests") }
         if parts.contains("build") || parts.contains("release") {
-            return parts.contains("release") ? String(localized: "Release build") : String(localized: "Build")
+            if parts.contains("release") { return String(localized: "Release build") }
+            return parts.contains("docs") ? String(localized: "Docs build") : String(localized: "Build")
         }
         return nil
     }

@@ -638,8 +638,52 @@ public enum TranscriptBuilder {
             }
         }
         closeTurn()
-        return foldingFinishedWork(hidesSilence ? withoutRoutineEchoes(items) : items)
+        return foldingFinishedWork(linkingFinishedProcesses(hidesSilence ? withoutRoutineEchoes(items) : items))
     }
+
+    /// Each finished process gets what its notice doesn't carry from the step that started it
+    /// (`docs/chat.md` §2a): when it started, and its command or the Bot it messaged when the
+    /// notice names only its id. Hermes holds a completion until the chat is free, so the notice's
+    /// time is when it ended only when Hermes was idle while it ran: the turn that started it ended
+    /// within a few seconds of starting it, and nothing but other notices came after that turn.
+    /// Otherwise it has no duration here; the gateway's list can still say (`FinishedProcess.timed`).
+    static func linkingFinishedProcesses(_ items: [TranscriptItem]) -> [TranscriptItem] {
+        guard items.contains(where: { if case .notice(let notice) = $0 { notice.work.contains(where: \.isProcess) } else { false } }) else { return items }
+        var items = items
+        var starts: [String: ToolActivity] = [:]
+        // Processes whose notice's time can still be read as their end.
+        var idle: Set<String> = []
+        for index in items.indices {
+            switch items[index] {
+            case .assistant(let turn):
+                idle.removeAll()
+                for case .tool(let tool) in turn.steps {
+                    guard let id = tool.startedProcessID else { continue }
+                    starts[id] = tool
+                    if let started = tool.startedAt, let ended = turn.finishedAt, ended.timeIntervalSince(started) <= idleTurnEnd {
+                        idle.insert(id)
+                    }
+                }
+            case .notice(var notice) where notice.work.contains(where: \.isProcess):
+                notice.work = notice.work.map { work in
+                    guard case .process(var process) = work else { return work }
+                    if let tool = starts[process.id] { process.link(startedBy: tool) }
+                    if idle.contains(process.id) { process.endedAt = process.endedAt ?? notice.timestamp }
+                    return .process(process)
+                }
+                notice.text = Notice.finishedLine(notice.work) ?? notice.text
+                items[index] = .notice(notice)
+            case .notice:
+                continue
+            default:
+                idle.removeAll()
+            }
+        }
+        return items
+    }
+
+    /// How soon after starting a process its turn must end for the chat to have been idle.
+    static let idleTurnEnd: TimeInterval = 10
 
     /// A stored notice, with what it's about when it's finished work.
     static func notice(id: String, kind: String, message: SessionMessage) -> Notice {
@@ -673,7 +717,7 @@ public enum TranscriptBuilder {
     /// The kind of a finished process's or helpers' notice by its words, however it's tagged.
     static func finishedWorkKind(_ text: String) -> String? {
         let head = text.drop { $0.isWhitespace }
-        if head.hasPrefix(FinishedProcess.prefix) || head.range(of: #"^\[IMPORTANT: \d+ background processes completed\."#, options: .regularExpression) != nil {
+        if head.hasPrefix(FinishedProcess.prefix) || head.range(of: #"^\[IMPORTANT: \d+ background processes completed( for this session)?\."#, options: .regularExpression) != nil {
             return "process_complete"
         }
         if head.hasPrefix("[ASYNC DELEGATION ") { return "async_delegation_complete" }
@@ -1068,7 +1112,7 @@ public enum TranscriptBuilder {
         case "auto_continue": return "Resumed an interrupted turn"
         case "failed_turn": return trimmed.isEmpty ? "This turn failed" : trimmed
         case "async_delegation_complete": return "Helpers finished"
-        case "process_complete": return "Background process finished"
+        case "process_complete": return "A background process finished"
         default: return trimmed.isEmpty ? kind.replacingOccurrences(of: "_", with: " ").capitalized : trimmed
         }
     }

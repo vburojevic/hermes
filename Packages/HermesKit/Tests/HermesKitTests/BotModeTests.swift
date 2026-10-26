@@ -383,7 +383,9 @@ struct BotChatTranscriptTests {
                                       "canonical_session": .object(["id": .string("c"), "preview": .string(text)])])).preview
         }
         #expect(preview("[IMPORTANT: The user has invoked the \"work\" skill, indicating...") == "Used the work skill")
-        #expect(preview("[IMPORTANT: Background process proc_1 completed normally (exit...") == "Background process finished")
+        #expect(preview("[IMPORTANT: Background process proc_1 completed normally (exit...") == "A background process finished")
+        #expect(preview("[IMPORTANT: Background process proc_1 exited (exit code 2).\nCommand: swift t...") == "A background process failed · exit 2")
+        #expect(preview("[IMPORTANT: 3 background processes completed. Treat these resul...") == "3 background tasks finished")
         #expect(preview("[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once...") == "Steered the reply")
         #expect(preview("[IMPORTANT: Something internal happened...") == nil)
     }
