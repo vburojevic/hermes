@@ -55,8 +55,10 @@ steps:
     # Archives take about 30 minutes, each notarization up to 45 and the Public Beta wait up to 60;
     # a dry run takes about 90.
     timeout_in_minutes: 240
+    # One signing release at a time on the mini, across the studio: a release's keychain is the only
+    # one in the builder user's search list while it runs, so two at once would break each other.
     concurrency: 1
-    concurrency_group: "hermes-release"
+    concurrency_group: "mini-signing"
     # Only a lost agent is retried, under the same build number, so a retry can't ship a second
     # release: App Store Connect refuses a build number twice and GitHub a tag twice.
     retry:
