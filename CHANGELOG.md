@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610260307 (October 26, 2026)
+
+- **Chat:** Reload on a reply the app lost track of settles it as it ended
+- **Chat:** a reply the app lost track of recovers by itself, and a message no longer vanishes from the chat after a gateway error at its end
+
 ### Build 2610252214 (October 25, 2026)
 
 - **Chat:** Hermes refusing a message says why in its own words, and a busy gateway or a full chat limit makes it wait, never the "as many chats at once" banner
