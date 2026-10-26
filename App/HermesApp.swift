@@ -44,6 +44,17 @@ struct HermesApp: App {
         if UserDefaults.standard.object(forKey: "HERMES_SPEAKER_ECHO") != nil {
             AudioGraph.simulatedEcho = UserDefaults.standard.float(forKey: "HERMES_SPEAKER_ECHO")
         }
+        #if os(macOS)
+        // `-HERMES_QUIT_AFTER 90`: Hermes Dev quits itself that many seconds after launch, so a Mac
+        // run ends without signalling anything: every Debug build shares one bundle id.
+        let quitAfter = UserDefaults.standard.double(forKey: "HERMES_QUIT_AFTER")
+        if quitAfter > 0 {
+            Task {
+                try? await Task.sleep(for: .seconds(quitAfter))
+                NSApplication.shared.terminate(nil)
+            }
+        }
+        #endif
     }
     #endif
 

@@ -188,6 +188,10 @@ Pasting on a simulator, whose clipboard only takes text from the command line:
 adds the picture's address as text, as Safari's Copy Image does; `file:` copies it as the Files
 app does), and ⌘V in the composer (`axe key-combo --modifiers 227 --key 25`) pastes it.
 
+Ending a Mac run: `-HERMES_QUIT_AFTER <s>` quits Hermes Dev that many seconds after launch.
+Every Debug build shares one bundle id, so a run never quits it by bundle id or name, and stops
+only the process it launched itself.
+
 For Bot Mode, also run the mock backend (four Bots with Bot Chats, routines, a photo avatar,
 an active worker and a routine that posts every couple of minutes):
 
