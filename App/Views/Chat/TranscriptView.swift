@@ -1381,6 +1381,7 @@ struct TranscriptView: View {
         case .notice(let notice) where !notice.work.isEmpty:
             FinishedWorkRow(
                 notice: notice, botName: { conversation.botTitle($0) },
+                listed: { conversation.processTracker[$0] },
                 stepRow: { id in TranscriptBuilder.turn(startingProcess: id, in: conversation.rows)?.id },
                 showRow: { conversation.flash($0) }
             )

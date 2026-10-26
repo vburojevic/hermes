@@ -8,6 +8,10 @@ public enum FinishedWork: Hashable, Sendable {
     case process(FinishedProcess)
     case helper(FinishedHelper)
 
+    var isProcess: Bool {
+        if case .process = self { true } else { false }
+    }
+
     /// The processes or helpers a stored notice names, in order. Empty for any other text.
     public static func parse(kind: String, text: String) -> [FinishedWork] {
         switch kind {
@@ -30,7 +34,12 @@ public struct FinishedProcess: Hashable, Sendable {
         case didNotStart
         /// Still running: its output matched a pattern it was watched for.
         case matched(pattern: String)
+        /// Finished, but Hermes's batch only counted it ("- … and 2 more completion(s)").
+        case unlisted
     }
+
+    /// Whether it's one Hermes only counted, with nothing to show.
+    public var isUnlisted: Bool { outcome == .unlisted }
 
     /// What came back from a message to another Bot (`message_agent`'s delivery).
     public enum BotAnswer: Hashable, Sendable {
@@ -46,13 +55,56 @@ public struct FinishedProcess: Hashable, Sendable {
     public var output: String
     /// The Bot a message went to (its profile), when this process delivered one.
     public var recipient: String?
+    /// When the call that started it ran, from its step in the chat (`TranscriptBuilder`), or the
+    /// gateway's own start time while it still lists the process.
+    public var startedAt: Date?
+    /// When it ended: the gateway's exit time while it lists the process, else when Hermes told
+    /// the chat (the notice's time) if Hermes was idle while it ran, else unknown. The notice
+    /// carries no duration of its own.
+    public var endedAt: Date?
 
-    public init(id: String, command: String, outcome: Outcome, output: String, recipient: String? = nil) {
+    public init(id: String, command: String, outcome: Outcome, output: String, recipient: String? = nil,
+                startedAt: Date? = nil, endedAt: Date? = nil) {
         self.id = id
         self.command = command
         self.outcome = outcome
         self.output = output
         self.recipient = recipient
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+    }
+
+    /// How long it ran, when both ends are known.
+    public var duration: TimeInterval? {
+        guard let startedAt, let endedAt, endedAt >= startedAt else { return nil }
+        return endedAt.timeIntervalSince(startedAt)
+    }
+
+    /// Filled in from the call that started it: its time, and its command or the Bot it messaged
+    /// when the notice had none (the messaging gateway's batch names only ids).
+    mutating func link(startedBy tool: ToolActivity) {
+        startedAt = tool.startedAt ?? startedAt
+        if command.isEmpty, let started = tool.startedCommand {
+            command = started
+        }
+        if recipient == nil {
+            recipient = command.isEmpty ? nil : ProcessNaming.messageRecipient(of: command)
+        }
+        if recipient == nil, tool.name == "message_agent" {
+            let to = tool.arguments?["target"]?.stringValue
+                ?? tool.result.flatMap { ToolDisplayCache.json($0)?["to"]?.stringValue }
+            if let to = to?.drop(while: { $0 == "@" }), !to.isEmpty { recipient = String(to) }
+        }
+    }
+
+    /// Its times from the gateway's list, which knows when it really started and exited, over the
+    /// chat's (the step's time and the notice's, which waits for Hermes to be free).
+    public func timed(by process: BackgroundProcess?) -> FinishedProcess {
+        guard let process, !process.isRunning, let started = process.startedAt, let finished = process.finishedAt else { return self }
+        var timed = self
+        timed.startedAt = started
+        timed.endedAt = finished
+        return timed
     }
 
     static let prefix = "[IMPORTANT: Background process "
@@ -64,7 +116,82 @@ public struct FinishedProcess: Hashable, Sendable {
     public static func parse(_ text: String) -> [FinishedProcess] {
         var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let footer = text.range(of: "\n\n" + footer) { text = String(text[..<footer.lowerBound]) }
+        if isGatewayBatch(text) { return gatewayBatch(text) }
         return blocks(text).compactMap(block)
+    }
+
+    /// The messaging gateway's own batch (`gateway/run_notifications.py`,
+    /// `_format_coalesced_process_completions`): "[IMPORTANT: 3 background processes completed for
+    /// this session." then a "- proc_…: exit_code=1, reason=exited" line and its output each. It
+    /// names no commands: the steps that started them do.
+    static let gatewayBatchPattern = #"^\[IMPORTANT: \d+ background processes completed for this session\."#
+
+    static func isGatewayBatch(_ text: String) -> Bool {
+        text.range(of: gatewayBatchPattern, options: .regularExpression) != nil
+    }
+
+    static func gatewayBatch(_ text: String) -> [FinishedProcess] {
+        var processes: [FinishedProcess] = []
+        var current: (id: String, code: Int?, reason: String, output: [String])?
+        func close() {
+            guard let current else { return }
+            var lines = current.output
+            if lines.first == "[… truncated …]" { lines.removeFirst() }
+            let outcome: Outcome = switch current.reason {
+            case "killed": .stopped
+            case "lost": .lost
+            case "failed_start": .didNotStart
+            default: current.code == 0 ? .succeeded : .failed(exitCode: current.code)
+            }
+            let output = ProcessOutput(cleaning: lines.joined(separator: "\n")).text
+            processes.append(FinishedProcess(id: current.id, command: "", outcome: outcome,
+                                             output: output.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        for line in text.components(separatedBy: "\n").dropFirst() {
+            if let entry = gatewayEntry(line) {
+                close()
+                current = (entry.id, entry.code, entry.reason, [])
+            } else if line.hasPrefix("- … and ") {
+                // Hermes lists ten and counts the rest: they finished all the same.
+                close()
+                current = nil
+                let more = Int(line.dropFirst("- … and ".count).prefix(while: \.isNumber)) ?? 0
+                processes += (0..<more).map { FinishedProcess(id: "unlisted-\($0)", command: "", outcome: .unlisted, output: "") }
+            } else if line.hasPrefix("If a result does not change the current conclusion") {
+                close()
+                current = nil
+            } else {
+                current?.output.append(line)
+            }
+        }
+        close()
+        return processes
+    }
+
+    /// "- proc_ab12: exit_code=1, reason=exited", or "- unknown: …" when Hermes lost the id.
+    static func gatewayEntry(_ line: String) -> (id: String, code: Int?, reason: String)? {
+        guard line.hasPrefix("- "), let colon = line.range(of: ": exit_code=") else { return nil }
+        let id = String(line[line.index(line.startIndex, offsetBy: 2)..<colon.lowerBound])
+        guard !id.isEmpty, !id.contains(" ") else { return nil }
+        let rest = line[colon.upperBound...]
+        let code = Int(rest.prefix { $0 != "," })
+        let reason = rest.range(of: "reason=").map { String(rest[$0.upperBound...]).trimmingCharacters(in: .whitespaces) } ?? "exited"
+        return (id, code, reason)
+    }
+
+    /// What a chat's preview says for a completion, from its first words (a preview is cut short):
+    /// "A background process failed", "3 background tasks finished".
+    public static func previewLine(_ text: String) -> String? {
+        if text.range(of: #"^\[IMPORTANT: \d+ background processes completed"#, options: .regularExpression) != nil,
+           let count = Int(text.dropFirst("[IMPORTANT: ".count).prefix(while: \.isNumber)) {
+            return String(localized: "\(count) background tasks finished")
+        }
+        guard text.hasPrefix(prefix) else { return nil }
+        guard var process = parse(text).first else { return String(localized: "A background process finished") }
+        // The command, if any, is cut: named from it, the line could name the wrong thing.
+        process.command = ""
+        process.recipient = nil
+        return process.line()
     }
 
     /// Hermes joins a batch's blocks with a blank line; a block starts with the prefix. Splitting
@@ -127,6 +254,8 @@ public struct FinishedProcess: Hashable, Sendable {
             output.removeSubrange(note)
         }
         command = command.trimmingCharacters(in: .whitespaces)
+        // Hermes writes "unknown" when the event lost its command (`format_process_notification`).
+        if command == "unknown" { command = "" }
         // As the Terminal shows it: no colour codes, progress lines at their last state.
         let cleaned = ProcessOutput(cleaning: output).text
         return FinishedProcess(id: id, command: command, outcome: outcome,
@@ -161,35 +290,85 @@ public struct FinishedProcess: Hashable, Sendable {
         return .replied(text)
     }
 
-    /// The line for it: "Tests passed", "Build failed · exit 1", "Engineer replied", "Docs site was
-    /// stopped". `botName` names a profile as the app does.
+    /// The line for it: "Tests passed · 2 min", "Build failed · exit 1 · 40 s", "Engineer replied",
+    /// "Docs site was stopped". `botName` names a profile as the app does.
     public func line(botName: (String) -> String? = { _ in nil }) -> String {
+        summary(botName: botName).text
+    }
+
+    /// The line in parts: what happened, then the exit code and how long it ran.
+    public func summary(botName: (String) -> String? = { _ in nil }) -> FinishedSummary {
+        let time = timeText.map { FinishedSummary.Part(text: $0) }
         if let recipient {
             let bot = ProcessNaming.bot(recipient, botName: botName)
             switch answer {
-            case .replied?: return String(localized: "\(bot) replied")
-            case .failed?: return String(localized: "Your message to \(bot) wasn't delivered")
+            case .replied?: return FinishedSummary(head: String(localized: "\(bot) replied"), parts: [time].compactMap { $0 })
+            case .failed?: return FinishedSummary(head: String(localized: "Your message to \(bot) wasn't delivered"))
             case nil: break
             }
-            if outcome == .succeeded { return String(localized: "\(bot) got the message") }
+            if outcome == .succeeded { return FinishedSummary(head: String(localized: "\(bot) got the message"), parts: [time].compactMap { $0 }) }
         }
         let name = command.isEmpty ? String(localized: "A background process") : ProcessNaming.name(for: command, botName: botName)
         let isTests = name == String(localized: "Tests")
+        let head: String
+        var parts: [FinishedSummary.Part] = []
         switch outcome {
-        case .succeeded: return isTests ? String(localized: "Tests passed") : String(localized: "\(name) finished")
-        case .failed(let code?): return isTests ? String(localized: "Tests failed · exit \(code)") : String(localized: "\(name) failed · exit \(code)")
-        case .failed(nil): return isTests ? String(localized: "Tests failed") : String(localized: "\(name) failed")
-        case .stopped: return String(localized: "\(name) was stopped")
-        case .lost: return String(localized: "Lost track of \(name)")
-        case .didNotStart: return String(localized: "\(name) didn't start")
-        case .matched(let pattern): return String(localized: "\(name) printed “\(pattern)”")
+        case .succeeded: head = isTests ? String(localized: "Tests passed") : String(localized: "\(name) finished")
+        case .failed(let code):
+            head = isTests ? String(localized: "Tests failed") : String(localized: "\(name) failed")
+            if let code { parts.append(FinishedSummary.Part(text: String(localized: "exit \(code)"))) }
+        case .stopped: head = String(localized: "\(name) was stopped")
+        case .lost: head = String(localized: "Lost track of \(name)")
+        case .didNotStart: return FinishedSummary(head: String(localized: "\(name) didn't start"))
+        case .matched(let pattern): head = String(localized: "\(name) printed “\(pattern)”")
+        case .unlisted: return FinishedSummary(head: String(localized: "A background process finished"))
         }
+        if let time { parts.append(time) }
+        return FinishedSummary(head: head, parts: parts)
+    }
+
+    /// Its name in a row of an open group: "Tests", "Message to Engineer".
+    public func name(botName: (String) -> String? = { _ in nil }) -> String {
+        if let recipient { return String(localized: "Message to \(ProcessNaming.bot(recipient, botName: botName))") }
+        return command.isEmpty ? String(localized: "Background process") : ProcessNaming.name(for: command, botName: botName)
+    }
+
+    /// How it went, as a process step says it: "Finished · 3 s", "Failed · exit 1 · 40 s",
+    /// "Replied · 4 min", "Not delivered".
+    public var status: String {
+        let word: String
+        switch (outcome, answer) {
+        case (_, .failed?): return String(localized: "Not delivered")
+        case (_, .replied?): word = String(localized: "Replied")
+        case (.succeeded, nil): word = recipient == nil ? String(localized: "Finished") : String(localized: "Delivered")
+        case (.failed(let code?), nil): word = String(localized: "Failed · exit \(code)")
+        case (.failed(nil), nil): word = String(localized: "Failed")
+        case (.stopped, nil): word = String(localized: "Stopped")
+        case (.lost, nil): word = String(localized: "Lost")
+        case (.didNotStart, nil): return String(localized: "Didn't start")
+        case (.matched(let pattern), nil): word = String(localized: "Printed “\(pattern)”")
+        case (.unlisted, nil): return String(localized: "Finished")
+        }
+        return timeText.map { String(localized: "\(word) · \($0)") } ?? word
+    }
+
+    /// "40 s", "3 min", as process steps say it.
+    var timeText: String? {
+        duration.map(BackgroundProcess.durationText)
+    }
+
+    /// For VoiceOver: "Tests, failed, exit 1, 40 seconds".
+    public func spokenStatus(botName: (String) -> String? = { _ in nil }) -> String {
+        var words = [name(botName: botName), status.components(separatedBy: " · ").first ?? status]
+        if case .failed(let code?) = outcome, answer == nil { words[1] = String(localized: "failed, exit \(code)") }
+        if let duration { words.append(BackgroundProcess.spokenDuration(duration)) }
+        return words.joined(separator: ", ")
     }
 
     public var isFailure: Bool {
         switch outcome {
         case .failed, .lost, .didNotStart: true
-        case .succeeded, .stopped, .matched: if case .failed? = answer { true } else { false }
+        case .succeeded, .stopped, .matched, .unlisted: if case .failed? = answer { true } else { false }
         }
     }
 }
@@ -302,35 +481,84 @@ public struct FinishedHelper: Hashable, Sendable {
     }
 }
 
+/// A finished-work line in parts, so a failure can take the danger colour on its own words:
+/// "Tests failed" · "exit 1" · "40 s"; "4 background tasks finished" · "3 ok", "1 failed".
+public struct FinishedSummary: Hashable, Sendable {
+    public struct Part: Hashable, Sendable {
+        public var text: String
+        /// "1 failed" in a group's counts: drawn in the danger colour.
+        public var isFailure = false
+
+        public init(text: String, isFailure: Bool = false) {
+            self.text = text
+            self.isFailure = isFailure
+        }
+    }
+
+    public var head: String
+    public var parts: [Part] = []
+    /// Between the parts: " · " for one process's facts, ", " for a group's counts.
+    public var separator = " · "
+
+    public init(head: String, parts: [Part] = [], separator: String = " · ") {
+        self.head = head
+        self.parts = parts
+        self.separator = separator
+    }
+
+    public var text: String {
+        parts.isEmpty ? head : head + " · " + parts.map(\.text).joined(separator: separator)
+    }
+}
+
 extension Notice {
-    /// The line a notice of finished work reads as, from what it's about: "Tests passed", "3
-    /// background processes finished · 1 failed", "2 helpers finished: Research, Review". Nil
+    /// The line a notice of finished work reads as, from what it's about: "Tests passed · 2 min",
+    /// "4 background tasks finished · 3 ok, 1 failed", "2 helpers finished: Research, Review". Nil
     /// when it names nothing (the notice keeps its own words).
     public static func finishedLine(_ work: [FinishedWork], botName: (String) -> String? = { _ in nil }) -> String? {
+        finishedSummary(work, botName: botName)?.text
+    }
+
+    public static func finishedSummary(_ work: [FinishedWork], botName: (String) -> String? = { _ in nil }) -> FinishedSummary? {
         let processes = work.compactMap { if case .process(let process) = $0 { process } else { nil } }
         let helpers = work.compactMap { if case .helper(let helper) = $0 { helper } else { nil } }
         if !processes.isEmpty, helpers.isEmpty {
-            if processes.count == 1 { return processes[0].line(botName: botName) }
-            let failed = processes.filter(\.isFailure).count
+            if processes.count == 1 { return processes[0].summary(botName: botName) }
             let replies = processes.filter { if case .replied? = $0.answer { true } else { false } }.count
             if replies == processes.count {
                 let bots = unique(processes.compactMap(\.recipient).map { ProcessNaming.bot($0, botName: botName) })
-                return bots.count == 1 ? String(localized: "\(bots[0]) replied \(processes.count) times") : String(localized: "\(processes.count) replies from Bots")
+                return FinishedSummary(head: bots.count == 1 ? String(localized: "\(bots[0]) replied \(processes.count) times") : String(localized: "\(processes.count) replies from Bots"))
             }
-            let line = String(localized: "\(processes.count) background processes finished")
-            return failed > 0 ? String(localized: "\(line) · \(failed) failed") : line
+            return FinishedSummary(head: String(localized: "\(processes.count) background tasks finished"),
+                                   parts: tally(processes), separator: ", ")
         }
         if !helpers.isEmpty, processes.isEmpty {
             let failed = helpers.filter { !$0.succeeded }.count
             if helpers.count == 1 {
                 let helper = helpers[0]
-                return helper.succeeded ? String(localized: "Helper finished: \(helper.title)") : String(localized: "Helper \(helper.outcomeWord): \(helper.title)")
+                return FinishedSummary(head: helper.succeeded ? String(localized: "Helper finished: \(helper.title)") : String(localized: "Helper \(helper.outcomeWord): \(helper.title)"))
             }
             let names = helpers.prefix(3).map(\.title).joined(separator: ", ") + (helpers.count > 3 ? ", …" : "")
             let line = String(localized: "\(helpers.count) helpers finished: \(names)")
-            return failed > 0 ? String(localized: "\(line) · \(failed) failed") : line
+            return FinishedSummary(head: line, parts: failed > 0 ? [.init(text: String(localized: "\(failed) failed"), isFailure: true)] : [])
         }
         return nil
+    }
+
+    /// How a group went: "3 ok", "1 stopped", "1 failed", or "all ok".
+    static func tally(_ processes: [FinishedProcess]) -> [FinishedSummary.Part] {
+        let failed = processes.filter(\.isFailure).count
+        let stopped = processes.filter { !$0.isFailure && $0.outcome == .stopped }.count
+        let unlisted = processes.filter(\.isUnlisted).count
+        let ok = processes.count - failed - stopped - unlisted
+        guard failed > 0 || stopped > 0 || unlisted > 0 else { return [.init(text: String(localized: "all ok"))] }
+        var parts: [FinishedSummary.Part] = []
+        if ok > 0 { parts.append(.init(text: String(localized: "\(ok) ok"))) }
+        if stopped > 0 { parts.append(.init(text: String(localized: "\(stopped) stopped"))) }
+        if failed > 0 { parts.append(.init(text: String(localized: "\(failed) failed"), isFailure: true)) }
+        // Hermes's batch only counted these: how they went isn't known here.
+        if unlisted > 0 { parts.append(.init(text: String(localized: "\(unlisted) not listed"))) }
+        return parts
     }
 
     private static func unique(_ names: [String]) -> [String] {

@@ -58,7 +58,7 @@ People see a name, not the command (`ProcessNaming`). After cleaning, the first 
 | `python -m http.server`, `caddy`, `serve`, `php -S` | Web server |
 | `npm test`, `swift test`, `pytest`, `go test`, `cargo test`, `xcodebuild test`, `make test` | Tests |
 | `make release`, `xcodebuild archive`, `swift build -c release`, `cargo build --release` | Release build |
-| Other builds (`make`, `swift build`, `cargo build`, `npm run build`, `xcodebuild`) | Build |
+| Other builds (`make`, `swift build`, `cargo build`, `npm run build`, `xcodebuild`) | Build (Docs build when the script name says docs) |
 | `docker compose up`, `docker run` | Docker: <service or image> |
 | `tail -f <file>`, `journalctl -f` | Watching <file name> (or the unit) |
 | `hermes [-p <profile>] chat …`, Hermes's Bot delivery | Message to <Bot name> (the profile's display name; "a Bot" when the command was cut before it). `message_agent`'s `to` names it first |
@@ -104,9 +104,14 @@ Under the title row only what has something to read (`ProcessSnippet`, `BotMessa
 a step with neither a command nor a line, or a message with no words, no answer and nothing waited
 for, is its title row alone. A finished step never shows an empty box.
 
-When a process finishes, Hermes tells the chat with a notice the app shows as one line saying which
-and how ("Tests failed · exit 1", "Engineer replied"); notices in a row fold into one, and each
-opens to its command and output, with Show Step back to this step ([chat.md](chat.md) §2a).
+When a process finishes, Hermes tells the chat with a notice the app shows as one line saying what
+ran, how it went and how long it took ("Tests failed · exit 1 · 40 s", "Engineer replied · 4 min").
+Notices in a row are one line, "4 background tasks finished · 3 ok, 1 failed", that opens to a row
+each, said as this step says it ("Tests", "Failed · exit 1 · 40 s"); a row, or a single line, opens
+to its command and last lines, with Show Step back to this step ([chat.md](chat.md) §2a). The notice
+carries no duration: it is the gateway's own start and exit times while it still lists the
+process (`FinishedProcess.timed`), else the time from this step to the notice when Hermes was idle
+meanwhile, else none.
 
 | State | From | Look |
 |---|---|---|

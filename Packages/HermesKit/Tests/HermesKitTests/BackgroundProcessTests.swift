@@ -10,6 +10,7 @@ struct ProcessNamingTests {
         ("npm run dev", "Dev server"),
         ("pnpm dev", "Dev server"),
         ("cd ~/Code/hermes-docs && npm run docs:dev", "Docs site"),
+        ("cd ~/Code/trailhead-docs && npm run docs:build", "Docs build"),
         ("bun run dev", "Dev server"),
         ("npx vite --port 4321", "Dev server"),
         ("next dev", "Dev server"),

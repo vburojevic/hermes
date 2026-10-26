@@ -161,7 +161,12 @@ after the turn, and to Ops, waiting for about 20 s before "No reply"; the Bot ru
 writer chat -q …` itself, replied; `hermes -p ops chat … --query-file …`, with no words to show,
 ended and no longer listed ("Ended", the title row alone); and a `message_agent` to Ops streamed
 without `args` (as a mirrored row is), ended with no answer 2 s later and no longer listed, so
-while the turn runs it is the title row alone (its stored row has the words). "every tool" plays one finished step of
+while the turn runs it is the title row alone (its stored row has the words). "background tasks" (any
+chat) starts five checks in the background and stores their completion notices as Hermes does
+(`docs/chat.md` §2a): the tests failing with exit 1 after 5 s, a fetch, a build and a lint, as the
+gateway's batch row for two (`… completed for this session.`, ids only) and two single rows in a row (one line, "4 background tasks finished · 3 ok, 1 failed"),
+a reply, the docs build alone after about 25 s ("Docs build finished · 25 s" while the gateway still lists it), a reply, then a completion
+with no details (`Command: unknown`, no output, no step: "A background process finished"). "every tool" plays one finished step of
 each kind of tool (commands, one that printed nothing and one that printed only blanks, files read,
 searched, patched and written, the web, the browser, typing into a page, images, code, a skill,
 session search, two MCP tools, one answering only blanks, memory, and a failure), and `@mentioning`
@@ -305,7 +310,8 @@ Background processes (`Tools/mock-hermes/processes.py`, [background-processes.md
 in Bot Chats and normal chats: "release" with "docs" (or "processes") starts a Docs site that runs
 on and a Release build that exits 0 after ~35 s with no event, and closes the Docs site's tab
 mid-build (`terminal.close`); "trailhead" or "deploy log" sends a message to Ada that fails with a
-JSON error and tails the deploy log. Output carries ANSI codes, `\r` progress and Hermes's CWD
+JSON error and tails the deploy log; "background tasks" ends five checks and stores their
+completion notices as Hermes does (above). Output carries ANSI codes, `\r` progress and Hermes's CWD
 marker. `POST /api/mock/processes/exit {process, code, reason}` ends one (by id or a word of its
 command) with no event, `…/close {process}` sends `terminal.close`, `…/reset` forgets them, and
 `…/deliveries {persist}` lists later `message_agent` deliveries with `persist_on_release` (Hermes

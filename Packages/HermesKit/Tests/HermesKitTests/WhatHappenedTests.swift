@@ -97,7 +97,7 @@ struct WhatHappenedTests {
         let processes = FinishedProcess.parse(batch)
         #expect(processes.map(\.id) == ["proc_a", "proc_b"])
         #expect(processes.first?.output == "ok\n\nall good")
-        #expect(Notice.finishedLine(processes.map(FinishedWork.process)) == "2 background processes finished · 1 failed")
+        #expect(Notice.finishedLine(processes.map(FinishedWork.process)) == "2 background tasks finished · 1 ok, 1 failed")
     }
 
     /// A message to another Bot is delivered by a background process; its completion carries the reply.
@@ -137,10 +137,160 @@ struct WhatHappenedTests {
         // The silent reply between the first three is gone, so they fold; the reply after breaks the run.
         #expect(notices[0].id == "m3")
         #expect(notices[0].work.count == 3)
-        #expect(notices[0].text == "3 background processes finished · 1 failed")
+        #expect(notices[0].text == "3 background tasks finished · 2 ok, 1 failed")
         #expect(notices[1].text == "Build finished")
         #expect(TranscriptBuilder.turn(startingProcess: "proc_a", in: items) == nil)
         #expect(TranscriptBuilder.finished(process: "proc_c", in: items)?.outcome == .failed(exitCode: 1))
+    }
+
+    /// What the person reported: a finished process said only "Background process finished".
+    /// Each says what ran, how it went and how long it took, from the step that started it.
+    @Test func aFinishedProcessSaysHowLongItRanFromTheStepThatStartedIt() throws {
+        let started = #"{"output":"Background process started","session_id":"proc_t1","pid":4100,"exit_code":0,"error":null}"#
+        var call = row(2, "assistant", "", calls: [call("c1", "terminal", #"{"command":"npm test","background":true}"#)])
+        call.timestamp = Date(timeIntervalSince1970: 1_000)
+        var result = row(3, "tool", started, callID: "c1", tool: "terminal")
+        result.timestamp = Date(timeIntervalSince1970: 1_001)
+        var notice = row(5, "user", processNotice("proc_t1", "npm test", exit: 1, output: "1 failing", outcome: "exited"), kind: "process_complete")
+        notice.timestamp = Date(timeIntervalSince1970: 1_040)
+        let items = TranscriptBuilder.build([row(1, "user", "Run the tests"), call, result, row(4, "assistant", "Started."), notice])
+        let finished = try #require(items.compactMap { if case .notice(let notice) = $0 { notice } else { nil } }.first)
+        let process = try #require(finished.work.first.flatMap { if case .process(let process) = $0 { process } else { nil } })
+        #expect(process.duration == 40)
+        #expect(finished.text == "Tests failed · exit 1 · 40 s")
+        #expect(process.name() == "Tests")
+        #expect(process.status == "Failed · exit 1 · 40 s")
+        #expect(process.spokenStatus() == "Tests, failed, exit 1, 40 seconds")
+        let summary = process.summary()
+        #expect(summary.head == "Tests failed")
+        #expect(summary.parts.map(\.text) == ["exit 1", "40 s"])
+        // The gateway's own times win over the chat's while it still lists the process.
+        var tracker = ProcessTracker()
+        let listed = try #require(JSONValue.parse(#"{"session_id":"proc_t1","command":"npm test","status":"exited","exit_code":1,"uptime_seconds":200,"exited_at":1012}"#))
+        tracker.apply(list: [listed], now: Date(timeIntervalSince1970: 1_200))
+        #expect(process.timed(by: tracker["proc_t1"]).duration == 12)
+        #expect(process.timed(by: nil).duration == 40)
+    }
+
+    /// Hermes holds a completion until the chat is free: when the turn that started a process kept
+    /// working, the notice's time isn't when it ended, so the line says no duration rather than a
+    /// wrong one.
+    @Test func aProcessStartedByABusyTurnHasNoDurationFromItsNotice() throws {
+        func at(_ message: SessionMessage, _ seconds: TimeInterval) -> SessionMessage {
+            var message = message
+            message.timestamp = Date(timeIntervalSince1970: seconds)
+            return message
+        }
+        let started = #"{"output":"Background process started","session_id":"proc_b1","pid":4100,"exit_code":0,"error":null}"#
+        let messages = [
+            at(row(1, "user", "Run the tests and fix the docs"), 990),
+            at(row(2, "assistant", "", calls: [call("c1", "terminal", #"{"command":"npm test","background":true}"#)]), 1_000),
+            at(row(3, "tool", started, callID: "c1", tool: "terminal"), 1_001),
+            // The turn keeps working for ten minutes; the tests finished long before it ended.
+            at(row(4, "assistant", "", calls: [call("c2", "read_file", #"{"path":"README.md"}"#)]), 1_200),
+            at(row(5, "tool", #"{"content":"Docs"}"#, callID: "c2", tool: "read_file"), 1_201),
+            at(row(6, "assistant", "The docs are fixed."), 1_600),
+            at(row(7, "user", processNotice("proc_b1", "npm test", exit: 0, output: "ok"), kind: "process_complete"), 1_601),
+        ]
+        let notice = try #require(TranscriptBuilder.build(messages).compactMap { if case .notice(let notice) = $0 { notice } else { nil } }.first)
+        let process = try #require(notice.work.first.flatMap { if case .process(let process) = $0 { process } else { nil } })
+        #expect(process.startedAt == Date(timeIntervalSince1970: 1_000))
+        #expect(process.duration == nil)
+        #expect(notice.text == "Tests passed")
+        #expect(process.status == "Finished")
+        // Another turn between the one that started it and its notice: no duration either.
+        let quick = [
+            at(row(1, "user", "Run the tests"), 990),
+            at(row(2, "assistant", "", calls: [call("c1", "terminal", #"{"command":"npm test","background":true}"#)]), 1_000),
+            at(row(3, "tool", started, callID: "c1", tool: "terminal"), 1_001),
+            at(row(4, "assistant", "Started."), 1_002),
+            at(row(5, "user", "And the lint?"), 1_010),
+            at(row(6, "assistant", "Clean."), 1_300),
+            at(row(7, "user", processNotice("proc_b1", "npm test", exit: 0, output: "ok"), kind: "process_complete"), 1_301),
+        ]
+        let later = try #require(TranscriptBuilder.build(quick).compactMap { if case .notice(let notice) = $0 { notice } else { nil } }.first)
+        #expect(later.text == "Tests passed")
+    }
+
+    @Test func aGroupSaysHowManyAndHowTheyWent() {
+        func finished(_ outcome: FinishedProcess.Outcome, _ command: String = "make build") -> FinishedWork {
+            .process(FinishedProcess(id: UUID().uuidString, command: command, outcome: outcome, output: ""))
+        }
+        #expect(Notice.finishedLine([finished(.succeeded), finished(.succeeded), finished(.failed(exitCode: 1)), finished(.succeeded)])
+                == "4 background tasks finished · 3 ok, 1 failed")
+        #expect(Notice.finishedLine([finished(.succeeded), finished(.succeeded)]) == "2 background tasks finished · all ok")
+        #expect(Notice.finishedLine([finished(.succeeded), finished(.stopped), finished(.lost)])
+                == "3 background tasks finished · 1 ok, 1 stopped, 1 failed")
+        let summary = Notice.finishedSummary([finished(.succeeded), finished(.failed(exitCode: 2))])
+        #expect(summary?.parts.map(\.isFailure) == [false, true])
+        // One with no details names nothing it doesn't know.
+        let bare = FinishedProcess.parse("[IMPORTANT: Background process proc_x completed normally (exit code 0).]")
+        #expect(bare.first?.line() == "A background process finished")
+        #expect(bare.first?.name() == "Background process")
+        #expect(bare.first?.status == "Finished")
+        let unknown = FinishedProcess.parse("[IMPORTANT: Background process proc_y completed normally (exit code 0).\nCommand: unknown\nOutput:\n]")
+        #expect(unknown.first?.command == "")
+        #expect(unknown.first?.line() == "A background process finished")
+    }
+
+    /// The messaging gateway batches completions its own way and names only their ids: the
+    /// steps that started them name them.
+    @Test func theGatewaysBatchNamesEachFromItsStep() throws {
+        let text = """
+        [IMPORTANT: 2 background processes completed for this session.
+        Treat these results as one completion batch and send at most one consolidated user-facing response.
+
+        - proc_g1: exit_code=0, reason=exited
+        Fetched 3 refs
+
+        - proc_g2: exit_code=1, reason=exited
+        [… truncated …]
+        error: build failed
+        If a result does not change the current conclusion, absorb it silently.]
+        """
+        let parsed = FinishedProcess.parse(text)
+        #expect(parsed.map(\.id) == ["proc_g1", "proc_g2"])
+        // Hermes lists ten and counts the rest; an entry whose id it lost reads "unknown".
+        let long = """
+        [IMPORTANT: 12 background processes completed for this session.
+        Treat these results as one completion batch and send at most one consolidated user-facing response.
+
+        - unknown: exit_code=1, reason=exited
+        boom
+        """ + (1...9).map { "\n- proc_l\($0): exit_code=0, reason=exited" }.joined(separator: "\n") + """
+
+        - … and 2 more completion(s); inspect them with the process tool if they affect the conclusion.
+        If a result does not change the current conclusion, absorb it silently.]
+        """
+        let many = FinishedProcess.parse(long)
+        #expect(many.count == 12)
+        #expect(many.first?.id == "unknown")
+        #expect(many.first?.output == "boom")
+        #expect(many.filter(\.isUnlisted).count == 2)
+        #expect(Notice.finishedLine(many.map(FinishedWork.process)) == "12 background tasks finished · 9 ok, 1 failed, 2 not listed")
+        #expect(FinishedProcess.previewLine(long) == "12 background tasks finished")
+        #expect(parsed.map(\.outcome) == [.succeeded, .failed(exitCode: 1)])
+        #expect(parsed.last?.output == "error: build failed")
+        func started(_ id: String) -> String { #"{"output":"Background process started","session_id":"\#(id)","exit_code":0}"# }
+        let messages = [
+            row(1, "user", "Fetch and build"),
+            row(2, "assistant", "", calls: [call("c1", "terminal", #"{"command":"git fetch origin","background":true}"#),
+                                             call("c2", "terminal", #"{"command":"swift build","background":true}"#)]),
+            row(3, "tool", started("proc_g1"), callID: "c1", tool: "terminal"),
+            row(4, "tool", started("proc_g2"), callID: "c2", tool: "terminal"),
+            row(5, "assistant", "Both started."),
+            row(6, "user", text, kind: "internal_notification"),
+        ]
+        let notice = try #require(TranscriptBuilder.build(messages).compactMap { if case .notice(let notice) = $0 { notice } else { nil } }.first)
+        #expect(notice.kind == "process_complete")
+        #expect(notice.text == "2 background tasks finished · 1 ok, 1 failed")
+        let names = notice.work.compactMap { if case .process(let process) = $0 { process.name() } else { nil } }
+        #expect(names == ["git fetch", "Build"])
+        // On the app's own sessions the same row is tagged `process_complete`.
+        var tagged = messages
+        tagged[5].displayKind = "process_complete"
+        let local = try #require(TranscriptBuilder.build(tagged).compactMap { if case .notice(let notice) = $0 { notice } else { nil } }.first)
+        #expect(local.text == "2 background tasks finished · 1 ok, 1 failed")
     }
 
     // MARK: Helpers
