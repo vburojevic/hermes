@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610261454 (October 26, 2026)
+
+- Fixes and polish.
+
 ### Build 2610261123 (October 26, 2026)
 
 - **Group chats:** a message waiting for an away Mac is kept on the device and still goes after a relaunch
