@@ -1,0 +1,77 @@
+# Buildkite pipeline for Hermes releases: iOS to TestFlight and the Public Beta, the Mac as a
+# notarized DMG with its Sparkle appcast, and the source tag, GitHub release and CHANGELOG.
+# What a release does is Scripts/release.sh's (docs/releasing.md); this file only runs it.
+#
+# Pipeline: `hermes-release` (its upload step, set in the pipeline's settings, names queue macos
+# too and runs `buildkite-agent pipeline upload .buildkite/release.yml`).
+# Trigger: by hand only (New Build, or `bk build create`), on main. Never a webhook: a tag can't
+# start it, because release.sh makes the tag itself at the end.
+#
+# Agent queue: `macos`, the mini's self-hosted agent. Never a Buildkite-hosted Mac (`hosted: true`
+# or any `*-hosted` queue): they bill per job minute (caffeinated-buildkite).
+#
+# Inputs: Mode (dry run or release) and Platforms (both, iOS, Mac). A build started with
+# RELEASE_MODE=dry-run or RELEASE_MODE=release in its environment skips the form; RELEASE_PLATFORMS
+# (both, ios, mac) and RELEASE_BUILD_NUMBER may come with it. See .buildkite/steps/release.sh.
+#
+# Cluster secrets, each limited to this pipeline (names only; read inside release.sh):
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_B64                 the studio's App Store Connect key
+#   APPLE_DISTRIBUTION_CERT_BASE64 / _PASSWORD                     Apple Distribution identity
+#   DEVELOPER_ID_APPLICATION_CERT_BASE64 / _PASSWORD               Developer ID Application (G2) identity
+#   HERMES_SPARKLE_ED_PRIVATE_KEY                                  Sparkle's EdDSA key
+#   HERMES_GITHUB_TOKEN                                            releases, the tag and the CHANGELOG push (not for dry runs)
+steps:
+  - input: ":rocket: Hermes release"
+    key: "release-input"
+    if: build.env("RELEASE_MODE") != "dry-run" && build.env("RELEASE_MODE") != "release"
+    prompt: "A dry run signs, notarizes and packages, and publishes nothing. Run one before a release."
+    fields:
+      - select: "Mode"
+        key: "release-mode"
+        required: true
+        default: "dry-run"
+        options:
+          - label: "Dry run: sign, notarize and package; publish nothing"
+            value: "dry-run"
+          - label: "Release: TestFlight and the Public Beta, the Mac DMG and Sparkle, the tag and CHANGELOG"
+            value: "release"
+      - select: "Platforms"
+        key: "release-platforms"
+        required: true
+        default: "both"
+        options:
+          - label: "iPhone, iPad and Mac"
+            value: "both"
+          - label: "iPhone and iPad only"
+            value: "ios"
+          - label: "Mac only"
+            value: "mac"
+
+  - label: ":apple: Hermes · release (iOS + Mac)"
+    key: "release"
+    command: ".buildkite/steps/release.sh"
+    agents:
+      queue: "macos"
+    # Archives take about 30 minutes, each notarization up to 45 and the Public Beta wait up to 60;
+    # a dry run takes about 90.
+    timeout_in_minutes: 240
+    concurrency: 1
+    concurrency_group: "hermes-release"
+    # Only a lost agent is retried, under the same build number, so a retry can't ship a second
+    # release: App Store Connect refuses a build number twice and GitHub a tag twice.
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 1
+      manual:
+        permit_on_passed: false
+    # What the run said and made. Never the work folder, the export options or the archives.
+    artifact_paths:
+      - "build/release/*/*.log"
+      - "build/release/*/validate-iOS.json"
+      - "build/release/*/notary-*.json"
+      - "build/release/*/appcast.xml"
+      - "build/release/*/whats-new.txt"
+      - "build/release/*/release-notes.md"
+      - "build/release/*/public-testflight.json"
+      - "build/release/*/Hermes-*.dmg"

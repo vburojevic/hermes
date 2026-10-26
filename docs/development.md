@@ -47,6 +47,14 @@ Dev builds can point at the mocks freely; they never touch the real app's gatewa
 run at the same time on one Mac. (`Application Support/Hermes` belongs to Hermes Desktop; the app
 never writes there.)
 
+### Releases
+
+Official releases are signed and shipped by the studio's Buildkite pipeline `hermes-release`, on its
+own Mac mini's agent (`.buildkite/release.yml`, which runs `Scripts/release.sh`), with a trusted
+MacBook as the fallback while that pipeline is new. Both need the studio's keys, so neither runs
+anywhere else; [releasing.md](releasing.md) says how, a dry run first. Forks release with their own
+team and their own tools.
+
 ## Test
 
 ```sh
