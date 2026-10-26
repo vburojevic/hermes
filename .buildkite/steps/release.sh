@@ -126,7 +126,7 @@ case "$(asc --version 2>&1 || true)" in
   *) echo "The pinned asc doesn't report $ASC_VERSION." >&2; exit 1 ;;
 esac
 missing=()
-for tool in xcodebuild xcrun python3 jq gh curl git security codesign hdiutil; do
+for tool in xcodebuild xcrun python3 jq gh curl git security codesign diskutil; do
   command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
 done
 [ -x /opt/homebrew/opt/openssl@3/bin/openssl ] || [ -x /opt/homebrew/bin/openssl ] || missing+=("openssl@3")

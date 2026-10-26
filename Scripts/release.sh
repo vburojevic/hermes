@@ -472,7 +472,10 @@ EOF
   rm -rf "$STAGE" && mkdir -p "$STAGE"
   ditto "$APP" "$STAGE/Hermes.app"
   ln -s /Applications "$STAGE/Applications"
-  hdiutil create -volname "Hermes" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$DMG" >/dev/null
+  # diskutil, not hdiutil: hdiutil create is deprecated on macOS 27, and after a restart it can fail
+  # with "Resource busy" for every image. diskutil doesn't overwrite, so an old DMG goes first.
+  rm -f "$DMG"
+  diskutil image create from --format UDZO --volumeName "Hermes" "$STAGE" "$DMG" >/dev/null
   codesign --force --timestamp --sign "$DEVID_SHA" "$DMG"
   notarize "$DMG"
   xcrun stapler staple "$DMG"
@@ -537,6 +540,13 @@ PUBLIC_GROUP="Public Beta"
 if [ $IOS = 1 ] && [ $DRY_RUN = 0 ]; then
   log "public TestFlight: $PUBLIC_GROUP"
   python3 -I Scripts/release_notes.py testflight "$VERSION" "$BUILD_NUMBER" "$PREVIOUS_TAG" > "$OUT/whats-new.txt"
+  # App Store Connect lists an upload only after a few minutes. With --ios-only no Mac step comes
+  # first to give it that time, and publishing at once finds no build, so wait for it (up to 30 min).
+  for _ in $(seq 1 60); do
+    "${ASC[@]}" builds list --app "$ASC_APP_ID" --build-number "$BUILD_NUMBER" --platform IOS --output json 2>/dev/null \
+      | python3 -I -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)["data"] else 1)' 2>/dev/null && break
+    sleep 30
+  done
   if "${ASC[@]}" publish testflight --app "$ASC_APP_ID" --build-number "$BUILD_NUMBER" --platform IOS \
       --group "$PUBLIC_GROUP" --test-notes "$(cat "$OUT/whats-new.txt")" --locale en-US \
       --wait --timeout 60m --submit --confirm --output json > "$OUT/public-testflight.json" 2> "$OUT/public-testflight.log"; then
