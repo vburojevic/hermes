@@ -314,6 +314,11 @@ def take_failed_read() -> bool:
 # stays (api_server_runs.py `_sweep_orphaned_runs_once`, api_server.py `_RUN_STREAM_TTL = 300`).
 # `--run-stream-ttl` shortens it for a timing run.
 RUN_STREAM = {"ttl": 300.0, "cut": 0}
+# The API server's caps (api_server.py `_concurrency_limited_response`, hermes_state_runtime.py
+# `ADMISSION_QUEUE_MAX`): at most `max_runs` runs live at once on the gateway (0 disables; Hermes's
+# default is 10), then 429 `rate_limit_exceeded`; at most 32 runs queued in one chat, then 409
+# `queue_full`, its message the bare reason. `POST /api/mock/run-caps {max_runs, queue_max}` lowers them.
+RUN_CAPS = {"max_runs": 10, "queue_max": 32}
 
 
 class Run:
@@ -557,8 +562,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def error(self, status, message, code=None, kind="invalid_request_error"):
-        self.send_json(status, {"error": {"message": message, "type": kind, "param": None, "code": code}})
+    def error(self, status, message, code=None, kind="invalid_request_error", extra=None):
+        self.send_json(status, {"error": {"message": message, "type": kind, "param": None, "code": code}}, extra)
 
     def respond_run(self, run, body, kind):
         """POST /v1/runs/{id}/approval|clarify as Hermes answers it (api_server_authority_runs.respond_run):
@@ -762,6 +767,14 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 RUN_STREAM["cut"] += 1
             return self.send_json(200, {"dropped": True})
+        if path == "/api/mock/run-caps":
+            body = self.body()
+            with LOCK:
+                for key in ("max_runs", "queue_max"):
+                    if isinstance(body.get(key), int) and body[key] >= 0:
+                        RUN_CAPS[key] = body[key]
+                caps = dict(RUN_CAPS)
+            return self.send_json(200, caps)
         STARVE.wait()
         if not self.authorized():
             return
@@ -809,6 +822,13 @@ class Handler(BaseHTTPRequestHandler):
                     if first_body != body:
                         return self.error(409, "Idempotency-Key was used with a different request", "idempotency_key_conflict")
                     return self.send_json(202, {"run_id": run_id, "status": RUNS[run_id].status, "replayed": True})
+                live = [r for r in RUNS.values() if not r.terminal]
+                if RUN_CAPS["max_runs"] and len(live) >= RUN_CAPS["max_runs"]:
+                    return self.error(429, f"Too many concurrent runs (max {RUN_CAPS['max_runs']})", "rate_limit_exceeded",
+                                      kind="rate_limit_error", extra={"Retry-After": "1"})
+                if sum(1 for r in live if r.session_id == sid and r.status == "queued") >= RUN_CAPS["queue_max"]:
+                    # A store refusal: its message is the bare reason (api_server_authority_runs.py).
+                    return self.error(409, "queue_full", "queue_full")
                 run = Run(f"run_{uuid.uuid4().hex}", sid, text if isinstance(text, str) else str(text))
                 RUNS[run.id] = run
                 if key:
