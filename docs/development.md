@@ -272,7 +272,10 @@ answers `started` but sends nothing and reads `queued` until it runs, `POST /v1/
 answers `{accepted: true}` (and `run.steered`) or 409 `run_not_accepting_steer` for a run that isn't
 running, an unread steer comes back as `pending_steer` on `run.completed`, Stop on a queued run
 cancels only it, and the same `Idempotency-Key` replays its run (409 `idempotency_key_conflict` with
-another body). `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p test_sending.py`
+another body). The API server's caps refuse as Hermes's do: past `max_runs` runs live at once (Hermes's
+default is 10) a new run is 429 `rate_limit_exceeded` "Too many concurrent runs (max N)" with
+`Retry-After`, and past 32 runs queued in one chat it is 409 `queue_full`, its message the bare
+reason; `POST /api/mock/run-caps {max_runs, queue_max}` on the gateway mock lowers them to hit. `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p test_sending.py`
 proves each of these against the mock.
 `POST /api/mock/hold {profile, seconds, surface, age, late}` holds a Bot Chat with nothing stored:
 `age` minutes ago (45 reads as a terminal, 0 as a one-shot booting), `surface` `cli` or

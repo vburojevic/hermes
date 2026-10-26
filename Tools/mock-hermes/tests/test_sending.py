@@ -336,6 +336,25 @@ class Sending(unittest.TestCase):
         status, body = self.call("POST", "/v1/runs", {"session_id": sid, "input": "other"}, port=self.gateway, headers=headers)
         self.assertEqual((status, body["error"]["code"]), (409, "idempotency_key_conflict"))
 
+    def test_the_api_servers_caps_refuse_in_hermes_words(self):
+        sid = f"api_caps_{int(time.time() * 1000)}"
+        self.addCleanup(self.call, "POST", "/api/mock/run-caps", {"max_runs": 10, "queue_max": 32}, port=self.gateway)
+        status, caps = self.call("POST", "/api/mock/run-caps", {"queue_max": 1}, port=self.gateway)
+        self.assertEqual((status, caps["queue_max"]), (200, 1))
+        self.call("POST", "/v1/runs", {"session_id": sid, "input": "slow first"}, port=self.gateway)
+        status, second = self.call("POST", "/v1/runs", {"session_id": sid, "input": "second"}, port=self.gateway)
+        self.assertEqual(status, 202)
+        time.sleep(0.3)
+        # The store's refusal: 409, its message the bare reason.
+        status, body = self.call("POST", "/v1/runs", {"session_id": sid, "input": "third"}, port=self.gateway)
+        self.assertEqual((status, body["error"]["code"], body["error"]["message"]), (409, "queue_full", "queue_full"))
+        # Two runs of this chat are live, so a cap of 2 is reached for any chat.
+        self.call("POST", "/api/mock/run-caps", {"max_runs": 2, "queue_max": 32}, port=self.gateway)
+        status, body = self.call("POST", "/v1/runs", {"session_id": f"{sid}_b", "input": "another chat"}, port=self.gateway)
+        self.assertEqual((status, body["error"]["code"], body["error"]["type"]), (429, "rate_limit_exceeded", "rate_limit_error"))
+        self.assertRegex(body["error"]["message"], r"^Too many concurrent runs \(max \d+\)$")
+        self.call("POST", f"/v1/runs/{second['run_id']}/stop", port=self.gateway)
+
 
 if __name__ == "__main__":
     unittest.main()
