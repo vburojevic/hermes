@@ -463,7 +463,7 @@ struct ChatScreen: View {
                         .transition(reduceMotion ? .opacity : .risesFromComposer)
                 }
                 if let notice = conversation.refusedNotice {
-                    RefusedBanner(line: notice.line, onRetry: notice.offersRetry ? conversation.retryRefused : nil) { conversation.refusedNotice = nil }
+                    RefusedBanner(notice: notice, onRetry: conversation.retryRefused) { conversation.refusedNotice = nil }
                         .glassEffectID("refused", in: bottomGlass)
                         .transition(ComposerView.rowAppears)
                 } else if let banner = conversation.banner {
@@ -768,9 +768,8 @@ struct ConnectionBanner: View {
 /// Hermes refused a message for a reason the app can't wait out (`refusedBanner`,
 /// `docs/chat.md` §4d): its words, never red, Try Again where sending again can help, and Dismiss.
 struct RefusedBanner: View {
-    let line: String
-    /// Nil where sending again can't help now (`refusedBannerSettle`).
-    let onRetry: (() -> Void)?
+    let notice: RefusedNotice
+    let onRetry: () -> Void
     let onDismiss: () -> Void
 
     var body: some View {
@@ -782,14 +781,15 @@ struct RefusedBanner: View {
                 Text("Hermes didn't take this message")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
-                Text(line)
+                Text(notice.line)
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-            if let onRetry {
+            // Not where sending again can't help now (`refusedBannerSettle`).
+            if notice.offersRetry {
                 Button("Try Again", action: onRetry)
                     .prominentGlassButton()
                     .controlSize(.small)
