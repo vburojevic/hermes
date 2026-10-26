@@ -21,7 +21,7 @@ public enum TranscriptItem: Identifiable, Hashable, Sendable {
 public struct UserEntry: Identifiable, Hashable, Sendable {
     public var id: String
     public var text: String
-    /// Images the server kept only as `[screenshot]` placeholders.
+    /// Images the server kept only as `[screenshot]` placeholders or `@image:` paths (``StoredImages``).
     public var imagePlaceholderCount: Int
     /// Images that are still inline in the stored content (`data:` or `https:` URLs).
     public var inlineImageURLs: [String]
@@ -1028,6 +1028,9 @@ public enum TranscriptBuilder {
         // A request Hermes restated after a compaction is the person's message it replaced.
         if let restated = CompactionSummary.restatedRequest(text) { text = restated }
         text = HermesScaffold.withoutMemoryContext(text)
+        // The photos' lines come last, after any attached context, so they're read first.
+        let photos = StoredImages.split(text)
+        text = photos.text
         // A skill used elsewhere is stored expanded: the skill as a chip, the words as typed.
         let invocation = SkillInvocation.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))
         if let invocation { text = invocation.instruction }
@@ -1036,7 +1039,7 @@ public enum TranscriptBuilder {
                 text = String(text[..<range.lowerBound])
             }
         }
-        var placeholders = 0
+        var placeholders = photos.count
         let lines = text.components(separatedBy: "\n").filter { line in
             if line.trimmingCharacters(in: .whitespaces) == "[screenshot]" {
                 placeholders += 1

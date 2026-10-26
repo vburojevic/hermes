@@ -70,7 +70,11 @@ The person's side is a trailing bubble (`userBubble`, `UserBubble`): images abov
 file chips inside it above the text, Bot and gateway-file pills inline in the text
 ([commands-and-references.md](commands-and-references.md)). Emoji Hermes put on the message sit
 under its trailing corner (`reactionRow`, `ReactionPill`). A message sent mid-turn carries a
-caption line saying how it was sent ([follow-ups.md](follow-ups.md)).
+caption line saying how it was sent ([follow-ups.md](follow-ups.md)). Hermes stores a message's
+photos as lines after its words: `@image:<path>` for each, then `[screenshot]` for each when a vision
+model saw them. It's the same whether the message ran at once or Hermes held it for the next turn.
+The app keeps its own copy of each photo it sent and shows it in their place (`StoredImages`,
+`SentImageStore`), or "1 image" when this device has no copy.
 
 Things that belong to the chat rather than to one turn come after the last row: side answers
 (`asideCard`), mid-turn messages still settling, and the error card of a turn that failed.
