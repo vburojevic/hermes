@@ -23,7 +23,9 @@ import urllib.error
 import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-BACKEND, GATEWAY, KEY = 40219, 40742, "dev-key-0123456789abcdef"
+# `HERMES_MATRIX_PORTS=<backend>,<gateway>` runs its mock on other ports, beside another run.
+BACKEND, GATEWAY = (int(p) for p in (os.environ.get("HERMES_MATRIX_PORTS") or "40219,40742").split(","))
+KEY = "dev-key-0123456789abcdef"
 BUNDLE = "co.caffeinatedcode.hermes.dev"
 BASE_FLAGS = ["-HERMES_PASTEBOARD", "none", "-HERMES_WHATS_NEW", "NO", "-HERMES_TIPS", "hide", "-push.primeDeclines", "2",
               "-HERMES_BOOTSTRAP_URL", f"http://127.0.0.1:{GATEWAY}", "-HERMES_BOOTSTRAP_KEY", KEY]
@@ -531,6 +533,28 @@ def photo_running(r):
     labels_after = r.shot("photo-running-after")
     r.record("photo_running", [("photoWhileBusy", "turnRunning"), ("photoWhileBusy", "toolRunning")], labels + labels_after,
              r.log_since(mark), expect=["on Hermes", "photo-running: what is this?"], stored=("photo-running: what is this?", 1))
+    # Once it ran, its bubble shows the photo, as one sent while Hermes was idle does.
+    r.record("photo_running_thumbnail", [("photoWhileBusy", "turnRunning·ran")], labels_after, "",
+             expect=[("Attached image", "attached image")], forbid=FORBIDDEN + ["@image:", "1 image"])
+
+
+def photo_idle(r):
+    """A photo sent while Hermes is idle: its own turn, and the bubble keeps the photo once Hermes stored it."""
+    mark = r.log_mark()
+    # A follow-up goes only after a send: a short one first, and the photo once its reply ended.
+    r.launch(["-HERMES_OPEN", "bot:default", "-HERMES_SEND", "photo-idle: hello", "-HERMES_SEND_AFTER", "6",
+              "-HERMES_FOLLOWUP", "photo-idle: what is this?", "-HERMES_FOLLOWUP_SEND", "YES", "-HERMES_FOLLOWUP_AFTER", "20",
+              "-HERMES_FOLLOWUP_IMAGE", PHOTO])
+    for _ in range(30):
+        time.sleep(3)
+        if r.stored_count("photo-idle: what is this?", since=mark):
+            break
+    # Its reply ends first: until then the bubble is the one this device drew as it sent.
+    time.sleep(25)
+    labels = r.shot("photo-idle-after")
+    r.record("photo_idle", [("photoWhileBusy", "idle")], labels, r.log_since(mark),
+             expect=["photo-idle: what is this?", ("Attached image", "attached image")], forbid=FORBIDDEN + ["@image:", "1 image"],
+             stored=("photo-idle: what is this?", 1))
 
 
 def photo_owner_busy(r):
@@ -703,12 +727,12 @@ def api_queue_full(r):
 
 SCENARIOS = {f.__name__: f for f in [
     idle_send, running_steer, running_upnext, starting_steer, stop_running, background_process, owner_busy, owner_forward,
-    owner_unconfirmed, slow_ack, lost_answer, photo_running, photo_owner_busy, another_bot, routine, limit, reconnecting_steer, offline_send, relaunch_queue, maybe_sent, queued_run,
+    owner_unconfirmed, slow_ack, lost_answer, photo_idle, photo_running, photo_owner_busy, another_bot, routine, limit, reconnecting_steer, offline_send, relaunch_queue, maybe_sent, queued_run,
     edit_resend, api_queue_full,
 ]}
 SHOTS = ["maybe_sent", "queued_run", "edit_resend"]
 LANE = ["idle_send", "running_steer", "running_upnext", "starting_steer", "stop_running", "background_process", "owner_busy",
-        "owner_forward", "owner_unconfirmed", "another_bot", "routine", "limit", "api_queue_full", "photo_running", "photo_owner_busy"]
+        "owner_forward", "owner_unconfirmed", "another_bot", "routine", "limit", "api_queue_full", "photo_idle", "photo_running", "photo_owner_busy"]
 WINDOW = ["offline_send", "reconnecting_steer", "slow_ack", "lost_answer"]
 
 

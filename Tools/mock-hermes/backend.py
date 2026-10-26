@@ -736,7 +736,10 @@ def start_turn(sid, text, runner):
         # Hermes builds the turn's agent first: half a second here, 6 s for a "cold start" (a loaded
         # Mac), in which only a redirect queues and a steer is refused 4010.
         runtime["agent_build_s"] = 6.0 if "cold start" in text.lower() else 0.5
-        runtime.pop("attached_images", None)  # the turn takes the photos staged for it
+        # The turn takes the photos staged for it, or a held message's own (`_run_prompt_submit`'s
+        # `image_paths`, which leaves anything staged since for the next prompt).
+        held = runtime.pop("held_images", None)
+        runtime["turn_images"] = held if held is not None else runtime.pop("attached_images", [])
         # Hermes' `_start_inflight_turn`: what the turn was asked, for clients that weren't the sender.
         runtime["inflight"] = {"user": text.split("\n\n[@mentions resolved", 1)[0].strip(), "assistant": "", "streaming": True}
     threading.Thread(target=guarded, args=(sid, text, runner), daemon=True).start()
@@ -764,6 +767,7 @@ def begin_turn(sid, stored, text, add):
     """The turn's user row and its start. Hermes with `dashboard.turn_isolation` stores the row only once
     the turn's own process starts (`_persist_turn_start`), a while after the turn began: only the live
     session's `inflight` has it meanwhile (`--turn-isolation SECONDS`)."""
+    text = with_image_refs(text, RUNTIME[sid].get("turn_images") or [])
     late = CONFIG.get("turn_isolation") or 0
     if late <= 0:
         add(stored, "user", text)
@@ -772,6 +776,17 @@ def begin_turn(sid, stored, text, add):
     if late > 0:
         time.sleep(late)
         add(stored, "user", text)
+
+
+def with_image_refs(text, images):
+    """The user row Hermes stores for a turn with photos, held or not (`_build_persist_user_message`,
+    `_durable_content`): the words, an `@image:<path>` line per photo, and, as a vision model gets the
+    photos themselves, a `[screenshot]` line per photo after them."""
+    if not images:
+        return text
+    refs = "\n".join(f"@image:{path}" for path in images)
+    persisted = f"{text}\n{refs}" if text else refs
+    return persisted + "\n[screenshot]" * len(images)
 
 
 def store_user(sid, stored, text):
@@ -807,7 +822,8 @@ def busy_submit(sid, text, queued):
     for the next turn; plain text follows display.busy_input_mode (steer, interrupt → redirect, queue)."""
     with LOCK:
         runtime = RUNTIME[sid]
-        media = len(runtime.pop("attached_images", []))
+        images = runtime.pop("attached_images", [])
+        media = len(images)
         mode = "queue" if queued or media else BUSY["mode"]
         if mode == "steer":
             runtime.setdefault("steers", []).append(text)
@@ -823,7 +839,7 @@ def busy_submit(sid, text, queued):
             if head.get("row"):
                 head["row"]["content"] = head["text"]
             return {"status": "queued"}
-        entry = {"text": text, "media": media}
+        entry = {"text": text, "media": media, "images": images}
         queue.append(entry)
         stored = runtime.get("stored")
     # Durable at accept (`_persist_queued_user_row`): a row marked `_queued_prompt`, swapped for the
@@ -851,6 +867,7 @@ def after_turn(sid, runner):
             # Hermes deactivates the row it wrote at accept: the turn stores its own.
             nxt["row"]["display_kind"] = "hidden"
             nxt["row"].pop("display_metadata", None)
+        runtime["held_images"] = nxt.get("images") or []
     # At once, right after the idle notice, as Hermes does (prompt_turn.py `_run_post_turn_followups`):
     # its start reaches the app while the app still finishes the turn before.
     start_turn(sid, nxt["text"], runner)

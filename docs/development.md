@@ -118,7 +118,10 @@ refusal is Hermes's words, never a generic error.
 Dictation fills the field, so it is Send. Talk is proven at the model level only (a simulator has
 no microphone to drive). A photo while busy is sent with `-HERMES_FOLLOWUP_IMAGE <path>`, which
 attaches that picture to the `-HERMES_FOLLOWUP` message as a paste does, on iPhone and Mac alike
-(never through the Mac's clipboard). The cells that depend on timing (offline, reconnecting, a slow or lost
+(never through the Mac's clipboard). Once it ran, its bubble must show the photo, as one sent while
+Hermes was idle does (`photo_idle`): the mock stores a photo as Hermes does, `@image:<path>` and
+`[screenshot]` after the words. `HERMES_MATRIX_PORTS=<backend>,<gateway>` moves the matrix's mock
+off 40219/40742, beside another run. The cells that depend on timing (offline, reconnecting, a slow or lost
 answer, a relaunch with an outbox) run in a quiet window; the rest run any time:
 
 ```sh
