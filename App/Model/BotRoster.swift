@@ -44,7 +44,10 @@ final class BotRoster {
     private(set) var profiles: [BotProfile] = []
     /// Pinned first, then most recently active or created. Rebuilt only when the roster changes.
     private(set) var visibleBots: [BotProfile] = []
-    private(set) var hiddenBots: [BotProfile] = []
+    private(set) var hiddenBots: [BotProfile] = [] {
+        // Hidden or shown again: a hidden Bot's news leaves the badge, a shown one's comes back.
+        didSet { if hiddenBots.map(\.name) != oldValue.map(\.name) { workspace?.unread.update() } }
+    }
     private(set) var hasLoaded = false
     /// Bots with activity the person hasn't seen (keyed by profile name).
     private(set) var unread: Set<String> = [] {

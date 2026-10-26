@@ -93,7 +93,9 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   activity until that's read, else when the Bot was made. A routine's run in a session of its own,
   opening the chat or a compaction moves neither the time nor the place; a turn running in the Bot
   Chat lifts the row until its reply ends.
-  Hidden Bots fold under "Hidden · N" in the sidebar. The sidebar's "Your Bots" lists group chats
+  Hidden Bots fold under "Hidden · N" in the sidebar. Their news shows on their own rows there,
+  and counts like a muted Bot's: never on the app icon or Dock badge, nor in the Bots count
+  ([notifications.md](notifications.md) §2 Badge). Show in Roster counts it again. The sidebar's "Your Bots" lists group chats
   first, then Bots. The context menu offers Edit Bot…, Routines…, Pin or Unpin, Hide from Roster
   or Show in Roster, and Copy @handle. Pin and Hide move the Bot at once; roster reads keep the
   change while `saveMeta` takes it to the gateway, and a failure moves it back with the error.

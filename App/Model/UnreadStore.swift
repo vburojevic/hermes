@@ -138,12 +138,22 @@ final class UnreadStore {
         return cache.watermarks[key].map { $0 == 0 ? .markedUnread : .readUntil(Date(timeIntervalSince1970: $0)) }
     }
 
-    /// Unread chats (not messages) that aren't muted, leaving out the open one.
+    /// Unread chats (not messages) that aren't muted or hidden Bots, leaving out the open one.
     func unreadChats(in keys: some Sequence<String>) -> Int {
         let open = openKey
+        let hidden = hiddenBots
         return keys.reduce(0) { total, key in
-            key != open && badge(for: key).isUnread && !mutes.isMuted(key) ? total + 1 : total
+            counts(key, open: open, hidden: hidden) ? total + 1 : total
         }
+    }
+
+    /// Bots folded under "Hidden · N": they count like muted ones (`BadgeScope`).
+    private var hiddenBots: Set<String> {
+        Set(workspace?.roster?.hiddenBots.map(\.name) ?? [])
+    }
+
+    private func counts(_ key: String, open: String?, hidden: Set<String>) -> Bool {
+        BadgeScope.counts(key, isUnread: badge(for: key).isUnread, open: open, isMuted: mutes.isMuted(key), hiddenBots: hidden)
     }
 
     /// Every unread, unmuted chat, Bot and group chat but the open one (the drawer button).
@@ -435,13 +445,14 @@ final class UnreadStore {
     }
 
     /// The chats the app icon badge counts (`PushShared.recordUnread`): unread, unmuted, not on
-    /// screen, named every way a notice may name them.
+    /// screen, not a hidden Bot, named every way a notice may name them.
     func badgeChats() -> [UnreadChat] {
         guard let workspace else { return [] }
         let open = openKey
+        let hidden = hiddenBots
         let botChats = workspace.roster?.botChats ?? [:]
         return badges.keys.sorted().compactMap { key -> UnreadChat? in
-            guard key != open, badge(for: key).isUnread, !mutes.isMuted(key) else { return nil }
+            guard counts(key, open: open, hidden: hidden) else { return nil }
             if key.hasPrefix("bot:") {
                 let name = String(key.dropFirst(4))
                 return UnreadChat(key: key, ids: botChats.filter { $0.value == name }.keys.sorted(),
@@ -457,17 +468,21 @@ final class UnreadStore {
     }
 
     /// Every chat, Bot and group chat the app lists for this gateway: the badge never counts
-    /// anything else (a notice for a routine's run or a Bot-to-Bot one-shot chat). Nil until the
-    /// list has loaded, so a cold start doesn't wipe what the badge knew.
+    /// anything else (a notice for a routine's run or a Bot-to-Bot one-shot chat), nor a hidden
+    /// Bot's. Nil until the list has loaded, so a cold start doesn't wipe what the badge knew.
     func countableChats() -> CountableChats? {
         guard let workspace, !workspace.sessions.isEmpty || workspace.roster?.profiles.isEmpty == false else { return nil }
+        let hidden = hiddenBots
         var ids: Set<String> = []
         for session in workspace.sessions {
             ids.insert(session.id)
             ids.insert(session.stableID)
         }
-        ids.formUnion((workspace.roster?.botChats ?? [:]).keys)
-        return CountableChats(ids: ids, bots: Set(workspace.roster?.profiles.map(\.name) ?? []),
+        let botChats = workspace.roster?.botChats ?? [:]
+        // A hidden Bot's own chat leaves the list's sessions too (the primary Bot's is one of them).
+        ids.subtract(botChats.filter { hidden.contains($0.value) }.keys)
+        ids.formUnion(BadgeScope.countedBotChats(botChats, hiddenBots: hidden).keys)
+        return CountableChats(ids: ids, bots: Set(workspace.roster?.profiles.map(\.name) ?? []).subtracting(hidden),
                               rooms: Set(workspace.roster?.groupRooms.rooms.map(\.id) ?? []),
                               unmarked: namesUnmarked ? Set(unmarkedSessions().flatMap { [$0.id, $0.stableID] }) : [])
     }
@@ -499,11 +514,15 @@ final class UnreadStore {
     }
 
     /// The chats the app lists, as the plugin names them (`presence away` with `listed`): a reply
-    /// for anything else never counts in its badge either.
+    /// for anything else, or for a hidden Bot, never counts in its badge either.
     func listedChats() -> AppPushClient.ChatLists {
         guard let workspace else { return AppPushClient.ChatLists() }
+        let hidden = hiddenBots
+        let botChats = workspace.roster?.botChats ?? [:]
+        let hiddenChats = Set(botChats.filter { hidden.contains($0.value) }.keys)
         return AppPushClient.ChatLists(
-            chats: Array(Set(workspace.sessions.map(\.id)).union((workspace.roster?.botChats ?? [:]).keys)).sorted(),
+            chats: Array(Set(workspace.sessions.map(\.id)).subtracting(hiddenChats)
+                .union(BadgeScope.countedBotChats(botChats, hiddenBots: hidden).keys)).sorted(),
             rooms: (workspace.roster?.groupRooms.rooms.map(\.id) ?? []).sorted()
         )
     }

@@ -311,7 +311,11 @@ Rules:
     notice to carry the read, so without those answers it stayed unread on the iPhone.
 - **Badge** counts unread, unmuted chats, Bots and group chats plus open "needs you" requests across
   gateways by default (Settings → Notifications → App Icon Badge, Dock Badge on the Mac → Unread
-  Chats; Needs You counts only the requests). Requests: each gateway's latest `open` count, ignoring
+  Chats; Needs You counts only the requests). A hidden Bot (folded under "Hidden · N") counts like
+  a muted one: never on the badge or in the Bots count, on any device, and its chat leaves what the
+  extension and the plugin may count (`BadgeScope`, `countableChats`, `listed`), while its own row
+  still shows its news. Its notices are unchanged. It once left the icon at 1 with nothing unread
+  in the list. Requests: each gateway's latest `open` count, ignoring
   counts older than six hours. Chats: one list per gateway in the App Group (`PushShared.unread`),
   which the app writes whenever its counts move (`UnreadStore`), the service extension adds a chat
   to when a reply or message for it arrives (unless it's muted), and every read takes chats off.
