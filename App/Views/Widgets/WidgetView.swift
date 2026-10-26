@@ -815,55 +815,64 @@ struct WidgetSkeleton: View {
 
     var body: some View {
         Group {
-            switch kind {
-            case .value:
-                VStack(alignment: .leading, spacing: 8) {
-                    block(width: 110, height: 10)
-                    block(width: 150, height: 26)
-                    block(width: 80, height: 10)
-                }
-            case .rows:
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(0..<3, id: \.self) { index in
-                        HStack(spacing: 10) {
-                            block(width: 26, height: 26)
-                            VStack(alignment: .leading, spacing: 6) {
-                                block(width: [180, 140, 160][index], height: 9)
-                                block(width: 90, height: 8)
-                            }
-                        }
-                    }
-                }
-            case .chart:
-                VStack(alignment: .leading, spacing: 8) {
-                    block(width: 90, height: 18)
-                    block(width: nil, height: 90)
-                }
-            case .media:
-                VStack(alignment: .leading, spacing: 8) {
-                    block(width: nil, height: 140)
-                    block(width: 160, height: 9)
-                }
-            case .grid:
-                Grid(horizontalSpacing: 6, verticalSpacing: 6) {
-                    ForEach(0..<4, id: \.self) { _ in
-                        GridRow {
-                            ForEach(0..<7, id: \.self) { _ in block(width: nil, height: 14) }
-                        }
-                    }
-                }
-            case .code:
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach([0.85, 0.6, 0.9, 0.5, 0.7], id: \.self) { fraction in
-                        GeometryReader { proxy in block(width: proxy.size.width * fraction, height: 8) }
-                            .frame(height: 8)
-                    }
-                }
-                .widgetWell()
+            // The blocks fade towards what's right behind them; the code well stays still under
+            // its lines, as the card does under the others.
+            if kind == .code {
+                blocks.modifier(SkeletonShimmer(towards: Theme.canvas)).widgetWell()
+            } else {
+                blocks.modifier(SkeletonShimmer(towards: Theme.surface))
             }
         }
-        .modifier(SkeletonShimmer())
         .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var blocks: some View {
+        switch kind {
+        case .value:
+            VStack(alignment: .leading, spacing: 8) {
+                block(width: 110, height: 10)
+                block(width: 150, height: 26)
+                block(width: 80, height: 10)
+            }
+        case .rows:
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(0..<3, id: \.self) { index in
+                    HStack(spacing: 10) {
+                        block(width: 26, height: 26)
+                        VStack(alignment: .leading, spacing: 6) {
+                            block(width: [180, 140, 160][index], height: 9)
+                            block(width: 90, height: 8)
+                        }
+                    }
+                }
+            }
+        case .chart:
+            VStack(alignment: .leading, spacing: 8) {
+                block(width: 90, height: 18)
+                block(width: nil, height: 90)
+            }
+        case .media:
+            VStack(alignment: .leading, spacing: 8) {
+                block(width: nil, height: 140)
+                block(width: 160, height: 9)
+            }
+        case .grid:
+            Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+                ForEach(0..<4, id: \.self) { _ in
+                    GridRow {
+                        ForEach(0..<7, id: \.self) { _ in block(width: nil, height: 14) }
+                    }
+                }
+            }
+        case .code:
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach([0.85, 0.6, 0.9, 0.5, 0.7], id: \.self) { fraction in
+                    GeometryReader { proxy in block(width: proxy.size.width * fraction, height: 8) }
+                        .frame(height: 8)
+                }
+            }
+        }
     }
 
     private func block(width: CGFloat?, height: CGFloat) -> some View {
@@ -874,23 +883,29 @@ struct WidgetSkeleton: View {
     }
 }
 
-/// The skeleton's slow shimmer (1.4 s). Its moving part exists only while the loop runs, so it
-/// stops when the card goes or can't be seen (`DecorativeLoop`).
+/// The skeleton's slow shimmer (1.4 s): the blocks fade halfway towards what's right behind them,
+/// the card's surface or the code well, and back. Towards the canvas, black in dark, blocks on a
+/// card sank below it. Its moving part exists only while the loop runs, so it stops when the card
+/// goes or can't be seen (`DecorativeLoop`).
 private struct SkeletonShimmer: ViewModifier {
+    let towards: Color
+
     func body(content: Content) -> some View {
         DecorativeLoop { runs in
             content.overlay {
-                if runs { SkeletonGlow().mask(content) }
+                if runs { SkeletonGlow(towards: towards).mask(content) }
             }
         }
     }
 }
 
 private struct SkeletonGlow: View {
+    let towards: Color
+
     @State private var bright = false
 
     var body: some View {
-        Theme.canvas
+        towards
             .opacity(bright ? 0.5 : 0)
             .onAppear {
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { bright = true }

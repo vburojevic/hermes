@@ -135,20 +135,18 @@ struct PulseHalo: View {
 }
 
 /// What Hermes or a Bot is doing, in words that shimmer (`Chips.shimmerText`, `docs/chat.md` §4a):
-/// the one moving thing in its place. A `thinking-shimmer` band sweeps across the words every
-/// 1.6 s while they can be seen; Reduce Motion, Low Power Mode and a window behind hold them still.
-/// Its accessibility label is its words.
+/// the one moving thing in its place. A soft `thinking-shimmer` band, the words' full ink, passes
+/// over them every 1.6 s while they can be seen (`ShimmerBand`); Reduce Motion, Low Power Mode and
+/// a window behind hold them still. Its accessibility label is its words.
 struct ShimmerText: View {
-    /// The colour under the band: tertiary in a chat, secondary in rows, ink in the jump pill.
+    /// The grey under the band: tertiary in a chat, secondary in rows and the jump pill. The band
+    /// is the words' full ink, so it lifts them away from the background in light and dark alike;
+    /// over ink words there'd be nowhere further for it to go.
     enum Tone {
         case chat, row, ink
 
         var color: Color {
-            switch self {
-            case .chat: Theme.tertiaryText
-            case .row: Theme.secondaryText
-            case .ink: Theme.primaryText
-            }
+            self == .chat ? Theme.tertiaryText : Theme.secondaryText
         }
 
         /// Still, with Reduce Motion: easier to read than tertiary.
@@ -222,19 +220,21 @@ private struct ShimmerSweep<Label: View>: View {
 /// The same band from a `TimelineView` at most 30 times a second, for the measurement only.
 private struct TimelineSweep: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-            let into = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: ShimmerLayer.period) / ShimmerLayer.period
-            // Ease in and out, as the layer's timing function.
-            let eased = into < 0.5 ? 2 * into * into : 1 - pow(-2 * into + 2, 2) / 2
-            let centre = -0.15 + eased * 1.3
-            LinearGradient(
-                stops: [
-                    .init(color: Theme.thinkingShimmer.opacity(0), location: centre - 0.15),
-                    .init(color: Theme.thinkingShimmer, location: centre),
-                    .init(color: Theme.thinkingShimmer.opacity(0), location: centre + 0.15),
-                ],
-                startPoint: .leading, endPoint: .trailing
-            )
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                let middle = ShimmerBand.middle(at: context.date.timeIntervalSinceReferenceDate, over: width)
+                let band = ShimmerBand.width(over: width)
+                LinearGradient(
+                    stops: ShimmerBand.stops.map { stop in
+                        .init(
+                            color: Theme.thinkingShimmer.opacity(stop.strength),
+                            location: (middle + (stop.location - 0.5) * band) / width
+                        )
+                    },
+                    startPoint: .leading, endPoint: .trailing
+                )
+            }
         }
     }
 }

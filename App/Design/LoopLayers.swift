@@ -1,3 +1,4 @@
+import HermesKit
 import QuartzCore
 import SwiftUI
 #if os(macOS)
@@ -172,14 +173,12 @@ final class HaloLayerView: LoopLayerView {
 
 // MARK: - Shimmer
 
-/// The band that sweeps across a `ShimmerText` (`Chips.shimmerText`, `docs/chat.md` §4a): 30% of
-/// its width (at least 24 pt), `color` in the middle, from just before its leading edge to just
-/// past its trailing one, once every `ShimmerLayer.period` seconds, easing in and out. The text
-/// masks it.
+/// The band that passes over a `ShimmerText` (`Chips.shimmerText`, `docs/chat.md` §4a), shaped
+/// and paced by `ShimmerBand`: `color` at its middle, easing out to nothing at its edges, from
+/// wholly before the words to wholly past them at a steady pace, then a rest, once every
+/// `ShimmerBand.period` seconds. The text masks it.
 struct ShimmerLayer {
     let color: Color
-
-    static let period = 1.6
 }
 
 #if os(macOS)
@@ -228,19 +227,22 @@ final class ShimmerLayerView: LoopLayerView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let width = next.size.width
-        let band = max(width * 0.3, 24)
-        sweep.colors = [color.copy(alpha: 0) ?? color, color, color.copy(alpha: 0) ?? color]
-        sweep.locations = [0, 0.5, 1]
-        sweep.frame = CGRect(x: -band, y: 0, width: band, height: next.size.height)
+        let band = ShimmerBand.width(over: width)
+        let travel = ShimmerBand.travel(over: width)
+        // Each stop is the band colour, fainter: fading towards clear black would grey its edges.
+        sweep.colors = ShimmerBand.stops.map { color.copy(alpha: color.alpha * $0.strength) ?? color }
+        sweep.locations = ShimmerBand.stops.map { NSNumber(value: $0.location) }
+        sweep.frame = CGRect(x: travel.from - band / 2, y: 0, width: band, height: next.size.height)
         sweep.removeAllAnimations()
-        let move = CABasicAnimation(keyPath: "position.x")
-        move.fromValue = -band / 2
-        move.toValue = width + band / 2
-        move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // A steady pass, then a rest past the words. Eased, it dwelt on the first and last words.
+        let move = CAKeyframeAnimation(keyPath: "position.x")
+        move.values = [travel.from, travel.to, travel.to]
+        move.keyTimes = [0, NSNumber(value: ShimmerBand.pass / ShimmerBand.period), 1]
+        move.calculationMode = .linear
         // On one clock for every shimmer: new words ("Thinking… · 12s" each second) carry on
         // the sweep where it was rather than starting it again, and rows sweep together.
-        let phase = CACurrentMediaTime().truncatingRemainder(dividingBy: ShimmerLayer.period)
-        sweep.add(looping(move, duration: ShimmerLayer.period, delay: -phase), forKey: "sweep")
+        let phase = CACurrentMediaTime().truncatingRemainder(dividingBy: ShimmerBand.period)
+        sweep.add(looping(move, duration: ShimmerBand.period, delay: -phase), forKey: "sweep")
         CATransaction.commit()
     }
 }

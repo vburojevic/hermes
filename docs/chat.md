@@ -704,12 +704,18 @@ typing bubbles, no waving dots and no spinners for agent work.
 | Waiting for you, or stopped | Nothing: solid orange or red words ("Waiting for your approval", "Waiting for your answer" while a question or other request waits on its card) | The card says what's waiting; the line above it doesn't shimmer the tool that asked |
 | Run in Background, an unread steer | "Working in the background: …" shimmers; a steer keeps its dashed border | No spinner |
 
-- **`ShimmerText`** (`App/Design/Components.swift`), one view everywhere: a `thinking-shimmer` band,
-  30% of the words' width, sweeps across `text-tertiary` (`text-secondary` in rows, ink in the
-  jump pill) every 1.6 s, easing in and out, on one clock for every shimmer. Core Animation moves
-  it (`ShimmerLayer`) at no more than 30 frames a second; the app does nothing per frame. It
-  exists only while seen (`DecorativeLoop`): off screen, behind another window, in Low Power Mode
-  and with Reduce Motion it isn't there. Its accessibility label is its words.
+- **`ShimmerText`** (`App/Design/Components.swift`), one view everywhere: a soft `thinking-shimmer`
+  band passes over grey words, `text-tertiary` (`text-secondary` in rows and in the jump pill).
+  The band is the words' full ink, near black in light and near white in dark (black and white
+  with Increase Contrast), so it lifts the words away from the background in both; a band that
+  faded them towards the background read as a hole, a dark smear in dark. `ShimmerBand`
+  (HermesKit) shapes and paces it: 30% of the words' width, at least 32 pt and at most 80 pt, full
+  strength only at its middle with eased (smoothstep) edges, crossing from wholly before the words
+  to wholly past them at a steady pace in 1.2 s, then resting 0.4 s, every 1.6 s on one clock for
+  every shimmer. Core Animation moves it (`ShimmerLayer`) at no more than 30 frames a second; the
+  app does nothing per frame. It exists only while seen (`DecorativeLoop`): off screen, behind
+  another window and in Low Power Mode the words hold still in their grey, and with Reduce Motion
+  there's no band at all. Its accessibility label is its words.
 - **Timing:** the header appears the moment the message is sent, so there's never an empty gap.
   Its words change at most 4 times a second, cross-faded. After 10 s of thinking it adds the
   time: "Thinking… · 12s"; a step that runs past 10 s adds its own, from when it started
@@ -726,7 +732,8 @@ typing bubbles, no waving dots and no spinners for agent work.
   only when the gateway's answer is what it shows (a test, an install), and then says so. The
   chat list and the Bots do this, and Tasks, Routines, Skills, Apps and Tools and Memory through
   `PendingChanges` (HermesKit), which lays the changes on their way over every list read.
-- **Reduce Motion:** no sweep; the words stay still in `text-secondary`. Times still count.
+- **Reduce Motion:** no sweep; the words stay still in `text-secondary` (the jump pill's in
+  `text-primary`). Times still count.
 - **VoiceOver:** "Research Buddy is thinking" once Hermes has the message, then "Replying", then
   "Reply finished" (`ReplyPhase`). Never each step, never the words as they stream.
 - **Checks:** `IndicatorsUITests` counts the shimmers on screen in each state against the mock

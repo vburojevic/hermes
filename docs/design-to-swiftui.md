@@ -246,7 +246,12 @@ state and banner components.
   - **`Spinner`** (a `ProgressView` shown after 0.5 s) only for the app's own waiting that the
     person started (connecting, pairing, signing in, installing, restarting, saving), in the control
     that started it or centred on an empty page. **`SkeletonRows`** for lists and cards that load.
-  - **Reduce Motion:** the shimmer stops; the words are still `text-secondary`.
+  - **The band** is `thinking-shimmer`, the words' full ink, over grey words: it lifts them away
+    from the background in light and dark. `ShimmerBand` (HermesKit) gives its eased stops, its
+    width and its steady pass with a rest, and the layer and the measurement's `TimelineView` both
+    follow it.
+  - **Reduce Motion:** the shimmer stops; the words are still `text-secondary` (the jump pill's
+    in `text-primary`).
 - Decorative motion (shimmer, blinks, auras, pulsing dots) holds still while
   `pausesDecorativeMotion` is set (the window isn't in front, or Low Power Mode is on) and stops
   under Reduce Motion. Every window's root sets it with `pausesMotionWhenAway()`, the Settings and

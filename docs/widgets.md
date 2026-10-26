@@ -310,6 +310,9 @@ widgets.
 - **Dynamic Type:** rows that sit side by side stack at accessibility sizes (`AnyLayout`); nothing
   truncates silently.
 - **Targets:** buttons are at least 44 pt tall.
+- **Skeleton shimmer:** the blocks fade halfway toward what's right behind them and back every
+  1.4 s: the card's surface, or the code well under a code skeleton's lines, which stays still.
+  Never toward the canvas behind a card, which is darker than the card in dark.
 - **Reduce Motion:** skeleton shimmer, resolution springs and chart scrubbing animations turn off;
   decorative loops use `DecorativeLoop`, so they stop when off screen.
 - **RTL and localisation:** layouts use leading and trailing; phrases are localised whole, never

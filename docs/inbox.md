@@ -189,7 +189,7 @@ search).
 |---|---|
 | Count appears / changes | Scale 0.6 → 1 (spring 0.3 / 0.7), digits roll (`.numericText`) |
 | Live dot | Still: an ink dot in a soft halo |
-| Activity shimmer | A `thinking-shimmer` band sweeps across the words every 1.6 s (ease-in-out) |
+| Activity shimmer | A soft `thinking-shimmer` band, the words' full ink, crosses them at a steady pace every 1.6 s, then rests ([chat.md](chat.md) §4a) |
 | Activity text | Cross-fade, at most 4 updates a second |
 | Rows | Spring to the top (0.4 / 0.85) |
 | New Messages line | Fades in with the chat, out (0.3 s) |

@@ -244,10 +244,12 @@ nonisolated enum Palette {
         increasedContrastLight: Color(.sRGB, red: 0.2588, green: 0.2588, blue: 0.2588),
         increasedContrastDark: Color(.sRGB, red: 0.749, green: 0.749, blue: 0.749)
     )
-    /// Shimmer highlight on "Thinking…".
+    /// Shimmer highlight on "Thinking…": the words' full ink, away from the background, passing over grey words.
     static let thinkingShimmer = Color(
-        light: Color(.sRGB, red: 0.7216, green: 0.7216, blue: 0.7216),
-        dark: Color(.sRGB, red: 0.3608, green: 0.3608, blue: 0.3608)
+        light: Color(.sRGB, red: 0.0588, green: 0.0588, blue: 0.0588),
+        dark: Color(.sRGB, red: 0.9608, green: 0.9608, blue: 0.9608),
+        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0),
+        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1)
     )
     /// System orange (26 palette; text-legible light variant).
     static let warning = Color(
