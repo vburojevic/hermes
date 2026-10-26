@@ -37,6 +37,15 @@ public struct AppPushClient: Sendable {
         public var open: Int
         public var installationID: String?
         public var relayError: String?
+        /// The last six hours' reads on any device (plugin 1.4.6; nil from older ones).
+        public var reads: ReadMarks? = nil
+    }
+
+    /// What `presence` answers: the open requests and, from plugin 1.4.6, the last six hours' reads
+    /// on any device, so a group chat read elsewhere reaches this one (`docs/notifications.md` §2).
+    public struct PresenceAnswer: Sendable, Equatable {
+        public var open: Int
+        public var reads: ReadMarks?
     }
 
     /// Sends one request over whichever socket the caller has.
@@ -159,7 +168,7 @@ public struct AppPushClient: Sendable {
     @discardableResult
     public func setPresence(_ presence: Presence, deviceID: String, visibleChat: String? = nil, live: [String]? = nil,
                             sync: [String]? = nil, unread: ChatLists? = nil, muted: ChatLists? = nil,
-                            listed: ChatLists? = nil, badgeOthers: Int? = nil, badge: Int? = nil) async throws -> Int {
+                            listed: ChatLists? = nil, badgeOthers: Int? = nil, badge: Int? = nil) async throws -> PresenceAnswer {
         var args: [String: JSONValue] = ["device_id": .string(deviceID), "state": .string(presence.rawValue)]
         if let visibleChat { args["session_id"] = .string(visibleChat) }
         if let live { args["live"] = .array(live.map(JSONValue.string)) }
@@ -170,7 +179,7 @@ public struct AppPushClient: Sendable {
         if let badgeOthers { args["badge_others"] = .number(Double(max(0, badgeOthers))) }
         if let badge { args["badge"] = .number(Double(max(0, badge))) }
         let answer = try await run("presence", args)
-        return Int(answer["open"]?.doubleValue ?? 0)
+        return PresenceAnswer(open: Int(answer["open"]?.doubleValue ?? 0), reads: Self.reads(in: answer))
     }
 
     /// Chats read on this device (`docs/notifications.md` §2 Reading): the plugin clears them on
@@ -198,8 +207,17 @@ public struct AppPushClient: Sendable {
             registered: answer["registered"]?.boolValue ?? false,
             open: Int(answer["open"]?.doubleValue ?? 0),
             installationID: answer["gateway"]?["id"]?.stringValue,
-            relayError: answer["relay_error"]?.stringValue
+            relayError: answer["relay_error"]?.stringValue,
+            reads: Self.reads(in: answer)
         )
+    }
+
+    /// An answer's `read`, shaped as a notice's (`{chats: [[id, at], …], rooms}`); a list this build
+    /// can't read costs only the reads, never the answer.
+    static func reads(in answer: JSONValue) -> ReadMarks? {
+        guard let read = answer["read"], let data = try? JSONEncoder().encode(read),
+              let marks = try? JSONDecoder().decode(ReadMarks.self, from: data), !marks.isEmpty else { return nil }
+        return marks
     }
 
     /// Asks the gateway to push a test notice now.

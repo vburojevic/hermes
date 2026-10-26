@@ -741,6 +741,15 @@ final class UnreadStore {
         }
     }
 
+    /// Hermes' marks now, awaited: an app woken in the background (a `sync` push, an app refresh)
+    /// counts from them, never from the marks it left with, or a chat read on another device while it
+    /// slept would go back on the icon (`docs/notifications.md` §2 Badge).
+    func catchUpMarks() async {
+        guard let workspace, let backend = workspace.roster?.boardClient,
+              let rows = try? await backend.recentSessions(limit: 100, profile: workspace.bot.profileName) else { return }
+        adopt(rows)
+    }
+
     private func adopt(_ rows: [HermesSession]) {
         var marks: [String: ReadMark] = [:]
         for row in rows {

@@ -268,7 +268,11 @@ a dashboard on an overloaded Mac does: a message sent meanwhile goes out before 
 `read`: read pushes to devices away from the app, badge pushes, the `read` list in later notices),
 `POST /api/mock/badge {badge}` sends every device a badge-only push now, and
 `GET /api/mock/push-state` shows what the push mock recorded (presence, reads, what each device was
-sent and cleared, badge records). `POST /api/mock/sync {sessions}` sends every registered device a `sync` push now, and
+sent and cleared, badge records). `POST /api/mock/push-reply {session_id, text, delay?}` sends a
+reply's notice as if its turn ran long; `delay` sends it that many seconds after the reply landed, as
+a slow end of turn does, so a read on another device meanwhile shows that it notifies and counts
+nothing (plugin 1.4.6). A Bot's message in a group chat notifies 5 s after it lands, like the
+plugin's (with Bots set to All). `POST /api/mock/sync {sessions}` sends every registered device a `sync` push now, and
 `-HERMES_REFRESH_AFTER <s>` runs the app's background refresh that long after launch: both read
 the chats kept current without waiting for iOS ([notifications.md](notifications.md) §2). A
 simulator turns `simctl push` into a plain background fetch that never reaches

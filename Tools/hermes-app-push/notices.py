@@ -488,20 +488,26 @@ def _texts(content: dict) -> list[tuple[Any, Any, int]]:
     return [text for text in texts if text[2] > MIN_TEXT]
 
 
-def withdraw_request(device: dict, ids: list[str], gateway: dict, open_count: int) -> dict:
-    """A background push: the app (or the next extension run) removes these delivered notices."""
+def withdraw_request(device: dict, ids: list[str], gateway: dict, open_count: int, read: dict | None = None) -> dict:
+    """A background push: the app (or the next extension run) removes these delivered notices. ``read``, as
+    a notice lists it: the app sets the badge from what it knows, so it hears the latest reads first."""
     content = {"v": 1, "kind": "withdraw", "ids": ids, "gateway": gateway, "open": open_count,
                "sent_at": round(time.time(), 3)}
+    if read:
+        content["read"] = read
     return {"token": device["token"], "environment": device.get("environment", "production"),
             "topic": device["topic"], "push_type": "background", "priority": 5, "expiration": int(time.time() + 900),
             "payload": {"aps": {"content-available": 1}, "hermes": crypto.seal(device["public_key"], content)}}
 
 
-def sync_request(device: dict, sessions: list[str], gateway: dict, open_count: int, profile: str | None = None) -> dict:
+def sync_request(device: dict, sessions: list[str], gateway: dict, open_count: int, profile: str | None = None,
+                 read: dict | None = None) -> dict:
     """A background push: these chats changed, so the app reads them now and is up to date when the person
-    comes back to it."""
+    comes back to it. ``read`` as for a withdrawal."""
     content = {"v": 1, "kind": "sync", "sessions": sessions, "gateway": gateway, "open": open_count,
                "sent_at": round(time.time(), 3)}
+    if read:
+        content["read"] = read
     if profile:
         content["profile"] = profile
     return {"token": device["token"], "environment": device.get("environment", "production"),
@@ -512,8 +518,8 @@ def sync_request(device: dict, sessions: list[str], gateway: dict, open_count: i
 def read_request(device: dict, read: dict, gateway: dict, open_count: int) -> dict:
     """A background push: these chats and rooms were read on another device since this one was last in the
     app, so it removes the notifications sent before each was read and sets the badge. ``read`` is shaped
-    like a notice's (``{chats: [[id, at], …], rooms}``) and names everything read since then, so a later
-    one replaces an earlier one (collapse id ``read``)."""
+    like a notice's (``{chats: [[id, at], …], rooms}``) and names everything read since then, with the last
+    six hours' other reads, so a later one replaces an earlier one (collapse id ``read``)."""
     content = {"v": 1, "kind": "read", "read": {"chats": list(read.get("chats") or []),
                                                 "rooms": list(read.get("rooms") or [])},
                "gateway": gateway, "open": open_count, "sent_at": round(time.time(), 3)}

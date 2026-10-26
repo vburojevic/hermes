@@ -248,8 +248,24 @@ public final class PushShared: @unchecked Sendable {
         let open = own.reduce(0) { total, key in
             total + (openCounts[key].map { $0.at > cutoff ? $0.count : 0 } ?? 0)
         }
-        let unread = badgeMode == .unreadChats ? unread(gateway: appID).count : 0
+        // Counted as the badge counts it: an entry the list doesn't show, or a second one for the same
+        // chat, never took anything off another gateway's share.
+        let unread = badgeMode == .unreadChats ? Self.counted(unread(gateway: appID), countable: countable(gateway: appID)) : 0
         return max(0, badge - open - unread)
+    }
+
+    /// A background push from a gateway's plugin (`withdraw`, `sync`, `read`): its open requests and the
+    /// reads it carries, recorded before the app sets the badge from what this device knows, so a chat
+    /// read on another device doesn't come back on an icon the plugin's badge push had set right
+    /// (`docs/notifications.md` §2 Badge). Returns the reads, for clearing their notifications.
+    @discardableResult
+    public func noteBackground(_ notice: PushNotice, gateway appID: UUID?, at date: Date = .now) -> ReadMarks {
+        if let installation = notice.gateway?.id, let open = notice.open {
+            recordOpen(open, gateway: installation, at: notice.sentAt ?? date)
+        }
+        let marks = ReadMarks(carriedBy: notice)
+        if let appID { noteRead(marks, gateway: appID, at: date) }
+        return marks
     }
 
     /// The badge: open requests across gateways, plus unread chats when the person chose so.

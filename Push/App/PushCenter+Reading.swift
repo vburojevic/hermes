@@ -60,16 +60,28 @@ extension PushCenter {
     /// Chats read on another device (a `read` background push): their notifications go, and the
     /// badge follows, before the app's own read marks have caught up.
     func read(_ notice: PushNotice) async {
-        if let gateway = notice.gateway?.id, let open = notice.open {
-            shared.recordOpen(open, gateway: gateway, at: notice.sentAt ?? .now)
-        }
-        if let appID = shared.gateway(notice.gateway?.id)?.appID {
-            let marks = ReadMarks(notice)
-            shared.noteRead(marks, gateway: appID)
-            model?.workspaces[appID]?.roster?.groupRooms.readElsewhere(marks.rooms)
-            await removeDelivered(gateway: appID, readAt: marks.readAt)
-        }
+        await followReads(in: notice)
         await applyBadge()
+    }
+
+    /// What a background push (`read`, `withdraw`, `sync`) says was read elsewhere and is open now:
+    /// those chats leave the badge's list and their notifications go, before anything sets the badge
+    /// from this device's own counts (`PushShared.noteBackground`).
+    func followReads(in notice: PushNotice) async {
+        let appID = shared.gateway(notice.gateway?.id)?.appID
+        let marks = shared.noteBackground(notice, gateway: appID)
+        guard let appID, !marks.isEmpty else { return }
+        model?.workspaces[appID]?.roster?.groupRooms.readElsewhere(marks.rooms)
+        await removeDelivered(gateway: appID, readAt: marks.readAt)
+    }
+
+    /// The reads a gateway's plugin answered `presence` or `status` with (plugin 1.4.6): a group chat
+    /// read on another device, whose message no notice carried, is read here too, unless it moved
+    /// since, and its notifications go.
+    func followReads(_ marks: ReadMarks, in workspace: BotWorkspace) {
+        shared.noteRead(marks, gateway: workspace.id)
+        workspace.roster?.groupRooms.readElsewhere(marks.rooms)
+        readMayHaveMoved(in: workspace)
     }
 
     /// Removes this gateway's delivered news (replies, Bot and group messages) for chats read

@@ -14,7 +14,9 @@ Also adds the gateway methods answering from a notification needs: ``approval.re
 question, "sudo" asks for a password, "slow" runs long; Tasks → Run Now posts a task result.
 
 Reading (docs/notifications.md §2, Reading): ``read`` and ``presence`` with ``unread``/``muted`` work like
-the plugin's, read and badge pushes included. ``GET /api/mock/push-state`` shows what it recorded,
+the plugin's, read and badge pushes included, and so does plugin 1.4.6's badge: news read on another device
+before its notice goes notifies nothing, and withdrawals, syncs and the answers to ``presence`` and ``status``
+carry the latest reads. ``GET /api/mock/push-state`` shows what it recorded,
 ``POST /api/mock/read {chats, rooms}`` plays a read on another device, ``POST /api/mock/badge {badge}``
 sends every device a badge-only push now.
 """
@@ -44,6 +46,7 @@ STATE = {"devices": {}, "presence": {}, "requests": {}, "resolved": [], "activit
          "sync": {}, "reads": {"chats": {}, "rooms": {}}, "delivered": {}, "cleared": {}, "badges": {},
          "read_pushes": {}}
 SYNC_MIN_INTERVAL = 60  # the plugin's: iOS rations background pushes
+ROOM_MESSAGE_SETTLE = 5.0  # the plugin's: a Bot's streamed message notifies after this quiet time
 # The plugin's reading rules: reads listed in notices for six hours (the newest 12 of each), at most one read
 # push a device every 30 s carrying at most 40 of each, read and badge pushes 3 s after what moved them.
 READ_TTL, NOTICE_READS, READ_MIN_INTERVAL, CLEARED_MAX, PUSH_DEBOUNCE = 6 * 3600, 12, 30, 40, 3.0
@@ -175,7 +178,9 @@ def cmd_presence(args):
     for request in released:
         log(f"→ held request to {device.get('name') if device else device_id} (left the chat)")
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
-    return {"ok": True, "open": open_count}
+    # Plugin 1.4.6: the latest reads ride along, so a room read elsewhere reaches this device.
+    read = recent_reads()
+    return {"ok": True, "open": open_count, **({"read": read} if read else {})}
 
 
 def cmd_read(args):
@@ -204,8 +209,15 @@ def cmd_read(args):
                     sent[kind].pop(key)
                     STATE["cleared"].setdefault(other, {}).setdefault(kind, {})[key] = now  # when it was read
                     matched = True
-            # Rooms too: the app marks a room read when it hears another device read it.
             record = STATE["badges"].get(other)
+            # Plugin 1.4.6: a chat it counted, never sent to it, goes in its read push too.
+            counted = {kind: [key for key in (record or {}).get(kind, []) if key in read[kind]] for kind in ("chats", "rooms")}
+            if any(counted.values()):
+                matched = True
+                for kind, keys in counted.items():
+                    for key in keys:
+                        STATE["cleared"].setdefault(other, {}).setdefault(kind, {})[key] = now
+            # Rooms too: the app marks a room read when it hears another device read it.
             if record and (set(chats) & set(record["chats"]) or set(rooms) & set(record["rooms"])):
                 record["chats"] = [c for c in record["chats"] if c not in set(chats)]
                 record["rooms"] = [r for r in record["rooms"] if r not in set(rooms)]
@@ -258,11 +270,13 @@ def cmd_activity(args):
 
 def cmd_status(args):
     expire()
+    read = recent_reads()
     with LOCK:
         device = STATE["devices"].get(args.get("device_id") or "")
         return {"ok": True, "version": "mock", "gateway": GATEWAY, "relay_url": RELAY["mode"], "relay_registered": True,
                 "relay_error": None, "devices": len(STATE["devices"]), "registered": device is not None,
-                "preferences": device["preferences"] if device else None, "open": len(STATE["requests"])}
+                "preferences": device["preferences"] if device else None, "open": len(STATE["requests"]),
+                **({"read": read} if read else {})}
 
 
 # Hermes writes the gateway's plist again without ProcessType on every update and restart
@@ -373,15 +387,26 @@ def recent_reads():
     return listed if listed["chats"] or listed["rooms"] else {}
 
 
+def news_key(notice):
+    if notice.kind == "reply":
+        return "chats", notice.session_id or notice.thread
+    if notice.kind == "message":
+        return "rooms", notice.extra.get("room_id") or notice.thread.removeprefix("room:")
+    return None, None
+
+
+def read_since(notice, news_at):
+    """Plugin 1.4.6: a reply or Bot message whose chat was read on some device after it landed."""
+    kind, key = news_key(notice)
+    with LOCK:
+        at = STATE["reads"].get(kind, {}).get(key) if kind and key else None
+    return at is not None and at >= news_at
+
+
 def delivered(notice, device_ids):
     """A reply's chat or a Bot message's room went to these devices: a read elsewhere clears it there, and
     it counts on badges that count unread chats (unless it's muted there)."""
-    if notice.kind == "reply":
-        kind, key = "chats", notice.session_id or notice.thread
-    elif notice.kind == "message":
-        kind, key = "rooms", notice.extra.get("room_id") or notice.thread.removeprefix("room:")
-    else:
-        return
+    kind, key = news_key(notice)
     if not key:
         return
     moved = []
@@ -515,8 +540,11 @@ def tidied_notice(profile, merged, archived, stale=0):
                            merged=merged, archived=archived, stale=stale))
 
 
-def deliver(notice, walked_away=()):
+def deliver(notice, walked_away=(), news_at=None):
     expire()
+    if news_at is not None and read_since(notice, news_at):
+        log(f"{notice.kind} for a chat read since it landed: not sent")
+        return
     with LOCK:
         devices = dict(STATE["devices"])
         open_count = len(STATE["requests"])
@@ -549,7 +577,7 @@ def deliver(notice, walked_away=()):
                                           + record.get("others", 0), 9999)
 
 
-def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away):
+def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away, news_at=None):
     """A reply, or, when it asks something with a widget, the widget request (the plugin's
     ``on_session_end``): at once, Open only (docs/widgets.md §12)."""
     requests = notices.widget_requests(text)
@@ -560,7 +588,7 @@ def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away):
         deliver(notice, walked_away=walked_away)
         return
     deliver(notices.reply(session_id=session_id, turn_id=turn_id, chat=chat, gateway_name=GATEWAY["name"],
-                          text=text, seconds=seconds), walked_away=walked_away)
+                          text=text, seconds=seconds), walked_away=walked_away, news_at=news_at)
 
 
 def withdraw(ids):
@@ -572,7 +600,7 @@ def withdraw(ids):
     if not closed:
         return
     for device in devices.values():
-        request = notices.withdraw_request(device, closed, GATEWAY, open_count)
+        request = notices.withdraw_request(device, closed, GATEWAY, open_count, recent_reads())
         threading.Thread(target=relay, args=(device, request), daemon=True).start()
     log(f"withdrew {', '.join(closed)}")
     # Like plugin 1.4.5: the badge goes as its own push too, since iOS may drop the background withdraw.
@@ -622,7 +650,7 @@ def send_sync(device_id, sessions, profile=None):
         open_count = len(STATE["requests"])
     if device is None:
         return
-    request = notices.sync_request(device, sessions, GATEWAY, open_count, profile)
+    request = notices.sync_request(device, sessions, GATEWAY, open_count, profile, recent_reads())
     threading.Thread(target=relay, args=(device, request), daemon=True).start()
     log(f"→ sync {', '.join(sessions)} to {device.get('name') or device_id}")
 
@@ -779,13 +807,23 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
 
     def push_reply(query, body):
         # Mock-only: a finished reply's notice now, as if its turn ran long ({"text", "chat", "session_id",
-        # "profile"}), for checking how notifications read without waiting out a 30 s turn.
+        # "profile"}), for checking how notifications read without waiting out a 30 s turn. `"delay": n`
+        # sends it n seconds after the reply landed (a slow end of turn), so a read meanwhile counts.
         notice = notices.reply(session_id=body.get("session_id") or "mock_session", turn_id=f"mock-{time.time()}",
                                chat=body.get("chat") or "", gateway_name=GATEWAY["name"], text=body.get("text") or "",
                                seconds=999)
         if body.get("profile"):
             notice.extra["profile"] = body["profile"]
-        deliver(notice)
+        try:
+            delay = max(0.0, min(float(body.get("delay") or 0), 60.0))
+        except (TypeError, ValueError):
+            return 400, {"ok": False, "error": "delay must be a number"}
+        if not delay:
+            deliver(notice)
+            return 200, {"ok": True}
+        timer = threading.Timer(delay, deliver, kwargs={"notice": notice, "news_at": time.time()})
+        timer.daemon = True
+        timer.start()
         return 200, {"ok": True}
 
     backend_globals["HTTP_ROUTES"][("POST", "/api/mock/push-reply")] = push_reply
@@ -797,7 +835,8 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
             devices = dict(STATE["devices"])
             open_count = len(STATE["requests"])
         for device in devices.values():
-            request = notices.sync_request(device, list(body.get("sessions") or []), GATEWAY, open_count)
+            request = notices.sync_request(device, list(body.get("sessions") or []), GATEWAY, open_count, None,
+                                           recent_reads())
             threading.Thread(target=relay, args=(device, request), daemon=True).start()
         return 200, {"ok": True, "devices": len(devices)}
 
@@ -1047,7 +1086,8 @@ def install_api(gateway):
         seconds = time.time() - self._push_started
         if self.status in ("completed", "complete") and (self.output or "").strip():
             session = gateway.SESSIONS.get(self.session_id) or {}
-            reply_or_request(self.session_id, self.id, session.get("title") or "", self.output, seconds, self._push_watching)
+            reply_or_request(self.session_id, self.id, session.get("title") or "", self.output, seconds, self._push_watching,
+                             news_at=time.time())
 
     original_init = run_class.__init__
 
@@ -1084,8 +1124,26 @@ def install_chats(chats, gateway):
                               "title": title(stored), "started_at": turn["start"], "ended_at": time.time(), "ok": ok},
                      event="end")
             if ok and (text or "").strip():
-                reply_or_request(stored, sid, title(stored), text, time.time() - turn["start"], turn["watching"])
+                reply_or_request(stored, sid, title(stored), text, time.time() - turn["start"], turn["watching"],
+                                 news_at=time.time())
             sync(stored)
         return result
 
-    chats.run_chat_turn, chats.finish = run_chat_turn, finish
+    original_event = chats.room_event
+
+    def room_event(room, kind, actor, payload):
+        # The plugin's ``on_room_member_activity``: a Bot's message in a group chat notifies once it has
+        # settled, 5 s on; a room read on another device meanwhile notifies nothing (plugin 1.4.6).
+        event = original_event(room, kind, actor, payload)
+        text = (payload or {}).get("text") or ""
+        if kind == "message.member" and text.strip():
+            profile = (actor or {}).get("profile") or (actor or {}).get("id") or ""
+            name = next((m.get("display_name") for m in room.get("members") or [] if m.get("profile") == profile), profile)
+            notice = notices.message(room_id=room["room_id"], room=room.get("name") or "", member_id=profile, bot=name,
+                                     gateway_name=GATEWAY["name"], text=text, mention=False)
+            timer = threading.Timer(ROOM_MESSAGE_SETTLE, deliver, kwargs={"notice": notice, "news_at": event["created_at"]})
+            timer.daemon = True
+            timer.start()
+        return event
+
+    chats.run_chat_turn, chats.finish, chats.room_event = run_chat_turn, finish, room_event

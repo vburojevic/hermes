@@ -106,6 +106,9 @@ final class PushCenter {
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var preferenceSync: Task<Void, Never>?
     @ObservationIgnored private var lastPresence: (chat: String?, at: Date)?
+    #if os(macOS)
+    @ObservationIgnored private var openAskedAt = Date.distantPast
+    #endif
     @ObservationIgnored private var pendingResponses: [PushResponder.Response] = []
     @ObservationIgnored private(set) var activities: AnyObject?
     /// Per gateway: the pending sweep of read chats' notifications, and reads on their way to the
@@ -218,6 +221,13 @@ final class PushCenter {
         if lastPresence == nil || lastPresence?.chat != chat || Date.now.timeIntervalSince(lastPresence?.at ?? .distantPast) > 50 {
             lastPresence = (chat, .now)
             await reportPresence(chat: chat)
+        }
+        #else
+        // The Mac reports no presence, so it asks for the open requests itself: the Dock badge counts
+        // them, and a request answered on the iPhone comes off it within the minute.
+        if Date.now.timeIntervalSince(openAskedAt) > 30 {
+            openAskedAt = .now
+            await refreshBadge()
         }
         #endif
     }
@@ -413,6 +423,13 @@ final class PushCenter {
             }
             #else
             let status = try await client.status(deviceID: shared.deviceID)
+            // Its open requests count in the Dock badge, as on the iPhone: they're kept by installation.
+            if let installation = status.installationID {
+                shared.remember(installationID: installation, appID: id, name: workspace.bot.name)
+                shared.recordOpen(status.open, gateway: installation)
+                if let reads = status.reads { followReads(reads, in: workspace) }
+                await applyBadge()
+            }
             gatewayStates[id] = .on(relay: status.relayError)
             #endif
             registeredAt[id] = .now
@@ -515,12 +532,13 @@ final class PushCenter {
         let deviceID = shared.deviceID
         for workspace in model.workspaces.values where gatewayStates[workspace.id]?.isOn == true {
             guard let roster = workspace.roster, roster.state.isOnline else { continue }
-            let open = try? await AppPushClient { try await roster.request($0, $1) }.setPresence(
+            let answer = try? await AppPushClient { try await roster.request($0, $1) }.setPresence(
                 .foreground, deviceID: deviceID, visibleChat: workspace.id == model.currentWorkspace?.id ? chat : nil
             )
-            if let open, let installation = installationID(for: workspace.id) {
-                shared.recordOpen(open, gateway: installation)
+            if let answer, let installation = installationID(for: workspace.id) {
+                shared.recordOpen(answer.open, gateway: installation)
             }
+            if let reads = answer?.reads { followReads(reads, in: workspace) }
         }
         await applyBadge()
     }
@@ -550,12 +568,12 @@ final class PushCenter {
         let shown = shared.badge
         Task {
             for (gateway, roster, chats, badge, others) in targets where roster.state.isOnline {
-                let open = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
+                let answer = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
                     .setPresence(.away, deviceID: deviceID, sync: chats, unread: badge?.unread, muted: badge?.muted,
                                  listed: badge?.listed, badgeOthers: badge == nil ? nil : others, badge: badge == nil ? nil : shown)
                 // The open requests as they are now: a count kept from a notice hours ago (a request
                 // answered elsewhere while the phone slept) leaves the icon here.
-                if let open, let installation = installationID(for: gateway) { shared.recordOpen(open, gateway: installation) }
+                if let answer, let installation = installationID(for: gateway) { shared.recordOpen(answer.open, gateway: installation) }
             }
             await applyBadge()
             activity.end()
@@ -579,6 +597,7 @@ final class PushCenter {
                   let installation = status.installationID
             else { continue }
             shared.recordOpen(status.open, gateway: installation)
+            if let reads = status.reads { followReads(reads, in: workspace) }
         }
         await applyBadge()
     }
@@ -621,13 +640,12 @@ final class PushCenter {
     /// Chats changed while the app was away (`sync`, a background push): they're read now and kept
     /// on the device, so they show as they are when the person comes back (`docs/notifications.md` §2).
     func sync(_ notice: PushNotice) async {
-        if let gateway = notice.gateway?.id, let open = notice.open {
-            shared.recordOpen(open, gateway: gateway, at: notice.sentAt ?? .now)
-        }
         // Woken from scratch, the app may still be setting up.
         for _ in 0..<20 where model == nil {
             try? await Task.sleep(for: .milliseconds(100))
         }
+        // Reads elsewhere first: the chats it reads now are counted again, and must not count those.
+        await followReads(in: notice)
         guard let model, let appID = shared.gateway(notice.gateway?.id)?.appID,
               let workspace = model.workspaces[appID], !notice.sessions.isEmpty else { return }
         let began = Date.now
@@ -640,9 +658,7 @@ final class PushCenter {
     func withdraw(_ notice: PushNotice) async {
         let ids = Set(notice.ids)
         await removeDelivered(requests: ids)
-        if let gateway = notice.gateway?.id, let open = notice.open {
-            shared.recordOpen(open, gateway: gateway, at: notice.sentAt ?? .now)
-        }
+        await followReads(in: notice)
         await applyBadge()
         #if os(iOS)
         (activities as? TurnActivityController)?.requestsResolved(ids)
