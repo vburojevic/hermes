@@ -78,6 +78,19 @@ struct UpNextDrainTests {
         #expect(UpNext.next(in: [Item(text: "one")], chat: chat, isHeld: \.isHeld) == nil)
     }
 
+    @Test("Hermes gets the messages in the order they were queued, the held one staying first")
+    func order() {
+        var queue = [Item(text: "maybe", isHeld: true), Item(text: "one"), Item(text: "two"), Item(text: "three")]
+        var received: [String] = []
+        // One per turn: each goes once the turn before it has ended.
+        while let next = UpNext.next(in: queue, chat: idle, isHeld: \.isHeld) {
+            queue.removeAll { $0 == next }
+            received.append(next.text)
+        }
+        #expect(received == ["one", "two", "three"])
+        #expect(queue == [Item(text: "maybe", isHeld: true)])
+    }
+
     @Test("Nothing waiting, nothing goes")
     func empty() {
         #expect(UpNext.next(in: [Item](), chat: idle, isHeld: \.isHeld) == nil)

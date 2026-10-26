@@ -177,7 +177,9 @@ design's component names, used in code comments.
   ends), once a turn recovered as over, and once what held it clears (a refusal's wait, a turn
   open on the gateway, the gateway's own held message). Each time the first message that doesn't
   wait for a Send goes, one per turn, in order; Not sent and Maybe sent messages go only with a
-  Send, and a chat never opened since the relaunch sends when it is opened. Before, after a
+  Send. After a relaunch, a chat's queue sends once that chat is opened, never in the background:
+  nothing goes out from a chat the person hasn't looked at. A held message at the top stays there,
+  its line still saying why, while the ones behind it go. Before, after a
   relaunch or an idle reconnect it said "Send sends the first" and waited for a Send that
   nothing asked for. Removing the gateway removes its chats' queues.
 - **The gateway's own queue.** A message Hermes holds itself (attachments or a fall-back, §1, a
