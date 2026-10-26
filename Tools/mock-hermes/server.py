@@ -313,7 +313,7 @@ def take_failed_read() -> bool:
 # even while the run goes on: its later events are dropped, and the events answer 404 while its status
 # stays (api_server_runs.py `_sweep_orphaned_runs_once`, api_server.py `_RUN_STREAM_TTL = 300`).
 # `--run-stream-ttl` shortens it for a timing run.
-RUN_STREAM = {"ttl": 300.0}
+RUN_STREAM = {"ttl": 300.0, "cut": 0}
 
 
 class Run:
@@ -706,6 +706,7 @@ class Handler(BaseHTTPRequestHandler):
                 run.subscribers -= 1
 
     def stream_run(self, run, query):
+        cut = RUN_STREAM["cut"]
         raw = self.headers.get("Last-Event-ID") or query.get("last_seq")
         last = int(raw) if raw is not None else -1
         self.start_sse()
@@ -730,7 +731,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b": stream closed\n\n")
                     self.wfile.flush()
                     return
-                if self.client_left():
+                if self.client_left() or RUN_STREAM["cut"] != cut:
                     return  # the run continues detached, with nothing listening (it may be swept)
                 if time.time() - idle > 10:
                     STARVE.wait()
@@ -755,6 +756,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/mock/starve":
             # Mock-only (starve.py): the whole machine starved, this gateway and the backend with it.
             return self.send_json(200, STARVE.configure(self.body()))
+        if path == "/api/mock/drop-run-streams":
+            # Mock-only: every run's open event stream is closed, as when a phone's suspended app loses
+            # its connections (a simulator keeps them open); the runs go on with nothing listening.
+            with LOCK:
+                RUN_STREAM["cut"] += 1
+            return self.send_json(200, {"dropped": True})
         STARVE.wait()
         if not self.authorized():
             return

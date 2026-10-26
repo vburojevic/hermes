@@ -103,8 +103,10 @@ Then add `localhost:18642` with that key, or launch a Debug build with
 Messages containing "approve" ask for permission, "slow" runs a long multi-tool turn,
 "marathon" runs six steps of 12 s each, and "fail" fails. Hermes sweeps a run's events 300 s after
 the run was created when nothing listens, even while it runs (its status stays, its events answer
-404); `--run-stream-ttl <s>` shortens that, so "marathon" with `--run-stream-ttl 20` and the app
-in the background for half a minute comes back to a run whose events are gone (`RunFollow`,
+404); `--run-stream-ttl <s>` shortens that. A simulator keeps a suspended app's connections open,
+so `POST /api/mock/drop-run-streams` closes every open run stream, as a phone's suspended app loses
+them: "marathon" with `--run-stream-ttl 20`, the app sent to the background, the streams dropped,
+and the app back after half a minute comes back to a run whose events are gone (`RunFollow`,
 `docs/chat.md` §2).
 
 The mock answers approvals as Hermes's run store does (`docs/quick-actions.md` §3): `POST
