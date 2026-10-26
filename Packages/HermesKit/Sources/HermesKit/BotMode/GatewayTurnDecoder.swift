@@ -5,7 +5,7 @@ import Foundation
 public enum GatewayTurnDecoder {
     public static func decode(_ event: GatewayEvent) -> [SequencedTurnEvent] {
         let payload = event.payload
-        let events: [TurnEvent]
+        var events: [TurnEvent]
         switch event.type {
         case "message.delta":
             events = payload["text"]?.stringValue.map { [.textDelta($0)] } ?? []
@@ -79,6 +79,8 @@ public enum GatewayTurnDecoder {
                 events = []
             } else {
                 events = ["status", "lifecycle", "compacting", "process"].contains(kind) ? text.map { [.status($0)] } ?? [] : []
+                // After the line, which clears it: Hermes holds steers while it compacts.
+                if kind == "compacting" { events.append(.compacting) }
             }
         case "subagent.start":
             events = [.subagentStarted(id: payload["subagent_id"]?.stringValue, goal: payload["goal"]?.stringValue)]

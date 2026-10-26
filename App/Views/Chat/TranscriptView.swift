@@ -1453,12 +1453,14 @@ struct TranscriptView: View {
             // message goes: no typing bubble, never an empty gap. Until Hermes has the message it
             // says so ("Waiting for MacBook Pro…"), then "Thinking…" (`docs/chat.md` §4, §4a).
             let delivery = isLive && turn.answer.isEmpty && turn.steps.isEmpty ? conversation.deliveryNote : nil
+            // The API server holds the run behind another turn in this chat (`turnHeaderQueued`).
+            let queuedRun = isLive && conversation.runWaitsInQueue ? String(localized: "Queued behind another turn") : nil
             AssistantTurnView(
                 turn: turn,
                 pendingSteers: turn.id == conversation.liveTurnID ? conversation.followUps.filter { $0.state == .steerWaiting && $0.turnID == turn.id } : [],
                 status: turn.isWorking ? delivery.map {
                     TranscriptView.words(for: $0, gateway: conversation.gatewayName, transcribing: conversation.isTranscribingVoice)
-                } ?? conversation.liveStatus : nil,
+                } ?? queuedRun ?? conversation.liveStatus : nil,
                 statusWaits: delivery == .waiting,
                 waitsForAnswer: isLive && turn.isWorking && !conversation.requests.isEmpty,
                 isStopping: turn.isWorking && conversation.isStopping,

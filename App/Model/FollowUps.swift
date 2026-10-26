@@ -169,6 +169,13 @@ enum FollowUpCaption: Equatable {
     }
 }
 
+/// A refusal shown above the composer (`refusedBanner`): Hermes's words, and the message Try Again
+/// sends from Up Next (nil: it's back in the field).
+struct RefusedNotice: Equatable {
+    let line: String
+    let heldItemID: UUID?
+}
+
 /// One message waiting in the queue tray (Send Next).
 struct QueuedFollowUp: Identifiable, Equatable {
     let id: UUID
@@ -181,7 +188,8 @@ struct QueuedFollowUp: Identifiable, Equatable {
     /// taken back by Stop while it waited): it waits for Send, and never goes by itself.
     var isHeld: Bool
     /// Why it's here when it wasn't sent here (a steer the turn couldn't take, Stop clearing the
-    /// gateway's queue, a refusal), for its row. Not kept across a relaunch.
+    /// gateway's queue, a refusal, one Hermes may already have), for its row. Kept across a
+    /// relaunch, except a refusal.
     var note: UpNextNote?
 
     init(id: UUID = UUID(), text: String, parts: MessageParts? = nil, skills: [String] = [], images: [ImageAttachment] = [], files: [FileAttachment] = [], isHeld: Bool = false, note: UpNextNote? = nil) {
@@ -237,6 +245,8 @@ enum FollowUpQueueStore {
         var sentAt: Date?
         var knownNewestID: Int?
         var held: Bool?
+        /// Why it's there (`UpNextNote.storedKey`).
+        var note: String?
     }
 
     private struct StoredFile: Codable {
@@ -286,7 +296,8 @@ enum FollowUpQueueStore {
                 files: entry.files.compactMap { file in
                     (try? Data(contentsOf: folder.appending(path: file.blob))).map { FileAttachment(name: file.name, data: $0) }
                 },
-                isHeld: entry.held ?? false
+                isHeld: entry.held ?? false,
+                note: UpNextNote(storedKey: entry.note)
             )
             return OutboxItem(message: message, sentAt: entry.sentAt ?? .distantPast, knownNewestID: entry.knownNewestID)
         }
@@ -320,7 +331,7 @@ enum FollowUpQueueStore {
             }
             return Entry(id: item.id, text: item.text, parts: item.parts, skills: item.skills, images: images, files: files,
                          sentAt: isOutbox ? outboxItem.sentAt : nil, knownNewestID: isOutbox ? outboxItem.knownNewestID : nil,
-                         held: item.isHeld ? true : nil)
+                         held: item.isHeld ? true : nil, note: item.note?.storedKey)
         }
         if let data = try? JSONEncoder().encode(entries) {
             try? data.write(to: folder.appending(path: "queue.json"), options: .atomic)

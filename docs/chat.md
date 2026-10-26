@@ -808,10 +808,14 @@ What becomes of a message is decided from Hermes's answers and events only, neve
 message is always in one of these states:
 
 - **Sending**: on its way, or waiting for the gateway (§4, "Sending on a busy or away gateway").
-- **Queued**, and behind what: the turn running here (the tray, read-only, `GatewayHeldQueue`), the
-  gateway's own queue (`waitingOnGateway`, from `session.info` `pending_submissions`), a run the
-  API server queued behind another (`runWaitsInQueue`, from `GET /v1/runs/{id}`), or, in Up Next,
-  a chat something else holds or Hermes's chat limit (`waitsForChat`, `chatHolder`, §4d).
+- **Queued**, and behind what: the turn running here (the tray, read-only, "on <gateway>",
+  `GatewayHeldQueue`), the gateway's own queue (`waitingOnGateway`, from `session.info`
+  `pending_submissions`: the tray says "sends when the gateway's turn ends"), a run the API server
+  queued behind another (`runWaitsInQueue`, from `GET /v1/runs/{id}`: the turn's live line says
+  "Queued behind another turn" until it runs, `turnHeaderQueued`), or, in Up Next, a chat something
+  else holds or Hermes's chat limit (`waitsForChat`, `chatHolder`, §4d). Up Next's header always
+  says what it waits for, and a row the person didn't put there says why
+  ([follow-ups.md](follow-ups.md) §4).
 - **Steered in**: a steer goes only into the running turn. When that turn can't take it (it ended,
   its agent was still being built, it waits on an approval, the chat never came back while it
   waited) it goes first in Up Next as the next message instead, its row noting why
@@ -850,11 +854,16 @@ never another reason's words.
 | `data.reason` | What the person reads | What happens to the message |
 |---|---|---|
 | `SESSION_NOT_OWNED` (another Hermes process) | What holds the chat, from its stored rows: a Bot answering another Bot, a routine, a terminal | Waits at the top of Up Next and goes once the chat is free (`waitForChat`) |
-| `SESSION_NOT_OWNED` (the gateway's queue, "durable queue") | "The gateway has unfinished work in this chat it couldn't confirm. Open the chat where the gateway runs … Nothing was sent." | Waits at the top of Up Next, held: only the person sends it again |
+| `SESSION_NOT_OWNED` (the gateway's queue, "durable queue") | "The gateway has unfinished work in this chat it couldn't confirm. Open the chat where the gateway runs … Nothing was sent." in `refusedBanner` and on its row | Waits at the top of Up Next, Not sent, under "Send sends the first": only the person sends it again (Try Again, or Send) |
 | `SESSION_OWNER_BUSY` | "The gateway is running a turn in this chat. Your message sends when that turn ends." (with its photo, when Hermes took the photo off) | Waits at the top of Up Next and goes when that turn ends |
 | `SESSION_OWNER_UNCONFIRMED` | Hermes's sentence: "… It may already be queued there: check the chat before sending it again." | Like a lost answer (`LostPrompt`, §2): the card offers Reload, and Send Again only as the person's choice; never Try Again, never sent again by itself or over the API server, and it settles once the stored chat shows it |
 | `MAX_CONCURRENT_SESSIONS` | "Hermes is running as many chats at once as it's set to allow (n of m). Your message sends when one finishes." | Waits at the top of Up Next and goes when a chat finishes |
-| `SESSION_COORDINATION_UNAVAILABLE`, none, or one the app doesn't know | Hermes's own first line | Back in the field, with Hermes's words, to send again |
+| `SESSION_COORDINATION_UNAVAILABLE`, none, or one the app doesn't know | Hermes's own first line, under "Hermes didn't take this message" (`refusedBanner`) | Back in the field; Try Again sends it |
+
+A refusal is never the red error banner. One the app waits out shows in Up Next (its header and
+the hold note); one it can't shows `refusedBanner` above the composer: a raised hand, "Hermes
+didn't take this message", Hermes's words, Try Again and Dismiss. The API server's refusals (409,
+429, its bare store reasons, `HermesError.isRefusal`) show the same way.
 
 Hermes sends `MAX_CONCURRENT_SESSIONS` only when `max_concurrent_sessions` is set on the gateway.
 A message that waits for the chat goes again after 30 s, 1 and 2 minutes, then every 5, and at

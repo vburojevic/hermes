@@ -462,7 +462,11 @@ struct ChatScreen: View {
                     requestDock
                         .transition(reduceMotion ? .opacity : .risesFromComposer)
                 }
-                if let banner = conversation.banner {
+                if let notice = conversation.refusedNotice {
+                    RefusedBanner(line: notice.line, onRetry: conversation.retryRefused) { conversation.refusedNotice = nil }
+                        .glassEffectID("refused", in: bottomGlass)
+                        .transition(ComposerView.rowAppears)
+                } else if let banner = conversation.banner {
                     ErrorBanner(error: banner) { conversation.banner = nil }
                         .glassEffectID("banner", in: bottomGlass)
                         .transition(ComposerView.rowAppears)
@@ -758,6 +762,50 @@ struct ConnectionBanner: View {
     static func isDeviceSetting(_ error: HermesError) -> Bool {
         guard case .unreachable(_, let reason) = error else { return false }
         return reason == .localNetworkDenied || reason == .mobileDataOff || reason == .wifiOff
+    }
+}
+
+/// Hermes refused a message for a reason the app can't wait out (`refusedBanner`,
+/// `docs/chat.md` §4d): its words, never red, Try Again and Dismiss.
+struct RefusedBanner: View {
+    let line: String
+    let onRetry: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "hand.raised")
+                .foregroundStyle(Theme.secondaryText)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hermes didn't take this message")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                Text(line)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            Button("Try Again", action: onRetry)
+                .prominentGlassButton()
+                .controlSize(.small)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -14)
+                    .padding(.trailing, -10)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }
 

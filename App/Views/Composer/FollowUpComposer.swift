@@ -161,19 +161,31 @@ struct QueueTray: View {
         showsAll ? 0 : max(0, total - Self.visibleCount)
     }
 
+    /// What the queue waits for (`UpNextWait`): never "when this reply is done" with no reply
+    /// running, or above messages that only go with a Send.
     private var subtitle: String? {
-        if isEditing { return nil }
-        // Another Hermes process holds the chat (a Bot answering another Bot, a routine).
-        if conversation.waitsForChat {
+        switch conversation.upNextWait {
+        case .editing:
+            return nil
+        case .chat:
+            // Another Hermes process holds the chat (a Bot answering another Bot, a routine).
             switch conversation.chatHolder {
             case .gatewayTurn?: return String(localized: "sends when that turn ends")
             case .chatLimit?: return String(localized: "sends when a chat finishes")
             default: break
             }
             return conversation.isBotChat ? String(localized: "sends when \(conversation.askerName) is free") : String(localized: "sends when this chat is free")
+        case .gatewayTurn:
+            return String(localized: "sends when the gateway's turn ends")
+        case .reply:
+            return String(localized: "sends when this reply is done")
+        case .gatewayAway:
+            return String(localized: "sends when \(conversation.gatewayName) is back")
+        case .yourSend:
+            return String(localized: "waits for you to send")
+        case .sendSendsFirst:
+            return String(localized: "Send sends the first")
         }
-        if conversation.queuePaused, !conversation.isWorking { return String(localized: "Send sends the first") }
-        return String(localized: "sends when this reply is done")
     }
 
     /// What holds the chat while the first message waits for it, in words: Hermes's own work
@@ -288,18 +300,34 @@ private struct QueueRow: View {
 
     @State private var isTargeted = false
 
+    private var note: String? { item.note?.line(gateway: conversation.gatewayName) }
+    private var heldLabel: String {
+        item.note == .mayHaveArrived ? String(localized: "Maybe sent") : String(localized: "Not sent")
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             OrderBadge(order: order)
-            Text(item.line)
-                .font(.subheadline)
-                .foregroundStyle(Theme.primaryText)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.line)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
+                // Why it's here when it wasn't sent here (`queueItemSendsNext`, `queueItemCleared`,
+                // `queueItemMaybeSent`).
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if item.isHeld {
-                // Maybe never sent (kept from before a relaunch, or stopped while it waited): it goes
-                // only with a Send.
-                Label("Not sent", systemImage: "clock")
+                // Not sent (Stop cleared it, Hermes refused it) or maybe sent (kept from before a
+                // relaunch): it goes only with a Send.
+                Label(heldLabel, systemImage: "clock")
                     .labelStyle(.titleAndIcon)
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
@@ -347,7 +375,7 @@ private struct QueueRow: View {
             return true
         } isTargeted: { isTargeted = $0 }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(order). \(item.line)\(item.hasAttachments ? String(localized: ", with attachments") : "")\(item.isHeld ? String(localized: ", not sent") : "")"))
+        .accessibilityLabel(Text("\(order). \(item.line)\(item.hasAttachments ? String(localized: ", with attachments") : "")\(item.isHeld ? ", " + heldLabel.lowercased() : "")\(note.map { ". " + $0 } ?? "")"))
         .accessibilityHint("Edits the message")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default) { conversation.editQueued(item) }

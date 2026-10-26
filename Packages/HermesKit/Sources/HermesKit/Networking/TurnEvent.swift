@@ -25,6 +25,9 @@ public enum TurnEvent: Sendable, Equatable {
     /// Compression rotated the conversation onto a new session id.
     case sessionChanged(String)
     case status(String)
+    /// Hermes is compacting the chat (`status.update` kind `compacting`): a steer sent now waits
+    /// for the next turn instead (hermes-agent `methods_session_interrupt.py`).
+    case compacting
     /// Where the turn's rows are stored (`message.complete.persisted_turn`); comes just before its end.
     case persisted(PersistedTurn)
     case completed(output: String?, usage: TokenUsage?, runtime: RuntimeInfo?)

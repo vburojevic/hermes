@@ -382,6 +382,17 @@ final class ConversationModel: Identifiable {
     /// What holds the chat while a message waits for it, in words for Up Next: a Bot answering
     /// another Bot, a routine's follow-up, or a terminal (`ChatHolder`).
     private(set) var chatHolder: ChatHolder?
+    /// A refusal the app can't wait out, above the composer (`refusedBanner`): Hermes's words and
+    /// Try Again. Never the red error banner (`docs/chat.md` §4d).
+    var refusedNotice: RefusedNotice?
+
+    /// What Up Next says it waits for, in its header (`UpNextWait`, `docs/follow-ups.md` §4).
+    var upNextWait: UpNextWait {
+        UpNextWait.of(isEditing: editingQueued != nil, waitsForChat: waitsForChat,
+                      turnHoldsChat: isWorking || isFinishing || isBotTurnOpen || isStopping, reachable: isReachable,
+                      heldOnGateway: !gatewayHeld.isEmpty || waitingOnGateway > 0, allHeld: !queue.isEmpty && queue.allSatisfy(\.isHeld))
+    }
+
     /// Hermes's refusal behind `chatHolder`, until a message goes.
     @ObservationIgnored private var chatHold: ChatHold?
     @ObservationIgnored private var chatWaitRetry: Task<Void, Never>?
@@ -1978,10 +1989,10 @@ final class ConversationModel: Identifiable {
             var item = sentItem(text: text, images: images, files: files, note: .refused(refusal))
             item.isHeld = true
             animateRows { queue.insert(item, at: 0) }
-            banner = .server(status: 0, code: nil, message: refusal.line)
+            refusedNotice = RefusedNotice(line: refusal.line, heldItemID: item.id)
         case .checkTheChat, .tryAgain:
             // `.checkTheChat` only before the prompt left (it can't): handled with the turn above.
-            restoreDraft(text: text, images: images, files: files, error: HermesError.server(status: 0, code: nil, message: refusal.line))
+            restoreDraft(text: text, images: images, files: files, error: HermesError.refused(refusal.line))
         }
     }
 
@@ -2763,7 +2774,7 @@ final class ConversationModel: Identifiable {
                 guard let self else { return }
                 guard let roster = gatewayRoster, let runtime = runtimeSessionID, isWorking else {
                     // It never went: the turn ended, or the chat isn't attached again yet.
-                    settleSteer(record, .nextMessage)
+                    settleSteer(record, .nextMessage, reason: sendsNextReason(for: nil))
                     return
                 }
                 var result: JSONValue?
@@ -2773,7 +2784,8 @@ final class ConversationModel: Identifiable {
                 } catch {
                     failure = error
                 }
-                settleSteer(record, SteerOutcome.steer(result: result, error: failure))
+                let compacting = live?.isCompacting == true
+                settleSteer(record, SteerOutcome.steer(result: result, error: failure, compacting: compacting), reason: sendsNextReason(for: failure))
             }
         } else if let runID = live?.runID, let client = workspace?.client {
             Task {
@@ -2783,15 +2795,21 @@ final class ConversationModel: Identifiable {
                 } catch {
                     failure = error
                 }
-                settleSteer(record, SteerOutcome.apiServer(error: failure))
+                settleSteer(record, SteerOutcome.apiServer(error: failure), reason: sendsNextReason(for: failure))
             }
         } else {
-            settleSteer(record, .nextMessage)
+            settleSteer(record, .nextMessage, reason: sendsNextReason(for: nil))
         }
     }
 
+    /// Why a steer the running turn couldn't take goes as the next message instead, for its row.
+    private func sendsNextReason(for failure: (any Error)?) -> SendsNextReason {
+        SendsNextReason.steer(error: failure, turnRunning: isWorking, waitingForApproval: live?.turn.state == .waitingForApproval,
+                              attached: runtimeSessionID != nil || live?.runID != nil)
+    }
+
     /// What Hermes did with a steer or a redirect sent while a tool ran (`SteerOutcome`).
-    private func settleSteer(_ id: String, _ outcome: SteerOutcome) {
+    private func settleSteer(_ id: String, _ outcome: SteerOutcome, reason: SendsNextReason) {
         switch outcome {
         case .accepted, .redirected:
             break // the next step after this one reads it
@@ -2806,21 +2824,21 @@ final class ConversationModel: Identifiable {
                 holdOnGateway(record.text)
             }
         case .nextMessage:
-            sendsNextInstead(id)
+            sendsNextInstead(id, reason: reason)
         }
     }
 
     /// The running turn couldn't take the steer (it ended, its agent was still being built, it
     /// waits on an approval, or the chat never came back while it waited): it goes as the next
     /// message, first in Up Next, and its row says so.
-    private func sendsNextInstead(_ id: String) {
+    private func sendsNextInstead(_ id: String, reason: SendsNextReason) {
         guard let index = followUps.firstIndex(where: { $0.id == id }), followUps[index].isPending else { return }
         let record = followUps[index]
         armedSteers.removeAll { $0 == id }
-        let before = queue.prefix { $0.note == .sendsNextInstead }.count
+        let before = queue.prefix { $0.note?.sendsNext == true }.count
         animateRows {
             followUps.remove(at: index)
-            queue.insert(QueuedFollowUp(text: record.text, note: .sendsNextInstead), at: before)
+            queue.insert(QueuedFollowUp(text: record.text, note: .sendsNextInstead(reason)), at: before)
         }
         drainQueueIfIdle()
     }
@@ -2894,8 +2912,8 @@ final class ConversationModel: Identifiable {
                 animateRows { holdOnGateway(text) }
             case .nextMessage:
                 // The reply ended first, or Hermes refused it: it goes as the next message.
-                let before = queue.prefix { $0.note == .sendsNextInstead }.count
-                animateRows { queue.insert(QueuedFollowUp(text: text, note: .sendsNextInstead), at: before) }
+                let before = queue.prefix { $0.note?.sendsNext == true }.count
+                animateRows { queue.insert(QueuedFollowUp(text: text, note: .sendsNextInstead(sendsNextReason(for: failure))), at: before) }
                 drainQueueIfIdle()
             case .unknown:
                 // The answer was lost: Hermes may have changed course with it, so it isn't given
@@ -3021,7 +3039,7 @@ final class ConversationModel: Identifiable {
     private func askAside(_ text: String) {
         guard let roster = gatewayRoster, let runtime = runtimeSessionID else {
             // No live chat to ask beside: it goes as the next message, and its row says so.
-            animateRows { queue.append(QueuedFollowUp(text: text, note: .sendsNextInstead)) }
+            animateRows { queue.append(QueuedFollowUp(text: text, note: .sendsNextInstead(.noAside))) }
             return
         }
         Task {
@@ -3041,7 +3059,7 @@ final class ConversationModel: Identifiable {
         guard let roster = gatewayRoster else {
             // Over the API server nothing runs beside the chat: it goes as the next message
             // instead of being dropped, and its row says so.
-            animateRows { queue.append(QueuedFollowUp(text: prompt, note: .sendsNextInstead)) }
+            animateRows { queue.append(QueuedFollowUp(text: prompt, note: .sendsNextInstead(.noBackground))) }
             return
         }
         var record = FollowUpRecord(text: prompt, state: .background(answer: nil), turnID: nil)
@@ -3347,6 +3365,7 @@ final class ConversationModel: Identifiable {
         hasUndoneMessage = false
         draftBeforeUndo = nil
         banner = nil
+        refusedNotice = nil
         turnError = nil
         unconfirmed = nil
         lastUserText = text
@@ -4256,6 +4275,7 @@ final class ConversationModel: Identifiable {
                 queue.insert(contentsOf: missing.map { item in
                     var held = item.message
                     held.isHeld = true
+                    held.note = .mayHaveArrived
                     return held
                 }, at: 0)
             }
@@ -4269,6 +4289,7 @@ final class ConversationModel: Identifiable {
         pendingUser = nil
         live = nil
         isStopping = false
+        var heldID: UUID?
         if draft.isEmpty, attachments.isEmpty, self.files.isEmpty {
             // As it was sent: its skills and mentions too.
             draft = text
@@ -4281,11 +4302,32 @@ final class ConversationModel: Identifiable {
             // of Up Next, held for a Send, rather than being lost.
             var item = sentItem(text: text, images: images, files: files)
             item.isHeld = true
+            heldID = item.id
             animateRows { queue.insert(item, at: 0) }
         }
-        // A stop pressed before the run started is not an error.
-        if !(error is CancellationError) {
+        // A stop pressed before the run started is not an error, and a refusal isn't a failure:
+        // it shows in Hermes's words, with Try Again (`refusedBanner`, `docs/chat.md` §4d).
+        if let refusal = error as? HermesError, refusal.isRefusal {
+            refusedNotice = RefusedNotice(line: refusal.errorDescription ?? "", heldItemID: heldID)
+        } else if !(error is CancellationError) {
             banner = error as? HermesError ?? .invalidResponse(error.localizedDescription)
+        }
+    }
+
+    /// Try Again on a refusal: the message goes again, from the field or from Up Next.
+    func retryRefused() {
+        guard let notice = refusedNotice else { return }
+        refusedNotice = nil
+        guard let id = notice.heldItemID else {
+            send()
+            return
+        }
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        if isWorking || isFinishing || isBotTurnOpen {
+            // It goes after the turn that's running, like any other message in Up Next.
+            queue[index].isHeld = false
+        } else {
+            sendQueued(queue[index])
         }
     }
 
@@ -5856,6 +5898,7 @@ extension ConversationModel {
         for index in queue.indices where !queue[index].isHeld
             && SubmitCheck.arrived(queue[index].text, sentAt: heldSince, knownNewestID: newestBefore, in: rawMessages) {
             queue[index].isHeld = true
+            queue[index].note = .mayHaveArrived
         }
         drainQueueIfIdle()
     }
@@ -5877,11 +5920,17 @@ extension ConversationModel {
         }
         let turnID = live?.turn.id
         let baseline = turnBaseline?.newest
+        // Hermes ends more than the turn: the chat's helpers and the approval it waited on.
+        let helpersRunning = helpers.teams.reduce(0) { $0 + $1.runningCount + $1.waitingCount }
+        let approvalWaiting = live?.approval != nil
         Task {
             do {
                 _ = try await roster.request("session.interrupt", ["session_id": .string(runtime)])
                 // Hermes empties its queue with the turn: nothing it held for the next one runs.
                 giveBackClearedByStop(baseline: baseline)
+                if let line = StopReceipt.line(helpersStopped: helpersRunning, approvalDeclined: approvalWaiting) {
+                    addReceipt(line, symbol: "stop.circle")
+                }
             } catch where !(error is GatewayRPCError) {
                 // The stop never got there, or its answer was lost: the turn may still be running,
                 // so it isn't shown as stopped (its events, or the next attach, say how it ends).

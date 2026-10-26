@@ -55,6 +55,19 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
         }
     }
 
+    /// Hermes refused a message, in its words (`SendRefusal.line`).
+    public static func refused(_ line: String) -> HermesError {
+        .server(status: 409, code: "refused", message: line)
+    }
+
+    /// Hermes refused the request for a reason of its own (a 409 or 429 from the API server, a
+    /// store refusal, a 4090 the app can't wait out) rather than failing: the chat shows it in
+    /// Hermes's words, never as a red error.
+    public var isRefusal: Bool {
+        guard case .server(let status, let code, _) = self else { return false }
+        return status == 409 || status == 429 || code.map { Self.storeRefusals[$0] != nil } ?? false
+    }
+
     /// The API server's refusals that come with only their reason (hermes-agent
     /// `gateway/platforms/api_server_authority_runs.py`), in words.
     static let storeRefusals: [String: String] = [

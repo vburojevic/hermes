@@ -23,11 +23,14 @@ public enum SteerOutcome: Sendable, Equatable {
     /// whether it was read; it's never sent again by itself.
     case unknown
 
-    /// `session.steer`'s answer, or the error it failed with.
-    public static func steer(result: JSONValue?, error: (any Error)?) -> SteerOutcome {
+    /// `session.steer`'s answer, or the error it failed with. `compacting`: Hermes was compacting
+    /// the chat, when its `queued` means it holds the note for the next turn, not that the turn
+    /// reads it.
+    public static func steer(result: JSONValue?, error: (any Error)?, compacting: Bool = false) -> SteerOutcome {
         if let error { return failed(error) }
         switch FollowUpStatus(result: result) {
-        case .queued?, .steered?: return .accepted
+        case .queued?: return compacting ? .heldByHermes : .accepted
+        case .steered?: return .accepted
         case .redirected?: return .redirected
         case .rejected?, .streaming?: return .nextMessage
         case nil: return .unknown

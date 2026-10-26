@@ -284,7 +284,7 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 |---|---|---|
 | Connecting | The face; "Downloading speech model · 40%" while the model downloads | |
 | Listening | Rings in the Bot's colour; the words as heard, the last ones lighter until settled; "Pause when you're done" | `talkListening` |
-| Working | The face works; the plan step or status line, lighter; the running step in a chip ("df -h /volume1 · 3 s"); a step longer than 4 s gets a short spoken note once ("Running a command."). Speaking now steers (`session.steer`) | `talkWorking` |
+| Working | The face works; the plan step or status line, lighter; the running step in a chip ("df -h /volume1 · 3 s"); a step longer than 4 s gets a short spoken note once ("Running a command."). Speaking now steers (`session.steer`), the same as a typed steer: a steer the turn can't take goes first in Up Next, its row saying why, and a chat something else holds makes it wait its turn there ([follow-ups.md](follow-ups.md) §2, §4) | `talkWorking` |
 | Speaking | The sentence being said in ink, the next one lighter; "Talk or tap to interrupt" ("Talk to interrupt" with Realtime, which only a voice stops; "It's loud here. Tap to interrupt." in a loud room) | `talkSpeaking` |
 | Needs your OK | Hermes asks out loud ("I need your OK to …"); the approval card docks; spoken answers as [quick-actions.md](quick-actions.md) §6. A tap on Always Allow, a flagged command or anything that can't be undone asks for Face ID | `talkApproval` |
 | Question | A clarify question or setup choice read out with its choices, answered by voice ("the second one") or on the card | |

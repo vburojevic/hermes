@@ -12,6 +12,8 @@ public struct LiveTurn: Sendable, Equatable {
     public private(set) var approval: ApprovalRequest?
     /// A transient line such as "Compacting context…".
     public private(set) var status: String?
+    /// Hermes is compacting the chat: a steer it takes now goes as the next turn.
+    public private(set) var isCompacting = false
     public private(set) var usage: TokenUsage?
     public private(set) var runtime: RuntimeInfo?
     /// Events were dropped while disconnected; the transcript must be reloaded.
@@ -92,6 +94,7 @@ public struct LiveTurn: Sendable, Equatable {
         case .textDelta(let delta):
             pendingText += delta
             status = nil
+            isCompacting = false
 
         case .commentary(let text, let alreadyStreamed):
             guard !alreadyStreamed else { break }
@@ -101,6 +104,7 @@ public struct LiveTurn: Sendable, Equatable {
         case .toolStarted(let callID, let name, let preview, let at):
             flushNarration()
             status = nil
+            isCompacting = false
             turn.steps.append(.tool(ToolActivity(
                 id: ToolActivity.stableID(callID: callID, fallback: "\(turn.id)-s\(turn.steps.count)", in: turn.steps),
                 callID: callID,
@@ -169,6 +173,10 @@ public struct LiveTurn: Sendable, Equatable {
 
         case .status(let text):
             status = text
+            isCompacting = false
+
+        case .compacting:
+            isCompacting = true
 
         case .completed(let output, let usage, let runtime):
             if let output, !output.isEmpty {
