@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610261847 (October 26, 2026)
+
+- **Chat:** a photo shows its thumbnail once Hermes has stored it, held for the next turn or sent while idle
+
 ### Build 2610261658 (October 26, 2026)
 
 - **Chat:** a message waiting for an away gateway says "Waiting for" on the Mac and in its row, never "Thinking…"
