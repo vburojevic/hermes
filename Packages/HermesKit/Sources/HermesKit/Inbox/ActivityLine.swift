@@ -20,6 +20,9 @@ public enum ActivityLine: Hashable, Sendable {
     case failed(String)
     /// A Bot's routine is running ("Daily digest · thinking…").
     case routine(String)
+    /// The person's message waits for the gateway, which hasn't taken it (away, or busy): "Waiting
+    /// for <gateway>…", in still words. Hermes isn't working on it yet (`docs/chat.md` §4).
+    case sending(gateway: String)
 
     /// What a paused turn waits for.
     public enum NeedsYou: Hashable, Sendable {
@@ -43,12 +46,12 @@ public enum ActivityLine: Hashable, Sendable {
         return true
     }
 
-    /// The words shimmer while Hermes works (`docs/chat.md` §4a). Waiting for the person and a
-    /// stop stay solid and still: nothing is working.
+    /// The words shimmer while Hermes works (`docs/chat.md` §4a). Waiting for the person or the
+    /// gateway, and a stop, stay solid and still: nothing is working.
     public var shimmers: Bool {
         switch self {
         case .starting, .thinking, .writing, .tool, .helpers, .routine: true
-        case .waiting, .failed: false
+        case .waiting, .failed, .sending: false
         }
     }
 
@@ -82,7 +85,8 @@ extension ActivityLine {
         case .waiting?: return .listening
         case .starting?, .thinking?, .routine?: return .thinking
         case .tool?, .helpers?, .writing?: return .working
-        case .failed?, nil: return muted && otherwise == .idle ? .sleeping : otherwise
+        // Nothing works on a message the gateway hasn't taken: the face rests.
+        case .failed?, .sending?, nil: return muted && otherwise == .idle ? .sleeping : otherwise
         }
     }
 }

@@ -591,7 +591,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   "Waiting for <Mac>…" once the gateway is away or busy, or 10 s have gone
   (`ConversationModel.deliveryNote`). The turn header's live line says so in place of "Thinking…"
   (still words while it waits for the Mac), and turns to "Thinking…" once Hermes has the message;
-  meanwhile the Bot's face doesn't think. Group chats say it under the message (`PendingSendLine`).
+  meanwhile the Bot's face doesn't think, and the chat's row, the jump pill and the Live Activity
+  say "Waiting for <Mac>…" too (`ActivityLine.sending`). The transcript hands the note to the
+  running reply's row rather than the row reading it: the note can change while the row is drawn,
+  and the Mac's row then kept "Thinking…" for the whole wait. Group chats say it under the message (`PendingSendLine`).
   Taken means `prompt.submit` answered, the run started (`/v1/runs`), or the turn's first event
   came. Meanwhile:
   - With the Bots away it waits for them, however long that takes, and goes once they're back

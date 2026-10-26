@@ -1357,15 +1357,18 @@ struct TranscriptView: View {
                     .modifier(SpokenMark(isSpoken: SpokenMessages.shared.isSpoken(entry.id, session: conversation.sessionID)))
             }
         case .assistant(let turn):
+            let note = conversation.deliveryNote
+            let isLive = turn.id == conversation.liveOutline?.id
             TurnRow(
                 listed: turn,
                 conversation: conversation,
-                isLive: turn.id == conversation.liveOutline?.id,
+                isLive: isLive,
                 onBranch: branchAction(for: turn.id),
                 extraTeamIDs: extraTeams,
                 memoryContext: MemoryNoteContext(workspace: workspace, conversation: conversation),
                 rowKey: conversation.displayID(for: item),
-                answersVoice: !spokenReplies.contains(turn.id) ? .none : turn.id == latestReply ? .latest : .earlier
+                answersVoice: !spokenReplies.contains(turn.id) ? .none : turn.id == latestReply ? .latest : .earlier,
+                delivery: isLive ? note : nil
             )
             .equatable()
         case .notice(let notice) where notice.kind == "background-sent":
@@ -1440,11 +1443,15 @@ struct TranscriptView: View {
         let rowKey: String
         /// The reply answers a voice message (`AssistantTurnView.answersVoice`).
         let answersVoice: AssistantTurnView.SpokenReply
+        /// The running reply's message on its way (`ConversationModel.deliveryNote`), handed in
+        /// rather than read here: the note can change while this row is being drawn, and the Mac's
+        /// row then missed it and said "Thinking…" while the message waited for the gateway.
+        let delivery: ConversationModel.Delivery?
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.listed == rhs.listed && lhs.conversation === rhs.conversation && lhs.isLive == rhs.isLive
                 && lhs.onBranch == rhs.onBranch && lhs.extraTeamIDs == rhs.extraTeamIDs
                 && lhs.memoryContext == rhs.memoryContext && lhs.rowKey == rhs.rowKey
-                && lhs.answersVoice == rhs.answersVoice
+                && lhs.answersVoice == rhs.answersVoice && lhs.delivery == rhs.delivery
         }
 
         var body: some View {
@@ -1452,7 +1459,7 @@ struct TranscriptView: View {
             // Every chat, a Bot's included, shows the header's live line from the moment the
             // message goes: no typing bubble, never an empty gap. Until Hermes has the message it
             // says so ("Waiting for MacBook Pro…"), then "Thinking…" (`docs/chat.md` §4, §4a).
-            let delivery = isLive && turn.answer.isEmpty && turn.steps.isEmpty ? conversation.deliveryNote : nil
+            let delivery = isLive && turn.answer.isEmpty && turn.steps.isEmpty ? self.delivery : nil
             // The API server holds the run behind another turn in this chat (`turnHeaderQueued`).
             let queuedRun = isLive && conversation.runWaitsInQueue ? String(localized: "Queued behind another turn") : nil
             AssistantTurnView(

@@ -167,6 +167,7 @@ extension ActivityLine {
         case .waiting(.key): String(localized: "Needs a key")
         case .failed(let reason): String(localized: "Stopped: \(reason)")
         case .routine(let name): String(localized: "\(name) · thinking…")
+        case .sending(let gateway): String(localized: "Waiting for \(gateway)…")
         }
     }
 
@@ -180,7 +181,7 @@ extension ActivityLine {
         case .waiting(.approval): String(localized: "waiting for your approval")
         case .waiting(.question): String(localized: "has a question")
         case .waiting(.key): String(localized: "needs a key")
-        case .failed: text
+        case .failed, .sending: text
         }
     }
 
@@ -190,6 +191,7 @@ extension ActivityLine {
         case .helpers: "person.2"
         case .waiting: "hand.raised.fill"
         case .failed: "exclamationmark.triangle.fill"
+        case .sending: "clock"
         case .starting, .thinking, .writing, .routine: nil
         }
     }
