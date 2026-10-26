@@ -91,6 +91,42 @@ The relay has its own tests (`cd Relay && npm ci && npm test`). The app's Hermes
 against a real Hermes Agent checkout, in a throwaway `HERMES_HOME`; see [plugins.md](plugins.md)
 §5.6 and [Tools/hermes-app-push](../Tools/hermes-app-push/README.md).
 
+### The send matrix
+
+Every way a message reaches Hermes, against every state a chat can be in (issue #53), proven
+twice: at the model level by `SendMatrixTests` in HermesKit (each cell fed Hermes's own answer for
+its state, and held to the rules below), and in the app on iPhone and Mac against the mock by
+`Tools/mock-hermes/matrix/send_matrix.py`, which launches Hermes Dev with `-HERMES_*` flags, drives
+the mock's endpoints, reads the screen (AXe, or cua-driver on the Mac) and counts what Hermes stored.
+The rules: what was sent always shows its true state; nothing is lost, sent twice or sent into the
+wrong turn; the queue survives a reconnect and a relaunch; Stop clears exactly what it says; a
+refusal is Hermes's words, never a generic error.
+
+| | Idle | Turn or tool running | Process notice's turn | Gateway's own turn | Unconfirmed | Another process | Reconnecting | Offline | Relaunch |
+|---|---|---|---|---|---|---|---|---|---|
+| Send | its turn | Up Next, "sends when this reply is done" | held by Hermes, runs once | Up Next, "sends when that turn ends" | looked for, never resent | Up Next, names the holder | Up Next, "sends when … is back" | "Waiting for …", goes once | behind the restored queue |
+| Steer | goes next ("finished before reading it") | read into the turn | not offered | not offered | not offered | not offered | goes next, "Couldn't reach …" | not offered | read into the turn |
+| Up Next | sends | waits | held by Hermes | waits for the gateway | looked for | waits, names the holder | waits | waits | sends once opened, Maybe sent stays |
+| Stop | not offered | stops; gives back what Hermes held, says what else stopped | not offered | not offered | not offered | not offered | turn stays, "couldn't reach" | not offered | stops |
+| Try Again | its turn | Up Next | held by Hermes | waits behind the refusal | not offered | waits behind the refusal | Up Next | waits for the gateway | Up Next |
+| Edit and Resend | a new chat | a new chat | a new chat | a new chat | a new chat | a new chat | back in the field | back in the field | a new chat |
+| Photo while busy | its turn | held by Hermes, own turn | held by Hermes | waits, "with its photo" | looked for | waits | Up Next | waits for the gateway | held by Hermes |
+| Talk | its turn | steers | held by Hermes | waits | looked for | waits | goes next | back in the field | steers |
+| Another Bot | its turn | Up Next | held by Hermes | waits | looked for | "… is answering …" | Up Next | waits for the gateway | Up Next |
+| Routine follow-up | Hermes's turn, live | the next turn, after this one | the next turn | runs on the gateway | runs on the gateway | "… is following up on its routine …" | the next turn | stored, shown on return | the next turn |
+
+Dictation fills the field, so it is Send. Talk is proven at the model level only (a simulator has
+no microphone to drive). The cells that depend on timing (offline, reconnecting, a slow or lost
+answer, a relaunch with an outbox) run in a quiet window; the rest run any time:
+
+```sh
+python3 -I Tools/mock-hermes/matrix/send_matrix.py --udid <simulator> --app <Hermes Dev.app> --out <folder> --only lane
+python3 -I Tools/mock-hermes/matrix/send_matrix.py --mac --app <Hermes Dev.app> --out <folder> --only window
+```
+
+It starts its own mock on ports 40219 and 40742 and stops it at the end; on the Mac it sets Hermes
+Dev's data folder aside first and puts it back byte for byte.
+
 ## Run without a real gateway
 
 
