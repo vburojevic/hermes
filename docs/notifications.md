@@ -359,8 +359,8 @@ Rules:
     the reads, so neither the app, woken, nor the extension counts it again and its notifications
     go. A session Hermes moves to the profile that owns it (`profile_repair`) keeps counting.
     Before, a chat deleted on the Mac left a sleeping iPhone's icon at 1 with nothing unread in
-    the list until the app ran. The hook widens what the plugin sees, so the app moves its pin to
-    1.4.7 only once it's published, behind the consent card (`docs/plugins.md` §2.1).
+    the list until the app ran. The hook widens what the plugin sees, so the app's move to 1.4.7
+    waits for the person's tap on the consent card (`docs/plugins.md` §2.1).
   Known gaps of the same kind, until the app next runs:
   - A chat deleted in a short-lived process (`hermes sessions delete` in a terminal) leaves the
     plugin's count right, but the badge and read pushes wait for the next push, since that process

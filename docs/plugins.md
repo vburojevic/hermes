@@ -7,7 +7,7 @@ run inside the person's own Hermes, and are published to public repositories tha
 
 | Plugin | What it adds | Source | State |
 |---|---|---|---|
-| `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.6 |
+| `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.7 |
 | `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.3.0 |
 
 Everything else the app does runs on a stock Hermes Agent: the API server for chats, and
@@ -69,9 +69,9 @@ The design is the Elyx project's `docs/plugins.md`; its frames are named below.
   manifest's names, and the promise the review quotes. A test checks the hooks and tools of the
   version in `Tools/<plugin>/plugin.yaml` against that manifest (the pinned version's, once the pin
   reaches it) and that every pinned hook is named on the review. A version changed in `Tools/` but
-  not yet published has its list ahead of the pin: push 1.4.7 adds `on_session_delete`, so the pin
-  stays on 1.4.6 until it's published, and moving it shows the consent card ("Knows when chats are
-  deleted or archived"). A new app plugin is one entry and a What's New row.
+  not yet published has its list ahead of the pin until it's published. A pin that adds access shows
+  the consent card: push 1.4.7 added `on_session_delete` ("Knows when chats are deleted or
+  archived"). A new app plugin is one entry and a What's New row.
 - **When it looks.** When Bot Mode connects (at most hourly) it reads every profile's plugins
   (`plugins.manage {action: list, profile}` for each profile in `profiles.list`, the root as
   `default`). A plugin is missing, older than the app's minimum version, turned off, or current.

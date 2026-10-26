@@ -60,11 +60,11 @@ struct PluginRegistryTests {
         }
     }
 
-    /// Push 1.4.7 hears of deleted and archived chats (`on_session_delete`): more access, so the app
-    /// stays on 1.4.6 until it's published, and moving the pin shows the consent card for that hook.
+    /// Push 1.4.7 hears of deleted and archived chats (`on_session_delete`): more access, so moving the
+    /// pin to it shows the consent card for that hook.
     @Test func push147AsksBeforeItHearsOfDeletedChats() throws {
         let push = AppPlugin.push
-        #expect(push.version == "1.4.6" && push.minimumVersion == "1.4.6", "1.4.7 isn't published yet")
+        #expect(push.version == "1.4.7" && push.minimumVersion == "1.4.7")
         let older = try #require(push.capabilities["1.4.6"]), newer = try #require(push.capabilities["1.4.7"])
         #expect(newer.widens(older))
         #expect(newer.additions(since: older) == PluginCapabilities(hooks: ["on_session_delete"]))
@@ -141,7 +141,8 @@ struct PluginRegistryTests {
         let widgets = AppPlugin.widgets
         #expect(widgets.widening(from: "1.1.0")?.hooks == ["pre_llm_call"], "1.1.1 added pre_llm_call")
         #expect(widgets.widening(from: "1.1.1") == nil)
-        #expect(AppPlugin.push.widening(from: "1.0.0") == nil, "push kept the same access")
+        #expect(AppPlugin.push.widening(from: "1.0.0")?.hooks == ["on_session_delete"], "1.4.7 added on_session_delete")
+        #expect(AppPlugin.push.widening(from: "1.4.7") == nil)
         let unknown = AppPlugin.push.widening(from: "0.9.0")
         #expect(unknown?.hooks.count == AppPlugin.push.pinnedCapabilities.hooks.count, "an unknown version can't be compared")
         let lines = CapabilityWords.consentLines(for: widgets.widening(from: "1.1.0")!, gateway: "Studio Mac")
@@ -175,9 +176,17 @@ struct PluginRegistryTests {
     }
 
     @Test func theSameAccessMovesQuietly() async {
-        let survey = await survey(["default": [row("hermes-app-push", version: "1.1.0")]], plugins: [.push])
+        let survey = await survey(["default": [row("hermes-app-widgets", version: "1.1.1")]])
         #expect(survey.held().isEmpty)
         #expect(survey.plan().map(\.profile) == ["default", "ada", "ops"], "older copies update and new Bots get it")
+    }
+
+    /// Push 1.4.6 installed: 1.4.7 hears of deleted chats, so it waits for the person's tap.
+    @Test func push147WaitsForTheConsentCard() async {
+        let survey = await survey(["default": [row("hermes-app-push", version: "1.4.6")]], plugins: [.push])
+        #expect(survey.plan().isEmpty)
+        #expect(survey.held()[.push]?.hooks == ["on_session_delete"])
+        #expect(survey.plan(consented: ["hermes-app-push": "1.4.7"]).map(\.profile) == ["default", "ada", "ops"])
     }
 
     @Test func onlyWantedPluginsKeepCurrent() async {

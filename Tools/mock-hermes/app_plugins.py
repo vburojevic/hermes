@@ -29,15 +29,15 @@ import time
 B = None  # backend.py globals
 LOCK = threading.RLock()
 SHA = re.compile(r"^[0-9a-fA-F]{40}$")
-PUBLISHED = "16a6be499e1c1b223d8bf63f8af35ccb5517b0cd"
+PUBLISHED = "cc5ee0b2c2cc2c2b3c70f20508ab7d196622afab"
 
-# The pinned 1.4.6's hooks (AppPlugin.push); 1.4.7 adds on_session_delete, here when the pin moves.
+# The pinned 1.4.7's hooks (AppPlugin.push).
 PUSH_HOOKS = ["pre_llm_call", "post_llm_call", "on_session_end", "pre_tool_call", "pre_approval_request",
               "post_approval_response", "on_human_input_request", "on_human_input_resolved", "on_room_member_activity",
-              "kanban_task_completed", "kanban_task_blocked"]
+              "kanban_task_completed", "kanban_task_blocked", "on_session_delete"]
 APPS = {
     "hermes-app-push": {
-        "repo": "vburojevic/hermes-app-push", "version": "1.4.6", "published": PUBLISHED,
+        "repo": "vburojevic/hermes-app-push", "version": "1.4.7", "published": PUBLISHED,
         # What Hermes says it switched on (hermes_cli/plugins_activation.py): hooks and the command at once.
         "activation": {"activated_now": {"hooks": PUSH_HOOKS, "gateway_commands": ["app-push"]}, "deferred": {}, "live_now": {}},
         "description": "Push notifications for the Hermes iPhone, iPad and Mac app: approvals, questions, password "
