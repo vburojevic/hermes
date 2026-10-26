@@ -34,6 +34,7 @@ The first public beta, for iPhone, iPad and Mac.
 ### Build 2610260628 (October 26, 2026)
 
 - **Chat:** a message to another Bot shows what was sent, and a finished step never shows an empty box
+- **Chat:** live words shimmer with a soft band of their own ink, in light and dark
 
 ### Build 2610260307 (October 26, 2026)
 
