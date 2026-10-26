@@ -284,7 +284,7 @@ struct GatewayTurnDecoderTests {
         #expect(decode("session.title", #"{"title":"Trip plan"}"#) == [.titleChanged("Trip plan")])
         #expect(decode("request.cancel", #"{"id":"srq-1","method":"approval","reason":"interrupted"}"#) == [.approvalResolved(requestID: nil)])
         #expect(decode("request.cancel", #"{"id":"srq-2","method":"clarify"}"#).isEmpty)
-        #expect(decode("status.update", #"{"kind":"compacting","text":"Compacting context…"}"#) == [.status("Compacting context…")])
+        #expect(decode("status.update", #"{"kind":"compacting","text":"Compacting context…"}"#) == [.status("Compacting context…"), .compacting(true)])
         #expect(decode("status.update", #"{"kind":"heartbeat","text":"♥"}"#).isEmpty)
         // A background process told Hermes it ended: for Hermes, not a status line (the step and
         // the chip show it). Other process statuses still show.
@@ -299,7 +299,7 @@ struct GatewayTurnDecoderTests {
         // The gateway re-tags lifecycle text that mentions compression as `compacting`.
         #expect(decode("status.update", #"{"kind":"compacting","text":"⚠ Configured auxiliary compression provider 'openai-codex' is unavailable, so older messages in long chats will be cut without a summary."}"#)
             == [.warning("Configured auxiliary compression provider 'openai-codex' is unavailable, so older messages in long chats will be cut without a summary.")])
-        #expect(decode("status.update", #"{"kind":"compacting","text":"Compacting context…"}"#) == [.status("Compacting context…")])
+        #expect(decode("status.update", #"{"kind":"compacting","text":"Compacting context…"}"#) == [.status("Compacting context…"), .compacting(true)])
         #expect(decode("status.update", #"{"kind":"lifecycle","text":"⚠ Rate limited — waiting 5s"}"#) == [.status("⚠ Rate limited — waiting 5s")])
         #expect(decode("status.update", #"{"kind":"lifecycle","text":"↻ Stream interrupted — using delivered content as final response"}"#)
             == [.status("↻ Stream interrupted — using delivered content as final response")])
