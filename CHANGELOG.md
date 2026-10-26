@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610260654 (October 26, 2026)
+
+- **Chat:** a finished background process says what ran, how it went and how long it took, and several in a row are one line that opens to a row each
+
 ### Build 2610260628 (October 26, 2026)
 
 - **Chat:** a message to another Bot shows what was sent, and a finished step never shows an empty box
