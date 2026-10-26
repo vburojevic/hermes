@@ -27,20 +27,25 @@ public enum UpNext {
         public var expectsGatewayTurn: Bool
         /// A message typed before the chat loaded goes first, once it has.
         public var sendsOnLoad: Bool
+        /// The person has opened the chat since the app launched. A chat the app only loaded in
+        /// the background (one kept from before a relaunch) sends nothing by itself: nothing goes
+        /// out from a chat the person hasn't looked at. A turn's end here counts as looked at.
+        public var opened: Bool
 
         public init(turnHoldsChat: Bool, reachable: Bool, paused: Bool = false, waitsForChat: Bool = false,
-                    expectsGatewayTurn: Bool = false, sendsOnLoad: Bool = false) {
+                    expectsGatewayTurn: Bool = false, sendsOnLoad: Bool = false, opened: Bool = true) {
             self.turnHoldsChat = turnHoldsChat
             self.reachable = reachable
             self.paused = paused
             self.waitsForChat = waitsForChat
             self.expectsGatewayTurn = expectsGatewayTurn
             self.sendsOnLoad = sendsOnLoad
+            self.opened = opened
         }
 
         /// Nothing holds the chat: what waits in Up Next may go.
         public var isFree: Bool {
-            !turnHoldsChat && reachable && !paused && !waitsForChat && !expectsGatewayTurn && !sendsOnLoad
+            opened && !turnHoldsChat && reachable && !paused && !waitsForChat && !expectsGatewayTurn && !sendsOnLoad
         }
     }
 

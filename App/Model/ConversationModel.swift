@@ -53,6 +53,11 @@ final class ConversationModel: Identifiable {
         }
         set {
             withMutation(keyPath: \.live) { liveStorage = newValue }
+            // Cleared outside a turn's finish (a refusal, a send given back): the next turn's
+            // events held meanwhile never wait for a finish that won't come.
+            if newValue == nil, nextTurn.isHolding, !isFinishing {
+                Task { @MainActor [weak self] in self?.releaseNextTurn() }
+            }
             wordsRedraw?.cancel()
             wordsRedraw = nil
             liveVersion &+= 1
@@ -241,6 +246,11 @@ final class ConversationModel: Identifiable {
     /// otherwise (§1).
     @ObservationIgnored private var processWatch: Task<Void, Never>?
     @ObservationIgnored private var isOnScreen = false
+    /// The person has opened this chat since the app launched (`UpNext.Chat.opened`).
+    @ObservationIgnored private var openedSinceLaunch = false
+    /// A new chat kept from before a relaunch, set up by the app itself (`WaitingChat`): until the
+    /// person opens it, its Up Next waits, even after the turn of the message that went again.
+    @ObservationIgnored private var keptFromRelaunch = false
     @ObservationIgnored private var processWatchID = 0
     /// Fetches the chat again while its stored rows stop mid-turn (`watchMidTurn`).
     @ObservationIgnored private var midTurnWatch: Task<Void, Never>?
@@ -645,6 +655,7 @@ final class ConversationModel: Identifiable {
         self.placement = waiting.projectID.map { workspace.projects.placement(in: $0) }
         self.waitingChat = waiting
         self.queue = queue
+        self.keptFromRelaunch = true
     }
 
     /// A Bot's Bot Chat, served by the Hermes backend.
@@ -1239,7 +1250,7 @@ final class ConversationModel: Identifiable {
                 }
                 // Loaded and attached with nothing running (after a relaunch, a reconnect): what
                 // waits in Up Next goes now, never only after a turn that may not come.
-                if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle() }
+                if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle(afterLoad: true) }
             } catch is CancellationError {
             } catch {
                 // Offline or refused: the kept copy still goes up.
@@ -2372,6 +2383,11 @@ final class ConversationModel: Identifiable {
     /// going on elsewhere is fetched again every 10 s while it shows.
     func screenChanged(shown: Bool) {
         isOnScreen = shown
+        if shown, !openedSinceLaunch {
+            openedSinceLaunch = true
+            // Loaded in the background after a relaunch: what waits in Up Next goes now it's opened.
+            if loadState == .loaded, !isFetching { drainQueueIfIdle(afterLoad: true) }
+        }
         guard shown, processTracker.processes.contains(where: \.isRunning) else { return }
         // Back at the 5 s pace, starting with a look now.
         processWatch?.cancel()
@@ -3208,10 +3224,13 @@ final class ConversationModel: Identifiable {
     /// reconnect, a turn recovered as idle, a hold that cleared), the first queued message goes,
     /// one per turn, unless Stop paused the queue or something else holds the chat (`UpNext.next`).
     /// A held message waits for its Send; the ones behind it go as usual.
-    private func drainQueueIfIdle() {
+    /// - Parameter afterLoad: a load or a reconnect, not a turn's end here: only in a chat the
+    ///   person has opened since launch.
+    private func drainQueueIfIdle(afterLoad: Bool = false) {
         let chat = UpNext.Chat(turnHoldsChat: isWorking || isFinishing || isBotTurnOpen || nextTurn.isHolding,
                                reachable: isReachable, paused: queuePaused, waitsForChat: waitsForChat,
-                               expectsGatewayTurn: !expectedFromGateway.isEmpty, sendsOnLoad: sendOnLoad != nil)
+                               expectsGatewayTurn: !expectedFromGateway.isEmpty, sendsOnLoad: sendOnLoad != nil,
+                               opened: openedSinceLaunch || !(afterLoad || keptFromRelaunch))
         guard let first = UpNext.next(in: queue, chat: chat, isHeld: \.isHeld) else { return }
         sendQueued(first)
     }
@@ -4284,6 +4303,7 @@ final class ConversationModel: Identifiable {
     /// listed under its record until Hermes lists it (`nil` then), the message looked for once it loads.
     func restoreWaiting(_ chat: WaitingChat?) {
         waitingChat = chat
+        if chat != nil { keptFromRelaunch = true }
     }
 
     /// The person deleted the chat while it waited: nothing more of it goes, and nothing stays.
@@ -4610,7 +4630,7 @@ extension ConversationModel {
                     LoadTrace.mark(stableKey, "attached")
                 }
                 // As for a chat (`reload`): idle once loaded, Up Next goes.
-                if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle() }
+                if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle(afterLoad: true) }
                 if fetchAgain, !Task.isCancelled { reload() }
             } catch is CancellationError {
             } catch {
@@ -6194,9 +6214,9 @@ extension ConversationModel {
             guard live != nil else {
                 // A transcript fetched moments ago (the socket connecting as the app starts) is
                 // current: only a real outage needs catching up. Idle either way: Up Next goes, by
-                // itself (the reload sends it once it's in).
+                // itself, unless that load is still attaching (it sends once it knows nothing runs).
                 if let lastFetchedAt, Date.now.timeIntervalSince(lastFetchedAt) < 5 {
-                    drainQueueIfIdle()
+                    if !isFetching { drainQueueIfIdle(afterLoad: true) }
                     return
                 }
                 reload()

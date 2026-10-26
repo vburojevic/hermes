@@ -178,7 +178,9 @@ design's component names, used in code comments.
   open on the gateway, the gateway's own held message). Each time the first message that doesn't
   wait for a Send goes, one per turn, in order; Not sent and Maybe sent messages go only with a
   Send. After a relaunch, a chat's queue sends once that chat is opened, never in the background:
-  nothing goes out from a chat the person hasn't looked at. A held message at the top stays there,
+  nothing goes out from a chat the person hasn't looked at, including one the app loads by itself
+  (a new chat kept from before the relaunch, even once its message went again,
+  `UpNext.Chat.opened`). A held message at the top stays there,
   its line still saying why, while the ones behind it go. Before, after a
   relaunch or an idle reconnect it said "Send sends the first" and waited for a Send that
   nothing asked for. Removing the gateway removes its chats' queues.

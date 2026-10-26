@@ -72,6 +72,8 @@ struct UpNextDrainTests {
         UpNext.Chat(turnHoldsChat: false, reachable: true, waitsForChat: true),
         UpNext.Chat(turnHoldsChat: false, reachable: true, expectsGatewayTurn: true),
         UpNext.Chat(turnHoldsChat: false, reachable: true, sendsOnLoad: true),
+        // Loaded in the background after a relaunch, never opened: its queue stays.
+        UpNext.Chat(turnHoldsChat: false, reachable: true, opened: false),
     ])
     func waits(chat: UpNext.Chat) {
         #expect(!chat.isFree)
