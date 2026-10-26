@@ -31,6 +31,14 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610262302 (October 26, 2026)
+
+- **Notifications:** a chat Hermes never marked counts the same on every device, and a Mac behind other apps passes on its reads
+- **Notifications:** a chat deleted or archived on another device comes off every badge
+- **Notifications:** Hermes App Push updates to 1.4.7, asking first because it now hears when chats are deleted or archived
+- **Bots:** a hidden Bot's news stays off the app badge and the Bots count, like a muted Bot's
+- **Chat:** a question Hermes asks during a reply over the API server shows on its card and can be answered
+
 ### Build 2610261847 (October 26, 2026)
 
 - **Chat:** a photo shows its thumbnail once Hermes has stored it, held for the next turn or sent while idle
