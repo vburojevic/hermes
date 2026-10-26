@@ -21,7 +21,7 @@ Hermes keeps one read mark per chat, `last_read_at`, shared by every device and 
 
 | Value | Meaning |
 |---|---|
-| `null` | Never tracked: read |
+| `null` | Never tracked: read, on every device. The app icon badge doesn't count its replies either, even from a notice on a sleeping iPhone, until a read marks it ([notifications.md](notifications.md) §2 Badge) |
 | `0` | Marked unread by hand: the row shows a dot, not a count |
 | A time | Read up to then |
 

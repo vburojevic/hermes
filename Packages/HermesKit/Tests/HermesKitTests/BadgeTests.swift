@@ -1,4 +1,5 @@
 import Foundation
+import HermesKit
 @testable import HermesPush
 import Testing
 
@@ -220,5 +221,103 @@ struct BadgeTests {
         #expect(shared.badge == 3)
         #expect(shared.badge(besides: home) == 2, "the VPS's request and chat")
         #expect(shared.badge(besides: vps) == 1)
+    }
+
+    /// A chat Hermes never marked (`last_read_at` empty) is read by Hermes' rule, and the Mac's list
+    /// shows it so (`UnreadStore`). Its reply used to count on the sleeping iPhone from the notice:
+    /// one on the icon, none on the Dock. The app names those chats with its list, and the extension
+    /// counts their news only once a read on some device gives them Hermes' mark.
+    @Test func aChatHermesNeverMarkedCountsTheSameEverywhere() {
+        let shared = shared()
+        shared.recordCountable(CountableChats(ids: ["chat_a", "chat_b"], unmarked: ["chat_b"]), gateway: home)
+        shared.recordOpen(0, gateway: "inst_home", at: at(0))
+
+        // Before: a list without unmarked chats counts every reply it shows.
+        let before = PushShared(suiteName: "badge-unmarked-before-\(UUID().uuidString)")
+        before.remember(installationID: "inst_home", appID: home, name: "Studio Mac")
+        before.recordCountable(CountableChats(ids: ["chat_a", "chat_b"]), gateway: home)
+        before.noteUnread(notice(.reply, "chat_b", at: 10), gateway: home)
+        #expect(before.badge == 1, "the drift: the iPhone counted what the Mac didn't")
+
+        #expect(!shared.noteUnread(notice(.reply, "chat_b", at: 10), gateway: home))
+        #expect(shared.badge == 0)
+        // A chat Hermes marked counts as before.
+        shared.noteUnread(notice(.reply, "chat_a", at: 11), gateway: home)
+        #expect(shared.badge == 1)
+
+        // Read on the Mac, the chat has a mark, so its next reply is unread everywhere.
+        shared.noteRead(ReadMarks(chats: ["chat_b": at(20)]), gateway: home, at: at(20))
+        #expect(shared.countable(gateway: home)?.unmarked.isEmpty == true)
+        shared.noteUnread(notice(.reply, "chat_b", at: 30), gateway: home)
+        #expect(shared.badge == 2)
+    }
+
+    /// Installed plugins only update when the app reinstalls them: plugin 1.4.6 ignores `unmarked` and
+    /// counts a never-marked chat's reply in its badge push. Against it the app names no unmarked
+    /// chats, so the extension counts exactly as the build before did, the same count as the plugin's
+    /// badge push, and nothing twice.
+    @Test func anOlderPluginKeepsCountingUnmarkedChatsAsBefore() {
+        #expect(!AppPushClient.namesUnmarked(pluginVersion: "1.4.6"))
+        #expect(!AppPushClient.namesUnmarked(pluginVersion: nil), "a gateway not checked yet")
+        #expect(AppPushClient.namesUnmarked(pluginVersion: "1.4.7"))
+        #expect(AppPushClient.namesUnmarked(pluginVersion: "1.10.0"))
+
+        let named: Set<String> = AppPushClient.namesUnmarked(pluginVersion: "1.4.6") ? ["chat_b"] : []
+        let today = shared()
+        today.recordCountable(CountableChats(ids: ["chat_a", "chat_b"], unmarked: named), gateway: home)
+        let before = PushShared(suiteName: "badge-146-\(UUID().uuidString)")
+        before.remember(installationID: "inst_home", appID: home, name: "Studio Mac")
+        before.recordCountable(CountableChats(ids: ["chat_a", "chat_b"]), gateway: home)
+        for shared in [today, before] {
+            shared.recordOpen(1, gateway: "inst_home", at: at(0))
+            #expect(shared.noteUnread(notice(.reply, "chat_b", at: 10), gateway: home))
+            #expect(!shared.noteUnread(notice(.reply, "chat_b", at: 11), gateway: home), "never twice")
+        }
+        // Plugin 1.4.6's badge push: the open request and chat_b.
+        #expect(today.badge == before.badge && today.badge == 2)
+        #expect(today.unread(gateway: home).map(\.key) == before.unread(gateway: home).map(\.key))
+    }
+
+    /// What the person saw: an icon saying 1 with nothing unread in the list. A reply in a chat Hermes
+    /// never marked had counted from its notice. Once this build names the chat, the next count the
+    /// app records takes the icon to 0, and the chat's next reply leaves it there.
+    @Test func aBadgeOfOneWithNothingUnreadGoesToZero() {
+        let shared = shared()
+        shared.recordOpen(0, gateway: "inst_home", at: at(0))
+        // An older build's state: the extension counted the reply, the list shows nothing unread.
+        shared.recordCountable(CountableChats(ids: ["chat_b"]), gateway: home)
+        shared.noteUnread(notice(.reply, "chat_b", at: 10), gateway: home)
+        #expect(shared.badge == 1, "the icon the person saw")
+
+        // This build, woken or in front, records what its list counts, and names the unmarked chat.
+        shared.recordCountable(CountableChats(ids: ["chat_b"], unmarked: ["chat_b"]), gateway: home)
+        shared.recordUnread([], gateway: home)
+        #expect(shared.badge == 0)
+        #expect(!shared.noteUnread(notice(.reply, "chat_b", at: 20), gateway: home))
+        #expect(shared.badge == 0)
+    }
+
+    /// The read can come with the reply: the notice's own read list marks the chat first.
+    @Test func aReadInTheNoticeMarksTheChat() {
+        let shared = shared()
+        shared.recordCountable(CountableChats(ids: ["chat_b"], unmarked: ["chat_b"]), gateway: home)
+        let reply = notice(.reply, "chat_b", at: 30, read: ReadMarks(chats: ["chat_b": at(20)]))
+        if let read = reply.read { shared.noteRead(read, gateway: home, at: at(30)) }
+        shared.noteUnread(reply, gateway: home)
+        #expect(shared.badge == 1)
+    }
+
+    /// Bots and group chats keep their own read points, so `unmarked` never holds them back.
+    @Test func unmarkedNeverHoldsBackABotOrARoom() {
+        let countable = CountableChats(ids: ["chat_ops"], bots: ["ops"], rooms: ["room_crew"], unmarked: ["chat_ops"])
+        #expect(!countable.isUnmarked(ReadNotices.Chat(ids: ["chat_ops"], profile: "ops")))
+        #expect(!countable.isUnmarked(ReadNotices.Chat(ids: [], room: "room_crew")))
+        #expect(countable.isUnmarked(ReadNotices.Chat(ids: ["chat_ops"])))
+    }
+
+    /// A list the app wrote before it named unmarked chats still opens.
+    @Test func anOlderCountableListDecodes() throws {
+        let old = try JSONDecoder().decode(CountableChats.self, from: Data(#"{"ids":["a"],"bots":[],"rooms":[]}"#.utf8))
+        #expect(old == CountableChats(ids: ["a"]))
     }
 }

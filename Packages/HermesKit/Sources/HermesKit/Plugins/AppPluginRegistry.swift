@@ -45,7 +45,9 @@ extension AppPlugin {
         public init() {}
     }
 
-    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.6 keeps the badge the
+    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.7 counts a chat Hermes
+    /// never marked only once it's read, as the app's list does (`presence away` with `unmarked`), same
+    /// access; not published yet, so the pin stays on 1.4.6. 1.4.6 keeps the badge the
     /// true unread count (news read before its notice goes isn't sent, reads ride on background pushes and
     /// on each device's check-in), same access; 1.4.5 sets a badge left
     /// showing a count the person can't see, same access; 1.4.4 seals a card fill
@@ -64,7 +66,8 @@ extension AppPlugin {
         ref: "16a6be499e1c1b223d8bf63f8af35ccb5517b0cd", version: "1.4.6", minimumVersion: "1.4.6",
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
                        "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess, "1.4.2": pushAccess,
-                       "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess, "1.4.6": pushAccess],
+                       "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess, "1.4.6": pushAccess,
+                       "1.4.7": pushAccess],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )

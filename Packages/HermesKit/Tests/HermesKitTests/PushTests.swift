@@ -318,7 +318,8 @@ import Testing
         }
         #expect(try await client.read(deviceID: "dev-1", chats: ["s1", "s1_root"], rooms: ["room_1"]) == 2)
         try await client.setPresence(.away, deviceID: "dev-1", sync: ["s1"], unread: .init(chats: ["s1"], rooms: ["room_1"]),
-                                     muted: .init(chats: ["s9"]), listed: .init(chats: ["s1", "s2"], rooms: ["room_1"]), badgeOthers: 3, badge: 8)
+                                     muted: .init(chats: ["s9"]), listed: .init(chats: ["s1", "s2"], rooms: ["room_1"]),
+                                     unmarked: .init(chats: ["s2"]), badgeOthers: 3, badge: 8)
         let sent = await calls.all.compactMap { $0.1["arg"]?.stringValue }
         func json(_ arg: String, after command: String) throws -> JSONValue {
             try JSONDecoder().decode(JSONValue.self, from: Data(arg.dropFirst(command.count + 1).utf8))
@@ -332,6 +333,8 @@ import Testing
         #expect(away["badge_others"]?.doubleValue == 3 && away["listed"]?["chats"] == .array([.string("s1"), .string("s2")]))
         // What the icon shows as the app leaves (plugin 1.4.5 sets it right when it isn't its count).
         #expect(away["badge"]?.doubleValue == 8)
+        // The listed chats Hermes never marked, which count nowhere until read (1.4.7).
+        #expect(away["unmarked"]?["chats"] == .array([.string("s2")]))
     }
 
     /// Plugin 1.4.6 answers `presence` and `status` with the last six hours' reads: a group chat read

@@ -112,9 +112,19 @@ final class PushCenter {
     @ObservationIgnored private var pendingResponses: [PushResponder.Response] = []
     @ObservationIgnored private(set) var activities: AnyObject?
     /// Per gateway: the pending sweep of read chats' notifications, and reads on their way to the
-    /// plugin (`PushCenter+Reading`).
+    /// plugin with the flush that sends them (`PushCenter+Reading`).
     @ObservationIgnored var readSweeps: [UUID: Task<Void, Never>] = [:]
-    @ObservationIgnored var readReports: [UUID: ReadReport] = [:]
+    @ObservationIgnored var readQueues: [UUID: PushReadQueue] = [:]
+    /// Each gateway's plugin version, as its last check answered. Kept on the device: woken in the
+    /// background, the app counts before any check answers, and must name unmarked chats then too.
+    @ObservationIgnored private lazy var pluginVersions: [UUID: String] =
+        (UserDefaults.standard.dictionary(forKey: Self.pluginVersionsKey) as? [String: String] ?? [:])
+            .reduce(into: [:]) { versions, entry in if let id = UUID(uuidString: entry.key) { versions[id] = entry.value } }
+    private static let pluginVersionsKey = "push.pluginVersions"
+    @ObservationIgnored var readFlushes: [UUID: (at: Date, task: Task<Void, Never>)] = [:]
+    /// Gateways whose chat list was fetched since Bot Mode last connected: only then are waiting reads
+    /// judged against it (a list from before the outage, or none at launch, can't say what moved).
+    @ObservationIgnored var listedSinceConnect: Set<UUID> = []
 
     private init() {
         preferences = PushShared.current.preferences
@@ -405,6 +415,7 @@ final class PushCenter {
                 }
                 shared.remember(installationID: registration.installationID, appID: id, name: workspace.bot.name)
                 if !registration.installationID.isEmpty { shared.registeredOwnKey(installation: registration.installationID) }
+                notePluginVersion(registration.version, of: workspace)
                 registerCategories()
                 gatewayStates[id] = .on(relay: registration.relay == "ok" ? nil : registration.relay)
                 renderFaces(for: workspace)
@@ -413,6 +424,7 @@ final class PushCenter {
                 if let installation = status.installationID {
                     shared.remember(installationID: installation, appID: id, name: workspace.bot.name)
                 }
+                notePluginVersion(status.version, of: workspace)
                 // The plugin is there, but without permission or a push address this iPhone can't
                 // register: that isn't "Push on" (`docs/setup.md` §4.13).
                 if status.registered, canNotify {
@@ -441,6 +453,25 @@ final class PushCenter {
             gatewayStates[id] = .failed(error.localizedDescription)
             retryLater(id)
         }
+    }
+
+    /// Whether the app names this gateway's never-marked chats to the service extension, which then
+    /// doesn't count them (`AppPushClient.namesUnmarked`): only when its plugin doesn't count them either.
+    func namesUnmarked(_ id: UUID) -> Bool {
+        AppPushClient.namesUnmarked(pluginVersion: pluginVersions[id])
+    }
+
+    /// A newer or older plugin than last time: what the extension counts follows it.
+    private func notePluginVersion(_ version: String?, of workspace: BotWorkspace) {
+        guard pluginVersions[workspace.id] != version else { return }
+        pluginVersions[workspace.id] = version
+        savePluginVersions()
+        workspace.unread.update()
+    }
+
+    private func savePluginVersions() {
+        UserDefaults.standard.set(Dictionary(uniqueKeysWithValues: pluginVersions.map { ($0.key.uuidString, $0.value) }),
+                                  forKey: Self.pluginVersionsKey)
     }
 
     /// Checks one gateway now (the Set Up Push sheet polls this).
@@ -476,6 +507,9 @@ final class PushCenter {
             Task { _ = try? await AppPushClient { try await roster.request($0, $1) }.unregister(deviceID: deviceID) }
         }
         shared.forget(appID: workspace.id)
+        forgetReads(of: workspace.id)
+        pluginVersions[workspace.id] = nil
+        savePluginVersions()
         gatewayStates[workspace.id] = nil
         registerCategories()
     }
@@ -556,7 +590,7 @@ final class PushCenter {
             var badge: AwayBadge?
             if countsUnread {
                 let lists = workspace.unread.badgeLists()
-                badge = (lists.unread, lists.muted, workspace.unread.listedChats())
+                badge = (lists.unread, lists.muted, workspace.unread.listedChats(), workspace.unread.unmarkedChats())
             }
             return (workspace.id, roster, workspace.chatsToKeepCurrent(showing: workspace.id == model.currentWorkspace?.id), badge,
                     shared.badge(besides: workspace.id))
@@ -570,7 +604,8 @@ final class PushCenter {
             for (gateway, roster, chats, badge, others) in targets where roster.state.isOnline {
                 let answer = try? await AppPushClient { try await roster.request($0, $1, timeout: .seconds(5)) }
                     .setPresence(.away, deviceID: deviceID, sync: chats, unread: badge?.unread, muted: badge?.muted,
-                                 listed: badge?.listed, badgeOthers: badge == nil ? nil : others, badge: badge == nil ? nil : shown)
+                                 listed: badge?.listed, unmarked: badge?.unmarked, badgeOthers: badge == nil ? nil : others,
+                                 badge: badge == nil ? nil : shown)
                 // The open requests as they are now: a count kept from a notice hours ago (a request
                 // answered elsewhere while the phone slept) leaves the icon here.
                 if let answer, let installation = installationID(for: gateway) { shared.recordOpen(answer.open, gateway: installation) }

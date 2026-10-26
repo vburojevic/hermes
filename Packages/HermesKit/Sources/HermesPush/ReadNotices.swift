@@ -129,17 +129,45 @@ public struct CountableChats: Codable, Sendable, Hashable {
     /// Bots by profile.
     public var bots: Set<String>
     public var rooms: Set<String>
+    /// Session ids of listed chats Hermes has never marked (`last_read_at` empty), which Hermes
+    /// reads as read: their news counts nowhere until a read marks them (`docs/notifications.md`
+    /// §2 Badge). Never a Bot Chat's: the app counts a Bot by its own read point.
+    public var unmarked: Set<String>
 
-    public init(ids: Set<String> = [], bots: Set<String> = [], rooms: Set<String> = []) {
+    public init(ids: Set<String> = [], bots: Set<String> = [], rooms: Set<String> = [], unmarked: Set<String> = []) {
         self.ids = ids
         self.bots = bots
         self.rooms = rooms
+        self.unmarked = unmarked
+    }
+
+    private enum CodingKeys: String, CodingKey { case ids, bots, rooms, unmarked }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try container.decode(Set<String>.self, forKey: .ids)
+        bots = try container.decode(Set<String>.self, forKey: .bots)
+        rooms = try container.decode(Set<String>.self, forKey: .rooms)
+        // Lists written before the app shared its unmarked chats.
+        unmarked = try container.decodeIfPresent(Set<String>.self, forKey: .unmarked) ?? []
     }
 
     public func contains(_ chat: ReadNotices.Chat) -> Bool {
         if let room = chat.room { return rooms.contains(room) }
         if let profile = chat.profile, bots.contains(profile) { return true }
         return !chat.ids.isDisjoint(with: ids)
+    }
+
+    /// A chat Hermes never marked: its news doesn't count.
+    public func isUnmarked(_ chat: ReadNotices.Chat) -> Bool {
+        chat.room == nil && chat.profile == nil && !chat.ids.isDisjoint(with: unmarked)
+    }
+
+    /// Chats read on some device now carry Hermes' mark: their news counts from here on.
+    public mutating func marked(_ ids: some Sequence<String>) -> Bool {
+        let before = unmarked.count
+        unmarked.subtract(ids)
+        return unmarked.count != before
     }
 
     public func contains(_ chat: UnreadChat) -> Bool {

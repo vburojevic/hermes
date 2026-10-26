@@ -96,7 +96,7 @@ Plugins can't add gateway RPC methods, so the app calls
 | `register` | `device_id`, `token` (hex), `topic` (bundle id), `environment` (`development`/`production`), `public_key` (base64 X25519), `platform`, `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}`, `relay`, `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` + `session_id`, `running`, `away`), `live` (chats the app notifies about itself, the Mac), `sync` (with `away`: chats to keep current; a turn ending in one sends the device a background `sync` push, at most one a minute), `unread` and `muted` (with `away`: `{chats, rooms}`, what the app icon's badge counts and what it never counts; at most 200 of each) | `open`, `read` (the last six hours' reads, as notices list them) |
+| `presence` | `device_id`, `state` (`foreground` + `session_id`, `running`, `away`), `live` (chats the app notifies about itself, the Mac), `sync` (with `away`: chats to keep current; a turn ending in one sends the device a background `sync` push, at most one a minute), `unread` and `muted` (with `away`: `{chats, rooms}`, what the app icon's badge counts and what it never counts; at most 200 of each), `listed` (with `away`: every chat the app lists; only those count), `unmarked` (with `away`: listed chats Hermes never marked, which count only once a `read` names them) | `open`, `read` (the last six hours' reads, as notices list them) |
 | `read` | `device_id` (the device that read), `chats` (session ids), `rooms` (group chat ids), at most 50 of each | `ok`, `open` |
 | `activity` | `device_id`, `token` (or none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` (optional) | version, relay, devices, registered, preferences, open, read |
@@ -117,7 +117,8 @@ something read elsewhere, or counts it in its badge, gets a background `read` pu
 with when each was last read, at most 40 each; `open`), at most one every 30 s, collapse id `read`. A device that left with `unread` gets a badge-only
 push (`{"aps": {"badge": n}}`, priority 5, collapse id `badge`) when its count (open requests + unread
 chats + unread rooms) moves: down for a chat or room read elsewhere, up for a reply
-or message it's sent (not a muted one, and only in a chat its list shows). A reply or message whose chat
+or message it's sent (not a muted one, only in a chat its list shows, and not in one Hermes never marked
+until it's read). A reply or message whose chat
 was read on some device after it landed (a room read while its message settles) goes to no device and
 counts on none. Coming back to the app (`presence foreground`) forgets all of it for that device.
 

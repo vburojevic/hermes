@@ -140,6 +140,13 @@ public struct AppPushClient: Sendable {
         case foreground, running, away
     }
 
+    /// The plugin counts a chat Hermes never marked only once it's read (`presence away` with
+    /// `unmarked`, 1.4.7). An older one counts its replies in its badge pushes, so the service
+    /// extension keeps counting them too against it, or the two would set the badge differently.
+    public static func namesUnmarked(pluginVersion: String?) -> Bool {
+        pluginVersion.map { AppPlugin.version($0, isAtLeast: "1.4.7") } ?? false
+    }
+
     /// Chats by session id and group chats by room id, as the plugin names them.
     public struct ChatLists: Sendable, Hashable {
         public var chats: [String]
@@ -164,11 +171,13 @@ public struct AppPushClient: Sendable {
     ///     `listed` every chat the app lists (only those may count) and `badgeOthers` what other
     ///     gateways add to it: the plugin keeps the badge right while the app is away (plugin 1.4.0,
     ///     `listed` 1.4.2). `badge` is what the icon shows as the app leaves: when that isn't the
-    ///     plugin's count, a badge push sets it right (1.4.5).
+    ///     plugin's count, a badge push sets it right (1.4.5). `unmarked` names the listed chats
+    ///     Hermes never marked, which don't count until a read marks them (1.4.7).
     @discardableResult
     public func setPresence(_ presence: Presence, deviceID: String, visibleChat: String? = nil, live: [String]? = nil,
                             sync: [String]? = nil, unread: ChatLists? = nil, muted: ChatLists? = nil,
-                            listed: ChatLists? = nil, badgeOthers: Int? = nil, badge: Int? = nil) async throws -> PresenceAnswer {
+                            listed: ChatLists? = nil, unmarked: ChatLists? = nil, badgeOthers: Int? = nil,
+                            badge: Int? = nil) async throws -> PresenceAnswer {
         var args: [String: JSONValue] = ["device_id": .string(deviceID), "state": .string(presence.rawValue)]
         if let visibleChat { args["session_id"] = .string(visibleChat) }
         if let live { args["live"] = .array(live.map(JSONValue.string)) }
@@ -176,6 +185,7 @@ public struct AppPushClient: Sendable {
         if let unread { args["unread"] = unread.json }
         if let muted { args["muted"] = muted.json }
         if let listed { args["listed"] = listed.json }
+        if let unmarked { args["unmarked"] = unmarked.json }
         if let badgeOthers { args["badge_others"] = .number(Double(max(0, badgeOthers))) }
         if let badge { args["badge"] = .number(Double(max(0, badge))) }
         let answer = try await run("presence", args)

@@ -206,9 +206,11 @@ public final class PushShared: @unchecked Sendable {
     @discardableResult
     public func noteUnread(_ notice: PushNotice, gateway appID: UUID, at date: Date = .now) -> Bool {
         guard let entry = UnreadChat(notice, at: notice.sentAt ?? date), let chat = ReadNotices.chat(of: notice),
-              countable(gateway: appID)?.contains(chat) == true,
+              let countable = countable(gateway: appID), countable.contains(chat),
               !isMuted(gateway: appID, keys: notice.muteKeys + [entry.key], at: date)
         else { return false }
+        // Hermes reads a chat it never marked as read, and so does the app's list (`UnreadStore`).
+        if countable.isUnmarked(chat) { return false }
         if let read = notice.read, entry.isRead(by: read) { return false }
         if entry.isRead(by: reads(gateway: appID)) { return false }
         var lists = unreadLists
@@ -231,6 +233,9 @@ public final class PushShared: @unchecked Sendable {
         known.rooms = known.rooms.merging(marks.rooms, uniquingKeysWith: max).filter { $0.value > cutoff }
         all[appID.uuidString] = known
         recentReads = all
+        // A chat read on any device has Hermes' mark now, so its next news counts.
+        var countable = countableLists
+        if countable[appID.uuidString]?.marked(marks.chats.keys) == true { countableLists = countable }
         var lists = unreadLists
         let chats = lists[appID.uuidString] ?? []
         let left = chats.filter { !$0.isRead(by: marks) }

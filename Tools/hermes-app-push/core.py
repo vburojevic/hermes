@@ -22,7 +22,7 @@ from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
 from .store import Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.6"
+VERSION = "1.4.7"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -176,7 +176,8 @@ class Push:
             shown = args.get("badge")
             shown = min(int(shown), 9999) if isinstance(shown, (int, float)) and not isinstance(shown, bool) and shown >= 0 else None
             self.store.set_badge(device_id, unread, _id_sets(args.get("muted")) if unread is not None else None, others,
-                                 _id_sets(args.get("listed"), MAX_LISTED_IDS), shown)
+                                 _id_sets(args.get("listed"), MAX_LISTED_IDS), shown,
+                                 _id_sets(args.get("unmarked"), MAX_LISTED_IDS))
             if unread is not None:
                 # An icon left showing a count this gateway doesn't have (a request answered elsewhere while
                 # the app slept, its background push dropped) is set right.
@@ -943,7 +944,8 @@ def _ids(value: Any, key: str, limit: int) -> list[str]:
 
 
 def _id_sets(value: Any, limit: int = 0) -> dict | None:
-    """``{chats, rooms}`` as ``presence`` takes it (``unread``, ``muted``, ``listed``); None when it isn't one."""
+    """``{chats, rooms}`` as ``presence`` takes it (``unread``, ``muted``, ``listed``, ``unmarked``); None when it
+    isn't one."""
     if not isinstance(value, dict):
         return None
     sets = {}

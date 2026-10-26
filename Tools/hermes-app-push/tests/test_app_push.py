@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.6"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.7"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1457,6 +1457,40 @@ def test_the_badge_follows_reads_and_new_replies(reading):
     assert fifth["payload"] == {"aps": {"badge": len(push.store.read()["requests"]) + 4}}
     presence(handler, "badge-phone", state="away")
     assert "dev-badge-phone" not in push.store.read()["badges"]
+
+
+def test_a_chat_hermes_never_marked_counts_once_read(reading):
+    """A listed chat Hermes never marked (``last_read_at`` empty) is read by Hermes' rule, and the app's list
+    doesn't count it: its reply notifies but counts on no badge, as on the Mac, until a read gives it
+    Hermes' mark. It once counted on a sleeping phone from the reply's notice (plugin 1.4.7)."""
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "unmarked-phone", reply_after=0)
+    chat = "20261026_unmarked_chat"
+    counted = len(push.store.read()["requests"])
+    presence(handler, "unmarked-phone", state="away", unread={"chats": [], "rooms": []},
+             listed={"chats": [chat], "rooms": []}, unmarked={"chats": [chat], "rooms": []}, badge=counted)
+    record = push.store.read()["badges"]["dev-unmarked-phone"]
+    assert record["unmarked_chats"] == [chat]
+    later.run()
+    pushed = len(badges_for(token))
+
+    finish_turn(plugins, chat, "unmarked-1")
+    wait_for(lambda: len(notices_for(key, token)) == 1)
+    assert push.store.read()["badges"]["dev-unmarked-phone"]["chats"] == []
+    assert later.delays(("badge", "dev-unmarked-phone")) == []
+    later.run()
+    assert len(badges_for(token)) == pushed
+
+    # Read on the Mac: Hermes marks it, so the next reply is unread everywhere.
+    read(handler, "unmarked-mac", chats=[chat])
+    assert push.store.read()["badges"]["dev-unmarked-phone"]["unmarked_chats"] == []
+    later.run()
+    finish_turn(plugins, chat, "unmarked-2")
+    wait_for(lambda: len(notices_for(key, token)) == 2)
+    assert push.store.read()["badges"]["dev-unmarked-phone"]["chats"] == [chat]
+    later.run()
+    badge = wait_for(lambda: badges_for(token)[pushed:] and badges_for(token)[-1])
+    assert badge["payload"] == {"aps": {"badge": counted + 1}}
 
 
 def test_news_read_before_its_notice_goes_nowhere(reading, monkeypatch):

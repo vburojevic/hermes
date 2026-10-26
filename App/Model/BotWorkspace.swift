@@ -1052,6 +1052,10 @@ final class BotWorkspace: Identifiable {
                 widgets.markKnownChats()
             }
             LaunchTrace.mark("chat list fetched (\(fresh.count))", id: "chat list fetched")
+            #if HERMES_PUSH
+            // Reads waiting for the push plugin are judged against this list (`PushReadQueue`).
+            PushCenter.shared.chatListFetched(self)
+            #endif
             hasMoreSessions = page.hasMore
             nextSessionOffset = limit
             for session in sessions {

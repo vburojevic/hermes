@@ -81,7 +81,7 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
 | `register` | `device_id`, `token` (APNs, hex), `topic` (bundle id), `environment` (`development` / `production`, from the provisioning profile), `public_key` (base64 X25519), `platform` (`ios` / `ipados`), `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}` (the relay installation id and the gateway's name), `relay` (`ok` or the error), `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2), `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) and `badge` (what the icon shows as the app leaves; 1.4.5) | `open` (open requests), `read` (the last six hours' reads, as notices list them; 1.4.6) |
+| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2), `unmarked` (the listed chats Hermes never marked, which it adds only once a `read` names them; 1.4.7), `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) and `badge` (what the icon shows as the app leaves; 1.4.5) | `open` (open requests), `read` (the last six hours' reads, as notices list them; 1.4.6) |
 | `read` | `device_id` (the device that read), `chats` (session ids: each chat's id and its lineage root, a Bot Chat's stored id), `rooms` (group room ids). Plugin 1.4.0 | `ok`, `open` |
 | `activity` | `device_id`, `token` (none to end), `session_id`, `activity_id` | `ok` |
 | `status` | `device_id` | `version`, `gateway`, `relay_error`, `devices`, `registered`, `preferences`, `open`, `read` (1.4.6) |
@@ -100,8 +100,16 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
   the chats to keep current meanwhile (`sync`, §2).
 - Removing a gateway from the app, or Stop Notifications on its detail page, sends `unregister`.
 - Reading a chat, a Bot or a group chat in the app (opening it, or Mark as Read) sends `read` to
-  that gateway, at most once a second with everything read meanwhile (§2, Reading). An older
-  plugin answers it with an error, which the app ignores.
+  that gateway, at most once a second with everything read meanwhile (§2, Reading). Until the
+  plugin has them the reads wait on the device (`PushReadQueue`, kept across launches), in front or
+  not: a gateway that can't be reached gets them when Bot Mode is back, a failed send goes again
+  after 5 s, 15 s, 45 s, then up to every 5 minutes, and an app that hasn't checked for the plugin
+  yet (a Mac app opened but never brought to the front) checks first. Each goes once: a read whose
+  chat has news since it was read is dropped, since the plugin would stamp that news read. Waiting
+  reads are judged against the chat list fetched since Bot Mode came back, never one from before
+  the outage or the launch; a read of a chat the list doesn't show yet waits for it, up to six hours
+  (as long as the plugin remembers reads). A gateway without the plugin, or an older plugin that
+  answers `read` with an error, drops them.
 
 ### 1.3 Encryption
 
@@ -261,7 +269,11 @@ Rules:
     and removes only those sent before the chat was read (`ReadNotices`). It does the same for
     chats read elsewhere whenever it learns of the read (`sessions.changed`, the list, coming back
     to the app, an app refresh), and on the Mac for its own notifications.
-  - The app tells the gateway (`read`, §1.2). The plugin remembers each read for six hours and
+  - The app tells the gateway (`read`, §1.2), whenever it can be reached: a read waits on the device
+    until the plugin has it, so one made on a Mac behind other apps, or never brought to the front
+    since it opened, still reaches the other devices (Bot Chats too: their Mark as Read goes to
+    Hermes in front or not, while what a Bot writes in a chat left open behind other apps stays
+    unread elsewhere). Before, such a read was dropped. The plugin remembers each read for six hours and
     lists the latest in every notice (`read: {chats, rooms}` with the times), so the service
     extension clears those chats' notifications whenever the next one arrives.
   - Devices that aren't in the app and were sent a reply or Bot message for a chat read since, or
@@ -320,14 +332,22 @@ Rules:
     on the Mac, went off the icon with the badge-only push and came back with the next withdrawal.
   - Woken in the background (a `sync` push, an app refresh), the app reads Hermes' read marks with
     the chats before it counts again (`UnreadStore.catchUpMarks`), never the marks it left with.
+  - A chat Hermes never marked (`last_read_at` empty) is read by Hermes' rule (`session_unread`),
+    and the list shows it so. Its news counts on no device until a read marks it: the app names
+    those chats with what the list shows (`CountableChats.unmarked`, Bot Chats excepted, which
+    count by the Bot's read point) and as it leaves (`presence away` with `unmarked`, plugin
+    1.4.7), and the extension and the plugin add none of their replies. A read on any app device
+    (`read`, or a notice's or push's reads) gives the chat Hermes' mark, so from then on its replies
+    count everywhere. Before, its reply counted on a sleeping iPhone from the notice while the Mac
+    showed it read, until the iPhone's app ran. Against an older plugin, which counts them in its
+    badge pushes, the app names none to the extension (`AppPushClient.namesUnmarked`, from the
+    version its last check answered, kept on the device so an app woken in the background names
+    them before any check), so the two count alike, as before.
   What the plugin can't hear: a read in another Hermes client (Hermes Desktop, the dashboard, the
   CLI) moves the chat's mark but fires no hook, so a sleeping device's badge keeps that chat until
   the app next runs (comes to the front, or is woken by a push or an app refresh), when it counts
-  from Hermes' marks. Known gaps of the same kind, until the app next runs:
-  - A chat Hermes never marked (`last_read_at` empty, which Hermes reads as read) that gets a
-    reply is counted on a sleeping iPhone from its notice, though the list doesn't show it unread.
-  - A Mac app that was opened but never came to the front hasn't checked for the plugin yet, so
-    the reads it makes then don't reach the other devices.
+  from Hermes' marks. A chat such a client marks for the first time doesn't count its next replies
+  on a sleeping device either, until the app runs. Known gaps of the same kind, until the app next runs:
   - A chat deleted in a short-lived process (`hermes sessions delete` in a terminal) leaves the
     plugin's count right, but the badge push waits for the next push, since that process ends
     before it goes.

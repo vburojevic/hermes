@@ -16,7 +16,7 @@ question, "sudo" asks for a password, "slow" runs long; Tasks → Run Now posts 
 Reading (docs/notifications.md §2, Reading): ``read`` and ``presence`` with ``unread``/``muted`` work like
 the plugin's, read and badge pushes included, and so does plugin 1.4.6's badge: news read on another device
 before its notice goes notifies nothing, and withdrawals, syncs and the answers to ``presence`` and ``status``
-carry the latest reads. ``GET /api/mock/push-state`` shows what it recorded,
+carry the latest reads; plugin 1.4.7's ``unmarked`` chats count only once read. ``GET /api/mock/push-state`` shows what it recorded,
 ``POST /api/mock/read {chats, rooms}`` plays a read on another device, ``POST /api/mock/badge {badge}``
 sends every device a badge-only push now.
 """
@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import threading
@@ -35,6 +36,8 @@ import uuid
 
 HERE = pathlib.Path(__file__).resolve().parent
 PLUGIN = HERE.parent / "hermes-app-push"
+# The version of the plugin it plays, as the plugin answers it: the app reads features from it.
+VERSION = (re.search(r'^VERSION = "([^"]+)"', (PLUGIN / "core.py").read_text(), re.M) or [None, "mock"])[1]
 PRESENCE_TTL = 75
 DEFAULT_PREFERENCES = {"approvals": True, "passwords": True, "replies": True, "reply_after": 30, "tasks": "all",
                        "bots": "mentions", "background": True, "live_activity": True, "show_details": "always",
@@ -110,7 +113,7 @@ def cmd_register(args):
             "simulator": args.get("simulator"),
             "preferences": {**DEFAULT_PREFERENCES, **(args.get("preferences") or {})}}
     log(f"registered {args.get('name') or device_id} ({'simulator ' + args['simulator'][:8] if args.get('simulator') else 'device'})")
-    return {"ok": True, "version": "mock", "gateway": GATEWAY, "relay": "ok", "devices": len(STATE["devices"])}
+    return {"ok": True, "version": VERSION, "gateway": GATEWAY, "relay": "ok", "devices": len(STATE["devices"])}
 
 
 def cmd_unregister(args):
@@ -170,6 +173,8 @@ def cmd_presence(args):
                     "muted_rooms": muted["rooms"], "others": others,
                     "listed_chats": (_id_sets(args.get("listed")) or {"chats": []})["chats"],
                     "listed_rooms": (_id_sets(args.get("listed")) or {"rooms": []})["rooms"],
+                    # Plugin 1.4.7: listed chats Hermes never marked count only once a read marks them.
+                    "unmarked_chats": (_id_sets(args.get("unmarked")) or {"chats": []})["chats"],
                     "shown": shown}
         device = STATE["devices"].get(device_id)
         open_count = len(STATE["requests"])
@@ -199,6 +204,9 @@ def cmd_read(args):
             times.update({key: now for key in read[kind]})
             for key in [key for key, at in times.items() if now - at > READ_TTL]:
                 times.pop(key)
+        # Read on an app device, a chat has Hermes' mark now (plugin 1.4.7).
+        for record in STATE["badges"].values():
+            record["unmarked_chats"] = [key for key in record.get("unmarked_chats", []) if key not in chats]
         for other in STATE["devices"]:
             if other == device_id or in_app(other):
                 continue
@@ -273,7 +281,7 @@ def cmd_status(args):
     read = recent_reads()
     with LOCK:
         device = STATE["devices"].get(args.get("device_id") or "")
-        return {"ok": True, "version": "mock", "gateway": GATEWAY, "relay_url": RELAY["mode"], "relay_registered": True,
+        return {"ok": True, "version": VERSION, "gateway": GATEWAY, "relay_url": RELAY["mode"], "relay_registered": True,
                 "relay_error": None, "devices": len(STATE["devices"]), "registered": device is not None,
                 "preferences": device["preferences"] if device else None, "open": len(STATE["requests"]),
                 **({"read": read} if read else {})}
@@ -416,7 +424,7 @@ def delivered(notice, device_ids):
             record = STATE["badges"].get(device_id)
             # Only a chat the app lists counts (plugin 1.4.2): routine runs and one-shot chats never do.
             if (record and key not in record[f"muted_{kind}"] and key not in record[kind]
-                    and key in record.get(f"listed_{kind}", [])):
+                    and key in record.get(f"listed_{kind}", []) and key not in record.get(f"unmarked_{kind}", [])):
                 record[kind].append(key)
                 moved.append(device_id)
     for device_id in moved:

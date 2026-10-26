@@ -297,11 +297,12 @@ class Store:
         self.update(change)
 
     def set_badge(self, device_id: str, unread: dict | None, muted: dict | None, others: int = 0,
-                  listed: dict | None = None, shown: int | None = None) -> None:
+                  listed: dict | None = None, shown: int | None = None, unmarked: dict | None = None) -> None:
         """Leaving the app, a device that counts unread chats in its badge names them (``unread``), the muted
-        ones, every chat its list shows (``listed``: only those may count), what the person's other gateways
-        add to its badge (``others``) and the badge it shows (``shown``; older apps don't say, so their
-        badge is set once). None: it doesn't count them."""
+        ones, every chat its list shows (``listed``: only those may count), the listed chats Hermes never
+        marked (``unmarked``: Hermes reads them as read, so they count only once a read marks them), what the
+        person's other gateways add to its badge (``others``) and the badge it shows (``shown``; older apps
+        don't say, so their badge is set once). None: it doesn't count them."""
         def change(state: dict) -> None:
             if unread is None:
                 state["badges"].pop(device_id, None)
@@ -311,7 +312,8 @@ class Store:
                       "muted_chats": list((muted or {}).get("chats") or []),
                       "muted_rooms": list((muted or {}).get("rooms") or []), "others": max(0, int(others)),
                       "listed_chats": list((listed or {}).get("chats") or []),
-                      "listed_rooms": list((listed or {}).get("rooms") or []), "at": time.time()}
+                      "listed_rooms": list((listed or {}).get("rooms") or []),
+                      "unmarked_chats": list((unmarked or {}).get("chats") or []), "at": time.time()}
             # What the icon shows: the next badge push goes when this count differs from it.
             record["shown"] = shown
             state["badges"][device_id] = record
@@ -346,6 +348,9 @@ class Store:
                 # session is news the person can't open, and counted for ever (a badge of 120 for 2 unread).
                 if key not in record.get(f"listed_{kind}", []):
                     continue
+                # A chat Hermes never marked is read by Hermes' rule, and the app's list doesn't count it.
+                if key in record.get(f"unmarked_{kind}", []):
+                    continue
                 record[kind] = (record.get(kind, []) + [key])[-UNREAD_MAX:]
                 moved.append(device_id)
             return moved
@@ -364,6 +369,10 @@ class Store:
                 for key in read[kind]:
                     reads[kind][key] = now
                 _keep_newest(reads[kind], READ_MEMORY, now - READ_TTL)
+            # Read on an app device, a chat has Hermes' mark now: its next reply counts everywhere.
+            for record in state["badges"].values():
+                if record.get("unmarked_chats"):
+                    record["unmarked_chats"] = [key for key in record["unmarked_chats"] if key not in set(chats)]
             owed, moved = [], []
             for device_id in state["devices"]:
                 if device_id == reader or _in_app(state, device_id, now):

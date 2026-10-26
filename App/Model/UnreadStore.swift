@@ -468,7 +468,34 @@ final class UnreadStore {
         }
         ids.formUnion((workspace.roster?.botChats ?? [:]).keys)
         return CountableChats(ids: ids, bots: Set(workspace.roster?.profiles.map(\.name) ?? []),
-                              rooms: Set(workspace.roster?.groupRooms.rooms.map(\.id) ?? []))
+                              rooms: Set(workspace.roster?.groupRooms.rooms.map(\.id) ?? []),
+                              unmarked: namesUnmarked ? Set(unmarkedSessions().flatMap { [$0.id, $0.stableID] }) : [])
+    }
+
+    /// Against an older push plugin, which counts never-marked chats, the extension counts them too.
+    private var namesUnmarked: Bool {
+        #if HERMES_PUSH
+        PushCenter.shared.namesUnmarked(gatewayID)
+        #else
+        false
+        #endif
+    }
+
+    /// Listed chats Hermes never marked (`last_read_at` empty), which it reads as read and so does
+    /// this list (`update`): the extension and the plugin don't count their news either, until a
+    /// read marks them (`docs/notifications.md` §2 Badge). Bot Chats count by the Bot's read point.
+    private func unmarkedSessions() -> [HermesSession] {
+        guard let workspace, hasGatewayMarks else { return [] }
+        let botChats = workspace.roster?.botChats ?? [:]
+        return workspace.sessions.filter { session in
+            (readMark(for: session.stableID) ?? .untracked) == .untracked
+                && botChats[session.id] == nil && botChats[session.stableID] == nil
+        }
+    }
+
+    /// The listed chats Hermes never marked, as the plugin names them (`presence away` with `unmarked`).
+    func unmarkedChats() -> AppPushClient.ChatLists {
+        AppPushClient.ChatLists(chats: Set(unmarkedSessions().map(\.id)).sorted(), rooms: [])
     }
 
     /// The chats the app lists, as the plugin names them (`presence away` with `listed`): a reply
@@ -641,6 +668,9 @@ final class UnreadStore {
         fetchMarks(now: true)
         startPolling()
         flushReads()
+        // And the list, against which the reads the push plugin hasn't heard yet are judged
+        // (`PushCenter.chatListFetched`), so the other devices' badges drop.
+        refreshListSoon()
     }
 
     // MARK: The read outbox
@@ -701,6 +731,9 @@ final class UnreadStore {
     func disconnected() {
         pollTask?.cancel()
         pollTask = nil
+        #if HERMES_PUSH
+        if let workspace { PushCenter.shared.gatewayWentAway(workspace) }
+        #endif
     }
 
     func tearDown() {

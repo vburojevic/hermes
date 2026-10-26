@@ -1606,7 +1606,9 @@ final class BotRoster {
         checkReadElsewhere()
     }
 
-    func markRead(_ name: String) {
+    /// - Parameter share: tell Hermes and the other devices. A Bot writing in a chat left open on a
+    ///   Mac behind other apps is read here, but nobody saw it (`isInFront`).
+    func markRead(_ name: String, share: Bool = true) {
         if unread.contains(name) { unread.remove(name) }
         if markedUnread.contains(name) {
             markedUnread.remove(name)
@@ -1618,7 +1620,7 @@ final class BotRoster {
             watermarks[name] = active
             UserDefaults.standard.set(watermarks, forKey: Self.watermarkKey(botID))
         }
-        shareRead(bot)
+        if share { shareRead(bot) }
     }
 
     /// Tells Hermes the Bot Chat was read (the mark Hermes Desktop keeps), so the person's other
@@ -1627,7 +1629,7 @@ final class BotRoster {
     /// outbox and goes when the gateway answers (`docs/inbox.md` §4).
     private func shareRead(_ bot: BotProfile) {
         let name = bot.name
-        guard Self.isInFront, let chat = bot.canonicalSession, let active = bot.chatActivity?.timeIntervalSince1970,
+        guard let chat = bot.canonicalSession, let active = bot.chatActivity?.timeIntervalSince1970,
               (serverRead[name] ?? 0) + 0.5 < active, !sharingRead.contains(name) else { return }
         let wait = readThrottle.wait(for: name)
         guard wait == 0 else {
@@ -1636,7 +1638,10 @@ final class BotRoster {
                 try? await Task.sleep(for: .seconds(wait))
                 guard let self, !Task.isCancelled else { return }
                 self.trailingRead[name] = nil
-                if let bot = self.bot(named: name) { self.shareRead(bot) }
+                // What came since, behind other apps, wasn't seen: only the read already made goes then.
+                guard let bot = self.bot(named: name),
+                      Self.isInFront || (bot.chatActivity?.timeIntervalSince1970 ?? 0) <= active + 0.5 else { return }
+                self.shareRead(bot)
             }
             return
         }
@@ -1832,7 +1837,7 @@ final class BotRoster {
         workspace?.activity.botReplied(name)
         Task {
             await refresh()
-            if openBot == name { markRead(name) }
+            if openBot == name { markRead(name, share: Self.isInFront) }
         }
     }
 

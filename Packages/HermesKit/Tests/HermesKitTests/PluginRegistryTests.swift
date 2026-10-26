@@ -38,6 +38,19 @@ struct PluginRegistryTests {
         }
     }
 
+    /// The version in `Tools/` has its list before it's published and pinned: a copy someone
+    /// installed by hand, or the next pin, is compared with what it really asks for.
+    @Test func theManifestsVersionHasACapabilityList() throws {
+        for plugin in AppPlugin.all {
+            let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appending(path: "../../../../Tools/\(plugin.name)/plugin.yaml")
+            let text = try String(contentsOf: root.standardizedFileURL, encoding: .utf8)
+            let version = text.split(separator: "\n").first { $0.hasPrefix("version:") }
+                .map { $0.dropFirst("version:".count).trimmingCharacters(in: .whitespaces) } ?? ""
+            #expect(plugin.capabilities[version] != nil, "\(plugin.name) \(version) has no capability list")
+        }
+    }
+
     /// `docs/plugins.md` §12: every hook in a manifest is on the review.
     @Test func everyHookIsOnTheReview() {
         for plugin in AppPlugin.all {
