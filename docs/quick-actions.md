@@ -185,10 +185,10 @@ reordering characters show as their codes (`⟨U+202E⟩`) and the person sees w
   this device ("Nothing allowed for this chat yet."). Its footer says these end with the chat, and
   that commands always allowed apply in every chat and are reviewed with `/approvals`. Hermes has
   no call to revoke a single session permission, so the list can't remove one.
-- Over the API server (no backend socket), only approvals exist:
+- Over the API server (no backend socket), Hermes asks for approvals and questions:
   `POST /v1/runs/{id}/approval {request_id, execution_generation, choice}`, one at a time
-  (`RunPromptAnswer`; a question's answer goes to `/clarify` with `answer`). Hermes takes exactly
-  those keys and refuses any other body with 400 `invalid_params`. The generation is the one the
+  (`RunPromptAnswer`; a question's answer goes to `/clarify` with `answer`, below). Hermes takes
+  exactly those keys and refuses any other body with 400 `invalid_params`. The generation is the one the
   approval was asked in: `approval.request` carries it, and the run's status
   (`execution_generation`, with the prompts it waits on in `pending_controls`) supplies it when
   the event didn't. A gateway whose runs have no generation gets `{choice, request_id}`.
@@ -209,6 +209,24 @@ reordering characters show as their codes (`⟨U+202E⟩`) and the person sees w
     then every 30 s, for up to four minutes (Hermes waits five). A repeat that lands after the first
     may find its own first answer settled, so it says nothing. Only then does the card come back
     with the error.
+  - **Questions** (`RunQuestions`). Hermes's clarify tool asks one question per prompt, listed in
+    the run's status (`pending_controls`, `kind: clarify`, with `question`, `choices`,
+    `multi_select` and, when Hermes says, `timeout_s`) and sent on the run's events as
+    `clarify.request` (`gateway/session_pending_controls.py`). Each gets the card a socket chat's
+    `clarify` of one question gets (§2), by its `prompt_id`, and the turn header says "Waiting for
+    your answer". The line Hermes adds for chat apps ("Reply "skip" to skip this question.") is
+    left off: the card has Skip, and a typed "skip" would be taken as the answer here.
+  - A gateway that lists the question only in the status sends nothing while it waits, so while the
+    run's events are quiet the app reads the status (`RunStatusWatch`): after 10 s of quiet, every
+    2 s while Hermes's question step runs with no card up, and every 15 s while a card is up.
+  - The answer is one string, `{request_id, execution_generation, answer}`: the words or the pick
+    as shown (Hermes strips "(Recommended)"), several picks as a JSON list of their labels, and a
+    skip as `""`, which Hermes records as skipped. It's sent and refused as an approval's is
+    (above), with the same receipts.
+  - `clarify.settled`, or a status that no longer lists the question, while its card is still up
+    here: Hermes stopped waiting without this device's answer. The card goes with "Answered on
+    another device", or "Hermes stopped waiting · no answer in time" past its `timeout_s`. A
+    question the turn still asks when it ends goes with it, without a word.
 - **Answers the gateway can't take yet** (`AnswerLedger`). Hermes acknowledges no answer: it
   resolves the request id it's given if that request is still open and drops it otherwise. So an
   approval, question or choice answered over the socket is kept by its id until the next attach
@@ -295,6 +313,12 @@ yes such as "yes", "go ahead", "run it"), "allow in this chat", or "deny" (any n
   and the typing carries on. A chip answers it; so does Send with words in the composer ("clarify
   open later"). "clarify twice" says "1 of 2" on the card and in the dock, and steps through them.
   The line above the card reads "Waiting for your answer" and holds still.
+- Over the API server alone (the mock gateway, `Tools/mock-hermes/server.py`), "clarify" shows its
+  question on the card while the turn waits, and the turn goes on with the answer; so does "clarify
+  quiet", which Hermes lists only in the run's status. "clarify multi" and "clarify open" answer
+  with several picks and with words, Skip answers nothing, "clarify elsewhere" takes the card down
+  with "Answered on another device", and "clarify timeout" with "Hermes stopped waiting · no answer
+  in time".
 - No card is wider than the screen: "clarify pair", answered with its long first pick, shows
   "Question 2 of 2" whole on the smallest iPhone, an iPad and the Mac (`RequestCardUITests`).
 - Against the mock backend (`Tools/mock-hermes/chats.py`), words in a message ask for each card:

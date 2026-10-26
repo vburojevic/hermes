@@ -349,6 +349,12 @@ final class ConversationModel: Identifiable {
     /// started, so the turn waits rather than thinks.
     private(set) var runWaitsInQueue = false
     @ObservationIgnored private var queuedRunWatch: Task<Void, Never>?
+    /// The questions the running `/v1/runs` turn asks, on cards like a socket chat's
+    /// (`RunQuestions`, `docs/quick-actions.md` §3), and the read of its status that finds one
+    /// its events didn't carry (`watchRunStatus`).
+    @ObservationIgnored private var runQuestions = RunQuestions()
+    @ObservationIgnored private var runStatusWatch: Task<Void, Never>?
+    @ObservationIgnored private var lastRunEventAt = Date.distantPast
     /// Gives back what Stop cleared from Hermes's queue once the stopped turn settled.
     @ObservationIgnored private var stopGiveBack: Task<Void, Never>?
 
@@ -3570,6 +3576,62 @@ final class ConversationModel: Identifiable {
         }
     }
 
+    /// While the run's events are quiet, its status is read now and then (`RunStatusWatch`): a
+    /// gateway that lists a question only there (`pending_controls`) still gets its card, and a card
+    /// answered on another device or expired goes (`docs/quick-actions.md` §3).
+    private func watchRunStatus(runID: String, client: HermesClient) {
+        runStatusWatch?.cancel()
+        runStatusWatch = Task { [weak self] in
+            var read: Date?
+            var pause: TimeInterval = 1
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(min(max(pause, 0.25), RunStatusWatch.longestSleep)))
+                guard let self, !Task.isCancelled, let live = self.live, live.runID == runID, !live.isFinished else { return }
+                let now = Date.now
+                pause = RunStatusWatch.pause(now: now, heard: self.lastRunEventAt, read: read,
+                                             askingStep: RunStatusWatch.asks(live.turn),
+                                             cardUp: self.runQuestions.isAsking(in: runID))
+                guard pause == 0 else { continue }
+                read = now
+                pause = RunStatusWatch.longestSleep
+                guard let status = try? await client.runStatus(runID: runID), !Task.isCancelled, self.live?.runID == runID else { continue }
+                self.applyRunQuestions(status, runID: runID, readAt: now)
+            }
+        }
+    }
+
+    /// The run's status, read from `readAt`: its questions' cards come and go (`RunQuestions`).
+    private func applyRunQuestions(_ status: RunStatus, runID: String, readAt: Date) {
+        for change in runQuestions.reconcile(status, runID: runID, readAt: readAt) {
+            applyRunQuestion(change)
+        }
+    }
+
+    private func applyRunQuestion(_ change: RunQuestions.Change) {
+        switch change {
+        case .show(let request):
+            receive(request)
+        case .end(let id, let ending):
+            withdrawRequest(id: id, method: "clarify", reason: ending == .timedOut ? "timeout" : "resolved")
+        case .drop(let id):
+            withdrawRequest(id: id, method: "clarify", reason: nil)
+        }
+    }
+
+    /// A question a `/v1/runs` turn asks on its events (`clarify.request`), or stopped waiting on.
+    private func runQuestionEvent(_ event: TurnEvent) {
+        switch event {
+        case .questionAsked(let prompt):
+            guard let runID = live?.runID, let request = runQuestions.ask(prompt, runID: runID) else { return }
+            applyRunQuestion(.show(request))
+        case .questionSettled(let id):
+            guard let ending = runQuestions.settle(id) else { return }
+            applyRunQuestion(.end(id: id, ending))
+        default:
+            break
+        }
+    }
+
     /// A request that certainly never reached the gateway (refused at connect, no network).
     nonisolated static func neverReached(_ error: any Error) -> Bool {
         switch error {
@@ -3606,15 +3668,22 @@ final class ConversationModel: Identifiable {
             try Task.checkCancellation()
             let seqBefore = live?.lastSeq
             if !eventsGone {
+                lastRunEventAt = .now
                 let subscription = Task { @MainActor [weak self] in
                     for try await event in client.runEvents(runID: runID, after: self?.live?.lastSeq) {
                         guard let self else { return }
                         self.connectionNote = nil
+                        self.lastRunEventAt = .now
                         self.apply(event.event, seq: event.seq)
                         if self.live?.isFinished == true { return }
                     }
                 }
                 self.subscription = subscription
+                watchRunStatus(runID: runID, client: client)
+                defer {
+                    runStatusWatch?.cancel()
+                    runStatusWatch = nil
+                }
                 do {
                     try await withTaskCancellationHandler {
                         try await subscription.value
@@ -3637,6 +3706,7 @@ final class ConversationModel: Identifiable {
 
             // The stream ended early. Reconcile with the run's status.
             let status: Result<RunStatus, any Error>
+            let readAt = Date.now
             do {
                 status = .success(try await client.runStatus(runID: runID))
             } catch {
@@ -3657,6 +3727,7 @@ final class ConversationModel: Identifiable {
                     if let approval = running.approval, live?.approval == nil {
                         apply(.approvalRequested(approval))
                     }
+                    applyRunQuestions(running, runID: runID, readAt: readAt)
                     if running.isQueued != runWaitsInQueue { runWaitsInQueue = running.isQueued }
                 }
             }
@@ -3664,7 +3735,7 @@ final class ConversationModel: Identifiable {
                 // Nothing more will stream: the run's status, read every few seconds, is the turn's
                 // true state, and the stored reply takes over when it ends (`finishTurn`).
                 // Waiting on the person, the card says so; queued, the header does (`runWaitsInQueue`).
-                connectionNote = live?.approval == nil ? RunFollow.line : nil
+                connectionNote = live?.approval == nil && !runQuestions.isAsking(in: runID) ? RunFollow.line : nil
                 try await Task.sleep(for: .seconds(RunFollow.statusInterval))
                 continue
             }
@@ -3893,6 +3964,7 @@ final class ConversationModel: Identifiable {
     private func apply(_ event: TurnEvent, seq: Int? = nil) {
         // The card is the step: the widget tool's own steps never show (`docs/widgets.md` §2).
         if widgetToolEvent(event) { return }
+        runQuestionEvent(event)
         trackSteers(event)
         applyToLive(SequencedTurnEvent(seq: seq, event: event))
     }
@@ -3924,6 +3996,8 @@ final class ConversationModel: Identifiable {
         connectionNote = nil
         settleFallback?.cancel()
         guard let finished = live else { return }
+        // A question the turn asked goes with it; the turn says how it ended.
+        for id in runQuestions.endAll() { applyRunQuestion(.drop(id: id)) }
         let finishing = UUID()
         finishingTurn = finishing
         isFinishing = true
@@ -4455,29 +4529,49 @@ final class ConversationModel: Identifiable {
         }
         guard let runID = live?.runID, let client = workspace?.client else { return }
         apply(.approvalResolved(requestID: approval.requestID))
+        sendRunAnswer(.approval(approval, choice: choice), runID: runID, client: client, about: approval.summary) { [weak self] in
+            guard let self, self.live?.runID == runID, self.isWorking else { return }
+            self.apply(.approvalRequested(approval))
+        }
+    }
+
+    /// Answers a `/v1/runs` turn's approval or question. A busy or unreachable gateway gets the
+    /// answer when it can: asked again for up to four minutes (Hermes waits five for an approval).
+    /// A repeat that lands after the first finds nothing waiting, which may be its own first
+    /// answer, so only the first says so. `failed` runs once the error is on the banner.
+    private func sendRunAnswer(_ answer: RunPromptAnswer, runID: String, client: HermesClient, about summary: String,
+                               failed: @escaping @MainActor () -> Void) {
         Task {
-            // A busy or unreachable gateway gets the answer when it can: asked again for up to four
-            // minutes (Hermes waits five for it). A repeat that lands after the first finds nothing
-            // waiting, which may be its own first answer, so only the first says so.
             let began = Date.now
             for attempt in 0... {
                 do {
-                    let outcome = try await client.answer(.approval(approval, choice: choice), runID: runID)
+                    let outcome = try await client.answer(answer, runID: runID)
                     if outcome == .notPending, attempt == 0 {
                         // Answered on another device, timed out, or the turn ended.
-                        addReceipt(String(localized: "Hermes stopped waiting before your answer got there · \(approval.summary)"), symbol: "clock")
+                        addReceipt(String(localized: "Hermes stopped waiting before your answer got there · \(summary)"), symbol: "clock")
                     }
                     return
                 } catch let error as HermesError where error.isTransient && Date.now.timeIntervalSince(began) < 240 && self.live?.runID == runID {
                     try? await Task.sleep(for: .seconds(min(30, 2 << min(attempt, 4))))
                 } catch {
                     banner = error as? HermesError
-                    if self.live?.runID == runID, self.isWorking {
-                        self.apply(.approvalRequested(approval))
-                    }
+                    failed()
                     return
                 }
             }
+        }
+    }
+
+    /// Answers a question a `/v1/runs` turn asked (`RunQuestions`) with its card's result, over
+    /// HTTP: the card goes, its receipt stays, and an answer that couldn't go brings it back.
+    private func answerRunQuestion(_ request: HermesRequest, with result: JSONValue, receipt: String?, symbol: String) {
+        guard let client = workspace?.client, let asked = runQuestions.answer(request.id) else { return }
+        moveCards { requests.removeAll { $0.id == request.id } }
+        if let receipt { addReceipt(receipt, symbol: symbol) }
+        let answer = RunPromptAnswer.clarify(request, result: result, generation: asked.generation)
+        sendRunAnswer(answer, runID: asked.runID, client: client, about: Self.title(of: request)) { [weak self] in
+            guard let self, self.live?.runID == asked.runID, self.isWorking, self.runQuestions.unanswer(request.id) else { return }
+            self.receive(request)
         }
     }
 
@@ -4534,6 +4628,7 @@ final class ConversationModel: Identifiable {
         quietRetry?.cancel()
         chatWaitRetry?.cancel()
         queuedRunWatch?.cancel()
+        runStatusWatch?.cancel()
         stopGiveBack?.cancel()
         processesPublish?.cancel()
         justFinishedReset?.cancel()
@@ -5576,6 +5671,11 @@ extension ConversationModel {
     func answer(_ request: HermesRequest, with result: JSONValue, receipt: String?, symbol: String = "checkmark.circle") {
         // A double tap answers once.
         guard requests.contains(where: { $0.id == request.id }) else { return }
+        // A `/v1/runs` turn's question goes back over HTTP, whatever else this gateway talks.
+        if runQuestions.owns(request.id) {
+            answerRunQuestion(request, with: result, receipt: receipt, symbol: symbol)
+            return
+        }
         guard let roster = gatewayRoster else {
             // Nothing to send it on: the card stays to be answered.
             banner = .invalidResponse(String(localized: "\(gatewayName) isn't connected, so that didn't go. Answer again when it's back."))
@@ -5706,7 +5806,9 @@ extension ConversationModel {
     /// The request cards up in this chat that Hermes lists in `open_requests` (connection requests
     /// are tracked by their own operation, not here).
     private var shownRequestCards: [RequestSync.Card] {
-        let cards = requests.filter { if case .connection = $0.kind { false } else { true } }
+        // A `/v1/runs` turn's question is Hermes's run's, not the socket's: the socket never lists
+        // it, and its card comes and goes with the run (`RunQuestions`).
+        let cards = requests.filter { if case .connection = $0.kind { false } else { !runQuestions.owns($0.id) } }
             .map { RequestSync.Card(id: $0.id, deadline: $0.deadline) }
         let approvals = ([pendingApproval].compactMap { $0 } + waitingApprovals).compactMap(\.gatewayRequestID)
         return cards + approvals.map { RequestSync.Card(id: $0) }

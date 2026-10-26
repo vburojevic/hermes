@@ -257,7 +257,7 @@ public struct LiveTurn: Sendable, Equatable {
         case .persisted(let receipt):
             persisted = receipt
 
-        case .settled, .titleChanged:
+        case .settled, .titleChanged, .questionAsked, .questionSettled:
             break // handled by the transport driver
         }
     }

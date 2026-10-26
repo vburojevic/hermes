@@ -163,6 +163,13 @@ to exercise the app's one defensive retry. "approve
 elsewhere" allows it on another device after 5 s without a word on the run's events, then runs the
 command for 20 s (the card's answer in that time finds nothing waiting).
 
+"clarify" asks a question mid-turn as Hermes does over the API server: a running clarify step, the
+prompt in the run's `pending_controls` and a `clarify.request` on its events, then
+`clarify.settled` when it stops waiting, and the reply says what was picked. "clarify quiet" lists
+it only in the status (a gateway that leaves it off the events), "clarify multi" offers several
+picks, "clarify open" none, "clarify elsewhere" is answered on another device after 5 s, and
+"clarify timeout" stops waiting after 20 s (`timeout_s`).
+
 Onboarding (`Tools/mock-hermes/onboarding.py`): `setup.status`, `model.options`,
 `model.save_key` and `free_tier.provision`. `--no-model` starts the backend with no model
 provider, so setup asks for one. `POST /api/mock/onboarding {provider_configured, jobs:

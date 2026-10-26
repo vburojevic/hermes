@@ -1,18 +1,29 @@
 import Foundation
+import HermesPush
 
-/// A prompt a `/v1/runs` turn waits on, as the run's status lists it (`pending_controls`): an
-/// approval or a question, named by its id and the execution generation it was asked in.
+/// A prompt a `/v1/runs` turn waits on, as the run's status lists it (`pending_controls`) and its
+/// `clarify.request` event carries it: an approval or a question, named by its id and the
+/// execution generation it was asked in (`gateway/session_pending_controls.py`).
 public struct RunPrompt: Decodable, Sendable, Hashable {
     public var kind: String
     public var promptID: String
     public var executionGeneration: Int?
     /// The approval card's content, for an approval.
     public var approval: ApprovalRequest?
+    /// A question's words and picks. Hermes asks one question per prompt; the first pick may end
+    /// in "(Recommended)", as on the socket.
+    public var question: String?
+    public var choices: [String] = []
+    public var multiSelect = false
+    /// How long Hermes waits for the answer, when it says (a local viewer's turn).
+    public var timeout: TimeInterval?
 
     enum CodingKeys: String, CodingKey {
-        case kind
+        case kind, question, choices
         case promptID = "prompt_id"
         case executionGeneration = "execution_generation"
+        case multiSelect = "multi_select"
+        case timeout = "timeout_s"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -21,6 +32,38 @@ public struct RunPrompt: Decodable, Sendable, Hashable {
         promptID = (try? c.decodeIfPresent(String.self, forKey: .promptID)) ?? ""
         executionGeneration = try? c.decodeIfPresent(Int.self, forKey: .executionGeneration)
         approval = kind == RunPromptAnswer.Kind.approval.rawValue ? try? ApprovalRequest(from: decoder) : nil
+        guard kind == RunPromptAnswer.Kind.clarify.rawValue else { return }
+        // Nothing invisible or reordering hides in the question. The picks go back as they came:
+        // the answer is the pick's own text.
+        question = VisibleText.of((try? c.decodeIfPresent(String.self, forKey: .question)).map(Self.withoutSkipHint))
+        choices = (try? c.decodeIfPresent([String].self, forKey: .choices)) ?? []
+        multiSelect = (try? c.decodeIfPresent(Bool.self, forKey: .multiSelect)) == true && !choices.isEmpty
+        timeout = (try? c.decodeIfPresent(Double.self, forKey: .timeout)).flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    /// The question's card, as a socket chat shows a `clarify` of one question: its id is the
+    /// prompt's, and so is the question's, which its answer names (`RunPromptAnswer.clarify`).
+    public func questionRequest(receivedAt: Date = .now) -> HermesRequest? {
+        guard kind == RunPromptAnswer.Kind.clarify.rawValue, !promptID.isEmpty, let question, !question.isEmpty else { return nil }
+        return HermesRequest(
+            id: promptID,
+            method: "clarify",
+            kind: .clarify([HermesRequest.Question(id: promptID, question: question, choices: choices, multiSelect: multiSelect)]),
+            receivedAt: receivedAt,
+            deadline: timeout.map { receivedAt.addingTimeInterval($0) }
+        )
+    }
+
+    /// Hermes adds a line for chat apps, where a typed "skip" answers the card
+    /// (`gateway/run_turn_runner.py` `_clarify_callback_sync`, `gateway.clarify.skip_hint`). The
+    /// card has its own Skip, and a typed "skip" over the API server would be taken as the answer.
+    /// Every language Hermes ships says it as one last line with the word `skip` in its own quotes
+    /// ("skip", „skip“, « skip », 「skip」…), so that line goes, whatever the language.
+    static func withoutSkipHint(_ question: String) -> String {
+        guard let newline = question.lastIndex(of: "\n") else { return question }
+        let line = question[question.index(after: newline)...]
+        guard line.contains(/[\u{22}\u{201E}\u{201C}\u{AB}\u{300C}]\s?skip\s?[\u{22}\u{201C}\u{201D}\u{BB}\u{300D}]/) else { return question }
+        return String(question[..<newline])
     }
 }
 
@@ -54,6 +97,20 @@ public struct RunPromptAnswer: Sendable, Hashable {
 
     public static func clarify(requestID: String, answer: String, generation: Int?) -> RunPromptAnswer {
         RunPromptAnswer(kind: .clarify, requestID: requestID, value: answer, generation: generation)
+    }
+
+    /// The answer to a run's question from its card's result, `{answers: {qid: …}}` as a socket
+    /// chat's card sends it. Hermes takes one string (`resolve_gateway_clarify`): the words or
+    /// pick; for several picks, the labels as a JSON array, which its clarify tool reads as a
+    /// list; and for a skip, nothing, which it records as skipped.
+    public static func clarify(_ request: HermesRequest, result: JSONValue, generation: Int?) -> RunPromptAnswer {
+        let value: String = switch result["answers"]?[request.id] {
+        case .string(let text)?: text
+        case .array(let picks)?:
+            (try? JSONEncoder().encode(picks.compactMap(\.stringValue))).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        default: ""
+        }
+        return .clarify(requestID: request.id, answer: value, generation: generation)
     }
 
     /// The body to send with `generation`. Without one, from a gateway whose runs carry none, it's

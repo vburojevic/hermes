@@ -14,6 +14,11 @@ Scripted behaviour by message content:
                          keeps the prompt under the new generation, which Hermes never does;
                          "approve elsewhere": another device allows it after 5 s, unannounced,
                          and the command then runs for 20 s)
+  contains "clarify"  -> asks a question mid-turn, on the run's events and in its status
+                         ("clarify quiet": only in its status, as a gateway that leaves it off the
+                         events; "clarify multi": several picks; "clarify open": no picks;
+                         "clarify elsewhere": answered on another device after 5 s;
+                         "clarify timeout": Hermes stops waiting after 20 s)
   contains "fail"     -> the run fails
   contains "key expired" -> the run fails on the provider's key (Provider authentication failed)
   contains "slow"     -> a long multi-tool turn (good for testing stop/resume)
@@ -435,7 +440,9 @@ def agent_turn(run):
             run.status = "failed"
             run.emit("run.failed", error="Provider returned 500: upstream overloaded")
             return
-        if "approve" in lowered:
+        if "clarify" in lowered:
+            clarify_turn(run, lowered)
+        elif "approve" in lowered:
             narration = "I'll clean the build folder first. "
             stream_text(run, narration)
             command = "rm -rf ./build && make release"
@@ -539,6 +546,82 @@ def agent_turn(run):
         run.finish()
 
 
+def clarify_turn(run, lowered):
+    """A question mid-turn, as Hermes asks one over the API server: its clarify step runs, the
+    prompt goes into the run's pending controls (`session_pending_controls.register_clarify`) and,
+    as a `clarify.request`, onto the run's events (`session_api_turn.observe_api_controls`); when
+    Hermes stops waiting it says `clarify.settled`. One question per prompt; the first pick carries
+    "(Recommended)" and a chat app's turn ends the question with the skip hint."""
+    sid = run.session_id
+    quiet, elsewhere, timeout = "quiet" in lowered, "elsewhere" in lowered, "timeout" in lowered
+    narration = "Before I deploy, one thing to settle. "
+    stream_text(run, narration)
+    if "multi" in lowered:
+        question, choices, multi = "Which regions should get the release?", ["Europe (Recommended)", "US East", "Asia Pacific"], True
+    elif "open" in lowered:
+        question, choices, multi = "What should the release notes lead with?", [], False
+    else:
+        question, choices, multi = "Where should I deploy the build?", ["Staging (Recommended)", "Production"], False
+    args = {"questions": [{"question": question, **({"choices": [c.replace(" (Recommended)", "") for c in choices]} if choices else {}),
+                           **({"multi_select": True} if multi else {})}]}
+    add_message(sid, "assistant", narration.strip(), finish_reason="tool_calls",
+                tool_calls=[{"id": "call_q", "type": "function", "function": {"name": "clarify", "arguments": json.dumps(args)}}])
+    run.emit("tool.started", tool="clarify", preview=question[:80])
+    prompt_id = uuid.uuid4().hex
+    prompt = {"kind": "clarify", "prompt_id": prompt_id, "execution_generation": run.generation,
+              "question": question + '\nReply "skip" to skip this question.', "choices": choices, "multi_select": multi}
+    if timeout:
+        prompt["timeout_s"] = 20
+    run.approval = prompt
+    if not quiet:
+        run.emit("clarify.request", **prompt)
+    deadline = time.time() + (20 if timeout else 3600)
+    other = time.time() + 5 if elsewhere else None
+    outcome = "submitted"
+    while run.approval_choice is None and not run.stop.is_set():
+        if other and time.time() > other:
+            # Answered on another device (the WS viewer): Hermes takes the first answer.
+            run.approval_choice = (json.dumps([choices[-1]]) if multi else choices[-1]) if choices else "Speed"
+        if time.time() > deadline:
+            outcome = "timed_out"
+            break
+        time.sleep(0.1)
+    answer = run.approval_choice
+    run.approval, run.approval_choice = None, None
+    if not quiet:
+        run.emit("clarify.settled", prompt_id=prompt_id, execution_generation=run.generation)
+    if run.stop.is_set():
+        return
+    if outcome == "timed_out":
+        status, said = "unanswered", None
+    elif not answer:
+        status, said = "skipped", None
+    else:
+        # As the clarify tool reads it (`_clean_answer`): picks as a list, the label stripped.
+        status, said = "answered", answer
+        if multi:
+            try:
+                said = json.loads(answer)
+            except json.JSONDecodeError:
+                said = [answer]
+            said = [str(item).replace(" (Recommended)", "") for item in (said if isinstance(said, list) else [said])]
+        else:
+            said = answer.replace(" (Recommended)", "")
+    result = json.dumps({"responses": [{"question": question, "choices_offered": [c.replace(" (Recommended)", "") for c in choices] or None,
+                                        "status": status, "user_response": said}], "outcome": outcome}, ensure_ascii=False)
+    run.emit("tool.completed", tool="clarify", duration=0.01, error=False, preview=result[:500])
+    add_message(sid, "tool", result, tool_call_id="call_q", tool_name="clarify")
+    if said is None:
+        reply = "No answer, so I'll hold the deploy. Say where when you're ready."
+    elif multi:
+        reply = f"Rolling the release out to **{', '.join(said)}**."
+    else:
+        reply = f"Got it: **{said}**. Deploying now."
+    out, ok = stream_text(run, reply)
+    add_message(sid, "assistant", out, finish_reason="stop")
+    run.output = out
+
+
 # ---------------------------------------------------------------- HTTP
 
 
@@ -576,7 +659,8 @@ class Handler(BaseHTTPRequestHandler):
                 or generation != run.generation:
             return self.error(409, "stale_generation", "stale_generation")
         prompt = run.approval
-        if not prompt or prompt["prompt_id"] != body["request_id"] or prompt["kind"] != kind:
+        # Answered a moment ago: Hermes no longer lists it, though the turn hasn't moved on yet.
+        if not prompt or run.approval_choice is not None or prompt["prompt_id"] != body["request_id"] or prompt["kind"] != kind:
             return self.error(409, "approval_not_pending", "approval_not_pending")
         if not isinstance(body[field], str) or (kind == "approval" and body[field] not in prompt["choices"]):
             return self.error(400, "invalid_params", "invalid_params")

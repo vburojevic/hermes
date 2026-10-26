@@ -20,6 +20,12 @@ public enum TurnEvent: Sendable, Equatable {
     case subagentFinished(id: String?, summary: String?, failed: Bool)
     case approvalRequested(ApprovalRequest)
     case approvalResolved(requestID: String?)
+    /// A `/v1/runs` turn asks the person a question (`clarify.request`); its card is the chat's
+    /// (`RunQuestions`), not the turn's.
+    case questionAsked(RunPrompt)
+    /// Hermes stopped waiting on that question (`clarify.settled`): answered, here or elsewhere,
+    /// timed out, or its generation ended.
+    case questionSettled(promptID: String)
     /// The authoritative final answer (session stream `assistant.completed`).
     case finalText(String)
     /// Compression rotated the conversation onto a new session id.
@@ -115,6 +121,12 @@ public enum RunEventDecoder {
             events = decodeApproval(frame.data).map { [.approvalRequested($0)] } ?? []
         case "approval.responded":
             events = [.approvalResolved(requestID: payload["request_id"]?.stringValue)]
+        case "clarify.request":
+            // The prompt as the run's status lists it (`observe_api_controls`).
+            let prompt = try? JSONDecoder().decode(RunPrompt.self, from: Data(frame.data.utf8))
+            events = prompt.map { [.questionAsked($0)] } ?? []
+        case "clarify.settled":
+            events = payload["prompt_id"]?.stringValue.map { [.questionSettled(promptID: $0)] } ?? []
         case "run.completed":
             events = [.completed(
                 output: payload["output"]?.stringValue,

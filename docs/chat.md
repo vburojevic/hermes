@@ -414,6 +414,7 @@ that opens to them, and consecutive subagents share one row.
 | `reasoning.available` | The reasoning step |
 | `subagent.start`, `subagent.complete` | A "Delegated to subagents" row on the rail |
 | `approval.request`, `approval.responded` | The approval card; answered with `POST /v1/runs/{id}/approval`, naming the prompt and the run's `execution_generation` ([quick-actions.md](quick-actions.md) §3) |
+| `clarify.request`, `clarify.settled` | The question card a socket chat's `clarify` gets, and its end; answered with `POST /v1/runs/{id}/clarify`. A gateway that lists the question only in the run's status (`pending_controls`) is read while the events are quiet ([quick-actions.md](quick-actions.md) §3) |
 | `run.completed` (`output`, `usage`), `run.failed`, `run.cancelled`, `run.interrupted` | The finished, failed, stopped or interrupted turn |
 | `replay.truncated` | The transcript is reloaded when the turn ends |
 | `run.steered` | Ignored: the steer shows as the person's message |
@@ -431,7 +432,7 @@ events then answer 404 while `GET /v1/runs/{id}` still says how the run is
 background after that used to say "Reconnecting…" with no steps until the run ended. Now a 404 on
 the events with the run still there means they're gone (`RunFollow`): the app reads the run's
 status every 4 s instead, keeps the steps it saw, and the live line says "Still working · its steps
-show when it's done" (`turnHeaderStepsLater`); waiting on an approval shows the card, and queued
+show when it's done" (`turnHeaderStepsLater`); waiting on an approval or a question shows the card, and queued
 behind another turn says so (`turnHeaderQueued`). When the run ends, the stored reply takes over as
 for any turn. A 404 on the status too is a run Hermes no longer has (above).
 
