@@ -151,6 +151,7 @@ Activity's first state.
 |---|---|
 | `session.active_list` status `starting` | "Starting…", shimmering |
 | `working`, preview still the prompt | "Thinking…", shimmering |
+| This device's message waits for the gateway, away or busy (`ConversationModel.deliveryNote`, [chat.md](chat.md) §4) | Clock + "Waiting for <Mac>…", still: nothing works on it yet, and the Bot's face rests |
 | `working`, preview moved on | Writing: “the newest ~40 characters” |
 | A tool running (chats the app is attached to) | The tool's glyph and what it does ("Running swift test"), with the plan's progress ("· 2 of 3") |
 | Helpers running (`subagent.*`, attached chats) | "3 helpers working" |

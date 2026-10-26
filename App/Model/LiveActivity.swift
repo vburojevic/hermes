@@ -273,6 +273,8 @@ final class LiveActivity {
         if !conversation.isWorking {
             return conversation.turnError.map { .failed($0.message) }
         }
+        // The message hasn't reached the gateway: never "Thinking…" while it waits for it.
+        if conversation.deliveryNote == .waiting { return .sending(gateway: conversation.gatewayName) }
         guard let live = conversation.live else { return .thinking }
         let progress = live.turn.plan.isEmpty ? nil : ActivityLine.PlanProgress(
             done: live.turn.plan.filter { $0.status == .completed }.count, total: live.turn.plan.count

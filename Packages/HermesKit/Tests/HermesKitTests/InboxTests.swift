@@ -372,6 +372,15 @@ struct InboxTests {
         #expect(end.hasPrefix("…") && end.hasSuffix("the last few words") && !end.contains("*") && end.count <= 21)
     }
 
+    @Test func aMessageWaitingForTheGatewayIsAStillWaitNeverThinking() {
+        // The row, the pill and the Live Activity say the message waits; nothing works on it yet.
+        let line = ActivityLine.sending(gateway: "MacBook Pro")
+        #expect(line != .thinking)
+        #expect(line.isLive && !line.shimmers)
+        #expect(ActivityLine.faceMood(for: line, justReplied: false, muted: false, otherwise: .idle) == .idle)
+        #expect(ActivityLine.faceMood(for: .thinking, justReplied: false, muted: false, otherwise: .idle) == .thinking)
+    }
+
     // MARK: Group chats
 
     @Test func roomsListWhoThinksBeforeTheirFirstWords() {
