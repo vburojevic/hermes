@@ -38,7 +38,6 @@ The first public beta, for iPhone, iPad and Mac.
 - **Chat:** over the API server a queued run says so, a refusal is never a bare code, and Stop never gives back a message Hermes may run
 - **Chat:** Up Next says why each message is there and what it waits for, a queued run says so, and a refusal shows Hermes's words with Try Again
 - **Chat:** a refusal sending again can't help has no Try Again, and a steer the running turn refused never reads as finished
-- **Chat:** the refusal banner reads its notice, so the Mac build type-checks it
 - **Chat:** a steer Hermes carries into the next turn shows there, Up Next sends by itself once the chat is free, and a reply whose steps Hermes stopped keeping says it's still working
 - **Composer:** Edit and Resend says the edit goes in a new chat and this one stays as it was
 - **Up Next:** after a relaunch a chat's queue sends once it's opened, and a held message stays first while the rest go in order
