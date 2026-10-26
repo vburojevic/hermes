@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Hermes release, run on the trusted studio Mac (Caffeinated Code, team 29ZNGBT83H):
+# Hermes release, run by the studio's Buildkite pipeline hermes-release on the mini's self-hosted
+# macos queue (.buildkite/release.yml), or on the trusted studio Mac (Caffeinated Code, team 29ZNGBT83H):
 #   • iOS / iPadOS → App Store Connect "Hermes Agent App" (6822000332) → internal TestFlight
 #     (the "Internal Testers" group has automatic access to every build).
 #   • macOS → Developer ID signed, notarized and stapled DMG + Sparkle appcast, published as a
@@ -12,6 +13,9 @@
 # G2 identities are read from Infisical prod /shared/apple/signing-caf73-20261005-e4rd77v8r4 into a
 # temporary keychain that is deleted on exit; no certificates are minted. Upload and notarization
 # use the studio ASC key 8BNZ87QD3D. Sparkle's EdDSA key is Infisical prod /hermes/ci.
+# In a Buildkite job (BUILDKITE=true) the same secrets come from the cluster's mirrors instead,
+# read one at a time with `buildkite-agent secret get` and given to the redactor before anything
+# prints (see "Secrets" below and docs/releasing.md); without it the Mac's Infisical login is used.
 # Release builds are the real "Hermes" (co.caffeinatedcode.hermes) with no demo code; the demo
 # lives only in Debug ("Hermes Dev", co.caffeinatedcode.hermes.dev).
 #
@@ -63,19 +67,136 @@ AUTH=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" 
 mkdir -p "$OUT"
 log() { printf '\n--- %s\n' "$*"; }
 
-log "Hermes $VERSION ($BUILD_NUMBER)$([ $DRY_RUN = 1 ] && echo ' — dry run')"
-[ -r "$ASC_KEY_PATH" ] || { echo "missing ASC key $ASC_KEY_PATH"; exit 1; }
+# --- Secrets: the Mac's Infisical login, or the Buildkite job's cluster secrets ----------------------
+# >>> secrets (sourced on its own by the static checks in docs/releasing.md)
+# Values never reach argv, the environment of a build tool, or a log: each is read into a pipe or
+# an owner-only file, and in Buildkite given to the redactor before anything else runs.
+if [ "${BUILDKITE:-}" = true ]; then
+  command -v buildkite-agent >/dev/null || { echo "BUILDKITE is set but buildkite-agent isn't on PATH"; exit 1; }
+  CI_RELEASE=1
+else
+  CI_RELEASE=0
+fi
+cluster_secrets() { # <KEY[=CLUSTER_NAME]>… → one JSON object of KEY: value
+  python3 -I -c '
+import json, subprocess, sys
+values = {}
+for spec in sys.argv[1:]:
+    key, _, name = spec.partition("=")
+    name = name or key
+    got = subprocess.run(["buildkite-agent", "secret", "get", name], capture_output=True, text=True)
+    value = got.stdout.rstrip("\n") if got.returncode == 0 else ""
+    if not value.strip():
+        sys.exit("cluster secret " + name + " is empty or this pipeline may not read it")
+    if subprocess.run(["buildkite-agent", "redactor", "add"], input=value, text=True, capture_output=True).returncode != 0:
+        sys.exit("could not give " + name + " to the redactor")
+    values[key] = value
+json.dump(values, sys.stdout)
+' "$@"
+}
+secrets_json() { # <Infisical folder> <KEY[=CLUSTER_NAME]>… → the secrets as JSON (Infisical's export, or a KEY: value object)
+  local folder="$1"; shift
+  if [ "$CI_RELEASE" = 1 ]; then
+    cluster_secrets "$@"
+  else
+    infisical export --projectId "$INFISICAL_PROJECT" --env prod --path "$folder" --format json 2>/dev/null
+  fi
+}
+secret_file() { # <Infisical folder> <KEY[=CLUSTER_NAME]> <file>: one secret, trimmed, into an owner-only file
+  secrets_json "$1" "$2" | KEY="${2%%=*}" OUT_FILE="$3" python3 -I -c '
+import json, os, sys
+data = json.load(sys.stdin)
+rows = data if isinstance(data, list) else data.get("secrets", data)
+values = {(r.get("key") or r.get("secretKey")): (r.get("value") or r.get("secretValue")) for r in rows} if isinstance(rows, list) else rows
+value = (values.get(os.environ["KEY"]) or "").strip()
+if not value:
+    sys.exit(os.environ["KEY"] + " is empty")
+fd = os.open(os.environ["OUT_FILE"], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.write(fd, value.encode())
+os.close(fd)
+'
+}
+ci_asc_key() { # <work dir>: the cluster's ASC key as AuthKey_<id>.p8 there, once it is known to be this script's key
+  secret_file - ASC_KEY_ID "$1/asc-key-id"
+  secret_file - ASC_ISSUER_ID "$1/asc-issuer-id"
+  [ "$(cat "$1/asc-key-id")" = "$ASC_KEY_ID" ] && [ "$(cat "$1/asc-issuer-id")" = "$ASC_ISSUER_ID" ] \
+    || { echo "the cluster's ASC_KEY_ID or ASC_ISSUER_ID isn't the studio key this script signs with"; exit 1; }
+  rm -f "$1/asc-key-id" "$1/asc-issuer-id"
+  secret_file - ASC_PRIVATE_KEY_B64 "$1/asc-key.b64"
+  ASC_KEY_PATH="$1/AuthKey_${ASC_KEY_ID}.p8"
+  (umask 077 && base64 -d < "$1/asc-key.b64" > "$ASC_KEY_PATH") || { echo "ASC_PRIVATE_KEY_B64 isn't base64"; exit 1; }
+  rm -P -f "$1/asc-key.b64"
+  grep -q -- '-----BEGIN PRIVATE KEY-----' "$ASC_KEY_PATH" || { echo "ASC_PRIVATE_KEY_B64 doesn't decode to a private key"; exit 1; }
+  buildkite-agent redactor add "$ASC_KEY_PATH"
+}
+github() { # <command…>: gh or git, with the job's GitHub token in that command's environment alone (Buildkite)
+  if [ "$CI_RELEASE" = 1 ]; then GH_TOKEN="$(cat "$GITHUB_TOKEN_FILE")" "$@"; else "$@"; fi
+}
+# <<< secrets
+
+log "Hermes $VERSION ($BUILD_NUMBER)$([ $DRY_RUN = 1 ] && echo ' — dry run')$([ "$CI_RELEASE" = 1 ] && echo " — Buildkite job ${BUILDKITE_JOB_ID:-}")"
+if [ "$CI_RELEASE" = 0 ]; then
+  [ -r "$ASC_KEY_PATH" ] || { echo "missing ASC key $ASC_KEY_PATH"; exit 1; }
+fi
+# The CHANGELOG commit carries the repository's identity, name included, taken from its own
+# commits so a machine's global git config never decides it. Checked before anything ships.
+GIT_EMAIL="2234474+vburojevic@users.noreply.github.com"
+if [ $DRY_RUN = 0 ]; then
+  GIT_NAME="$(git log -1 --fixed-strings --format=%an --author="$GIT_EMAIL" HEAD 2>/dev/null || true)"
+  [ -n "$GIT_NAME" ] || { echo "no commit by $GIT_EMAIL in this checkout's history to take the committer name from"; exit 1; }
+fi
+# Archives build in a DerivedData of their own, so the Sparkle sign_update below is the one this
+# release resolved, never another app's on a shared Mac.
+RELEASE_DERIVED_DATA="$PWD/build/DerivedData-release"
+# In Buildkite, anything shaped like a credential stays out of what xcodebuild prints: Xcode turns
+# the environment into build settings, and its logs are kept as artifacts, which the redactor never
+# sees. The job's own token is one; an agent hook could add more. Names only, never values.
+XCB=(xcodebuild)
+if [ "$CI_RELEASE" = 1 ]; then
+  XCB=(env)
+  while IFS= read -r name; do
+    case "$name" in
+      *TOKEN*|*SECRET*|*PASSWORD*|*PRIVATE_KEY*|*ACCESS_KEY*|*API_KEY*) XCB+=(-u "$name") ;;
+    esac
+  done < <(compgen -e)
+  XCB+=(xcodebuild)
+fi
 command -v xcodegen >/dev/null && xcodegen generate --quiet
 (cd Packages/HermesKit && swift test 2>&1 | grep -E "Test run with" | tail -1)
 
 # --- Signing keychain (escrowed identities, temporary) ---------------------------------------
 WORK="$(umask 077; mktemp -d -t hermes-release)"
 KEYCHAIN="$WORK/signing.keychain-db"
+# In Buildkite the keychain is the job's own, under a name the next job finds and deletes if this one
+# was killed outright (.buildkite/steps/release.sh), alone in the search list and the default.
+[ "$CI_RELEASE" = 1 ] && KEYCHAIN="$HOME/Library/Keychains/hermes-release-${BUILDKITE_JOB_ID:-$$}.keychain-db"
 ORIGINAL_KEYCHAINS=()
 while IFS= read -r line; do ORIGINAL_KEYCHAINS+=("$(echo "$line" | tr -d '" ')"); done < <(security list-keychains -d user)
+ORIGINAL_DEFAULT="$(security default-keychain -d user 2>/dev/null | tr -d '" ' || true)"
+INSTALLED_PROFILES="$WORK/installed-profiles.txt"
 cleanup() {
-  security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}" 2>/dev/null || true
-  security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+  if [ "$CI_RELEASE" = 1 ]; then
+    security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+    # What the user had, less any release keychain (a killed run's included) and anything gone;
+    # the login keychain when nothing is left.
+    local keep=() keychain login="$HOME/Library/Keychains/login.keychain-db" default="$ORIGINAL_DEFAULT"
+    for keychain in ${ORIGINAL_KEYCHAINS[@]+"${ORIGINAL_KEYCHAINS[@]}"}; do
+      case "$keychain" in */hermes-release-*.keychain-db) continue ;; esac
+      [ -e "$keychain" ] && keep+=("$keychain")
+    done
+    [ ${#keep[@]} -gt 0 ] || keep=("$login")
+    security list-keychains -d user -s "${keep[@]}" 2>/dev/null || true
+    case "$default" in */hermes-release-*.keychain-db) default="" ;; esac
+    { [ -n "$default" ] && [ -e "$default" ]; } || default="$login"
+    security default-keychain -d user -s "$default" 2>/dev/null || true
+  else
+    security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}" 2>/dev/null || true
+    security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+  fi
+  # Only the profiles this run added; one that was installed before stays.
+  if [ -f "$INSTALLED_PROFILES" ]; then
+    while IFS= read -r installed; do [ -n "$installed" ] && rm -f "$installed"; done < "$INSTALLED_PROFILES"
+  fi
   find "$WORK" -type f -exec rm -P -f {} + 2>/dev/null || true
   rm -rf "$WORK"
 }
@@ -85,18 +206,47 @@ trap cleanup EXIT
 trap 'exit 130' INT HUP
 trap 'exit 143' TERM
 
+if [ "$CI_RELEASE" = 1 ]; then
+  log "secrets (Buildkite cluster)"
+  ci_asc_key "$WORK"
+  AUTH=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+  # No asc profile or keychain on the agent: the key comes from this job alone.
+  ASC=(env -u ASC_PROFILE ASC_CONFIG_PATH="$WORK/asc-config.json" ASC_KEY_ID="$ASC_KEY_ID" ASC_ISSUER_ID="$ASC_ISSUER_ID" ASC_PRIVATE_KEY_PATH="$ASC_KEY_PATH" asc)
+  if [ $DRY_RUN = 0 ]; then
+    GITHUB_TOKEN_FILE="$WORK/github-token"
+    secret_file - GITHUB_TOKEN=HERMES_GITHUB_TOKEN "$GITHUB_TOKEN_FILE"
+  fi
+  echo "ASC key $ASC_KEY_ID$([ $DRY_RUN = 0 ] && echo ' and the GitHub token') loaded"
+fi
+
 log "signing keychain"
 curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o "$WORK/AppleWWDRCAG3.cer"
 curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$WORK/DeveloperIDG2CA.cer"
 # Passwords travel on security's stdin, never argv; files are owner-only and shredded on exit.
-infisical export --projectId "$INFISICAL_PROJECT" --env prod --path "$ESCROW" --format json 2>/dev/null \
-  | WORK="$WORK" KEYCHAIN="$KEYCHAIN" python3 -c '
+# The Mac's keychain locks itself after two idle hours; a job's never does, so a long notarization
+# wait can't lock it before the DMG is signed.
+KEYCHAIN_SETTINGS="-lut 7200 "
+[ "$CI_RELEASE" = 1 ] && KEYCHAIN_SETTINGS=""
+secrets_json "$ESCROW" APPLE_DISTRIBUTION_CERT_BASE64 APPLE_DISTRIBUTION_CERT_PASSWORD \
+    DEVELOPER_ID_APPLICATION_CERT_BASE64 DEVELOPER_ID_APPLICATION_CERT_PASSWORD \
+  | WORK="$WORK" KEYCHAIN="$KEYCHAIN" KEYCHAIN_SETTINGS="$KEYCHAIN_SETTINGS" REDACT="$CI_RELEASE" python3 -c '
 import base64, json, os, secrets, subprocess, sys
 data = json.load(sys.stdin)
 rows = data if isinstance(data, list) else data.get("secrets", data)
 values = {(r.get("key") or r.get("secretKey")): (r.get("value") or r.get("secretValue")) for r in rows} if isinstance(rows, list) else rows
 work, keychain = os.environ["WORK"], os.environ["KEYCHAIN"]
-OPENSSL = "/opt/homebrew/bin/openssl"   # OpenSSL 3 reads the escrow (AES-256/SHA-256 PKCS#12)
+# OpenSSL 3 reads the escrow (AES-256/SHA-256 PKCS#12); /usr/bin/openssl is LibreSSL. Homebrew keeps
+# it keg-only on some Macs, so its own prefix comes first.
+OPENSSL = next((path for path in ("/opt/homebrew/opt/openssl@3/bin/openssl", "/opt/homebrew/bin/openssl")
+                if os.access(path, os.X_OK)), None)
+if not OPENSSL:
+    sys.exit("OpenSSL 3 not found (brew install openssl@3)")
+def one_time_password():
+    # Made here and never printed; in Buildkite still given to the redactor, in case a tool echoes it.
+    password = secrets.token_hex(24)
+    if os.environ.get("REDACT") == "1":
+        subprocess.run(["buildkite-agent", "redactor", "add"], input=password, text=True, capture_output=True, check=True)
+    return password
 def write_private(path, payload):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as handle:
@@ -113,9 +263,9 @@ def security(command, tolerate=None):
         return
     if result.returncode != 0 or "returned 1" in output:
         sys.exit("security " + command.split()[0] + " failed")
-password = secrets.token_hex(24)
+password = one_time_password()
 security(f"create-keychain -p {quoted(password)} {quoted(keychain)}")
-security(f"set-keychain-settings -lut 7200 {quoted(keychain)}")
+security("set-keychain-settings " + os.environ["KEYCHAIN_SETTINGS"] + quoted(keychain))
 security(f"unlock-keychain -p {quoted(password)} {quoted(keychain)}")
 for name in ("APPLE_DISTRIBUTION", "DEVELOPER_ID_APPLICATION"):
     modern = os.path.join(work, name + ".p12")
@@ -123,7 +273,7 @@ for name in ("APPLE_DISTRIBUTION", "DEVELOPER_ID_APPLICATION"):
     write_private(modern, base64.b64decode(values[name + "_CERT_BASE64"]))
     # macOS imports only 3DES/SHA-1 PKCS#12, so re-wrap it under a one-time password. The PEM
     # stage is owner-only inside the private temp folder and shredded at once; the escrow is unchanged.
-    transfer = secrets.token_hex(24)
+    transfer = one_time_password()
     env = dict(os.environ, P12_IN=values[name + "_CERT_PASSWORD"], P12_OUT=transfer)
     stage = os.path.join(work, name + ".pem")
     unwrap = subprocess.run([OPENSSL, "pkcs12", "-in", modern, "-passin", "env:P12_IN", "-nodes"], env=env, capture_output=True)
@@ -144,7 +294,13 @@ for cert in ("AppleWWDRCAG3.cer", "DeveloperIDG2CA.cer"):
     security(f"import {quoted(os.path.join(work, cert))} -k {quoted(keychain)}", tolerate="already exists")
 security(f"set-key-partition-list -S apple-tool:,apple:,codesign: -s -k {quoted(password)} {quoted(keychain)}")
 '
-security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
+if [ "$CI_RELEASE" = 1 ]; then
+  # Alone in the search list: a shared agent's other keychains make codesign fail (errSecInternalComponent).
+  security list-keychains -d user -s "$KEYCHAIN"
+  security default-keychain -d user -s "$KEYCHAIN"
+else
+  security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
+fi
 IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN")"
 DIST_SHA="$(echo "$IDENTITIES" | awk '/Apple Distribution: .*\(29ZNGBT83H\)/ {print $2; exit}')"
 DEVID_SHA="$(echo "$IDENTITIES" | awk '/Developer ID Application: .*\(29ZNGBT83H\)/ {print $2; exit}')"
@@ -158,8 +314,8 @@ archive() { # <iOS|macOS>
   # with Developer ID (it has no entitlements, so no profile), re-signed after export below.
   local style=()
   [ "$1" = macOS ] && style=(CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$DEVID_SHA" PROVISIONING_PROFILE_SPECIFIER=)
-  xcodebuild archive -project Hermes.xcodeproj -scheme Hermes -configuration Release \
-    -destination "generic/platform=$1" -archivePath "$OUT/Hermes-$1.xcarchive" \
+  "${XCB[@]}" archive -project Hermes.xcodeproj -scheme Hermes -configuration Release \
+    -destination "generic/platform=$1" -archivePath "$OUT/Hermes-$1.xcarchive" -derivedDataPath "$RELEASE_DERIVED_DATA" \
     -allowProvisioningUpdates "${AUTH[@]}" DEVELOPMENT_TEAM="$TEAM_ID" ${style[@]+"${style[@]}"} \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" > "$OUT/archive-$1.log" 2>&1 \
     || { grep -E "error:" "$OUT/archive-$1.log" | head -20; exit 1; }
@@ -184,7 +340,9 @@ if [ $IOS = 1 ]; then
     profile="$WORK/$id.mobileprovision"
     "${ASC[@]}" profiles download --id "$id" --output "$profile" >/dev/null
     uuid="$(security cms -D -i "$profile" | plutil -extract UUID raw -o - -)"
-    cp "$profile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
+    installed="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
+    [ -e "$installed" ] || echo "$installed" >> "$INSTALLED_PROFILES"
+    cp "$profile" "$installed"
     PROFILE_MAP+="<key>$bundle</key><string>$name</string>"
     echo "$name ($id) → $bundle"
   done
@@ -211,7 +369,7 @@ EOF
   }
   log "export + validate iOS"
   ios_options export
-  xcodebuild -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios" \
+  "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios" \
     -exportOptionsPlist "$OUT/ExportOptions-iOS-export.plist" "${AUTH[@]}" > "$OUT/export-iOS.log" 2>&1 \
     || { grep -E "error" "$OUT/export-iOS.log" | head -20; exit 1; }
   IPA="$(ls "$OUT"/ios/*.ipa)"
@@ -247,7 +405,7 @@ EOF
   if [ $DRY_RUN = 0 ]; then
     log "upload iOS to App Store Connect"
     ios_options upload
-    xcodebuild -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios-upload" \
+    "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios-upload" \
       -exportOptionsPlist "$OUT/ExportOptions-iOS-upload.plist" "${AUTH[@]}" > "$OUT/upload-iOS.log" 2>&1 \
       || { grep -E "error" "$OUT/upload-iOS.log" | head -20; exit 1; }
     echo "uploaded iOS $VERSION ($BUILD_NUMBER) — internal testers get it once processing finishes; Public Beta after the Mac"
@@ -269,7 +427,7 @@ if [ $MAC = 1 ]; then
   <key>signingCertificate</key><string>$DEVID_SHA</string>
 </dict></plist>
 EOF
-  xcodebuild -exportArchive -archivePath "$OUT/Hermes-macOS.xcarchive" -exportPath "$OUT/mac" \
+  "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-macOS.xcarchive" -exportPath "$OUT/mac" \
     -exportOptionsPlist "$OUT/ExportOptions-macOS.plist" > "$OUT/export-macOS.log" 2>&1 \
     || { grep -E "error" "$OUT/export-macOS.log" | head -20; exit 1; }
   APP="$OUT/mac/Hermes.app"
@@ -322,19 +480,10 @@ EOF
   spctl -a -t exec -v "$APP"
 
   log "Sparkle appcast"
-  SPARKLE_BIN="$(dirname "$(find build/DerivedData/SourcePackages/artifacts "$HOME/Library/Developer/Xcode/DerivedData" -type f -name sign_update -path '*/Sparkle/bin/*' 2>/dev/null | head -1)")"
-  [ -x "$SPARKLE_BIN/sign_update" ] || { echo "Sparkle sign_update not found (resolve packages first)"; exit 1; }
+  SPARKLE_BIN="$(dirname "$(find "$RELEASE_DERIVED_DATA/SourcePackages/artifacts" -type f -name sign_update -path '*/Sparkle/bin/*' 2>/dev/null | head -1)")"
+  [ -x "$SPARKLE_BIN/sign_update" ] || { echo "Sparkle sign_update not found in $RELEASE_DERIVED_DATA"; exit 1; }
   ED_KEY="$WORK/sparkle-ed.key"
-  infisical export --projectId "$INFISICAL_PROJECT" --env prod --path /hermes/ci --format json 2>/dev/null \
-    | ED_KEY="$ED_KEY" python3 -c '
-import json, os, sys
-data = json.load(sys.stdin)
-rows = data if isinstance(data, list) else data.get("secrets", data)
-values = {(r.get("key") or r.get("secretKey")): (r.get("value") or r.get("secretValue")) for r in rows} if isinstance(rows, list) else rows
-fd = os.open(os.environ["ED_KEY"], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-os.write(fd, values["SPARKLE_ED_PRIVATE_KEY"].strip().encode())
-os.close(fd)
-'
+  secret_file /hermes/ci SPARKLE_ED_PRIVATE_KEY=HERMES_SPARKLE_ED_PRIVATE_KEY "$ED_KEY"
   SIGNATURE="$("$SPARKLE_BIN/sign_update" --ed-key-file "$ED_KEY" "$DMG")"   # sparkle:edSignature="…" length="…"
   rm -P -f "$ED_KEY"
   TAG="v$VERSION-$BUILD_NUMBER"
@@ -362,7 +511,7 @@ EOF
     log "publish $TAG on $RELEASES_REPO"
     # Hermes.dmg is the stable download link (…/releases/latest/download/Hermes.dmg) for the website.
     cp "$DMG" "$OUT/Hermes.dmg"
-    gh release create "$TAG" "$DMG" "$OUT/Hermes.dmg" "$OUT/appcast.xml" --repo "$RELEASES_REPO" --latest \
+    github gh release create "$TAG" "$DMG" "$OUT/Hermes.dmg" "$OUT/appcast.xml" --repo "$RELEASES_REPO" --latest \
       --title "Hermes $VERSION beta ($BUILD_NUMBER)" --notes "Hermes $VERSION beta for Mac. Signed by Caffeinated Code (team 29ZNGBT83H), notarized by Apple. Existing installs update through Sparkle. What's new: https://github.com/$SOURCE_REPO/releases/tag/$TAG"
     # Verify what customers get, not the exit codes.
     FEED="https://github.com/$RELEASES_REPO/releases/latest/download/appcast.xml"
@@ -411,9 +560,9 @@ fi
 # a pre-release there would never be served.
 if [ $DRY_RUN = 0 ]; then
   TAG="v$VERSION-$BUILD_NUMBER"
-  if [ "$(gh repo view "$SOURCE_REPO" --json visibility --jq .visibility)" != PUBLIC ]; then
+  if [ "$(github gh repo view "$SOURCE_REPO" --json visibility --jq .visibility)" != PUBLIC ]; then
     echo "source: $SOURCE_REPO isn't public yet, so $TAG wasn't tagged"
-  elif gh release view "$TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
+  elif github gh release view "$TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
     echo "source: $TAG is already released on $SOURCE_REPO"
   elif ! git merge-base --is-ancestor HEAD origin/main; then
     echo "source: HEAD isn't on origin/main, so $TAG wasn't tagged; release from a clean checkout of main" >&2
@@ -422,14 +571,22 @@ if [ $DRY_RUN = 0 ]; then
     log "tag $TAG on $SOURCE_REPO"
     python3 -I Scripts/release_notes.py notes "$VERSION" "$BUILD_NUMBER" "$TAG" "$PREVIOUS_TAG" > "$OUT/release-notes.md"
     PRERELEASE=(); [ $BETA = 1 ] && PRERELEASE=(--prerelease)
-    gh release create "$TAG" --repo "$SOURCE_REPO" --target "$(git rev-parse HEAD)" ${PRERELEASE[@]+"${PRERELEASE[@]}"} \
+    github gh release create "$TAG" --repo "$SOURCE_REPO" --target "$(git rev-parse HEAD)" ${PRERELEASE[@]+"${PRERELEASE[@]}"} \
       --title "Hermes $VERSION$([ $BETA = 1 ] && echo ' beta') ($BUILD_NUMBER)" --notes-file "$OUT/release-notes.md"
     # The changelog commit lands after the tag, so the next release's notes skip it ("Changelog:").
     python3 -I Scripts/release_notes.py changelog "$VERSION" "$BUILD_NUMBER" "$PREVIOUS_TAG"
     if git diff --quiet -- CHANGELOG.md; then
       echo "source: CHANGELOG.md already has build $BUILD_NUMBER"
     else
-      GIT_ID=(-c user.email=2234474+vburojevic@users.noreply.github.com)   # the repository's commit identity
+      GIT_ID=(-c "user.name=$GIT_NAME" -c "user.email=$GIT_EMAIL")   # the repository's commit identity
+      # In Buildkite the push signs in through gh with the job's token, never a token in a URL, and
+      # goes over https whatever URL the pipeline cloned from: credential helpers serve https alone,
+      # so an SSH origin would use the agent's own key instead.
+      PUSH_AUTH=() PUSH_REMOTE=origin
+      if [ "$CI_RELEASE" = 1 ]; then
+        PUSH_AUTH=(-c credential.helper= -c 'credential.helper=!gh auth git-credential')
+        PUSH_REMOTE="https://github.com/$SOURCE_REPO.git"
+      fi
       git "${GIT_ID[@]}" commit --quiet -m "Changelog: Hermes $VERSION beta ($BUILD_NUMBER)" -- CHANGELOG.md
       CHANGELOG_COMMIT="$(git rev-parse HEAD)"
       # main usually moves during a release: replay the commit on the newest main in a clean worktree
@@ -440,7 +597,7 @@ if [ $DRY_RUN = 0 ]; then
         git worktree remove --force "$OUT/changelog-main" 2>/dev/null || true
         git worktree add --quiet --detach "$OUT/changelog-main" origin/main
         if git -C "$OUT/changelog-main" "${GIT_ID[@]}" cherry-pick "$CHANGELOG_COMMIT" >/dev/null 2>&1 \
-          && git -C "$OUT/changelog-main" push --quiet origin HEAD:main 2>/dev/null; then
+          && github git -C "$OUT/changelog-main" ${PUSH_AUTH[@]+"${PUSH_AUTH[@]}"} push --quiet "$PUSH_REMOTE" HEAD:main 2>/dev/null; then
           PUSHED="$(git -C "$OUT/changelog-main" rev-parse --short HEAD)"
         fi
         git worktree remove --force "$OUT/changelog-main"

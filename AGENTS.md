@@ -24,6 +24,7 @@ without a real Hermes or a paid model.
 | `Tools/hermes-app-widgets/` | The Hermes Agent plugin for widgets agents send to the app: the `widget` tool, its checks and store, and plain text on other platforms. Published to `vburojevic/hermes-app-widgets` with `Scripts/publish-widgets-plugin.sh`. |
 | `Tools/IconGen/` | Renders the app icons from the same path the UI draws. |
 | `Scripts/release.sh` | The maintainers' release (TestFlight, including the public beta, + notarized Mac DMG). Needs the studio's signing escrow; never run it unless asked. |
+| `.buildkite/` | Where releases run: the `hermes-release` pipeline on the studio Mac mini's self-hosted `macos` queue (never a Buildkite-hosted Mac), started by hand, a dry run first. Its job runs `Scripts/release.sh`, which reads its secrets from the cluster there (docs/releasing.md). |
 
 ## Build and test
 
