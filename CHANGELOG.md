@@ -31,6 +31,19 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610261123 (October 26, 2026)
+
+- **Group chats:** a message waiting for an away Mac is kept on the device and still goes after a relaunch
+- **Chat:** every message keeps its true state: a steer the turn can't take goes next, Stop gives back what it cleared, and nothing jumps the line or goes twice
+- **Chat:** over the API server a queued run says so, a refusal is never a bare code, and Stop never gives back a message Hermes may run
+- **Chat:** Up Next says why each message is there and what it waits for, a queued run says so, and a refusal shows Hermes's words with Try Again
+- **Chat:** a refusal sending again can't help has no Try Again, and a steer the running turn refused never reads as finished
+- **Chat:** the refusal banner reads its notice, so the Mac build type-checks it
+- **Chat:** a steer Hermes carries into the next turn shows there, Up Next sends by itself once the chat is free, and a reply whose steps Hermes stopped keeping says it's still working
+- **Composer:** Edit and Resend says the edit goes in a new chat and this one stays as it was
+- **Up Next:** after a relaunch a chat's queue sends once it's opened, and a held message stays first while the rest go in order
+- **Up Next:** a chat the app loads by itself after a relaunch keeps its queue until it's opened
+
 ### Build 2610261052 (October 26, 2026)
 
 - **Notifications:** the app icon and Dock badge always show the true unread count
