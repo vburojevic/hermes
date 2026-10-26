@@ -114,7 +114,9 @@ class Run:
             for row in rows or []:
                 content = row.get("content")
                 words = content if isinstance(content, str) else json.dumps(content)
-                if row.get("role") == "user" and text in (words or "") and row.get("display_kind") != "hidden":
+                # The row Hermes keeps for a message still in its queue isn't the message running.
+                queued = "_queued_prompt" in json.dumps(row.get("display_metadata") or "")
+                if row.get("role") == "user" and text in (words or "") and row.get("display_kind") != "hidden" and not queued:
                     count += 1
         return count
 
@@ -152,10 +154,15 @@ class Run:
         self.sh("xcrun", "simctl", "install", self.udid, self.args.app, check=True)
 
     def ui(self):
-        out = self.sh("axe", "describe-ui", "--udid", self.udid).stdout
-        try:
-            tree = json.loads(out)
-        except json.JSONDecodeError:
+        tree = None
+        for _ in range(3):
+            # AXe now and then answers with nothing: ask again.
+            try:
+                tree = json.loads(self.sh("axe", "describe-ui", "--udid", self.udid).stdout)
+                break
+            except json.JSONDecodeError:
+                time.sleep(1)
+        if tree is None:
             return [], []
         labels, frames = [], []
 
@@ -504,6 +511,47 @@ def lost_answer(r):
              expect=["lost answer: count the logs"], forbid=FORBIDDEN + ["Send Again"], stored=("lost answer: count the logs", 1))
 
 
+PHOTO = os.path.join(REPO, ".github", "images", "app-icon.png")
+
+
+def photo_running(r):
+    """A photo sent while a turn runs: Hermes holds it for the next turn ("on <gateway>" in the tray),
+    and it runs once, as a turn of its own, after this one."""
+    mark = r.log_mark()
+    r.launch(["-HERMES_OPEN", "bot:default", "-HERMES_SEND", "slow walk through the logs", "-HERMES_SEND_AFTER", "6",
+              "-HERMES_FOLLOWUP", "photo-running: what is this?", "-HERMES_FOLLOWUP_SEND", "YES", "-HERMES_FOLLOWUP_AFTER", "4",
+              "-HERMES_FOLLOWUP_IMAGE", PHOTO])
+    time.sleep(16)
+    labels = r.shot("photo-running")
+    for _ in range(30):
+        time.sleep(3)
+        if r.stored_count("photo-running: what is this?", since=mark):
+            break
+    time.sleep(4)
+    labels_after = r.shot("photo-running-after")
+    r.record("photo_running", [("photoWhileBusy", "turnRunning"), ("photoWhileBusy", "toolRunning")], labels + labels_after,
+             r.log_since(mark), expect=["on Hermes", "photo-running: what is this?"], stored=("photo-running: what is this?", 1))
+
+
+def photo_owner_busy(r):
+    """A photo sent while the gateway's own turn holds the chat: it can't join that queue, so it waits
+    behind the refusal in Up Next and goes, once, with its photo, when that turn ends."""
+    mark = r.log_mark()
+    r.launch(["-HERMES_OPEN", "bot:default", "-HERMES_SEND", "photo-busy: first", "-HERMES_SEND_AFTER", "8",
+              "-HERMES_FOLLOWUP", "photo-busy: and this picture", "-HERMES_FOLLOWUP_SEND", "YES", "-HERMES_FOLLOWUP_AFTER", "3",
+              "-HERMES_FOLLOWUP_IMAGE", PHOTO])
+    time.sleep(4)
+    r.post("/api/mock/owner", {"profile": "default", "mode": "busy", "seconds": 25})
+    time.sleep(12)
+    labels = r.shot("photo-owner-busy")
+    # A held chat is asked again 30 s after the refusal.
+    time.sleep(48)
+    labels_after = r.shot("photo-owner-busy-after")
+    r.post("/api/mock/owner", {"profile": "default", "mode": "off"})
+    r.record("photo_owner_busy", [("photoWhileBusy", "ownerBusy")], labels + labels_after, r.log_since(mark),
+             expect=["sends when that turn ends", "photo-busy: and this picture"], stored=("photo-busy: and this picture", 1))
+
+
 def another_bot(r):
     mark = r.log_mark()
     r.post("/api/mock/message-agent", {"from": "researcher", "to": "writer", "text": "Can you tighten the intro?"})
@@ -655,12 +703,12 @@ def api_queue_full(r):
 
 SCENARIOS = {f.__name__: f for f in [
     idle_send, running_steer, running_upnext, starting_steer, stop_running, background_process, owner_busy, owner_forward,
-    owner_unconfirmed, slow_ack, lost_answer, another_bot, routine, limit, reconnecting_steer, offline_send, relaunch_queue, maybe_sent, queued_run,
+    owner_unconfirmed, slow_ack, lost_answer, photo_running, photo_owner_busy, another_bot, routine, limit, reconnecting_steer, offline_send, relaunch_queue, maybe_sent, queued_run,
     edit_resend, api_queue_full,
 ]}
 SHOTS = ["maybe_sent", "queued_run", "edit_resend"]
 LANE = ["idle_send", "running_steer", "running_upnext", "starting_steer", "stop_running", "background_process", "owner_busy",
-        "owner_forward", "owner_unconfirmed", "another_bot", "routine", "limit", "api_queue_full"]
+        "owner_forward", "owner_unconfirmed", "another_bot", "routine", "limit", "api_queue_full", "photo_running", "photo_owner_busy"]
 WINDOW = ["offline_send", "reconnecting_steer", "slow_ack", "lost_answer"]
 
 

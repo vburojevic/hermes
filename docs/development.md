@@ -116,7 +116,9 @@ refusal is Hermes's words, never a generic error.
 | Routine follow-up | Hermes's turn, live | the next turn, after this one | the next turn | runs on the gateway | runs on the gateway | "… is following up on its routine …" | the next turn | stored, shown on return | the next turn |
 
 Dictation fills the field, so it is Send. Talk is proven at the model level only (a simulator has
-no microphone to drive). The cells that depend on timing (offline, reconnecting, a slow or lost
+no microphone to drive). A photo while busy is sent with `-HERMES_FOLLOWUP_IMAGE <path>`, which
+attaches that picture to the `-HERMES_FOLLOWUP` message as a paste does, on iPhone and Mac alike
+(never through the Mac's clipboard). The cells that depend on timing (offline, reconnecting, a slow or lost
 answer, a relaunch with an outbox) run in a quiet window; the rest run any time:
 
 ```sh
