@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610261658 (October 26, 2026)
+
+- **Chat:** a message waiting for an away gateway says "Waiting for" on the Mac and in its row, never "Thinking…"
+- **Chat:** "Queued behind another turn" follows its run the same way the waiting line does
+
 ### Build 2610261454 (October 26, 2026)
 
 - Fixes and polish.
