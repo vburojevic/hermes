@@ -770,7 +770,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.error(400, "Missing 'input' field")
             if run.status != "running" or run.stop.is_set():
                 # Queued, waiting for an approval, stopping or over: nothing to steer (runs.py).
-                return self.error(409, f"Run is {run.status}; it can't take a steer now.", "run_not_accepting_steer")
+                return self.error(409, f"Run is not currently accepting steer input: {run.id}", "run_not_accepting_steer")
             with LOCK:
                 run.steers.append(text)
             run.emit("run.steered", text=text)

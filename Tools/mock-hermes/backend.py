@@ -1009,13 +1009,16 @@ def lifecycle(sid, text):
 
 
 def compact_between_steps(sid, runtime, seconds=8):
-    """"… compact": Hermes compacts the chat between steps; a steer or redirect sent meanwhile is
-    held for the next turn (`status.update` kind `compacting`, `methods_session_interrupt.py`)."""
+    """"… compact": Hermes compacts the chat between steps; a steer or redirect sent meanwhile goes
+    in its queue as the next turn (hermes-agent `tui_gateway/methods_session_interrupt.py`:
+    `_session_compression_in_flight` → `_enqueue_prompt`; `status.update` kinds `compacting`, then
+    `compacted`)."""
     runtime["compacting"] = True
-    lifecycle(sid, "Compacting context…")
+    lifecycle(sid, "🗜️ Compacting context — summarizing earlier conversation so I can continue...")
     time.sleep(seconds)
     runtime["compacting"] = False
-    lifecycle(sid, "Context compaction complete")
+    # The done edge has a kind of its own (`agent/conversation_compression.py` COMPACTION_DONE_STATUS).
+    emit(sid, "status.update", {"kind": "compacted", "text": "✓ Context compaction complete — continuing turn..."})
 
 
 def mock_warnings(sid, visible):
