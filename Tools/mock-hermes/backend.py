@@ -733,6 +733,9 @@ def start_turn(sid, text, runner):
         runtime["running"] = True
         runtime["interrupt"] = False
         runtime["turn_started"] = time.time()
+        # Hermes builds the turn's agent first: half a second here, 6 s for a "cold start" (a loaded
+        # Mac), in which only a redirect queues and a steer is refused 4010.
+        runtime["agent_build_s"] = 6.0 if "cold start" in text.lower() else 0.5
         runtime.pop("attached_images", None)  # the turn takes the photos staged for it
         # Hermes' `_start_inflight_turn`: what the turn was asked, for clients that weren't the sender.
         runtime["inflight"] = {"user": text.split("\n\n[@mentions resolved", 1)[0].strip(), "assistant": "", "streaming": True}
@@ -857,7 +860,7 @@ def method_session_redirect(params):
     with LOCK:
         if not runtime["running"]:
             return {"status": "rejected", "text": text}
-        if time.time() - runtime.get("turn_started", 0) < 0.5:
+        if time.time() - runtime.get("turn_started", 0) < runtime.get("agent_build_s", 0.5):
             # The agent is still being built: Hermes queues it for the next turn.
             runtime.setdefault("queue", []).append({"text": text, "media": 0})
             return {"status": "queued", "text": text}
@@ -884,7 +887,7 @@ def method_session_steer(params):
     with LOCK:
         if not runtime["running"]:
             return {"status": "rejected", "text": text}
-        if time.time() - runtime.get("turn_started", 0) < 0.5:
+        if time.time() - runtime.get("turn_started", 0) < runtime.get("agent_build_s", 0.5):
             # The turn's agent is still being built: only a redirect queues then (`methods_session_interrupt.py`).
             raise RPCError(4010, "agent does not support steer")
         if runtime.get("compacting"):

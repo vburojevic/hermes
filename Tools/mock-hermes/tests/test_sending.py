@@ -237,6 +237,14 @@ class Sending(unittest.TestCase):
         time.sleep(0.6)
         self.assertEqual(self.rpc(ws, "session.steer", {"session_id": sid, "text": "now"})["result"]["status"], "queued")
 
+    def test_a_cold_start_refuses_a_steer_while_its_agent_is_built(self):
+        ws, sid, _ = self.open_chat()
+        self.submit(ws, sid, "slow please, cold start")
+        time.sleep(1.5)
+        code, _, message = self.refusal(self.rpc(ws, "session.steer", {"session_id": sid, "text": "too early"}))
+        self.assertEqual((code, message), (4010, "agent does not support steer"))
+        self.rpc(ws, "session.interrupt", {"session_id": sid})
+
     def test_a_steer_while_hermes_compacts_waits_for_the_next_turn(self):
         ws, sid, stored = self.open_chat()
         self.submit(ws, sid, "clean up old snapshots and compact")
