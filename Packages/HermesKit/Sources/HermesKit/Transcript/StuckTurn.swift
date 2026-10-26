@@ -26,9 +26,13 @@ public enum StuckTurn {
         case askAgain
     }
 
-    /// What the gateway's `running` (from `session.resume`) means for the held chat.
-    public static func outcome(running: Bool?) -> Outcome {
-        switch running {
+    /// What the gateway's `running` (from `session.resume`) means for the held chat. A turn whose end
+    /// went unheard and whose stored rows are being read (`recovering`, `TurnRecovery`) isn't stuck:
+    /// those reads are slow when Hermes is (a proxy's 502 is read again), and settling it here dropped
+    /// the turn and its message, so the chat showed neither while its reads failed.
+    public static func outcome(running: Bool?, recovering: Bool = false) -> Outcome {
+        if recovering, running != true { return .askAgain }
+        return switch running {
         case false?: .settle
         case true?: .follow
         case nil: .askAgain

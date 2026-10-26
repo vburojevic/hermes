@@ -213,7 +213,7 @@ struct TranscriptView: View {
                     }
                     // While a turn runs the card is about an earlier one, and its Try Again can't act yet.
                     // A turn the app lost track of says so in its own header, with Reload.
-                    if let failure = conversation.turnError, !conversation.isWorking, failure.message != LiveTurn.lostTrack {
+                    if let failure = conversation.turnError, !conversation.isWorking, LostTurn(line: failure.message) == nil {
                         TurnErrorRow(
                             failure: failure,
                             conversation: conversation,

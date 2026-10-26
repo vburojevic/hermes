@@ -256,7 +256,8 @@ public struct LiveTurn: Sendable, Equatable {
     }
 
     /// The session says it's idle and the turn never heard how it ended. It ends here so the chat
-    /// can read how it ended; until the stored chat says, it holds as lost (`heldTurn`).
+    /// can read how it ended; until the stored chat says, it holds as it last was (`heldTurn`,
+    /// `TurnRecovery`).
     public mutating func settleUnheard(now: Date = .now) {
         guard !isFinished else { return }
         endedUnheard = true
@@ -270,17 +271,26 @@ public struct LiveTurn: Sendable, Equatable {
         finish(.complete, now: now)
     }
 
-    /// What a turn that lost its run says until the stored chat shows how it ended (`docs/chat.md`
-    /// §2): one line, with Reload, in the turn's header (`turnHeaderLost`). Never an endless shimmer.
-    public static var lostTrack: String {
-        String(localized: "Lost track of this reply. Reload to see how it ended.")
-    }
-
-    /// The turn as it stays on screen while its stored rows aren't whole: as it ended, or, when
-    /// it never heard its end, saying the app lost track of it rather than "Worked for …".
+    /// The turn as it stays on screen while its stored rows aren't whole: as it ended, or, when it
+    /// never heard its end, as it last was (still working, what was running still running) while
+    /// the app finds out how it ended (`TurnRecovery`): recovery is quiet, never "Worked for …".
     public var heldTurn: AssistantTurn {
         var held = snapshot
-        if endedUnheard, !held.endedEmpty { held.state = .failed(Self.lostTrack) }
+        guard endedUnheard, !held.endedEmpty else { return held }
+        held.state = .streaming
+        held.finishedAt = nil
+        held.steps = held.steps.map { step in
+            switch step {
+            case .tool(var tool) where cutOff.contains(tool.id):
+                tool.status = .running
+                return .tool(tool)
+            case .subagent(var agent) where cutOff.contains(agent.id):
+                agent.status = .running
+                return .subagent(agent)
+            default:
+                return step
+            }
+        }
         return held
     }
 

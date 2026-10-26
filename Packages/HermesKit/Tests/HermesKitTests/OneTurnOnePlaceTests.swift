@@ -128,19 +128,26 @@ struct OneTurnOnePlaceTests {
 
     // MARK: A run lost on the way (a gateway restart, a stream that never came back)
 
-    /// The session says it's idle and the turn never heard how it ended: what stays on screen
-    /// says the app lost track of it, never "Worked for …" as if it had finished.
-    @Test func aRunThatEndedUnheardSaysItLostTrack() {
+    /// The session says it's idle and the turn never heard how it ended: while the app finds out
+    /// (`TurnRecovery`), what stays on screen is the turn as it last was, still working with what
+    /// was running still running: never "Worked for …" as if it had finished, and no "Lost track"
+    /// before recovery has failed.
+    @Test func aRunThatEndedUnheardHoldsAsItLastWas() {
         var live = liveTurn(heardEnd: false)
+        live.apply(SequencedTurnEvent(seq: 9, event: .toolStarted(id: "c4", name: "terminal", preview: nil, at: nil)), now: at(-20))
         live.settleUnheard(now: now)
         #expect(live.isFinished)
-        guard case .failed(let line) = live.heldTurn.state else {
-            Issue.record("held as \(live.heldTurn.state)")
-            return
-        }
-        #expect(line == LiveTurn.lostTrack)
-        // Its header says so, with Reload (`turnHeaderLost`).
-        #expect(live.heldTurn.lostTrack)
+        let held = live.heldTurn
+        #expect(held.isWorking && held.finishedAt == nil)
+        #expect(!held.lostTrack)
+        #expect(live.cutOff == ["c:c4"])
+        let calls = held.steps.compactMap { step -> ToolActivity? in if case .tool(let tool) = step { tool } else { nil } }
+        #expect(calls.map(\.status) == [.succeeded, .succeeded, .succeeded, .running])
+        // Only once recovery fails does it say so, and why, with Reload (`turnHeaderLost`).
+        let lost = held.lost(.unreachable, now: now)
+        #expect(lost.lostTrack && lost.lostReason == .unreachable && !lost.isWorking)
+        #expect(lost.state == .failed("Couldn't reach the gateway to see how this reply ended."))
+        #expect(held.lost(.gone, now: now).state == .failed("Hermes no longer has this reply."))
         // One that heard its end is held as it ended.
         #expect(liveTurn().heldTurn.state == .complete)
         #expect(!liveTurn().heldTurn.lostTrack)
@@ -160,8 +167,8 @@ struct OneTurnOnePlaceTests {
         #expect(live.turn.runningStepStart == nil)
     }
 
-    /// The stored rows went further than what the lost turn heard: the turn keeps those steps, in
-    /// its own place, and still says it lost track.
+    /// The stored rows went further than what the turn heard before it lost its run: the turn keeps
+    /// those steps, in its own place, and keeps working while the app finds out how it ended.
     @Test func aLostTurnKeepsTheStepsHermesStored() {
         var heard = LiveTurn(id: "live-1", sessionID: "rt", startedAt: at(-259))
         heard.apply(SequencedTurnEvent(seq: 1, event: .commentary(Self.narration, alreadyStreamed: false)), now: at(-250))
@@ -172,7 +179,7 @@ struct OneTurnOnePlaceTests {
         let turn = assistantTurns(placed).last
         #expect(turn?.id == "live-1")
         #expect(turn?.toolCount == 3)
-        #expect(turn?.state == .failed(LiveTurn.lostTrack))
+        #expect(turn?.isWorking == true && turn?.lostTrack == false)
     }
 
     /// The gateway restarted under the turn: Hermes stored its message and calls up to the one
@@ -188,7 +195,8 @@ struct OneTurnOnePlaceTests {
                                        toolCalls: [ToolCall(id: "c3", name: "terminal", arguments: #"{"command": "argus import --help"}"#)], timestamp: at(-60)))
         #expect(!TranscriptBuilder.holdsTurn(messages, after: 9))
         let built = TranscriptBuilder.build(messages)
-        let lost = try #require(assistantTurns(TurnPlacement.place([.assistant(heard.heldTurn)], userRowID: nil, after: 9, in: built, messages: messages)).last)
+        let held = try #require(assistantTurns(TurnPlacement.place([.assistant(heard.heldTurn)], userRowID: nil, after: 9, in: built, messages: messages)).last)
+        let lost = held.lost(.unreachable, now: now)
         #expect(lost.lostTrack)
 
         let settled = try #require(lost.settledAfterLoss(cutOff: heard.cutOff, messages: messages))
@@ -223,7 +231,7 @@ struct OneTurnOnePlaceTests {
         heard.settleUnheard(now: now)
         let messages = Array(rows(withReply: false).prefix(3))
         let placed = TurnPlacement.place([.assistant(heard.heldTurn)], userRowID: nil, after: 9, in: TranscriptBuilder.build(messages), messages: messages)
-        let lost = try #require(assistantTurns(placed).last)
+        let lost = try #require(assistantTurns(placed).last).lost(.unreachable, now: now)
         #expect(lost.lostTrack && lost.steps.count == 3)
 
         let settled = try #require(lost.settledAfterLoss(cutOff: heard.cutOff, messages: messages))

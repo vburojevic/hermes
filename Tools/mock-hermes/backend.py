@@ -127,6 +127,7 @@ PENDING = {}       # srq id -> {"event": Event, "result": dict | None, "sid": st
 CURRENT = threading.local()  # .peer: the socket whose request a METHODS handler is answering
 CLIENTS = set()    # connected WebSocket peers
 DROP = {"settle": 0, "refuse_until": 0.0}  # /api/mock/drop-sockets: resumes answered 4009, sockets refused
+HISTORY_DOWN = {"until": 0.0, "status": 502}  # /api/mock/history-down: stored chats' messages refused meanwhile
 TICKETS = {}       # ws ticket -> expiry
 SESSIONS_AUTH = {} # access cookie -> username
 STATUS_EXTRA = {}  # fields setup.py adds to /api/status (gateway_running, fts_rebuild)
@@ -2292,6 +2293,10 @@ class Handler(BaseHTTPRequestHandler):
             profile = (query.get("profile", ["default"])[0] or "default")
             if CONFIG.get("slow_history"):
                 time.sleep(CONFIG["slow_history"])  # a dashboard on an overloaded Mac: read late, as it is then
+            if time.time() < HISTORY_DOWN["until"]:
+                # A proxy in front of a dashboard that stopped answering (502), or a chat Hermes no longer has (404).
+                gone = HISTORY_DOWN["status"] == 404
+                return self.send_json(HISTORY_DOWN["status"], {"detail": "Session not found" if gone else "Bad Gateway"})
             with LOCK:
                 session = STORED.get(sid)
                 if session is None or session["profile"] != profile:
@@ -2443,6 +2448,14 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 TICKETS[ticket] = time.time() + 30
             return self.send_json(200, {"ticket": ticket, "ttl_seconds": 30})
+        if url.path == "/api/mock/history-down":
+            # Mock-only: stored chats' messages are refused for `seconds` while the socket keeps working: a 502 as
+            # a proxy answers for a dashboard that stopped answering, or with `status: 404` as Hermes answers for a
+            # chat it no longer has. A reply the app lost track of then can't find out how it ended.
+            with LOCK:
+                HISTORY_DOWN["until"] = time.time() + float(body.get("seconds") or 60)
+                HISTORY_DOWN["status"] = 404 if int(body.get("status") or 502) == 404 else 502
+            return self.send_json(200, {"ok": True})
         if url.path == "/api/mock/drop-sockets":
             # Mock-only: the network blips. Every socket drops mid-whatever (turns keep running), the next
             # `settle` resumes of a running chat answer 4009 like Hermes' client-gone settling window, and

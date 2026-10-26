@@ -119,7 +119,7 @@ shows no message.
 | `message.complete` with `status: error` | A warning-coloured line with `error` (or `failure_reason`) under the reply, and the error card after the chat with Try Again (or Reload when the outcome is unknown) and Dismiss | footer, `TurnErrorRow` |
 | `message.complete` with `warning` | A warning line above the work | `TurnWarnings` |
 | `error` during a turn | Fails the turn with its `message` | footer, `TurnErrorRow` |
-| `session.info` with `running: false` | The turn has settled on the backend; the app then fetches the stored transcript, which replaces the live rows in place. It counts only once Hermes has taken the prompt (its submit answered, or an event of its turn came): Hermes says the session is idle while it builds a chat's agent, before it takes the prompt, and ending the turn then emptied it (`TurnSettleGate`). A turn on screen never just vanishes: one that ended with nothing in it and no stored reply yet stays a turn still working (in a Bot Chat, the typing bubble), the chat read again every 5 s until the reply takes its place, and after 3 minutes it says "Hermes hasn't answered this here yet" with Reload (`AssistantTurn.endedEmpty`). Only that fetch hands a turn on screen over to its stored rows: until it has, no other reload (the Bots' roster noticing the chat moved, a reconnect) redraws the chat, and the turn's rows are matched from the newest stored message from before it, taken as it started. When the socket died with the reply, a reload redrew the stored turn under the live one and the turn then took its own rows for history, so it showed twice (`TranscriptBuilder.newestBeforeTurn`) | |
+| `session.info` with `running: false` | The turn has settled on the backend; the app then fetches the stored transcript, which replaces the live rows in place. It counts only once Hermes has taken the prompt (its submit answered, or an event of its turn came): Hermes says the session is idle while it builds a chat's agent, before it takes the prompt, and ending the turn then emptied it (`TurnSettleGate`). A turn on screen never just vanishes: one that ended with nothing in it and no stored reply yet stays a turn still working (in a Bot Chat, the typing bubble), the chat read again every 5 s until the reply takes its place, and after 3 minutes it says "Hermes hasn't answered this here yet" with Reload (`AssistantTurn.endedEmpty`). One that never heard its end keeps its last state while the app finds out how it ended, by itself (`TurnRecovery`, one turn, one place, below). Only that fetch hands a turn on screen over to its stored rows: until it has, no other reload (the Bots' roster noticing the chat moved, a reconnect) redraws the chat, and the turn's rows are matched from the newest stored message from before it, taken as it started. When the socket died with the reply, a reload redrew the stored turn under the live one and the turn then took its own rows for history, so it showed twice (`TranscriptBuilder.newestBeforeTurn`) | |
 | `session.info` with `yolo`, folder, branch or project | Updates "allow everything" ([quick-actions.md](quick-actions.md) §3) and where the chat runs ([projects.md](projects.md)) | |
 
 **One turn, one place.** The live turn and its stored rows are the same turn, found by Hermes's
@@ -133,22 +133,40 @@ stored after the newest row from before the turn. Never by words, and never by b
   again every 5 s until the reply's row is there; then the stored rows take over in place
   (`TurnPlacement`). The stored part is never drawn as a second turn still working elsewhere: that
   showed one turn twice, "Thinking… · 4m 19s" over its own narration above "Worked for 3m 57s".
-- A live header never outlives its run. When the session says it's idle and the turn never heard
-  its end (it ended while the socket was down, or the gateway restarted under it), the stored chat
-  says how it ended; until it does, the turn's header says "Lost track of this reply. Reload to see how it
-  ended." in still words, with Reload beside them (`turnHeaderLost`; no error card under the
-  chat), and the chat reads itself again (`LiveTurn.settleUnheard`,
-  `heldTurn`). "Stopped" and failures say so. A lost turn keeps the steps Hermes stored when they
-  went further than what it heard. Reload is the person asking how it ended, and it settles the
-  turn in place: when the stored chat holds the turn whole (its reply, or a failed turn's
-  notice), the stored rows take over; when it still stops partway (the gateway restarted under
-  the turn, so nothing more will be stored), the turn ended there and says "Stopped", with the
-  steps Hermes stored. What was cut off ends with it (a call stored without a result, or a step
-  still running when the app lost track), while a call heard to its end stays as it was
-  (`AssistantTurn.settledAfterLoss`, `LiveTurn.cutOff`). Should the rest be stored later after
-  all, the stored rows still take over. The chat's own reads meanwhile never settle it: a reply
-  written late by a busy database is still on its way, and a Reload asked for one turn never
-  settles the next.
+- A live header never outlives its run, and a reply the app stopped hearing recovers by itself.
+  The turn can end unheard in normal use: Hermes reaps a session 20 s after its last socket left
+  (`ws_orphan_reap_grace_s`), so a phone away while its reply ended re-attaches to a new runtime
+  that replays nothing; a run's status is kept for an hour and not over a gateway restart (`GET
+  /v1/runs/{id}` answers 404); the gateway restarted under the turn. Hermes stores a turn's rows
+  before it says the session is idle, so the stored chat says how it ended. When the session says
+  it's idle (or the run is gone) and the turn never heard its end, it keeps its last state, still
+  working with what was running still running, and nothing new moves (`LiveTurn.settleUnheard`,
+  `heldTurn`). The app reads the chat at once, then again after 1, 2, 4, 8 and 15 s, about 30 s
+  in all, attaching it again over the gateway (`TurnRecovery`, `recoverHeldTurn`). However slow
+  the reads (a frozen backend holds one for a minute), the looks end a minute after the unheard
+  end, and a message sent meanwhile settles the turn first, so only the new one moves:
+  - a turn running again carries on in its place;
+  - stored whole (its reply, or a failed turn's notice), the stored rows take over;
+  - still partway once the looks are spent, nothing more is coming (the gateway restarted under
+    the turn): it ended there and says "Stopped", with the steps Hermes stored. What was cut off
+    ends with it (a call stored without a result, or a step still running when the app stopped
+    hearing it), while a call heard to its end stays as it was (`AssistantTurn.endedPartway`,
+    `LiveTurn.cutOff`). Should the rest be stored later after all, the stored rows still take over;
+  - only when no look could read the chat, or Hermes says the chat is gone (404), does the header
+    say so in still words, with Reload beside them (`turnHeaderLost`; no error card under the
+    chat):
+
+    | Why | Header |
+    |---|---|
+    | Every read failed | "Couldn't reach the gateway to see how this reply ended." (`turnHeaderLost`) |
+    | The chat is gone | "Hermes no longer has this reply." (`turnHeaderLostGone`) |
+
+  Reload settles it in place as the looks would have: the stored rows when they hold it whole,
+  else "Stopped" where they stop (`AssistantTurn.settledAfterLoss`). A Reload asked for one turn
+  never settles the next. Mock: "marathon" in a Bot Chat with `POST /api/mock/drop-sockets {reap:
+  20}` during it, the app in the background past the reply's end (the session is reaped, so the
+  re-attach replays nothing); `POST /api/mock/restart-gateway` during it; `--late-store 20`; and
+  `POST /api/mock/history-down {seconds, status}` with a drop that reaps it, for the reads that fail.
 - A turn this device joins while it runs (back from the background, a dropped stream, another
   device) carries on the part the stored chat holds, under that part's identity (`LiveTurn.joining`):
   Hermes takes one writer per chat, so stored rows that stop partway are the turn running now. One
@@ -207,7 +225,13 @@ by one, and `sessions.changed` brings each in. That turn shows as working
   `hermes chat` (one tagged `internal_notification` runs as a dashboard turn, which the app hears).
 - **Stopped mid-turn.** The last stored row is a tool call or a tool's result, newer than 20
   minutes: its timer runs, a call without a result shows running, and what Hermes last said
-  shows under it.
+  shows under it. A turn that answers the person's own message runs in the chat's own session,
+  which the gateway says is running while it is (`session.resume`'s `running`): when an attach
+  (after a relaunch, back from the background) says nothing runs, the app reads the chat again on
+  the same backoff, and with nothing more stored the turn ended there, "Stopped"
+  (`TranscriptBuilder.endsOwnMidTurn`, `settleMidTurn`, `recoverStoredMidTurn`). A row stored
+  after that makes it a turn going on again. Over the API server alone nothing says whether it
+  runs, so it shows as working until its last row is 20 minutes old.
 - **Everywhere the Bot shows.** The roster reads a Bot Chat's last rows when its count or last
   activity moves (`BotRoster.runningElsewhere`): the Bot's row gets its activity line ("Running a
   command", else thinking), its tile says what it runs ("Working: Running a command"), else
@@ -384,7 +408,8 @@ that opens to them, and consecutive subagents share one row.
 The multimodal session stream sends `run.started`, `assistant.delta`, `assistant.commentary`,
 `tool.started`, `tool.completed`, `tool.failed`, `approval.request`, `assistant.completed` and
 `run.completed`; a dropped connection there ends the turn unless the run's status says it already
-finished.
+finished. A run whose status Hermes no longer has (404: kept for an hour, and not over a restart)
+ended unheard, and the stored chat says how (`TurnRecovery`, above).
 
 ### Not shown in this app
 
@@ -733,6 +758,11 @@ out with a message waiting in Up Next, and the queue never sent either.
   - A turn still runs: the chat is attached to it, so it streams on here, and Up Next sends when it
     ends.
   - The gateway can't be asked (offline): it asks again 10 s later. Meanwhile Send queues.
+  - A turn whose end went unheard and whose stored rows are being read isn't stuck, even with
+    nothing running: it's asked again 10 s later, and its own recovery settles it (§2, one turn,
+    one place). Settling it here dropped the turn and the person's message from the chat when
+    Bot Mode answered those reads with a 502, which is read again as a busy answer past the 10 s
+    (`StuckTurn.outcome(running:recovering:)`).
 - **Checks:** with the mock, start a turn elsewhere in an open chat (`POST
   /api/mock/turn-elsewhere`), then drop the sockets past the reap (`POST /api/mock/drop-sockets
   {"outage": 25, "reap": 20}`, `docs/development.md`). Typed text queues while the chat is held, and

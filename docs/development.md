@@ -174,7 +174,9 @@ seconds, text, reply}` has Hermes start a turn in that chat by itself, as when a
 finishes (about 8 s; with `{"outage": 25, "reap": 20}` above in its middle, the app never hears it
 end: a stuck turn, `docs/chat.md` §4b; `-HERMES_STUCK_TURN <s>` holds the open chat that way that
 long after launch, without the mock's help), `POST /api/mock/freeze-sockets`
-leaves them half-open, `POST /api/mock/stall {seconds}` freezes the backend the way Hermes's
+leaves them half-open, `POST /api/mock/history-down {seconds, status}` refuses stored chats' messages that
+long while the socket keeps working (a 502, or `status: 404` for a chat Hermes no longer has: a reply the app
+lost track of then says why, `docs/chat.md` §2), `POST /api/mock/stall {seconds}` freezes the backend the way Hermes's
 dashboard freezes on a loaded Mac (requests, frames and pings wait, then all answer; the gateway
 mock keeps answering), `POST /api/mock/starve {seconds, gap, slice, health}` starves the whole
 Mac instead, both mocks at once (`Tools/mock-hermes/starve.py`, also on the gateway mock's port;

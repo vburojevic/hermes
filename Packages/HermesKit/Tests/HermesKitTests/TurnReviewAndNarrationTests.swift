@@ -43,7 +43,7 @@ struct TurnReviewAndNarrationTests {
         #expect(working.reading(stepsOpen: false)?.isInterim == false)
         working.answer = Self.reply
         #expect(working.reading(stepsOpen: false)?.text == Self.reply)
-        let died = AssistantTurn(id: "t", steps: [.narration(id: "n", text: Self.narration)], state: .failed(LiveTurn.lostTrack))
+        let died = AssistantTurn(id: "t", steps: [.narration(id: "n", text: Self.narration)], state: .failed(LostTurn.unreachable.line))
         #expect(died.reading(stepsOpen: false)?.isInterim == true)
     }
 }

@@ -577,9 +577,9 @@ struct WorkSummaryView: View, Equatable {
         }
     }
 
-    /// The run ended while the app couldn't hear it (`turnHeaderLost`): one still line instead of
-    /// an endless shimmer, with Reload in it. The chat reads itself again meanwhile, and the stored
-    /// turn takes this one's place; Reload settles it from the stored chat (`reloadLostTurn`).
+    /// The app couldn't find out by itself how a run it stopped hearing ended (`TurnRecovery`,
+    /// `turnHeaderLost`, `turnHeaderLostGone`): one still line saying why instead of an endless
+    /// shimmer, with Reload in it, which settles it from the stored chat (`reloadLostTurn`).
     private var lostHeader: some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "exclamationmark.circle")
@@ -587,7 +587,7 @@ struct WorkSummaryView: View, Equatable {
                 .foregroundStyle(Theme.tertiaryText)
                 .frame(width: 14, height: 20)
                 .accessibilityHidden(true)
-            Text(LiveTurn.lostTrack)
+            Text(turn.lostReason?.line ?? "")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
