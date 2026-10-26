@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.5"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.6"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1400,10 +1400,14 @@ def test_the_badge_follows_reads_and_new_replies(reading):
     # Read on another device: one fewer, sent as a badge-only push.
     read(handler, "badge-reader", chats=[unread])
     assert later.delays(("badge", "dev-badge-phone")) == [3.0]
-    assert ("read", "dev-badge-phone") not in push._due  # it was sent nothing for that chat
+    # It was sent nothing for that chat, but counted it: the read push names it too, so the app, woken by
+    # it, doesn't put it back on the icon the badge push set (plugin 1.4.6).
+    assert later.delays(("read", "dev-badge-phone")) == [3.0]
     later.run()
     first = wait_for(lambda: badges_for(token) and badges_for(token)[0])
     assert first["payload"] == {"aps": {"badge": shown - 1}}
+    woken = opened(key, wait_for(lambda: next(iter(reads_for(key, token)), None)))
+    assert list(read_times(woken)) == [unread]
     assert (first["push_type"], first["priority"], first["collapse_id"]) == ("alert", 5, "badge")
     assert time.time() < first["expiration"] <= time.time() + 3601
 
@@ -1453,6 +1457,75 @@ def test_the_badge_follows_reads_and_new_replies(reading):
     assert fifth["payload"] == {"aps": {"badge": len(push.store.read()["requests"]) + 4}}
     presence(handler, "badge-phone", state="away")
     assert "dev-badge-phone" not in push.store.read()["badges"]
+
+
+def test_news_read_before_its_notice_goes_nowhere(reading, monkeypatch):
+    """A reply or a Bot's message read on another device before its notice goes (the Mac had the chat open;
+    a room's message settles 5 s before it notifies) is news the person has seen: no notice, no count. It
+    once stayed on a sleeping phone's badge until the app was opened."""
+    plugins, handler, push, later = reading
+    monkeypatch.setattr(_core_module(), "ROOM_MESSAGE_SETTLE", 0.3)
+    key, token = make_device(handler, "seen-phone", reply_after=0, bots="all")
+    chat, room = "20261026_seen_chat", "room-seen-0026"
+    presence(handler, "seen-phone", state="away", unread={"chats": [], "rooms": []},
+             listed={"chats": [chat], "rooms": [room]}, badge=len(push.store.read()["requests"]))
+    later.run()
+    shown = len(badges_for(token))
+
+    plugins.invoke_hook("pre_llm_call", session_id=chat, turn_id="seen-1")
+    plugins.invoke_hook("post_llm_call", session_id=chat, turn_id="seen-1", assistant_response="Done.")
+    read(handler, "seen-mac", chats=[chat])  # read on the Mac as the reply landed
+    plugins.invoke_hook("on_session_end", session_id=chat, turn_id="seen-1", completed=True)
+    plugins.invoke_hook("on_room_member_activity", room_id=room, member_id="ada", turn_id="seen-2",
+                        kind="message.delta", payload={"text": "The build is green."})
+    read(handler, "seen-mac", rooms=[room])  # the room open on the Mac: read while it settles
+    time.sleep(0.8)
+    later.run()
+    time.sleep(0.3)
+    assert not notices_for(key, token) and len(badges_for(token)) == shown
+    record = push.store.read()["badges"]["dev-seen-phone"]
+    assert record["chats"] == [] and record["rooms"] == []
+
+    # News after the read still notifies and counts.
+    finish_turn(plugins, chat, "seen-3")
+    wait_for(lambda: notices_for(key, token))
+    assert push.store.read()["badges"]["dev-seen-phone"]["chats"] == [chat]
+
+
+def test_background_pushes_carry_the_latest_reads(reading, monkeypatch):
+    """A withdrawal or a sync wakes the app, which sets the badge from what it knows: each carries the last
+    six hours' reads as notices do, so a chat read elsewhere doesn't come back on the icon."""
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "woken-phone", reply_after=0)
+    store = sys.modules[_core_module().__name__.rsplit(".", 1)[0] + ".store"]
+    monkeypatch.setattr(store, "SYNC_MIN_INTERVAL", 0)
+    chat, other = "20261026_woken", "20261026_woken_read"
+    handler("presence " + json.dumps({"device_id": "dev-woken-phone", "state": "away", "sync": [chat]}))
+    read(handler, "woken-mac", chats=[other])
+    finish_turn(plugins, chat, "woken-1")
+    sync = wait_for(lambda: next((opened(key, p) for p in pushes_for(token, "background")
+                                  if opened(key, p).get("kind") == "sync"), None))
+    assert other in read_times(sync)
+    push.withdraw(["req-woken-gone"])
+    withdraw = wait_for(lambda: next((opened(key, p) for p in pushes_for(token, "background")
+                                      if opened(key, p).get("kind") == "withdraw"), None))
+    assert other in read_times(withdraw) and withdraw["ids"] == ["req-woken-gone"]
+
+
+def test_a_room_read_elsewhere_reaches_a_device_when_its_app_asks(reading, monkeypatch):
+    """A group chat has no read mark on the gateway. Read on the Mac while its Bot's message settled, the
+    message notifies no one (1.4.6), so no notice carries the read: the iPhone's app, back in front, hears
+    it from its presence, and the Mac from its status check, or the room stayed unread there."""
+    plugins, handler, push, later = reading
+    make_device(handler, "asking-phone", bots="all")
+    room = "room-asked-0026"
+    read(handler, "asking-mac", rooms=[room])
+    answer = presence(handler, "asking-phone", state="foreground")
+    assert room in read_times(answer, "rooms") and answer["open"] == len(push.store.read()["requests"])
+    status = json.loads(handler('status {"device_id": "dev-asking-mac"}'))
+    assert room in read_times(status, "rooms")
+    away = presence(handler, "asking-phone", state="away")
+    assert room in read_times(away, "rooms")
 
 
 def test_notices_list_the_latest_reads(reading):
@@ -1642,7 +1715,9 @@ def test_an_older_state_file_still_loads(copies, tmp_path):
     assert store.read()["badges"]["dev-old"]["shown"] is None
     assert push.read({"device_id": "dev-new", "chats": ["20261021_old_chat"]}) == {"ok": True, "open": 1}
     assert store.claim_badge("dev-old") == 1 and store.claim_badge("dev-old") is None
-    assert store.claim_read_push("dev-old") == (None, 0.0)
+    # It counted that chat, so its read push names it (plugin 1.4.6).
+    claimed, wait = store.claim_read_push("dev-old")
+    assert [key for key, _at in claimed["read"]["chats"]] == ["20261021_old_chat"] and wait == 0.0
     assert push.store.remove_device("dev-old") and store.read()["badges"] == {}
 
     # A file whose reads came from an older shape still lists what it can.

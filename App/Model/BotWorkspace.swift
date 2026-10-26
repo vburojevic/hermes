@@ -582,6 +582,8 @@ final class BotWorkspace: Identifiable {
                 group.addTask { await model.readForSync() }
             }
             if listed { group.addTask { await self.refreshSessions() } }
+            // The badge is counted again from the list: with Hermes' read marks as they are now.
+            group.addTask { await self.unread.catchUpMarks() }
         }
     }
 

@@ -26,6 +26,16 @@ public struct ReadMarks: Codable, Sendable, Hashable {
         }
     }
 
+    /// What any notice says was read: a `read` push's chats and rooms, and every notice's `read` list.
+    /// A `sync` push's `sessions` are chats to read now, not chats read.
+    public init(carriedBy notice: PushNotice) {
+        if notice.kind == .read {
+            self.init(notice)
+        } else {
+            self = notice.read ?? ReadMarks()
+        }
+    }
+
     public var isEmpty: Bool { chats.isEmpty && rooms.isEmpty }
 
     /// When the chat a notice is about was last read, as far as these marks say.

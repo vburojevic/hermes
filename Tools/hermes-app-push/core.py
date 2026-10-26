@@ -22,7 +22,7 @@ from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
 from .store import Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.5"
+VERSION = "1.4.6"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -182,7 +182,16 @@ class Push:
                 # the app slept, its background push dropped) is set right.
                 self._soon("badge", device_id, PUSH_DEBOUNCE)
         self._release_held(device_id, state, session, live)
-        return {"ok": True, "open": len(self.store.open_requests())}
+        return self._with_reads({"ok": True, "open": len(self.store.open_requests())})
+
+    def _with_reads(self, answer: dict) -> dict:
+        """The last six hours' reads, as notices list them: a group chat has no read mark on the gateway,
+        and a room read on one device whose message was never notified (read before it settled) reaches
+        the others only this way, when their app next asks (plugin 1.4.6)."""
+        read = recent_reads(self.store.read())
+        if read:
+            answer["read"] = read
+        return answer
 
     def read(self, args: dict) -> dict:
         """Chats (``chats``: session ids) and group chats (``rooms``) read on ``device_id``. Every notice
@@ -248,7 +257,7 @@ class Push:
                 "relay_registered": bool(state.get("installation", {}).get("id")),
                 "relay_error": self.relay.last_error, "devices": len(state["devices"]),
                 "registered": device is not None, "preferences": device.get("preferences") if device else None,
-                "open": len(state["requests"])}
+                "open": len(state["requests"]), **({"read": recent_reads(state)} if recent_reads(state) else {})}
 
     def test(self, args: dict) -> dict:
         device_id = _require(args, "device_id", _DEVICE)
@@ -322,8 +331,13 @@ class Push:
                 return False  # the chat on screen docks its card instead
         return True
 
-    def deliver(self, notice: notices.Notice, walked_away: set | None = None) -> int:
+    def deliver(self, notice: notices.Notice, walked_away: set | None = None, news_at: float | None = None) -> int:
+        """Sends a notice to every device that wants it. ``news_at``: when a reply or a Bot's message landed.
+        Read on any device since, it's news the person has seen: it goes nowhere and counts nowhere (a room
+        read on the Mac within the message's 5 s settle once left a count on the phone)."""
         state = self.store.read()
+        if news_at is not None and _read_since(state, notice, news_at):
+            return 0
         resolved = [rid for rid, _ in state["resolved"]]
         read = recent_reads(state)
         sent = 0
@@ -374,7 +388,8 @@ class Push:
         state = self.store.read()
         for device_id, device in state["devices"].items():
             with contextlib.suppress(Exception):
-                request = notices.withdraw_request(device, ids, self.gateway(), len(state["requests"]))
+                request = notices.withdraw_request(device, ids, self.gateway(), len(state["requests"]),
+                                                   recent_reads(state))
                 self.relay.enqueue(Delivery(device_id, request, on_done=self._done(device_id)))
         # The withdraw is a background push, which iOS may never deliver to an app that isn't running: the
         # badge goes as its own push, so a request answered elsewhere doesn't stay on the icon.
@@ -483,6 +498,7 @@ class Push:
         with self._lock:
             if turn_id in self._turns:
                 self._turns[turn_id]["text"] = str(assistant_response or "")
+                self._turns[turn_id]["answered_at"] = time.time()
 
     def on_session_end(self, session_id: str = "", turn_id: str = "", completed: bool = False,
                        failed: bool = False, interrupted: bool = False, **_: Any) -> None:
@@ -527,7 +543,7 @@ class Push:
             if turn.get("origin") in ("routine", "bot"):
                 notice.extra["origin"] = turn["origin"]
                 notice.extra["mention"] = self._mentions(turn["text"])
-            self.deliver(notice, walked_away=turn.get("watching"))
+            self.deliver(notice, walked_away=turn.get("watching"), news_at=turn.get("answered_at") or turn["start"])
 
     # -- keeping chats current on devices that left the app ---------------------------------------------
 
@@ -566,7 +582,8 @@ class Push:
         if not device:
             return
         try:
-            request = notices.sync_request(device, sessions, self.gateway(), len(state["requests"]), profile)
+            request = notices.sync_request(device, sessions, self.gateway(), len(state["requests"]), profile,
+                                           recent_reads(state))
         except Exception:
             logger.warning("app push: couldn't build a sync for %s", device_id, exc_info=True)
             return
@@ -699,6 +716,7 @@ class Push:
             buffer = self._room_buffers.setdefault(key, {"text": "", "timer": None})
             # Notices read a room message's opening lines: the rest isn't kept (F28).
             buffer["text"] = (buffer["text"] + text)[:notices.MAX_PLAIN]
+            buffer["at"] = time.time()
             if buffer["timer"]:
                 buffer["timer"].cancel()
             buffer["timer"] = threading.Timer(ROOM_MESSAGE_SETTLE, self._flush_room, args=(key,))
@@ -714,7 +732,7 @@ class Push:
         room_name, bot = _room_names(room_id, member_id)
         self.deliver(notices.message(room_id=room_id, room=room_name, member_id=member_id, bot=bot,
                                      gateway_name=self.gateway_name(), text=buffer["text"],
-                                     mention=self._mentions(buffer["text"])))
+                                     mention=self._mentions(buffer["text"])), news_at=buffer.get("at"))
 
     def _mentions(self, text: str) -> bool:
         """Whether ``text`` @mentions the person (any device's ``mention_names``) or everyone."""
@@ -947,6 +965,17 @@ def _read_key(notice: notices.Notice) -> tuple[str, str] | None:
         key = str(notice.extra.get("room_id") or "") or notice.thread.removeprefix("room:")
         return ("rooms", key) if key else None
     return None
+
+
+def _read_since(state: dict, notice: notices.Notice, news_at: float) -> bool:
+    """Whether the chat or room a reply or Bot message is about was read on some device at or after it
+    landed."""
+    key = _read_key(notice)
+    if key is None:
+        return False
+    kind, chat = key
+    at = (state.get("reads") or {}).get(kind, {}).get(chat)
+    return isinstance(at, (int, float)) and at >= news_at
 
 
 def _later(delay: float, run: Callable[[], None], key: tuple[str, str]) -> threading.Timer:

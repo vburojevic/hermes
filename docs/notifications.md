@@ -81,10 +81,10 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
 | `register` | `device_id`, `token` (APNs, hex), `topic` (bundle id), `environment` (`development` / `production`, from the provisioning profile), `public_key` (base64 X25519), `platform` (`ios` / `ipados`), `name`, `app_version`, `preferences` | `ok`, `gateway {id, name}` (the relay installation id and the gateway's name), `relay` (`ok` or the error), `devices` |
 | `unregister` | `device_id` | `removed` |
 | `preferences` | `device_id`, `preferences` | the stored preferences |
-| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2), `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) and `badge` (what the icon shows as the app leaves; 1.4.5) | `open` (open requests) |
+| `presence` | `device_id`, `state` (`foreground` with `session_id`, `running`, `away`), `live`, `sync` (with `away`: the chats to keep current, at most 20), `unread` and `muted` (with `away`: `{chats, rooms}`, the chats the app icon badge counts, one session id each, and the muted ones, when it counts unread chats) with `listed` (every chat its list shows, the only ones the plugin may add; 1.4.2), `badge_others` (what the person's other gateways add to the badge; plugin 1.4.0) and `badge` (what the icon shows as the app leaves; 1.4.5) | `open` (open requests), `read` (the last six hours' reads, as notices list them; 1.4.6) |
 | `read` | `device_id` (the device that read), `chats` (session ids: each chat's id and its lineage root, a Bot Chat's stored id), `rooms` (group room ids). Plugin 1.4.0 | `ok`, `open` |
 | `activity` | `device_id`, `token` (none to end), `session_id`, `activity_id` | `ok` |
-| `status` | `device_id` | `version`, `gateway`, `relay_error`, `devices`, `registered`, `preferences`, `open` |
+| `status` | `device_id` | `version`, `gateway`, `relay_error`, `devices`, `registered`, `preferences`, `open`, `read` (1.4.6) |
 | `test` | `device_id` | sends a test notice now |
 | `host` | none | `host {os, machine_id, jobs}`: Hermes's launchd jobs on the gateway's Mac and how launchd runs them, for Settings → Setup → Priority ([setup.md](setup.md) §4.17; plugin 1.3.0) |
 
@@ -176,7 +176,9 @@ notification keeps the relay's kind-only text, never content.
 The Mac app hears its chats over its own connections and posts local notifications
 (`MacNotifier`, `UNUserNotificationCenter`) only while it runs, and only when Hermes isn't in front or
 the chat isn't the one on screen. Answers go straight back through the chat. The Mac checks that
-the plugin is there (`status`) but doesn't register, so the relay never pushes to it.
+the plugin is there (`status`) but doesn't register, so the relay never pushes to it. It remembers the
+gateway's installation from that answer and asks `status` again every 30 s for the open requests,
+which its Dock badge counts as the iPhone's icon does (§2 Badge).
 
 Not built yet: notifications on the Mac while its app is closed (the plugin already understands a
 `running` presence with the chats the Mac notifies about itself, `live`).
@@ -223,7 +225,8 @@ Rules:
   A notice still over the limit drops the oldest reads it lists, then halves its longest text until
   it fits (`notices._fit`; plugin 1.4.1).
 - **Withdrawing.** When a request settles (answered anywhere, timed out, cancelled), the plugin sends
-  every device a background push (`withdraw`, with the request ids and the open count). The app
+  every device a background push (`withdraw`, with the request ids, the open count and, from plugin
+  1.4.6, the latest reads as notices list them). The app
   removes the delivered notifications, updates the badge and moves the Live Activity back to
   working. Each new notice also lists recently settled requests (`resolved`), and the service
   extension clears their notifications and any "needs you" notification more than a minute past its
@@ -261,11 +264,12 @@ Rules:
   - The app tells the gateway (`read`, §1.2). The plugin remembers each read for six hours and
     lists the latest in every notice (`read: {chats, rooms}` with the times), so the service
     extension clears those chats' notifications whenever the next one arrives.
-  - Devices that aren't in the app and were sent a reply or Bot message for a chat read since get a
-    background push (`read`, with the chats and rooms read since the device was last in front and
-    when each was read, at most 40 each, and the open count): the app removes their notifications and sets the badge. At
+  - Devices that aren't in the app and were sent a reply or Bot message for a chat read since, or
+    count it in their badge, get a background push (`read`, with the chats and rooms read since the
+    device was last in front and when each was read, at most 40 each, and the open count): the app
+    removes their notifications and sets the badge. At
     most one a device every 30 s (a read inside the window waits for it), collapse id `read`, and
-    none when the plugin sent that device nothing for those chats: iOS rations background pushes to
+    none when the plugin neither sent that device anything for those chats nor counts them there: iOS rations background pushes to
     two or three an hour, and none reach an app the person force-quit. What a push doesn't reach,
     the next notice, the next app refresh or coming back to the app catches up.
   - A device that counts unread chats in its badge told the gateway which ones as it left
@@ -283,10 +287,16 @@ Rules:
     devices it went to, and a withdraw is followed by a badge push, so a request answered elsewhere
     comes off the icon even when the withdraw never arrives. In front, the open count is read again
     as soon as Bot Mode comes online, not at the next presence 50 s later.
+  - News read before its notice goes is news the person has seen (plugin 1.4.6): a reply whose chat
+    was read on some device after the answer landed, or a Bot's message in a group chat read while
+    it settles (the 5 s before it notifies), goes to no device and counts on none. The Mac with the
+    room open used to leave a count for it on the sleeping phone until the app was opened.
   - Group chats have no read mark on the gateway (`docs/inbox.md` §1), so the plugin's reads are
     how a room read on one device reaches the others: an app that hears of one (the `read` push,
-    or a notice's list, applied when it next comes to the front) marks the room read too, unless
-    it moved since.
+    or a notice's list, applied when it next comes to the front, and from plugin 1.4.6 the answer
+    to its `presence`, every 50 s in front, and the Mac's `status`, every 30 s) marks the room read
+    too, unless it moved since. A room read on the Mac while its Bot's message settled sends no
+    notice to carry the read, so without those answers it stayed unread on the iPhone.
 - **Badge** counts unread, unmuted chats, Bots and group chats plus open "needs you" requests across
   gateways by default (Settings → Notifications → App Icon Badge, Dock Badge on the Mac → Unread
   Chats; Needs You counts only the requests). Requests: each gateway's latest `open` count, ignoring
@@ -300,7 +310,33 @@ Rules:
   longer has go.
   The badge (`PushShared.badge`) is set by the app whenever that list or a count moves and at
   launch (`setBadgeCount`, `NSApp.dockTile.badgeLabel`, so the Mac's Dock shows it too), by the
-  extension on every notice, and by the plugin's badge-only push (`docs/inbox.md` §5).
+  extension on every notice, and by the plugin's badge-only push (`docs/inbox.md` §5). Every push
+  carries absolute numbers, never an increment: a notice its `open` count and its reads, a badge-only
+  push the whole count. Each writer works from what it knows, so each learns the reads first:
+  - The extension takes the notice's `read` list off the list before it adds the notice's chat.
+  - A background push (`read`, `withdraw`, `sync`) is followed by its reads and open count before
+    the app sets the badge (`PushShared.noteBackground`). Before plugin 1.4.6 only a `read` push
+    carried reads, and only for chats the device was sent: a chat counted as the phone left, read
+    on the Mac, went off the icon with the badge-only push and came back with the next withdrawal.
+  - Woken in the background (a `sync` push, an app refresh), the app reads Hermes' read marks with
+    the chats before it counts again (`UnreadStore.catchUpMarks`), never the marks it left with.
+  What the plugin can't hear: a read in another Hermes client (Hermes Desktop, the dashboard, the
+  CLI) moves the chat's mark but fires no hook, so a sleeping device's badge keeps that chat until
+  the app next runs (comes to the front, or is woken by a push or an app refresh), when it counts
+  from Hermes' marks. Known gaps of the same kind, until the app next runs:
+  - A chat Hermes never marked (`last_read_at` empty, which Hermes reads as read) that gets a
+    reply is counted on a sleeping iPhone from its notice, though the list doesn't show it unread.
+  - A Mac app that was opened but never came to the front hasn't checked for the plugin yet, so
+    the reads it makes then don't reach the other devices.
+  - A chat deleted in a short-lived process (`hermes sessions delete` in a terminal) leaves the
+    plugin's count right, but the badge push waits for the next push, since that process ends
+    before it goes.
+  - A chat deleted or archived on another device keeps counting on a device away from the app:
+    the plugin hears nothing of it. Planned: the plugin takes Hermes' `on_session_delete` hook,
+    in the change that moves the app's pin to it and shows its consent card (a new hook widens
+    what it sees).
+  - Reads are timed when the plugin hears them, so a read the app sends late (it waited for a busy
+    gateway) can count a newer reply as read, and skip its notice, if one lands in between.
 - **Muted chats** are on the device (`docs/inbox.md` §1). The extension delivers their notices
   quietly (`interruptionLevel = .passive`, no sound); approvals, questions, keys and mentions in
   group chats still alert (`PushNotice.quietWhenMuted`, `muteKeys`).

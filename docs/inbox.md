@@ -327,7 +327,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
     app writes it whenever its counts move, the Notification Service adds a chat as its news
     arrives, and reads anywhere take chats off; while the app is away, the push plugin sends a
     badge-only push when the number changes ([notifications.md](notifications.md) §2 Reading,
-    Badge). Set with `UNUserNotificationCenter.setBadgeCount` and `NSApp.dockTile.badgeLabel`.
+    Badge). Woken in the background, the app reads Hermes' marks with the chats before it counts
+    again (`UnreadStore.catchUpMarks`), so a chat read on another device while it slept stays off.
+    Set with `UNUserNotificationCenter.setBadgeCount` and `NSApp.dockTile.badgeLabel`.
 
 ## 6. Accessibility
 

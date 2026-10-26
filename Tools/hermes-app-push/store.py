@@ -387,6 +387,15 @@ class Store:
                     before = {kind: list(record.get(kind) or []) for kind in KINDS}
                     for kind in KINDS:
                         record[kind] = [key for key in before[kind] if key not in set(read[kind])]
+                        # A chat it counted unread as it left, never sent to it: its read goes in the read
+                        # push too, or the app, woken, would put it back on the icon the badge push set.
+                        counted = [key for key in before[kind] if key in set(read[kind])]
+                        if counted:
+                            matched = True
+                            cleared = state["cleared"].setdefault(device_id, {}).setdefault(kind, {})
+                            for key in counted:
+                                cleared[key] = now
+                            _keep_newest(cleared, CLEARED_MAX)
                     if any(record[kind] != before[kind] for kind in KINDS):
                         moved.append(device_id)
                 if matched:

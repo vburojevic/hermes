@@ -333,6 +333,27 @@ import Testing
         // What the icon shows as the app leaves (plugin 1.4.5 sets it right when it isn't its count).
         #expect(away["badge"]?.doubleValue == 8)
     }
+
+    /// Plugin 1.4.6 answers `presence` and `status` with the last six hours' reads: a group chat read
+    /// on another device, whose Bot message no notice carried, reaches this one when its app asks.
+    @Test func presenceAndStatusAnswerWithTheLatestReads() async throws {
+        let client = AppPushClient { _, params in
+            let arg = params["arg"]?.stringValue ?? ""
+            let read = #""read": {"chats": [["s1", 1792300010.5]], "rooms": [["room_1", 1792300011]]}"#
+            let output = arg.hasPrefix("status") ? #"{"ok": true, "registered": false, "open": 1, \#(read)}"#
+                : #"{"ok": true, "open": 2, \#(read)}"#
+            return .object(["type": .string("plugin"), "output": .string(output)])
+        }
+        let marks = ReadMarks(chats: ["s1": Date(timeIntervalSince1970: 1_792_300_010.5)],
+                              rooms: ["room_1": Date(timeIntervalSince1970: 1_792_300_011)])
+        let front = try await client.setPresence(.foreground, deviceID: "dev-1")
+        #expect(front == .init(open: 2, reads: marks))
+        #expect(try await client.status(deviceID: "dev-1").reads == marks)
+        // An older plugin says nothing more, and a list this build can't read costs only the reads.
+        let older = AppPushClient { _, _ in .object(["type": .string("plugin"), "output": .string(#"{"ok": true, "open": 3, "read": {"rooms": "soon"}}"#)]) }
+        #expect(try await older.setPresence(.foreground, deviceID: "dev-1") == .init(open: 3, reads: nil))
+        #expect(try await older.status(deviceID: "dev-1").reads == nil)
+    }
 }
 
 private actor Calls {
