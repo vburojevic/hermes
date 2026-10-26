@@ -46,8 +46,9 @@ extension AppPlugin {
     }
 
     /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.7 counts a chat Hermes
-    /// never marked only once it's read, as the app's list does (`presence away` with `unmarked`), same
-    /// access; not published yet, so the pin stays on 1.4.6. 1.4.6 keeps the badge the
+    /// never marked only once it's read, as the app's list does (`presence away` with `unmarked`), and
+    /// takes a chat deleted or archived anywhere off every badge (`on_session_delete`, more access: its
+    /// pin waits for the consent card); not published yet, so the pin stays on 1.4.6. 1.4.6 keeps the badge the
     /// true unread count (news read before its notice goes isn't sent, reads ride on background pushes and
     /// on each device's check-in), same access; 1.4.5 sets a badge left
     /// showing a count the person can't see, same access; 1.4.4 seals a card fill
@@ -67,7 +68,7 @@ extension AppPlugin {
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
                        "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess, "1.4.2": pushAccess,
                        "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess, "1.4.6": pushAccess,
-                       "1.4.7": pushAccess],
+                       "1.4.7": pushCapabilities(since147: true)],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )
@@ -93,12 +94,17 @@ extension AppPlugin {
         words: widgetsWords
     )
 
-    private static let pushAccess = PluginCapabilities(
-        hooks: ["pre_llm_call", "post_llm_call", "on_session_end", "pre_tool_call", "pre_approval_request",
-                "post_approval_response", "on_human_input_request", "on_human_input_resolved", "on_room_member_activity",
-                "kanban_task_completed", "kanban_task_blocked"],
-        commands: ["app-push"], platforms: ["apppush"], networkHosts: ["push.hermesapp.dev"]
-    )
+    private static let pushAccess = pushCapabilities(since147: false)
+
+    /// 1.4.7 added `on_session_delete`, so a chat deleted or archived elsewhere leaves the badge.
+    private static func pushCapabilities(since147: Bool) -> PluginCapabilities {
+        PluginCapabilities(
+            hooks: ["pre_llm_call", "post_llm_call", "on_session_end", "pre_tool_call", "pre_approval_request",
+                    "post_approval_response", "on_human_input_request", "on_human_input_resolved", "on_room_member_activity",
+                    "kanban_task_completed", "kanban_task_blocked"] + (since147 ? ["on_session_delete"] : []),
+            commands: ["app-push"], platforms: ["apppush"], networkHosts: ["push.hermesapp.dev"]
+        )
+    }
 
     /// 1.1.1 added `pre_llm_call`, for app chats whose prompt predates their widgets.
     private static func widgetsAccess(since111: Bool) -> PluginCapabilities {

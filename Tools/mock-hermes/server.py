@@ -72,6 +72,17 @@ FIFO = {}         # session id -> run ids in order
 IDEMPOTENCY = {}  # Idempotency-Key -> (body, run id): the same key and body replay the run
 # Deleted chats' ids: Hermes never makes a chat under one again.
 DELETED = set()
+# Hermes' ``on_session_delete`` (hermes_state_common.emit_session_deleted): fn(ids, reason) after a chat
+# is deleted or archived, for plugins other modules play (push.py).
+SESSION_GONE = []
+
+
+def session_gone(ids, reason):
+    for hook in list(SESSION_GONE):
+        try:
+            hook(list(ids), reason)
+        except Exception:  # noqa: BLE001 — Hermes' hooks fail open
+            pass
 JOBS = {}
 
 
@@ -1041,6 +1052,7 @@ class Handler(BaseHTTPRequestHandler):
                 if key in body and not isinstance(body[key], bool):
                     return self.error(400, f"{key} must be a boolean", "invalid_session_field")
             s = SESSIONS[m.group(1)]
+            archiving = body.get("archived") is True and not s.get("archived")
             with LOCK:
                 for key in ("title", "pinned", "archived", "hidden", "end_reason"):
                     if key in body:
@@ -1049,6 +1061,8 @@ class Handler(BaseHTTPRequestHandler):
                     s["hidden"] = False
                 if "unread" in body:
                     s["_last_read_at"] = 0.0 if body["unread"] else time.time()
+            if archiving:
+                session_gone([m.group(1)], "archive")
             return self.send_json(200, {"object": "hermes.session", "session": public_session(s, False)})
         return self.error(404, "Session not found", "session_not_found")
 
@@ -1062,6 +1076,7 @@ class Handler(BaseHTTPRequestHandler):
             SESSIONS.pop(m.group(1))
             DELETED.add(m.group(1))
             MESSAGES.pop(m.group(1), None)
+            session_gone([m.group(1)], "delete")
             return self.send_json(200, {"object": "hermes.session.deleted", "id": m.group(1), "deleted": True})
         m = re.fullmatch(r"/api/jobs/([^/]+)", path)
         if m and m.group(1) in JOBS:

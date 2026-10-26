@@ -2,7 +2,8 @@
 
 Hermes Agent has no Apple push support, so this plugin listens to Hermes's documented plugin hooks
 (approvals, questions, password prompts, finished turns, background work, group chats), seals each
-notice for every registered device, and sends it through the Caffeinated Code push relay to APNs.
+notice for every registered device, and sends it through the Caffeinated Code push relay to APNs. It
+also hears when chats are deleted or archived, so they leave every device's badge.
 The relay sees only routing fields and the sealed envelope. Answers come back over the normal gateway
 protocol (``approval.respond``, clarify responses); the plugin only reports.
 
@@ -25,7 +26,7 @@ logger = logging.getLogger("hermes_app_push")
 PLATFORM = "apppush"
 HOOKS = ("pre_llm_call", "post_llm_call", "on_session_end", "pre_tool_call", "pre_approval_request",
          "post_approval_response", "on_human_input_request", "on_human_input_resolved",
-         "on_room_member_activity", "kanban_task_completed", "kanban_task_blocked")
+         "on_room_member_activity", "kanban_task_completed", "kanban_task_blocked", "on_session_delete")
 
 _push: Push | None = None
 

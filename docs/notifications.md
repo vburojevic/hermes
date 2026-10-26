@@ -351,14 +351,24 @@ Rules:
   CLI) moves the chat's mark but fires no hook, so a sleeping device's badge keeps that chat until
   the app next runs (comes to the front, or is woken by a push or an app refresh), when it counts
   from Hermes' marks. A chat such a client marks for the first time doesn't count its next replies
-  on a sleeping device either, until the app runs. Known gaps of the same kind, until the app next runs:
+  on a sleeping device either, until the app runs.
+  - A chat deleted or archived anywhere (another device, Hermes Desktop, the CLI, a prune) leaves
+    every device's badge (plugin 1.4.7, Hermes' `on_session_delete`). The plugin drops it from each
+    device's lists, and one a device away from the app counts or was sent news for is read on no
+    device: that device gets the badge-only push and a `read` push, and every notice lists it with
+    the reads, so neither the app, woken, nor the extension counts it again and its notifications
+    go. A session Hermes moves to the profile that owns it (`profile_repair`) keeps counting.
+    Before, a chat deleted on the Mac left a sleeping iPhone's icon at 1 with nothing unread in
+    the list until the app ran. The hook widens what the plugin sees, so the app moves its pin to
+    1.4.7 only once it's published, behind the consent card (`docs/plugins.md` §2.1).
+  Known gaps of the same kind, until the app next runs:
   - A chat deleted in a short-lived process (`hermes sessions delete` in a terminal) leaves the
-    plugin's count right, but the badge push waits for the next push, since that process ends
-    before it goes.
-  - A chat deleted or archived on another device keeps counting on a device away from the app:
-    the plugin hears nothing of it. Planned: the plugin takes Hermes' `on_session_delete` hook,
-    in the change that moves the app's pin to it and shows its consent card (a new hook widens
-    what it sees).
+    plugin's count right, but the badge and read pushes wait for the next push, since that process
+    ends before they go.
+  - A chat archived and brought back with Undo (`docs/inbox.md` §5) leaves sleeping devices' badges
+    and its notifications there: Hermes fires `on_session_delete` for the archive but has no hook for
+    the unarchive, so the plugin can't put it back. The chat is still unread in the list, and counts
+    again once that device's app runs.
   - Reads are timed when the plugin hears them, so a read the app sends late (it waited for a busy
     gateway) can count a newer reply as read, and skip its notice, if one lands in between.
 - **Muted chats** are on the device (`docs/inbox.md` §1). The extension delivers their notices

@@ -16,7 +16,8 @@ question, "sudo" asks for a password, "slow" runs long; Tasks → Run Now posts 
 Reading (docs/notifications.md §2, Reading): ``read`` and ``presence`` with ``unread``/``muted`` work like
 the plugin's, read and badge pushes included, and so does plugin 1.4.6's badge: news read on another device
 before its notice goes notifies nothing, and withdrawals, syncs and the answers to ``presence`` and ``status``
-carry the latest reads; plugin 1.4.7's ``unmarked`` chats count only once read. ``GET /api/mock/push-state`` shows what it recorded,
+carry the latest reads; plugin 1.4.7's ``unmarked`` chats count only once read, and a chat deleted or archived
+(the gateway's ``SESSION_GONE``, Hermes' ``on_session_delete``) leaves every badge. ``GET /api/mock/push-state`` shows what it recorded,
 ``POST /api/mock/read {chats, rooms}`` plays a read on another device, ``POST /api/mock/badge {badge}``
 sends every device a badge-only push now.
 """
@@ -195,6 +196,39 @@ def cmd_read(args):
     if not device_id:
         raise ValueError("device_id is missing or malformed")
     chats, rooms = _ids(args.get("chats"), "chats", 50), _ids(args.get("rooms"), "rooms", 50)
+    open_count = record_read(device_id, chats, rooms)
+    if chats or rooms:
+        log(f"read on {device_id}: {', '.join(chats + rooms)}")
+    return {"ok": True, "open": open_count}
+
+
+# The plugin's: ``on_session_delete`` reasons whose chats leave the person's list (not a profile move).
+GONE_REASONS = {"delete", "archive", "prune", "ghost_prune", "empty_sweep"}
+
+
+def session_gone(ids, reason):
+    """The plugin's ``on_session_delete`` (plugin 1.4.7): a chat deleted or archived leaves every device's
+    lists, and one a device away from the app counts or was sent news for is read on no device, so its read
+    and badge pushes go as for a read elsewhere."""
+    installed = B.get("APP_PLUGIN_INSTALLED")
+    if reason not in GONE_REASONS or (installed is not None and not installed("hermes-app-push")):
+        return
+    gone = set(ids)
+    with LOCK:
+        known = set()
+        for record in STATE["badges"].values():
+            known.update(key for key in record.get("chats", []) if key in gone)
+            for kind in ("listed_chats", "unmarked_chats"):
+                record[kind] = [key for key in record.get(kind, []) if key not in gone]
+        for sent in STATE["delivered"].values():
+            known.update(key for key in (sent.get("chats") or {}) if key in gone)
+    if known:
+        record_read("", sorted(known), [])
+        log(f"{reason}: {', '.join(sorted(known))} off every badge")
+
+
+def record_read(device_id, chats, rooms):
+    """A read on ``device_id`` ("" for none: a chat deleted everywhere). Returns the open count."""
     owed, moved = [], []
     with LOCK:
         now = time.time()
@@ -235,13 +269,11 @@ def cmd_read(args):
                 entry["pending"] = True
                 owed.append((other, entry.get("sent", 0) + READ_MIN_INTERVAL - now))
         open_count = len(STATE["requests"])
-    if chats or rooms:
-        log(f"read on {device_id}: {', '.join(chats + rooms)}")
     for other, wait in owed:
         soon("read", other, max(PUSH_DEBOUNCE, wait))
     for other in moved:
         soon("badge", other, PUSH_DEBOUNCE)
-    return {"ok": True, "open": open_count}
+    return open_count
 
 
 def _ids(value, key, limit):
@@ -776,6 +808,8 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         kanban.HOOKS.append(card_notice)
     backend_globals["MOCK_LEARNED_TIDIED"] = tidied_notice
     backend_globals["MOCK_RESET_PRIORITY"] = reset_priority
+    if gateway_module is not None:
+        gateway_module.SESSION_GONE.append(session_gone)
 
     def dispatch(params):
         installed = backend_globals.get("APP_PLUGIN_INSTALLED")

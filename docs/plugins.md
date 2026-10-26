@@ -66,9 +66,12 @@ The design is the Elyx project's `docs/plugins.md`; its frames are named below.
   skills, prompt sections, from each version's `plugin.yaml` and `register()`), the moments it may
   be offered (the ask, Turn On Notifications, What's New, the checklist), and its words: feature
   title, one sentence, SF Symbol, "What you get", "What it can do" in plain words with the
-  manifest's names, and the promise the review quotes. A test checks the pinned version's hooks and
-  tools against `Tools/<plugin>/plugin.yaml` and that every hook is named on the review. A new app
-  plugin is one entry and a What's New row.
+  manifest's names, and the promise the review quotes. A test checks the hooks and tools of the
+  version in `Tools/<plugin>/plugin.yaml` against that manifest (the pinned version's, once the pin
+  reaches it) and that every pinned hook is named on the review. A version changed in `Tools/` but
+  not yet published has its list ahead of the pin: push 1.4.7 adds `on_session_delete`, so the pin
+  stays on 1.4.6 until it's published, and moving it shows the consent card ("Knows when chats are
+  deleted or archived"). A new app plugin is one entry and a What's New row.
 - **When it looks.** When Bot Mode connects (at most hourly) it reads every profile's plugins
   (`plugins.manage {action: list, profile}` for each profile in `profiles.list`, the root as
   `default`). A plugin is missing, older than the app's minimum version, turned off, or current.
@@ -245,6 +248,7 @@ plugin's side of it.
 | | `pre_tool_call` | The Live Activity's step, a `clarify` call's questions, and a `widget` claim or resolve withdrawing its notice |
 | | `on_room_member_activity` | Bot messages in group chats |
 | | `kanban_task_blocked`, `kanban_task_completed` | Board cards that need you or are done |
+| | `on_session_delete` (1.4.7) | A chat deleted or archived anywhere leaves every device's badge ([notifications.md](notifications.md) §2, Badge). Not a session Hermes moves to the profile that owns it (`profile_repair`) |
 | Command | `/app-push <command> <json>` | How the app registers devices, sets preferences, presence and Live Activities, and says which chats were read. Hidden from the app's "/" list |
 | Delivery platform | `apppush` (`ctx.register_platform`) | Scheduled tasks: `deliver: apppush`, `failure_deliver: apppush:fail` |
 | Watcher | one thread per gateway process | What Hermes has no hook for: cards ready for review or stopped (each board's `task_events`) and skill tidies (each profile's `logs/curator/<run>/run.json`) |
@@ -437,7 +441,8 @@ rewrite, fence neutralising, and claims.
   registry entry (`AppPluginRegistry.swift`). Without the bump, installed copies count as current
   and stay as they are. If the new list adds a hook, a tool, a command, a platform or a network
   host, gateways on the older version wait for the person's yes (§2.1), and the review's lines
-  must name the new hook (a test checks).
+  must name the new hook (a test checks once the pin reaches it). Record the new version's list
+  with the change in `Tools/`, before it's published: the registry test reads the manifest's version.
 - Once published, installed copies change only when the app reinstalls them (§2.1), or with
   `hermes plugins update` in the root and every profile for copies installed by hand, then a
   restart (§3).

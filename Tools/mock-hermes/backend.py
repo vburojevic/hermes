@@ -2566,6 +2566,7 @@ class Handler(BaseHTTPRequestHandler):
         if chat is not None:
             if fenced and int(body["expected_revision"]) != chat.get("_revision", 0):
                 return self.send_json(409, {"detail": "revision_conflict"})
+            archiving = body.get("archived") is True and not chat.get("archived")
             with LOCK:
                 chat["_revision"] = chat.get("_revision", 0) + 1
                 if "unread" in body:
@@ -2573,6 +2574,8 @@ class Handler(BaseHTTPRequestHandler):
                 for key in ("title", "archived", "hidden", "pinned"):
                     if key in body:
                         chat[key] = body[key]
+            if archiving:
+                GATEWAY[0].session_gone([sid], "archive")  # Hermes' on_session_delete
             return self.send_json(200, {"ok": True, "title": chat.get("title"), **flags})
         with LOCK:
             session = STORED.get(sid)

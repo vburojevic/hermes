@@ -349,7 +349,9 @@ a dashboard on an overloaded Mac does: a message sent meanwhile goes out before 
 ([connecting-and-voice.md](connecting-and-voice.md) §8).
 `POST /api/mock/read {chats, rooms, device_id?}` plays chats read on another device (the plugin's
 `read`: read pushes to devices away from the app, badge pushes, the `read` list in later notices),
-`POST /api/mock/badge {badge}` sends every device a badge-only push now, and
+`POST /api/mock/badge {badge}` sends every device a badge-only push now, a chat deleted or
+archived on the mock gateway (`DELETE /api/sessions/<id>`, `PATCH … {archived: true}`) plays the
+plugin's `on_session_delete` (plugin 1.4.7: off every device's badge, with its badge and read pushes), and
 `GET /api/mock/push-state` shows what the push mock recorded (presence, reads, what each device was
 sent and cleared, badge records). `POST /api/mock/push-reply {session_id, text, delay?}` sends a
 reply's notice as if its turn ran long; `delay` sends it that many seconds after the reply landed, as

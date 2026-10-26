@@ -76,6 +76,7 @@ Scheduled tasks: `deliver: apppush`, and `failure_deliver: apppush:fail` to hear
 | `on_room_member_activity` | a Bot's group message (settled after 5 s) | `MESSAGE` | active |
 | none: the gateway reads each profile's new `logs/curator/<run>/run.json` every 30 s | "Hermes tidied its skills" when a tidy merged, archived or marked something (once per run; follows the tasks setting) | `OPEN` | passive |
 | `post_approval_response`, `on_human_input_resolved`, `pre_tool_call` on `widget` claim or resolve | background "withdraw" push | — | — |
+| `on_session_delete` (a chat deleted or archived anywhere; not a session moved to another profile) | the same as a read on no device, for the chats a device away from the app counts or was sent news for: a background "read" push and a badge-only push; the others only leave the lists | — | — |
 | the app's `read` (a chat or group chat read on another device) | background "read" push to devices away from the app that were sent a reply or Bot message for it or count it, and a badge-only push (`aps {badge}`) to those that count unread chats. A reply or message read before its notice goes notifies nothing | — | — |
 
 Live Activities: `pre_llm_call`, `pre_tool_call`, approvals and questions, and `on_session_end` update the
@@ -116,7 +117,7 @@ rooms: […]}`, the newest 12 of each; the oldest give way first when a notice w
 something read elsewhere, or counts it in its badge, gets a background `read` push (`read: {chats: [[id, at], …], rooms}`: all read since it was last in front,
 with when each was last read, at most 40 each; `open`), at most one every 30 s, collapse id `read`. A device that left with `unread` gets a badge-only
 push (`{"aps": {"badge": n}}`, priority 5, collapse id `badge`) when its count (open requests + unread
-chats + unread rooms) moves: down for a chat or room read elsewhere, up for a reply
+chats + unread rooms) moves: down for a chat or room read elsewhere or a chat deleted or archived, up for a reply
 or message it's sent (not a muted one, only in a chat its list shows, and not in one Hermes never marked
 until it's read). A reply or message whose chat
 was read on some device after it landed (a room read while its message settles) goes to no device and

@@ -184,6 +184,7 @@ public enum CapabilityWords {
                   matches: exact("on_stream_start", "on_stream_delta", "on_stream_end", "on_interim_message")),
             Group(kind: .sees, words: String(localized: "Knows when chats start and end"),
                   matches: exact("on_session_start", "on_session_end", "on_session_finalize", "on_session_reset")),
+            Group(kind: .sees, words: String(localized: "Knows when chats are deleted or archived"), matches: exact("on_session_delete")),
             Group(kind: .sees, words: String(localized: "Sees approval requests and your answers (can’t answer them)"),
                   matches: exact("pre_approval_request", "post_approval_response")),
             Group(kind: .sees, words: String(localized: "Sees questions and when they’re answered"),

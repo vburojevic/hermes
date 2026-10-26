@@ -25,15 +25,28 @@ private func manifestList(_ plugin: String, _ key: String) throws -> [String] {
     return values
 }
 
+/// The `version:` of a `plugin.yaml` in `Tools/`.
+private func manifestVersion(_ plugin: String) throws -> String {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "../../../../Tools/\(plugin)/plugin.yaml")
+    let text = try String(contentsOf: root.standardizedFileURL, encoding: .utf8)
+    return text.split(separator: "\n").first { $0.hasPrefix("version:") }
+        .map { $0.dropFirst("version:".count).trimmingCharacters(in: .whitespaces) } ?? ""
+}
+
 @Suite("The plugin registry")
 struct PluginRegistryTests {
-    /// The registry's list for each pin is the manifest's: a plugin change that adds a hook or a
-    /// tool must add it here too, or the consent card would miss it.
+    /// The registry's list for the manifest's version is the manifest's, and so the pin's once the
+    /// pin reaches it: a plugin change that adds a hook or a tool must add it here too, or the
+    /// consent card would miss it. Between a change in `Tools/` and its publish the pin is older.
     @Test func pinnedCapabilitiesMatchTheManifests() throws {
         for plugin in AppPlugin.all {
-            let pinned = plugin.pinnedCapabilities
-            #expect(Set(pinned.hooks) == Set(try manifestList(plugin.name, "provides_hooks")), "\(plugin.name)")
-            #expect(Set(pinned.tools) == Set(try manifestList(plugin.name, "provides_tools")), "\(plugin.name)")
+            let version = try manifestVersion(plugin.name)
+            let listed = plugin.capabilities[version] ?? PluginCapabilities()
+            #expect(Set(listed.hooks) == Set(try manifestList(plugin.name, "provides_hooks")), "\(plugin.name)")
+            #expect(Set(listed.tools) == Set(try manifestList(plugin.name, "provides_tools")), "\(plugin.name)")
+            if version == plugin.version {
+                #expect(plugin.pinnedCapabilities == listed, "\(plugin.name)")
+            }
             #expect(plugin.capabilities[plugin.minimumVersion] != nil, "the minimum version has a capability list")
         }
     }
@@ -42,13 +55,21 @@ struct PluginRegistryTests {
     /// installed by hand, or the next pin, is compared with what it really asks for.
     @Test func theManifestsVersionHasACapabilityList() throws {
         for plugin in AppPlugin.all {
-            let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-                .appending(path: "../../../../Tools/\(plugin.name)/plugin.yaml")
-            let text = try String(contentsOf: root.standardizedFileURL, encoding: .utf8)
-            let version = text.split(separator: "\n").first { $0.hasPrefix("version:") }
-                .map { $0.dropFirst("version:".count).trimmingCharacters(in: .whitespaces) } ?? ""
+            let version = try manifestVersion(plugin.name)
             #expect(plugin.capabilities[version] != nil, "\(plugin.name) \(version) has no capability list")
         }
+    }
+
+    /// Push 1.4.7 hears of deleted and archived chats (`on_session_delete`): more access, so the app
+    /// stays on 1.4.6 until it's published, and moving the pin shows the consent card for that hook.
+    @Test func push147AsksBeforeItHearsOfDeletedChats() throws {
+        let push = AppPlugin.push
+        #expect(push.version == "1.4.6" && push.minimumVersion == "1.4.6", "1.4.7 isn't published yet")
+        let older = try #require(push.capabilities["1.4.6"]), newer = try #require(push.capabilities["1.4.7"])
+        #expect(newer.widens(older))
+        #expect(newer.additions(since: older) == PluginCapabilities(hooks: ["on_session_delete"]))
+        let lines = CapabilityWords.consentLines(for: newer.additions(since: older), gateway: "Studio Mac")
+        #expect(lines == [CapabilityLine(.sees, "Knows when chats are deleted or archived", names: ["on_session_delete"])])
     }
 
     /// `docs/plugins.md` §12: every hook in a manifest is on the review.

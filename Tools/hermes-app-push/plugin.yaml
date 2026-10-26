@@ -21,6 +21,7 @@ provides_hooks:
   - on_room_member_activity
   - kanban_task_completed
   - kanban_task_blocked
+  - on_session_delete
 config_schema:
   relay_url:
     type: string

@@ -1493,6 +1493,86 @@ def test_a_chat_hermes_never_marked_counts_once_read(reading):
     assert badge["payload"] == {"aps": {"badge": counted + 1}}
 
 
+def test_a_chat_deleted_or_archived_elsewhere_comes_off_the_badge(reading):
+    """A chat deleted or archived on another device (or in Hermes Desktop, the CLI) leaves the list, so it
+    leaves a sleeping phone's badge too: Hermes' ``on_session_delete``, fired by its own session store, takes
+    it off every device's count, with a badge-only push and a read push so the app, woken, doesn't count it
+    again. It once said 1 with nothing unread in the list until the app ran (plugin 1.4.7)."""
+    plugins, handler, push, later = reading
+    from hermes_state import SessionDB
+    key, token = make_device(handler, "gone-phone", reply_after=0)
+    deleted, archived, kept, quiet = ("20261026_gone_deleted", "20261026_gone_archived", "20261026_gone_kept",
+                                      "20261026_gone_quiet")
+    db = SessionDB(db_path=HOME / "state.db")
+    for session in (deleted, archived, kept, quiet):
+        db.create_session(session, "api_server")
+    counted = len(push.store.read()["requests"]) + 1
+    presence(handler, "gone-phone", state="away", unread={"chats": [deleted], "rooms": []},
+             listed={"chats": [deleted, archived, kept, quiet], "rooms": []}, badge=counted)
+    later.run()
+    pushed = len(badges_for(token))
+
+    # Deleted on the Mac, where the phone counted it unread as it left: the badge reaches what's left.
+    assert db.delete_session(deleted)
+    assert push.store.read()["badges"]["dev-gone-phone"]["chats"] == []
+    assert deleted not in push.store.read()["badges"]["dev-gone-phone"]["listed_chats"]
+    assert later.delays(("badge", "dev-gone-phone")) == [3.0] and later.delays(("read", "dev-gone-phone")) == [3.0]
+    later.run()
+    badge = wait_for(lambda: badges_for(token)[pushed:] and badges_for(token)[-1])
+    assert badge["payload"] == {"aps": {"badge": counted - 1}}
+    woken = opened(key, wait_for(lambda: next(iter(reads_for(key, token)), None)))
+    assert list(read_times(woken)) == [deleted]
+
+    # A reply the phone was sent, then the chat archived on the Mac: off the count, its notification goes.
+    finish_turn(plugins, archived, "gone-1")
+    wait_for(lambda: len(notices_for(key, token)) == 1)
+    assert push.store.read()["badges"]["dev-gone-phone"]["chats"] == [archived]
+    later.run()
+    wait_for(lambda: badges_for(token)[-1]["payload"] == {"aps": {"badge": counted}})
+    pushed = len(badges_for(token))
+    assert db.set_session_archived(archived, True)
+    record = push.store.read()["badges"]["dev-gone-phone"]
+    assert record["chats"] == [] and archived not in record["listed_chats"]
+    assert archived not in push.store.read()["delivered"]["dev-gone-phone"]["chats"]
+    later.run()
+    badge = wait_for(lambda: badges_for(token)[pushed:] and badges_for(token)[-1])
+    assert badge["payload"] == {"aps": {"badge": counted - 1}}
+    # Every notice lists it with the reads, so the extension takes it off its list too.
+    finish_turn(plugins, kept, "gone-2")
+    notice = wait_for(lambda: len(notices_for(key, token)) == 2 and notices_for(key, token)[-1])
+    assert {deleted, archived} <= set(read_times(notice))
+
+    # A chat no device counted or was sent anything for only leaves the lists: no read, no push.
+    later.run()
+    waiting = list(later.waiting)  # the archive's read push, waiting out the 30 s since the last one
+    assert db.delete_session(quiet)
+    assert quiet not in push.store.read()["badges"]["dev-gone-phone"]["listed_chats"]
+    assert quiet not in push.store.read()["reads"]["chats"]
+    assert later.waiting == waiting
+
+
+def test_a_session_moved_to_another_profile_keeps_counting(reading):
+    """Hermes fires ``on_session_delete`` for a session moved to the profile that owns it
+    (``profile_repair``): the chat lives on there, so it stays on the badge. A reason Hermes adds later is
+    left alone too, and a broken payload never raises."""
+    plugins, handler, push, later = reading
+    make_device(handler, "moved-phone", reply_after=0)
+    chat = "20261026_moved"
+    presence(handler, "moved-phone", state="away", unread={"chats": [chat], "rooms": []},
+             listed={"chats": [chat], "rooms": []}, badge=len(push.store.read()["requests"]) + 1)
+    later.run()
+    for reason in ("profile_repair", "something_new"):
+        plugins.invoke_hook("on_session_delete", session_id=chat, reason=reason, profile=None)
+    plugins.invoke_hook("on_session_delete", session_id=None, reason="delete", deleted_ids="not-a-list")
+    record = push.store.read()["badges"]["dev-moved-phone"]
+    assert record["chats"] == [chat] and record["listed_chats"] == [chat]
+    assert later.delays(("badge", "dev-moved-phone")) == []
+    # Several at once (a bulk delete): each named in ``deleted_ids`` goes.
+    plugins.invoke_hook("on_session_delete", session_id="20261026_other", reason="delete", profile=None,
+                        deleted_ids=["20261026_other", chat])
+    assert push.store.read()["badges"]["dev-moved-phone"]["chats"] == []
+
+
 def test_news_read_before_its_notice_goes_nowhere(reading, monkeypatch):
     """A reply or a Bot's message read on another device before its notice goes (the Mac had the chat open;
     a room's message settles 5 s before it notifies) is news the person has seen: no notice, no count. It
