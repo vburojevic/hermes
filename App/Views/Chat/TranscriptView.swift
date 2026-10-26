@@ -1358,6 +1358,7 @@ struct TranscriptView: View {
             }
         case .assistant(let turn):
             let note = conversation.deliveryNote
+            let runWaits = conversation.runWaitsInQueue
             let isLive = turn.id == conversation.liveOutline?.id
             TurnRow(
                 listed: turn,
@@ -1368,7 +1369,8 @@ struct TranscriptView: View {
                 memoryContext: MemoryNoteContext(workspace: workspace, conversation: conversation),
                 rowKey: conversation.displayID(for: item),
                 answersVoice: !spokenReplies.contains(turn.id) ? .none : turn.id == latestReply ? .latest : .earlier,
-                delivery: isLive ? note : nil
+                delivery: isLive ? note : nil,
+                runWaitsInQueue: isLive && runWaits
             )
             .equatable()
         case .notice(let notice) where notice.kind == "background-sent":
@@ -1447,11 +1449,14 @@ struct TranscriptView: View {
         /// rather than read here: the note can change while this row is being drawn, and the Mac's
         /// row then missed it and said "Thinking…" while the message waited for the gateway.
         let delivery: ConversationModel.Delivery?
+        /// The API server holds the running reply's run behind another turn, handed in the same way.
+        let runWaitsInQueue: Bool
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.listed == rhs.listed && lhs.conversation === rhs.conversation && lhs.isLive == rhs.isLive
                 && lhs.onBranch == rhs.onBranch && lhs.extraTeamIDs == rhs.extraTeamIDs
                 && lhs.memoryContext == rhs.memoryContext && lhs.rowKey == rhs.rowKey
                 && lhs.answersVoice == rhs.answersVoice && lhs.delivery == rhs.delivery
+                && lhs.runWaitsInQueue == rhs.runWaitsInQueue
         }
 
         var body: some View {
@@ -1461,7 +1466,7 @@ struct TranscriptView: View {
             // says so ("Waiting for MacBook Pro…"), then "Thinking…" (`docs/chat.md` §4, §4a).
             let delivery = isLive && turn.answer.isEmpty && turn.steps.isEmpty ? self.delivery : nil
             // The API server holds the run behind another turn in this chat (`turnHeaderQueued`).
-            let queuedRun = isLive && conversation.runWaitsInQueue ? String(localized: "Queued behind another turn") : nil
+            let queuedRun = isLive && runWaitsInQueue ? String(localized: "Queued behind another turn") : nil
             AssistantTurnView(
                 turn: turn,
                 pendingSteers: turn.id == conversation.liveTurnID ? conversation.followUps.filter { $0.state == .steerWaiting && $0.turnID == turn.id } : [],
