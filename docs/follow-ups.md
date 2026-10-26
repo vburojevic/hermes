@@ -87,10 +87,13 @@ design's component names, used in code comments.
    snapshots”" (the step's past-tense title), and a `steerStep` ("Read your note" and the quote)
    is inserted in the timeline at that point.
 3. If the turn ends before Hermes read it:
-   - Over the gateway protocol, Hermes sends unread steers as the next turn by itself. The bubble
-     stays dashed, captioned "Steer · sends as the next message", and when that turn starts the
-     message appears captioned "Steer · sent after the reply". If no turn comes within 6 s, the
-     steer is missed.
+   - Over the gateway protocol, Hermes sends unread steers as the next turn by itself, right
+     after the idle notice. The bubble stays dashed, captioned "Steer · sends as the next
+     message", and when that turn starts the message appears captioned "Steer · sent after the
+     reply", once: the tray lets go of it and it is never offered again. That turn's start often
+     comes while the app still finishes the turn before; it waits for that and then starts the
+     turn ([chat.md](chat.md) §2), so the steer is never marked missed while Hermes answers it. If
+     no turn comes within 6 s of the end, the steer is missed.
    - After Stop, or over the API server, it is missed straight away.
    - Steers the stored transcript shows as read are taken from there.
 4. A missed steer (`steerMissed`: one whose answer was lost and the stored turn shows unread, or
@@ -120,7 +123,7 @@ design's component names, used in code comments.
   | The chat | "Up next · …" |
   |---|---|
   | A turn runs, finishes or stops here | "sends when this reply is done" |
-  | Nothing runs (after Stop, a relaunch, an idle reconnect) | "Send sends the first" |
+  | Nothing runs and the queue waits for a Send (after Stop, or only Not sent and Maybe sent messages wait) | "Send sends the first" |
   | The gateway can't be reached | "sends when <gateway> is back" |
   | Every message is Not sent or Maybe sent, while a turn runs | "waits for you to send" |
   | The gateway's own queue holds the next message | "sends when the gateway's turn ends" |
@@ -168,8 +171,15 @@ design's component names, used in code comments.
   with Send while the turn is still stopping goes to Up Next, and the queue drains when it ends.
 - **Survives:** the queue is kept per chat on the device (Application Support,
   `FollowUpQueues/<chat>/`, attachments included) and survives app restarts. It waits while the
-  gateway is unreachable and drains on reconnect, after a resumed turn ends. Removing the gateway
-  removes its chats' queues.
+  gateway is unreachable. It sends by itself whenever the chat becomes idle and reachable, not
+  only when a turn ends here (`UpNext.next`): once the chat has loaded after a relaunch (and
+  attached, with nothing running), on a reconnect with nothing running (or after a resumed turn
+  ends), once a turn recovered as over, and once what held it clears (a refusal's wait, a turn
+  open on the gateway, the gateway's own held message). Each time the first message that doesn't
+  wait for a Send goes, one per turn, in order; Not sent and Maybe sent messages go only with a
+  Send, and a chat never opened since the relaunch sends when it is opened. Before, after a
+  relaunch or an idle reconnect it said "Send sends the first" and waited for a Send that
+  nothing asked for. Removing the gateway removes its chats' queues.
 - **The gateway's own queue.** A message Hermes holds itself (attachments or a fall-back, §1, a
   steer while it compacts, or one it queued behind a turn this device hadn't seen) shows first in
   the tray, read-only, marked "on <gateway name>" (`queueItemOnGateway`). After a reconnect the app
@@ -206,6 +216,11 @@ Next while a turn runs, or sends normally otherwise. With no turn running, ⌥Re
   and never read ends as `steerMissed`. Never silently lost, never sent twice.
 - Stop leaves the queue intact, gives back what the gateway held (Not sent), and Send then sends the first item.
 - Up Next never says "sends when this reply is done" with no reply running or above messages that only go with a Send.
+- A steer Hermes carries into the next turn shows as that turn's message, once, even when the turn
+  says nothing for seconds (a steer with "quietly" in it, `docs/development.md`): never missed,
+  never offered again.
+- With a message in Up Next, a relaunch (once the chat opens) and an idle reconnect send it by
+  itself, once; Not sent and Maybe sent messages stay for a Send.
 - The Mac shortcuts match the Settings caption.
 - Against the mock backend, a message with the word "snapshot" starts a long turn to steer,
   redirect and queue against (`run_snapshots_turn` in `Tools/mock-hermes/chats.py`).

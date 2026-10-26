@@ -11,6 +11,48 @@ public enum UpNext {
         if turnRunning || waitsForChat { return false }
         return !othersWaiting || queuePaused
     }
+
+    /// What Up Next waits on before it sends by itself.
+    public struct Chat: Sendable, Equatable {
+        /// A turn runs, finishes or is open here.
+        public var turnHoldsChat: Bool
+        /// The gateway or API server is there to send to.
+        public var reachable: Bool
+        /// Stop paused the queue: it waits for a Send.
+        public var paused: Bool
+        /// Hermes refused a message because something else holds the chat (`waitForChat`).
+        public var waitsForChat: Bool
+        /// The gateway is about to send what it holds as the next turn (a carried-over steer, its
+        /// queue's head): that goes first.
+        public var expectsGatewayTurn: Bool
+        /// A message typed before the chat loaded goes first, once it has.
+        public var sendsOnLoad: Bool
+
+        public init(turnHoldsChat: Bool, reachable: Bool, paused: Bool = false, waitsForChat: Bool = false,
+                    expectsGatewayTurn: Bool = false, sendsOnLoad: Bool = false) {
+            self.turnHoldsChat = turnHoldsChat
+            self.reachable = reachable
+            self.paused = paused
+            self.waitsForChat = waitsForChat
+            self.expectsGatewayTurn = expectsGatewayTurn
+            self.sendsOnLoad = sendsOnLoad
+        }
+
+        /// Nothing holds the chat: what waits in Up Next may go.
+        public var isFree: Bool {
+            !turnHoldsChat && reachable && !paused && !waitsForChat && !expectsGatewayTurn && !sendsOnLoad
+        }
+    }
+
+    /// The message Up Next sends by itself now, if any (`docs/follow-ups.md` §4): the first one that
+    /// doesn't wait for a Send, once nothing holds the chat. The app asks whenever the chat becomes
+    /// idle and reachable (a turn's end, a load after a relaunch, an idle reconnect, a turn recovered
+    /// as idle, a hold that cleared), and sending it starts a turn, so one goes at a time, in order.
+    /// Not sent and Maybe sent messages go only with the person's Send.
+    public static func next<Item>(in queue: [Item], chat: Chat, isHeld: (Item) -> Bool) -> Item? {
+        guard chat.isFree else { return nil }
+        return queue.first { !isHeld($0) }
+    }
 }
 
 /// Why a message is in Up Next when it wasn't sent there, for its row (`docs/follow-ups.md` §4).

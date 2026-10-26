@@ -100,8 +100,12 @@ python3 Tools/mock-hermes/server.py --port 18642 --key dev-key-0123456789abcdef
 
 Then add `localhost:18642` with that key, or launch a Debug build with
 `HERMES_BOOTSTRAP_URL=http://127.0.0.1:18642` and `HERMES_BOOTSTRAP_KEY=…` in the environment.
-Messages containing "approve" ask for permission, "slow" runs a long multi-tool turn, and
-"fail" fails.
+Messages containing "approve" ask for permission, "slow" runs a long multi-tool turn,
+"marathon" runs six steps of 12 s each, and "fail" fails. Hermes sweeps a run's events 300 s after
+the run was created when nothing listens, even while it runs (its status stays, its events answer
+404); `--run-stream-ttl <s>` shortens that, so "marathon" with `--run-stream-ttl 20` and the app
+in the background for half a minute comes back to a run whose events are gone (`RunFollow`,
+`docs/chat.md` §2).
 
 The mock answers approvals as Hermes's run store does (`docs/quick-actions.md` §3): `POST
 /v1/runs/{id}/approval` (and `/clarify`) takes exactly `{request_id, execution_generation,
@@ -183,7 +187,15 @@ another Bot drops a message in its chat. `--drop-after-reply` cuts every socket 
 `persisted_turn` then has no `final_assistant_row_id`), `POST /api/mock/restart-gateway` kills the
 turns where they are and cuts every socket, as a gateway restart does (a resume finds the chat idle,
 with a new event sequence; auto-continue isn't played), `--agent-build <s>` says the session is idle on `prompt.submit` and takes the
-prompt that long later (Hermes building a chat's agent on a loaded Mac), and `--late-settle <s>` says
+prompt that long later (Hermes building a chat's agent on a loaded Mac). As Hermes, the mock
+starts the next turn the moment one ends, right after its idle notice: a steer the turn never read,
+then what its queue holds ("essay", a steer while it streams, and the steer goes as the next turn;
+a steer with "quietly" in it makes that turn send nothing for 8 s, as a model writing a long tool
+call: the steer shows as that turn's message meanwhile, never missed, `docs/chat.md` §2). Up Next
+sending by itself (`docs/follow-ups.md` §4): queue a message behind "slow", quit the app before
+the turn ends and open the chat again after it has (it goes once the chat loads), or queue one
+behind a turn and `POST /api/mock/drop-sockets {"outage": 15}` past its end (it goes on the
+reconnect). `--late-settle <s>` says
 the session is idle that long after it (the turn's
 end handing over: `-HERMES_SEND "write swift widgets" -HERMES_SEND_AFTER 6 -HERMES_FOLLOWUP <text>
 -HERMES_FOLLOWUP_MODE steer -HERMES_FOLLOWUP_SEND YES -HERMES_FOLLOWUP_AFTER 12` in `bot:default`, and

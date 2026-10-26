@@ -851,7 +851,9 @@ def after_turn(sid, runner):
             # Hermes deactivates the row it wrote at accept: the turn stores its own.
             nxt["row"]["display_kind"] = "hidden"
             nxt["row"].pop("display_metadata", None)
-    threading.Timer(0.5, start_turn, args=(sid, nxt["text"], runner)).start()
+    # At once, right after the idle notice, as Hermes does (prompt_turn.py `_run_post_turn_followups`):
+    # its start reaches the app while the app still finishes the turn before.
+    start_turn(sid, nxt["text"], runner)
 
 
 def method_session_redirect(params):
@@ -1225,6 +1227,17 @@ def run_turn(sid, text):
         answer = "Here it is, a little late: your next event is the cleaning lady on **Wednesday** at 09:00."
         threading.Timer(12, lambda: add_message(stored, "assistant", answer, finish_reason="stop")).start()
         return finish(sid, stored, "")
+
+    if "quietly" in visible.lower():
+        # Mock-only: nothing for 8 s after the turn's start, as when the model writes a long tool call
+        # before its first event. A steer carried into this turn shows as its message meanwhile.
+        for _ in range(80):
+            if runtime["interrupt"]:
+                return finish(sid, stored, "", status="interrupted")
+            time.sleep(0.1)
+        answer = "Done, quietly: I folded your note into the plan."
+        stream(sid, answer)
+        return finish(sid, stored, answer)
 
     if "ponder" in visible.lower():
         # Mock-only: thinks for about 14 s before a word (the live line's "Thinking… · 12s").
@@ -2862,6 +2875,9 @@ def main():
                         help="cut every socket right after a turn's message.complete, before the session says it's idle")
     parser.add_argument("--late-settle", type=float, default=0, metavar="SECONDS",
                         help="say the session is idle (session.info running: false) this long after message.complete")
+    parser.add_argument("--run-stream-ttl", type=float, default=300, metavar="SECONDS",
+                        help="the API-server mock sweeps a run's events this long after it was created when nothing "
+                             "listens, even mid-run (Hermes: 300)")
     parser.add_argument("--turn-isolation", type=float, default=0, metavar="SECONDS",
                         help="store a turn's user row this long after it starts (Hermes' dashboard.turn_isolation)")
     parser.add_argument("--dev-port", type=int, default=5173, help="the Inspector's localhost dev server (inspector.py)")
@@ -2916,6 +2932,7 @@ def main():
         gateway.seed()
         gateway.NETWORK["kbps"] = args.bandwidth
         gateway.NETWORK["busy"] = args.busy
+        gateway.RUN_STREAM["ttl"] = args.run_stream_ttl
         if args.long_chat:
             gateway.seed_long_chat()
         GATEWAY_PAGING.extend([gateway.page_rows, gateway.throttle])

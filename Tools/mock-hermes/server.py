@@ -28,6 +28,8 @@ import importlib.util
 import json
 import pathlib
 import re
+import select
+import socket
 import sys
 import threading
 import time
@@ -307,12 +309,22 @@ def take_failed_read() -> bool:
         FAILED_READS["count"] -= 1
         return True
 
+# Hermes sweeps a run's events this long after the run was created whenever nothing is listening,
+# even while the run goes on: its later events are dropped, and the events answer 404 while its status
+# stays (api_server_runs.py `_sweep_orphaned_runs_once`, api_server.py `_RUN_STREAM_TTL = 300`).
+# `--run-stream-ttl` shortens it for a timing run.
+RUN_STREAM = {"ttl": 300.0}
+
+
 class Run:
     def __init__(self, run_id, session_id, text):
         self.id = run_id
         self.session_id = session_id
         self.text = text
         self.events = []
+        self.created = time.time()
+        self.subscribers = 0
+        self.swept = False
         self.cond = threading.Condition()
         self.status = "queued"
         self.output = ""
@@ -327,8 +339,17 @@ class Run:
         # Steers accepted and not read yet (`POST /v1/runs/{id}/steer`); read at the next step.
         self.steers = []
 
+    def is_swept(self):
+        """Swept once nothing listened past the stream's lifetime (call with `cond` held)."""
+        if not self.swept and self.subscribers == 0 and time.time() - self.created > RUN_STREAM["ttl"]:
+            self.swept = True
+            self.events = []
+        return self.swept
+
     def emit(self, name, **fields):
         with self.cond:
+            if self.is_swept():
+                return  # Hermes drops the events of a run whose stream it swept (`RunStream.put_event`)
             seq = len(self.events)
             event = {"event": name, "run_id": self.id, "timestamp": time.time(), **fields, "seq": seq}
             self.events.append(event)
@@ -474,12 +495,18 @@ def agent_turn(run):
             run.output = out
         else:
             slow = "slow" in lowered
+            # "marathon": six steps of 12 s, past a short `--run-stream-ttl` (a phone away meanwhile
+            # comes back to a run whose events Hermes swept).
+            marathon = "marathon" in lowered
             narration = "Let me look into that. "
             stream_text(run, narration)
             calls = [("web_search", {"query": text[:60]}, "1. Official docs\n2. Release notes\n3. Community thread", 1.4 if not slow else 4)]
             calls.append(("terminal", {"command": "uname -a && df -h /"}, "Darwin mini 27.0.0 arm64\n/dev/disk3s1  926Gi  412Gi  514Gi  45% /", 0.9 if not slow else 4))
             if slow:
                 calls.append(("read_file", {"path": "~/projects/app/Package.swift"}, "// swift-tools-version: 6.2", 4))
+            if marathon:
+                calls = [(name, args, result, 12) for name, args, result, _ in calls]
+                calls += [("read_file", {"path": f"~/projects/app/Sources/Part{i}.swift"}, f"// part {i}", 12) for i in range(1, 5)]
             tool_calls = [{"id": f"call_{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}} for i, (n, a, _, _) in enumerate(calls)]
             add_message(sid, "assistant", narration.strip(), tool_calls=tool_calls, finish_reason="tool_calls",
                         reasoning="I should gather facts before answering: search, then check the machine.")
@@ -667,6 +694,18 @@ class Handler(BaseHTTPRequestHandler):
         run = RUNS.get(run_id)
         if not run:
             return self.error(404, f"Run not found: {run_id}", "run_not_found")
+        with run.cond:
+            if run.is_swept():
+                # The run goes on (its status says so), but its events are gone: 404, as Hermes.
+                return self.error(404, f"Run not found: {run_id}", "run_not_found")
+            run.subscribers += 1
+        try:
+            self.stream_run(run, query)
+        finally:
+            with run.cond:
+                run.subscribers -= 1
+
+    def stream_run(self, run, query):
         raw = self.headers.get("Last-Event-ID") or query.get("last_seq")
         last = int(raw) if raw is not None else -1
         self.start_sse()
@@ -691,6 +730,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b": stream closed\n\n")
                     self.wfile.flush()
                     return
+                if self.client_left():
+                    return  # the run continues detached, with nothing listening (it may be swept)
                 if time.time() - idle > 10:
                     STARVE.wait()
                     self.wfile.write(b": keepalive\n\n")
@@ -698,6 +739,14 @@ class Handler(BaseHTTPRequestHandler):
                     idle = time.time()
         except (BrokenPipeError, ConnectionResetError):
             return  # the run continues detached
+
+    def client_left(self):
+        """The client closed the stream (aiohttp notices at once; a blocking write only at the next one)."""
+        try:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            return bool(readable) and self.connection.recv(1, socket.MSG_PEEK) == b""
+        except OSError:
+            return True
 
     def do_POST(self):
         path, query = self.route("POST")
@@ -975,9 +1024,13 @@ def main():
     parser.add_argument("--no-widgets", action="store_true", help="a gateway without the hermes-app-widgets plugin")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: answers come in bursts every MIN-MAX seconds (starve.py)")
+    parser.add_argument("--run-stream-ttl", type=float, default=300, metavar="SECONDS",
+                        help="sweep a run's events this long after it was created when nothing listens, even mid-run "
+                             "(Hermes: 300); its status stays and its events answer 404")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
+    RUN_STREAM["ttl"] = args.run_stream_ttl
     Handler.key = args.key
     seed()
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets)

@@ -572,6 +572,16 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var stuckTurnWatch: Task<Void, Never>?
     /// Events that arrive while catching up after a reconnect wait here.
     @ObservationIgnored private var catchUpBuffer: [GatewayEvent]?
+    /// What Hermes sends for the next turn while this device still finishes the last one waits
+    /// here (`NextTurnHold`, `releaseNextTurn`).
+    @ObservationIgnored private var nextTurn = NextTurnHold<NextTurnItem>()
+    /// A stuck turn's settle reloads the chat and sends Up Next itself, once the messages the stored
+    /// chat already has are held (`settleStuckTurn`): the load doesn't send them first.
+    @ObservationIgnored private var checksQueueAfterLoad = false
+    enum NextTurnItem {
+        case event(GatewayEvent)
+        case approval(ApprovalRequest)
+    }
     /// The re-attach after a reconnect, and the runtime id it can replay missed events from.
     @ObservationIgnored private var reattachTask: Task<Void, Never>?
     /// A pending check of which requests Hermes still waits on (`RequestSync`).
@@ -1227,6 +1237,9 @@ final class ConversationModel: Identifiable {
                     _ = await attachGatewayChat()
                     LoadTrace.mark(stableKey, "attached")
                 }
+                // Loaded and attached with nothing running (after a relaunch, a reconnect): what
+                // waits in Up Next goes now, never only after a turn that may not come.
+                if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle() }
             } catch is CancellationError {
             } catch {
                 // Offline or refused: the kept copy still goes up.
@@ -3146,7 +3159,8 @@ final class ConversationModel: Identifiable {
         carryOverTimeout?.cancel()
         carryOverTimeout = Task {
             try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled, !isWorking else { return }
+            // A turn under way, or one held for its start, is the one carrying it (`takeExpectedFromGateway`).
+            guard !Task.isCancelled, !isWorking, live == nil, !nextTurn.isHolding else { return }
             // Nothing came: the steer is missed, and what the gateway held has gone some other way.
             animateRows {
                 for index in followUps.indices where followUps[index].state == .steerCarriedOver {
@@ -3190,13 +3204,15 @@ final class ConversationModel: Identifiable {
 
     // The queue (Send Next)
 
-    /// When a turn ends: the first queued message goes next, one per turn, unless Stop paused the
-    /// queue, a queued message is being edited into the first place, or the gateway is away.
+    /// Whenever the chat becomes idle and reachable (a turn's end, a load after a relaunch, an idle
+    /// reconnect, a turn recovered as idle, a hold that cleared), the first queued message goes,
+    /// one per turn, unless Stop paused the queue or something else holds the chat (`UpNext.next`).
+    /// A held message waits for its Send; the ones behind it go as usual.
     private func drainQueueIfIdle() {
-        // A held message waits for its Send; the ones behind it go as usual.
-        guard !queuePaused, !waitsForChat, expectedFromGateway.isEmpty, let first = queue.first(where: { !$0.isHeld }), !isWorking,
-              !isFinishing, !isBotTurnOpen, isReachable, sendOnLoad == nil
-        else { return }
+        let chat = UpNext.Chat(turnHoldsChat: isWorking || isFinishing || isBotTurnOpen || nextTurn.isHolding,
+                               reachable: isReachable, paused: queuePaused, waitsForChat: waitsForChat,
+                               expectsGatewayTurn: !expectedFromGateway.isEmpty, sendsOnLoad: sendOnLoad != nil)
+        guard let first = UpNext.next(in: queue, chat: chat, isHeld: \.isHeld) else { return }
         sendQueued(first)
     }
 
@@ -3561,52 +3577,76 @@ final class ConversationModel: Identifiable {
     /// Follows a detached run, re-attaching to its event stream whenever it drops.
     ///
     /// A lost connection never fails the turn: the run keeps executing on the gateway,
-    /// so this keeps trying (and says "Reconnecting…") until it learns the outcome.
+    /// so this keeps trying (and says "Reconnecting…") until it learns the outcome. Once Hermes has
+    /// swept the run's events (`RunFollow`), its status alone is followed, and the live line says so.
     private func follow(runID: String, client: HermesClient) async throws {
         var failures = 0
+        var eventsGone = false
         while true {
             try Task.checkCancellation()
             let seqBefore = live?.lastSeq
-            let subscription = Task { @MainActor [weak self] in
-                for try await event in client.runEvents(runID: runID, after: self?.live?.lastSeq) {
-                    guard let self else { return }
-                    self.connectionNote = nil
-                    self.apply(event.event, seq: event.seq)
-                    if self.live?.isFinished == true { return }
+            if !eventsGone {
+                let subscription = Task { @MainActor [weak self] in
+                    for try await event in client.runEvents(runID: runID, after: self?.live?.lastSeq) {
+                        guard let self else { return }
+                        self.connectionNote = nil
+                        self.apply(event.event, seq: event.seq)
+                        if self.live?.isFinished == true { return }
+                    }
                 }
-            }
-            self.subscription = subscription
-            do {
-                try await withTaskCancellationHandler {
-                    try await subscription.value
-                } onCancel: {
-                    subscription.cancel()
+                self.subscription = subscription
+                do {
+                    try await withTaskCancellationHandler {
+                        try await subscription.value
+                    } onCancel: {
+                        subscription.cancel()
+                    }
+                } catch {
+                    // Transport errors are handled below by asking for the run's status. A 404 says
+                    // the events are gone for good, even if the run goes on.
+                    if RunFollow.eventsGone(after: error) {
+                        eventsGone = true
+                        ConnectionLog.logger.notice("chat: Hermes no longer keeps this run's events; following its status")
+                    }
                 }
-            } catch {
-                // Transport errors are handled below by asking for the run's status.
+                self.subscription = nil
             }
-            self.subscription = nil
             try Task.checkCancellation() // the whole turn was cancelled
             if live?.isFinished == true { return }
             if live?.lastSeq != seqBefore { failures = 0 }
 
             // The stream ended early. Reconcile with the run's status.
+            let status: Result<RunStatus, any Error>
             do {
-                let status = try await client.runStatus(runID: runID)
-                if status.isTerminal {
-                    applyTerminal(status)
-                    return
-                }
-                if let approval = status.approval, live?.approval == nil {
-                    apply(.approvalRequested(approval))
-                }
-            } catch HermesError.notFound {
+                status = .success(try await client.runStatus(runID: runID))
+            } catch {
+                try Task.checkCancellation()
+                status = .failure(error)
+            }
+            switch RunFollow.next(eventsGone: eventsGone, status: status) {
+            case .end:
+                if case .success(let ended) = status { applyTerminal(ended) }
+                return
+            case .recover:
                 // Hermes keeps a run's status for an hour and not over a restart: nothing runs, and
                 // the stored chat says how the turn ended (`TurnRecovery`, `docs/chat.md` §2).
                 live?.settleUnheard()
                 return
-            } catch {
-                try Task.checkCancellation()
+            case .listen, .watchStatus:
+                if case .success(let running) = status {
+                    if let approval = running.approval, live?.approval == nil {
+                        apply(.approvalRequested(approval))
+                    }
+                    if running.isQueued != runWaitsInQueue { runWaitsInQueue = running.isQueued }
+                }
+            }
+            if eventsGone {
+                // Nothing more will stream: the run's status, read every few seconds, is the turn's
+                // true state, and the stored reply takes over when it ends (`finishTurn`).
+                // Waiting on the person, the card says so; queued, the header does (`runWaitsInQueue`).
+                connectionNote = live?.approval == nil ? RunFollow.line : nil
+                try await Task.sleep(for: .seconds(RunFollow.statusInterval))
+                continue
             }
 
             // A deliberate re-attach (app came back to the foreground) isn't a failure.
@@ -3872,6 +3912,8 @@ final class ConversationModel: Identifiable {
                 finishingTurn = nil
                 isFinishing = false
             }
+            // The turn Hermes started as this one ended (a carried-over steer, its queue) shows now.
+            releaseNextTurn()
         }
         if let newID = finished.sessionID, newID != sessionID {
             sessionID = newID
@@ -4567,6 +4609,8 @@ extension ConversationModel {
                     _ = await attachGatewayChat()
                     LoadTrace.mark(stableKey, "attached")
                 }
+                // As for a chat (`reload`): idle once loaded, Up Next goes.
+                if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle() }
                 if fetchAgain, !Task.isCancelled { reload() }
             } catch is CancellationError {
             } catch {
@@ -5326,6 +5370,7 @@ extension ConversationModel {
             isResting = true
             runtimeSessionID = nil
             lastAppliedSeq = nil
+            nextTurn = NextTurnHold()
             appliedRunSettings = nil
             if !items.isEmpty {
                 addReceipt(String(localized: "This chat was resting · it picks up where you left off"), symbol: "moon.zzz")
@@ -5341,6 +5386,39 @@ extension ConversationModel {
             if let last = lastAppliedSeq, seq <= last { return }
             lastAppliedSeq = seq
         }
+        // The next turn's, while the last one still finishes: it starts once that one has handed over.
+        if nextTurn.holds(.event(event), startsTurn: Self.turnEvents.contains(event.type), turnEnded: turnHasEnded) {
+            releaseNextTurn()
+            return
+        }
+        applyTurnEvent(event)
+    }
+
+    /// The turn on screen has ended and is being finished: a turn that starts now is the next one.
+    private var turnHasEnded: Bool {
+        live?.isFinished == true || (live == nil && isFinishing)
+    }
+
+    /// The next turn's events held while the last one finished (`NextTurnHold`), once it has
+    /// handed over: they start that turn, in order, as if they came now. A carried-over steer or a
+    /// message the gateway held shows as its message (`takeExpectedFromGateway`), never as missed.
+    private func releaseNextTurn() {
+        guard nextTurn.isHolding, live == nil, !isFinishing else { return }
+        let held = nextTurn.release()
+        LoadTrace.mark(stableKey ?? "?", "next turn: \(held.count) events held while the last one finished")
+        for item in held {
+            switch item {
+            case .event(let event):
+                // A turn after that one, all inside the finish: it waits for that one's end in turn.
+                if nextTurn.holds(item, startsTurn: Self.turnEvents.contains(event.type), turnEnded: turnHasEnded) { continue }
+                applyTurnEvent(event)
+            case .approval(let approval):
+                receive(approval)
+            }
+        }
+    }
+
+    private func applyTurnEvent(_ event: GatewayEvent) {
         let decoded = GatewayTurnDecoder.decode(event)
         if live == nil {
             guard Self.turnEvents.contains(event.type), !isFinishing else { return }
@@ -5389,6 +5467,11 @@ extension ConversationModel {
 
     /// An approval the backend asked for (a server→client request).
     func receive(_ approval: ApprovalRequest) {
+        // Asked by the next turn while the last one still finishes: it waits with that turn's events.
+        if nextTurn.holds(.approval(approval), startsTurn: true, turnEnded: turnHasEnded) {
+            releaseNextTurn()
+            return
+        }
         if live == nil { beginRemoteTurn() }
         // Parallel tool calls ask at once: keep the others waiting behind the card.
         if let current = pendingApproval, current.id != approval.id {
@@ -5769,6 +5852,9 @@ extension ConversationModel {
         isRemoteTurn = true
         // Its events come over the socket, so a steer goes there too.
         turnUsesGateway = true
+        // A turn of its own, even right after one of this device's: that one's end, still being
+        // finished, clears only its own opening (`finishBotTurn`).
+        if isBotTurnOpen { botTurnGeneration &+= 1 }
         isBotTurnOpen = true
         turnGate.take()
     }
@@ -5894,6 +5980,10 @@ extension ConversationModel {
         finishingTurn = nil
         isFinishing = false
         isBotTurnOpen = false
+        releaseNextTurn()
+        // Up Next goes below, once what the stored chat already has is held: not from the load.
+        checksQueueAfterLoad = true
+        defer { checksQueueAfterLoad = false }
         reload()
         await loadTask?.value
         guard !isWorking, !isFinishing, !isBotTurnOpen else { return }
@@ -5902,6 +5992,7 @@ extension ConversationModel {
             queue[index].isHeld = true
             queue[index].note = .mayHaveArrived
         }
+        checksQueueAfterLoad = false
         drainQueueIfIdle()
     }
 
@@ -6102,8 +6193,12 @@ extension ConversationModel {
             connectionNote = nil
             guard live != nil else {
                 // A transcript fetched moments ago (the socket connecting as the app starts) is
-                // current: only a real outage needs catching up.
-                if let lastFetchedAt, Date.now.timeIntervalSince(lastFetchedAt) < 5 { return }
+                // current: only a real outage needs catching up. Idle either way: Up Next goes, by
+                // itself (the reload sends it once it's in).
+                if let lastFetchedAt, Date.now.timeIntervalSince(lastFetchedAt) < 5 {
+                    drainQueueIfIdle()
+                    return
+                }
                 reload()
                 return
             }

@@ -103,6 +103,15 @@ matters most with `dashboard.turn_isolation`, where Hermes stores the message on
 own process has started: until then no other device could see it. A `hidden` send (a widget's)
 shows no message.
 
+Hermes starts the next turn the moment one ends: a steer the turn never read, or what its queue
+holds, goes as a turn of its own right after the idle notice (hermes-agent
+`tui_gateway/prompt_turn.py` `_run_post_turn_followups`), while the app is still reading the
+ended turn's stored rows. A turn event that comes once the turn on screen has ended starts the next
+turn, and it and everything after it wait (`NextTurnHold`) until the ended turn has handed over to
+its stored rows; then they start the next turn, in order, as if they came then. Before, they went
+into the ended turn, the next one showed only from its next event on, and a steer it carried was
+marked missed while Hermes answered it ([follow-ups.md](follow-ups.md) §2).
+
 ### Streaming and text
 
 | Event | Shown as | Component |
@@ -410,6 +419,17 @@ The multimodal session stream sends `run.started`, `assistant.delta`, `assistant
 `run.completed`; a dropped connection there ends the turn unless the run's status says it already
 finished. A run whose status Hermes no longer has (404: kept for an hour, and not over a restart)
 ended unheard, and the stored chat says how (`TurnRecovery`, above).
+
+Hermes keeps a run's events only while something listens: 300 s after the run was created, with
+no subscriber, it sweeps them, even while the run goes on, and drops the run's later events; the
+events then answer 404 while `GET /v1/runs/{id}` still says how the run is
+(`api_server_runs.py` `_sweep_orphaned_runs_once`, `_RUN_STREAM_TTL`). A phone back from the
+background after that used to say "Reconnecting…" with no steps until the run ended. Now a 404 on
+the events with the run still there means they're gone (`RunFollow`): the app reads the run's
+status every 4 s instead, keeps the steps it saw, and the live line says "Still working · its steps
+show when it's done" (`turnHeaderStepsLater`); waiting on an approval shows the card, and queued
+behind another turn says so (`turnHeaderQueued`). When the run ends, the stored reply takes over as
+for any turn. A 404 on the status too is a run Hermes no longer has (above).
 
 ### Not shown in this app
 
@@ -910,6 +930,10 @@ Not built yet:
 - No raw JSON, tool arguments or unknown event text ever reaches the transcript.
 - A turn that ends replaces its live rows with the stored ones in place, without rows jumping or
   disappearing.
+- A turn Hermes starts as one ends (a carried-over steer, its queue) shows live from its start.
+- Over the API server, back after the run's events were swept (`--run-stream-ttl`), the turn says
+  "Still working · its steps show when it's done", never "Reconnecting…", and its stored reply
+  shows when it ends.
 - Light, dark and Increase Contrast match the design, on iPhone, iPad and Mac.
 
 ## 8. Setup
