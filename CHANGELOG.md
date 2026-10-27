@@ -31,6 +31,14 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610271033 (October 27, 2026)
+
+- **Chat:** an approval answered on another device or timed out comes off a reply's card at once
+- **Chat:** stopping a reply takes its approval card down without saying another device answered
+- **Mac:** a selected Bot or chat always shows under its row after a launch, and clicking the selected row shows it again
+- **Search:** a result's time is its chat's last message, as on the chat's row
+- **Projects:** a project's time and place are its chats' newest message, not Hermes' last activity
+
 ### Build 2610270830 (October 27, 2026)
 
 - **Settings:** removing a gateway never crashes, and its Preview and browser data still go
