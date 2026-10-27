@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610270830 (October 27, 2026)
+
+- **Settings:** removing a gateway never crashes, and its Preview and browser data still go
+
 ### Build 2610270630 (October 27, 2026)
 
 - **Bots:** a Bot stops showing as working the moment its chat settles the turn
