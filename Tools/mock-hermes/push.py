@@ -1009,10 +1009,15 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
                     server_request(sid, "approval", {
                         "request_id": f"ap_{uuid.uuid4().hex[:6]}", "command": "rm -rf ~/snapshots/2026-0[1-8]-*",
                         "description": "deletes files recursively", "choices": ["once", "session", "always", "deny"]})
+                    if backend_globals["RUNTIME"][sid]["interrupt"]:
+                        break
                 activity(stored, {"phase": "working", "step": label, "started_at": turn["start"],
                                   "progress": {"done": index, "total": len(steps)}, "title": chat_title(stored)})
                 backend_globals["tool"](sid, stored, "terminal", {"command": label.lower()},
                                         json.dumps({"output": "ok", "exit_code": 0}), 6.0, label)
+            if backend_globals["RUNTIME"][sid]["interrupt"]:
+                # Stopped, at a step or at the approval: Hermes ends the turn interrupted, with no reply.
+                return backend_globals["finish"](sid, stored, "", status="interrupted")
             reply = "Done. Freed **42 GB** and kept the last 7 days of snapshots."
             backend_globals["stream"](sid, reply)
             return backend_globals["finish"](sid, stored, reply)
@@ -1031,6 +1036,8 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
             else:
                 server_request(sid, "sudo", {"command": "apt-get upgrade -y"}, timeout=120)
                 reply = "Thanks. The upgrade finished: **14 packages** updated."
+            if backend_globals["RUNTIME"][sid]["interrupt"]:
+                return backend_globals["finish"](sid, stored, "", status="interrupted")
             backend_globals["stream"](sid, reply)
             return backend_globals["finish"](sid, stored, reply)
         return original_run(sid, text)

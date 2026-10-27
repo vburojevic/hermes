@@ -343,11 +343,14 @@ agent being built; 6 s when the message says "cold start", as on a loaded Mac) a
 message with "compact", or a Bot Chat's "slow … compact", compacts for 8 s after its first step,
 `status.update` kind `compacting`) a steer or redirect is held for the next turn and answered
 `queued`; `session.interrupt` empties the queue held for
-the next turn. On the API server mock a chat's runs go one at a time: a run posted behind another
+the next turn. A turn stopped while a card waits (an approval, a question, a password) ends as on
+Hermes: the card is withdrawn (`request.cancel` with the card's own method, reason `interrupted`)
+and the turn ends `interrupted` with no reply stored. On the API server mock a chat's runs go one at a time: a run posted behind another
 answers `started` but sends nothing and reads `queued` until it runs, `POST /v1/runs/{id}/steer`
 answers `{accepted: true}` (and `run.steered`) or 409 `run_not_accepting_steer` for a run that isn't
 running, an unread steer comes back as `pending_steer` on `run.completed`, Stop on a queued run
-cancels only it, and the same `Idempotency-Key` replays its run (409 `idempotency_key_conflict` with
+cancels only it, Stop while an approval waits settles it (`approval.settled`), stores the step with
+its blocked result and ends the run `cancelled` without a reply, and the same `Idempotency-Key` replays its run (409 `idempotency_key_conflict` with
 another body). The API server's caps refuse as Hermes's do: past `max_runs` runs live at once (Hermes's
 default is 10) a new run is 429 `rate_limit_exceeded` "Too many concurrent runs (max N)" with
 `Retry-After`, and past 32 runs queued in one chat it is 409 `queue_full`, its message the bare

@@ -590,6 +590,11 @@ def run_request_turn(sid, stored, lower):
         answer = "No answer, so I carried on with the safe default."
     else:
         return False
+    if interrupted(sid):
+        # Stop withdrew the card (`session.interrupt`): Hermes's agent loop breaks before another model
+        # call, so the turn ends interrupted with no reply.
+        finish(sid, stored, "", status="interrupted")
+        return True
     stream(sid, answer)
     finish(sid, stored, answer)
     return True
@@ -1066,6 +1071,8 @@ def run_chat_turn(sid, text):
             "request_id": uuid.uuid4().hex, "command": command, "description": "Recursive delete",
             "pattern_key": "rm_rf", "pattern_keys": ["rm_rf"], "tool_name": "terminal",
             "allow_session": True, "allow_permanent": True})
+        if interrupted(sid):
+            return finish(sid, stored, "", status="interrupted")
         choice = (result or {}).get("choice", "deny")
         if result is None or choice == "deny":
             answer = "Okay, I didn't touch the build folder. Let me know if you want a safer cleanup."

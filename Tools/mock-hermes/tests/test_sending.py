@@ -1,8 +1,8 @@
 """Every way a message reaches the mock gateway, shaped like Hermes's own (`docs/chat.md` §4b,
 §4c): what `prompt.submit` answers, every 4090 reason with Hermes's words, the gateway owner's
 queue and its forwarded prompts, the chat limit, a slow or lost answer, photos staged for a refused
-prompt, steer accepted and refused, Stop emptying the queue, and the API server's run FIFO,
-Idempotency-Key and steer.
+prompt, steer accepted and refused, Stop emptying the queue, Stop while a card waits (the turn ends
+interrupted, nothing stored after it), and the API server's run FIFO, Idempotency-Key and steer.
 
 Starts its own backend and gateway on free ports, stdlib only:
     python3 -I -m unittest discover -s Tools/mock-hermes/tests
@@ -71,13 +71,13 @@ class Sending(unittest.TestCase):
         except urllib.error.HTTPError as error:
             return error.code, json.loads(error.read() or b"null")
 
-    def open_chat(self):
-        """A socket and a new chat on it: (socket, runtime id, stored id)."""
+    def open_chat(self, **create):
+        """A socket and a new chat on it (a Bot Chat with `title="Bot Chat"`): (socket, runtime id, stored id)."""
         ws = Socket(self.port, f"/api/ws?token={TOKEN}")
         self.addCleanup(ws.close)
         ws.sock.settimeout(40)
         self.next_id = 0
-        created = self.rpc(ws, "session.create", {"profile": "default"})["result"]
+        created = self.rpc(ws, "session.create", {"profile": "default", **create})["result"]
         return ws, created["session_id"], created["stored_session_id"]
 
     def rpc(self, ws, method, params):
@@ -90,7 +90,26 @@ class Sending(unittest.TestCase):
                 return message
             if isinstance(message, dict) and message.get("method") == "event":
                 self.events.append(message["params"])
+            elif isinstance(message, dict) and "method" in message:
+                self.requests.append(message)
         self.fail(f"{method}: the socket closed without an answer")
+
+    def until_request(self, ws, method, seconds=20):
+        """Reads until the gateway asks this socket something (`approval`, `clarify`…); returns the frame."""
+        for frame in self.requests:
+            if frame["method"] == method:
+                self.requests.remove(frame)
+                return frame
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            message = ws.recv()
+            if message is None:
+                break
+            if isinstance(message, dict) and message.get("method") == "event":
+                self.events.append(message["params"])
+            elif isinstance(message, dict) and message.get("method") == method:
+                return message
+        self.fail(f"no {method} request")
 
     def until_event(self, ws, kind, seconds=20, where=lambda p: True):
         """Reads events until one of `kind` (matching `where`) comes; returns its payload."""
@@ -111,6 +130,7 @@ class Sending(unittest.TestCase):
 
     def setUp(self):
         self.events = []
+        self.requests = []
 
     def submit(self, ws, sid, text, **extra):
         return self.rpc(ws, "prompt.submit", {"session_id": sid, "text": text, **extra})
@@ -263,6 +283,44 @@ class Sending(unittest.TestCase):
         resumed = self.rpc(ws, "session.resume", {"session_id": stored, "omit_messages": True})["result"]
         self.assertIsNone(resumed["queued"])
 
+    def stop_while_a_card_waits(self, text, method, **create):
+        """Sends `text`, answers nothing and stops the turn once its `method` card is up: returns the
+        stored rows from the message on, after the interrupted end."""
+        ws, sid, stored = self.open_chat(**create)
+        self.assertTrue(self.rpc(ws, "client.capabilities", {"server_requests": True})["result"]["server_requests"])
+        self.submit(ws, sid, text)
+        asked = self.until_request(ws, method)
+        self.assertEqual(self.rpc(ws, "session.interrupt", {"session_id": sid})["result"], {"status": "interrupted"})
+        # The card is withdrawn under its own method, as Hermes's `server_requests.cancel` does.
+        cancel = self.until_event(ws, "request.cancel", where=lambda p: p.get("id") == asked["id"])
+        self.assertEqual((cancel["method"], cancel["reason"]), (method, "interrupted"))
+        complete = self.until_event(ws, "message.complete")
+        self.assertEqual((complete["status"], complete["text"]), ("interrupted", ""))
+        self.until_event(ws, "session.info", where=lambda p: p.get("running") is False)
+        time.sleep(0.5)
+        if create.get("title") == "Bot Chat":
+            status, body = self.call("GET", f"/api/sessions/{stored}/messages")  # a Bot Chat lives on the backend
+            self.assertEqual(status, 200)
+            rows = body["messages"]
+        else:
+            rows = self.stored_rows(stored)
+        start = max(i for i, r in enumerate(rows) if r["role"] == "user" and r["content"] == text)
+        return rows[start:]
+
+    def test_stop_while_an_approval_waits_ends_the_turn_interrupted_with_no_reply(self):
+        rows = self.stop_while_a_card_waits("approve this cleanup", "approval")
+        self.assertEqual([r["role"] for r in rows], ["user"])
+
+    def test_stop_while_a_bot_chats_approval_waits_ends_the_turn_interrupted_with_no_reply(self):
+        rows = self.stop_while_a_card_waits("approve this cleanup", "approval", title="Bot Chat")
+        self.assertEqual([r["role"] for r in rows], ["user"])
+
+    def test_stop_while_a_question_waits_ends_the_turn_interrupted_with_no_reply(self):
+        for create in ({}, {"title": "Bot Chat"}):
+            with self.subTest(**create):
+                rows = self.stop_while_a_card_waits("clarify pair", "clarify", **create)
+                self.assertEqual([r["role"] for r in rows], ["user"])
+
     def stored_rows(self, stored):
         status, body = self.call("GET", f"/api/sessions/{stored}/messages", port=self.gateway)
         self.assertEqual(status, 200)
@@ -326,6 +384,29 @@ class Sending(unittest.TestCase):
         self.assertEqual(polled["status"], "cancelled")
         _, polled = self.call("GET", f"/v1/runs/{first['run_id']}", port=self.gateway)
         self.assertIn(polled["status"], ("running", "completed"))
+
+    def test_a_run_stopped_while_its_approval_waits_is_cancelled_with_no_reply(self):
+        """As Hermes (tools/approval.py, api_server_runs.py): the wait ends interrupted and fails closed,
+        the step and its blocked result are stored, and the run ends cancelled without a reply."""
+        sid = f"api_stop_approval_{int(time.time() * 1000)}"
+        status, run = self.call("POST", "/v1/runs", {"session_id": sid, "input": "approve the cleanup"}, port=self.gateway)
+        self.assertEqual(status, 202)
+        deadline = time.time() + 10
+        while self.call("GET", f"/v1/runs/{run['run_id']}", port=self.gateway)[1]["status"] != "waiting_for_approval":
+            self.assertLess(time.time(), deadline, "the approval never came")
+            time.sleep(0.2)
+        status, body = self.call("POST", f"/v1/runs/{run['run_id']}/stop", port=self.gateway)
+        self.assertEqual((status, body["status"]), (200, "stopping"))
+        deadline = time.time() + 10
+        while (polled := self.call("GET", f"/v1/runs/{run['run_id']}", port=self.gateway)[1])["status"] not in ("cancelled", "completed"):
+            self.assertLess(time.time(), deadline, "the run never ended")
+            time.sleep(0.2)
+        self.assertEqual(polled["status"], "cancelled")
+        time.sleep(0.5)
+        rows = self.stored_rows(sid)
+        self.assertEqual([r["role"] for r in rows[-3:]], ["user", "assistant", "tool"])
+        self.assertEqual(rows[-2]["finish_reason"], "tool_calls")
+        self.assertTrue(rows[-1]["content"].startswith("BLOCKED: Command approval was withdrawn"))
 
     def test_the_same_key_replays_the_run_and_another_body_conflicts(self):
         sid = f"api_key_{int(time.time() * 1000)}"

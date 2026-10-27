@@ -569,7 +569,15 @@ def agent_turn(run):
                 run.emit("approval.settled", prompt_id=request_id, execution_generation=settled_generation)
             add_message(sid, "assistant", narration.strip(), finish_reason="tool_calls",
                         tool_calls=[{"id": "call_x", "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": command})}}])
-            if choice == "deny" or choice is None:
+            if run.stop.is_set() and choice is None:
+                # Stopped while it waited: Hermes's approval wait ends interrupted and fails closed
+                # (tools/approval.py, `cancelled`), then the agent loop breaks before another model
+                # call. The step and its result are stored; there is no reply, and the run is cancelled.
+                blocked = "BLOCKED: Command approval was withdrawn before the user answered (Stop requested via API)."
+                run.emit("tool.started", tool="terminal", preview=command)
+                run.emit("tool.completed", tool="terminal", duration=0.01, error=True, preview=blocked)
+                add_message(sid, "tool", blocked, tool_call_id="call_x", tool_name="terminal")
+            elif choice == "deny" or choice is None:
                 run.emit("tool.started", tool="terminal", preview=command)
                 run.emit("tool.completed", tool="terminal", duration=0.01, error=True, preview="BLOCKED: denied by user")
                 add_message(sid, "tool", "BLOCKED: denied by user", tool_call_id="call_x", tool_name="terminal")
@@ -579,9 +587,10 @@ def agent_turn(run):
                 tool(run, "terminal", command, "Release build succeeded in 41.2s", 20 if elsewhere else 1.6)
                 add_message(sid, "tool", json.dumps({"output": "Release build succeeded in 41.2s", "exit_code": 0}), tool_call_id="call_x", tool_name="terminal")
                 answer = "Done. The release build **succeeded in 41.2 s** and the artifacts are in `./build/release`."
-            out, ok = stream_text(run, answer)
-            add_message(sid, "assistant", out, finish_reason="stop")
-            run.output = out
+            if not run.stop.is_set():
+                out, ok = stream_text(run, answer)
+                add_message(sid, "assistant", out, finish_reason="stop")
+                run.output = out
         else:
             slow = "slow" in lowered
             # "marathon": six steps of 12 s, past a short `--run-stream-ttl` (a phone away meanwhile

@@ -1208,6 +1208,8 @@ def run_turn(sid, text):
                                               "events and keep the paperwork straight. Two questions before I connect "
                                               "your accounts.", "already_streamed": False})
         result = server_request(sid, "clarify", {"questions": CLARIFY_PAIR})
+        if runtime["interrupt"]:
+            return finish(sid, stored, "", status="interrupted")
         answer = f"Set up with: {json.dumps((result or {}).get('answers'), ensure_ascii=False)}."
         stream(sid, answer)
         return finish(sid, stored, answer)
@@ -1233,6 +1235,8 @@ def run_turn(sid, text):
             time.sleep(0.15)
         for t in threads:
             t.join()
+        if runtime["interrupt"]:
+            return finish(sid, stored, "", status="interrupted")
         answer = "Saved with: " + "; ".join(json.dumps((r or {}).get("answers"), ensure_ascii=False) for r in results) + "."
         stream(sid, answer)
         return finish(sid, stored, answer)
@@ -1302,6 +1306,10 @@ def run_turn(sid, text):
         result = server_request(sid, "approval", {
             "request_id": f"ap_{uuid.uuid4().hex[:6]}", "command": command,
             "description": description, "choices": ["once", "session", "always", "deny"]})
+        if runtime["interrupt"]:
+            # Stop withdrew the card (`session.interrupt`): Hermes's tool fails closed and the agent loop
+            # breaks before another model call, so the turn ends interrupted with no reply.
+            return finish(sid, stored, "", status="interrupted")
         choice = (result or {}).get("choice", "deny")
         if choice == "deny" or result is None:
             answer = "Okay, I **didn't delete** anything. It's all still there if you change your mind."
@@ -2231,12 +2239,12 @@ def method_session_interrupt(params):
         runtime["interrupt"] = True
         runtime["queue"] = []
         runtime.pop("steers", None)
-        cancelled = [rid for rid, e in PENDING.items() if e["sid"] == sid]
-    for rid in cancelled:
-        entry = PENDING.get(rid)
-        if entry:
-            entry["event"].set()
-        emit(sid, "request.cancel", {"id": rid, "method": "approval", "reason": "interrupted"})
+        cancelled = [(rid, e) for rid, e in PENDING.items() if e["sid"] == sid]
+    for rid, entry in cancelled:
+        entry["event"].set()
+        # Each open request is withdrawn under its own method (`server_requests.cancel`). An approval gets
+        # no `approval.cancelled` here: withdrawing the request already took it off Hermes's queue.
+        emit(sid, "request.cancel", {"id": rid, "method": entry["frame"]["method"], "reason": "interrupted"})
     return {"status": "interrupted"}
 
 
