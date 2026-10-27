@@ -87,6 +87,13 @@ the next build makes the system launch the app for it, without launch arguments,
 run's first test launches the app. That test gets the system's launch and no `-HERMES_*` flags.
 `VoiceUITests` ends any call left running when each test ends.
 
+A turn one test leaves running would turn the next test's message in the same chat into a
+redirect (Hermes's default busy mode). So `IndicatorsUITests` and `RequestCardUITests`, which send
+in Research Buddy's chat, start each launch with `POST /api/mock/stop-turns {"profile":
+"researcher"}` on the backend mock. It stops every running turn (of `profile`, if given) through
+Hermes's own `session.interrupt`, as Stop on another device does, and answers once they are all
+idle, or 504 with the ones still running after `seconds` (15 by default).
+
 The relay has its own tests (`cd Relay && npm ci && npm test`). The app's Hermes plugins' tests run
 against a real Hermes Agent checkout, in a throwaway `HERMES_HOME`; see [plugins.md](plugins.md)
 §5.6 and [Tools/hermes-app-push](../Tools/hermes-app-push/README.md).

@@ -2664,6 +2664,26 @@ class Handler(BaseHTTPRequestHandler):
             for peer in peers:
                 peer.cut()
             return self.send_json(200, {"ok": True, "dropped": len(peers)})
+        if url.path == "/api/mock/stop-turns":
+            # Mock-only: Stop pressed on another device in every chat with a turn running (of `profile`, if
+            # given), each through Hermes's own `session.interrupt`, answered once they're all idle. UI tests
+            # start with it, so a turn the last test left running doesn't make their message a redirect.
+            profile = body.get("profile")
+            with LOCK:
+                running = [sid for sid, runtime in RUNTIME.items() if runtime["running"] and not runtime.get("dead")
+                           and (not profile or runtime["profile"] == profile)]
+            for sid in running:
+                method_session_interrupt({"session_id": sid})
+            deadline = time.time() + float(body.get("seconds") or 15)
+            while True:
+                with LOCK:
+                    left = [sid for sid in running if RUNTIME[sid]["running"] and not RUNTIME[sid].get("dead")]
+                if not left or time.time() >= deadline:
+                    break
+                time.sleep(0.1)
+            if left:
+                return self.send_json(504, {"detail": "Turns still running", "running": left})
+            return self.send_json(200, {"ok": True, "stopped": len(running)})
         if url.path == "/api/mock/answer-elsewhere":
             # Mock-only: another device answers the newest open request (of `method`, if given) the way
             # Hermes settles it: no event to the clients still showing its card (`RequestSync`).

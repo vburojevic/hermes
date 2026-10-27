@@ -12,8 +12,8 @@ final class RequestCardUITests: XCTestCase {
     }
 
     @MainActor
-    func testALongAnswerKeepsTheNextQuestionOnScreen() throws {
-        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
+    func testALongAnswerKeepsTheNextQuestionOnScreen() async throws {
+        let app = try await launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
         XCTAssertTrue(element(app, "label BEGINSWITH 'Question 1 of 2'").waitForExistence(timeout: 60), "no clarify card")
         try expectOnScreen(app, "question 1")
 
@@ -23,11 +23,11 @@ final class RequestCardUITests: XCTestCase {
         app.buttons["Next"].tap()
         XCTAssertTrue(element(app, "label BEGINSWITH 'Question 2 of 2'").waitForExistence(timeout: 10), "didn't move to question 2")
         // The card moves in with a blur; measure where it settles.
-        Thread.sleep(forTimeInterval: 1)
+        try await Task.sleep(for: .seconds(1))
         try expectOnScreen(app, "question 2")
         XCTAssertTrue(element(app, "label BEGINSWITH 'Which Google Workspace'").exists, "no summary of the first answer")
 
-        // Answered, the card goes (and the mock's turn ends, so the next run starts clean).
+        // Answered, the card goes.
         element(app, "label BEGINSWITH 'No or not sure'").tap()
         app.buttons["Send"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["requestCard"].waitForNonExistence(timeout: 10), "the card stayed")
@@ -37,7 +37,7 @@ final class RequestCardUITests: XCTestCase {
     /// device finds out as the chat moves on, takes the card down and says so.
     @MainActor
     func testACardAnsweredElsewhereGoes() async throws {
-        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
+        let app = try await launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
         XCTAssertTrue(element(app, "label BEGINSWITH 'Question 1 of 2'").waitForExistence(timeout: 60), "no clarify card")
         try await answerElsewhere("clarify")
         XCTAssertTrue(app.descendants(matching: .any)["requestCard"].waitForNonExistence(timeout: 10), "the card stayed")
@@ -47,7 +47,7 @@ final class RequestCardUITests: XCTestCase {
     /// Away while another device answered: coming back, the card is gone.
     @MainActor
     func testACardAnsweredWhileAwayIsGoneOnReturn() async throws {
-        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
+        let app = try await launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_SEND_HERE", "clarify pair", "-HERMES_SEND_HERE_AFTER", "4"])
         XCTAssertTrue(element(app, "label BEGINSWITH 'Question 1 of 2'").waitForExistence(timeout: 60), "no clarify card")
         XCUIDevice.shared.press(.home)
         try await Task.sleep(for: .seconds(20))
@@ -59,21 +59,27 @@ final class RequestCardUITests: XCTestCase {
 
     // MARK: Helpers
 
-    /// `POST /api/mock/answer-elsewhere` on the mock backend, with the dashboard's session token.
+    /// `POST /api/mock/answer-elsewhere`: another device answers the newest open `method`.
     private func answerElsewhere(_ method: String) async throws {
+        let status = try await mock("answer-elsewhere", ["method": method])
+        XCTAssertEqual(status, 200, "the mock had no open \(method) (restart it after pulling)")
+    }
+
+    /// `POST /api/mock/<path>` on the mock backend, with the dashboard's session token; its status.
+    private func mock(_ path: String, _ body: [String: String]) async throws -> Int? {
         let backend = URL(string: (Bundle(for: RequestCardUITests.self).object(forInfoDictionaryKey: "HermesMockBackend") as? String)
             .flatMap { $0.isEmpty ? nil : $0 } ?? "http://127.0.0.1:19119")!
         let (page, _) = try await URLSession.shared.data(from: backend)
         let html = String(decoding: page, as: UTF8.self)
         guard let start = html.range(of: "__HERMES_SESSION_TOKEN__=\"")?.upperBound,
               let end = html[start...].firstIndex(of: "\"") else { throw URLError(.userAuthenticationRequired) }
-        var request = URLRequest(url: backend.appending(path: "api/mock/answer-elsewhere"))
+        var request = URLRequest(url: backend.appending(path: "api/mock/\(path)"))
         request.httpMethod = "POST"
         request.setValue(String(html[start..<end]), forHTTPHeaderField: "X-Hermes-Session-Token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["method": method])
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await URLSession.shared.data(for: request)
-        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, "the mock had no open \(method) (restart it after pulling)")
+        return (response as? HTTPURLResponse)?.statusCode
     }
 
     /// Every part of the card, and the composer under it, inside the window (half a point's grace
@@ -90,7 +96,7 @@ final class RequestCardUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5), "no request card")
         XCTAssertTrue(window.contains(card.frame), "the card is \(card.frame), the window \(window)")
         var outside: [String] = []
-        func walk(_ node: XCUIElementSnapshot) {
+        func walk(_ node: any XCUIElementSnapshot) {
             if !node.frame.isEmpty, !window.contains(node.frame) {
                 outside.append("\(node.label.isEmpty ? node.identifier : node.label) at \(node.frame)")
             }
@@ -104,8 +110,12 @@ final class RequestCardUITests: XCTestCase {
         XCTAssertTrue(window.contains(composer.frame), "the composer is \(composer.frame), the window \(window)")
     }
 
+    /// Launched with Research Buddy quiet: a turn an earlier test left running in its chat would make
+    /// this one's message a redirect (Hermes's default busy mode), so it's stopped first.
     @MainActor
-    private func launch(_ arguments: [String]) -> XCUIApplication {
+    private func launch(_ arguments: [String]) async throws -> XCUIApplication {
+        let stopped = try await mock("stop-turns", ["profile": "researcher"])
+        XCTAssertEqual(stopped, 200, "Research Buddy's turn didn't stop (restart the mock after pulling)")
         let bundle = Bundle(for: RequestCardUITests.self)
         func setting(_ key: String, _ fallback: String) -> String {
             (bundle.object(forInfoDictionaryKey: key) as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
