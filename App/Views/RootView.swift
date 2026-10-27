@@ -26,9 +26,10 @@ struct RootView: View {
                         if !workspace.connection.isOnline {
                             await workspace.connect()
                         }
+                        workspace.settleLaunchSelection()
                         #if DEBUG
                         if let session = app.takeLaunchSession() {
-                            workspace.selection = .session(session)
+                            workspace.openAtLaunch(.session(session))
                         }
                         // `-HERMES_OPEN tasks|skills|bot:<name>` opens a page (screenshots).
                         switch UserDefaults.standard.string(forKey: "HERMES_OPEN") {
@@ -49,7 +50,7 @@ struct RootView: View {
                             workspace.roster?.isCreatingBot = true
                         case let page? where page.hasPrefix("bot:"):
                             workspace.sidebarMode = .bots
-                            workspace.selection = .bot(String(page.dropFirst(4)))
+                            workspace.openAtLaunch(.bot(String(page.dropFirst(4))))
                         case let page? where page.hasPrefix("group:"):
                             workspace.sidebarMode = .bots
                             let id = String(page.dropFirst(6))
@@ -100,6 +101,8 @@ struct RootView: View {
                             workspace.startNewChat(inProject: String(page.dropFirst(13)))
                         default: break
                         }
+                        // What the flags opened settles like a restored selection.
+                        workspace.settleLaunchSelection()
                         await openProjectSheet(in: workspace)
                         await sendDebugMessage(in: workspace)
                         await openDebugHelpers(in: workspace)
@@ -655,7 +658,7 @@ struct MainView: View {
                 #endif
                 if workspace.selection == nil, let restored, let item = SidebarItem(storedValue: restored) {
                     if case .project = item { workspace.sidebarMode = .chats }
-                    workspace.selection = item
+                    workspace.openAtLaunch(item)
                 }
             }
             // Another chat, Bot or page: the composer it typed into is gone.
@@ -847,53 +850,44 @@ struct DetailView: View {
     @Bindable var workspace: BotWorkspace
     var onToggleSidebar: (() -> Void)?
 
-    /// Bots mode with nothing picked shows all the Bots; Tasks, Skills and any chat or Bot
-    /// show themselves whichever mode the sidebar is in.
-    private var showsBotsHome: Bool {
-        workspace.sidebarMode == .bots && workspace.roster != nil && workspace.selection == nil
-    }
-
     var body: some View {
+        // Read so the screen is resolved again when the selection stays the same: the selected
+        // row picked again, or what the window opened on once the gateway answers (`DetailPass`).
+        let _ = workspace.detailPass
         Group {
-            if showsBotsHome, let roster = workspace.roster {
-                BotsHomeView(roster: roster, workspace: workspace, onToggleSidebar: onToggleSidebar)
-            } else {
-                selectionView
+            switch workspace.detailRoute {
+            case .botsHome:
+                if let roster = workspace.roster {
+                    BotsHomeView(roster: roster, workspace: workspace, onToggleSidebar: onToggleSidebar)
+                }
+            case .tasks:
+                TasksView(workspace: workspace, onToggleSidebar: onToggleSidebar)
+            case .skills:
+                SkillsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
+            case .group(let id):
+                if let rooms = workspace.roster?.groupRooms, let chat = rooms.chat(for: id) {
+                    GroupChatScreen(chat: chat, rooms: rooms, workspace: workspace, onToggleSidebar: onToggleSidebar)
+                        .id(id)
+                } else {
+                    StateMessage(symbol: "person.3", title: String(localized: "Group chat not found"), message: String(localized: "It may have been deleted on the gateway."))
+                }
+            case .project(let id):
+                ProjectHomeView(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
+                    .id(id)
+            case .board(let id):
+                BoardScreen(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
+                    .id(id)
+            case .allProjects:
+                AllProjectsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
+            case .chat:
+                // One screen for every chat: opening another one swaps its data and its transcript,
+                // not the toolbar, the composer and its text view (that cost a long frame per switch).
+                ChatScreen(conversation: workspace.currentConversation, workspace: workspace, onToggleSidebar: onToggleSidebar)
             }
         }
         .sheet(item: $workspace.openedFile) { file in
             GatewayFileSheet(file: file)
                 .environment(\.references, ReferenceContext(workspace: workspace))
-        }
-    }
-
-    @ViewBuilder
-    private var selectionView: some View {
-        switch workspace.selection {
-        case .tasks:
-            TasksView(workspace: workspace, onToggleSidebar: onToggleSidebar)
-        case .skills:
-            SkillsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
-        case .group(let id):
-            if let rooms = workspace.roster?.groupRooms, let chat = rooms.chat(for: id) {
-                GroupChatScreen(chat: chat, rooms: rooms, workspace: workspace, onToggleSidebar: onToggleSidebar)
-                    .id(id)
-            } else {
-                StateMessage(symbol: "person.3", title: String(localized: "Group chat not found"), message: String(localized: "It may have been deleted on the gateway."))
-            }
-        case .project(let id):
-            ProjectHomeView(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
-                .id(id)
-        case .board(let id):
-            BoardScreen(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
-                .id(id)
-        case .allProjects:
-            AllProjectsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
-        case .session, .bot, nil:
-            let conversation = workspace.currentConversation
-            // One screen for every chat: opening another one swaps its data and its transcript,
-            // not the toolbar, the composer and its text view (that cost a long frame per switch).
-            ChatScreen(conversation: conversation, workspace: workspace, onToggleSidebar: onToggleSidebar)
         }
     }
 }

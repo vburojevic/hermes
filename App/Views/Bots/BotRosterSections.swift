@@ -62,7 +62,7 @@ struct BotRosterSections: View {
         let isUnread = workspace.unread.badge(for: key).isUnread
         let muted = workspace.unread.isMuted(key)
         return SidebarRow(isSelected: isSelected, height: InboxMetrics.botRowHeight) {
-            workspace.selection = item
+            workspace.pick(item)
             onNavigate()
         } label: {
             BotInboxRow(roster: roster, bot: bot, workspace: workspace, isSelected: isSelected)
@@ -123,7 +123,7 @@ struct BotRosterSections: View {
         let isSelected = workspace.selection == item
         let muted = workspace.unread.isMuted(key)
         return SidebarRow(isSelected: isSelected, height: InboxMetrics.botRowHeight) {
-            workspace.selection = item
+            workspace.pick(item)
             onNavigate()
         } label: {
             GroupInboxRow(room: room, roster: roster, workspace: workspace, isSelected: isSelected)

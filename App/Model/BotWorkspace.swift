@@ -2,58 +2,6 @@ import Foundation
 import HermesKit
 import Observation
 
-/// What the main area shows.
-enum SidebarItem: Hashable {
-    /// A conversation, keyed by its stable key (survives compression).
-    case session(String)
-    case tasks
-    case skills
-    /// A Bot's Bot Chat, keyed by profile name.
-    case bot(String)
-    /// A hosted group chat, keyed by room id.
-    case group(String)
-    /// A project's home, keyed by project id (`docs/projects.md`).
-    case project(String)
-    /// A project's Board, keyed by project id (`docs/board.md`).
-    case board(String)
-    /// All Projects.
-    case allProjects
-
-    /// As a string for `SceneStorage`: what a window showed, restored when it opens again.
-    var storedValue: String {
-        switch self {
-        case .session(let key): "session:\(key)"
-        case .tasks: "tasks"
-        case .skills: "skills"
-        case .bot(let name): "bot:\(name)"
-        case .group(let id): "group:\(id)"
-        case .project(let id): "project:\(id)"
-        case .board(let id): "board:\(id)"
-        case .allProjects: "allProjects"
-        }
-    }
-
-    init?(storedValue: String) {
-        let parts = storedValue.split(separator: ":", maxSplits: 1).map(String.init)
-        switch (parts.first, parts.count > 1 ? parts[1] : nil) {
-        case ("session", let key?): self = .session(key)
-        case ("tasks", _): self = .tasks
-        case ("skills", _): self = .skills
-        case ("bot", let name?): self = .bot(name)
-        case ("group", let id?): self = .group(id)
-        case ("project", let id?): self = .project(id)
-        case ("board", let id?): self = .board(id)
-        case ("allProjects", _): self = .allProjects
-        default: return nil
-        }
-    }
-}
-
-/// The sidebar's two halves, like Hermes Desktop's Sessions and Bots modes.
-enum SidebarMode: String {
-    case chats, bots
-}
-
 /// Everything the app knows about one Hermes gateway.
 @MainActor
 @Observable
@@ -217,6 +165,31 @@ final class BotWorkspace: Identifiable {
     }
     /// The chat open last (Skills' Use adds to its tray; `nil`: the new-chat draft).
     @ObservationIgnored private(set) var lastChatKey: String?
+    /// The detail reads it, so it resolves its screen again when the selection stays the same
+    /// (`DetailPass`, `docs/bots-groups-skills.md` §1.2).
+    private(set) var detailPass = DetailPass()
+
+    /// The screen the main area shows for the selection.
+    var detailRoute: DetailRoute {
+        DetailRoute(selection: selection, mode: sidebarMode, hasBotMode: roster != nil)
+    }
+
+    /// A row picked in the sidebar: the row that is already selected shows its screen again.
+    func pick(_ item: SidebarItem?) {
+        if detailPass.pick(item, current: selection) { selection = item }
+    }
+
+    /// What the window opens on: restored from when it last closed, before the gateway answers.
+    func openAtLaunch(_ item: SidebarItem) {
+        detailPass.open(item)
+        selection = item
+    }
+
+    /// The gateway answered (or gave up): the detail resolves what the window opened on again,
+    /// in case its first frame was built before the selection arrived.
+    func settleLaunchSelection() {
+        detailPass.settle(current: selection)
+    }
 
     /// Use on a skill (`docs/bots-groups-skills.md`): the skill goes in the tray of the chat that
     /// was open, or of a new chat.

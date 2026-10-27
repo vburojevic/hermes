@@ -58,7 +58,7 @@ struct ProjectSidebarSection: View {
 
     private var allProjectsRow: some View {
         SidebarRow(isSelected: workspace.selection == .allProjects) {
-            workspace.selection = .allProjects
+            workspace.pick(.allProjects)
             onNavigate()
         } label: {
             HStack(spacing: SidebarMetrics.rowPadding) {
@@ -97,7 +97,7 @@ struct ProjectSidebarRow: View {
     var body: some View {
         let isSelected = workspace.selection == .project(node.id)
         SidebarRow(isSelected: isSelected) {
-            workspace.selection = .project(node.id)
+            workspace.pick(.project(node.id))
             onNavigate()
         } label: {
             ProjectRowLabel(workspace: workspace, node: node, isSelected: isSelected)
@@ -160,7 +160,7 @@ struct MacProjectRows: View {
         let isSelected = workspace.selection == .project(node.id) && projects.focusLane == nil
         SidebarRow(isSelected: isSelected) {
             projects.focusLane = nil
-            workspace.selection = .project(node.id)
+            workspace.pick(.project(node.id))
         } label: {
             HStack(spacing: 0) {
                 Button {
@@ -196,7 +196,7 @@ struct MacProjectRows: View {
     private var boardRow: some View {
         let isSelected = workspace.selection == .board(node.id)
         return SidebarRow(isSelected: isSelected) {
-            workspace.selection = .board(node.id)
+            workspace.pick(.board(node.id))
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "square.grid.2x2")
@@ -228,7 +228,7 @@ struct MacProjectRows: View {
         let isSelected = workspace.selection == .project(node.id) && projects.focusLane == lane.id
         return SidebarRow(isSelected: isSelected) {
             projects.focusLane = lane.id
-            workspace.selection = .project(node.id)
+            workspace.pick(.project(node.id))
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")

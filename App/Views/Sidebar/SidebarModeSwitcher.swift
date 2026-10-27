@@ -1,3 +1,4 @@
+import HermesKit
 import SwiftUI
 
 /// Chats | Bots: the sidebar's two halves, as a full-width track with a raised pill

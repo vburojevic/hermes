@@ -538,7 +538,7 @@ private struct SessionRow: View {
         let item = SidebarItem.session(session.stableID)
         let isSelected = workspace.selection == item
         SidebarRow(isSelected: isSelected, height: InboxMetrics.rowHeight) {
-            workspace.selection = item
+            workspace.pick(item)
             onNavigate()
         } label: {
             ChatInboxRow(session: session, workspace: workspace, isSelected: isSelected)
@@ -557,7 +557,7 @@ private struct DestinationRow: View {
 
     var body: some View {
         SidebarNavRow(title: title, symbol: symbol, isSelected: workspace.selection == item, shortcut: shortcut) {
-            workspace.selection = item
+            workspace.pick(item)
             onNavigate()
         }
     }

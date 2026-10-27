@@ -114,6 +114,13 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   minutes. With no answer within a minute it stops showing as working without being "Stopped",
   and is asked after again. Hermes answers for its own process only, so a turn the person runs in
   a terminal (`--resume`) reads as not running, here as in the chat.
+- **Selection:** the sidebar's selection decides the main area (`DetailRoute`). A selected Bot
+  shows its Bot Chat, also when it was picked before the Bots loaded, and the grid shows only
+  while nothing is picked (All Bots). Picking the selected row again shows its screen again, and
+  what a window opened on (restored from when it closed, or named by a launch flag) is shown again
+  once the gateway answers (`DetailPass`): the Mac's detail didn't always redraw for a selection
+  made while the window's first frame was built, and kept the grid or a new chat under a selected
+  row.
 - **Grid tiles** (`BotsHomeView`) show the face, title, @handle, role and one status line:
   "Working: <step>", "New: <preview>", "Active now", "Last active <time>" (the row's time) or
   "Say hi to start".
@@ -236,6 +243,9 @@ Rescan (`skills.reload`).
 - A group chat runs its rounds, shows passes, failures and the settled divider, takes an approval,
   stops the whole room, renames and deletes after confirmation.
 - Use on a skill puts it in the tray of the last chat, or of a new chat.
+- On the Mac, a launch on a Bot or a chat (`-HERMES_RESTORE bot:default` with `-HERMES_OPEN
+  bot:default`, or `-HERMES_RESTORE session:<id>` with `-HERMES_OPEN_SESSION <id>`) shows its chat
+  under its selected row every time; clicking the selected row again keeps it.
 - A Bot turn whose end the app misses stops showing as working within seconds of the socket
   coming back, in the list, the Mac sidebar and the grid, on a device with its chat open or not. Mock: "slow" in a Bot Chat, then
   `POST /api/mock/restart-gateway` (or `/api/mock/drop-sockets {"outage": 25, "reap": 20}`) while

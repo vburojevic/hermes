@@ -396,7 +396,9 @@ Measuring a cold launch (same build): `-HERMES_LAUNCH_LOG YES` prints each launc
 its time since the process started (`LaunchTrace`: the model, the first view, the kept chats, Bots
 and last lines, the gateway's answer, the socket, the fresh lists, each row's last line), and the
 chat load steps above with it. `-HERMES_RESTORE bot:ops` (or `session:<key>`) opens as if the
-window had been showing that chat. A Mac window behind other windows isn't drawn, so its chat
+window had been showing that chat; with `-HERMES_OPEN bot:ops` (or `-HERMES_OPEN_SESSION <key>`)
+too, it's the launch where the Mac's detail once missed the selection
+([bots-groups-skills.md](bots-groups-skills.md) §1.2). A Mac window behind other windows isn't drawn, so its chat
 doesn't load until it's in front; measure the open chat on the simulator. Kill the app between
 launches, and launch twice: the first after a build pays for loading the new binary.
 
