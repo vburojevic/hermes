@@ -3821,13 +3821,14 @@ final class ConversationModel: Identifiable {
     }
 
     /// A `/v1/runs` turn's approval card going up, or Hermes no longer waiting on one
-    /// (`approval.settled`): the card goes, with a line unless it was answered here.
+    /// (`approval.settled`): the card goes, with a line unless it was answered here or the person
+    /// is stopping the reply, which ends the prompt with it (the turn says how it ended).
     private func runApprovalEvent(_ event: TurnEvent) {
         switch event {
         case .approvalRequested(let approval) where approval.gatewayRequestID == nil:
             runApprovals.show(approval)
         case .approvalSettled(let id, let generation):
-            guard let ending = runApprovals.settle(id, generation: generation),
+            guard let ending = runApprovals.settle(id, generation: generation), !isStopping,
                   let receipt = Self.withdrawalReceipt(ending == .timedOut ? "timeout" : "resolved") else { return }
             addReceipt(receipt.text, symbol: receipt.symbol)
         default:

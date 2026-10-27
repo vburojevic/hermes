@@ -162,9 +162,10 @@ choice}` (`answer`), and anything else is 400 `invalid_params`. A generation oth
 is 409 `stale_generation`, and a prompt it isn't waiting on is 409 `approval_not_pending`; each
 refusal's message is its bare reason, as Hermes's. `GET /v1/runs/{id}` carries
 `execution_generation` and the prompts in `pending_controls`. "approve stale" moves the run's
-generation as soon as the card is up and drops the prompt with it, as Hermes does: the card's answer
-is refused stale, the run no longer lists it, so the card settles, and the turn asks again 30 s
-later. "approve stale retry" keeps the prompt under the new generation, which Hermes never does,
+generation as soon as the card is up and drops the prompt with it, as Hermes does: the next read of
+the run's status announces it (`approval.settled` with the old generation), so a card still up goes
+then, an answer sent meanwhile is refused stale and finds the run no longer lists it, and the turn
+asks again 30 s later. "approve stale retry" keeps the prompt under the new generation, which Hermes never does,
 to exercise the app's one defensive retry. When Hermes stops waiting on an approval, however that
 came about, the run's events say `approval.settled` with its `prompt_id` and generation. "approve
 elsewhere" allows it on another device after 5 s, then runs the command for 20 s (the card's answer

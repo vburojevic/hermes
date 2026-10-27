@@ -111,6 +111,28 @@ struct RunApprovalTests {
         #expect(aheadEnding == .answeredElsewhere)
     }
 
+    @Test func aCardTheRunsStatusRaisedEndsTheSameWay() throws {
+        // A gateway that left the approval off the events lists it in the run's status, with no
+        // time it asked: its deadline counts from when the card showed.
+        let json = #"""
+        {"run_id": "run_1", "status": "waiting_for_approval", "execution_generation": 4,
+         "pending_controls": [{"kind": "approval", "prompt_id": "p1", "execution_generation": 4,
+           "command": "rm -rf ./build", "choices": ["once", "deny"], "timeout_s": 20}]}
+        """#
+        let approval = try #require(try JSONDecoder().decode(RunStatus.self, from: Data(json.utf8)).approval)
+        #expect(approval.askedAt == nil)
+
+        var late = RunApprovals()
+        late.show(approval, now: start)
+        let ending = late.settle("p1", generation: 4, now: start.addingTimeInterval(21))
+        #expect(ending == .timedOut)
+
+        var elsewhere = RunApprovals()
+        elsewhere.show(approval, now: start)
+        let elsewhereEnding = elsewhere.settle("p1", generation: 4, now: start.addingTimeInterval(5))
+        #expect(elsewhereEnding == .answeredElsewhere)
+    }
+
     @Test func aSettleForAnotherPromptLeavesTheCardUp() throws {
         var approvals = RunApprovals()
         approvals.show(Self.approval(), now: start)

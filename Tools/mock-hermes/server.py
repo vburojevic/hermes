@@ -369,6 +369,9 @@ class Run:
         self.approval = None
         self.approval_choice = None
         self.generation = 1
+        # Prompts dropped with an older generation, announced (`approval.settled`) the next time the
+        # run is read, as Hermes's `PendingControls.snapshot` does.
+        self.dropped = []
         self.admission_id = f"adm_{uuid.uuid4().hex[:12]}"
         self.terminal = False
         # Steers accepted and not read yet (`POST /v1/runs/{id}/steer`); read at the next step.
@@ -522,7 +525,10 @@ def agent_turn(run):
                     run.approval["execution_generation"] = run.generation
                 else:
                     # As Hermes does (PendingControls.snapshot): the prompt goes with its generation,
-                    # unannounced, and the claimed turn asks again 30 s later.
+                    # announced only when something next reads the run, and the claimed turn asks
+                    # again 30 s later. Older gateways never announce it.
+                    if not legacy:
+                        run.dropped.append((request_id, run.generation - 1))
                     run.approval = None
                     run.status = "running"
                     reask = time.time() + 30
@@ -552,8 +558,9 @@ def agent_turn(run):
             if legacy:
                 if answered_here:
                     run.emit("approval.responded", choice=choice, request_id=request_id, resolved=1)
-            elif not run.stop.is_set():
-                # However it ended (`PendingControls.snapshot`/`respond`): the prompt and its generation.
+            else:
+                # However it ended (`PendingControls.snapshot`/`respond`), a Stop included: the prompt
+                # and its generation.
                 run.emit("approval.settled", prompt_id=request_id, execution_generation=settled_generation)
             add_message(sid, "assistant", narration.strip(), finish_reason="tool_calls",
                         tool_calls=[{"id": "call_x", "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": command})}}])
@@ -835,7 +842,11 @@ class Handler(BaseHTTPRequestHandler):
             if not run:
                 return self.error(404, f"Run not found: {m.group(1)}", "run_not_found")
             # As Hermes projects a run (api_server_authority_runs.run_projection): its generation and
-            # the prompts it waits on, never a separate `approval`.
+            # the prompts it waits on, never a separate `approval`. Reading them settles the prompts
+            # an older generation left (`PendingControls.snapshot`).
+            while run.dropped and not run.terminal:
+                prompt_id, generation = run.dropped.pop(0)
+                run.emit("approval.settled", prompt_id=prompt_id, execution_generation=generation)
             pending = [dict(run.approval)] if run.approval else []
             body = {"object": "hermes.run", "run_id": run.id, "status": run.status, "session_id": run.session_id,
                     "admission_id": run.admission_id, "execution_generation": run.generation, "pending_controls": pending,

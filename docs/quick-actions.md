@@ -199,7 +199,8 @@ reordering characters show as their codes (`⟨U+202E⟩`) and the person sees w
     question (below), the card for that prompt (and generation, when the card has one), and only
     that card, goes with "Answered on another device", or "Hermes stopped waiting · no answer in
     time" past its `timeout_s`, counted from when Hermes asked (the event's `timestamp`, so a
-    request the app heard late keeps Hermes's deadline). One answered here goes without a word (`RunApprovals`). An answer
+    request the app heard late keeps Hermes's deadline). One answered here goes without a word
+    (`RunApprovals`), and so does one Stop ended (the turn says how it ended). An answer
     tapped after that isn't sent: the chat says "Not sent · already answered on another device".
     Older gateways say `approval.responded` after an answer over HTTP instead, which clears the
     card.
