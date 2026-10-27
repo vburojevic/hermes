@@ -31,6 +31,12 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610271627 (October 27, 2026)
+
+- **Mac:** clicking a project, chat or Bot in search results that's already selected shows its screen again
+- **Chat:** a question that reached the app late and timed out says Hermes stopped waiting
+- **Notifications:** unread counts count messages, never a background process's heartbeats or the silence that answers them
+
 ### Build 2610271033 (October 27, 2026)
 
 - **Chat:** an approval answered on another device or timed out comes off a reply's card at once
