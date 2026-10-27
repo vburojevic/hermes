@@ -58,8 +58,25 @@ public struct TurnRecovery: Sendable, Equatable {
     public private(set) var looks = 0
     /// A look read the chat stopping partway: the turn's end is known even if a later read fails.
     public private(set) var sawPartway = false
+    /// Looks that find the turn partway, with nothing running, before it settles: nil when the backoff
+    /// decides (the chat), 2 for the Bots list (`forBotsList`).
+    public let partwaySettles: Int?
+    /// Looks so far that found it partway.
+    public private(set) var partwayLooks = 0
 
-    public init() {}
+    public init(partwaySettles: Int? = nil) {
+        self.partwaySettles = partwaySettles
+    }
+
+    /// The Bots list's looks at a Bot's own turn (`docs/bots-groups-skills.md` §1.2): two looks a second
+    /// apart that both find nothing running and the rows partway settle it. Hermes stores a turn's rows
+    /// before it says the session is idle, so a row that stops showing as working is right the moment
+    /// nothing runs. The chat waits out the whole backoff, as its "Stopped" is a verdict on screen that
+    /// a late store would contradict; a reply stored late here only moves the rows, and the row
+    /// follows them.
+    public static func forBotsList() -> TurnRecovery {
+        TurnRecovery(partwaySettles: 2)
+    }
 
     /// What a read of the stored chat that failed with `error` says: Hermes answering 404 for the chat
     /// (over the API server, `HermesError.notFound`; over the backend a Bot Chat is read from, a 404
@@ -70,6 +87,19 @@ public struct TurnRecovery: Sendable, Equatable {
             return message.map(HermesVersionGap.isMissingRoute) == true ? .unreachable : .gone
         }
         return .unreachable
+    }
+
+    /// One look at a Bot's own turn whose stored rows stop mid-work, for a Bot whose chat isn't
+    /// following it (`docs/bots-groups-skills.md` §1.2): the same verdict the chat reaches. `running`
+    /// is whether Hermes runs the chat now (`session.active_list`, the flag `session.resume` answers
+    /// the chat with), nil when it couldn't be asked; `stored` is the chat's last rows read again, nil
+    /// when they couldn't be read. Rows that no longer stop mid-work in the person's own turn (the
+    /// reply stored, another turn, too quiet to be running) take over.
+    public static func look(running: Bool?, stored: [SessionMessage]?, now: Date = .now) -> Look {
+        if running == true { return .running }
+        guard let stored else { return .unreachable }
+        guard TranscriptBuilder.endsOwnMidTurn(stored, now: now) else { return .stored }
+        return running == false ? .partway : .unreachable
     }
 
     /// What a turn on screen does once its chat attached again after the socket dropped and Hermes
@@ -102,7 +132,11 @@ public struct TurnRecovery: Sendable, Equatable {
         case .stored: return .handOver
         case .gone: return .lost(.gone)
         case .partway, .unreachable:
-            if look == .partway { sawPartway = true }
+            if look == .partway {
+                sawPartway = true
+                partwayLooks += 1
+                if let partwaySettles, partwayLooks >= partwaySettles { return .settle }
+            }
             let left = Self.deadline - elapsed
             if looks < Self.backoff.count, left > 0 { return .wait(min(Self.backoff[looks], left)) }
             return sawPartway ? .settle : .lost(.unreachable)

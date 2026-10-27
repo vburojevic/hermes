@@ -104,7 +104,16 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   else the profile description without its "<title> — " prefix.
 - **"Active now":** the Bot wrote in the last 90 s (in any of its sessions, a routine's run
   included), or one of its background workers beat in the last 150 s. "Working" (and a working face) is the Bot Chat's turn running here, or a worker beat
-  in the last 150 s.
+  in the last 150 s, or a turn its stored rows say runs where the app hears nothing
+  ([chat.md](chat.md), a turn going on elsewhere). The row, tile, face, jump pill and Live Activity
+  follow the chat's settled turn: the moment the chat settles it (finished, stopped, or the reason
+  it couldn't find out), the Bot stops showing as working. Where no chat here follows it, a turn
+  that answers the person's own message is asked after the way the chat would (whether Hermes runs
+  the chat, then its rows), on every roster read while it shows: a turn whose end the app missed
+  stops showing as working a few seconds after the app can ask (the socket back), not after 20
+  minutes. With no answer within a minute it stops showing as working without being "Stopped",
+  and is asked after again. Hermes answers for its own process only, so a turn the person runs in
+  a terminal (`--resume`) reads as not running, here as in the chat.
 - **Grid tiles** (`BotsHomeView`) show the face, title, @handle, role and one status line:
   "Working: <step>", "New: <preview>", "Active now", "Last active <time>" (the row's time) or
   "Say hi to start".
@@ -227,6 +236,10 @@ Rescan (`skills.reload`).
 - A group chat runs its rounds, shows passes, failures and the settled divider, takes an approval,
   stops the whole room, renames and deletes after confirmation.
 - Use on a skill puts it in the tray of the last chat, or of a new chat.
+- A Bot turn whose end the app misses stops showing as working within seconds of the socket
+  coming back, in the list, the Mac sidebar and the grid, on a device with its chat open or not. Mock: "slow" in a Bot Chat, then
+  `POST /api/mock/restart-gateway` (or `/api/mock/drop-sockets {"outage": 25, "reap": 20}`) while
+  it runs.
 
 Edit Bot shows a Bot's colour at its nearest swatch (345° is red, not pink) but writes colour and
 shape only when the person picks another one, with `custom: true`. A hex colour, a hue between

@@ -257,6 +257,32 @@ by one, and `sessions.changed` brings each in. That turn shows as working
   "Working: Answering CORE" (or "Following up on <routine>"), its face works, the Bot Chat's
   title says what it does, and the jump pill follows the turn as it follows a live one.
   The Bots found working are read again every 30 s, so one that went quiet stops showing.
+  The Bot follows its chat's verdict, one per turn: when the chat settles a turn (finished,
+  "Stopped" where Hermes stored it, or lost with the reason), every place the Bot shows stops
+  showing it as working at once (`BotRoster.chatSettledTurn`), never waiting out the 20 minutes;
+  the row's activity line from the last `session.active_list` goes with it, not at the next poll
+  (`LiveActivity.botTurnSettled`).
+  Where no chat here follows the turn (it isn't open, or it stopped hearing it), a turn that
+  answers the person's own message is recovered the way the chat does: the roster asks whether
+  Hermes runs the chat (`session.active_list`, the same flag `session.resume` answers; a turn
+  waiting on an approval runs) and reads its last rows again, on every roster read while the Bot
+  shows working, the first one after a reconnect included. Each look asks Hermes afresh, within
+  what's left of the minute. Two looks a second apart that both find nothing running and the rows
+  partway settle it (`TurnRecovery.forBotsList`): Hermes stores a turn's rows before it says the
+  session is idle, so a turn that died there (a gateway restart, a reap while the socket was down)
+  stops showing as working seconds after the app can ask, where the chat keeps its whole backoff
+  before it says "Stopped" (`BotRoster.recoverOwnTurn`, `TurnRecovery.look(running:stored:)`).
+  Unanswered looks wait on the backoff; with no answer within the minute it stops showing as
+  working too, but the app has lost track of it rather than settled it: its chat doesn't say
+  "Stopped", and every roster read looks again, so a turn still running shows again once Hermes
+  answers. Hermes lists only its own process's sessions (`tui_gateway`, where Bot Chats run): a
+  turn in another Hermes process, a terminal's `--resume`, reads as not running, as it does for the
+  chat's attach. Two records, each owning one thing, so they never disagree. Where a turn settled
+  is the chat's own mark on the device (`KeptTurn.stoppedAt`, above): the chat writes it, the Bots
+  list writes the same mark when it settles a turn no chat followed, and both read it, so a chat
+  opened later, or after a relaunch, shows that turn "Stopped". Where the Bots list lost track of a
+  turn is its own, in memory (`BotTurnBook`): the turn doesn't show as working, but no record says
+  "Stopped", and a relaunch looks again. A row stored after either is the turn going on.
 
 While it shows and the chat is on screen, the chat is fetched again every 10 s until the reply is
 stored. A turn that ended without a reply (it died) keeps what it last said in view, muted,

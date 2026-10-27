@@ -71,6 +71,17 @@ final class BotRoster {
     @ObservationIgnored private var elsewhereTips: [String: String] = [:]
     @ObservationIgnored private var elsewhereReads: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var elsewhereRecheck: Task<Void, Never>?
+    /// Where the roster lost track of a Bot Chat's last turn (`BotTurnBook`, in memory). Where one
+    /// settled is the chat's own record on the device (`KeptTurn.stoppedAt`), which the roster reads
+    /// for every Bot and writes when it settles a turn no chat followed (`recoverOwnTurn`). The row,
+    /// its tile, its face and every working line follow both (`docs/bots-groups-skills.md` §1.2).
+    @ObservationIgnored private var turnBook = BotTurnBook()
+    @ObservationIgnored private let keptTurns = KeptTurns()
+    @ObservationIgnored private var ownTurnRecoveries: [String: Task<Void, Never>] = [:]
+    /// Bots shown working for their own turn stopping mid-work (`recoverOwnTurn`): each roster read
+    /// looks at them again, so a turn that died while the socket was down settles as soon as it's back,
+    /// not at the next 30 s re-read.
+    @ObservationIgnored private var ownTurns: Set<String> = []
     /// Photo avatars, as `FaceImageCache` keys, by profile name.
     private(set) var photos: [String: String] = [:]
     /// The Bot Chat on screen, which never counts as unread.
@@ -383,6 +394,7 @@ final class BotRoster {
         version = nil
         versionEpoch = nil
         cachedRows = []
+        turnBook = BotTurnBook()
         RosterCache.remove(botID)
         connectIfNeeded()
     }
@@ -774,6 +786,9 @@ final class BotRoster {
         elsewhereReads = [:]
         elsewhereRecheck?.cancel()
         elsewhereRecheck = nil
+        ownTurnRecoveries.values.forEach { $0.cancel() }
+        ownTurnRecoveries = [:]
+        ownTurns = []
         elsewhereTips = [:] // read again on reconnect
         runningElsewhere = [:]
         if let socket {
@@ -1501,6 +1516,13 @@ final class BotRoster {
             readElsewhere(bot.name, chat: chat.resolvedID)
         }
         for name in runningElsewhere.keys where !names.contains(name) { runningElsewhere[name] = nil }
+        for name in ownTurns where ownTurnRecoveries[name] == nil && elsewhereReads[name] == nil {
+            guard let chat = bot(named: name)?.canonicalSession?.resolvedID else {
+                ownTurns.remove(name)
+                continue
+            }
+            readElsewhere(name, chat: chat)
+        }
     }
 
     private func readElsewhere(_ name: String, chat: String) {
@@ -1510,11 +1532,179 @@ final class BotRoster {
             guard let self, !Task.isCancelled, let tail else { return }
             self.elsewhereReads[name] = nil
             // A turn this app streams is live, not elsewhere.
-            let turn = self.conversations[name]?.isWorking == true ? nil : ElsewhereTurn.of(tail.messages)
+            let working = self.conversations[name]?.isWorking == true
+            let settledAt = self.keptStop(name)
+            let turn = working ? nil : self.turnBook.shown(name, rows: tail.messages, settledAt: settledAt)
             if self.runningElsewhere[name] != turn { self.runningElsewhere[name] = turn }
+            // The person's own turn stopping mid-work runs on the gateway, which says whether it still
+            // does: it isn't left showing as working for 20 minutes once it died (a gateway restart).
+            // One the app lost track of is looked at again on every read, though nothing shows it.
+            if !working, BotTurnBook.needsLook(tail.messages, settledAt: settledAt) {
+                self.ownTurns.insert(name)
+                self.recoverOwnTurn(name, chat: chat, from: tail.messages)
+            } else {
+                self.ownTurns.remove(name)
+                self.turnBook.found(name)
+            }
             self.recheckElsewhere()
         }
     }
+
+    /// A Bot's own turn whose stored rows stop mid-work, with no chat here following it live: the
+    /// roster finds out how it ended the way the chat does (`TurnRecovery`, `docs/chat.md` §2). It
+    /// asks whether Hermes runs the chat and reads its last rows again, and keeps showing the Bot
+    /// working meanwhile. Still running, it shows working (the next roster read looks again); stored
+    /// whole, the rows take over; two looks a second apart finding nothing running and the rows
+    /// partway (`TurnRecovery.forBotsList`), it ended there and stops showing as working. With no
+    /// answer within the minute it stops showing as working too, but isn't "Stopped": the app lost
+    /// track of it (`BotTurnBook.lose`), and the next roster read looks again.
+    private func recoverOwnTurn(_ name: String, chat: String, from tail: [SessionMessage]) {
+        guard ownTurnRecoveries[name] == nil else { return }
+        ownTurnRecoveries[name] = Task { [weak self] in
+            let began = Date.now
+            var recovery = TurnRecovery.forBotsList()
+            var step = TurnRecovery.Step.wait(0)
+            // The rows last read: where the turn ended, should no look read them again.
+            var stored = tail
+            while case .wait(let seconds) = step {
+                if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
+                guard let self, !Task.isCancelled else { return }
+                // The chat runs the turn here now, or already settled it: it's the one to follow.
+                guard self.conversations[name]?.isWorking != true else { break }
+                let look = await self.lookAtOwnTurn(name, chat: chat, within: TurnRecovery.timeout(elapsed: Date.now.timeIntervalSince(began)))
+                guard !Task.isCancelled else { return }
+                if let rows = look.stored { stored = rows }
+                if self.keptStop(name) == TranscriptBuilder.lastTurnRowID(stored) { break }
+                step = recovery.next(after: look.look, elapsed: Date.now.timeIntervalSince(began))
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.ownTurnRecoveries[name] = nil
+            switch step {
+            case .settle:
+                self.settleOwnTurn(name, rows: stored)
+            case .lost:
+                self.loseOwnTurn(name, rows: stored)
+            case .follow, .handOver:
+                // It runs, or its rows say what it is now.
+                self.turnBook.found(name)
+                guard self.conversations[name]?.isWorking != true else { return }
+                let turn = self.turnBook.shown(name, rows: stored, settledAt: self.keptStop(name))
+                if self.runningElsewhere[name] != turn { self.runningElsewhere[name] = turn }
+            case .wait:
+                break
+            }
+        }
+    }
+
+    /// What one of `lookAtOwnTurn`'s reads answered.
+    nonisolated private enum OwnTurnRead: Sendable {
+        case running(Bool?)
+        case stored([SessionMessage]?)
+        case timedOut
+    }
+
+    /// One look for `recoverOwnTurn`: whether Hermes runs the chat now (a turn waiting on the person
+    /// runs too) and its last rows, both given up after `limit` seconds.
+    private func lookAtOwnTurn(_ name: String, chat: String, within limit: TimeInterval) async -> (look: TurnRecovery.Look, stored: [SessionMessage]?) {
+        let client = client
+        var running: Bool?
+        var stored: [SessionMessage]?
+        await withTaskGroup(of: OwnTurnRead.self) { group in
+            group.addTask { .stored(try? await client.transcript(storedSessionID: chat, profile: name, limit: 12).messages) }
+            group.addTask { .running(await self.gatewayHoldsTurn(in: chat, within: limit)) }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(limit))
+                return .timedOut
+            }
+            var answered = 0
+            for await read in group {
+                switch read {
+                case .running(let value): running = value
+                case .stored(let value): stored = value
+                case .timedOut: break
+                }
+                answered += 1
+                if case .timedOut = read { break }
+                if answered == 2 { break }
+            }
+            group.cancelAll()
+        }
+        return (TurnRecovery.look(running: running, stored: stored), stored)
+    }
+
+    /// Whether Hermes has a turn under way in the stored chat `chat` (`session.active_list`), nil when
+    /// it couldn't be asked within `limit` seconds. Asked afresh on the socket, not through the lists'
+    /// shared answer: that one waits as long as a frozen backend holds it, and is up to 2 s old.
+    /// Hermes lists the sessions of its own process (`tui_gateway`, where Bot Chats run): a turn in
+    /// another Hermes process, a terminal's `--resume`, reads as not running, as it does for the
+    /// chat's attach (`session.resume`'s `running`).
+    private func gatewayHoldsTurn(in chat: String, within limit: TimeInterval) async -> Bool? {
+        guard isConnected else { return nil }
+        let client = ProjectsClient(profile: nil) { [weak self] method, params in
+            guard let self else { throw CancellationError() }
+            return try await self.request(method, params, timeout: .seconds(limit))
+        }
+        guard let rows = try? await client.activeSessions() else { return nil }
+        return rows.contains { $0.sessionKey == chat && $0.holdsTurn }
+    }
+
+    /// The roster settled a Bot's own turn where its rows stop: the Bot stops showing as working, and
+    /// its chat, when it's open, shows the turn ended there.
+    private func settleOwnTurn(_ name: String, rows: [SessionMessage]) {
+        guard let row = BotTurnBook.stoppedRow(rows) else { return }
+        // The chat's own record, through the chat when it's loaded so its copy stays the same.
+        if let conversation = conversations[name] {
+            conversation.turnSettledByRoster(at: row)
+        } else {
+            var kept = keptTurns.turn(for: keptKey(name))
+            kept.stoppedAt = row
+            keptTurns.set(kept, for: keptKey(name))
+        }
+        turnBook.found(name)
+        ownTurns.remove(name)
+        if runningElsewhere[name] != nil { runningElsewhere[name] = nil }
+        workspace?.activity.botTurnSettled(name)
+    }
+
+    /// The Bot Chat's key in `KeptTurns`, as the chat's own (`ConversationModel.cacheKey`).
+    private func keptKey(_ name: String) -> String {
+        "bot-\(botID.uuidString)-\(name)"
+    }
+
+    /// The row the Bot Chat's last turn settled at, kept on the device (`KeptTurn.stoppedAt`).
+    private func keptStop(_ name: String) -> Int? {
+        keptTurns.turn(for: keptKey(name)).stoppedAt
+    }
+
+    /// The roster couldn't find out how a Bot's own turn ended: it stops showing as working, its chat
+    /// doesn't say "Stopped", and the next roster read looks again (`ownTurns` keeps it).
+    private func loseOwnTurn(_ name: String, rows: [SessionMessage]) {
+        guard turnBook.lose(name, rows: rows) else { return }
+        if runningElsewhere[name] != nil { runningElsewhere[name] = nil }
+        workspace?.activity.botTurnSettled(name)
+    }
+
+    /// The Bot's chat settled its last turn (finished, or stopped where Hermes stored it, which it
+    /// keeps in its `KeptTurn`): the row, tile, face and working lines stop showing it as working at
+    /// once, and the roster's own look at it ends.
+    func chatSettledTurn(_ name: String) {
+        turnBook.found(name)
+        ownTurnRecoveries.removeValue(forKey: name)?.cancel()
+        workspace?.activity.botTurnSettled(name)
+        guard runningElsewhere[name] != nil else { return }
+        runningElsewhere[name] = nil
+        // A turn going on after the row the chat settled at shows again from the rows themselves.
+        if let chat = bot(named: name)?.canonicalSession?.resolvedID { readElsewhere(name, chat: chat) }
+    }
+
+    /// The Bot's chat lost track of its last turn (no answer within the recovery's minute): the Bot
+    /// stops showing it as working, but it isn't settled there, so the roster's reads keep asking.
+    func chatLostTurn(_ name: String, rows: [SessionMessage]) {
+        turnBook.lose(name, rows: rows)
+        workspace?.activity.botTurnSettled(name)
+        if runningElsewhere[name] != nil { runningElsewhere[name] = nil }
+    }
+
 
     private func recheckElsewhere() {
         guard elsewhereRecheck == nil, !runningElsewhere.isEmpty else { return }

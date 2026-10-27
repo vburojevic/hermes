@@ -1504,6 +1504,28 @@ final class ConversationModel: Identifiable {
         }
     }
 
+    /// The Bot's roster settled its own turn at stored row `row`, with nothing running for it
+    /// (`BotRoster.settleOwnTurn`): kept as this chat's own mark (`KeptTurn`), so the chat shows it
+    /// ended there too, after a relaunch as well, rather than working.
+    func turnSettledByRoster(at row: Int) {
+        midTurnEndedAt = row
+        guard loadState == .loaded, live == nil, heldOver == nil, runsElsewhere else { return }
+        rebuild(from: rawMessages)
+    }
+
+    /// The chat settled its last turn: finished, or ended where Hermes stored it (its `KeptTurn`
+    /// mark, which the roster reads), or lost with the reason. The Bot's row, tile, face and working
+    /// lines follow at once (`BotRoster.chatSettledTurn`, `docs/bots-groups-skills.md` §1.2). One the
+    /// chat lost track of isn't settled: the roster keeps asking after it (`BotRoster.chatLostTurn`).
+    private func announceSettledTurn(lost: Bool = false) {
+        guard let botName, let roster else { return }
+        if lost {
+            roster.chatLostTurn(botName, rows: rawMessages)
+        } else {
+            roster.chatSettledTurn(botName)
+        }
+    }
+
     /// The chat's stored turn stops mid-work and nothing runs for it: it ended there, "Stopped", and
     /// stays so across launches (`midTurnEndedAt`) until a row is stored after it.
     private func settleStoredMidTurn() {
@@ -1511,6 +1533,7 @@ final class ConversationModel: Identifiable {
         LoadTrace.mark(stableKey ?? "?", "a stored turn that stops mid-work, with nothing running, settled as stopped")
         midTurnEndedAt = last
         rebuild(from: rawMessages)
+        announceSettledTurn()
     }
 
     /// One look for `recoverStoredMidTurn`: the stored chat read again.
@@ -4057,6 +4080,7 @@ final class ConversationModel: Identifiable {
         heldOver?.endUnheard = false
         animateRows { items[index] = .assistant(settled) }
         keepStoppedMark(settled.state, rows: rawMessages)
+        announceSettledTurn()
     }
 
     /// The turn being recovered: the app couldn't find out how it ended, and says why
@@ -4070,6 +4094,7 @@ final class ConversationModel: Identifiable {
         animateRows { items[index] = .assistant(lost) }
         failureIsRetryable = false
         turnError = TurnFailure(message: reason.line, canRetry: false)
+        announceSettledTurn(lost: true)
     }
 
     /// The person's Reload on a turn the app lost track of, once the chat is read. Stored whole, it
@@ -4090,6 +4115,7 @@ final class ConversationModel: Identifiable {
         heldOver?.endUnheard = false
         if let failure = turnError, LostTurn(line: failure.message) != nil { turnError = nil }
         keepStoppedMark(settled.state, rows: rawMessages)
+        announceSettledTurn()
     }
 
     /// A turn that ended without finishing, and whose stored rows stop partway, ended there: kept so
@@ -4305,6 +4331,7 @@ final class ConversationModel: Identifiable {
         }
         loadState = .loaded
         completedTurns += 1
+        if transcript != nil { announceSettledTurn() }
         if workspace?.currentConversation === self { ChatSounds.play(.received) }
         LoadTrace.mark(stableKey ?? "?", "turn end: \(shownRows.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(shownRows.count) rows kept their identity\(transcript == nil ? ", held for a later load" : "")")
         if transcript == nil, sessionID != nil {

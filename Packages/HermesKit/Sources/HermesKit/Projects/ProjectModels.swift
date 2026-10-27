@@ -488,6 +488,12 @@ public struct ActiveSession: Hashable, Sendable {
     public var isRunning: Bool {
         ["starting", "working", "streaming", "resuming"].contains(status)
     }
+
+    /// A turn is under way in it: running, or waiting on the person (an approval, a question), which
+    /// Hermes lists as `waiting` (tui_gateway `_session_live_status`).
+    public var holdsTurn: Bool {
+        isRunning || status == "waiting"
+    }
 }
 
 /// Path helpers for folders on the gateway (which may not be this device).

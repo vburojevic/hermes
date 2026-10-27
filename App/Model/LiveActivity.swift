@@ -188,6 +188,17 @@ final class LiveActivity {
         refresh()
     }
 
+    /// A Bot's turn settled (`BotRoster.chatSettledTurn`, `settleOwnTurn`): the line the last
+    /// `session.active_list` gave its Bot Chat goes now, not at the next poll (30 s with the Mac app in
+    /// the back). A poll that still lists it running brings it back.
+    func botTurnSettled(_ name: String) {
+        let key = UnreadStore.botKey(name)
+        guard remote[key] != nil else { return }
+        remote[key] = nil
+        trackers[key] = nil
+        refresh()
+    }
+
     /// A reply landed in a Bot Chat: its face is happy for 2 s.
     func botReplied(_ name: String) {
         justReplied.insert(name)

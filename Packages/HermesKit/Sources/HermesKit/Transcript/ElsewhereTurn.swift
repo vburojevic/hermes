@@ -18,8 +18,11 @@ public struct ElsewhereTurn: Hashable, Sendable {
         self.runningTool = runningTool
     }
 
-    /// The stored rows' last turn, when it runs elsewhere: nil when it ended or went quiet too long.
-    public static func of(_ messages: [SessionMessage], now: Date = .now) -> ElsewhereTurn? {
+    /// The stored rows' last turn, when it runs elsewhere: nil when it ended, went quiet too long, or
+    /// was settled where its rows stop (`settledAt`, the row `TurnRecovery` settled it at: nothing ran
+    /// for it). A row stored after that one is the turn going on, and it shows again.
+    public static func of(_ messages: [SessionMessage], now: Date = .now, settledAt: Int? = nil) -> ElsewhereTurn? {
+        if let settledAt, TranscriptBuilder.lastTurnRowID(messages) == settledAt { return nil }
         if TranscriptBuilder.awaitsReply(messages, now: now) {
             switch TranscriptBuilder.lastTurnRow(messages).flatMap(TranscriptBuilder.answeredElsewhere) {
             case .bot(let sender): return ElsewhereTurn(answering: sender)
