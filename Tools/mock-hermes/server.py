@@ -12,8 +12,12 @@ Scripted behaviour by message content:
                          ("approve stale": the run's generation moves once the card is up and
                          the prompt goes with it, asked again 30 s later; "approve stale retry"
                          keeps the prompt under the new generation, which Hermes never does;
-                         "approve elsewhere": another device allows it after 5 s, unannounced,
-                         and the command then runs for 20 s)
+                         "approve elsewhere": another device allows it after 5 s, and the
+                         command then runs for 20 s; "approve timeout": Hermes stops waiting
+                         after 20 s and the command is denied. Hermes says `approval.settled`
+                         when it stops waiting; with "legacy" the run's events say what older
+                         gateways do: `approval.responded` after this device's answer, and
+                         nothing when another device answers)
   contains "clarify"  -> asks a question mid-turn, on the run's events and in its status
                          ("clarify quiet": only in its status, as a gateway that leaves it off the
                          events; "clarify multi": several picks; "clarify open": no picks;
@@ -490,16 +494,20 @@ def agent_turn(run):
             command = "rm -rf ./build && make release"
             choices = ["once", "deny", "session", "always"]
 
+            legacy, timeout = "legacy" in lowered, "timeout" in lowered
+            # How long Hermes waits, when it says (`PendingControls.register`'s `timeout_s`).
+            wait = {"timeout_s": 20} if timeout else {}
+
             def ask():
                 request_id = uuid.uuid4().hex
                 run.approval = {"kind": "approval", "prompt_id": request_id, "execution_generation": run.generation,
-                                "command": command, "description": "Recursive delete", "choices": choices}
+                                "command": command, "description": "Recursive delete", "choices": choices, **wait}
                 run.status = "waiting_for_approval"
                 # The run's event is the prompt as Hermes projects it (session_api_turn.run_api_turn):
                 # `request_id` for `prompt_id`, the allow_* flags, and its generation.
                 run.emit("approval.request", command=command, description="Recursive delete", pattern_key="rm_rf",
                          pattern_keys=["rm_rf"], execution_generation=run.generation, request_id=request_id,
-                         allow_session=True, allow_permanent=True, choices=["once", "session", "always", "deny"])
+                         allow_session=True, allow_permanent=True, choices=["once", "session", "always", "deny"], **wait)
                 return request_id
 
             request_id = ask()
@@ -519,21 +527,34 @@ def agent_turn(run):
                     run.status = "running"
                     reask = time.time() + 30
             elsewhere = time.time() + 5 if "elsewhere" in lowered else None
+            deadline = time.time() + 20 if timeout else None
+            answered_here = False
             while run.approval_choice is None and not run.stop.is_set():
                 if reask and time.time() > reask:
                     reask = None
                     request_id = ask()
                 if elsewhere and time.time() > elsewhere:
-                    # Allowed on another device: Hermes says nothing on this run's events.
+                    # Allowed on another device (the WS viewer): Hermes takes the first answer.
                     run.approval_choice = "once"
+                    break
+                if deadline and time.time() > deadline:
+                    # No answer in time: Hermes denies it.
+                    break
                 time.sleep(0.1)
+            else:
+                answered_here = run.approval_choice is not None
             if run.killed:
                 return
             choice = run.approval_choice
+            settled_generation = (run.approval or {}).get("execution_generation", run.generation)
             run.approval = None
             run.status = "running"
-            if not elsewhere:
-                run.emit("approval.responded", choice=choice or "deny", request_id=request_id, resolved=1)
+            if legacy:
+                if answered_here:
+                    run.emit("approval.responded", choice=choice, request_id=request_id, resolved=1)
+            elif not run.stop.is_set():
+                # However it ended (`PendingControls.snapshot`/`respond`): the prompt and its generation.
+                run.emit("approval.settled", prompt_id=request_id, execution_generation=settled_generation)
             add_message(sid, "assistant", narration.strip(), finish_reason="tool_calls",
                         tool_calls=[{"id": "call_x", "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": command})}}])
             if choice == "deny" or choice is None:

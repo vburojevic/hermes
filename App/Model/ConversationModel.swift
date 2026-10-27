@@ -380,6 +380,8 @@ final class ConversationModel: Identifiable {
     /// (`RunQuestions`, `docs/quick-actions.md` §3), and the read of its status that finds one
     /// its events didn't carry (`watchRunStatus`).
     @ObservationIgnored private var runQuestions = RunQuestions()
+    /// How the running `/v1/runs` turn's approval cards end (`RunApprovals`, `approval.settled`).
+    @ObservationIgnored private var runApprovals = RunApprovals()
     @ObservationIgnored private var runStatusWatch: Task<Void, Never>?
     @ObservationIgnored private var lastRunEventAt = Date.distantPast
     /// Gives back what Stop cleared from Hermes's queue once the stopped turn settled.
@@ -3818,6 +3820,21 @@ final class ConversationModel: Identifiable {
         }
     }
 
+    /// A `/v1/runs` turn's approval card going up, or Hermes no longer waiting on one
+    /// (`approval.settled`): the card goes, with a line unless it was answered here.
+    private func runApprovalEvent(_ event: TurnEvent) {
+        switch event {
+        case .approvalRequested(let approval) where approval.gatewayRequestID == nil:
+            runApprovals.show(approval)
+        case .approvalSettled(let id, let generation):
+            guard let ending = runApprovals.settle(id, generation: generation),
+                  let receipt = Self.withdrawalReceipt(ending == .timedOut ? "timeout" : "resolved") else { return }
+            addReceipt(receipt.text, symbol: receipt.symbol)
+        default:
+            break
+        }
+    }
+
     /// A request that certainly never reached the gateway (refused at connect, no network).
     nonisolated static func neverReached(_ error: any Error) -> Bool {
         switch error {
@@ -3912,7 +3929,7 @@ final class ConversationModel: Identifiable {
                 return
             case .listen, .watchStatus:
                 if case .success(let running) = status {
-                    if let approval = running.approval, live?.approval == nil {
+                    if let approval = running.approval, live?.approval == nil, !runApprovals.isSettled(approval.id) {
                         apply(.approvalRequested(approval))
                     }
                     applyRunQuestions(running, runID: runID, readAt: readAt)
@@ -4166,6 +4183,7 @@ final class ConversationModel: Identifiable {
         // The card is the step: the widget tool's own steps never show (`docs/widgets.md` §2).
         if widgetToolEvent(event) { return }
         runQuestionEvent(event)
+        runApprovalEvent(event)
         trackSteers(event)
         applyToLive(SequencedTurnEvent(seq: seq, event: event))
     }
@@ -4199,6 +4217,7 @@ final class ConversationModel: Identifiable {
         guard let finished = live else { return }
         // A question the turn asked goes with it; the turn says how it ended.
         for id in runQuestions.endAll() { applyRunQuestion(.drop(id: id)) }
+        runApprovals.endAll()
         let finishing = UUID()
         finishingTurn = finishing
         isFinishing = true
@@ -4721,6 +4740,11 @@ final class ConversationModel: Identifiable {
         // A card fill is answered once or not at all: Hermes remembers nothing for cards, and no
         // card offers more (`docs/web.md` §4).
         if approval.isPaymentFill, choice == .session || choice == .always { return }
+        // Hermes stopped waiting on it (`approval.settled`): the answer would go nowhere.
+        if approval.gatewayRequestID == nil, runApprovals.isSettled(approval.id) {
+            addReceipt(String(localized: "Not sent · already answered on another device"), symbol: "info.circle")
+            return
+        }
         WelcomeProgress.shared.mark(.runCommand)
         // One behind the card, stepped to in the dock: answered by its id, and the card's stays.
         if let index = waitingApprovals.firstIndex(where: { $0.id == approval.id }), pendingApproval?.id != approval.id {
@@ -4737,9 +4761,10 @@ final class ConversationModel: Identifiable {
             return
         }
         guard let runID = live?.runID, let client = workspace?.client else { return }
+        runApprovals.answer(approval.id)
         apply(.approvalResolved(requestID: approval.requestID))
         sendRunAnswer(.approval(approval, choice: choice), runID: runID, client: client, about: approval.summary) { [weak self] in
-            guard let self, self.live?.runID == runID, self.isWorking else { return }
+            guard let self, self.live?.runID == runID, self.isWorking, self.runApprovals.unanswer(approval.id) else { return }
             self.apply(.approvalRequested(approval))
         }
     }
@@ -5990,12 +6015,7 @@ extension ConversationModel {
     private func withdrawRequest(id: String?, method: String?, reason: String?) {
         guard let id else { return }
         answers.forget(id)
-        let receipt: (String, String)? = switch reason {
-        case "timeout": (String(localized: "Hermes stopped waiting · no answer in time"), "clock")
-        case "resolved": (String(localized: "Answered on another device"), "checkmark.circle.fill")
-        case "interrupted": (String(localized: "Cancelled · you stopped this reply"), "stop.circle")
-        default: nil
-        }
+        let receipt = Self.withdrawalReceipt(reason)
         var matched = false
         if requests.contains(where: { $0.id == id }) {
             moveCards { requests.removeAll { $0.id == id } }
@@ -6010,7 +6030,18 @@ extension ConversationModel {
             matched = true
             DispatchQueue.main.async { [weak self] in self?.showNextApproval() }
         }
-        if matched, let receipt { addReceipt(receipt.0, symbol: receipt.1) }
+        if matched, let receipt { addReceipt(receipt.text, symbol: receipt.symbol) }
+    }
+
+    /// The line a card leaves when Hermes stops waiting on it, by `request.cancel`'s reason
+    /// (`docs/quick-actions.md` §1); none for a reason without one.
+    private static func withdrawalReceipt(_ reason: String?) -> (text: String, symbol: String)? {
+        switch reason {
+        case "timeout": (String(localized: "Hermes stopped waiting · no answer in time"), "clock")
+        case "resolved": (String(localized: "Answered on another device"), "checkmark.circle.fill")
+        case "interrupted": (String(localized: "Cancelled · you stopped this reply"), "stop.circle")
+        default: nil
+        }
     }
 
     /// The request cards up in this chat that Hermes lists in `open_requests` (connection requests

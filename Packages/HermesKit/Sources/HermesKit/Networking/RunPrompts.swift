@@ -175,3 +175,70 @@ public enum RunPromptStep: Sendable, Hashable {
     /// Say what went wrong; the card comes back.
     case fail
 }
+
+/// How a `/v1/runs` turn's approval cards end (`docs/quick-actions.md` §3). Hermes says
+/// `approval.settled` on the run's events when it stops waiting on one, however that came about:
+/// answered here or on another device, timed out, or its generation ended. It doesn't say which,
+/// so the card's own story decides, as for a question's `clarify.settled` (`RunQuestions`).
+public struct RunApprovals: Sendable {
+    private struct Shown: Sendable {
+        var generation: Int?
+        var deadline: Date?
+    }
+
+    /// Cards up here, by prompt id.
+    private var shown: [String: Shown] = [:]
+    /// Answered here, and possibly not with Hermes yet: a settle says nothing.
+    private var answered: [String: Shown] = [:]
+    /// Prompts Hermes stopped waiting on: an answer to one isn't sent.
+    private var settled: Set<String> = []
+
+    public init() {}
+
+    /// The approval's card is up. Its deadline, when Hermes gave one, counts from when Hermes
+    /// asked: an event that arrived late (a stream attached after the asking) doesn't move it past
+    /// Hermes's own. A clock ahead of this device's counts from now.
+    public mutating func show(_ approval: ApprovalRequest, now: Date = .now) {
+        guard let id = approval.requestID, shown[id] == nil, answered[id] == nil, !settled.contains(id) else { return }
+        let asked = min(approval.askedAt ?? now, now)
+        shown[id] = Shown(generation: approval.executionGeneration, deadline: approval.timeout.map { asked.addingTimeInterval($0) })
+    }
+
+    /// Hermes stopped waiting on `id` (`approval.settled`): how its card ends, or nil when none is
+    /// up here (answered here, never shown, or asked in another generation).
+    public mutating func settle(_ id: String, generation: Int?, now: Date = .now) -> RequestSync.Ending? {
+        if let card = shown[id] ?? answered[id], let generation, let asked = card.generation, asked != generation { return nil }
+        settled.insert(id)
+        answered[id] = nil
+        guard let card = shown.removeValue(forKey: id) else { return nil }
+        return RequestSync.ended(shown: [RequestSync.Card(id: id, deadline: card.deadline)], open: [], now: now).first?.ending
+    }
+
+    /// Whether Hermes already stopped waiting on `id`: an answer tapped now goes nowhere.
+    public func isSettled(_ id: String) -> Bool {
+        settled.contains(id)
+    }
+
+    /// The person answered `id` here: false when Hermes already stopped waiting on it, and the
+    /// answer isn't sent.
+    @discardableResult
+    public mutating func answer(_ id: String) -> Bool {
+        guard !settled.contains(id) else { return false }
+        answered[id] = shown.removeValue(forKey: id) ?? answered[id] ?? Shown()
+        return true
+    }
+
+    /// The answer didn't go: the card comes back. False when Hermes stopped waiting meanwhile.
+    public mutating func unanswer(_ id: String) -> Bool {
+        guard !settled.contains(id), let card = answered.removeValue(forKey: id) else { return false }
+        shown[id] = card
+        return true
+    }
+
+    /// The turn is over: its approvals go with it.
+    public mutating func endAll() {
+        shown = [:]
+        answered = [:]
+        settled = []
+    }
+}

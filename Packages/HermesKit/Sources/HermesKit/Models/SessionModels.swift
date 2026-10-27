@@ -599,6 +599,11 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
     public var title: String?
     /// The run's execution generation it was asked in (`/v1/runs`): the answer names it.
     public var executionGeneration: Int?
+    /// How long Hermes waits for the answer, when it says (a `/v1/runs` turn's `timeout_s`).
+    public var timeout: TimeInterval?
+    /// When Hermes asked, by the gateway's clock: a run's event carries it (`timestamp`), so a
+    /// deadline counts from the asking, not from when the event reached this device.
+    public var askedAt: Date?
 
     public var id: String { requestID ?? gatewayRequestID ?? (command ?? "") + (description ?? "") }
 
@@ -610,6 +615,8 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
         case allowSession = "allow_session"
         case allowPermanent = "allow_permanent"
         case smartDenied = "smart_denied"
+        case timeout = "timeout_s"
+        case askedAt = "timestamp"
         case toolName = "tool_name"
         case patternKey = "pattern_key"
         case patternKeys = "pattern_keys"
@@ -628,6 +635,8 @@ public struct ApprovalRequest: Decodable, Sendable, Hashable, Identifiable {
         // A run's event says `request_id`; its status lists the same prompt as `prompt_id`.
         requestID = (try? c.decodeIfPresent(String.self, forKey: .requestID)) ?? (try? c.decodeIfPresent(String.self, forKey: .promptID))
         executionGeneration = try? c.decodeIfPresent(Int.self, forKey: .executionGeneration)
+        timeout = (try? c.decodeIfPresent(Double.self, forKey: .timeout)).flatMap { $0 > 0 ? $0 : nil }
+        askedAt = HermesDate.fromEpoch(try? c.decodeIfPresent(Double.self, forKey: .askedAt))
         // Shown as they'd run: nothing invisible or reordering hides in them (`VisibleText`).
         command = VisibleText.of(try? c.decodeIfPresent(String.self, forKey: .command))
         description = VisibleText.of(try? c.decodeIfPresent(String.self, forKey: .description))

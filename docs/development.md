@@ -165,9 +165,13 @@ refusal's message is its bare reason, as Hermes's. `GET /v1/runs/{id}` carries
 generation as soon as the card is up and drops the prompt with it, as Hermes does: the card's answer
 is refused stale, the run no longer lists it, so the card settles, and the turn asks again 30 s
 later. "approve stale retry" keeps the prompt under the new generation, which Hermes never does,
-to exercise the app's one defensive retry. "approve
-elsewhere" allows it on another device after 5 s without a word on the run's events, then runs the
-command for 20 s (the card's answer in that time finds nothing waiting).
+to exercise the app's one defensive retry. When Hermes stops waiting on an approval, however that
+came about, the run's events say `approval.settled` with its `prompt_id` and generation. "approve
+elsewhere" allows it on another device after 5 s, then runs the command for 20 s (the card's answer
+in that time finds nothing waiting), and "approve timeout" stops waiting after 20 s (`timeout_s`)
+and denies the command. With "legacy" in the message (say "approve elsewhere legacy") the events
+are an older gateway's: `approval.responded` after this device's answer, and nothing when another
+device answers.
 
 "clarify" asks a question mid-turn as Hermes does over the API server: a running clarify step, the
 prompt in the run's `pending_controls` and a `clarify.request` on its events, then

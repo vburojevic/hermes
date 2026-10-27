@@ -445,7 +445,7 @@ that opens to them, and consecutive subagents share one row.
 | `tool.started`, `tool.completed` | Steps (`tool`, `preview`, `duration`, `error`); no call ids, so start and finish pair by tool name |
 | `reasoning.available` | The reasoning step |
 | `subagent.start`, `subagent.complete` | A "Delegated to subagents" row on the rail |
-| `approval.request`, `approval.responded` | The approval card; answered with `POST /v1/runs/{id}/approval`, naming the prompt and the run's `execution_generation` ([quick-actions.md](quick-actions.md) §3) |
+| `approval.request`, `approval.settled` | The approval card, and its end: `approval.settled` takes down the card for its `prompt_id` only, with a line when it was answered on another device or timed out (`approval.responded` on older gateways). Answered with `POST /v1/runs/{id}/approval`, naming the prompt and the run's `execution_generation` ([quick-actions.md](quick-actions.md) §3) |
 | `clarify.request`, `clarify.settled` | The question card a socket chat's `clarify` gets, and its end; answered with `POST /v1/runs/{id}/clarify`. A gateway that lists the question only in the run's status (`pending_controls`) is read while the events are quiet ([quick-actions.md](quick-actions.md) §3) |
 | `run.completed` (`output`, `usage`), `run.failed`, `run.cancelled`, `run.interrupted` | The finished, failed, stopped or interrupted turn |
 | `replay.truncated` | The transcript is reloaded when the turn ends |

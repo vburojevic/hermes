@@ -165,6 +165,13 @@ public struct LiveTurn: Sendable, Equatable {
             approval = nil
             if turn.state == .waitingForApproval { turn.state = .streaming }
 
+        case .approvalSettled(let promptID, let generation):
+            // Only the card for that prompt, asked in that generation, goes.
+            guard let shown = approval, shown.requestID == promptID,
+                  generation == nil || shown.executionGeneration == nil || shown.executionGeneration == generation else { break }
+            approval = nil
+            if turn.state == .waitingForApproval { turn.state = .streaming }
+
         case .finalText(let text):
             pendingText = text
 

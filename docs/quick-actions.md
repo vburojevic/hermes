@@ -192,8 +192,17 @@ reordering characters show as their codes (`⟨U+202E⟩`) and the person sees w
   approval was asked in: `approval.request` carries it, and the run's status
   (`execution_generation`, with the prompts it waits on in `pending_controls`) supplies it when
   the event didn't. A gateway whose runs have no generation gets `{choice, request_id}`.
-  `approval.responded` in the run's events clears the card. The … menu then offers only Copy
-  Command.
+  The … menu offers only Copy Command.
+  - `approval.settled` on the run's events (`{prompt_id, execution_generation}`) says Hermes
+    stopped waiting on an approval: answered here or on another device, timed out, or its
+    generation ended (`gateway/session_pending_controls.py`). It doesn't say which, so, as for a
+    question (below), the card for that prompt (and generation, when the card has one), and only
+    that card, goes with "Answered on another device", or "Hermes stopped waiting · no answer in
+    time" past its `timeout_s`, counted from when Hermes asked (the event's `timestamp`, so a
+    request the app heard late keeps Hermes's deadline). One answered here goes without a word (`RunApprovals`). An answer
+    tapped after that isn't sent: the chat says "Not sent · already answered on another device".
+    Older gateways say `approval.responded` after an answer over HTTP instead, which clears the
+    card.
   - `stale_generation` (409): the run moved on (claimed again after a restart or a drain). Its
     status is read again. Hermes drops a prompt with its generation, so it's usually gone: the card
     settles as below, and the claimed turn asks again on a new card. Only if the same prompt still
@@ -318,7 +327,10 @@ yes such as "yes", "go ahead", "run it"), "allow in this chat", or "deny" (any n
   quiet", which Hermes lists only in the run's status. "clarify multi" and "clarify open" answer
   with several picks and with words, Skip answers nothing, "clarify elsewhere" takes the card down
   with "Answered on another device", and "clarify timeout" with "Hermes stopped waiting · no answer
-  in time".
+  in time". The same goes for approvals: "approve elsewhere" takes its card down within a few
+  seconds with "Answered on another device", while the command runs, and "approve timeout" with
+  "Hermes stopped waiting · no answer in time"; "approve elsewhere legacy" (an older gateway, which
+  says nothing) leaves it up until the reply moves on.
 - No card is wider than the screen: "clarify pair", answered with its long first pick, shows
   "Question 2 of 2" whole on the smallest iPhone, an iPad and the Mac (`RequestCardUITests`).
 - Against the mock backend (`Tools/mock-hermes/chats.py`), words in a message ask for each card:
