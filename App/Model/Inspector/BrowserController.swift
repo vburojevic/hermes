@@ -142,11 +142,17 @@ final class BrowserController: NSObject {
         await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
     }
 
-    /// The gateway is gone: its store goes with every site's cookies, and the key that named it.
-    static func removeData(gateway: UUID) async {
-        guard let text = UserDefaults.standard.string(forKey: storeKey(gateway)), let id = UUID(uuidString: text) else { return }
+    /// The gateway's store, if its browser ever made one.
+    static func madeStoreID(gateway: UUID) -> UUID? {
+        UserDefaults.standard.string(forKey: storeKey(gateway)).flatMap(UUID.init(uuidString:))
+    }
+
+    /// The gateway is gone: the key that named its store goes now, and the store's id is returned
+    /// for `RetiredWebStores`, which deletes it at the next launch (`docs/web.md` §6.5).
+    static func retireStore(gateway: UUID) -> UUID? {
+        let id = madeStoreID(gateway: gateway)
         UserDefaults.standard.removeObject(forKey: storeKey(gateway))
-        try? await WKWebsiteDataStore.remove(forIdentifier: id)
+        return id
     }
 
     // MARK: Attaching
@@ -657,7 +663,9 @@ final class BrowserController: NSObject {
         controller.add(observer, contentWorld: world, name: "hermesPerson")
         personObserver = observer
         configuration.userContentController = controller
-        if let gateway = inspector?.gatewayID {
+        if inspector?.gatewayRemoved == true {
+            configuration.websiteDataStore = .nonPersistent()
+        } else if let gateway = inspector?.gatewayID {
             configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.dataStoreID(gateway: gateway))
         }
         let view = WKWebView(frame: .zero, configuration: configuration)

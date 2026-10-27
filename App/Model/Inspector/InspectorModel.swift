@@ -202,6 +202,22 @@ final class InspectorModel {
         releaseTask?.cancel()
         releaseTask = nil
     }
+
+    /// The gateway was removed: a page made again for a screen that still shows it keeps nothing,
+    /// so no store is made for a gateway that's gone (`docs/connecting-and-voice.md` §7).
+    @ObservationIgnored private(set) var gatewayRemoved = false
+
+    /// The gateway is being removed: every page this chat's Inspector shows closes, the Preview's
+    /// and the browser's, before anything touches their stores.
+    func closeWebViews() {
+        gatewayRemoved = true
+        releaseTask?.cancel()
+        releaseTask = nil
+        previewControllers.values.forEach { $0.tearDown() }
+        previewControllers = [:]
+        browserStore?.tearDown()
+    }
+
     @ObservationIgnored private var editors: [String: FileEditorModel] = [:]
     @ObservationIgnored private var trees: [String: FileTreeModel] = [:]
     @ObservationIgnored private var reviews: [String: ChangesModel] = [:]

@@ -67,7 +67,9 @@ final class PreviewController: NSObject {
             fileScheme = scheme
         }
         // Each gateway keeps its own cookies and storage: one gateway's pages never see another's.
-        if let id = inspector?.gatewayID {
+        if inspector?.gatewayRemoved == true {
+            configuration.websiteDataStore = .nonPersistent()
+        } else if let id = inspector?.gatewayID {
             configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: id)
         }
         #if os(iOS)

@@ -23,6 +23,9 @@ final class AppModel {
     /// When the app last went to the background: coming back after a real absence starts the
     /// connections afresh (`recycleConnections`).
     @ObservationIgnored private var backgroundedAt: Date?
+    /// Removed gateways' web data, deleted at launch once no web view can use it.
+    @ObservationIgnored private let retiredWebStores = RetiredWebStores()
+    @ObservationIgnored private var webStoreSweep: Task<Void, Never>?
 
     init(store: BotStore = .standard()) {
         self.store = store
@@ -40,6 +43,7 @@ final class AppModel {
         }
         let saved = UserDefaults.standard.string(forKey: PreferenceKey.selectedBot).flatMap(UUID.init(uuidString:))
         selectedBotID = bots.first { $0.id == saved }?.id ?? bots.first?.id
+        sweepRetiredWebStores()
         #if DEBUG
         bootstrapFromEnvironment()
         LaunchTrace.mark("model ready (\(bots.count) gateways)")
@@ -146,6 +150,8 @@ final class AppModel {
         try store.save(updated)
         try? store.removeAPIKey(for: botID)
         try? store.setBackendCredential(nil, for: botID)
+        // Its pages close before anything else touches the gateway's stores.
+        workspaces[botID]?.closeWebViews()
         #if HERMES_PUSH
         if let workspace = workspaces[botID] { PushCenter.shared.forget(workspace) }
         #endif
@@ -160,14 +166,15 @@ final class AppModel {
         SessionsCache.remove(botID)
         LastLinesCache.remove(botID)
         ModelOptionsCache.remove(botID)
-        // Its Inspector tabs, and its Preview pages' cookies and storage.
+        // Its Inspector tabs.
         let inspectorKeys = ["inspector.pins.\(botID.uuidString)", "inspector.tabs.\(botID.uuidString)."]
         for key in UserDefaults.standard.dictionaryRepresentation().keys where inspectorKeys.contains(where: key.hasPrefix) {
             UserDefaults.standard.removeObject(forKey: key)
         }
-        Task { try? await WKWebsiteDataStore.remove(forIdentifier: botID) }
-        // And the in-app browser's sign-ins on it (`docs/web.md` §6.5).
-        Task { await BrowserController.removeData(gateway: botID) }
+        // Its Preview pages' cookies and storage, and the in-app browser's sign-ins on it
+        // (`docs/web.md` §6.5), go at the next launch: deleting a store under a web view that
+        // still uses it crashes WebKit, and a page on screen lets its web view go only later.
+        retiredWebStores.retire([botID] + [BrowserController.retireStore(gateway: botID)].compactMap { $0 })
         workspaces[botID] = nil
         bots = updated
         UserDefaults.standard.removeObject(forKey: "model.\(botID.uuidString)")
@@ -175,6 +182,39 @@ final class AppModel {
         if selectedBotID == botID {
             selectedBotID = bots.first?.id
             if let id = selectedBotID { select(id) }
+        }
+    }
+
+    /// Deletes the stores removed gateways left behind (`docs/connecting-and-voice.md` §7), at
+    /// launch. No web view can use them: the sweep skips every store a current gateway uses, and
+    /// nothing makes one for a gateway that's gone. One at a time, on the main actor, as WebKit
+    /// expects. With nothing waiting, WebKit isn't touched at all.
+    private func sweepRetiredWebStores() {
+        #if DEBUG
+        // `-HERMES_WEB_STORES_LOG YES`: the stores WebKit has, before and after the sweep, even
+        // with nothing waiting, to show the stores are gone.
+        let logs = UserDefaults.standard.bool(forKey: "HERMES_WEB_STORES_LOG")
+        #else
+        let logs = false
+        #endif
+        guard logs || !retiredWebStores.pending.isEmpty else { return }
+        var inUse = Set(bots.map(\.id))
+        inUse.formUnion(bots.compactMap { BrowserController.madeStoreID(gateway: $0.id) })
+        webStoreSweep = Task { [retiredWebStores] in
+            // WebKit's class methods for stores answer on its main run loop, which only exists once
+            // WebKit has started in this process: before that, they crash on a background thread
+            // and take the app down. Asking for the default store starts it.
+            _ = WKWebsiteDataStore.default()
+            let existing = await WKWebsiteDataStore.allDataStoreIdentifiers
+            let removed = await retiredWebStores.sweep(inUse: inUse, existing: Set(existing)) {
+                try await WKWebsiteDataStore.remove(forIdentifier: $0)
+            }
+            #if DEBUG
+            if logs {
+                let left = await WKWebsiteDataStore.allDataStoreIdentifiers
+                print("WEBSTORES before=\(existing.map(\.uuidString).sorted()) removed=\(removed.map(\.uuidString)) after=\(left.map(\.uuidString).sorted()) waiting=\(retiredWebStores.pending.map(\.uuidString))")
+            }
+            #endif
         }
     }
 

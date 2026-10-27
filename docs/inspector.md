@@ -318,7 +318,9 @@ rebinding) isn't caught.
   localhost address http.
 - Each gateway's Preview pages keep their own cookies and storage
   (`WKWebsiteDataStore(forIdentifier:)` with the gateway's id): one gateway's pages never see
-  another's.
+  another's. Removing the gateway closes its pages at once and deletes the store at the app's next
+  launch, never while a page uses it (`RetiredWebStores`, `docs/connecting-and-voice.md` §7): WebKit
+  crashes when a store is deleted under a web view that still uses it.
 - Safari's Web Inspector can attach to Preview pages only in Debug builds.
 - Open in Browser (the URL bar's Safari button) is offered for http and https pages.
 

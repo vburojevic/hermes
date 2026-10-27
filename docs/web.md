@@ -422,8 +422,10 @@ page: the app never reads or sends it.
 
 The web view's cookies and storage are the app's own, one store per gateway
 (`WKWebsiteDataStore(forIdentifier:)`), apart from the Preview's. Sign-ins stay until Settings →
-Browser → **Clear Browsing Data in This App**, or until the gateway is removed, which removes its
-store. A chat that closes gives its browser back and closes the page.
+Browser → **Clear Browsing Data in This App** (which empties the store and keeps it, since a page
+may be open), or until the gateway is removed. Removing it closes the page at once and deletes the
+store at the app's next launch, never while a page uses it (`docs/connecting-and-voice.md` §7). A chat
+that closes gives its browser back and closes the page.
 
 ### 6.6 Setup
 

@@ -382,6 +382,11 @@ accessibility queries a tapping tool sends. `--seed-bot-chat` with an export of 
 and tables makes Ops a heavy chat to open. `-HERMES_INLINE_SELECTION YES` makes iPhone and iPad
 replies selectable in place again, as they were, to measure what that costs.
 
+Removed gateways' web data (`docs/connecting-and-voice.md` §7): `-HERMES_WEB_STORES_LOG YES`
+prints one `WEBSTORES` line at launch with the stores WebKit has before and after the sweep, the
+ones it deleted and the ones still waiting, even when nothing waits (without it, such a launch
+doesn't touch WebKit).
+
 Measuring a cold launch (same build): `-HERMES_LAUNCH_LOG YES` prints each launch step once with
 its time since the process started (`LaunchTrace`: the model, the first view, the kept chats, Bots
 and last lines, the gateway's answer, the socket, the fresh lists, each row's last line), and the

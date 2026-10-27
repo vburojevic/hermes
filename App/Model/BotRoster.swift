@@ -820,6 +820,13 @@ final class BotRoster {
         gatewayChats = [:]
     }
 
+    /// The gateway is being removed: its Bot Chats' pages close (`AppModel.removeBot`).
+    func closeWebViews() {
+        for chat in Array(conversations.values) + gatewayChats.values.compactMap(\.value) {
+            chat.inspectorIfLoaded?.closeWebViews()
+        }
+    }
+
     /// The app went to the background: stop polling and reconnecting until it's back. On iPhone
     /// and iPad the socket stays open for as long as iOS lets the app run, about 30 s: a quick
     /// trip to another app comes back to it as it was, and what arrives meanwhile (a reply still

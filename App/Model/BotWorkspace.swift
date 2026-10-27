@@ -1529,6 +1529,14 @@ final class BotWorkspace: Identifiable {
         projectDrafts.values.forEach { $0.forgetLocalData() }
     }
 
+    /// The gateway is being removed: every page its chats show closes, the Preview's and the
+    /// browser's, before its web data is touched (`docs/connecting-and-voice.md` §7).
+    func closeWebViews() {
+        let chats = Array(conversations.values) + Array(projectDrafts.values) + backgroundChats + [draft].compactMap { $0 }
+        for chat in chats { chat.inspectorIfLoaded?.closeWebViews() }
+        roster?.closeWebViews()
+    }
+
     func tearDown() {
         stopKeepingConnected()
         appPluginsModel?.tearDown()

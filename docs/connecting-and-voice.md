@@ -199,6 +199,19 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   Application Support folder, written with complete-until-first-authentication protection.
 - Removing a gateway deletes its key, its Bot Mode credential, its cached transcripts and sent
   images, its Inspector tabs and its web data on this device. Its chats stay on the gateway.
+- Its web data (the Preview's cookies and storage, and the in-app browser's sign-ins) goes at the
+  app's next launch. Removing the gateway closes its pages first and writes their two stores down
+  (`RetiredWebStores`, kept in `UserDefaults`). At the next launch the app deletes each one in
+  turn, awaited on the main actor, and never a store a current gateway uses, so no web view can be
+  using it: a store deleted under a web view that still uses it crashes WebKit, and a page on
+  screen lets its web view go only after the screen changes. With nothing waiting, launch doesn't
+  touch WebKit. A store that can't be deleted waits for the launch
+  after. A page made again for a screen that still shows it keeps nothing (a
+  non-persistent store). WebKit's store calls (`allDataStoreIdentifiers`, `remove(forIdentifier:)`)
+  are made only once WebKit has started in the process (`WKWebsiteDataStore.default()`): before
+  that they crash the app on a background thread, which removing a gateway in a session that
+  never opened a page did. Stores left by gateways removed on builds before this list aren't
+  known to it and stay.
 - Keys never go into `UserDefaults`, files, logs or URLs. The pairing link is the one deliberate
   exception (§2).
 
