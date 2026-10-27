@@ -80,6 +80,9 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
   "7 min" because Hermes' heartbeat moved, and a result agrees with its chat's row.
 - **Matching projects** come before the chat rows, with their tile and folder; tapping one opens
   the project.
+- **Picking a result** (a project, a chat, a Bot's chat, here or in the Mac's ⌘K palette) picks
+  like its sidebar row ([bots-groups-skills.md](bots-groups-skills.md) §1.2): the result already
+  selected shows its screen again.
 - **Opening a result** opens the chat (a Bot's result opens that Bot's chat) and lands on the first
   message that has the snippet's phrase (all its matched words without one). If the message isn't
   loaded yet, the app loads up to five older pages to find it, and only then settles for a message

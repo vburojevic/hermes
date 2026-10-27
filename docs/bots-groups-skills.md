@@ -116,11 +116,11 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   a terminal (`--resume`) reads as not running, here as in the chat.
 - **Selection:** the sidebar's selection decides the main area (`DetailRoute`). A selected Bot
   shows its Bot Chat, also when it was picked before the Bots loaded, and the grid shows only
-  while nothing is picked (All Bots). Picking the selected row again shows its screen again, and
-  what a window opened on (restored from when it closed, or named by a launch flag) is shown again
-  once the gateway answers (`DetailPass`): the Mac's detail didn't always redraw for a selection
-  made while the window's first frame was built, and kept the grid or a new chat under a selected
-  row.
+  while nothing is picked (All Bots). Picking the selected row again (in the sidebar, its search
+  results or the Mac's ⌘K palette) shows its screen again, and what a window opened on (restored
+  from when it closed, or named by a launch flag) is shown again once the gateway answers
+  (`DetailPass`): the Mac's detail didn't always redraw for a selection made while the window's
+  first frame was built, and kept the grid or a new chat under a selected row.
 - **Grid tiles** (`BotsHomeView`) show the face, title, @handle, role and one status line:
   "Working: <step>", "New: <preview>", "Active now", "Last active <time>" (the row's time) or
   "Say hi to start".

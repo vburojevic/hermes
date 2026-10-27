@@ -31,7 +31,7 @@ struct SearchResultsSection: View {
         Group {
             ForEach(search.projects) { project in
                 SidebarRow(isSelected: workspace.selection == .project(project.id), height: 44) {
-                    workspace.selection = .project(project.id)
+                    workspace.pick(.project(project.id))
                     onNavigate()
                 } label: {
                     HStack(spacing: 10) {

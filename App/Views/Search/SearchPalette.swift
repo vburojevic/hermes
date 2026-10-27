@@ -227,7 +227,7 @@ struct SearchPalette: View {
             workspace.open(hit)
         case .recent(let session):
             workspace.sidebarMode = .chats
-            workspace.selection = .session(session.stableID)
+            workspace.pick(.session(session.stableID))
         case .showAll:
             // The sidebar's search, filtered in place.
             workspace.sidebarMode = .chats
@@ -235,7 +235,7 @@ struct SearchPalette: View {
             router.focusSidebarSearch()
         case .project(let project):
             workspace.sidebarMode = .chats
-            workspace.selection = .project(project.id)
+            workspace.pick(.project(project.id))
         case .newChat(let projectID, _):
             workspace.sidebarMode = .chats
             workspace.startNewChat(inProject: projectID)

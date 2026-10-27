@@ -668,21 +668,26 @@ final class BotWorkspace: Identifiable {
     /// Opens a chat that may not be in the loaded history page (a project's chats come from the
     /// tree, which reaches further back).
     func open(_ session: HermesSession) {
-        if !sessions.contains(where: { $0.stableID == session.stableID }) {
-            let index = sessions.firstIndex { ($0.lastActive ?? .distantPast) < (session.lastActive ?? .distantPast) && !$0.pinned }
-            sessions.insert(session, at: index ?? sessions.endIndex)
-        }
+        list(session)
         selection = .session(session.stableID)
     }
 
+    /// Puts a chat opened from elsewhere in the list, in its place by time, unless it's there.
+    private func list(_ session: HermesSession) {
+        guard !sessions.contains(where: { $0.stableID == session.stableID }) else { return }
+        let index = sessions.firstIndex { ($0.lastActive ?? .distantPast) < (session.lastActive ?? .distantPast) && !$0.pinned }
+        sessions.insert(session, at: index ?? sessions.endIndex)
+    }
+
     /// Opens a search result at the message that matched (`docs/search.md`). A Bot's result opens
-    /// that Bot's chat.
+    /// that Bot's chat. It picks like a sidebar row, so the result already selected shows its
+    /// screen again.
     func open(_ hit: ChatSearch.Hit) {
         let result = hit.result
         let focus = SearchFocus(result: result)
         if let botName = hit.botName, let roster, roster.bot(named: botName) != nil {
             sidebarMode = .bots
-            selection = .bot(botName)
+            pick(.bot(botName))
             roster.conversation(for: botName).searchFocus = focus
             return
         }
@@ -696,7 +701,8 @@ final class BotWorkspace: Identifiable {
             session.startedAt = result.sessionStarted
             session.lastActive = result.lastActive ?? result.sessionStarted
         }
-        open(session)
+        list(session)
+        pick(.session(session.stableID))
         let conversation = conversation(forKey: session.stableID)
         conversation.loadIfNeeded()
         conversation.searchFocus = focus

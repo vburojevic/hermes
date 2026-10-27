@@ -57,6 +57,21 @@ struct SidebarSelectionTests {
         #expect(pass.count == 3)
     }
 
+    @Test func pickingTheSelectedProjectFromSearchShowsItAgain() {
+        // The window opened on the project, then the person searched for it and clicked its
+        // result: the same pick as its sidebar row (`docs/search.md` §2).
+        var pass = DetailPass()
+        pass.open(.project("p"))
+        pass.settle(current: .project("p"))
+        #expect(pass.count == 1)
+        let fromSearch = pass.pick(.project("p"), current: .project("p"))
+        #expect(!fromSearch)
+        #expect(pass.count == 2)
+        let again = pass.pick(.project("p"), current: .project("p"))
+        #expect(!again)
+        #expect(pass.count == 3)
+    }
+
     @Test func aLaunchSelectionSettlesOnce() {
         var pass = DetailPass()
         pass.open(.bot("default"))
