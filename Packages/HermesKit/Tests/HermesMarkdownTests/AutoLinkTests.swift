@@ -15,14 +15,26 @@ struct AutoLinkTests {
         .link(destination: url, content: [.text(words ?? url)])
     }
 
-    /// A reply built to be slow (thousands of ")" or "(http://" with no space) is read in one pass.
-    @Test func aPathologicalRunStaysQuick() {
-        let clock = ContinuousClock()
-        let started = clock.now
-        _ = AutoLink.matches(in: "http://a.co" + String(repeating: ")", count: 30_000))
-        _ = AutoLink.matches(in: String(repeating: "(http://", count: 4_000))
-        _ = AutoLink.matches(in: String(repeating: "http://x ", count: 4_000))
-        #expect(clock.now - started < .seconds(5))
+    /// The bytes `AutoLink` reads to look through `count` repeats of `piece` after `prefix`.
+    private func reads(_ piece: String, count: Int, after prefix: String = "") -> Int {
+        var reads = 0
+        _ = AutoLink.matches(in: prefix + String(repeating: piece, count: count), reads: &reads)
+        return reads
+    }
+
+    /// A reply built to be slow (thousands of ")" or "(http://" with no space) is read in one pass:
+    /// twice the text is about twice the work, where reading it again from every start would be
+    /// four times. The work is counted rather than timed, so a busy Mac can't fail it. A thousand
+    /// ")" keep the address under `maxLength`, so they're trimmed off one by one.
+    @Test(arguments: [(")", "http://a.co", 8_000), (")", "http://a.co", 1_000), ("(http://", "", 8_000), ("http://x ", "", 8_000)])
+    func aPathologicalRunStaysQuick(piece: String, after prefix: String, count: Int) {
+        let once = reads(piece, count: count, after: prefix)
+        let twice = reads(piece, count: 2 * count, after: prefix)
+        #expect(once > 0)
+        #expect(twice < once * 5 / 2, "\(twice) bytes read for twice the \(once)")
+    }
+
+    @Test func aBracketTheAddressOpenedStaysIn() {
         #expect(AutoLink.matches(in: "see (https://example.com/a_(b)) now").map(\.destination) == ["https://example.com/a_(b)"])
     }
 

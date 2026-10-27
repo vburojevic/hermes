@@ -19,9 +19,17 @@ public enum AutoLink {
     static let maxLength = 2048
 
     public static func matches(in text: String) -> [Match] {
+        var reads = 0
+        return matches(in: text, reads: &reads)
+    }
+
+    /// `matches(in:)`, adding to `reads` the bytes of `text` each step reads, so a test can
+    /// tell the work grows with the text rather than with its square without timing it.
+    static func matches(in text: String, reads: inout Int) -> [Match] {
         guard text.contains("://") || text.localizedCaseInsensitiveContains("www.") else { return [] }
         var found: [Match] = []
         var starts = Starts(text: text)
+        defer { reads += starts.reads }
         var index = text.startIndex
         // Where the run without spaces around the last start ends (later starts in it share it),
         // and from where on what's left of it is short enough to be an address.
@@ -32,14 +40,16 @@ public enum AutoLink {
             if start >= runEnd {
                 runEnd = start
                 while runEnd < text.endIndex, !text[runEnd].isWhitespace, text[runEnd] != "<" { runEnd = text.index(after: runEnd) }
+                reads += text.utf8.distance(from: start, to: runEnd)
                 shortFrom = text.index(runEnd, offsetBy: -maxLength, limitedBy: start) ?? start
             }
             guard start >= shortFrom else {
                 index = text.index(after: start)
                 continue
             }
-            let end = trimmedEnd(text[start..<runEnd])
+            let end = trimmedEnd(text[start..<runEnd], reads: &reads)
             let candidate = String(text[start..<end])
+            reads += candidate.utf8.count
             if let destination = destination(of: candidate) {
                 found.append(Match(range: start..<end, destination: destination))
                 index = end
@@ -56,6 +66,8 @@ public enum AutoLink {
         let text: String
         private var web: String.Index?
         private var www: String.Index?
+        /// The bytes the searches for "http" and "www." have read.
+        private(set) var reads = 0
 
         init(text: String) {
             self.text = text
@@ -66,9 +78,11 @@ public enum AutoLink {
             while at < text.endIndex {
                 if web.map({ $0 < at }) ?? true {
                     web = text.range(of: "http", options: .caseInsensitive, range: at..<text.endIndex)?.lowerBound ?? text.endIndex
+                    reads += text.utf8.distance(from: at, to: web ?? text.endIndex)
                 }
                 if www.map({ $0 < at }) ?? true {
                     www = text.range(of: "www.", options: .caseInsensitive, range: at..<text.endIndex)?.lowerBound ?? text.endIndex
+                    reads += text.utf8.distance(from: at, to: www ?? text.endIndex)
                 }
                 guard let next = [web, www].compactMap({ $0 }).min(), next < text.endIndex else { return nil }
                 let rest = text[next...]
@@ -89,18 +103,23 @@ public enum AutoLink {
     /// Without what ends the sentence around the address: `.`, `,`, `?`, `!`, `:`, quotes and
     /// emphasis marks, a `)` it didn't open, an entity like `&amp;`. The brackets are counted
     /// once, not again for every `)` taken off.
-    private static func trimmedEnd(_ text: Substring) -> String.Index {
+    private static func trimmedEnd(_ text: Substring, reads: inout Int) -> String.Index {
         var end = text.endIndex
         let opens = text.count { $0 == "(" }
         var closes = text.count { $0 == ")" }
+        reads += 2 * text.utf8.count
         while end > text.startIndex {
             let last = text[text.index(before: end)]
+            reads += 1
             if "?!.,:*_~'\"”’;".contains(last) {
-                if last == ";", let entity = text[..<end].range(of: #"&[A-Za-z0-9]+;$"#, options: .regularExpression) {
-                    end = entity.lowerBound
-                } else {
-                    end = text.index(before: end)
+                if last == ";" {
+                    reads += text.utf8.distance(from: text.startIndex, to: end)
+                    if let entity = text[..<end].range(of: #"&[A-Za-z0-9]+;$"#, options: .regularExpression) {
+                        end = entity.lowerBound
+                        continue
+                    }
                 }
+                end = text.index(before: end)
                 continue
             }
             if last == ")", closes > opens {
