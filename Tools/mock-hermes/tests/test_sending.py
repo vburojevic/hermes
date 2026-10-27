@@ -355,6 +355,32 @@ class Sending(unittest.TestCase):
         self.assertRegex(body["error"]["message"], r"^Too many concurrent runs \(max \d+\)$")
         self.call("POST", f"/v1/runs/{second['run_id']}/stop", port=self.gateway)
 
+    def test_a_gateway_restart_keeps_a_keyed_runs_status_as_interrupted(self):
+        """As Hermes (api_server_runs.py `_durable_run_status`): a run started under an Idempotency-Key
+        reads `interrupted` after a restart cut it off, one without is gone, and neither stores more."""
+        sid = f"api_restart_{int(time.time() * 1000)}"
+        _, keyed = self.call("POST", "/v1/runs", {"session_id": sid, "input": "slow one"}, port=self.gateway,
+                             headers={"Idempotency-Key": f"key-{sid}"})
+        _, plain = self.call("POST", "/v1/runs", {"session_id": f"{sid}_b", "input": "slow two"}, port=self.gateway)
+        time.sleep(1.5)
+        status, body = self.call("POST", "/api/mock/restart-gateway", {}, port=self.gateway)
+        self.assertEqual(status, 200)
+        _, rows = self.call("GET", f"/api/sessions/{sid}/messages", port=self.gateway)
+        status, run = self.call("GET", f"/v1/runs/{keyed['run_id']}", port=self.gateway)
+        self.assertEqual((status, run["status"], run["error"]), (200, "interrupted", "The gateway restarted before this run settled."))
+        status, events = self.call("GET", f"/v1/runs/{keyed['run_id']}/events", port=self.gateway)
+        self.assertEqual((status, events["error"]["code"]), (404, "run_not_found"))
+        status, gone = self.call("GET", f"/v1/runs/{plain['run_id']}", port=self.gateway)
+        self.assertEqual((status, gone["error"]["code"]), (404, "run_not_found"))
+        time.sleep(4.5)
+        _, later = self.call("GET", f"/api/sessions/{sid}/messages", port=self.gateway)
+        self.assertEqual(len(later["data"]), len(rows["data"]))
+        self.assertNotEqual(later["data"][-1]["role"], "user")
+        # An older Hermes kept no status over a restart.
+        self.call("POST", "/api/mock/restart-gateway", {"forget": True}, port=self.gateway)
+        status, _ = self.call("GET", f"/v1/runs/{keyed['run_id']}", port=self.gateway)
+        self.assertEqual(status, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

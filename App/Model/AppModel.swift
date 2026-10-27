@@ -155,6 +155,7 @@ final class AppModel {
         workspaces[botID]?.tearDown()
         workspaces[botID]?.imageStore.removeAll()
         TranscriptCache.removeAll(gateway: botID)
+        KeptTurns().removeAll(gateway: botID)
         RosterCache.remove(botID)
         SessionsCache.remove(botID)
         LastLinesCache.remove(botID)

@@ -335,6 +335,9 @@ RUN_STREAM = {"ttl": 300.0, "cut": 0}
 # default is 10), then 429 `rate_limit_exceeded`; at most 32 runs queued in one chat, then 409
 # `queue_full`, its message the bare reason. `POST /api/mock/run-caps {max_runs, queue_max}` lowers them.
 RUN_CAPS = {"max_runs": 10, "queue_max": 32}
+# `POST /api/mock/runs-down {seconds}`: a run's status answers 502 for that long (a proxy in front
+# of a gateway too busy to answer) while the stored chats still read.
+RUNS_DOWN = {"until": 0.0}
 
 
 class Run:
@@ -347,8 +350,15 @@ class Run:
         self.subscribers = 0
         self.swept = False
         self.cond = threading.Condition()
+        # A gateway restart killed it (`POST /api/mock/restart-gateway`): it stores, sends and changes
+        # nothing more, and its status is what the restart left.
+        self.killed = False
         self.status = "queued"
         self.output = ""
+        self.error = None
+        # Started under an Idempotency-Key: Hermes keeps its status over a restart
+        # (api_server_runs.py `_durable_run_status`).
+        self.durable = False
         self.stop = threading.Event()
         # The pending prompt as Hermes keeps it (session_pending_controls.py): kind, prompt_id,
         # execution_generation. An answer must name both, or it's refused.
@@ -360,6 +370,25 @@ class Run:
         # Steers accepted and not read yet (`POST /v1/runs/{id}/steer`); read at the next step.
         self.steers = []
 
+    @property
+    def status(self):
+        return self._status
+
+    @status.setter
+    def status(self, value):
+        if not self.killed:
+            self._status = value
+
+    def kill(self):
+        """A gateway restart under the run: as Hermes reads a run whose owner died, `interrupted`."""
+        self.status = "interrupted"
+        self.error = "The gateway restarted before this run settled."
+        self.killed = True
+        self.swept = True  # the events were the old process's: they answer 404
+        self.events = []
+        self.stop.set()
+        self.finish()
+
     def is_swept(self):
         """Swept once nothing listened past the stream's lifetime (call with `cond` held)."""
         if not self.swept and self.subscribers == 0 and time.time() - self.created > RUN_STREAM["ttl"]:
@@ -369,7 +398,7 @@ class Run:
 
     def emit(self, name, **fields):
         with self.cond:
-            if self.is_swept():
+            if self.killed or self.is_swept():
                 return  # Hermes drops the events of a run whose stream it swept (`RunStream.put_event`)
             seq = len(self.events)
             event = {"event": name, "run_id": self.id, "timestamp": time.time(), **fields, "seq": seq}
@@ -444,12 +473,14 @@ def agent_turn(run):
             # The API server only says so in words (gateway/platforms/api_server.py).
             time.sleep(0.6)
             run.status = "failed"
-            run.emit("run.failed", error="⚠️ Provider authentication failed: Anthropic rejected the API key (401 invalid x-api-key)")
+            run.error = "⚠️ Provider authentication failed: Anthropic rejected the API key (401 invalid x-api-key)"
+            run.emit("run.failed", error=run.error)
             return
         if "fail" in lowered:
             time.sleep(0.6)
             run.status = "failed"
-            run.emit("run.failed", error="Provider returned 500: upstream overloaded")
+            run.error = "Provider returned 500: upstream overloaded"
+            run.emit("run.failed", error=run.error)
             return
         if "clarify" in lowered:
             clarify_turn(run, lowered)
@@ -496,6 +527,8 @@ def agent_turn(run):
                     # Allowed on another device: Hermes says nothing on this run's events.
                     run.approval_choice = "once"
                 time.sleep(0.1)
+            if run.killed:
+                return
             choice = run.approval_choice
             run.approval = None
             run.status = "running"
@@ -542,7 +575,9 @@ def agent_turn(run):
                 out, ok = stream_text(run, RICH_ANSWER)
                 add_message(sid, "assistant", out, finish_reason="stop")
                 run.output = out
-        if run.stop.is_set():
+        if run.killed:
+            pass
+        elif run.stop.is_set():
             run.status = "cancelled"
             run.emit("run.cancelled", completed=False, partial=True, interrupted=True)
         else:
@@ -772,6 +807,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows, pagination = page_rows(list(MESSAGES.get(sid, [])), query)
             return self.send_json(200, {"object": "list", "session_id": sid, "data": rows, "pagination": pagination})
         m = re.fullmatch(r"/v1/runs/([^/]+)", path)
+        if m and time.time() < RUNS_DOWN["until"]:
+            return self.error(502, "Bad Gateway", "bad_gateway")
         if m:
             run = RUNS.get(m.group(1))
             if not run:
@@ -782,6 +819,8 @@ class Handler(BaseHTTPRequestHandler):
             body = {"object": "hermes.run", "run_id": run.id, "status": run.status, "session_id": run.session_id,
                     "admission_id": run.admission_id, "execution_generation": run.generation, "pending_controls": pending,
                     "model": "hermes-agent", "output": run.output if run.terminal else None}
+            if run.error:
+                body["error"] = run.error
             return self.send_json(200, body)
         m = re.fullmatch(r"/v1/runs/([^/]+)/events", path)
         if m:
@@ -862,6 +901,30 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 RUN_STREAM["cut"] += 1
             return self.send_json(200, {"dropped": True})
+        if path == "/api/mock/restart-gateway":
+            # Mock-only: the gateway restarts under its runs (`hermes gateway restart`, a crash). Each run
+            # dies where it is: it stores nothing more and its events go. A run started under an
+            # Idempotency-Key keeps its status, `interrupted` if it hadn't ended (the app's runs are);
+            # one without is forgotten (404). `{"forget": true}`: every run is forgotten, as an older
+            # Hermes that kept no status over a restart.
+            forget = bool(self.body().get("forget"))
+            with LOCK:
+                for run in list(RUNS.values()):
+                    if not run.terminal:
+                        run.kill()
+                    if forget or not run.durable:
+                        del RUNS[run.id]
+                    else:
+                        run.swept = True
+                        run.events = []
+                FIFO.clear()
+                kept = len(RUNS)
+            return self.send_json(200, {"ok": True, "kept": kept})
+        if path == "/api/mock/runs-down":
+            seconds = float(self.body().get("seconds") or 0)
+            with LOCK:
+                RUNS_DOWN["until"] = time.time() + seconds
+            return self.send_json(200, {"ok": True, "seconds": seconds})
         if path == "/api/mock/run-caps":
             body = self.body()
             with LOCK:
@@ -925,6 +988,7 @@ class Handler(BaseHTTPRequestHandler):
                     # A store refusal: its message is the bare reason (api_server_authority_runs.py).
                     return self.error(409, "queue_full", "queue_full")
                 run = Run(f"run_{uuid.uuid4().hex}", sid, text if isinstance(text, str) else str(text))
+                run.durable = bool(key)
                 RUNS[run.id] = run
                 if key:
                     IDEMPOTENCY[key] = (body, run.id)

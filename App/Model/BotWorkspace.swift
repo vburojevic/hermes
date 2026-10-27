@@ -1295,6 +1295,7 @@ final class BotWorkspace: Identifiable {
         conversations[session.stableID]?.cancelAll()
         conversations[session.stableID] = nil
         TranscriptCache.remove("\(bot.id.uuidString)-\(session.stableID)")
+        KeptTurns().set(KeptTurn(), for: "\(bot.id.uuidString)-\(session.stableID)")
         // What waited to go in it goes with it.
         FollowUpQueueStore.save([], key: session.stableID)
         FollowUpQueueStore.saveOutbox([], key: session.stableID)

@@ -148,7 +148,13 @@ the run was created when nothing listens, even while it runs (its status stays, 
 so `POST /api/mock/drop-run-streams` closes every open run stream, as a phone's suspended app loses
 them: "marathon" with `--run-stream-ttl 20`, the app sent to the background, the streams dropped,
 and the app back after half a minute comes back to a run whose events are gone (`RunFollow`,
-`docs/chat.md` §2).
+`docs/chat.md` §2). `POST /api/mock/restart-gateway` restarts the gateway under its runs: each dies
+where it is and stores nothing more, its events go, and a run started under an `Idempotency-Key`
+(the app's are) reads `interrupted`, "The gateway restarted before this run settled.", while one
+without is gone (404); `{"forget": true}` forgets every run, as an older Hermes did. Relaunch the
+app after it, or during "slow" without it, for a run whose end the app never heard (`UnheardRun`);
+`POST /api/mock/runs-down {"seconds": 90}` first makes the run's status answer 502 meanwhile, for the
+turn that says it couldn't reach the gateway.
 
 The mock answers approvals as Hermes's run store does (`docs/quick-actions.md` §3): `POST
 /v1/runs/{id}/approval` (and `/clarify`) takes exactly `{request_id, execution_generation,

@@ -258,8 +258,35 @@ final class ConversationModel: Identifiable {
     /// (`recoverStoredMidTurn`).
     @ObservationIgnored private var midTurnRecovery: Task<Void, Never>?
     /// The last stored row of a turn that died mid-work: it shows as stopped there, not working
-    /// (`TranscriptBuilder.settleMidTurn`), until a row is stored after it.
-    @ObservationIgnored private var midTurnEndedAt: Int?
+    /// (`TranscriptBuilder.settleMidTurn`), until a row is stored after it. Kept on the device, so
+    /// the next launch shows it stopped at once (`KeptTurn`).
+    private var midTurnEndedAt: Int? {
+        get { keptTurn.stoppedAt }
+        set { keptTurn.stoppedAt = newValue }
+    }
+    /// Asking the run this device started over the API server, whose end it never heard, how it
+    /// stands (`askUnheardRun`).
+    @ObservationIgnored private var unheardRunCheck: Task<Void, Never>?
+    /// The stored turn whose run couldn't be asked within the recovery's minute: it says so, with
+    /// Reload, which asks again (`TranscriptBuilder.loseMidTurn`).
+    @ObservationIgnored private var midTurnLost: (row: Int, reason: LostTurn)?
+    @ObservationIgnored private let keptTurns = KeptTurns()
+    @ObservationIgnored private var keptTurnRead: (chat: String, turn: KeptTurn)?
+    /// What the device keeps of this chat's last turn across launches (`KeptTurn`, `docs/chat.md` §2).
+    private var keptTurn: KeptTurn {
+        get {
+            guard let chat = cacheKey else { return KeptTurn() }
+            if let keptTurnRead, keptTurnRead.chat == chat { return keptTurnRead.turn }
+            let turn = keptTurns.turn(for: chat)
+            keptTurnRead = (chat, turn)
+            return turn
+        }
+        set {
+            guard let chat = cacheKey, newValue != keptTurn else { return }
+            keptTurnRead = (chat, newValue)
+            keptTurns.set(newValue, for: chat)
+        }
+    }
     /// Bumped by `cancelAll`: a look still on its way doesn't start watching again.
     @ObservationIgnored private var processGeneration = 0
     @ObservationIgnored private var processRefreshing = false
@@ -526,6 +553,7 @@ final class ConversationModel: Identifiable {
             UserDefaults.standard.removeObject(forKey: "parts.\(stableKey)")
             UserDefaults.standard.removeObject(forKey: "goal.\(stableKey)")
         }
+        keptTurn = KeptTurn()
         if let queueKey {
             FollowUpQueueStore.save([], key: queueKey)
             FollowUpQueueStore.saveOutbox([], key: queueKey)
@@ -1254,6 +1282,9 @@ final class ConversationModel: Identifiable {
                     _ = await attachGatewayChat()
                     LoadTrace.mark(stableKey, "attached")
                 }
+                // Over the API server, the run this device started and never heard end says how it
+                // stands, before Up Next decides whether the chat is free.
+                if attaching { await askUnheardRun() }
                 // Loaded and attached with nothing running (after a relaunch, a reconnect): what
                 // waits in Up Next goes now, never only after a turn that may not come.
                 if attaching, !checksQueueAfterLoad, !Task.isCancelled { drainQueueIfIdle(afterLoad: true) }
@@ -1388,8 +1419,12 @@ final class ConversationModel: Identifiable {
         // A turn held on screen whose stored rows aren't whole yet: the stored rows that stop
         // partway are that turn, not another one still going somewhere else.
         let held = heldOver.flatMap { $0.isStored(in: messages) ? nil : $0 }
+        // A row stored after a stopped turn's mark: it went on after all, or a later turn came.
+        let kept = keptTurn.stillStopped(in: messages)
+        if kept != keptTurn { keptTurn = kept }
         let midTurn = live == nil && held == nil
             && !TranscriptBuilder.settleMidTurn(&built, messages: messages, endedAt: midTurnEndedAt)
+            && !TranscriptBuilder.loseMidTurn(&built, messages: messages, at: midTurnLost)
             && TranscriptBuilder.markMidTurn(&built, messages: messages)
         watchMidTurn(lastRowAt: midTurn ? messages.last?.timestamp : nil)
         // The other process's turn ended: what waited for the chat goes now.
@@ -1464,12 +1499,18 @@ final class ConversationModel: Identifiable {
                 let look = await self.lookAtStoredMidTurn(within: TurnRecovery.timeout(elapsed: Date.now.timeIntervalSince(began)))
                 step = recovery.next(after: look, elapsed: Date.now.timeIntervalSince(began))
             }
-            guard let self, !Task.isCancelled, self.live == nil, step == .settle,
-                  let last = TranscriptBuilder.lastTurnRowID(self.rawMessages) else { return }
-            LoadTrace.mark(self.stableKey ?? "?", "a stored turn that stops mid-work, with nothing running, settled as stopped")
-            self.midTurnEndedAt = last
-            self.rebuild(from: self.rawMessages)
+            guard let self, !Task.isCancelled, self.live == nil, step == .settle else { return }
+            self.settleStoredMidTurn()
         }
+    }
+
+    /// The chat's stored turn stops mid-work and nothing runs for it: it ended there, "Stopped", and
+    /// stays so across launches (`midTurnEndedAt`) until a row is stored after it.
+    private func settleStoredMidTurn() {
+        guard TranscriptBuilder.endsOwnMidTurn(rawMessages), let last = TranscriptBuilder.lastTurnRowID(rawMessages) else { return }
+        LoadTrace.mark(stableKey ?? "?", "a stored turn that stops mid-work, with nothing running, settled as stopped")
+        midTurnEndedAt = last
+        rebuild(from: rawMessages)
     }
 
     /// One look for `recoverStoredMidTurn`: the stored chat read again.
@@ -1484,6 +1525,116 @@ final class ConversationModel: Identifiable {
         }
         if live != nil { return .running }
         return TranscriptBuilder.endsOwnMidTurn(rawMessages) ? .partway : .stored
+    }
+
+    /// Over the API server alone, nothing but the run itself says whether a chat's turn still runs:
+    /// stored rows that stop mid-work showed as working for 20 minutes. A run this device started and
+    /// never heard end (it was relaunched meanwhile) is kept on the device and asked once the chat is
+    /// loaded (`UnheardRun`, `docs/chat.md` §2): still running, it carries on live in its place; ended
+    /// partway, it's "Stopped" at once; finished or forgotten by Hermes, the stored chat says how, on
+    /// `TurnRecovery`'s backoff. A status that can't be read is asked again on the same backoff, within
+    /// a minute, and at the next load after that.
+    private func askUnheardRun() async {
+        guard !isBotChat, unheardRunCheck == nil, live == nil, !isFinishing, let runID = keptTurn.runID,
+              let client = workspace?.client else { return }
+        let began = Date.now
+        // The first look before Up Next decides whether the chat is free; the next ones meanwhile.
+        if await lookAtUnheardRun(runID, client: client, within: 10) { return }
+        unheardRunCheck = Task { [weak self] in
+            defer { self?.unheardRunCheck = nil }
+            var recovery = TurnRecovery()
+            while case .wait(let seconds) = recovery.next(after: .unreachable, elapsed: Date.now.timeIntervalSince(began)) {
+                try? await Task.sleep(for: .seconds(seconds))
+                guard let self, !Task.isCancelled else { return }
+                let limit = TurnRecovery.timeout(elapsed: Date.now.timeIntervalSince(began))
+                if await self.lookAtUnheardRun(runID, client: client, within: limit) { return }
+            }
+            // A minute of no answer: the stored turn says so, with Reload, which asks again.
+            guard let self, !Task.isCancelled, self.live == nil, self.keptTurn.runID == runID,
+                  TranscriptBuilder.endsOwnMidTurn(self.rawMessages),
+                  let last = TranscriptBuilder.lastTurnRowID(self.rawMessages) else { return }
+            self.midTurnLost = (last, .unreachable)
+            self.rebuild(from: self.rawMessages)
+        }
+    }
+
+    /// One look at the run for `askUnheardRun`. Returns whether it's decided: what its status says is
+    /// done, or a turn runs here now and nothing is left to decide.
+    private func lookAtUnheardRun(_ runID: String, client: HermesClient, within limit: TimeInterval) async -> Bool {
+        let status: Result<RunStatus, any Error>
+        do {
+            status = .success(try await Self.within(limit) { try await client.runStatus(runID: runID) })
+        } catch {
+            status = .failure(error)
+        }
+        guard !Task.isCancelled, live == nil, !isFinishing, keptTurn.runID == runID else { return true }
+        let step = UnheardRun.next(status: status, sessionID: sessionID)
+        LoadTrace.mark(stableKey ?? "?", "a run whose end went unheard: \(step)")
+        if step != .askAgain, midTurnLost != nil {
+            // Answered after all (a Reload): the stored turn is as its rows say again.
+            midTurnLost = nil
+            rebuild(from: rawMessages)
+        }
+        switch step {
+        case .follow:
+            joinUnheardRun(runID, client: client)
+        case .settle:
+            forgetRun(runID)
+            settleStoredMidTurn()
+        case .readStored:
+            forgetRun(runID)
+            recoverStoredMidTurn()
+        case .askAgain:
+            return false
+        }
+        return true
+    }
+
+    /// The run this device started still runs: it carries on live in the place of its stored part
+    /// (`LiveTurn.joining`), Stop and Steer reach it, and its stored reply shows when it ends. Its
+    /// status alone is followed, saying so in the turn's live line (`RunFollow.line`): its events
+    /// would replay what the stored part holds.
+    private func joinUnheardRun(_ runID: String, client: HermesClient) {
+        unconfirmed = nil
+        if turnError?.canRetry == false { turnError = nil }
+        midTurnWatch?.cancel()
+        midTurnWatch = nil
+        midTurnRecovery?.cancel()
+        animateRows {
+            let joined = LiveTurn.joining(items, sessionID: sessionID, startedAt: nil)
+            if joined.rest.count != items.count { items = joined.rest }
+            live = joined.live
+            redirectedParts = []
+        }
+        if let live { turnBaseline = (live.turn.id, newestBeforeTurn) }
+        turnGate = TurnSettleGate()
+        isRemoteTurn = false
+        turnUsesGateway = false
+        failureIsRetryable = false
+        apply(.runStarted(runID: runID))
+        turnTask = Task { [weak self] in
+            guard let self else { return }
+            backgroundActivity.begin("Hermes reply")
+            defer { backgroundActivity.end() }
+            var ended: AssistantTurn.State?
+            var heard = false
+            do {
+                try await follow(runID: runID, client: client, listening: false)
+                heard = true
+                if live?.endedUnheard == false { ended = live?.turn.state }
+            } catch {
+                live?.markStopped()
+            }
+            await finishTurn { try await self.fetchLatest($0) }
+            if let ended { keepStoppedMark(ended, rows: rawMessages) }
+            // Forgotten only now: a relaunch before the turn settled still asks the run.
+            if heard { forgetRun(runID) }
+        }
+    }
+
+    /// The run's end is known: a relaunch no longer asks it.
+    private func forgetRun(_ runID: String) {
+        if keptTurn.runID == runID { keptTurn.runID = nil }
     }
 
     /// Events for the chat's turn arrived after all (the app attached to it): the stored copy
@@ -1619,15 +1770,20 @@ final class ConversationModel: Identifiable {
     /// recovery's reads end within its minute however long a frozen backend holds them (`TurnRecovery`).
     private func fetchLatest(_ id: String, within limit: TimeInterval?) async throws -> SessionTranscript {
         guard let limit else { return try await fetchLatest(id) }
-        return try await withThrowingTaskGroup(of: SessionTranscript?.self) { group in
-            group.addTask { try await self.fetchLatest(id) }
+        return try await Self.within(limit) { try await self.fetchLatest(id) }
+    }
+
+    /// `operation`, given up as a timeout after `limit` seconds.
+    private static func within<Value: Sendable>(_ limit: TimeInterval, _ operation: @escaping @Sendable () async throws -> Value) async throws -> Value {
+        try await withThrowingTaskGroup(of: Value?.self) { group in
+            group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(for: .seconds(limit))
                 return nil
             }
             defer { group.cancelAll() }
-            guard let first = try await group.next(), let page = first else { throw URLError(.timedOut) }
-            return page
+            guard let first = try await group.next(), let value = first else { throw URLError(.timedOut) }
+            return value
         }
     }
 
@@ -3496,6 +3652,10 @@ final class ConversationModel: Identifiable {
         // message back then, as Hermes may run it under the key.
         var postInFlight = false
         var mayHaveRun = false
+        // The run whose end was heard: forgotten once the turn has settled from the stored chat, so a
+        // relaunch before that still asks it (`askUnheardRun`).
+        var heardRun: String?
+        defer { if let heardRun { forgetRun(heardRun) } }
         do {
             while true {
                 do {
@@ -3517,8 +3677,11 @@ final class ConversationModel: Identifiable {
                         )
                         endDelivery()
                         apply(.runStarted(runID: runID))
+                        // Kept until its end is heard: a relaunch meanwhile asks it how it stands.
+                        keptTurn.runID = runID
                         watchQueuedRun(runID, client: client)
                         try await follow(runID: runID, client: client)
+                        heardRun = runID
                     } else {
                         try await streamChat(sessionID: sessionID, text: input, images: images, client: client)
                     }
@@ -3661,9 +3824,11 @@ final class ConversationModel: Identifiable {
     /// A lost connection never fails the turn: the run keeps executing on the gateway,
     /// so this keeps trying (and says "Reconnecting…") until it learns the outcome. Once Hermes has
     /// swept the run's events (`RunFollow`), its status alone is followed, and the live line says so.
-    private func follow(runID: String, client: HermesClient) async throws {
+    /// - Parameter listening: off for a run joined after a relaunch (`joinUnheardRun`): its events
+    ///   would replay what its stored part holds, so its status alone is followed.
+    private func follow(runID: String, client: HermesClient, listening: Bool = true) async throws {
         var failures = 0
-        var eventsGone = false
+        var eventsGone = !listening
         while true {
             try Task.checkCancellation()
             let seqBefore = live?.lastSeq
@@ -3891,6 +4056,7 @@ final class ConversationModel: Identifiable {
         heldOver?.shown = Array(held.shown.dropLast()) + [.assistant(settled)]
         heldOver?.endUnheard = false
         animateRows { items[index] = .assistant(settled) }
+        keepStoppedMark(settled.state, rows: rawMessages)
     }
 
     /// The turn being recovered: the app couldn't find out how it ended, and says why
@@ -3923,6 +4089,15 @@ final class ConversationModel: Identifiable {
         animateRows { items[index] = .assistant(settled) }
         heldOver?.endUnheard = false
         if let failure = turnError, LostTurn(line: failure.message) != nil { turnError = nil }
+        keepStoppedMark(settled.state, rows: rawMessages)
+    }
+
+    /// A turn that ended without finishing, and whose stored rows stop partway, ended there: kept so
+    /// on the device (`midTurnEndedAt`), so a relaunch shows it ended rather than drawing those rows
+    /// as a turn still working (`TranscriptBuilder.stoppedMark`).
+    private func keepStoppedMark(_ state: AssistantTurn.State, rows: [SessionMessage]) {
+        guard let mark = TranscriptBuilder.stoppedMark(endedAs: state, messages: rows) else { return }
+        midTurnEndedAt = mark
     }
 
     /// A turn held on screen that the turn now running here continues: one kept as still working
@@ -4036,6 +4211,8 @@ final class ConversationModel: Identifiable {
         // the recovery's minute, however slow the backend is.
         var found = TurnRecovery.Look.unreachable
         let unheardAt = Date.now
+        // The newest rows these reads found, whole or not (`keepStoppedMark`).
+        var newestRows: [SessionMessage]?
         if let sessionID {
             for wait in [0, 500, 1500] {
                 if wait > 0 { try? await Task.sleep(for: .milliseconds(wait)) }
@@ -4053,6 +4230,7 @@ final class ConversationModel: Identifiable {
                     continue
                 }
                 found = .partway
+                newestRows = fetched.messages
                 // By the rows Hermes said it stored the turn in, when it said; else a reply after its message.
                 guard finished.persisted?.isStored(in: fetched.messages)
                         ?? TranscriptBuilder.holdsTurn(fetched.messages, after: newestBefore, stopped: stoppedByUser) else { continue }
@@ -4120,6 +4298,10 @@ final class ConversationModel: Identifiable {
             settleSteers(stopped: stoppedByUser, after: newestBefore, readLive: transcript == nil ? [] : (shownRows.flatMap { row -> [SteerNote] in
                 if case .assistant(let turn) = row { turn.steers } else { [] }
             }))
+        }
+        // Its end was heard (Hermes said it, or the person stopped it), not guessed.
+        if !finished.endedUnheard, failureIsRetryable || finished.turn.state == .stopped {
+            keepStoppedMark(finished.turn.state, rows: newestRows ?? rawMessages)
         }
         loadState = .loaded
         completedTurns += 1
@@ -4612,6 +4794,7 @@ final class ConversationModel: Identifiable {
         loadTask?.cancel()
         storedReplyWait?.cancel()
         midTurnRecovery?.cancel()
+        unheardRunCheck?.cancel()
         reattachTask?.cancel()
         recoveryTask?.cancel()
         storedStepsTask?.cancel()

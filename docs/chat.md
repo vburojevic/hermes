@@ -242,9 +242,15 @@ by one, and `sessions.changed` brings each in. That turn shows as working
   which the gateway says is running while it is (`session.resume`'s `running`): when an attach
   (after a relaunch, back from the background) says nothing runs, the app reads the chat again on
   the same backoff, and with nothing more stored the turn ended there, "Stopped"
-  (`TranscriptBuilder.endsOwnMidTurn`, `settleMidTurn`, `recoverStoredMidTurn`). A row stored
-  after that makes it a turn going on again. Over the API server alone nothing says whether it
-  runs, so it shows as working until its last row is 20 minutes old.
+  (`TranscriptBuilder.endsOwnMidTurn`, `settleMidTurn`, `recoverStoredMidTurn`). The device keeps
+  that settle, the turn's last stored row and nothing of its words (`KeptTurn`), so the next launch
+  shows it stopped at once; kept in memory alone, it showed as working again for about 30 s after
+  each relaunch. A turn the app heard end without finishing (Stop, a run a restart interrupted, a
+  failure), or that its recovery settled, is kept the same way when its stored rows stop partway
+  (`TranscriptBuilder.stoppedMark`): a relaunch drew those rows as working too. A row stored after
+  that makes it a turn going on again, and the mark goes. Over the API server alone, the run the app
+  started says whether it runs (§2, over the API server); a turn started elsewhere there, or one
+  with a picture, shows as working until its last row is 20 minutes old.
 - **Everywhere the Bot shows.** The roster reads a Bot Chat's last rows when its count or last
   activity moves (`BotRoster.runningElsewhere`): the Bot's row gets its activity line ("Running a
   command", else thinking), its tile says what it runs ("Working: Running a command"), else
@@ -435,6 +441,37 @@ status every 4 s instead, keeps the steps it saw, and the live line says "Still 
 show when it's done" (`turnHeaderStepsLater`); waiting on an approval or a question shows the card, and queued
 behind another turn says so (`turnHeaderQueued`). When the run ends, the stored reply takes over as
 for any turn. A 404 on the status too is a run Hermes no longer has (above).
+
+A relaunch loses the run the app was following, and nothing else over the API server says whether
+a chat's turn still runs: the stored rows that stop mid-work showed as working for 20 minutes. So
+the device keeps the id of the run it started until it hears the run end (`KeptTurn`, never the
+message), and once the chat is loaded after a relaunch it reads `GET /v1/runs/{id}`, before Up Next
+decides the chat is free (`UnheardRun`). Hermes keeps the status of a run started with an
+`Idempotency-Key`, which the app always sends, for a day and over a restart; one a restart cut off
+reads `interrupted`, "The gateway restarted before this run settled." (`api_server_runs.py`
+`_durable_run_status`):
+
+- still running, queued or waiting on the person: it carries on live in the place of its stored
+  part, followed by its status alone as above ("Still working · its steps show when it's done": its
+  events would replay what the stored part holds), with Stop and Steer, and the stored reply takes
+  over when it ends;
+- ended without finishing (interrupted, stopped, failed): stored rows that stop partway end there,
+  "Stopped", at once, and stay so across launches;
+- finished, or no longer known to Hermes (404): the stored chat says how, read again on the
+  recovery's backoff as after an attach that says nothing runs (§2, a turn going on elsewhere),
+  "Stopped" once the looks are spent with the rows still partway;
+- the status can't be read: asked again on the same backoff; with no answer within the minute, the
+  stored turn says so in still words, "Couldn't reach the gateway to see how this reply ended."
+  with Reload beside them (`turnHeaderLost`, `TranscriptBuilder.loseMidTurn`), and Reload asks
+  again. Until then it stays as it was.
+
+A turn with a picture goes over the chat's stream (`/api/sessions/{id}/chat/stream`), which has no
+run to ask: after a relaunch it shows as working until its last row is 20 minutes old, as a turn
+started elsewhere does.
+
+Mock: "slow" or "marathon" with the gateway alone, then relaunch the app while it runs (it carries
+on), or `POST /api/mock/restart-gateway` on the gateway during it and relaunch (it's "Stopped" at
+once); `{"forget": true}` forgets every run's status, as an older Hermes did over a restart.
 
 ### Not shown in this app
 
