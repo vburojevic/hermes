@@ -179,7 +179,10 @@ prompt in the run's `pending_controls` and a `clarify.request` on its events, th
 `clarify.settled` when it stops waiting, and the reply says what was picked. "clarify quiet" lists
 it only in the status (a gateway that leaves it off the events), "clarify multi" offers several
 picks, "clarify open" none, "clarify elsewhere" is answered on another device after 5 s, and
-"clarify timeout" stops waiting after 20 s (`timeout_s`).
+"clarify timeout" stops waiting after 20 s (`timeout_s`). `--late-events <s>` holds every run's
+events that long after its stream opens, as a stream that attached late: with `--late-events 8`,
+"clarify timeout" reaches the app 8 s after Hermes asked and still ends with "Hermes stopped
+waiting · no answer in time".
 
 Onboarding (`Tools/mock-hermes/onboarding.py`): `setup.status`, `model.options`,
 `model.save_key` and `free_tier.provision`. `--no-model` starts the backend with no model

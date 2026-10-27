@@ -222,6 +222,73 @@ struct RunQuestionTests {
         #expect(!questions.owns("c2"))
     }
 
+    // MARK: - The deadline
+
+    /// `clarify.request` as the run's events carry it: the prompt, and when Hermes asked.
+    private func askedEvent(at asked: Date, timeout: Int = 20) -> RunPrompt? {
+        let frame = ServerSentEvent(data: #"""
+        {"event": "clarify.request", "run_id": "run_1", "timestamp": \#(asked.timeIntervalSince1970), "kind": "clarify",
+         "prompt_id": "c1", "execution_generation": 3, "question": "Where?", "choices": ["Staging"], "multi_select": false,
+         "timeout_s": \#(timeout), "seq": 4}
+        """#)
+        guard case .questionAsked(let prompt)? = RunEventDecoder.decode(frame).first?.event else { return nil }
+        return prompt
+    }
+
+    @Test func aQuestionHeardLateKeepsHermessDeadline() throws {
+        // The stream attached 8 s after Hermes asked and replayed the question.
+        let prompt = try #require(askedEvent(at: start))
+        var questions = RunQuestions()
+        let shown = questions.ask(prompt, runID: "run_1", now: start + 8)
+        let request = try #require(shown)
+        #expect(request.deadline == start + 20)
+        let ending = questions.settle("c1", now: start + 20.2)
+        #expect(ending == .timedOut)
+    }
+
+    @Test func aQuestionHeardLateStillEndsAsAnsweredElsewhereBeforeItsDeadline() throws {
+        let prompt = try #require(askedEvent(at: start))
+        var questions = RunQuestions()
+        _ = questions.ask(prompt, runID: "run_1", now: start + 8)
+        let ending = questions.settle("c1", now: start + 12)
+        #expect(ending == .answeredElsewhere)
+    }
+
+    @Test func aGatewayClockAheadCountsFromWhenTheCardShowed() throws {
+        let prompt = try #require(askedEvent(at: start + 60))
+        #expect(prompt.askedAt == start + 60)
+        var questions = RunQuestions()
+        let shown = questions.ask(prompt, runID: "run_1", now: start)
+        let request = try #require(shown)
+        #expect(request.deadline == start + 20)
+    }
+
+    @Test func aQuestionTheStatusRaisedCountsFromTheRead() throws {
+        // The status carries no time Hermes asked; it listed the question when the read began.
+        let listed = Self.prompt.replacingOccurrences(of: #""multi_select": false"#, with: #""multi_select": false, "timeout_s": 20"#)
+        var questions = RunQuestions()
+        let changes = questions.reconcile(Self.status(listed), runID: "run_1", readAt: start, now: start + 1.5)
+        guard case .show(let request)? = changes.first else {
+            Issue.record("no card")
+            return
+        }
+        #expect(request.deadline == start + 20)
+        let ending = questions.settle("c1", now: start + 20.5)
+        #expect(ending == .timedOut)
+    }
+
+    @Test func theEventAfterTheStatusBringsTheDeadlineForward() throws {
+        // The status raised the card 10 s in; the stream, attached late, then replays the asking.
+        let listed = Self.prompt.replacingOccurrences(of: #""multi_select": false"#, with: #""multi_select": false, "timeout_s": 20"#)
+        var questions = RunQuestions()
+        _ = questions.reconcile(Self.status(listed), runID: "run_1", readAt: start + 10, now: start + 10)
+        let prompt = try #require(askedEvent(at: start))
+        let again = questions.ask(prompt, runID: "run_1", now: start + 11)
+        #expect(again == nil) // the card is up already
+        let ending = questions.settle("c1", now: start + 20.2)
+        #expect(ending == .timedOut)
+    }
+
     // MARK: - When the status is read
 
     @Test func aQuietStreamIsReadNowAndThen() {

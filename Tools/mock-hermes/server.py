@@ -22,7 +22,8 @@ Scripted behaviour by message content:
                          ("clarify quiet": only in its status, as a gateway that leaves it off the
                          events; "clarify multi": several picks; "clarify open": no picks;
                          "clarify elsewhere": answered on another device after 5 s;
-                         "clarify timeout": Hermes stops waiting after 20 s)
+                         "clarify timeout": Hermes stops waiting after 20 s; with --late-events 8
+                         the question reaches the app 8 s after Hermes asked)
   contains "fail"     -> the run fails
   contains "key expired" -> the run fails on the provider's key (Provider authentication failed)
   contains "slow"     -> a long multi-tool turn (good for testing stop/resume)
@@ -332,8 +333,10 @@ def take_failed_read() -> bool:
 # Hermes sweeps a run's events this long after the run was created whenever nothing is listening,
 # even while the run goes on: its later events are dropped, and the events answer 404 while its status
 # stays (api_server_runs.py `_sweep_orphaned_runs_once`, api_server.py `_RUN_STREAM_TTL = 300`).
-# `--run-stream-ttl` shortens it for a timing run.
-RUN_STREAM = {"ttl": 300.0, "cut": 0}
+# `--run-stream-ttl` shortens it for a timing run. `--late-events` holds every run's events that long
+# after its stream opens, as a stream that attached late (a slow network): what Hermes said meanwhile
+# then arrives at once, each event with the time it was said.
+RUN_STREAM = {"ttl": 300.0, "cut": 0, "late": 0.0}
 # The API server's caps (api_server.py `_concurrency_limited_response`, hermes_state_runtime.py
 # `ADMISSION_QUEUE_MAX`): at most `max_runs` runs live at once on the gateway (0 disables; Hermes's
 # default is 10), then 429 `rate_limit_exceeded`; at most 32 runs queued in one chat, then 409
@@ -884,6 +887,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.wfile.write(b": open\n\n")
             self.wfile.flush()
+            held = time.time() + RUN_STREAM["late"]
+            while time.time() < held:
+                if self.client_left() or RUN_STREAM["cut"] != cut:
+                    return
+                time.sleep(0.1)
             sent = last + 1
             idle = time.time()
             while True:
@@ -1249,10 +1257,13 @@ def main():
     parser.add_argument("--run-stream-ttl", type=float, default=300, metavar="SECONDS",
                         help="sweep a run's events this long after it was created when nothing listens, even mid-run "
                              "(Hermes: 300); its status stays and its events answer 404")
+    parser.add_argument("--late-events", type=float, default=0, metavar="SECONDS",
+                        help="hold every run's events this long after its stream opens, as a stream that attached late")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
     RUN_STREAM["ttl"] = args.run_stream_ttl
+    RUN_STREAM["late"] = args.late_events
     Handler.key = args.key
     seed()
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets)

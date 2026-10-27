@@ -43,11 +43,21 @@ public struct RunQuestions: Sendable {
         asked.values.contains { $0.runID == runID }
     }
 
-    /// Hermes asked (`clarify.request`, or a status that lists it): the card to show, or nil when it
-    /// already shows, was answered here, or isn't a question.
-    public mutating func ask(_ prompt: RunPrompt, runID: String, now: Date = .now) -> HermesRequest? {
-        guard !owns(prompt.promptID), let request = prompt.questionRequest(receivedAt: now) else { return nil }
-        asked[prompt.promptID] = Asked(runID: runID, generation: prompt.executionGeneration, deadline: request.deadline, since: now)
+    /// Hermes asked (`clarify.request`, or a status read from `listedAt` that lists it): the card to
+    /// show, or nil when it already shows, was answered here, or isn't a question. Its deadline
+    /// counts from when Hermes asked (`RunPrompt.questionRequest`), and the event that says so
+    /// brings forward the deadline of a card a status read raised first.
+    public mutating func ask(_ prompt: RunPrompt, runID: String, listedAt: Date? = nil, now: Date = .now) -> HermesRequest? {
+        guard let request = prompt.questionRequest(receivedAt: now, listedAt: listedAt) else { return nil }
+        let id = prompt.promptID
+        guard !owns(id) else {
+            if let deadline = request.deadline {
+                if let shown = asked[id]?.deadline, deadline < shown { asked[id]?.deadline = deadline }
+                if let sent = answered[id]?.deadline, deadline < sent { answered[id]?.deadline = deadline }
+            }
+            return nil
+        }
+        asked[id] = Asked(runID: runID, generation: prompt.executionGeneration, deadline: request.deadline, since: now)
         return request
     }
 
@@ -73,7 +83,7 @@ public struct RunQuestions: Sendable {
             answered[id] = nil
         }
         for prompt in waiting {
-            if let request = ask(prompt, runID: runID, now: now) { changes.append(.show(request)) }
+            if let request = ask(prompt, runID: runID, listedAt: readAt, now: now) { changes.append(.show(request)) }
         }
         return changes
     }

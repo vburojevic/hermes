@@ -17,6 +17,9 @@ public struct RunPrompt: Decodable, Sendable, Hashable {
     public var multiSelect = false
     /// How long Hermes waits for the answer, when it says (a local viewer's turn).
     public var timeout: TimeInterval?
+    /// When Hermes asked, by the gateway's clock: a run's event carries it (`timestamp`); its
+    /// status doesn't.
+    public var askedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case kind, question, choices
@@ -24,6 +27,7 @@ public struct RunPrompt: Decodable, Sendable, Hashable {
         case executionGeneration = "execution_generation"
         case multiSelect = "multi_select"
         case timeout = "timeout_s"
+        case askedAt = "timestamp"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -39,18 +43,23 @@ public struct RunPrompt: Decodable, Sendable, Hashable {
         choices = (try? c.decodeIfPresent([String].self, forKey: .choices)) ?? []
         multiSelect = (try? c.decodeIfPresent(Bool.self, forKey: .multiSelect)) == true && !choices.isEmpty
         timeout = (try? c.decodeIfPresent(Double.self, forKey: .timeout)).flatMap { $0 > 0 ? $0 : nil }
+        askedAt = HermesDate.fromEpoch(try? c.decodeIfPresent(Double.self, forKey: .askedAt))
     }
 
     /// The question's card, as a socket chat shows a `clarify` of one question: its id is the
     /// prompt's, and so is the question's, which its answer names (`RunPromptAnswer.clarify`).
-    public func questionRequest(receivedAt: Date = .now) -> HermesRequest? {
+    /// Its deadline counts from when Hermes asked, so an event that arrived late (a stream attached
+    /// after the asking) doesn't move it past Hermes's own; a question only a status read lists was
+    /// asked by `listedAt`, when that read began. A clock ahead of this device's counts from now.
+    public func questionRequest(receivedAt: Date = .now, listedAt: Date? = nil) -> HermesRequest? {
         guard kind == RunPromptAnswer.Kind.clarify.rawValue, !promptID.isEmpty, let question, !question.isEmpty else { return nil }
+        let asked = min(askedAt ?? listedAt ?? receivedAt, receivedAt)
         return HermesRequest(
             id: promptID,
             method: "clarify",
             kind: .clarify([HermesRequest.Question(id: promptID, question: question, choices: choices, multiSelect: multiSelect)]),
             receivedAt: receivedAt,
-            deadline: timeout.map { receivedAt.addingTimeInterval($0) }
+            deadline: timeout.map { asked.addingTimeInterval($0) }
         )
     }
 
