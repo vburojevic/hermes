@@ -3,10 +3,11 @@ import Foundation
 /// Counts what's new in a chat (`docs/inbox.md` §1 Counting). Hermes has no unread count; the
 /// app counts the chat's latest messages after the read mark.
 ///
-/// What counts as a message: each reply that ended a turn (the answer after the steps), each
-/// Bot's message in the chat (`message_agent`, a group member), each routine delivery and each
-/// command result. Narration, tool steps, reasoning, notices, compaction summaries and your own
-/// messages don't.
+/// What counts as a message: each reply that ended a turn (the answer after the steps, however
+/// many tool calls it made), each Bot's message in the chat (`message_agent`, a group member) and
+/// each routine delivery. Narration, tool steps, reasoning, notices, run events (a background
+/// process's heartbeats), a reply that is only a silence marker, compaction summaries, your own
+/// messages and your own commands' results don't.
 public enum UnreadCounter {
     /// The most a badge says: "99+".
     public static let cap = 99
@@ -19,10 +20,10 @@ public enum UnreadCounter {
     public static func counts(_ item: TranscriptItem) -> Bool {
         if item.isCompactionSummary { return false }
         return switch item {
-        case .assistant(let turn): !turn.isWorking && !turn.answer.isEmpty
+        // A reply that says nothing ("[SILENT]", answering a run event) isn't news, shown or not.
+        case .assistant(let turn): !turn.isWorking && !turn.answer.isEmpty && !BotMentions.isSilenceMarker(turn.answer)
         case .user(let entry): !entry.isFromPerson
-        case .command(let command): if case .running = command.outcome { false } else { true }
-        case .notice: false
+        case .command, .notice: false
         }
     }
 

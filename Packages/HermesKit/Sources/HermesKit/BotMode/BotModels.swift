@@ -231,6 +231,8 @@ extension BotProfile {
             let name = text.dropFirst(skillPrefix.count).prefix { $0 != "\"" }
             return name.isEmpty ? .hidden : .named("Used the \(name) skill")
         }
+        // A background process's heartbeat or other wake: a run event, not a message.
+        if HermesScaffold.isRunEvent(text) { return .hidden }
         let machinePrefixes = ["[IMPORTANT:", "[System:", "[SYSTEM", "[System note:", "[Runtime note:"]
         return machinePrefixes.contains(where: text.hasPrefix) ? .hidden : nil
     }

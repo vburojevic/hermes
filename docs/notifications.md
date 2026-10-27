@@ -309,8 +309,8 @@ Rules:
     to its `presence`, every 50 s in front, and the Mac's `status`, every 30 s) marks the room read
     too, unless it moved since. A room read on the Mac while its Bot's message settled sends no
     notice to carry the read, so without those answers it stayed unread on the iPhone.
-- **Badge** counts unread, unmuted chats, Bots and group chats plus open "needs you" requests across
-  gateways by default (Settings → Notifications → App Icon Badge, Dock Badge on the Mac → Unread
+- **Badge** counts unread, unmuted chats, Bots and group chats (one each, however many messages)
+  plus open "needs you" requests across gateways by default (Settings → Notifications → App Icon Badge, Dock Badge on the Mac → Unread
   Chats; Needs You counts only the requests). A hidden Bot (folded under "Hidden · N") counts like
   a muted one: never on the badge or in the Bots count, on any device, and its chat leaves what the
   extension and the plugin may count (`BadgeScope`, `countableChats`, `listed`), while its own row
@@ -324,6 +324,12 @@ Rules:
   shows, and counting their replies took a badge to 120 for two unread chats (build 2610210714). A
   list from before that rule keeps only the app's own entries, and lists for gateways the app no
   longer has go.
+  A chat is unread on the icon only while its count has a message in it (`docs/inbox.md` §1
+  Counting): tool calls, their results, narration, status, a background process's heartbeats and a
+  silent answer to them never make it unread. The extension and the plugin add a chat only for a
+  `reply` or `message` notice, which goes once per turn that ended with words (`on_session_end`) or
+  for a group chat's message, and each keeps one entry per chat or room, so no step or run event
+  adds to their count either.
   The badge (`PushShared.badge`) is set by the app whenever that list or a count moves and at
   launch (`setBadgeCount`, `NSApp.dockTile.badgeLabel`, so the Mac's Dock shows it too), by the
   extension on every notice, and by the plugin's badge-only push (`docs/inbox.md` §5). Every push

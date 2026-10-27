@@ -149,7 +149,10 @@ python3 Tools/mock-hermes/server.py --port 18642 --key dev-key-0123456789abcdef
 Then add `localhost:18642` with that key, or launch a Debug build with
 `HERMES_BOOTSTRAP_URL=http://127.0.0.1:18642` and `HERMES_BOOTSTRAP_KEY=…` in the environment.
 Messages containing "approve" ask for permission, "slow" runs a long multi-tool turn,
-"marathon" runs six steps of 12 s each, and "fail" fails. Hermes sweeps a run's events 300 s after
+"marathon" runs six steps of 12 s each, "heartbeat" makes four tool calls with narration between
+them and starts a background process that wakes the chat twice with a heartbeat (each answered
+with `[SILENT]`) and once when it ends (answered with a reply), 6 s apart, as Hermes stores them
+(two unread messages, `docs/inbox.md` §1 Counting), and "fail" fails. Hermes sweeps a run's events 300 s after
 the run was created when nothing listens, even while it runs (its status stays, its events answer
 404); `--run-stream-ttl <s>` shortens that. A simulator keeps a suspended app's connections open,
 so `POST /api/mock/drop-run-streams` closes every open run stream, as a phone's suspended app loses

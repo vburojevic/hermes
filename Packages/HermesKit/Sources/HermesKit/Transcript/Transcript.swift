@@ -1119,6 +1119,9 @@ public enum TranscriptBuilder {
         case "failed_turn": return trimmed.isEmpty ? "This turn failed" : trimmed
         case "async_delegation_complete": return "Helpers finished"
         case "process_complete": return "A background process finished"
+        case "internal_notification" where !trimmed.isEmpty:
+            // A process wake shows as Hermes's own receipt does, without the note it leaves the model.
+            return HermesScaffold.heartbeatLine(trimmed) ?? HermesScaffold.withoutFooter(trimmed)
         default: return trimmed.isEmpty ? kind.replacingOccurrences(of: "_", with: " ").capitalized : trimmed
         }
     }
