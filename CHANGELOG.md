@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610270409 (October 27, 2026)
+
+- **Chat:** a stopped reply stays stopped after a relaunch, and a chat over the API server finds out how its reply ended at once
+
 ### Build 2610262302 (October 26, 2026)
 
 - **Notifications:** a chat Hermes never marked counts the same on every device, and a Mac behind other apps passes on its reads
