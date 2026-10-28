@@ -66,7 +66,7 @@ extension AppPlugin {
     /// Settings → Setup → Priority); 1.2.1 sent no notice for a turn that ends in "[SILENT]".
     public static let push = AppPlugin(
         name: "hermes-app-push", repo: "vburojevic/hermes-app-push",
-        ref: "cc5ee0b2c2cc2c2b3c70f20508ab7d196622afab", version: "1.4.7", minimumVersion: "1.4.7",
+        ref: "52c5d51a5452b43537e67c6b6016236491648461", version: "1.4.8", minimumVersion: "1.4.8",
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
                        "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess, "1.4.2": pushAccess,
                        "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess, "1.4.6": pushAccess,

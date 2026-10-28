@@ -64,7 +64,6 @@ struct PluginRegistryTests {
     /// pin to it shows the consent card for that hook.
     @Test func push147AsksBeforeItHearsOfDeletedChats() throws {
         let push = AppPlugin.push
-        #expect(push.version == "1.4.7" && push.minimumVersion == "1.4.7")
         let older = try #require(push.capabilities["1.4.6"]), newer = try #require(push.capabilities["1.4.7"])
         #expect(newer.widens(older))
         #expect(newer.additions(since: older) == PluginCapabilities(hooks: ["on_session_delete"]))
@@ -73,9 +72,10 @@ struct PluginRegistryTests {
     }
 
     /// Push 1.4.8 counts only requests the person can still answer (#86) with 1.4.7's access, so the pin
-    /// can move to it quietly once it's published; until then it stays at 1.4.7.
+    /// moved to it quietly.
     @Test func push148KeepsTheSameAccess() throws {
         let push = AppPlugin.push
+        #expect(push.version == "1.4.8" && push.minimumVersion == "1.4.8")
         let older = try #require(push.capabilities["1.4.7"]), newer = try #require(push.capabilities["1.4.8"])
         #expect(!newer.widens(older))
         #expect(newer == older)
@@ -195,7 +195,14 @@ struct PluginRegistryTests {
         let survey = await survey(["default": [row("hermes-app-push", version: "1.4.6")]], plugins: [.push])
         #expect(survey.plan().isEmpty)
         #expect(survey.held()[.push]?.hooks == ["on_session_delete"])
-        #expect(survey.plan(consented: ["hermes-app-push": "1.4.7"]).map(\.profile) == ["default", "ada", "ops"])
+        #expect(survey.plan(consented: ["hermes-app-push": AppPlugin.push.version]).map(\.profile) == ["default", "ada", "ops"])
+    }
+
+    /// Push 1.4.7 installed: 1.4.8 has the same access, so it updates without asking.
+    @Test func push148MovesQuietlyFrom147() async {
+        let survey = await survey(["default": [row("hermes-app-push", version: "1.4.7")]], plugins: [.push])
+        #expect(survey.held().isEmpty)
+        #expect(survey.plan().map(\.profile) == ["default", "ada", "ops"])
     }
 
     @Test func onlyWantedPluginsKeepCurrent() async {
