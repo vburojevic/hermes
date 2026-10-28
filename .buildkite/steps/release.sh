@@ -3,13 +3,12 @@
 # `macos` queue. Never a Buildkite-hosted Mac (caffeinated-buildkite).
 #
 # It readies the agent and runs Scripts/release.sh with the flags it takes on the Mac
-# (--dry-run, --ios-only, --mac-only, --build-number). It reads no secret itself: release.sh reads
+# (--dry-run, --build-number); every release ships iOS and macOS together. It reads no secret itself: release.sh reads
 # each cluster secret where it's used, with `buildkite-agent secret get`, and gives it to the
 # redactor first, so none sits in this job's environment, where xcodebuild would print it.
 #
 # Inputs, from the pipeline's form or the build's environment (which skips the form):
 #   RELEASE_MODE          dry-run (the default) or release
-#   RELEASE_PLATFORMS     both (the default), ios or mac
 #   RELEASE_BUILD_NUMBER  a build number (yyMMddHHmm) to reuse; otherwise one is made and kept
 #                         for the whole build, so a retried job ships under the same number
 set -euo pipefail
@@ -27,19 +26,17 @@ export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 echo "--- :clipboard: What to release"
 MODE="${RELEASE_MODE:-$(buildkite-agent meta-data get release-mode --default dry-run)}"
-PLATFORMS="${RELEASE_PLATFORMS:-$(buildkite-agent meta-data get release-platforms --default both)}"
 FLAGS=()
 case "$MODE" in
   dry-run) FLAGS+=(--dry-run) ;;
   release) ;;
   *) echo "Mode is '$MODE'; it's dry-run or release." >&2; exit 2 ;;
 esac
-case "$PLATFORMS" in
-  both) ;;
-  ios) FLAGS+=(--ios-only) ;;
-  mac) FLAGS+=(--mac-only) ;;
-  *) echo "Platforms is '$PLATFORMS'; it's both, ios or mac." >&2; exit 2 ;;
-esac
+# Every release ships iOS and macOS together (docs/releasing.md); a build asking for one platform is refused.
+if [ -n "${RELEASE_PLATFORMS:-}" ] && [ "$RELEASE_PLATFORMS" != both ]; then
+  echo "RELEASE_PLATFORMS is '$RELEASE_PLATFORMS'. Hermes releases ship iOS and macOS together, never one alone." >&2
+  exit 2
+fi
 BUILD_NUMBER="${RELEASE_BUILD_NUMBER:-$(buildkite-agent meta-data get release-build-number --default "")}"
 if [ -z "$BUILD_NUMBER" ]; then
   BUILD_NUMBER="$(date -u +%y%m%d%H%M)"
@@ -47,7 +44,7 @@ if [ -z "$BUILD_NUMBER" ]; then
 fi
 [[ "$BUILD_NUMBER" =~ ^[0-9]{10}$ ]] || { echo "The build number '$BUILD_NUMBER' isn't yyMMddHHmm." >&2; exit 2; }
 FLAGS+=(--build-number "$BUILD_NUMBER")
-echo "$MODE · $PLATFORMS · build $BUILD_NUMBER · ${BUILDKITE_BRANCH:-?} at ${BUILDKITE_COMMIT:-?}"
+echo "$MODE · iOS + macOS · build $BUILD_NUMBER · ${BUILDKITE_BRANCH:-?} at ${BUILDKITE_COMMIT:-?}"
 
 # The CHANGELOG push signs in over https with the job's GitHub token; an SSH clone would sidestep it.
 case "${BUILDKITE_REPO:-}" in

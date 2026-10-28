@@ -129,7 +129,7 @@ def changelog(version, build, previous_tag, path="CHANGELOG.md"):
     if heading not in text:
         raise SystemExit(f"{path} has no '{heading}' section")
     if f"### Build {build}" in text:
-        return  # a rerun (--mac-only) adds nothing twice
+        return  # a rerun adds nothing twice
     day = datetime.datetime.strptime(build[:6], "%y%m%d").strftime("%B %-d, %Y")
     rows = changes(previous_tag)
     body = "\n".join(grouped(rows) if rows else ["- Fixes and polish."])

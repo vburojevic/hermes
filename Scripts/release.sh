@@ -19,8 +19,10 @@
 # Release builds are the real "Hermes" (co.caffeinatedcode.hermes) with no demo code; the demo
 # lives only in Debug ("Hermes Dev", co.caffeinatedcode.hermes.dev).
 #
-# Usage: Scripts/release.sh [--ios-only | --mac-only] [--dry-run] [--build-number N]
+# Usage: Scripts/release.sh [--dry-run] [--build-number N]
 #   --dry-run  sign, notarize and package, but upload/publish nothing.
+# Every release ships iOS and macOS together (docs/releasing.md): there is no one-platform release. If
+# one leg fails, fix the cause and release both again under a new build number.
 set -euo pipefail
 # A tight umask makes codesign write owner-only files that fail Mac validation (ITMS-90255).
 umask 022
@@ -31,8 +33,10 @@ IOS=1 MAC=1 DRY_RUN=0
 BUILD_NUMBER="$(date -u +%y%m%d%H%M)"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --ios-only) MAC=0 ;;
-    --mac-only) IOS=0 ;;
+    --ios-only|--mac-only)
+      echo "$1: Hermes releases ship iOS and macOS together, never one alone (docs/releasing.md)." >&2
+      echo "Fix the failed leg and release both again under a new build number." >&2
+      exit 2 ;;
     --dry-run) DRY_RUN=1 ;;
     --build-number) BUILD_NUMBER="$2"; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -540,8 +544,8 @@ PUBLIC_GROUP="Public Beta"
 if [ $IOS = 1 ] && [ $DRY_RUN = 0 ]; then
   log "public TestFlight: $PUBLIC_GROUP"
   python3 -I Scripts/release_notes.py testflight "$VERSION" "$BUILD_NUMBER" "$PREVIOUS_TAG" > "$OUT/whats-new.txt"
-  # App Store Connect lists an upload only after a few minutes. With --ios-only no Mac step comes
-  # first to give it that time, and publishing at once finds no build, so wait for it (up to 30 min).
+  # App Store Connect lists an upload only after a few minutes, and publishing before that finds no
+  # build, so wait for it (up to 30 min).
   for _ in $(seq 1 60); do
     "${ASC[@]}" builds list --app "$ASC_APP_ID" --build-number "$BUILD_NUMBER" --platform IOS --output json 2>/dev/null \
       | python3 -I -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)["data"] else 1)' 2>/dev/null && break

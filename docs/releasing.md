@@ -8,8 +8,12 @@ MacBook while that pipeline is new (§Where releases run). Forks build and sign 
 ```sh
 Scripts/release.sh --dry-run        # sign, validate, notarize and package; publish nothing
 Scripts/release.sh                  # ship iOS to TestFlight and the Mac DMG
-Scripts/release.sh --mac-only       # or --ios-only
 ```
+
+**Every release ships iOS and macOS together** (the maintainers' standing rule since 2026-10-28). There
+is no one-platform release: `release.sh` refuses `--ios-only` and `--mac-only`, and the pipeline has
+no platform choice. If one leg fails (an upload, notarization, the appcast), the release reports it.
+Fix the cause and release both again under a new build number, never one platform alone.
 
 - **iPhone and iPad → TestFlight.** The app and its three extensions are signed with the studio's
   Apple Distribution identity and App Store profiles, validated and uploaded. Internal testers get
@@ -49,8 +53,7 @@ is retired.
    `push entitlements ok`, two `Accepted` notarizations and `macOS: dry run`, and its artifacts for
    the DMG and the appcast.
 2. **Then the release**: the same with **Release** chosen (`RELEASE_MODE=release`). It builds only a
-   commit that is on `main`. `RELEASE_PLATFORMS` (`both`, `ios` or `mac`) picks the platforms, as
-   `--ios-only` and `--mac-only` do.
+   commit that is on `main`, and always ships both platforms.
 
 The pipeline only starts by hand: a tag can't start it, because the release makes its own tag at the
 end. One release runs at a time, at low priority, with a four-hour limit. The build number is made
@@ -125,6 +128,6 @@ Every release (not a dry run) records what it shipped on this repository, after 
    if `main` moves again. If both fail (a conflict in CHANGELOG.md, say), the release still
    succeeds and says which commit to cherry-pick.
 
-A `--mac-only` rerun (after a failed appcast) finds the release already made and skips this step,
+A rerun that finds the release already made skips this step,
 and so does any release while the repository is still private.
 When Hermes leaves the beta, set `BETA=0` and rename the CHANGELOG's next heading.

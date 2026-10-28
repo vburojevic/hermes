@@ -10,9 +10,10 @@
 # Agent queue: `macos`, the mini's self-hosted agent. Never a Buildkite-hosted Mac (`hosted: true`
 # or any `*-hosted` queue): they bill per job minute (caffeinated-buildkite).
 #
-# Inputs: Mode (dry run or release) and Platforms (both, iOS, Mac). A build started with
-# RELEASE_MODE=dry-run or RELEASE_MODE=release in its environment skips the form; RELEASE_PLATFORMS
-# (both, ios, mac) and RELEASE_BUILD_NUMBER may come with it. See .buildkite/steps/release.sh.
+# Input: Mode (dry run or release). Every release ships iOS and macOS together; there is no
+# one-platform release (docs/releasing.md). A build started with RELEASE_MODE=dry-run or
+# RELEASE_MODE=release in its environment skips the form; RELEASE_BUILD_NUMBER may come with it.
+# See .buildkite/steps/release.sh.
 #
 # Cluster secrets, each limited to this pipeline (names only; read inside release.sh):
 #   ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_B64                 the studio's App Store Connect key
@@ -35,17 +36,6 @@ steps:
             value: "dry-run"
           - label: "Release: TestFlight and the Public Beta, the Mac DMG and Sparkle, the tag and CHANGELOG"
             value: "release"
-      - select: "Platforms"
-        key: "release-platforms"
-        required: true
-        default: "both"
-        options:
-          - label: "iPhone, iPad and Mac"
-            value: "both"
-          - label: "iPhone and iPad only"
-            value: "ios"
-          - label: "Mac only"
-            value: "mac"
 
   - label: ":apple: Hermes · release (iOS + Mac)"
     key: "release"
