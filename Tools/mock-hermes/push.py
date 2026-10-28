@@ -178,7 +178,7 @@ def cmd_presence(args):
                     "unmarked_chats": (_id_sets(args.get("unmarked")) or {"chats": []})["chats"],
                     "shown": shown}
         device = STATE["devices"].get(device_id)
-        open_count = len(STATE["requests"])
+        open_count = open_total()
     if args["state"] == "away" and device_id in STATE["badges"]:
         soon("badge", device_id, PUSH_DEBOUNCE)
     for request in released:
@@ -268,7 +268,7 @@ def record_read(device_id, chats, rooms):
                 entry = STATE["read_pushes"].setdefault(other, {})
                 entry["pending"] = True
                 owed.append((other, entry.get("sent", 0) + READ_MIN_INTERVAL - now))
-        open_count = len(STATE["requests"])
+        open_count = open_total()
     for other, wait in owed:
         soon("read", other, max(PUSH_DEBOUNCE, wait))
     for other in moved:
@@ -315,7 +315,7 @@ def cmd_status(args):
         device = STATE["devices"].get(args.get("device_id") or "")
         return {"ok": True, "version": VERSION, "gateway": GATEWAY, "relay_url": RELAY["mode"], "relay_registered": True,
                 "relay_error": None, "devices": len(STATE["devices"]), "registered": device is not None,
-                "preferences": device["preferences"] if device else None, "open": len(STATE["requests"]),
+                "preferences": device["preferences"] if device else None, "open": open_total(),
                 **({"read": read} if read else {})}
 
 
@@ -495,12 +495,12 @@ def flush(kind, device_id):
                 entry.pop("pending", None)
                 if read["chats"] or read["rooms"]:
                     entry["sent"] = time.time()
-                    request = notices.read_request(device, read, GATEWAY, len(STATE["requests"]))
+                    request = notices.read_request(device, read, GATEWAY, open_total())
                     log(f"→ read {', '.join(key for key, _at in read['chats'] + read['rooms'])} to "
                         f"{device.get('name') or device_id}")
         else:
             record = STATE["badges"].get(device_id)
-            count = (min(len(STATE["requests"]) + len(record["chats"]) + len(record["rooms"]) + record.get("others", 0), 9999)
+            count = (min(open_total() + len(record["chats"]) + len(record["rooms"]) + record.get("others", 0), 9999)
                      if record else None)
             if count is not None and count != record["shown"]:
                 record["shown"] = count
@@ -544,12 +544,41 @@ def wants(device_id, device, notice, walked_away=(), ignore_presence=False):
     return True
 
 
+# Whether the turn a request waits in still runs, by request id: the plugin's process check (1.4.8). A
+# gateway restart (`/api/mock/restart-gateway`) kills the turn with no close hook.
+WAITS = {}
+
+
 def expire():
-    """Forget requests past their deadline, like the plugin: they must not pin the badge."""
+    """Forget the requests nobody can answer any more, like the plugin (1.4.8, #86): past their deadline,
+    six hours old without one, or waiting in a turn a restart killed. They must not pin the badge."""
     now = time.time()
     with LOCK:
-        for rid in [rid for rid, r in STATE["requests"].items() if r.get("expires_at") and r["expires_at"] < now - 30]:
+        gone = []
+        for rid, r in STATE["requests"].items():
+            deadline, alive = r.get("expires_at"), WAITS.get(rid)
+            if deadline and deadline < now - 30 or not deadline and r.get("opened_at", now) < now - 6 * 3600 \
+                    or alive is not None and not alive():
+                gone.append(rid)
+        for rid in gone:
             STATE["requests"].pop(rid, None)
+            WAITS.pop(rid, None)
+        if gone:
+            STATE["resolved"] = (gone + STATE["resolved"])[:30]
+
+
+def open_total():
+    """The open requests every answer and notice counts (``len(state["requests"])`` in the plugin)."""
+    with LOCK:
+        expire()
+        return len(STATE["requests"])
+
+
+def open_request(request_id, info, alive=None):
+    with LOCK:
+        STATE["requests"][request_id] = {**info, "opened_at": time.time()}
+        if alive is not None:
+            WAITS[request_id] = alive
 
 
 def card_notice(kind, card, payload):
@@ -587,7 +616,7 @@ def deliver(notice, walked_away=(), news_at=None):
         return
     with LOCK:
         devices = dict(STATE["devices"])
-        open_count = len(STATE["requests"])
+        open_count = open_total()
         resolved = list(STATE["resolved"])
     read = recent_reads()
     sent = []
@@ -613,7 +642,7 @@ def deliver(notice, walked_away=(), news_at=None):
             for device_id in sent:
                 record = STATE["badges"].get(device_id)
                 if record is not None:
-                    record["shown"] = min(len(STATE["requests"]) + len(record["chats"]) + len(record["rooms"])
+                    record["shown"] = min(open_total() + len(record["chats"]) + len(record["rooms"])
                                           + record.get("others", 0), 9999)
 
 
@@ -623,8 +652,7 @@ def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away, news
     requests = notices.widget_requests(text)
     if requests:
         notice = notices.widget(payload=requests[0], session_id=session_id, chat=chat, gateway_name=GATEWAY["name"])
-        with LOCK:
-            STATE["requests"][notice.request_id] = {"kind": "widget", "session": session_id, "expires": notice.expires_at}
+        open_request(notice.request_id, {"kind": "widget", "session": session_id, "expires_at": notice.expires_at})
         deliver(notice, walked_away=walked_away)
         return
     deliver(notices.reply(session_id=session_id, turn_id=turn_id, chat=chat, gateway_name=GATEWAY["name"],
@@ -636,7 +664,7 @@ def withdraw(ids):
         closed = [rid for rid in ids if STATE["requests"].pop(rid, None) is not None]
         STATE["resolved"] = (closed + STATE["resolved"])[:30]
         devices = dict(STATE["devices"])
-        open_count = len(STATE["requests"])
+        open_count = open_total()
     if not closed:
         return
     for device in devices.values():
@@ -687,7 +715,7 @@ def send_sync(device_id, sessions, profile=None):
         return  # back in the app, which reads its chats itself
     with LOCK:
         device = STATE["devices"].get(device_id)
-        open_count = len(STATE["requests"])
+        open_count = open_total()
     if device is None:
         return
     request = notices.sync_request(device, sessions, GATEWAY, open_count, profile, recent_reads())
@@ -875,7 +903,7 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         # the app's handling without leaving it in the background.
         with LOCK:
             devices = dict(STATE["devices"])
-            open_count = len(STATE["requests"])
+            open_count = open_total()
         for device in devices.values():
             request = notices.sync_request(device, list(body.get("sessions") or []), GATEWAY, open_count, None,
                                            recent_reads())
@@ -887,8 +915,8 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
     def push_state(query, body):
         # Mock-only: what the push mock recorded for reading (docs/notifications.md §2, Reading).
         with LOCK:
-            return 200, json.loads(json.dumps({key: STATE[key] for key in (
-                "presence", "reads", "delivered", "cleared", "badges", "read_pushes")}))
+            return 200, json.loads(json.dumps({**{key: STATE[key] for key in (
+                "presence", "reads", "delivered", "cleared", "badges", "read_pushes", "requests")}, "open": open_total()}))
 
     def mock_read(query, body):
         # Mock-only: chats and rooms read on another device ({"chats", "rooms", "device_id"?}), as the app's
@@ -965,8 +993,8 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         if notice is not None:
             if profile_of(stored):
                 notice.extra["profile"] = profile_of(stored)
-            with LOCK:
-                STATE["requests"][notice.request_id] = {"kind": notice.kind, "session": stored, "expires_at": expires}
+            open_request(notice.request_id, {"kind": notice.kind, "session": stored, "expires_at": expires},
+                         alive=lambda: not (backend_globals["RUNTIME"].get(sid) or {}).get("dead"))
             deliver(notice)
             activity(stored, state, alert=True)
         try:
@@ -1122,11 +1150,14 @@ def install_api(gateway):
                                       description=fields.get("description", ""), choices=["once", "session", "always", "deny"],
                                       expires_at=expires)
             notice.extra["answer"] = {"via": "run", "run_id": self.id}
-            with LOCK:
-                STATE["requests"][request_id] = {"kind": "approval", "session": self.session_id, "expires_at": expires}
+            open_request(request_id, {"kind": "approval", "session": self.session_id, "expires_at": expires},
+                         alive=lambda run=self: not run.killed)
             deliver(notice)
         elif name == "approval.responded" and fields.get("request_id"):
             withdraw([fields["request_id"]])
+        elif name == "approval.settled" and fields.get("prompt_id"):
+            # Hermes's `post_approval_response` fires however the wait ended (an answer, Stop, a timeout).
+            withdraw([fields["prompt_id"]])
 
     def finish(self):
         original_finish(self)

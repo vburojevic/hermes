@@ -2,7 +2,8 @@
 §4c): what `prompt.submit` answers, every 4090 reason with Hermes's words, the gateway owner's
 queue and its forwarded prompts, the chat limit, a slow or lost answer, photos staged for a refused
 prompt, steer accepted and refused, Stop emptying the queue, Stop while a card waits (the turn ends
-interrupted, nothing stored after it), and the API server's run FIFO, Idempotency-Key and steer.
+interrupted, nothing stored after it), the API server's run FIFO, Idempotency-Key and steer, and the
+push plugin's open requests, which end with their wait however it ends (a restart included).
 
 Starts its own backend and gateway on free ports, stdlib only:
     python3 -I -m unittest discover -s Tools/mock-hermes/tests
@@ -39,13 +40,16 @@ def wait_for(url, server):
     raise RuntimeError("the mock didn't start")
 
 
-class Sending(unittest.TestCase):
+class MockCase(unittest.TestCase):
+    """A backend and gateway of its own; `relay` is the push plugin's (`none`: no plugin)."""
+    relay = "none"
+
     @classmethod
     def setUpClass(cls):
         cls.port, cls.gateway = free_port(), free_port()
         cls.server = subprocess.Popen(
             [sys.executable, "-I", BACKEND, "--port", str(cls.port), "--gateway-port", str(cls.gateway), "--token", TOKEN,
-             "--quiet-world", "--push-relay", "none", "--gateway-key", KEY],
+             "--quiet-world", "--push-relay", cls.relay, "--gateway-key", KEY],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         wait_for(f"http://127.0.0.1:{cls.port}/", cls.server)
         wait_for(f"http://127.0.0.1:{cls.gateway}/health", cls.server)
@@ -144,6 +148,9 @@ class Sending(unittest.TestCase):
         error = answer.get("error") or {}
         return error.get("code"), (error.get("data") or {}).get("reason"), error.get("message", "")
 
+
+
+class Sending(MockCase):
     # ------------------------------------------------------------ prompt.submit's answers
 
     def test_an_idle_chat_streams_and_a_typed_stop_phrase_starts_nothing(self):
@@ -461,6 +468,69 @@ class Sending(unittest.TestCase):
         self.call("POST", "/api/mock/restart-gateway", {"forget": True}, port=self.gateway)
         status, _ = self.call("GET", f"/v1/runs/{keyed['run_id']}", port=self.gateway)
         self.assertEqual(status, 404)
+
+
+
+class OpenRequests(MockCase):
+    """The push plugin's open requests, which every device's badge counts (#86). Its notices go to the simulator
+    that registered: none does here, so nothing is sent."""
+    relay = "simctl"
+
+
+    def open_requests(self):
+        status, state = self.call("GET", "/api/mock/push-state")
+        self.assertEqual(status, 200)
+        return state["open"]
+
+    def until_open(self, count, seconds=10):
+        deadline = time.time() + seconds
+        while (now := self.open_requests()) != count and time.time() < deadline:
+            time.sleep(0.2)
+        self.assertEqual(now, count)
+
+    def waiting_run(self, text):
+        sid = f"api_open_{int(time.time() * 1000)}"
+        status, run = self.call("POST", "/v1/runs", {"session_id": sid, "input": text}, port=self.gateway)
+        self.assertEqual(status, 202)
+        deadline = time.time() + 10
+        while (polled := self.call("GET", f"/v1/runs/{run['run_id']}", port=self.gateway)[1])["status"] != "waiting_for_approval":
+            self.assertLess(time.time(), deadline, "the approval never came")
+            time.sleep(0.2)
+        return run, polled
+
+    def test_an_api_runs_approval_leaves_the_open_count_however_it_ends(self):
+        """As the plugin hears Hermes's `post_approval_response` (an answer, Stop, a timeout): the request goes
+        with the wait. It once stayed open after every API server approval, so the badge read 1 (#86)."""
+        before = self.open_requests()
+        run, polled = self.waiting_run("approve the cleanup")
+        self.until_open(before + 1)
+        prompt = polled["pending_controls"][0]
+        status, _ = self.call("POST", f"/v1/runs/{run['run_id']}/approval",
+                              {"request_id": prompt["prompt_id"], "execution_generation": prompt["execution_generation"],
+                               "choice": "deny"}, port=self.gateway)
+        self.assertEqual(status, 200)
+        self.until_open(before)
+        run, _ = self.waiting_run("approve the cleanup")
+        self.until_open(before + 1)
+        self.call("POST", f"/v1/runs/{run['run_id']}/stop", port=self.gateway)
+        self.until_open(before)
+
+    def test_a_restart_under_a_waiting_card_takes_it_off_the_open_count(self):
+        """A restart ends the wait with no hook: plugin 1.4.8 drops a request whose process is gone (#86)."""
+        before = self.open_requests()
+        ws, sid, stored = self.open_chat()
+        self.assertTrue(self.rpc(ws, "client.capabilities", {"server_requests": True})["result"]["server_requests"])
+        self.submit(ws, sid, "approve this cleanup")
+        self.until_request(ws, "approval")
+        self.until_open(before + 1)
+        status, _ = self.call("POST", "/api/mock/restart-gateway", {})
+        self.assertEqual(status, 200)
+        self.until_open(before)
+        self.waiting_run("approve the cleanup")
+        self.until_open(before + 1)
+        status, _ = self.call("POST", "/api/mock/restart-gateway", {}, port=self.gateway)
+        self.assertEqual(status, 200)
+        self.until_open(before)
 
 
 if __name__ == "__main__":

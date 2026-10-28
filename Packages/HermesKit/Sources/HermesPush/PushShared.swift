@@ -24,6 +24,10 @@ public final class PushShared: @unchecked Sendable {
         var at: Date
     }
 
+    /// How long what the app in front counted as shown caps the open requests (`recordShown`): it counts
+    /// again at least every 50 s while it's there, so a cap left by an app that ended in front lapses.
+    public static let shownLifetime: TimeInterval = 120
+
     public static let current = PushShared()
 
     public let groupID: String?
@@ -176,7 +180,7 @@ public final class PushShared: @unchecked Sendable {
         return badgeMode == .unreadChats
     }
 
-    /// Lists for gateways the app no longer has go: they'd count for ever.
+    /// Lists and open counts for gateways the app no longer has go: they'd count for ever.
     @discardableResult
     public func keepUnread(gateways appIDs: Set<UUID>) -> Bool {
         let keep = Set(appIDs.map(\.uuidString))
@@ -186,7 +190,11 @@ public final class PushShared: @unchecked Sendable {
         countable = countable.filter { keep.contains($0.key) }
         unreadLists = unread
         countableLists = countable
-        return unread.count != before && badgeMode == .unreadChats
+        let known = gateways
+        let open = openCounts
+        let kept = open.filter { known[$0.key].map { appIDs.contains($0.appID) } ?? false }
+        if kept.count != open.count { openCounts = kept }
+        return (unread.count != before && badgeMode == .unreadChats) || kept.count != open.count
     }
 
     /// The app counted a gateway's unread chats (`UnreadStore`); returns whether the badge changed.
@@ -247,16 +255,94 @@ public final class PushShared: @unchecked Sendable {
 
     /// What the other gateways add to the badge: a gateway's plugin sets the whole badge while the
     /// app is away (`presence away` with `badge_others`).
-    public func badge(besides appID: UUID) -> Int {
-        let cutoff = Date.now.addingTimeInterval(-6 * 3600)
-        let own = gateways.filter { $0.value.appID == appID }.keys
-        let open = own.reduce(0) { total, key in
-            total + (openCounts[key].map { $0.at > cutoff ? $0.count : 0 } ?? 0)
-        }
+    public func badge(besides appID: UUID, at date: Date = .now) -> Int {
+        let open = openShares(at: date).filter { $0.appID == appID }.reduce(0) { $0 + $1.count }
         // Counted as the badge counts it: an entry the list doesn't show, or a second one for the same
         // chat, never took anything off another gateway's share.
         let unread = badgeMode == .unreadChats ? Self.counted(unread(gateway: appID), countable: countable(gateway: appID)) : 0
-        return max(0, badge - open - unread)
+        return max(0, badge(at: date) - open - unread)
+    }
+
+    /// What the app in front shows waiting on the person, per gateway (`ShownRequests`), or nil as it
+    /// leaves. While it's fresh, a gateway's open requests count no higher than this: the plugin's count
+    /// is only a number, and one it kept for a request nobody can answer (an older plugin's, for a turn a
+    /// restart ended) held the icon at 1 with every chat read and nothing waiting (#86). Away, the
+    /// gateway's notices are what the person sees, and its count stands alone. Returns whether it changed.
+    @discardableResult
+    public func recordShown(_ counts: [UUID: Int]?, at date: Date = .now) -> Bool {
+        let before = shownCounts
+        guard let counts else {
+            shownCounts = [:]
+            return !before.isEmpty
+        }
+        shownCounts = Dictionary(uniqueKeysWithValues: counts.map { ($0.key.uuidString, OpenCount(count: max(0, $0.value), at: date)) })
+        // Back in front: what the app shows caps the counts again.
+        staleOpen = [:]
+        leftShown = [:]
+        return before.mapValues(\.count) != shownCounts.mapValues(\.count)
+    }
+
+    private var shownCounts: [String: OpenCount] {
+        get { decode([String: OpenCount].self, "push.shown") ?? [:] }
+        set { encode(newValue, "push.shown") }
+    }
+
+    /// The app leaves. A plugin before 1.4.8 (`olderPlugins`, by installation) keeps counting requests
+    /// nobody can answer, so what its open count held beyond what the app showed waiting as it left stays
+    /// off the badge, here and in the service extension, until the app is back in front; a new request
+    /// still adds to it. Returns those installations: the app asks their plugins for no badge pushes
+    /// meanwhile, which would put the stale count back (#86).
+    @discardableResult
+    public func leave(olderPlugins: Set<String>, at date: Date = .now) -> Set<String> {
+        let cutoff = date.addingTimeInterval(-6 * 3600)
+        let known = gateways
+        let shown = shownCounts.filter { $0.value.at > date.addingTimeInterval(-Self.shownLifetime) }
+        var stale: [String: Int] = [:], left: [String: Int] = [:]
+        for key in olderPlugins {
+            guard let appID = known[key]?.appID, let cap = shown[appID.uuidString] else { continue }
+            left[key] = cap.count
+            if let open = openCounts[key], open.at > cutoff, open.count > cap.count { stale[key] = open.count - cap.count }
+        }
+        staleOpen = stale
+        leftShown = left
+        shownCounts = [:]
+        return Set(stale.keys)
+    }
+
+    /// An older plugin's answer to the app leaving (`presence away`), its open count as the app left: what it
+    /// holds beyond what the app showed is stale too, though the app hadn't heard of it in front.
+    public func recordLeavingOpen(_ count: Int, gateway installation: String, at date: Date = .now) {
+        recordOpen(count, gateway: installation, at: date)
+        guard let shown = leftShown[installation] else { return }
+        var stale = staleOpen
+        stale[installation] = count > shown ? count - shown : nil
+        staleOpen = stale
+    }
+
+    private var staleOpen: [String: Int] {
+        get { decode([String: Int].self, "push.staleOpen") ?? [:] }
+        set { encode(newValue, "push.staleOpen") }
+    }
+
+    /// What the app showed waiting as it left, by an older plugin's installation (`leave`).
+    private var leftShown: [String: Int] {
+        get { decode([String: Int].self, "push.leftShown") ?? [:] }
+        set { encode(newValue, "push.leftShown") }
+    }
+
+    /// Each known gateway's open requests as the badge counts them: its latest count, ignoring counts
+    /// older than six hours; in front no more than the app shows waiting there, and away less what an
+    /// older plugin counted that the app didn't show (`leave`).
+    private func openShares(at date: Date) -> [(appID: UUID, count: Int)] {
+        let cutoff = date.addingTimeInterval(-6 * 3600)
+        let known = gateways
+        let shown = shownCounts.filter { $0.value.at > date.addingTimeInterval(-Self.shownLifetime) }
+        let stale = staleOpen
+        return openCounts.compactMap { key, open in
+            guard let gateway = known[key], open.at > cutoff else { return nil }
+            if let cap = shown[gateway.appID.uuidString] { return (gateway.appID, min(open.count, cap.count)) }
+            return (gateway.appID, max(0, open.count - (stale[key] ?? 0)))
+        }
     }
 
     /// A background push from a gateway's plugin (`withdraw`, `sync`, `read`): its open requests and the
@@ -274,10 +360,10 @@ public final class PushShared: @unchecked Sendable {
     }
 
     /// The badge: open requests across gateways, plus unread chats when the person chose so.
-    public var badge: Int {
-        let cutoff = Date.now.addingTimeInterval(-6 * 3600)
-        let known = gateways
-        let open = openCounts.filter { known[$0.key] != nil && $0.value.at > cutoff }.reduce(0) { $0 + $1.value.count }
+    public var badge: Int { badge(at: .now) }
+
+    public func badge(at date: Date) -> Int {
+        let open = openShares(at: date).reduce(0) { $0 + $1.count }
         guard badgeMode == .unreadChats else { return open }
         // Every gateway's list: the Mac registers with none, and a removed gateway's list goes with it.
         let countable = countableLists

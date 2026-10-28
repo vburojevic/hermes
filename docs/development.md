@@ -384,7 +384,10 @@ a dashboard on an overloaded Mac does: a message sent meanwhile goes out before 
 archived on the mock gateway (`DELETE /api/sessions/<id>`, `PATCH … {archived: true}`) plays the
 plugin's `on_session_delete` (plugin 1.4.7: off every device's badge, with its badge and read pushes), and
 `GET /api/mock/push-state` shows what the push mock recorded (presence, reads, what each device was
-sent and cleared, badge records). `POST /api/mock/push-reply {session_id, text, delay?}` sends a
+sent and cleared, badge records, the open requests and their count). Like plugin 1.4.8, the open
+count leaves out a request past its deadline, one six hours old without one, and one whose turn a
+restart killed (`/api/mock/restart-gateway`), and an API server run's approval goes when it settles
+(answered, stopped or timed out). `POST /api/mock/push-reply {session_id, text, delay?}` sends a
 reply's notice as if its turn ran long; `delay` sends it that many seconds after the reply landed, as
 a slow end of turn does, so a read on another device meanwhile shows that it notifies and counts
 nothing (plugin 1.4.6). A Bot's message in a group chat notifies 5 s after it lands, like the

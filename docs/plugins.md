@@ -7,7 +7,7 @@ run inside the person's own Hermes, and are published to public repositories tha
 
 | Plugin | What it adds | Source | State |
 |---|---|---|---|
-| `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.7 |
+| `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.7 (1.4.8 here, to publish) |
 | `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.3.0 |
 
 Everything else the app does runs on a stock Hermes Agent: the API server for chats, and
@@ -244,7 +244,7 @@ plugin's side of it.
 |---|---|---|
 | Hooks | `pre_approval_request`, `post_approval_response` | Approvals: the notice, then its withdrawal |
 | | `on_human_input_request`, `on_human_input_resolved` | Questions (`clarify`), password and value prompts |
-| | `pre_llm_call`, `post_llm_call`, `on_session_end` | Finished replies (or a widget request, when the reply asks with one) and the Live Activity's start and end |
+| | `pre_llm_call`, `post_llm_call`, `on_session_end` | Finished replies (or a widget request, when the reply asks with one) and the Live Activity's start and end; from 1.4.8, a question or approval left open when its turn ends closes ([notifications.md](notifications.md) §2) |
 | | `pre_tool_call` | The Live Activity's step, a `clarify` call's questions, and a `widget` claim or resolve withdrawing its notice |
 | | `on_room_member_activity` | Bot messages in group chats |
 | | `kanban_task_blocked`, `kanban_task_completed` | Board cards that need you or are done |

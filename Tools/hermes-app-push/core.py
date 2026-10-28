@@ -19,10 +19,10 @@ from typing import Any, Callable
 
 from . import crypto, hostinfo, notices
 from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
-from .store import Store, recent_reads
+from .store import WAITING_KINDS, Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.7"
+VERSION = "1.4.8"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
@@ -516,6 +516,7 @@ class Push:
                     self._active_sessions.pop(turn["session"], None)
         if turn:
             self._sync(turn["session"] or session_id, turn.get("profile"))
+        self._close_waits((turn or {}).get("session") or session_id)
         if not turn or not turn.get("reports", True):
             return
         seconds = time.time() - turn["start"]
@@ -548,6 +549,28 @@ class Push:
                 notice.extra["origin"] = turn["origin"]
                 notice.extra["mention"] = self._mentions(turn["text"])
             self.deliver(notice, walked_away=turn.get("watching"), news_at=turn.get("answered_at") or turn["start"])
+
+    def _close_waits(self, session: str) -> None:
+        """The chat's last running turn ended, however it ended: nothing in it waits on the person any more, so a
+        question or approval whose close hook never fired comes off every icon with its notification (#86)."""
+        if not session:
+            return
+        with self._lock:
+            if self._active_sessions.get(session):
+                return
+        ids = [rid for rid, request in self.store.open_requests().items()
+               if request.get("kind") in WAITING_KINDS and session in (request.get("session"), request.get("key"))]
+        if ids:
+            closed, _remaining = self.store.close_requests(ids)
+            self.withdraw(closed)
+
+    def sweep(self) -> None:
+        """At load: requests a restart or a crash left open (their process is gone) or past their deadline
+        close, with their notifications and a badge push to devices away from the app (#86)."""
+        try:
+            self.withdraw(self.store.sweep())
+        except Exception:
+            logger.warning("app push: couldn't sweep the open requests", exc_info=True)
 
     def on_session_delete(self, session_id: str = "", reason: str = "", deleted_ids: Any = None, **_: Any) -> None:
         """Chats deleted or archived anywhere (the app, Hermes Desktop, the CLI, a prune) leave every device's

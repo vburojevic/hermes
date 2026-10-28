@@ -49,6 +49,8 @@ extension PushCenter {
     }
 
     func conversation(_ conversation: ConversationModel, approval: ApprovalRequest?, replacing old: ApprovalRequest?) {
+        // In front, the badge counts the requests the app shows (`noteShownRequests`).
+        if old?.id != approval?.id { Task { await applyBadge() } }
         if let old, old.id != approval?.id {
             #if os(macOS)
             MacNotifier.shared.resolved(old.id)
@@ -69,6 +71,7 @@ extension PushCenter {
 
     func conversation(_ conversation: ConversationModel, requests: [HermesRequest], old: [HermesRequest]) {
         let before = Set(old.map(\.id)), now = Set(requests.map(\.id))
+        if before != now { Task { await applyBadge() } }
         #if os(iOS)
         let gone = before.subtracting(now)
         if !gone.isEmpty { Task { await removeDelivered(requests: gone) } }

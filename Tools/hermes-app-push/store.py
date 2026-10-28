@@ -47,6 +47,13 @@ DELIVERED_MAX = 100
 UNREAD_MAX = 400
 MAX_BADGE = 9999  # the relay's ceiling for a badge-only push
 KINDS = ("chats", "rooms")
+# Open requests count only while the person can still answer them (#86). One past its deadline (and a
+# moment for its close hook) or, without a deadline, older than OPEN_REQUEST_MAX_AGE is gone. A question,
+# approval or password prompt waits inside the Hermes process that asked: a restart or a crash ends that
+# wait with no hook, so once that process is gone the request is too.
+DEADLINE_GRACE = 30
+OPEN_REQUEST_MAX_AGE = 6 * 3600
+WAITING_KINDS = ("approval", "question", "password")
 
 
 def _root_home() -> str:
@@ -115,13 +122,16 @@ class Store:
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
-    def _read(self) -> dict:
+    def _read(self, prune: bool = True) -> dict:
         try:
             data = json.loads(self.path.read_text())
         except (FileNotFoundError, ValueError):
             return _empty()
         base = _empty()
         base.update(data if isinstance(data, dict) else {})
+        if prune:
+            # Every count reads the requests someone can still answer, whenever the file was last written.
+            _expire(base)
         return base
 
     def _write(self, text: str) -> None:
@@ -144,8 +154,9 @@ class Store:
         """Run ``change(state)`` under the lock and save when it changed something; returns what
         ``change`` returned."""
         with self._locked():
-            data = self._read()
+            data = self._read(prune=False)
             before = _canonical(data)
+            _note_resolved(data, _expire(data))
             result = change(data)
             after = _canonical(data)
             if after != before:
@@ -192,8 +203,8 @@ class Store:
 
     def open_request(self, request_id: str, info: dict) -> int:
         def change(state: dict) -> int:
-            state["requests"][request_id] = {**info, "opened_at": time.time()}
-            _expire(state)
+            # The process that waits on it: when it's gone, so is the request.
+            state["requests"][request_id] = {**info, "opened_at": time.time(), "pid": os.getpid()}
             return len(state["requests"])
         return self.update(change)
 
@@ -201,11 +212,20 @@ class Store:
         """Mark requests resolved; returns (the ids that were open, the remaining count)."""
         def change(state: dict) -> tuple[list[str], int]:
             closed = [rid for rid in request_ids if state["requests"].pop(rid, None) is not None]
-            now = time.time()
-            state["resolved"] = ([[rid, now] for rid in closed] + state["resolved"])[:RESOLVED_MEMORY]
-            _expire(state)
+            _note_resolved(state, closed)
             return closed, len(state["requests"])
         return self.update(change)
+
+    def sweep(self) -> list[str]:
+        """Closes the requests nobody can answer any more (a restart ended their wait, their deadline
+        passed) in the file itself; returns their ids, so their notifications can be withdrawn."""
+        with self._locked():
+            data = self._read(prune=False)
+            gone = _expire(data)
+            if gone:
+                _note_resolved(data, gone)
+                self._write(_canonical(data))
+            return gone
 
     def open_requests(self, session_key: str | None = None) -> dict[str, dict]:
         requests = self.read()["requests"]
@@ -307,7 +327,6 @@ class Store:
             if unread is None:
                 state["badges"].pop(device_id, None)
                 return
-            _expire(state)
             record = {"chats": list(unread["chats"]), "rooms": list(unread["rooms"]),
                       "muted_chats": list((muted or {}).get("chats") or []),
                       "muted_rooms": list((muted or {}).get("rooms") or []), "others": max(0, int(others)),
@@ -416,7 +435,6 @@ class Store:
             record = state["badges"].get(device_id)
             if record is None or device_id not in state["devices"] or _in_app(state, device_id, time.time()):
                 return None
-            _expire(state)
             count = _badge(state, record)
             if count == record.get("shown"):
                 return None
@@ -527,8 +545,44 @@ def _keep_newest(times: dict, limit: int, since: float | None = None) -> None:
         times.pop(key, None)
 
 
-def _expire(state: dict) -> None:
-    """Forget requests past their deadline (a hook that never fired its close must not pin the badge)."""
+def _expire(state: dict) -> list[str]:
+    """Forget the requests nobody can answer any more (a hook that never fired its close must not pin the
+    badge, #86); returns their ids."""
     now = time.time()
-    for rid in [rid for rid, r in state["requests"].items() if r.get("expires_at") and r["expires_at"] < now - 30]:
-        state["requests"].pop(rid, None)
+    requests = state["requests"] if isinstance(state.get("requests"), dict) else state.setdefault("requests", {})
+    gone = [rid for rid, request in requests.items() if not _answerable(request, now)]
+    for rid in gone:
+        requests.pop(rid, None)
+    return gone
+
+
+def _answerable(request: Any, now: float) -> bool:
+    if not isinstance(request, dict):
+        return False
+    deadline, opened = request.get("expires_at"), request.get("opened_at")
+    if isinstance(deadline, (int, float)) and deadline:
+        if deadline < now - DEADLINE_GRACE:
+            return False
+    elif isinstance(opened, (int, float)) and opened < now - OPEN_REQUEST_MAX_AGE:
+        return False
+    pid = request.get("pid")
+    return not (request.get("kind") in WAITING_KINDS and isinstance(pid, int) and not _alive(pid))
+
+
+def _alive(pid: int) -> bool:
+    """Whether a process runs under ``pid``: signal 0 only checks, it delivers nothing."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # another user's process: it exists
+    return True
+
+
+def _note_resolved(state: dict, closed: list[str]) -> None:
+    """Every notice lists recently settled requests, so a device clears their notifications."""
+    now = time.time()
+    state["resolved"] = ([[rid, now] for rid in closed] + state["resolved"])[:RESOLVED_MEMORY]

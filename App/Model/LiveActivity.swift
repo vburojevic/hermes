@@ -19,6 +19,12 @@ final class LiveActivity {
     private(set) var lines: [String: ActivityLine] = [:] {
         didSet {
             for (key, slot) in slots where slot.line != lines[key] { slot.line = lines[key] }
+            #if HERMES_PUSH
+            // In front, the badge counts the chats whose row waits on the person (`docs/notifications.md` §2 Badge).
+            if Set(lines.filter { $0.value.needsYou }.keys) != Set(oldValue.filter { $0.value.needsYou }.keys) {
+                Task { await PushCenter.shared.applyBadge() }
+            }
+            #endif
         }
     }
     /// One chat's line, observed alone (`line(for:)`): a row follows its own chat, not every

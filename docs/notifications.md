@@ -240,6 +240,20 @@ Rules:
   extension clears their notifications and any "needs you" notification more than a minute past its
   deadline. In the chat, a cancelled request leaves a receipt ("Hermes stopped waiting · no answer
   in time", "Answered on another device").
+  Stop settles a waiting approval too: Hermes ends the wait interrupted and fires
+  `post_approval_response` with `cancelled` (`on_human_input_resolved` for a question), so the
+  request goes then.
+- **Open requests are only what someone can still answer** (plugin 1.4.8, #86). The plugin counts,
+  and every notice, answer and badge push carries, only the requests whose wait is still on: not one
+  past its deadline (30 s after it, for its own close to land first), not one without a deadline
+  (a widget that asks without `expires_at`, a question when `agent.clarify_timeout` is 0) after six
+  hours, and not a question, approval or password prompt whose Hermes process has ended (each
+  request keeps the process that waits on it). A restart or a crash ends that wait with no hook, and
+  before 1.4.8 the request stayed counted: every device's icon read 1 with every chat read and
+  nothing to answer, in front too. When a turn ends (`on_session_end`, however it ended), a question
+  or approval left open in its chat closes and is withdrawn, and a gateway that starts closes what
+  the last one left (`Store.sweep`) and withdraws it, so a device away from the app gets its badge
+  push. Each request that goes this way is listed as settled (`resolved`) on the next notice.
 - **Keeping chats current.** Leaving the app, the iPhone or iPad names the chats it keeps current
   while away (`presence away` with `sync`): the one on screen, the Bots' own chats and the five
   most recent chats in the list, at most 20 (`BotWorkspace.chatsToKeepCurrent`). The plugin keeps
@@ -316,7 +330,24 @@ Rules:
   extension and the plugin may count (`BadgeScope`, `countableChats`, `listed`), while its own row
   still shows its news. Its notices are unchanged. It once left the icon at 1 with nothing unread
   in the list. Requests: each gateway's latest `open` count, ignoring
-  counts older than six hours. Chats: one list per gateway in the App Group (`PushShared.unread`),
+  counts older than six hours. In front, and on the Mac whenever it runs, a gateway's count adds no
+  more than the app shows waiting there (`PushShared.recordShown`, `ShownRequests`): the approvals and
+  questions on its chats' cards and docks, plus one for each chat or group chat whose row waits on the
+  person. The plugin's `open` is only a number, and an older plugin's count for a request nobody could
+  answer held both devices' icons at 1 with nothing waiting (#86). A widget that asks counts on the
+  icon while the app is away (its notification) but not in front, where its card is in the chat. What
+  the app counted lapses after two minutes (it counts again at least every 50 s in front), and the
+  iPhone drops it as it leaves: away, a plugin's count stands alone (1.4.8 never counts a request
+  nobody can answer). A plugin before 1.4.8 still may, so as the iPhone leaves, what that gateway
+  counts beyond what the app showed (its last count, and its answer to `presence away`) stays off
+  the icon until the app is back in front (`PushShared.leave`, `recordLeavingOpen`), in the app and
+  in the service extension, while a request that comes in meanwhile adds to it. When the app already
+  knew of such a count as it left, it sends that plugin no unread lists, so it sends no badge-only
+  pushes, which would set the stale count again; reads elsewhere then reach that iPhone's icon when a
+  notice or the app next runs. A request that went stale in the moments before the app left, which it
+  hadn't heard of yet, can still come back with that plugin's next badge push. Counts kept for a gateway the app no longer has go
+  (`keepUnread`). In front, the app counts again as soon as a row starts or stops waiting on the
+  person, so a new request reaches the Dock at once. Chats: one list per gateway in the App Group (`PushShared.unread`),
   which the app writes whenever its counts move (`UnreadStore`), the service extension adds a chat
   to when a reply or message for it arrives (unless it's muted), and every read takes chats off.
   Only chats the app's list shows ever count (`PushShared.countable`, written with the list): a

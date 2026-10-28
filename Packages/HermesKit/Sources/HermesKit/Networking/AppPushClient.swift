@@ -147,6 +147,12 @@ public struct AppPushClient: Sendable {
         pluginVersion.map { AppPlugin.version($0, isAtLeast: "1.4.7") } ?? false
     }
 
+    /// Whether the plugin counts only requests someone can still answer (1.4.8, #86). An older one can
+    /// count a request whose turn ended (`PushShared.leave`).
+    public static func countsOnlyAnswerable(pluginVersion: String?) -> Bool {
+        pluginVersion.map { AppPlugin.version($0, isAtLeast: "1.4.8") } ?? false
+    }
+
     /// Chats by session id and group chats by room id, as the plugin names them.
     public struct ChatLists: Sendable, Hashable {
         public var chats: [String]

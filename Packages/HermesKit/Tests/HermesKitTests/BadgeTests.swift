@@ -315,6 +315,90 @@ struct BadgeTests {
         #expect(countable.isUnmarked(ReadNotices.Chat(ids: ["chat_ops"])))
     }
 
+    /// #86: the plugin kept a request whose turn had ended (a restart, a deadline nothing swept) and
+    /// answered `open: 1`; the app copied it onto the icon, in front, with every chat read and nothing
+    /// to answer. In front, a gateway's open requests count no higher than what the app shows waiting.
+    @Test func inFrontAnOpenCountTheAppCantMatchNeverPinsTheBadge() {
+        let shared = shared()
+        shared.recordOpen(1, gateway: "inst_home", at: at(0))
+        shared.recordUnread([], gateway: home)
+        #expect(shared.badge == 1, "the stray 1: an open count nothing on screen answers")
+        #expect(shared.recordShown([home: 0], at: at(5)))
+        #expect(shared.badge(at: at(10)) == 0)
+        // What the app shows still counts, never more than the plugin says is open.
+        shared.recordShown([home: 1], at: at(15))
+        #expect(shared.badge(at: at(20)) == 1)
+        shared.recordShown([home: 3], at: at(25))
+        #expect(shared.badge(at: at(30)) == 1)
+        // Unread chats count as before.
+        shared.recordShown([home: 0], at: at(35))
+        shared.recordUnread([chat("chat_a")], gateway: home)
+        #expect(shared.badge(at: at(40)) == 1)
+        #expect(shared.badge(besides: home, at: at(40)) == 0)
+    }
+
+    /// Away, the gateway's notices are what the person sees: its open count stands alone again, and a cap
+    /// the app left behind (it ended in front) lapses on its own.
+    @Test func awayTheGatewaysOpenCountStandsAlone() {
+        let shared = shared()
+        shared.recordOpen(2, gateway: "inst_home", at: at(0))
+        shared.recordShown([home: 0], at: at(0))
+        #expect(shared.badge(at: at(10)) == 0)
+        #expect(shared.recordShown(nil, at: at(20)))
+        #expect(shared.badge(at: at(30)) == 2)
+        shared.recordShown([home: 0], at: at(40))
+        #expect(shared.badge(at: at(40 + PushShared.shownLifetime + 1)) == 2)
+    }
+
+    /// Plugin 1.4.7 keeps counting a request nobody can answer, so as the iPhone left, its icon went back
+    /// to 1. What that plugin counted beyond what the app showed stays off the icon while it's away (here
+    /// and in the extension, from each notice's `open`); a request that comes in meanwhile still counts.
+    @Test func awayAnOlderPluginsStaleCountStaysOff() {
+        let shared = shared()
+        shared.recordOpen(1, gateway: "inst_home", at: at(0))
+        shared.recordShown([home: 0], at: at(5))
+        #expect(shared.leave(olderPlugins: ["inst_home"], at: at(10)) == ["inst_home"])
+        #expect(shared.badge(at: at(20)) == 0)
+        // A new approval's notice says 2 open: one is new.
+        shared.recordOpen(2, gateway: "inst_home", at: at(30))
+        #expect(shared.badge(at: at(40)) == 1)
+        // Back in front, what the app shows caps it again.
+        shared.recordShown([home: 1], at: at(50))
+        #expect(shared.badge(at: at(60)) == 1)
+        // A request that went stale just before the app left, which it hadn't heard of in front: the plugin's
+        // answer as it leaves says 3 open, with 1 shown.
+        #expect(shared.leave(olderPlugins: ["inst_home"], at: at(64)) == ["inst_home"])
+        shared.recordLeavingOpen(3, gateway: "inst_home", at: at(65))
+        #expect(shared.badge(at: at(66)) == 1)
+        // Plugin 1.4.8 counts only what can be answered: its count stands alone away.
+        shared.recordShown([home: 1], at: at(68))
+        #expect(shared.leave(olderPlugins: [], at: at(70)).isEmpty)
+        shared.recordLeavingOpen(3, gateway: "inst_home", at: at(71))
+        #expect(shared.badge(at: at(80)) == 3)
+    }
+
+    /// A gateway the app no longer has keeps no share of the badge, even one remembered under its
+    /// installation (a removal from an older build that never forgot it).
+    @Test func aGoneGatewaysOpenCountGoes() {
+        let shared = shared()
+        let other = UUID()
+        shared.remember(installationID: "inst_old", appID: other, name: "Old Mac")
+        shared.recordOpen(1, gateway: "inst_old", at: at(0))
+        shared.recordOpen(1, gateway: "inst_home", at: at(0))
+        #expect(shared.badge == 2)
+        #expect(shared.keepUnread(gateways: [home]))
+        #expect(shared.badge == 1)
+    }
+
+    /// What the app shows waiting in a gateway: every request on a card or in the dock, plus one for each
+    /// chat whose row waits on the person when the app holds none of its requests.
+    @Test func shownRequestsCountCardsAndWaitingRows() {
+        #expect(ShownRequests.count(cards: [:], waiting: []) == 0)
+        #expect(ShownRequests.count(cards: ["chat_a": ["a:1", "r:2"]], waiting: ["chat_a"]) == 2)
+        #expect(ShownRequests.count(cards: ["chat_a": ["a:1"], "bot:ops": ["a:1"]], waiting: []) == 1)
+        #expect(ShownRequests.count(cards: ["chat_a": []], waiting: ["chat_a", "room:crew"]) == 2)
+    }
+
     /// A list the app wrote before it named unmarked chats still opens.
     @Test func anOlderCountableListDecodes() throws {
         let old = try JSONDecoder().decode(CountableChats.self, from: Data(#"{"ids":["a"],"bots":[],"rooms":[]}"#.utf8))

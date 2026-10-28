@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 
 from .core import Push, PushError
 
@@ -129,6 +130,8 @@ def _register_platform(ctx) -> None:
 
 def register(ctx) -> None:
     _instance(ctx)
+    # Requests a restart left open come off the icons, without holding up the load.
+    threading.Thread(target=_instance().sweep, name="app-push-sweep", daemon=True).start()
     for name in HOOKS:
         ctx.register_hook(name, _hook(name))
     ctx.register_command("app-push", handler=handle_command, args_hint="<command> <json>",

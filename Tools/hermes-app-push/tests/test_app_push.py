@@ -201,7 +201,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.7"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.8"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -1838,3 +1838,125 @@ def test_an_older_state_file_still_loads(copies, tmp_path):
     (tmp_path / "state.json").write_text(json.dumps({"devices": {}, "reads": {"chats": []}}))
     assert sys.modules["app_push_old_state.store"].recent_reads(store.read()) == {}
     assert push.read({"device_id": "dev-new", "rooms": ["room-1"]})["ok"]
+
+
+# -- requests nobody can answer (#86) ---------------------------------------------------------------
+
+def _open_count(handler, name):
+    return json.loads(handler("status " + json.dumps({"device_id": f"dev-{name}"})))["open"]
+
+
+def test_a_request_whose_process_is_gone_never_counts(reading, monkeypatch):
+    """A question or approval waits inside the Hermes process that asked. A gateway restart or a crash ends
+    that wait with no hook, so the plugin's request stayed open and every device's icon read 1 with nothing
+    left to answer (#86). Once the process that asked is gone, the request counts nowhere."""
+    plugins, handler, push, later = reading
+    make_device(handler, "restart-phone", reply_after=0)
+    before = _open_count(handler, "restart-phone")
+    import subprocess
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "getpid", lambda: gone.pid)  # asked by a process that has since ended
+        plugins.invoke_hook("on_human_input_request", kind="clarify", request_id="hi_restarted01",
+                            session_id="20261028_restarted", prompt="Which branch?")
+    plugins.invoke_hook("on_human_input_request", kind="clarify", request_id="hi_still_waits01",
+                        session_id="20261028_waiting", prompt="Which folder?")
+    assert _open_count(handler, "restart-phone") == before + 1  # only the one this process still waits on
+    assert presence(handler, "restart-phone", state="foreground")["open"] == before + 1
+    plugins.invoke_hook("on_human_input_resolved", kind="clarify", request_id="hi_still_waits01",
+                        session_id="20261028_waiting", outcome="answered")
+    assert _open_count(handler, "restart-phone") == before
+    # The plugin's next write closes it as settled, so every notice lists it and its notification goes.
+    assert "hi_restarted01" not in push.store._read(prune=False)["requests"]
+    assert "hi_restarted01" in push.store.recently_resolved()
+
+    # The gateway that starts after a restart closes what the old one left, and withdraws it.
+    key, token = make_device(handler, "swept-phone", reply_after=0)
+    store = sys.modules[_core_module().__name__.rsplit(".", 1)[0] + ".store"]
+    with push.store._locked():
+        data = push.store._read(prune=False)
+        data["requests"]["hi_swept01"] = {"kind": "approval", "session": "20261028_swept", "pid": gone.pid,
+                                          "expires_at": time.time() + 3600, "opened_at": time.time()}
+        push.store._write(store._canonical(data))
+    push.sweep()
+    assert "hi_swept01" not in push.store._read(prune=False)["requests"]
+    assert "hi_swept01" in push.store.recently_resolved()
+    withdraw = wait_for(lambda: next((p for p in pushes_for(token, "background")
+                                      if "hi_swept01" in (opened(key, p).get("ids") or [])), None))
+    assert opened(key, withdraw)["kind"] == "withdraw"
+
+
+def test_a_request_past_its_deadline_never_counts(reading):
+    """A deadline that passed with no hook closing the request took it off the count only at the plugin's next
+    write, so a status or presence answer could still say 1 for hours (#86)."""
+    plugins, handler, push, later = reading
+    make_device(handler, "deadline-phone", reply_after=0)
+    before = _open_count(handler, "deadline-phone")
+    push.store.update(lambda s: s["requests"].__setitem__(
+        "hi_lapsed01", {"kind": "question", "session": "20261028_lapsed", "expires_at": time.time() - 120,
+                        "opened_at": time.time() - 3600}))
+    assert _open_count(handler, "deadline-phone") == before
+    assert read(handler, "deadline-phone", chats=["20261028_lapsed"])["open"] == before
+    assert len(push.store.read()["requests"]) == before
+
+
+def test_a_request_without_a_deadline_is_kept_six_hours(reading):
+    """A widget that asks without ``expires_at`` (and a question with no clarify timeout) had no end: one the
+    person never answered kept the icon at 1 for good (#86). Without a deadline a request is kept six hours."""
+    plugins, handler, push, later = reading
+    make_device(handler, "forever-phone", reply_after=0)
+    before = _open_count(handler, "forever-phone")
+    push.store.update(lambda s: s["requests"].update({
+        "w_yesterday01": {"kind": "widget", "session": "20261027_widget", "expires_at": None,
+                          "opened_at": time.time() - 7 * 3600},
+        "w_just_now01": {"kind": "widget", "session": "20261028_widget", "expires_at": None,
+                         "opened_at": time.time() - 60}}))
+    assert _open_count(handler, "forever-phone") == before + 1
+    push.store.close_requests(["w_just_now01"])
+
+
+def test_a_request_left_open_when_its_turn_ends_comes_off(reading):
+    """Nothing waits on a question or an approval once its turn has ended, however it ended: the request goes,
+    with its notification, even if no close hook fired for it (#86)."""
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "ended-phone", reply_after=0)
+    before = _open_count(handler, "ended-phone")
+    session = "20261028_turn_ended"
+    plugins.invoke_hook("pre_llm_call", session_id=session, turn_id="turn-ended-1")
+    plugins.invoke_hook("on_human_input_request", kind="clarify", request_id="hi_turn_ended01", session_id=session,
+                        prompt="Ship it?")
+    assert _open_count(handler, "ended-phone") == before + 1
+    plugins.invoke_hook("on_session_end", session_id=session, turn_id="turn-ended-1", interrupted=True)
+    assert _open_count(handler, "ended-phone") == before
+    withdraw = wait_for(lambda: next((p for p in pushes_for(token, "background")
+                                      if "hi_turn_ended01" in (opened(key, p).get("ids") or [])), None))
+    assert opened(key, withdraw)["kind"] == "withdraw"
+
+
+def test_an_approval_withdrawn_by_stop_comes_off(reading):
+    """Stop while an approval waits: Hermes ends the wait interrupted and fires ``post_approval_response`` with
+    ``cancelled`` (tools/approval_gateway_wait.py); the request goes with it."""
+    plugins, handler, push, later = reading
+    key, token = make_device(handler, "stopped-phone", reply_after=0)
+    from tools import interrupt
+    from tools.approval_gateway_wait import _await_gateway_decision
+    session = "20261028_stopped_approval"
+    before = _open_count(handler, "stopped-phone")
+    result = {}
+
+    def wait():
+        result.update(_await_gateway_decision(session, lambda data: None, {
+            "command": "rm -rf ./build", "description": "deletes a folder", "pattern_key": "rm", "pattern_keys": ["rm"]}))
+        interrupt.clear_current_thread_interrupt()
+
+    worker = threading.Thread(target=wait)
+    worker.start()
+    alert = wait_for(lambda: next((p for p in pushes_for(token, "alert") if "hermes" in p["payload"]), None))
+    request_id = opened(key, alert)["request_id"]
+    assert _open_count(handler, "stopped-phone") == before + 1
+    interrupt.set_interrupt(True, worker.ident, reason="user stop")
+    worker.join(5)
+    assert result.get("cancelled")
+    wait_for(lambda: _open_count(handler, "stopped-phone") == before)
+    assert request_id not in push.store.read()["requests"]

@@ -72,6 +72,15 @@ struct PluginRegistryTests {
         #expect(lines == [CapabilityLine(.sees, "Knows when chats are deleted or archived", names: ["on_session_delete"])])
     }
 
+    /// Push 1.4.8 counts only requests the person can still answer (#86) with 1.4.7's access, so the pin
+    /// can move to it quietly once it's published; until then it stays at 1.4.7.
+    @Test func push148KeepsTheSameAccess() throws {
+        let push = AppPlugin.push
+        let older = try #require(push.capabilities["1.4.7"]), newer = try #require(push.capabilities["1.4.8"])
+        #expect(!newer.widens(older))
+        #expect(newer == older)
+    }
+
     /// `docs/plugins.md` §12: every hook in a manifest is on the review.
     @Test func everyHookIsOnTheReview() {
         for plugin in AppPlugin.all {

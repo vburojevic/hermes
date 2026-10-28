@@ -584,11 +584,17 @@ final class PushCenter {
         lastPresence = nil
         let deviceID = shared.deviceID
         let countsUnread = shared.badgeMode == .unreadChats
+        // Away, the gateways' counts stand alone, less what a plugin before 1.4.8 counted that the app
+        // didn't show (a request nobody can answer): that plugin sends no badge pushes meanwhile, which
+        // would put it back on the icon (#86).
+        let older = Set(model.workspaces.keys.filter { !AppPushClient.countsOnlyAnswerable(pluginVersion: pluginVersions[$0]) }
+            .compactMap(installationID(for:)))
+        let pinned = shared.leave(olderPlugins: older)
         let targets = model.workspaces.values.compactMap { workspace -> (UUID, BotRoster, [String], AwayBadge?, Int)? in
             guard gatewayStates[workspace.id]?.isOn == true, let roster = workspace.roster else { return nil }
             // What the badge counts, so the plugin keeps it right while the app is away.
             var badge: AwayBadge?
-            if countsUnread {
+            if countsUnread, !pinned.contains(installationID(for: workspace.id) ?? "") {
                 let lists = workspace.unread.badgeLists()
                 badge = (lists.unread, lists.muted, workspace.unread.listedChats(), workspace.unread.unmarkedChats())
             }
@@ -608,7 +614,13 @@ final class PushCenter {
                                  badge: badge == nil ? nil : shown)
                 // The open requests as they are now: a count kept from a notice hours ago (a request
                 // answered elsewhere while the phone slept) leaves the icon here.
-                if let answer, let installation = installationID(for: gateway) { shared.recordOpen(answer.open, gateway: installation) }
+                if let answer, let installation = installationID(for: gateway) {
+                    if older.contains(installation) {
+                        shared.recordLeavingOpen(answer.open, gateway: installation)
+                    } else {
+                        shared.recordOpen(answer.open, gateway: installation)
+                    }
+                }
             }
             await applyBadge()
             activity.end()
@@ -640,12 +652,44 @@ final class PushCenter {
     func applyBadge() async {
         // Lists for gateways the app no longer has would count for ever.
         if let gateways = model?.workspaces.keys, !gateways.isEmpty { shared.keepUnread(gateways: Set(gateways)) }
+        noteShownRequests()
         #if os(iOS)
         try? await UNUserNotificationCenter.current().setBadgeCount(shared.badge)
         #else
         let badge = shared.badge
         NSApp.dockTile.badgeLabel = badge > 0 ? "\(badge)" : nil
         #endif
+    }
+
+    /// In front, and on the Mac whenever it runs, a gateway's open requests count on the badge only as
+    /// far as the app shows them waiting (`PushShared.recordShown`, `docs/notifications.md` §2 Badge): a
+    /// count the plugin kept for a request nobody can answer held the icon at 1 with nothing to answer (#86).
+    private func noteShownRequests() {
+        guard let model else { return }
+        #if os(iOS)
+        // Woken in the background, the app shows nothing: the gateways' counts stand.
+        guard isActive else {
+            shared.recordShown(nil)
+            return
+        }
+        #endif
+        var counts: [UUID: Int] = [:]
+        for workspace in model.workspaces.values { counts[workspace.id] = shownRequests(in: workspace) }
+        shared.recordShown(counts)
+    }
+
+    /// What the app shows waiting on the person in a gateway (`ShownRequests`): the approvals and
+    /// questions on its chats' cards and docks, and the chats and group chats whose row waits on them.
+    private func shownRequests(in workspace: BotWorkspace) -> Int {
+        var cards: [String: [String]] = [:]
+        for (key, conversation) in workspace.attachedConversations {
+            cards[key, default: []] += conversation.waitingItems.map(\.id)
+        }
+        var waiting = Set(workspace.activity.lines.filter { $0.value.needsYou }.keys)
+        if let rooms = workspace.roster?.groupRooms {
+            for room in rooms.rooms where rooms.summary(for: room.id).needsYou { waiting.insert("room:" + room.id) }
+        }
+        return ShownRequests.count(cards: cards, waiting: waiting)
     }
 
     /// A gateway's unread, unmuted chats changed (`UnreadStore`): the badge follows when it
