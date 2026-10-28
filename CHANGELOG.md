@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610281337 (October 28, 2026)
+
+- **Notifications:** the badge reads 0 once every chat is read and nothing waits on you
+- **Notifications:** Hermes App Push updates to 1.4.8, so the badge never counts a request nobody can answer
+
 ### Build 2610271627 (October 27, 2026)
 
 - **Mac:** clicking a project, chat or Bot in search results that's already selected shows its screen again
