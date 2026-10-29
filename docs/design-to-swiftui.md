@@ -66,6 +66,12 @@ Increase Contrast.
   than system green, orange and red so they pass 4.5:1 as text), the `*-tint`, `*-wash`, `*-halo`
   and `*-border` backgrounds, `accents.*` (a Bot's avatar colours), `faces.*` (Bot faces),
   `syntax.*` (code, after Xcode's themes).
+- With Increase Contrast the status colours themselves get stronger (darker in light, lighter in
+  dark), but their `*-tint` backgrounds keep their usual opacity: a deeper fill pulls a tag's
+  background toward its own text, which made tags like Needs You and Writes harder to read with
+  the setting than without it. Every text colour clears 4.5:1 on the surfaces, tints and selected
+  rows it sits on in both Increase Contrast appearances, including `segment-selected` behind the
+  selected segment's white label.
 - `ink` is the tint for primary actions only. It is not the app's accent colour: `AccentColor` is
   system blue, so links and selection stay blue.
 - `media-dim` (35% black) is the dimming layer under clear glass over live media: the Inspector's
@@ -271,7 +277,10 @@ drawn (`BotFace`, [bot-faces.md](bot-faces.md)).
 
 ## 10. Accessibility checks
 
-- Light, dark and both Increase Contrast appearances match the design.
+- Light, dark and both Increase Contrast appearances match the design. On the Mac, Increase
+  Contrast is a system setting (System Settings → Accessibility → Display) that changes every app
+  on the machine at once: check with the app in front, since an inactive window draws its toolbar
+  and selection in quieter colours, and turn the setting off again afterwards.
 - Text contrast is at least 4.5:1 everywhere, and code's syntax colours reach 7:1 with Increase
   Contrast.
 - Dynamic Type up to the largest accessibility size without clipped buttons; paired buttons may
