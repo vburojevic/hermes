@@ -12,13 +12,18 @@ public struct RunQuestions: Sendable {
     public struct Asked: Sendable, Hashable {
         public var runID: String
         public var generation: Int?
-        public var deadline: Date?
+        /// The card as the chat shows it. Its deadline is the one its countdown and its ending line
+        /// both go by.
+        public var card: HermesRequest
         /// When the chat learned of it: a status read that began earlier can't have listed it.
         public var since: Date
+
+        public var deadline: Date? { card.deadline }
     }
 
     /// What the chat does with a status read or an event.
     public enum Change: Sendable, Equatable {
+        /// Show the card or, when one with its id is up, take its deadline (`ask`).
         case show(HermesRequest)
         /// Hermes stopped waiting while its card was up here.
         case end(id: String, RequestSync.Ending)
@@ -44,20 +49,21 @@ public struct RunQuestions: Sendable {
     }
 
     /// Hermes asked (`clarify.request`, or a status read from `listedAt` that lists it): the card to
-    /// show, or nil when it already shows, was answered here, or isn't a question. Its deadline
-    /// counts from when Hermes asked (`RunPrompt.questionRequest`), and the event that says so
-    /// brings forward the deadline of a card a status read raised first.
+    /// show, or nil when nothing changes (it already shows, was answered here, or isn't a
+    /// question). Its deadline counts from when Hermes asked (`RunPrompt.questionRequest`). The
+    /// event that says so brings forward the deadline of a card a status read raised first, and
+    /// that card comes again with it, so its countdown keeps Hermes's deadline too.
     public mutating func ask(_ prompt: RunPrompt, runID: String, listedAt: Date? = nil, now: Date = .now) -> HermesRequest? {
         guard let request = prompt.questionRequest(receivedAt: now, listedAt: listedAt) else { return nil }
         let id = prompt.promptID
         guard !owns(id) else {
-            if let deadline = request.deadline {
-                if let shown = asked[id]?.deadline, deadline < shown { asked[id]?.deadline = deadline }
-                if let sent = answered[id]?.deadline, deadline < sent { answered[id]?.deadline = deadline }
-            }
-            return nil
+            guard let deadline = request.deadline else { return nil }
+            if let sent = answered[id]?.deadline, deadline < sent { answered[id]?.card.deadline = deadline }
+            guard let shown = asked[id]?.deadline, deadline < shown else { return nil }
+            asked[id]?.card.deadline = deadline
+            return asked[id]?.card
         }
-        asked[id] = Asked(runID: runID, generation: prompt.executionGeneration, deadline: request.deadline, since: now)
+        asked[id] = Asked(runID: runID, generation: prompt.executionGeneration, card: request, since: now)
         return request
     }
 
@@ -103,11 +109,12 @@ public struct RunQuestions: Sendable {
         return card
     }
 
-    /// The answer didn't go: the card comes back. False when Hermes stopped waiting meanwhile.
-    public mutating func unanswer(_ id: String) -> Bool {
-        guard let card = answered.removeValue(forKey: id) else { return false }
-        asked[id] = card
-        return true
+    /// The answer didn't go: the card to bring back, with the deadline it has now. Nil when Hermes
+    /// stopped waiting meanwhile.
+    public mutating func unanswer(_ id: String) -> HermesRequest? {
+        guard let question = answered.removeValue(forKey: id) else { return nil }
+        asked[id] = question
+        return question.card
     }
 
     /// The turn is over: every question goes with it, its card without a word (the turn says

@@ -3798,7 +3798,12 @@ final class ConversationModel: Identifiable {
     private func applyRunQuestion(_ change: RunQuestions.Change) {
         switch change {
         case .show(let request):
-            receive(request)
+            // A card up already comes again when Hermes's event brought its deadline forward.
+            if let index = requests.firstIndex(where: { $0.id == request.id }) {
+                requests[index].deadline = request.deadline
+            } else {
+                receive(request)
+            }
         case .end(let id, let ending):
             withdrawRequest(id: id, method: "clarify", reason: ending == .timedOut ? "timeout" : "resolved")
         case .drop(let id):
@@ -4805,8 +4810,8 @@ final class ConversationModel: Identifiable {
         if let receipt { addReceipt(receipt, symbol: symbol) }
         let answer = RunPromptAnswer.clarify(request, result: result, generation: asked.generation)
         sendRunAnswer(answer, runID: asked.runID, client: client, about: Self.title(of: request)) { [weak self] in
-            guard let self, self.live?.runID == asked.runID, self.isWorking, self.runQuestions.unanswer(request.id) else { return }
-            self.receive(request)
+            guard let self, self.live?.runID == asked.runID, self.isWorking, let card = self.runQuestions.unanswer(request.id) else { return }
+            self.receive(card)
         }
     }
 

@@ -194,9 +194,9 @@ struct RunQuestionTests {
         _ = questions.answer("c1")
         let back = questions.unanswer("c1")
         let backAgain = questions.unanswer("c1")
-        #expect(back)
+        #expect(back?.id == "c1")
         #expect(questions.isAsking(in: "run_1"))
-        #expect(!backAgain)
+        #expect(backAgain == nil)
     }
 
     @Test func settledWithItsCardUpItWasAnsweredElsewhereOrExpired() {
@@ -277,16 +277,38 @@ struct RunQuestionTests {
         #expect(ending == .timedOut)
     }
 
-    @Test func theEventAfterTheStatusBringsTheDeadlineForward() throws {
+    @Test func theEventAfterTheStatusBringsTheCardsDeadlineForward() throws {
         // The status raised the card 10 s in; the stream, attached late, then replays the asking.
         let listed = Self.prompt.replacingOccurrences(of: #""multi_select": false"#, with: #""multi_select": false, "timeout_s": 20"#)
         var questions = RunQuestions()
-        _ = questions.reconcile(Self.status(listed), runID: "run_1", readAt: start + 10, now: start + 10)
+        let raised = questions.reconcile(Self.status(listed), runID: "run_1", readAt: start + 10, now: start + 10)
+        guard case .show(let first)? = raised.first else {
+            Issue.record("no card")
+            return
+        }
+        #expect(first.deadline == start + 30)
         let prompt = try #require(askedEvent(at: start))
         let again = questions.ask(prompt, runID: "run_1", now: start + 11)
-        #expect(again == nil) // the card is up already
+        // The card up comes again with Hermes's deadline, so its countdown follows it.
+        let moved = try #require(again)
+        #expect(moved.id == "c1")
+        #expect(moved.deadline == start + 20)
+        let heardTwice = questions.ask(prompt, runID: "run_1", now: start + 12)
+        #expect(heardTwice == nil) // nothing moved
         let ending = questions.settle("c1", now: start + 20.2)
         #expect(ending == .timedOut)
+    }
+
+    @Test func anAnswerThatDidntGoComesBackWithTheDeadlineTheEventBrought() throws {
+        let listed = Self.prompt.replacingOccurrences(of: #""multi_select": false"#, with: #""multi_select": false, "timeout_s": 20"#)
+        var questions = RunQuestions()
+        _ = questions.reconcile(Self.status(listed), runID: "run_1", readAt: start + 10, now: start + 10)
+        _ = questions.answer("c1")
+        let prompt = try #require(askedEvent(at: start))
+        let meanwhile = questions.ask(prompt, runID: "run_1", now: start + 11)
+        #expect(meanwhile == nil) // no card is up to move
+        let back = questions.unanswer("c1")
+        #expect(back?.deadline == start + 20)
     }
 
     // MARK: - When the status is read

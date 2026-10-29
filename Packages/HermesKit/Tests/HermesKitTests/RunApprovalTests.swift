@@ -133,6 +133,18 @@ struct RunApprovalTests {
         #expect(elsewhereEnding == .answeredElsewhere)
     }
 
+    @Test func theEventAfterTheStatusBringsTheDeadlineForward() {
+        // The status raised the card 10 s after Hermes asked; the stream, attached late, then
+        // replays the asking with its time.
+        var approvals = RunApprovals()
+        approvals.show(Self.approval(timeout: 20), now: start.addingTimeInterval(10))
+        var event = Self.approval(timeout: 20)
+        event.askedAt = start
+        approvals.show(event, now: start.addingTimeInterval(11))
+        let ending = approvals.settle("p1", generation: 4, now: start.addingTimeInterval(20.2))
+        #expect(ending == .timedOut)
+    }
+
     @Test func aSettleForAnotherPromptLeavesTheCardUp() throws {
         var approvals = RunApprovals()
         approvals.show(Self.approval(), now: start)

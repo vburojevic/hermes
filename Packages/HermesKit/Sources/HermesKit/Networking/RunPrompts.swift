@@ -206,11 +206,19 @@ public struct RunApprovals: Sendable {
 
     /// The approval's card is up. Its deadline, when Hermes gave one, counts from when Hermes
     /// asked: an event that arrived late (a stream attached after the asking) doesn't move it past
-    /// Hermes's own. A clock ahead of this device's counts from now.
+    /// Hermes's own, and one after a status read raised the card brings it forward. A clock ahead
+    /// of this device's counts from now.
     public mutating func show(_ approval: ApprovalRequest, now: Date = .now) {
-        guard let id = approval.requestID, shown[id] == nil, answered[id] == nil, !settled.contains(id) else { return }
+        guard let id = approval.requestID, !settled.contains(id) else { return }
         let asked = min(approval.askedAt ?? now, now)
-        shown[id] = Shown(generation: approval.executionGeneration, deadline: approval.timeout.map { asked.addingTimeInterval($0) })
+        let deadline = approval.timeout.map { asked.addingTimeInterval($0) }
+        guard shown[id] == nil, answered[id] == nil else {
+            guard let deadline else { return }
+            if let up = shown[id]?.deadline, deadline < up { shown[id]?.deadline = deadline }
+            if let sent = answered[id]?.deadline, deadline < sent { answered[id]?.deadline = deadline }
+            return
+        }
+        shown[id] = Shown(generation: approval.executionGeneration, deadline: deadline)
     }
 
     /// Hermes stopped waiting on `id` (`approval.settled`): how its card ends, or nil when none is
