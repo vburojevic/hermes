@@ -1,0 +1,43 @@
+# Buildkite pipeline for the checks on every commit to main: HermesKit's `swift test`, the relay's
+# tests, and the iPhone and Mac Debug builds with zero warnings in our code (docs/development.md,
+# Checks on main). What runs is .buildkite/steps/checks.sh's; this file only runs it.
+#
+# Pipeline: `hermes-checks` (its upload step, set in the pipeline's settings, names queue macos too
+# and runs `buildkite-agent pipeline upload .buildkite/checks.yml`).
+# Trigger: a GitHub push webhook, branch filter `main`. Building pull requests, pull requests from
+# forks and tags are all OFF. The repository is public and the mini holds the studio's signing
+# keys, so nothing but a commit on main runs here: a pull request would run a stranger's code on
+# that Mac. The condition below and the guard in checks.sh refuse anything else if a setting is
+# ever wrong, but only the pipeline's settings stop a pull request's own copy of this file.
+#
+# Agent queue: `macos`, the mini's self-hosted agent. Never a Buildkite-hosted Mac (`hosted: true`
+# or any `*-hosted` queue): they bill per job minute (caffeinated-buildkite). The agent runs in the
+# mini's desktop session and builds with the mini's selected Xcode: its DEVELOPER_DIR is
+# /var/db/xcode_select_link, which follows xcode-select. The job prints `xcodebuild -version` first.
+#
+# Cluster secrets: NONE. This pipeline is given no secret, and checks.sh reads none.
+steps:
+  - label: ":swift: Hermes · checks (tests, iPhone and Mac builds)"
+    key: "checks"
+    command: ".buildkite/steps/checks.sh"
+    # Main only, and never a pull request or a tag.
+    if: build.branch == "main" && build.pull_request.id == null && build.tag == null
+    agents:
+      queue: "macos"
+    # A clean run takes about 7 minutes on the mini.
+    timeout_in_minutes: 60
+    # In the studio's signing group, so it never runs during a release on the mini. The Keychain
+    # tests run unsigned, so KeychainStore falls back to the user's default keychain, and while a
+    # release runs that is the release's signing keychain, alone in the search list
+    # (Scripts/release.sh): the tests would write into it, and its cleanup would swap the keychain
+    # out under them. The builds sign ad hoc, which needs no keychain.
+    concurrency: 1
+    concurrency_group: "mini-signing"
+    # Only a lost agent is retried.
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 1
+    # The tools' own logs, each made from an environment with nothing of the job's in it.
+    artifact_paths:
+      - "build/checks/logs/*.log"

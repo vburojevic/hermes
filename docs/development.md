@@ -139,6 +139,28 @@ python3 -I Tools/mock-hermes/matrix/send_matrix.py --mac --app <Hermes Dev.app> 
 It starts its own mock on ports 40219 and 40742 and stops it at the end; on the Mac it sets Hermes
 Dev's data folder aside first and puts it back byte for byte.
 
+## Checks on main
+
+Every commit to `main` runs the checks in the studio's Buildkite pipeline `hermes-checks`, on its
+own Mac mini's agent (the self-hosted `macos` queue, never a Buildkite-hosted Mac):
+`.buildkite/checks.yml` runs `.buildkite/steps/checks.sh`, which runs
+
+- `xcodegen generate`, then `swift test` in Packages/HermesKit;
+- the relay's tests (`npm ci && npm test` in Relay);
+- the iPhone (`generic/platform=iOS Simulator`) and Mac Debug builds, which fail on any warning in
+  our own files (`Scripts/check-build-warnings.sh <log>` checks a build's log the same way).
+
+The builds sign ad hoc, with no signing identity, and the pipeline has no secrets. The agent
+builds with the mini's selected Xcode (it follows `xcode-select`), and the job's log starts with
+its version. The job runs in the mini's desktop session, where the Keychain tests reach the login
+keychain, and never during a release, which swaps that keychain out while it signs.
+
+Pull requests, forks, tags and other branches are never built, on purpose. The repository is
+public and the mini holds the studio's signing keys, so code that hasn't been merged doesn't run
+there. The pipeline's settings build `main` only, and the step and the script each refuse anything
+else as well. Before you open a pull request, run the commands under [Build](#build) and
+[Test](#test) yourself.
+
 ## Run without a real gateway
 
 
