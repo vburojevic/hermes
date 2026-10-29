@@ -961,21 +961,26 @@ def mock_provider(handler, path, body):
 def install_scenario():
     """Ask any Bot for something "as audio" (or "voice note"): it calls text_to_speech and answers
     with a voice message, `[[audio_as_voice]]` and a `MEDIA:` line, like Hermes's TTS tool. The file
-    is a recorded clip, served by /api/files/stream."""
+    is a recorded clip, served by /api/files/stream; asked for an "audio digest", it's 20 s of
+    speech-like WAV, long enough to skip through."""
     import pathlib
     clip = (pathlib.Path(__file__).resolve().parent / "voice" / "essay.m4a").read_bytes()
     original = B["run_turn"]
 
     def run_turn(sid, text):
         visible = text.split("\n\n[@mentions resolved", 1)[0].lower()
-        if "as audio" not in visible and "voice note" not in visible:
+        if "as audio" not in visible and "audio digest" not in visible and "voice note" not in visible:
             return original(sid, text)
         stored = B["ensure_row"](sid)
         B["add_message"](stored, "user", text)
         B["emit"](sid, "session.info", {"running": True})
         B["emit"](sid, "message.start", {})
-        path = f"/Users/demo/.hermes/audio_cache/tts_{uuid.uuid4().hex[:8]}.m4a"
-        add_file(path, clip)
+        if "audio digest" in visible:
+            path = f"/Users/demo/.hermes/audio_cache/tts_{uuid.uuid4().hex[:8]}.wav"
+            add_file(path, wav_bytes(speechlike("This week's roundup. " * 15)))
+        else:
+            path = f"/Users/demo/.hermes/audio_cache/tts_{uuid.uuid4().hex[:8]}.m4a"
+            add_file(path, clip)
         B["tool"](sid, stored, "text_to_speech", {"text": "This week's roundup."},
                   json.dumps({"success": True, "file_path": path, "media_tag": f"[[audio_as_voice]]\nMEDIA:{path}"}),
                   0.8, "This week's roundup.")

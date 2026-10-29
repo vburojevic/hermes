@@ -705,7 +705,8 @@ states: say "disk" or "approve" for an approval, "clarify" (in a Hermes chat) fo
 failed turn. Voice messages: hold Dictate with `-HERMES_VOICE_INPUT` set (the clips play from
 when recording starts); ask any Bot for something "as audio" (or a "voice note") and it answers
 with a `text_to_speech` voice message (`[[audio_as_voice]]` + `MEDIA:`), served by the mock's
-`/api/files/stream` like the recordings `file.attach` staged. Voices: GET/PUT `/api/config` keep each
+`/api/files/stream` like the recordings `file.attach` staged (an "audio digest" is 20 s, enough
+to skip through). Voices: GET/PUT `/api/config` keep each
 Bot's `tts` and `voice` sections; with `{"direct": true}` voice-config points previews at the mock's
 own `/mock-provider/…` (never a real provider), and `GET /api/mock/audio/turns` lists them. Setup:
 `GET /api/env` lists the voice keys per profile; `{"env_refusal": "…"}` makes `PUT /api/env` refuse

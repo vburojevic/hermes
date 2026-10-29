@@ -437,6 +437,30 @@ class AudioRoutes(unittest.TestCase):
         self.assertEqual((turn["text"], turn["voice_turn"], turn["surface"], turn["voice_context"], turn["interrupted"]),
                          ("Check the NAS.", True, "voice-live", "User: hi", True))
 
+    def test_an_audio_digest_is_a_long_voice_message(self):
+        ws = self.socket("/api/ws")
+        ws.sock.settimeout(20)
+        ws.send({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {"profile": "researcher"}})
+        session = None
+        while session is None and (message := ws.recv()) is not None:
+            if isinstance(message, dict) and message.get("id") == 1:
+                session = message["result"]["session_id"]
+        ws.send({"jsonrpc": "2.0", "id": 2, "method": "prompt.submit",
+                 "params": {"session_id": session, "text": "Send me the roundup as an audio digest."}})
+        reply = None
+        while reply is None and (message := ws.recv()) is not None:
+            if isinstance(message, dict) and message.get("method") == "event" and message["params"]["type"] == "message.complete":
+                reply = message["params"]["payload"]["text"]
+        self.assertTrue(reply and reply.startswith("[[audio_as_voice]]\nMEDIA:"), reply)
+        path = reply.split("\n")[1][len("MEDIA:"):]
+        self.assertTrue(path.endswith(".wav"), path)
+        request = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/files/stream?path={path}")
+        request.add_header("X-Hermes-Session-Token", TOKEN)
+        with urllib.request.urlopen(request, timeout=10) as response:
+            self.assertEqual(response.headers["Content-Type"], "audio/wav")
+            with wave.open(io.BytesIO(response.read())) as clip:
+                self.assertGreater(clip.getnframes() / clip.getframerate(), 15)
+
     def test_the_wake_word_refuses_until_enabled_and_checks_feeds(self):
         started = self.rpc("wake.start", {"surface": "gui", "client_capture": True})["result"]
         self.assertEqual((started["started"], started["reason"]), (False, "disabled"))
