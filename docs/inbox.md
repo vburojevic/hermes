@@ -281,6 +281,11 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
     (`SidewaysSwipe`), as the drawer's rows do (§5): a SwiftUI drag on each reply took the chat's
     vertical drags, and the chat stopped scrolling under a finger that started on a reply. A drag
     to the right from the screen's edge stays the drawer's.
+  - On the Mac a mouse drag to the left does it, and so does a sideways scroll: a trackpad's or a
+    Magic Mouse's swipe, or a mouse that scrolls sideways (`SidewaysScroll`). SwiftUI has no
+    scroll-wheel events, so the message reads them from the window before the chat does. A scroll
+    that starts up or down stays the chat's, and one that starts over something scrolling sideways
+    inside the message (a widget's strip of hours, a wide table) stays that one's.
 - **Composing:** the reply bar ("Replying to Hermes", the quote, ✕) sits in the composer and the
   passage flashes where it is.
 - **Sent:** `> quote` lines, a blank line, then your words (`QuotedReply`, at most 280 characters
@@ -386,10 +391,13 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
   actions open all scroll the chat and the drawer; a swipe left on a reply still replies, and one
   right from the edge still opens the drawer.
+- On the Mac, a sideways scroll to the left on a reply (trackpad, Magic Mouse, a mouse that
+  scrolls sideways) quotes it in the composer, and a scroll up or down that starts on a reply
+  scrolls the chat.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
   reads, pill priority, activity, quotes, row times and their order, compaction summaries, Bot
   faces, group mentions, last lines and the `LastLineBook`), `SidewaysSwipeTests`
-  (which drags a row's swipe takes).
+  (which drags a row's swipe takes), `SidewaysScrollTests` (which Mac scrolls reply).
 
 ## 8. Setup
 

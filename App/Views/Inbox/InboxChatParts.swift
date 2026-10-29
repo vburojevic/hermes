@@ -392,6 +392,7 @@ struct SwipeToReply: ViewModifier {
                 .gesture(SidewaysSwipePan(direction: .left, changed: follow, ended: { translation, _ in release(translation) }, cancelled: { release(0) }))
                 #else
                 .simultaneousGesture(drag)
+                .background(SidewaysScrollReader(follow: follow, release: release))
                 .onChange(of: isDragging) { _, dragging in
                     guard !dragging, isHorizontal != nil else { return }
                     isHorizontal = nil
@@ -437,3 +438,118 @@ struct SwipeToReply: ViewModifier {
     }
     #endif
 }
+
+#if os(macOS)
+/// A sideways scroll on a message (a trackpad's or a Magic Mouse's swipe, a mouse that scrolls
+/// sideways) moves it as a drag does: SwiftUI has no scroll-wheel events, so this reads them from
+/// the window before the chat does (`SidewaysScroll`, `docs/inbox.md` §4). It never takes a click.
+private struct SidewaysScrollReader: NSViewRepresentable {
+    let follow: (CGFloat) -> Void
+    let release: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ReaderView { ReaderView(follow: follow, release: release) }
+
+    func updateNSView(_ view: ReaderView, context: Context) {
+        view.follow = follow
+        view.release = release
+    }
+
+    static func dismantleNSView(_ view: ReaderView, coordinator: ()) { view.stop() }
+
+    final class ReaderView: NSView {
+        var follow: (CGFloat) -> Void
+        var release: (CGFloat) -> Void
+        private var scroll = SidewaysScroll()
+        private var monitor: Any?
+        /// Ends a mouse wheel's run of steps once they stop.
+        private var quiet: Task<Void, Never>?
+
+        init(follow: @escaping (CGFloat) -> Void, release: @escaping (CGFloat) -> Void) {
+            self.follow = follow
+            self.release = release
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                self?.handle(event) ?? event
+            }
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            quiet?.cancel()
+            quiet = nil
+            scroll = SidewaysScroll()
+        }
+
+        /// The event, or nil once the scroll is the message's, so the chat doesn't move with it.
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            guard event.window === window, let phase = Self.phase(of: event) else { return event }
+            if phase == .began || (phase == .step && scroll.isIdle), !starts(at: event) {
+                scroll.beganElsewhere()
+                return event
+            }
+            // A wheel's steps are lines; a trackpad's are points.
+            let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 10
+            let action = scroll.scroll(phase, delta: CGPoint(x: event.scrollingDeltaX * scale, y: event.scrollingDeltaY * scale))
+            if phase == .step { waitForQuiet() }
+            // The end always reaches the chat, so a scroll it saw begin doesn't stay open there.
+            return apply(action) && phase != .ended && phase != .cancelled ? nil : event
+        }
+
+        /// Whether the action was the message's.
+        private func apply(_ action: SidewaysScroll.Action) -> Bool {
+            switch action {
+            case .pass: return false
+            case .follow(let x): follow(x); return true
+            case .release(let x): release(x); return true
+            case .absorb: return true
+            }
+        }
+
+        private func waitForQuiet() {
+            quiet?.cancel()
+            quiet = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled, let self else { return }
+                _ = self.apply(self.scroll.idle())
+            }
+        }
+
+        /// A scroll starts a swipe on this message only over it, and never over something inside
+        /// it that scrolls sideways itself (a widget's strip of hours, a wide table).
+        private func starts(at event: NSEvent) -> Bool {
+            guard bounds.contains(convert(event.locationInWindow, from: nil)),
+                  let root = window?.contentView else { return false }
+            let point = root.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+            var scrollView = root.hitTest(point)?.enclosingScrollView
+            while let current = scrollView {
+                if let document = current.documentView, document.frame.width > current.contentView.bounds.width + 1 { return false }
+                scrollView = current.enclosingScrollView
+            }
+            return true
+        }
+
+        private static func phase(of event: NSEvent) -> SidewaysScroll.Phase? {
+            if !event.momentumPhase.isEmpty { return .momentum }
+            let phase = event.phase
+            if phase.isEmpty { return .step }
+            if phase.contains(.began) { return .began }
+            if phase.contains(.changed) { return .changed }
+            if phase.contains(.ended) { return .ended }
+            if phase.contains(.cancelled) { return .cancelled }
+            // A finger resting on the trackpad (`mayBegin`) moves nothing yet.
+            return nil
+        }
+    }
+}
+#endif
