@@ -91,7 +91,6 @@ nonisolated enum Palette {
     static let infoTint = Color(
         light: Color(.sRGB, red: 0.1176, green: 0.4314, blue: 0.9569, opacity: 0.1216),
         dark: Color(.sRGB, red: 0, green: 0.5686, blue: 1, opacity: 0.1608),
-        increasedContrastLight: Color(.sRGB, red: 0.0431, green: 0.3412, blue: 0.8157, opacity: 0.1216),
         increasedContrastDark: Color(.sRGB, red: 0.3608, green: 0.7216, blue: 1, opacity: 0.1608)
     )
     /// The monochrome accent: prominent glass tint, send, selection.
