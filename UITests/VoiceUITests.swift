@@ -52,7 +52,8 @@ final class VoiceUITests: XCTestCase {
     func testVoiceOverAdjustMovesYourVoiceMessage() async throws {
         let stopped = try await mock.stopTurns(profile: "researcher")
         XCTAssertEqual(stopped, 200, "Research Buddy's turn didn't stop")
-        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_VOICE_INPUT", mock.clip("weekly", at: 0.4)])
+        // At 1×, whatever speed an earlier run left.
+        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_VOICE_INPUT", mock.clip("weekly", at: 0.4), "-listen.speed", "1"])
         openResearchBuddy(in: app)
         let microphone = app.buttons["Dictate"]
         XCTAssertTrue(microphone.waitForExistence(timeout: 30), "no microphone in the composer")
@@ -74,6 +75,7 @@ final class VoiceUITests: XCTestCase {
         let app = launch([
             "-HERMES_OPEN", "bot:researcher",
             "-HERMES_SEND_HERE", "Send me the roundup as an audio digest.", "-HERMES_SEND_HERE_AFTER", "6", "-HERMES_SEND_HERE_ROUNDS", "1",
+            "-listen.speed", "1",
         ])
         openResearchBuddy(in: app)
         let strips = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Voice message, 0:20'"))
@@ -265,23 +267,28 @@ final class VoiceUITests: XCTestCase {
     }
 
     /// Plays `clip` with its own button, then sends the accessibility increment and decrement
-    /// VoiceOver sends for a swipe up and down (`accessibilityAdjust`). Each step must land 5 s from where it was, give or
-    /// take the moment it took: playing on alone moves it 2 s at most in that time.
+    /// VoiceOver sends for a swipe up and down (`accessibilityAdjust`). Each step must land 5 s from
+    /// where it was plus the time between the two readings, within a second and a half (a value
+    /// shows whole seconds): playing on alone, at any speed, can't get there in the 3 s allowed.
     @MainActor
     private func checkAdjust(_ clip: XCUIElement, play offset: CGVector) async throws {
+        // The play button sits a fixed inset from the clip's corner at the simulator's default text
+        // size; it's hidden from accessibility, as the clip itself is the element.
         clip.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
         let start = try await position(of: clip, within: 15) { $0 >= 1 }
-        let started = try XCTUnwrap(start, "the clip didn't play: \(clip.value ?? "no value")")
+        let (started, startedAt) = try XCTUnwrap(start, "the clip didn't play: \(clip.value ?? "no value")")
 
         try accessibilityAdjust(clip, up: true)
-        let forward = try await position(of: clip, within: 2) { $0 >= started + 5 }
-        let ahead = try XCTUnwrap(forward, "increment didn't move it 5 s on from \(started): \(clip.value ?? "no value")")
-        XCTAssertLessThanOrEqual(ahead, started + 7, "increment moved it more than 5 s")
+        let forward = try await position(of: clip, within: 3) { $0 >= started + 4 }
+        let (ahead, aheadAt) = try XCTUnwrap(forward, "increment didn't move it 5 s on from \(started): \(clip.value ?? "no value")")
+        let played = aheadAt.timeIntervalSince(startedAt)
+        XCTAssertEqual(Double(ahead - started), 5 + played, accuracy: 1.5, "increment didn't move it 5 s (\(started) → \(ahead) in \(played) s)")
 
         try accessibilityAdjust(clip, up: false)
-        let back = try await position(of: clip, within: 2) { $0 <= ahead - 2 }
-        let behind = try XCTUnwrap(back, "decrement didn't move it 5 s back from \(ahead): \(clip.value ?? "no value")")
-        XCTAssertGreaterThanOrEqual(behind, ahead - 5, "decrement moved it more than 5 s")
+        let back = try await position(of: clip, within: 3) { $0 <= ahead - 3 }
+        let (behind, behindAt) = try XCTUnwrap(back, "decrement didn't move it 5 s back from \(ahead): \(clip.value ?? "no value")")
+        let playedOn = behindAt.timeIntervalSince(aheadAt)
+        XCTAssertEqual(Double(behind - ahead), playedOn - 5, accuracy: 1.5, "decrement didn't move it 5 s back (\(ahead) → \(behind) in \(playedOn) s)")
     }
 
     /// VoiceOver's swipe up or down on `element`: the accessibility increment or decrement. XCUITest
@@ -306,14 +313,17 @@ final class VoiceUITests: XCTestCase {
         XCTAssertTrue(done, "the \(up ? "increment" : "decrement") wasn't performed: \(error.map { "\($0.domain) \($0.code)" } ?? "no error")")
     }
 
-    /// The clip's position in whole seconds, from its value ("Playing, 0:07"), once `check` holds.
+    /// The clip's position in whole seconds, from its value ("Playing, 0:07"), once `check` holds,
+    /// and when it was read.
     @MainActor
-    private func position(of clip: XCUIElement, within timeout: TimeInterval, _ check: (Int) -> Bool) async throws -> Int? {
+    private func position(of clip: XCUIElement, within timeout: TimeInterval,
+                          _ check: (Int) -> Bool) async throws -> (seconds: Int, at: Date)? {
         let deadline = Date.now.addingTimeInterval(timeout)
         repeat {
+            let now = Date.now
             if let value = clip.value as? String, value.hasPrefix("Playing, ") {
                 let parts = value.dropFirst("Playing, ".count).split(separator: ":").compactMap { Int($0) }
-                if parts.count == 2, check(parts[0] * 60 + parts[1]) { return parts[0] * 60 + parts[1] }
+                if parts.count == 2, check(parts[0] * 60 + parts[1]) { return (parts[0] * 60 + parts[1], now) }
             }
             try await Task.sleep(for: .milliseconds(100))
         } while Date.now < deadline

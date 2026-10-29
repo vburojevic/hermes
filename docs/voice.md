@@ -625,4 +625,4 @@ and send from there, slide left to cancel; a message sent while Hermes works wai
 messages from elsewhere are fetched from `/api/files/stream` and drawn as bubbles; "send it as
 audio" to a Bot plays its `text_to_speech` reply as a strip; VoiceOver's adjust (the accessibility
 increment and decrement, sent as VoiceOver sends them) moves a playing voice message and a Bot's
-audio 5 s forward and back.
+audio 5 s forward and back. A real VoiceOver pass on a device stays welcome.
