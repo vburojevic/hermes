@@ -30,7 +30,7 @@ nonisolated enum Palette {
     static let danger = Color(
         light: Color(.sRGB, red: 0.9137, green: 0.0824, blue: 0.1765),
         dark: Color(.sRGB, red: 1, green: 0.2588, blue: 0.2706),
-        increasedContrastLight: Color(.sRGB, red: 0.7216, green: 0, blue: 0.102),
+        increasedContrastLight: Color(.sRGB, red: 0.6627, green: 0, blue: 0.0941),
         increasedContrastDark: Color(.sRGB, red: 1, green: 0.4745, blue: 0.4863)
     )
     static let dangerBorder = Color(
@@ -80,7 +80,7 @@ nonisolated enum Palette {
     static let info = Color(
         light: Color(.sRGB, red: 0.1176, green: 0.4314, blue: 0.9569),
         dark: Color(.sRGB, red: 0, green: 0.5686, blue: 1),
-        increasedContrastLight: Color(.sRGB, red: 0.0431, green: 0.3412, blue: 0.8157),
+        increasedContrastLight: Color(.sRGB, red: 0.0392, green: 0.298, blue: 0.7137),
         increasedContrastDark: Color(.sRGB, red: 0.3608, green: 0.7216, blue: 1)
     )
     static let infoHalo = Color(
@@ -172,7 +172,7 @@ nonisolated enum Palette {
     static let success = Color(
         light: Color(.sRGB, red: 0, green: 0.5373, blue: 0.1961),
         dark: Color(.sRGB, red: 0.1882, green: 0.8196, blue: 0.3451),
-        increasedContrastLight: Color(.sRGB, red: 0, green: 0.4196, blue: 0.1529),
+        increasedContrastLight: Color(.sRGB, red: 0, green: 0.3804, blue: 0.1373),
         increasedContrastDark: Color(.sRGB, red: 0.2902, green: 0.851, blue: 0.4078)
     )
     static let successHalo = Color(
@@ -251,7 +251,7 @@ nonisolated enum Palette {
     static let warning = Color(
         light: Color(.sRGB, red: 0.7725, green: 0.3255, blue: 0),
         dark: Color(.sRGB, red: 1, green: 0.5725, blue: 0.1882),
-        increasedContrastLight: Color(.sRGB, red: 0.5686, green: 0.2392, blue: 0),
+        increasedContrastLight: Color(.sRGB, red: 0.549, green: 0.2314, blue: 0),
         increasedContrastDark: Color(.sRGB, red: 1, green: 0.6275, blue: 0.3373)
     )
     static let warningHalo = Color(
