@@ -31,6 +31,12 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610291901 (October 29, 2026)
+
+- **Chat:** a question card's countdown follows Hermes's deadline once a late event brings it forward
+- **Chat:** on the Mac, scrolling a reply sideways quotes it, as a swipe does on iPhone
+- **Bots:** a Bot's key and sign-in are only read for the addresses they were saved for
+
 ### Build 2610281337 (October 28, 2026)
 
 - **Notifications:** the badge reads 0 once every chat is read and nothing waits on you
