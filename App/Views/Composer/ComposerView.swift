@@ -218,6 +218,10 @@ struct ComposerView: View {
             UserDefaults.standard.removeObject(forKey: "HERMES_TYPE")
             let delay = UserDefaults.standard.string(forKey: "HERMES_TYPE_AFTER").flatMap(Double.init) ?? 8
             try? await Task.sleep(for: .seconds(delay))
+            // Focused as a tap focuses it: the field's own focus alone was undone by the next
+            // update, which put the keyboard straight back down.
+            focused.wrappedValue = true
+            try? await Task.sleep(for: .milliseconds(300))
             field.typeForTesting(text)
         }
         #endif
