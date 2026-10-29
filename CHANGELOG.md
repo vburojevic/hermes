@@ -31,6 +31,15 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610292317 (October 29, 2026)
+
+- **Composer:** the "/" menu with the keyboard up stays clear of the top bar, the jump pill included
+- **Mac:** the selected Chats or Bots tab stays readable in Dark Mode with Increase Contrast
+- **Mac:** status tags and red and orange text stay readable with Increase Contrast
+- **Mac:** a selected sidebar row's status line stays readable in Dark Mode with Increase Contrast
+- **Mac:** status tags on a selected task card stay readable with Increase Contrast
+- **Mac:** information tags keep their usual tint with Increase Contrast in light, like the other status tags
+
 ### Build 2610292114 (October 29, 2026)
 
 - **Chat:** a model fallback shows once per switch, and "Primary model restored" no longer starts every message
