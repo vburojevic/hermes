@@ -125,6 +125,10 @@ part of its profile (`docs/bots-groups-skills.md`).
 | Think (reasoning level) | the composer's Think chip | Auto (the gateway decides), Off, Minimal, Low, Medium, High, XHigh, Max: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` on the wire. `/reasoning <level>` (alias `/effort`) does the same |
 | Thinking block | `reasoning.delta` and `reasoning.available` events | See `docs/chat.md` |
 
+When the chat's model fails, Hermes answers with its fallback model (`fallback_model` in its
+config) and goes back to the chosen one as the next turn starts. The chat says so once per switch
+and never says it went back ([chat.md](chat.md) §2, "Model switches").
+
 Provider keys are entered during setup, not in the picker: `model.save_key {slug, api_key}` with
 4003 (a provider that signs in, such as an OAuth one: run `hermes model` on the gateway) and 4006
 (a managed install) explained (`docs/onboarding.md` §3).

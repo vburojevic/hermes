@@ -246,12 +246,13 @@ public struct LiveTurn: Sendable, Equatable {
             turn.plan = items
 
         case .warning(let text):
-            // Several can arrive in one turn; each is its own paragraph.
-            if let current = turn.warning, !current.isEmpty {
-                if !current.components(separatedBy: "\n\n").contains(text) { turn.warning = current + "\n\n" + text }
-            } else {
-                turn.warning = text
-            }
+            addWarning(text)
+
+        case .modelSwitch(.fallback(let route)):
+            addWarning(route.note)
+
+        case .modelSwitch(.restored):
+            break // never a line: it says nothing about whether the primary works (`ModelSwitch`)
 
         case .models(let label, let done, let total, let text, let aggregator):
             var progress = turn.models ?? ModelsProgress()
@@ -266,6 +267,15 @@ public struct LiveTurn: Sendable, Equatable {
 
         case .settled, .titleChanged, .questionAsked, .questionSettled:
             break // handled by the transport driver
+        }
+    }
+
+    /// Several warnings can arrive in one turn; each is its own paragraph.
+    private mutating func addWarning(_ text: String) {
+        if let current = turn.warning, !current.isEmpty {
+            if !current.components(separatedBy: "\n\n").contains(text) { turn.warning = current + "\n\n" + text }
+        } else {
+            turn.warning = text
         }
     }
 

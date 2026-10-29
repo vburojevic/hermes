@@ -621,6 +621,9 @@ final class ConversationModel: Identifiable {
     /// What Hermes sends for the next turn while this device still finishes the last one waits
     /// here (`NextTurnHold`, `releaseNextTurn`).
     @ObservationIgnored private var nextTurn = NextTurnHold<NextTurnItem>()
+    /// Hermes's model switches across this chat's turns: a fallback shows once per switch, a
+    /// restore never (`docs/chat.md` §2, "Model switches").
+    @ObservationIgnored private var modelSwitches = ModelSwitchNotes()
     /// A stuck turn's settle reloads the chat and sends Up Next itself, once the messages the stored
     /// chat already has are held (`settleStuckTurn`): the load doesn't send them first.
     @ObservationIgnored private var checksQueueAfterLoad = false
@@ -5776,7 +5779,8 @@ extension ConversationModel {
     }
 
     private func applyTurnEvent(_ event: GatewayEvent) {
-        let decoded = GatewayTurnDecoder.decode(event)
+        // Every event, a turn on screen or not: the chat's model switches span its turns.
+        let decoded = modelSwitches.filter(GatewayTurnDecoder.decode(event))
         if live == nil {
             guard Self.turnEvents.contains(event.type), !isFinishing else { return }
             beginRemoteTurn()

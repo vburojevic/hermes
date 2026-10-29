@@ -72,7 +72,10 @@ public enum GatewayTurnDecoder {
         case "status.update":
             let kind = payload["kind"]?.stringValue ?? ""
             let text = nonEmpty(payload["text"]?.stringValue)
-            if let text, let warning = warning(kind: kind, text: text) {
+            if let text, let change = ModelSwitch(line: text) {
+                // Before the "⚠" warnings: a fallback is a note once per switch, a restore never a line.
+                events = [.modelSwitch(change)]
+            } else if let text, let warning = warning(kind: kind, text: text) {
                 events = [.warning(warning)]
             } else if kind == "process", let text, isProcessNotice(text) {
                 // For Hermes, which answers in its next turn: the step and the chip show it.

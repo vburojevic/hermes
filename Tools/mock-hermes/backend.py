@@ -21,6 +21,9 @@ Scripted Bot Chat behaviour by message content:
                          keeps (512): drop the socket for ten seconds of it and the replay is `truncated`
   an @mention note    -> uses message_agent and drops a DM into the other Bot's chat
   contains "every tool" -> one finished step of each kind of tool, with blanks and a failure among them
+  contains "fallback" -> the primary model fails and the turn ends on a fallback: Hermes's "⚠️ Model fallback" line
+                         as it ends, and "✅ Primary model restored" as the next turn starts; "fallback every
+                         turn" keeps the primary failing on every turn after it, until "fallback off"
   anything else       -> thinks, searches, then answers in Markdown
 """
 
@@ -980,6 +983,8 @@ def finish(sid, stored, text, status="complete", error=None):
             threading.Timer(late, lambda: add_message(stored, "assistant", text, ended, finish_reason="stop")).start()
         else:
             final_row = add_message(stored, "assistant", text, finish_reason="stop")
+    if status == "complete":
+        fallback_notice(sid, stored)
     payload = {"text": text, "status": status, "usage": {"input_tokens": 1830, "output_tokens": 212, "total_tokens": 2042}}
     if error:
         payload["error"] = error
@@ -1041,6 +1046,49 @@ def compact_between_steps(sid, runtime, seconds=8):
     runtime["compacting"] = False
     # The done edge has a kind of its own (`agent/conversation_compression.py` COMPACTION_DONE_STATUS).
     emit(sid, "status.update", {"kind": "compacted", "text": "✓ Context compaction complete — continuing turn..."})
+
+
+# A chat's primary model and its fallback (hermes-agent `agent/chat_completion_helpers.py` `try_activate_fallback`,
+# `agent/agent_runtime_helpers.py` `restore_primary_runtime`), and, by stored chat, whether it is on the fallback
+# ("on") and whether its primary fails every turn ("always").
+FALLBACK_ROUTE = ("claude-opus-5-5", "anthropic", "gpt-6-sol", "openai-codex", "provider server error")
+FALLBACKS = {}
+
+
+def model_switches(sid, visible):
+    """"fallback": Hermes falls back as the primary fails. Its line comes as the turn ends (`finish`); the
+    restore comes as the next turn starts, before the primary has answered anything, and only after a
+    real fallback. A primary that fails for any reason but a rate limit (no cooldown) fails again at once:
+    restore, fall back, every turn."""
+    stored = RUNTIME[sid]["stored"]
+    lowered = visible.lower()
+    with LOCK:
+        state = FALLBACKS.setdefault(stored, {"on": False, "always": False, "pending": False})
+        if "fallback off" in lowered:
+            state["always"] = False
+        elif "fallback every turn" in lowered:
+            state["always"] = True
+        restore = state["on"]
+        state["on"] = False
+        state["pending"] = state["always"] or ("fallback" in lowered and "fallback off" not in lowered)
+    primary, primary_provider, fallback, fallback_provider, _ = FALLBACK_ROUTE
+    if restore:
+        lifecycle(sid, f"✅ Primary model restored: {primary} via {primary_provider}; "
+                       f"fallback {fallback} via {fallback_provider} is no longer active.")
+
+
+def fallback_notice(sid, stored):
+    """The turn ended on the fallback: Hermes's one-shot switch line, just before the turn's end
+    (`agent/turn_final_response.py` `_emit_pending_fallback_notice`)."""
+    with LOCK:
+        state = FALLBACKS.get(stored)
+        if not state or not state["pending"]:
+            return
+        state["pending"] = False
+        state["on"] = True
+    primary, primary_provider, fallback, fallback_provider, reason = FALLBACK_ROUTE
+    lifecycle(sid, f"⚠️ Model fallback: {primary} via {primary_provider} unavailable ({reason}); "
+                   f"using {fallback} via {fallback_provider}.")
 
 
 def mock_warnings(sid, visible):
@@ -1175,6 +1223,7 @@ def run_turn(sid, text):
     lower = text.lower()
     visible = text.split("\n\n[@mentions resolved", 1)[0]
     mock_warnings(sid, visible)
+    model_switches(sid, visible)
 
     if lower.startswith("hey, tell me about yourself"):
         intro = (f"Hi! I'm **{me}**. This is our Bot Chat, one continuous conversation that never resets. "

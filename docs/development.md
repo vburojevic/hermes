@@ -260,7 +260,13 @@ with no details (`Command: unknown`, no output, no step: "A background process f
 each kind of tool (commands, one that printed nothing and one that printed only blanks, files read,
 searched, patched and written, the web, the browser, typing into a page, images, code, a skill,
 session search, two MCP tools, one answering only blanks, memory, and a failure), and `@mentioning`
-another Bot drops a message in its chat. `--drop-after-reply` cuts every socket right after a turn's
+another Bot drops a message in its chat. "fallback" ends its turn on a fallback model, with Hermes's
+own lines (`docs/chat.md` §2, "Model switches"): "⚠️ Model fallback: claude-opus-5-5 via anthropic
+unavailable (provider server error); using gpt-6-sol via openai-codex." just before the turn's end,
+and "✅ Primary model restored: …" as the next turn starts. "fallback every turn" keeps the primary
+failing, as one that fails for any reason but a rate limit does: every turn after it starts with the
+restore and ends with the fallback, until "fallback off" (`Tools/mock-hermes/tests/test_model_switch.py`).
+The chat shows one note and never the restore. `--drop-after-reply` cuts every socket right after a turn's
 `message.complete`, `--late-store <s>` writes a turn's reply that long after `message.complete` (its
 `persisted_turn` then has no `final_assistant_row_id`), `POST /api/mock/restart-gateway` kills the
 turns where they are and cuts every socket, as a gateway restart does (a resume finds the chat idle,

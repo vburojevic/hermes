@@ -127,6 +127,7 @@ marked missed while Hermes answered it ([follow-ups.md](follow-ups.md) §2).
 | `thinking.delta` | Only provider waits ("⏳ waiting on…", "rate limited") become the header's label; spinner text is ignored | `turnHeader` |
 | `status.update`, kinds `status`, `lifecycle`, `compacting`, `process` | The header's label ("Compacting context…") | `turnHeader` |
 | `status.update`, kind `warn`, or text starting with "⚠" | A warning line above the work | `TurnWarnings` |
+| `status.update` with a model switch ("⚠️ Model fallback: …", "↻ Switched to fallback: …", "✅ Primary model restored: …") | A fallback is a warning line once per switch; a restore is never shown (model switches, below) | `TurnWarnings` |
 | `message.complete` | The header turns into its finished form; actions appear; `usage` is kept for the footer, and `persisted_turn` (the turn's stored rows: `user_row_id`, `row_ids`, `final_assistant_row_id`) to find its stored copy by (one turn, one place, below) | `turnHeader`, `replyActions` |
 | `message.complete` with `status: interrupted` | "Stopped" badge under the partial reply, with the actions | footer |
 | `message.complete` with `status: error` | A warning-coloured line with `error` (or `failure_reason`) under the reply, and the error card after the chat with Try Again (or Reload when the outcome is unknown) and Dismiss | footer, `TurnErrorRow` |
@@ -134,6 +135,29 @@ marked missed while Hermes answered it ([follow-ups.md](follow-ups.md) §2).
 | `error` during a turn | Fails the turn with its `message` | footer, `TurnErrorRow` |
 | `session.info` with `running: false` | The turn has settled on the backend; the app then fetches the stored transcript, which replaces the live rows in place. It counts only once Hermes has taken the prompt (its submit answered, or an event of its turn came): Hermes says the session is idle while it builds a chat's agent, before it takes the prompt, and ending the turn then emptied it (`TurnSettleGate`). A turn on screen never just vanishes: one that ended with nothing in it and no stored reply yet stays a turn still working (in a Bot Chat, the typing bubble), the chat read again every 5 s until the reply takes its place, and after 3 minutes it says "Hermes hasn't answered this here yet" with Reload (`AssistantTurn.endedEmpty`). One that never heard its end keeps its last state while the app finds out how it ended, by itself (`TurnRecovery`, one turn, one place, below). Only that fetch hands a turn on screen over to its stored rows: until it has, no other reload (the Bots' roster noticing the chat moved, a reconnect) redraws the chat, and the turn's rows are matched from the newest stored message from before it, taken as it started. When the socket died with the reply, a reload redrew the stored turn under the live one and the turn then took its own rows for history, so it showed twice (`TranscriptBuilder.newestBeforeTurn`) | |
 | `session.info` with `yolo`, folder, branch or project | Updates "allow everything" ([quick-actions.md](quick-actions.md) §3) and where the chat runs ([projects.md](projects.md)) | |
+
+**Model switches.** When a chat's primary model fails, Hermes answers with a fallback and says so
+as the turn ends: "⚠️ Model fallback: claude-opus-5-5 via anthropic unavailable (provider server
+error); using gpt-6-sol via openai-codex.", with " Primary retry eligible in ~N s; recovery is not
+guaranteed." after a rate limit (hermes-agent `agent/chat_completion_helpers.py`
+`try_activate_fallback`, `agent/turn_final_response.py`), or "↻ Switched to fallback: gpt-6-sol
+(openai-codex)" in what a failed turn flushes (`agent/turn_empty_response.py`). As the next turn
+starts it goes back to the primary and says "✅ Primary model restored: … is no longer active."
+(`agent/agent_runtime_helpers.py` `restore_primary_runtime`) before the primary has answered
+anything. A primary that fails for any reason but a rate limit (only those wait out a cooldown)
+fails again at once, so Hermes says both on every turn. Each chat keeps one `ModelSwitchNotes` and
+shows them as:
+
+- A fallback is a warning line on its turn (`TurnWarnings`), in Hermes's words without the retry
+  countdown, which is out of date as soon as the line stays. Once per actual switch: the same
+  fallback on later turns adds nothing while the chat keeps falling back to it. A turn that ends on
+  the primary (restored as it started, no fallback by its end) ends that, and the next fallback shows
+  again; so does a different fallback. A failed turn doesn't end it.
+- A restore is never shown: not as the header's label, not as a line of its own. The design has no
+  recovered state, and the restore says nothing about whether the primary works.
+- Both come only over the gateway socket (`status.update`, kind `lifecycle`); a `/v1/runs` turn has no
+  status lines. Hermes doesn't store them, so a reloaded chat keeps the notes its turns showed live
+  (put back with the turn's other live-only parts, §4) and never adds one.
 
 **One turn, one place.** The live turn and its stored rows are the same turn, found by Hermes's
 own ids (`message.complete.persisted_turn`, agent/persisted_turn_receipt.py, which Hermes publishes

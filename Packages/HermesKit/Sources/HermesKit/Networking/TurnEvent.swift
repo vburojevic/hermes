@@ -63,6 +63,8 @@ public enum TurnEvent: Sendable, Equatable {
     case toolRisk(id: String?, name: String, risk: ToolRisk)
     /// One line to know about a finished reply (`message.complete.warning`).
     case warning(String)
+    /// Hermes moved the chat onto a fallback model, or back to its primary (`ModelSwitch`).
+    case modelSwitch(ModelSwitch)
     /// Mixture of agents: a model answered (`moa.reference`), progress (`moa.progress`), or the
     /// combining model started (`moa.aggregating`).
     case models(label: String?, done: Bool, total: Int?, text: String?, aggregator: String?)
