@@ -69,9 +69,11 @@ Increase Contrast.
 - With Increase Contrast the status colours themselves get stronger (darker in light, lighter in
   dark), but their `*-tint` backgrounds keep their usual opacity: a deeper fill pulls a tag's
   background toward its own text, which made tags like Needs You and Writes harder to read with
-  the setting than without it. Every text colour clears 4.5:1 on the surfaces, tints and selected
-  rows it sits on in both Increase Contrast appearances, including `segment-selected` behind the
-  selected segment's white label.
+  the setting than without it. With Increase Contrast, every text colour clears 4.5:1 on the
+  surfaces and selected rows it sits on, and a status tag does on the canvas, `surface` and a
+  selected row over the canvas (and on `surface-raised` in light). The selected segment's white label clears it
+  on `segment-selected`. In dark, a tag on `surface-raised` doesn't (danger 4.0:1), so tags don't
+  go there.
 - `ink` is the tint for primary actions only. It is not the app's accent colour: `AccentColor` is
   system blue, so links and selection stay blue.
 - `media-dim` (35% black) is the dimming layer under clear glass over live media: the Inspector's
