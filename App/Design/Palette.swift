@@ -130,7 +130,7 @@ nonisolated enum Palette {
     static let segmentSelected = Color(
         light: Color(.sRGB, red: 1, green: 1, blue: 1),
         dark: Color(.sRGB, red: 0.3882, green: 0.3882, blue: 0.4),
-        increasedContrastDark: Color(.sRGB, red: 0.4863, green: 0.4863, blue: 0.502)
+        increasedContrastDark: Color(.sRGB, red: 0.4392, green: 0.4392, blue: 0.4549)
     )
     /// List separators (system separator).
     static let separator = Color(
