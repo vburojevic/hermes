@@ -249,7 +249,8 @@ search).
 
 ### The jump pill
 
-A glass capsule 12 pt above the composer, shown once you scroll up (`JumpPillView`).
+A glass capsule 12 pt above the composer, shown once you scroll up (`JumpPillView`), while it
+fits between the bars: a "/" or "@" menu that takes that room hides it ([composer.md](composer.md) §1).
 
 | Below | Pill | Tap |
 |---|---|---|

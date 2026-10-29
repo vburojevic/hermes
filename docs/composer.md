@@ -45,7 +45,9 @@ the top bar or a banner under it, with the keyboard up or down: each is as tall 
 most 440 pt, and at most the room between the bar's bottom edge and the composer less 8 pt
 (`ComposerMenuRoom`); what doesn't fit scrolls inside it. The chat screens measure where the bar
 ends (`composerCeiling`), the composer measures its own top (`ComposerTop`, read only by the menu,
-so the keyboard moving doesn't redraw the composer), and the bar's height is never animated.
+so the keyboard moving doesn't redraw the composer), and the bar's height is never animated. The
+chat's jump pill sits in the same room: while a menu leaves it none, it steps aside rather than
+rise over the top bar.
 
 The trailing button is the only tinted control:
 

@@ -81,6 +81,10 @@ struct TranscriptView: View {
     @State private var measuredKeys: Set<String> = []
     /// The composer's height over the end of the chat (see the end marker).
     @State private var bottomInset: CGFloat = 0
+    /// The jump pill stands in the room between the bars. A composer menu that takes that room
+    /// (`docs/composer.md` §1) hides it, rather than pushing it up over the top bar.
+    @State private var pillFits = true
+    @State private var pillHeight: CGFloat = 52
     /// Rows that arrived at the end while the reader was up in the history.
     @State private var arrivalsBelow = 0
     /// The New Messages line (`docs/inbox.md` §4): placed when the chat opens with something new,
@@ -313,6 +317,8 @@ struct TranscriptView: View {
             edge.top = new.top
             edge.container = new.container
             if new.inset != bottomInset { bottomInset = new.inset }
+            let fits = new.container >= pillHeight + Self.pillGap
+            if fits != pillFits { pillFits = fits }
             // The room between the bars a turn has to fill (the container is what the insets
             // leave): as it is now, keyboard and all, so the chat never scrolls past its message
             // at the top into blank. Also without the keyboard (the smallest inset seen is the
@@ -417,9 +423,15 @@ struct TranscriptView: View {
         // Sending turns the page: the message glides up to the top.
         .onChange(of: conversation.sentTurns) { beginLanding() }
         .overlay(alignment: .bottom) {
-            if !isFollowing && settled {
+            if !isFollowing && settled && pillFits {
                 ActivityJumpPill(pill: pill, conversation: conversation, workspace: workspace, face: botFace, action: jump)
-                    .padding(.bottom, 12)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        // A taller pill (larger text) may no longer fit the room it was shown in.
+                        pillHeight = height
+                        let fits = edge.container >= height + Self.pillGap
+                        if fits != pillFits { pillFits = fits }
+                    }
+                    .padding(.bottom, Self.pillGap)
                     .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .scale(scale: 0.9)).combined(with: .opacity))
             }
         }
@@ -1133,6 +1145,8 @@ struct TranscriptView: View {
     nonisolated private static let contentSpace = "transcript-content"
     /// Between the top bar and a message sending put at the top.
     private static let landingGap: CGFloat = 14
+    /// The jump pill's gap above the composer (`docs/inbox.md`, the jump pill).
+    private static let pillGap: CGFloat = 12
     private static let bottomPadding: CGFloat = 12
     /// The glide of a sent message up to the top: off at once, eased into place, and done at a
     /// set time. (A spring's `.smooth(duration: 0.5)` crept the last few points for a while.)
