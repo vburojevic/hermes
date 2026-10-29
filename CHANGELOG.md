@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2610292114 (October 29, 2026)
+
+- **Chat:** a model fallback shows once per switch, and "Primary model restored" no longer starts every message
+
 ### Build 2610291901 (October 29, 2026)
 
 - **Chat:** a question card's countdown follows Hermes's deadline once a late event brings it forward
