@@ -623,4 +623,6 @@ stops it nor makes a turn, and the call offers Voice Isolation. The mock's audio
 own tests (`Tools/mock-hermes/tests`). Voice messages: hold to record and let go to send, lock then Pause into Review, play back
 and send from there, slide left to cancel; a message sent while Hermes works waits in Up Next;
 messages from elsewhere are fetched from `/api/files/stream` and drawn as bubbles; "send it as
-audio" to a Bot plays its `text_to_speech` reply as a strip.
+audio" to a Bot plays its `text_to_speech` reply as a strip; VoiceOver's adjust (the accessibility
+increment and decrement, sent as VoiceOver sends them) moves a playing voice message and a Bot's
+audio 5 s forward and back.

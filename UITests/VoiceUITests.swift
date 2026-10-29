@@ -1,8 +1,9 @@
 import XCTest
 
-/// Voice against the mock (`docs/voice.md` §12): a voice message's round trip, a Bot's audio, and
-/// a Talk call answered by voice. The microphone is the simulated one: spoken clips from
-/// `Tools/mock-hermes/voice` (`-HERMES_VOICE_INPUT`), whose words come from the `.txt` beside each.
+/// Voice against the mock (`docs/voice.md` §12): a voice message's round trip, a Bot's audio,
+/// VoiceOver's adjust on both, and a Talk call answered by voice. The microphone is the simulated
+/// one: spoken clips from `Tools/mock-hermes/voice` (`-HERMES_VOICE_INPUT`), whose words come from
+/// the `.txt` beside each.
 /// Start the mock first: `python3 -I Tools/mock-hermes/backend.py --port 19119 --gateway-port 18642`.
 final class VoiceUITests: XCTestCase {
     private let mock = VoiceMock()
@@ -43,6 +44,43 @@ final class VoiceUITests: XCTestCase {
         XCTAssertTrue(strip.waitForExistence(timeout: 60), "no listen strip for the Bot's audio")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'summary you asked for'")).firstMatch.exists,
                       "the reply's words didn't follow the strip")
+    }
+
+    /// VoiceOver's swipe up and down on a playing voice message (`docs/voice.md` §2): the adjust
+    /// moves it 5 s forward and back. A 16 s recording, so both steps have room.
+    @MainActor
+    func testVoiceOverAdjustMovesYourVoiceMessage() async throws {
+        let stopped = try await mock.stopTurns(profile: "researcher")
+        XCTAssertEqual(stopped, 200, "Research Buddy's turn didn't stop")
+        let app = launch(["-HERMES_OPEN", "bot:researcher", "-HERMES_VOICE_INPUT", mock.clip("weekly", at: 0.4)])
+        openResearchBuddy(in: app)
+        let microphone = app.buttons["Dictate"]
+        XCTAssertTrue(microphone.waitForExistence(timeout: 30), "no microphone in the composer")
+        microphone.press(forDuration: 16)
+
+        // The newest of the long ones (the chat may hold voice messages from earlier runs).
+        let bubbles = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Your voice message, 0:1'"))
+        XCTAssertTrue(bubbles.firstMatch.waitForExistence(timeout: 20), "no 16 s voice message")
+        let bubble = bubbles.element(boundBy: bubbles.count - 1)
+        // Its play button: the bubble's 10 pt inset plus half the 32 pt circle.
+        try await checkAdjust(bubble, play: CGVector(dx: 26, dy: 26))
+    }
+
+    /// The same adjust on a Bot's audio: a 20 s `text_to_speech` voice message.
+    @MainActor
+    func testVoiceOverAdjustMovesABotsAudio() async throws {
+        let stopped = try await mock.stopTurns(profile: "researcher")
+        XCTAssertEqual(stopped, 200, "Research Buddy's turn didn't stop")
+        let app = launch([
+            "-HERMES_OPEN", "bot:researcher",
+            "-HERMES_SEND_HERE", "Send me the roundup as an audio digest.", "-HERMES_SEND_HERE_AFTER", "6", "-HERMES_SEND_HERE_ROUNDS", "1",
+        ])
+        openResearchBuddy(in: app)
+        let strips = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Voice message, 0:20'"))
+        XCTAssertTrue(strips.firstMatch.waitForExistence(timeout: 60), "no listen strip for the Bot's long audio")
+        let strip = strips.element(boundBy: strips.count - 1)
+        // Its play button: the strip's 8 pt inset plus half the 30 pt circle.
+        try await checkAdjust(strip, play: CGVector(dx: 23, dy: 23))
     }
 
     /// A call as a Shortcut starts one: "Check the disk space on the NAS" is a voice turn, the
@@ -226,6 +264,62 @@ final class VoiceUITests: XCTestCase {
         return app
     }
 
+    /// Plays `clip` with its own button, then sends the accessibility increment and decrement
+    /// VoiceOver sends for a swipe up and down (`accessibilityAdjust`). Each step must land 5 s from where it was, give or
+    /// take the moment it took: playing on alone moves it 2 s at most in that time.
+    @MainActor
+    private func checkAdjust(_ clip: XCUIElement, play offset: CGVector) async throws {
+        clip.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
+        let start = try await position(of: clip, within: 15) { $0 >= 1 }
+        let started = try XCTUnwrap(start, "the clip didn't play: \(clip.value ?? "no value")")
+
+        try accessibilityAdjust(clip, up: true)
+        let forward = try await position(of: clip, within: 2) { $0 >= started + 5 }
+        let ahead = try XCTUnwrap(forward, "increment didn't move it 5 s on from \(started): \(clip.value ?? "no value")")
+        XCTAssertLessThanOrEqual(ahead, started + 7, "increment moved it more than 5 s")
+
+        try accessibilityAdjust(clip, up: false)
+        let back = try await position(of: clip, within: 2) { $0 <= ahead - 2 }
+        let behind = try XCTUnwrap(back, "decrement didn't move it 5 s back from \(ahead): \(clip.value ?? "no value")")
+        XCTAssertGreaterThanOrEqual(behind, ahead - 5, "decrement moved it more than 5 s")
+    }
+
+    /// VoiceOver's swipe up or down on `element`: the accessibility increment or decrement. XCUITest
+    /// has no public call for it on iOS, so this asks XCTest's own accessibility client, which sends
+    /// the app the same action VoiceOver does (`accessibilityIncrement`, `accessibilityDecrement`).
+    @MainActor
+    private func accessibilityAdjust(_ element: XCUIElement, up: Bool) throws {
+        typealias Factory = @convention(c) (AnyClass, Selector, Int) -> AnyObject
+        typealias Perform = @convention(c) (AnyObject, Selector, AnyObject, AnyObject, AnyObject?,
+                                            AutoreleasingUnsafeMutablePointer<NSError?>?) -> Bool
+        let actions = try XCTUnwrap(NSClassFromString("XCUIAccessibilityAction"), "XCTest has no accessibility actions")
+        let factory = NSSelectorFromString(up ? "incrementActionForPlatform:" : "decrementActionForPlatform:")
+        let make = try XCTUnwrap(class_getClassMethod(actions, factory), "XCTest has no \(factory)")
+        // Platform 2, iOS: every iOS platform maps to the same action, the Mac's to none.
+        let action = unsafeBitCast(method_getImplementation(make), to: Factory.self)(actions, factory, 2)
+        let client = try XCTUnwrap((XCUIDevice.shared as NSObject).value(forKey: "accessibilityInterface") as? NSObject)
+        let target = try XCTUnwrap((try element.snapshot() as AnyObject).value(forKey: "accessibilityElement") as AnyObject?)
+        let selector = NSSelectorFromString("performAction:onElement:value:error:")
+        let perform = unsafeBitCast(client.method(for: selector), to: Perform.self)
+        var error: NSError?
+        let done = perform(client, selector, action, target, nil, &error)
+        XCTAssertTrue(done, "the \(up ? "increment" : "decrement") wasn't performed: \(error.map { "\($0.domain) \($0.code)" } ?? "no error")")
+    }
+
+    /// The clip's position in whole seconds, from its value ("Playing, 0:07"), once `check` holds.
+    @MainActor
+    private func position(of clip: XCUIElement, within timeout: TimeInterval, _ check: (Int) -> Bool) async throws -> Int? {
+        let deadline = Date.now.addingTimeInterval(timeout)
+        repeat {
+            if let value = clip.value as? String, value.hasPrefix("Playing, ") {
+                let parts = value.dropFirst("Playing, ".count).split(separator: ":").compactMap { Int($0) }
+                if parts.count == 2, check(parts[0] * 60 + parts[1]) { return parts[0] * 60 + parts[1] }
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        } while Date.now < deadline
+        return nil
+    }
+
     /// `-HERMES_OPEN bot:` can land on the Bots page before the roster has the Bot: open it.
     @MainActor
     private func openResearchBuddy(in app: XCUIApplication) {
@@ -300,6 +394,17 @@ private struct VoiceMock {
 
     func reset() async throws {
         _ = try await request("api/mock/audio/reset", method: "POST")
+    }
+
+    /// Stops every running turn of `profile` (`docs/development.md`): a turn an earlier test left
+    /// running would hold a voice message in Up Next and make a message a redirect.
+    func stopTurns(profile: String) async throws -> Int {
+        var request = URLRequest(url: backend.appending(path: "api/mock/stop-turns"))
+        request.httpMethod = "POST"
+        request.setValue(try await token(), forHTTPHeaderField: "X-Hermes-Session-Token")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["profile": profile])
+        return (try await URLSession.shared.data(for: request).1 as? HTTPURLResponse)?.statusCode ?? 0
     }
 
     func audio() async throws -> (turns: [String], spoken: [String]) {
