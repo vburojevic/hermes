@@ -368,7 +368,7 @@ struct BotEditorView: View {
         guard canSubmit, let url = normalizedURL else { return }
         focusedField = nil // reveal the result, which sits under the fields
         let typedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = typedKey.isEmpty ? (editingBot.flatMap { app.apiKey(for: $0.id) } ?? "") : typedKey
+        let key = typedKey.isEmpty ? (editingBot.flatMap { app.apiKey(for: $0) } ?? "") : typedKey
         phase = .checking
         submitTask = Task {
             do {
@@ -382,7 +382,7 @@ struct BotEditorView: View {
                 var credential: BackendCredential?
                 if botMode, let backendURL {
                     let candidate = BackendLink(url: backendURL, signIn: signIn, username: signIn == .password ? backendUsername : nil)
-                    let existing = keepsBackendCredential ? editingBot.flatMap { app.backendCredential(for: $0.id) } : nil
+                    let existing = keepsBackendCredential ? editingBot.flatMap { app.backendCredential(for: $0) } : nil
                     do {
                         let probe = try await AppModel.probeBackend(
                             url: backendURL, signIn: signIn, token: backendToken.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -408,7 +408,7 @@ struct BotEditorView: View {
                     bot.baseURL = url
                     bot.accent = accent.rawValue
                     bot.backend = link
-                    try app.updateBot(bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential)
+                    try app.updateBot(bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential, editing: editingBot)
                 } else {
                     added = try app.addBot(name: finalName, baseURL: url, apiKey: key, accent: accent, backend: link, backendCredential: credential)
                 }

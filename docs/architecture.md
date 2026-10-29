@@ -89,4 +89,6 @@ and other Bots' messages can all carry injected instructions, so:
 - Preview pages read only the folder of the file they opened, and pages on the device's own network
   open only when the person says so;
 - HTML artifacts run with no network unless the person allows it;
+- a Bot's key and Bot Mode sign-in are read only for the addresses they were saved for, checked
+  against the Keychain at each read;
 - keys live in the Keychain on this device only, never follow a redirect, and never reach a log.

@@ -21,6 +21,9 @@ public struct KeychainStore: Sendable {
     }
 
     public let service: String
+    /// Makes a read or write fail as a locked or refusing Keychain would, by account: the status
+    /// to fail with, or nil to go ahead. Only tests set it (`BotConfigurationTests`).
+    let fault: (@Sendable (_ account: String, _ writing: Bool) -> OSStatus?)?
 
     /// A gateway key runs commands on that machine: it stays on this device, readable after the
     /// first unlock (background refresh, notification answers), never restored onto another
@@ -28,10 +31,19 @@ public struct KeychainStore: Sendable {
     static var accessibility: CFString { kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
 
     public init(service: String) {
+        self.init(service: service, fault: nil)
+    }
+
+    init(service: String, fault: (@Sendable (_ account: String, _ writing: Bool) -> OSStatus?)?) {
         self.service = service
+        self.fault = fault
     }
 
     public func string(for account: String) throws -> String? {
+        if let status = fault?(account, false) {
+            if status == errSecItemNotFound { return nil }
+            throw Failure.unexpectedStatus(status)
+        }
         #if os(macOS)
         // A development build may have written to either keychain; check both.
         do {
@@ -63,6 +75,7 @@ public struct KeychainStore: Sendable {
     }
 
     public func setString(_ value: String, for account: String) throws {
+        if let status = fault?(account, true) { throw Failure.unexpectedStatus(status) }
         let data = Data(value.utf8)
         try withKeychainFallback { useDataProtection in
             let query = baseQuery(account: account, useDataProtection: useDataProtection)

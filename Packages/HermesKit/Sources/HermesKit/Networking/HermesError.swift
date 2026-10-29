@@ -3,6 +3,8 @@ import Foundation
 /// Everything that can go wrong talking to a gateway, phrased for people.
 public enum HermesError: Error, Sendable, Equatable, LocalizedError {
     case missingAPIKey
+    /// The Keychain can't confirm yet where the key may go (`BotStore.isVerified`), so it isn't read.
+    case keychainUnavailable
     case unauthorized
     case notFound(message: String?)
     case rateLimited
@@ -23,6 +25,8 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
         switch self {
         case .missingAPIKey:
             "No API key is saved for this gateway on this device."
+        case .keychainUnavailable:
+            "Hermes can't read this gateway's key from the Keychain right now. Try again in a moment."
         case .unauthorized:
             "Hermes rejected the API key. Check API_SERVER_KEY in the gateway's .env file."
         case .notFound(let message):
@@ -139,7 +143,7 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
 
     public var isTransient: Bool {
         switch self {
-        case .rateLimited, .gatewayRestarting, .unreachable: true
+        case .rateLimited, .gatewayRestarting, .unreachable, .keychainUnavailable: true
         case .server(let status, _, _): status >= 500
         default: false
         }
