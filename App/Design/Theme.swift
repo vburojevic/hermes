@@ -16,10 +16,12 @@ nonisolated enum Theme {
     /// Pressed rows and nested surfaces.
     static let surfaceRaised = Palette.surfaceRaised
     /// A selected sidebar row: a quiet wash that reads on the opaque drawer and the vibrant
-    /// Mac and iPad sidebars alike (the design's surface-raised over the sidebar).
+    /// Mac and iPad sidebars alike (the design's surface-raised over the sidebar). Increase
+    /// Contrast deepens it, but in Dark Mode only so far that a status line in the row (warning
+    /// orange) keeps 4.5:1 on the Mac's vibrant sidebar.
     static let rowSelected = Color(
         light: .black.opacity(0.075), dark: .white.opacity(0.11),
-        increasedContrastLight: .black.opacity(0.16), increasedContrastDark: .white.opacity(0.22)
+        increasedContrastLight: .black.opacity(0.16), increasedContrastDark: .white.opacity(0.15)
     )
     /// A sidebar row under the pointer.
     static let rowHover = Color(light: .black.opacity(0.035), dark: .white.opacity(0.05))
