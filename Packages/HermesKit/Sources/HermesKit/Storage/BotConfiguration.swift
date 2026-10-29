@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// A Hermes Agent gateway the app can talk to.
 ///
@@ -183,6 +184,9 @@ public struct BackendLink: Hashable, Codable, Sendable {
 public struct BotStore: Sendable {
     public let fileURL: URL
     public let keychain: KeychainStore
+    /// The addresses each Bot was last confirmed for, against its pin read or written then. Shared
+    /// by every copy of this store.
+    private let verified = Verified()
 
     public init(fileURL: URL, keychain: KeychainStore) {
         self.fileURL = fileURL
@@ -202,27 +206,17 @@ public struct BotStore: Sendable {
     /// The saved Bots. A gateway or backend address that differs from the one its secrets were
     /// saved for (`Destinations`) is put back, and the file with it: `bots.json` is a plain file
     /// any app of this user can rewrite on the Mac, which isn't sandboxed, and a changed address
-    /// would otherwise carry the Keychain's key to another server.
+    /// would otherwise carry the Keychain's key to another server. A Bot whose pin can't be read
+    /// yet (the Keychain before the first unlock) stays unverified: its secrets are read only once
+    /// a later read finds its addresses pinned (`check`).
     public func load() throws -> [BotConfiguration] {
         guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else { return [] }
         let data = try Data(contentsOf: fileURL)
         var bots = try JSONDecoder().decode([BotConfiguration].self, from: data)
         var restored = false
         for index in bots.indices {
-            let pinned: Destinations?
-            do {
-                pinned = try destinations(for: bots[index].id)
-            } catch {
-                continue // an unreadable Keychain (still locked): neither trusted nor pinned
-            }
-            guard let pinned else {
-                // Saved before addresses were pinned: pin what's there now.
-                pin(bots[index])
-                continue
-            }
-            if pinned != Destinations(bots[index]) {
-                bots[index].baseURL = pinned.gateway
-                bots[index].backend = pinned.backend
+            if case .putBack(let pinned) = examine(bots[index]) {
+                bots[index] = pinned
                 restored = true
             }
         }
@@ -230,17 +224,42 @@ public struct BotStore: Sendable {
         return bots
     }
 
-    public func save(_ bots: [BotConfiguration]) throws {
+    /// Writes the list. `edited` is the Bot the person just added or changed in the app: its
+    /// addresses become the ones its key and sign-in may go to, and the save fails when that can't
+    /// be recorded. No other Bot's pin moves, so an address the app didn't set stays unverified.
+    public func save(_ bots: [BotConfiguration], edited: BotConfiguration? = nil) throws {
+        try write(bots)
+        if let edited {
+            try pin(edited)
+            verified.set(Destinations(edited), for: edited.id)
+        }
+    }
+
+    /// Saves the person's edit of `edited`, then writes its new secrets (`secrets`): a new key
+    /// waits for its addresses to be pinned, so it never sits under the old ones. When the secrets
+    /// can't be written, the edit is undone: `previous` goes back, and its pin with it.
+    public func save(
+        _ bots: [BotConfiguration], edited: BotConfiguration, previous: [BotConfiguration], secrets: () throws -> Void
+    ) throws {
+        try save(bots, edited: edited)
+        do {
+            try secrets()
+        } catch {
+            try? save(previous, edited: previous.first { $0.id == edited.id })
+            throw error
+        }
+    }
+
+    private func write(_ bots: [BotConfiguration]) throws {
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(bots).write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        for bot in bots { pin(bot) }
     }
 
     /// Where a Bot's key and Bot Mode sign-in may be sent: the addresses the app itself last saved
     /// for it, kept in the Keychain next to them.
-    struct Destinations: Codable, Equatable {
+    struct Destinations: Codable, Equatable, Sendable {
         var gateway: URL
         var backend: BackendLink?
 
@@ -250,20 +269,99 @@ public struct BotStore: Sendable {
         }
     }
 
+    /// Why no secret was read for a Bot.
+    public enum Refusal: Error, Equatable, LocalizedError {
+        /// Its pin can't be read (or, saved before pins, written) now, so its addresses can't be
+        /// checked.
+        case unverified
+        /// Its addresses aren't the ones its secrets were saved for: this is the Bot with those
+        /// back, as the file now has it too.
+        case putBack(BotConfiguration)
+
+        public var errorDescription: String? {
+            switch self {
+            case .unverified: HermesError.keychainUnavailable.errorDescription
+            case .putBack: nil // the app goes on with the saved addresses
+            }
+        }
+    }
+
+    /// Checks `bot`'s addresses against its pin, read now. Throws `Refusal.putBack` with the
+    /// pinned addresses (put back in the file too) when they differ, and `Refusal.unverified` when
+    /// the pin can't be read.
+    public func check(_ bot: BotConfiguration) throws {
+        switch examine(bot) {
+        case .verified:
+            return
+        case .unverified:
+            throw Refusal.unverified
+        case .putBack(let pinned):
+            try? putBackInFile(pinned)
+            throw Refusal.putBack(pinned)
+        }
+    }
+
+    /// Whether a read has confirmed `bot`'s addresses since this store last couldn't.
+    public func isVerified(_ bot: BotConfiguration) -> Bool {
+        verified.destinations(for: bot.id) == Destinations(bot)
+    }
+
+    /// Why a read gave no key for `bot`: none is saved, or its addresses can't be checked yet.
+    public func missingKey(for bot: BotConfiguration) -> HermesError {
+        isVerified(bot) ? .missingAPIKey : .keychainUnavailable
+    }
+
+    private enum Outcome {
+        case verified, unverified, putBack(BotConfiguration)
+    }
+
+    private func examine(_ bot: BotConfiguration) -> Outcome {
+        let pinned: Destinations
+        do {
+            if let found = try destinations(for: bot.id) {
+                pinned = found
+            } else {
+                // Saved before addresses were pinned: what's there now is pinned, once that's
+                // actually written.
+                try pin(bot)
+                pinned = Destinations(bot)
+            }
+        } catch {
+            verified.set(nil, for: bot.id)
+            return .unverified
+        }
+        verified.set(pinned, for: bot.id)
+        guard pinned != Destinations(bot) else { return .verified }
+        var restored = bot
+        restored.baseURL = pinned.gateway
+        restored.backend = pinned.backend
+        return .putBack(restored)
+    }
+
+    /// The pinned addresses back in the file, for the Bot alone.
+    private func putBackInFile(_ pinned: BotConfiguration) throws {
+        var bots = try JSONDecoder().decode([BotConfiguration].self, from: Data(contentsOf: fileURL))
+        guard let index = bots.firstIndex(where: { $0.id == pinned.id }) else { return }
+        bots[index].baseURL = pinned.baseURL
+        bots[index].backend = pinned.backend
+        try write(bots)
+    }
+
     /// Nil when none were pinned; throws when the Keychain can't be read.
     func destinations(for bot: BotConfiguration.ID) throws -> Destinations? {
         guard let text = try keychain.string(for: "\(bot.uuidString).destinations") else { return nil }
         return try? JSONDecoder().decode(Destinations.self, from: Data(text.utf8))
     }
 
-    private func pin(_ bot: BotConfiguration) {
-        let destinations = Destinations(bot)
-        guard (try? self.destinations(for: bot.id)) != destinations, let data = try? JSONEncoder().encode(destinations) else { return }
-        try? keychain.setString(String(decoding: data, as: UTF8.self), for: "\(bot.id.uuidString).destinations")
+    private func pin(_ bot: BotConfiguration) throws {
+        let data = try JSONEncoder().encode(Destinations(bot))
+        try keychain.setString(String(decoding: data, as: UTF8.self), for: "\(bot.id.uuidString).destinations")
     }
 
-    public func apiKey(for bot: BotConfiguration.ID) throws -> String? {
-        try keychain.string(for: bot.uuidString)
+    /// The key, read only for the addresses it was saved for (`check`).
+    public func apiKey(for bot: BotConfiguration) throws -> String? {
+        try check(bot)
+        return try keychain.string(for: bot.id.uuidString)
     }
 
     public func setAPIKey(_ key: String, for bot: BotConfiguration.ID) throws {
@@ -272,13 +370,16 @@ public struct BotStore: Sendable {
 
     /// Forgets the key, and where it could go.
     public func removeAPIKey(for bot: BotConfiguration.ID) throws {
+        verified.set(nil, for: bot)
         try keychain.removeValue(for: bot.uuidString)
         try? keychain.removeValue(for: "\(bot.uuidString).destinations")
     }
 
-    /// The Bot Mode sign-in (session token or cookies), next to the API key.
-    public func backendCredential(for bot: BotConfiguration.ID) -> BackendCredential? {
-        guard let text = try? keychain.string(for: "\(bot.uuidString).backend") else { return nil }
+    /// The Bot Mode sign-in (session token or cookies), next to the API key, read only for the
+    /// addresses it was saved for (`check`).
+    public func backendCredential(for bot: BotConfiguration) throws -> BackendCredential? {
+        try check(bot)
+        guard let text = try keychain.string(for: "\(bot.id.uuidString).backend") else { return nil }
         return try? JSONDecoder().decode(BackendCredential.self, from: Data(text.utf8))
     }
 
@@ -289,6 +390,18 @@ public struct BotStore: Sendable {
         }
         let data = try JSONEncoder().encode(credential)
         try keychain.setString(String(decoding: data, as: UTF8.self), for: "\(bot.uuidString).backend")
+    }
+
+    private final class Verified: Sendable {
+        private let state = Mutex<[BotConfiguration.ID: Destinations]>([:])
+
+        func destinations(for bot: BotConfiguration.ID) -> Destinations? {
+            state.withLock { $0[bot] }
+        }
+
+        func set(_ destinations: Destinations?, for bot: BotConfiguration.ID) {
+            state.withLock { $0[bot] = destinations }
+        }
     }
 }
 

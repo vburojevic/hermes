@@ -6,6 +6,7 @@ import WebKit
 import AppKit
 #else
 import BackgroundTasks
+import UIKit
 #endif
 
 /// App-wide state: the configured bots and which one is in front.
@@ -38,8 +39,10 @@ final class AppModel {
         } catch {
             storageError = error.localizedDescription
         }
-        for bot in bots {
-            workspaces[bot.id] = BotWorkspace(bot: bot, apiKey: try? store.apiKey(for: bot.id), store: store)
+        for index in bots.indices {
+            let key = apiKey(for: bots[index])
+            // Read after the key: a Bot whose addresses were just put back has the saved ones.
+            workspaces[bots[index].id] = makeWorkspace(bots[index], apiKey: key)
         }
         let saved = UserDefaults.standard.string(forKey: PreferenceKey.selectedBot).flatMap(UUID.init(uuidString:))
         selectedBotID = bots.first { $0.id == saved }?.id ?? bots.first?.id
@@ -54,7 +57,15 @@ final class AppModel {
         #if os(macOS)
         watchSleep()
         watchActivation()
+        #else
+        watchProtectedData()
         #endif
+    }
+
+    private func makeWorkspace(_ bot: BotConfiguration, apiKey: String?) -> BotWorkspace {
+        let workspace = BotWorkspace(bot: bot, apiKey: apiKey, backendCredential: backendCredential(for: bot), store: store)
+        workspace.app = self
+        return workspace
     }
 
     var currentWorkspace: BotWorkspace? {
@@ -83,9 +94,62 @@ final class AppModel {
         }
     }
 
-    func apiKey(for botID: UUID) -> String? {
-        try? store.apiKey(for: botID)
+    // MARK: - Secrets
+
+    /// A Bot's key, read only for the addresses it was saved for (`BotStore.check`).
+    func apiKey(for bot: BotConfiguration) -> String? {
+        readSecret(of: bot) { try store.apiKey(for: $0) }
     }
+
+    /// A Bot's Bot Mode sign-in, read only for the addresses it was saved for.
+    func backendCredential(for bot: BotConfiguration) -> BackendCredential? {
+        readSecret(of: bot) { try store.backendCredential(for: $0) }
+    }
+
+    /// Nothing is read for a Bot whose addresses the Keychain can't confirm yet; addresses
+    /// bots.json changed under the app go back to the saved ones here too.
+    private func readSecret<Secret>(of bot: BotConfiguration, _ read: (BotConfiguration) throws -> Secret?) -> Secret? {
+        do {
+            return try read(bot)
+        } catch BotStore.Refusal.putBack(let saved) {
+            putBack(saved)
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// The store found other addresses than the ones this Bot's secrets were saved for, and put
+    /// the saved ones back in the file (`BotStore.check`): the app goes back to them as well.
+    private func putBack(_ saved: BotConfiguration) {
+        guard let index = bots.firstIndex(where: { $0.id == saved.id }) else { return }
+        var bot = bots[index]
+        bot.baseURL = saved.baseURL
+        bot.backend = saved.backend
+        bots[index] = bot
+        workspaces[bot.id]?.update(bot: bot, apiKey: apiKey(for: bot), keyChanged: true)
+    }
+
+    /// A Bot loaded while the Keychain was locked has no key or sign-in yet
+    /// (`BotStore.isVerified`): it connects again, and reads them once its addresses check out.
+    private func retryUnverifiedBots() {
+        for workspace in workspaces.values where !store.isVerified(workspace.bot) {
+            if workspace.id == selectedBotID {
+                Task { await workspace.connect() }
+            } else {
+                workspace.roster?.connectIfNeeded()
+            }
+        }
+    }
+
+    #if os(iOS)
+    /// The Keychain opens with the device's first unlock.
+    private func watchProtectedData() {
+        NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.retryUnverifiedBots() }
+        }
+    }
+    #endif
 
     // MARK: - Editing bots
 
@@ -109,37 +173,53 @@ final class AppModel {
         var updated = bots
         updated.append(bot)
         do {
-            try store.save(updated)
+            try store.save(updated, edited: bot)
         } catch {
+            try? store.save(bots)
             try? store.removeAPIKey(for: bot.id)
             throw error
         }
         bots = updated
-        let workspace = BotWorkspace(bot: bot, apiKey: apiKey, store: store)
-        workspaces[bot.id] = workspace
+        workspaces[bot.id] = makeWorkspace(bot, apiKey: apiKey)
         select(bot.id)
         if isFirst, startsSetup { setupGatewayID = bot.id }
         return bot
     }
 
-    /// Saves edits. Pass `apiKey` only when the key changed, and `backendCredential`
-    /// only after a fresh Bot Mode sign-in.
-    func updateBot(_ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil) throws {
+    /// Saves edits. Pass `apiKey` only when the key changed, `backendCredential` only after a
+    /// fresh Bot Mode sign-in, and `original`, the Bot as an editor showed it, when there is one.
+    func updateBot(
+        _ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil, editing original: BotConfiguration? = nil
+    ) throws {
         guard let index = bots.firstIndex(where: { $0.id == bot.id }) else { return }
-        if let apiKey {
-            try store.setAPIKey(apiKey, for: bot.id)
-        }
-        if let backendCredential {
-            try store.setBackendCredential(backendCredential, for: bot.id)
-        } else if bot.backend == nil || bot.backend?.url != bots[index].backend?.url {
-            try? store.setBackendCredential(nil, for: bot.id)
+        // The edit moves where the Bot's secrets may go, so it starts from addresses they were
+        // saved for: ones bots.json changed under the app go back to the saved ones, here and in
+        // the edit wherever the person left them as they were.
+        var bot = bot
+        let basis = original ?? bots[index]
+        do {
+            try store.check(basis)
+        } catch BotStore.Refusal.putBack(let saved) {
+            putBack(saved)
+            if bot.baseURL == basis.baseURL { bot.baseURL = saved.baseURL }
+            if bot.backend == basis.backend { bot.backend = saved.backend }
         }
         var updated = bots
         updated[index] = bot
-        try store.save(updated)
+        let backendMoved = bot.backend == nil || bot.backend?.url != bots[index].backend?.url
+        try store.save(updated, edited: bot, previous: bots) {
+            if let apiKey {
+                try store.setAPIKey(apiKey, for: bot.id)
+            }
+            if let backendCredential {
+                try store.setBackendCredential(backendCredential, for: bot.id)
+            } else if backendMoved {
+                try? store.setBackendCredential(nil, for: bot.id)
+            }
+        }
         bots = updated
         workspaces[bot.id]?.update(
-            bot: bot, apiKey: apiKey ?? self.apiKey(for: bot.id), keyChanged: apiKey != nil,
+            bot: bot, apiKey: apiKey ?? self.apiKey(for: bot), keyChanged: apiKey != nil,
             backendSignInChanged: backendCredential != nil
         )
     }
@@ -222,9 +302,9 @@ final class AppModel {
 
     /// What another device needs to connect to this gateway, for its pairing QR code.
     func pairingLink(for botID: UUID) -> PairingLink? {
-        guard let bot = bots.first(where: { $0.id == botID }), let key = apiKey(for: botID) else { return nil }
+        guard let bot = bots.first(where: { $0.id == botID }), let key = apiKey(for: bot) else { return nil }
         var token: String?
-        if bot.backend?.signIn == .token, case .sessionToken(let value)? = backendCredential(for: botID) {
+        if bot.backend?.signIn == .token, case .sessionToken(let value)? = backendCredential(for: bot) {
             token = value
         }
         return PairingLink(name: bot.name, gateway: bot.baseURL, apiKey: key, backend: bot.backend, backendToken: token)
@@ -442,7 +522,10 @@ final class AppModel {
     /// (`BotWorkspace.nextCheck`); back in front, a check that's due goes now.
     private func watchActivation() {
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.currentWorkspace?.cameToFront() }
+            MainActor.assumeIsolated {
+                self?.retryUnverifiedBots()
+                self?.currentWorkspace?.cameToFront()
+            }
         }
     }
     #endif
@@ -505,10 +588,6 @@ final class AppModel {
         return BackendProbe(credential: await client.credential, version: status.version, botCount: count)
     }
 
-    func backendCredential(for botID: UUID) -> BackendCredential? {
-        store.backendCredential(for: botID)
-    }
-
     #if DEBUG
     /// A session to open on launch (`-HERMES_OPEN_SESSION <id>`), for screenshot automation.
     func takeLaunchSession() -> String? {
@@ -538,7 +617,7 @@ final class AppModel {
             password == nil ? BackendLink(url: url, signIn: .automatic) : BackendLink(url: url, signIn: .password, username: "admin")
         }
         defer {
-            if let password, let first = bots.first, first.backend?.signIn == .password, store.backendCredential(for: first.id) == nil {
+            if let password, let first = bots.first, first.backend?.signIn == .password, backendCredential(for: first) == nil {
                 Task { try? await self.workspaces[first.id]?.roster?.signIn(username: "admin", password: password) }
             }
         }

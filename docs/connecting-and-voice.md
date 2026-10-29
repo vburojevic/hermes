@@ -197,6 +197,11 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   can't, fall back to the login keychain.
 - The list of gateways (names, addresses, Bot Mode links, no secrets) is `bots.json` in the app's
   Application Support folder, written with complete-until-first-authentication protection.
+- A gateway's key and Bot Mode sign-in are read only for the addresses saved with them
+  (`<gateway id>.destinations`), checked at each read: other addresses in `bots.json` go back to
+  the saved ones. While the Keychain can't be read yet, nothing is read and the gateway says
+  "Hermes can't read this gateway's key from the Keychain right now". It tries again on its own,
+  as the app comes back, and when the device unlocks.
 - Removing a gateway deletes its key, its Bot Mode credential, its cached transcripts and sent
   images, its Inspector tabs and its web data on this device. Its chats stay on the gateway.
 - Its web data (the Preview's cookies and storage, and the in-app browser's sign-ins) goes at the

@@ -226,11 +226,11 @@ final class BotRoster {
     /// New Group Chat is showing.
     var isCreatingGroup = false
 
-    init(botID: UUID, link: BackendLink, store: BotStore) {
+    init(botID: UUID, link: BackendLink, credential: BackendCredential?, store: BotStore) {
         self.botID = botID
         self.link = link
         self.store = store
-        self.client = Self.makeClient(botID: botID, link: link, store: store)
+        self.client = Self.makeClient(botID: botID, link: link, credential: credential, store: store)
         watermarks = UserDefaults.standard.dictionary(forKey: Self.watermarkKey(botID)) as? [String: Double] ?? [:]
         #if os(macOS)
         // Coming to the front with a Bot Chat open is reading it (`isInFront`).
@@ -267,11 +267,20 @@ final class BotRoster {
         }
     }
 
-    private static func makeClient(botID: UUID, link: BackendLink, store: BotStore) -> BackendClient {
-        BackendClient(baseURL: link.url, credential: store.backendCredential(for: botID)) { credential in
+    private static func makeClient(botID: UUID, link: BackendLink, credential: BackendCredential?, store: BotStore) -> BackendClient {
+        BackendClient(baseURL: link.url, credential: credential) { credential in
             // The gate refreshes cookies on use; keep the newest pair.
             try? store.setBackendCredential(credential, for: botID)
         }
+    }
+
+    /// The saved sign-in, read only for the addresses it was saved for (`AppModel.backendCredential`).
+    private func savedCredential() -> BackendCredential? {
+        guard let bot = workspace?.bot, bot.backend == link else { return nil }
+        if let saved = workspace?.app?.backendCredential(for: bot) { return saved }
+        // The read put back addresses bots.json had changed: it's read again for those.
+        guard let current = workspace?.bot, current != bot, current.backend == link else { return nil }
+        return workspace?.app?.backendCredential(for: current)
     }
 
     private static func watermarkKey(_ id: UUID) -> String { "botWatermarks.\(id.uuidString)" }
@@ -383,7 +392,7 @@ final class BotRoster {
         guard link != self.link else { return }
         self.link = link
         disconnect()
-        client = Self.makeClient(botID: botID, link: link, store: store)
+        client = Self.makeClient(botID: botID, link: link, credential: savedCredential(), store: store)
         profiles = []
         visibleBots = []
         hiddenBots = []
@@ -461,7 +470,18 @@ final class BotRoster {
         if !state.isOnline, !(quietly && state.isFailed) { state = .connecting }
         func isCurrent() -> Bool { generation == connectGeneration && !Task.isCancelled && !isTornDown }
         do {
+            if await client.credential == nil, let saved = savedCredential() {
+                // Unreadable as the app started (a locked Keychain), and readable now.
+                client = Self.makeClient(botID: botID, link: link, credential: saved, store: store)
+            }
+            guard isCurrent() else { return }
             if await client.credential == nil {
+                // Addresses the Keychain can't confirm yet: Bot Mode waits for them, rather than
+                // signing in wherever bots.json points. The gateway's retries try again.
+                guard let bot = workspace?.bot, store.isVerified(bot) else {
+                    state = .failed(HermesError.keychainUnavailable.errorDescription ?? "")
+                    return
+                }
                 guard link.signIn == .automatic else {
                     state = .signInRequired(nil)
                     return

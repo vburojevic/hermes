@@ -366,8 +366,10 @@ final class BotWorkspace: Identifiable {
     @ObservationIgnored private var titleRefreshTasks: [String: Task<Void, Never>] = [:]
 
     @ObservationIgnored private let store: BotStore
+    /// Reads this gateway's key and Bot Mode sign-in later, for the addresses they were saved for.
+    @ObservationIgnored weak var app: AppModel?
 
-    init(bot: BotConfiguration, apiKey: String?, store: BotStore) {
+    init(bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil, store: BotStore) {
         self.id = bot.id
         self.bot = bot
         self.store = store
@@ -382,7 +384,7 @@ final class BotWorkspace: Identifiable {
         let savedMode = UserDefaults.standard.string(forKey: "sidebarMode.\(bot.id.uuidString)").flatMap(SidebarMode.init(rawValue:))
         sidebarMode = bot.backend == nil ? .chats : (savedMode ?? .bots)
         if let link = bot.backend {
-            roster = BotRoster(botID: bot.id, link: link, store: store)
+            roster = BotRoster(botID: bot.id, link: link, credential: backendCredential, store: store)
         }
         let defaults = UserDefaults.standard
         if let data = defaults.data(forKey: "model.\(bot.id.uuidString)") {
@@ -427,8 +429,9 @@ final class BotWorkspace: Identifiable {
     /// Applies edited settings; reconnects when the address or key changed.
     func update(bot: BotConfiguration, apiKey: String?, keyChanged: Bool, backendSignInChanged: Bool = false) {
         let endpointChanged = bot.baseURL != self.bot.baseURL || keyChanged
-        updateBackend(bot.backend, signInChanged: backendSignInChanged)
+        // First, so Bot Mode reads its sign-in for the addresses it's now saved for.
         self.bot = bot
+        updateBackend(bot.backend, signInChanged: backendSignInChanged)
         guard endpointChanged else { return }
         client = (apiKey?.isEmpty ?? true) ? nil : HermesClient(baseURL: bot.baseURL, apiKey: apiKey ?? "")
         conversations.values.forEach { $0.cancelAll() }
@@ -449,7 +452,7 @@ final class BotWorkspace: Identifiable {
     private func updateBackend(_ link: BackendLink?, signInChanged: Bool) {
         switch (roster, link) {
         case (nil, let link?):
-            let roster = BotRoster(botID: id, link: link, store: store)
+            let roster = BotRoster(botID: id, link: link, credential: app?.backendCredential(for: bot), store: store)
             roster.workspace = self
             self.roster = roster
             sidebarMode = .bots
@@ -937,10 +940,14 @@ final class BotWorkspace: Identifiable {
     }
 
     private func performConnect(quietly: Bool) async {
+        if client == nil, let key = app?.apiKey(for: bot) {
+            // Unreadable as the app started (a locked Keychain), and readable now.
+            client = HermesClient(baseURL: bot.baseURL, apiKey: key)
+        }
         let endpoint = bot.baseURL
         roster?.connectIfNeeded(quietly: quietly)
         guard let client else {
-            connection = .failed(.missingAPIKey)
+            connection = .failed(store.missingKey(for: bot))
             return
         }
         if !connection.isOnline, !(quietly && connection.isFailed) { connection = .connecting }

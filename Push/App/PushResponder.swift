@@ -263,7 +263,7 @@ enum PushResponder {
               let appID = center.shared.gateway(notice.gateway?.id)?.appID,
               let workspace = model.workspaces[appID]
         else { throw Failure.unknownGateway }
-        return (workspace, model.apiKey(for: appID))
+        return (workspace, model.apiKey(for: workspace.bot))
     }
 
     typealias Request = (_ method: String, _ params: [String: JSONValue]) async throws -> JSONValue
@@ -285,7 +285,7 @@ enum PushResponder {
     @MainActor
     private static func makeSocket(_ workspace: BotWorkspace) async throws -> GatewaySocket {
         guard let link = workspace.bot.backend else { throw Failure.noBackend }
-        let client = BackendClient(baseURL: link.url, credential: PushCenter.shared.model?.backendCredential(for: workspace.id))
+        let client = BackendClient(baseURL: link.url, credential: PushCenter.shared.model?.backendCredential(for: workspace.bot))
         do {
             let socket = GatewaySocket(url: try await client.gatewaySocketURL())
             try await socket.connect()
