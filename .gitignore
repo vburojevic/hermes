@@ -10,7 +10,6 @@ __pycache__/
 DerivedData/
 /0
 .claude/*
-!.claude/settings.json
 !.claude/skills/
 .env
 .env.*
