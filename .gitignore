@@ -9,7 +9,8 @@ __pycache__/
 /build/
 DerivedData/
 /0
-.claude/
+.claude/*
+!.claude/skills/
 .env
 .env.*
 !.env.example
