@@ -120,6 +120,25 @@
       "sourceType": "github",
       "skillPath": "skills/asc-xcode-build/SKILL.md",
       "computedHash": "1a944dbc0b96febbe26319e07fbd0f9e3f6b3517165c4c91e850b3ebf2a9413b"
+    },
+    "axe": {
+      "source": "cameroncooke/axe",
+      "sourceType": "github",
+      "skillPath": "skills/CLI/axe/SKILL.md",
+      "computedHash": "a8f764fb94291de8e7da0b36893677134693c36d8de41dc86d13879d2a9bda78"
+    },
+    "sosumi": {
+      "source": "sosumi.ai",
+      "sourceUrl": "https://sosumi.ai",
+      "sourceType": "well-known",
+      "computedHash": "009deff19c5e75371bdea5b877418b428d1882a4bb5179f57b6e98544022bf5f",
+      "wellKnownDigest": "sha256:858b3080a57e02e6b5911ca735309d31289cbf68950a7a110cddd1fdfeafbb43"
+    },
+    "xcdocs": {
+      "source": "bitrigapp/xcdocs",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/xcdocs/SKILL.md",
+      "computedHash": "36d12d904408672a767e235de0709a82b14110affda74add5758796af201f4e4"
     }
   }
 }
