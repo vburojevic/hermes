@@ -288,7 +288,10 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
     that starts up or down stays the chat's, and one that starts over something scrolling sideways
     inside the message (a widget's strip of hours, a wide table) stays that one's.
 - **Composing:** the reply bar ("Replying to Hermes", the quote, ✕) sits in the composer and the
-  passage flashes where it is.
+  passage flashes where it is. Quoting never scrolls the chat to the passage (`QuotedReply.Flash`):
+  the chat counts a row as visible only once 40% of it shows, so a tall reply read near its top
+  would otherwise count as off screen. At the end of the chat, the bar's own height lifts the last
+  lines by that much.
 - **Sent:** `> quote` lines, a blank line, then your words (`QuotedReply`, at most 280 characters
   of quote). Hermes needs nothing new.
 - **Shown:** a leading block quote is drawn as the quote block (`QuotedBlock`), never as ">". This

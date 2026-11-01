@@ -61,3 +61,24 @@ public struct QuotedReply: Hashable, Sendable {
         return String(hash, radix: 36)
     }
 }
+
+extension QuotedReply {
+    /// Why a row flashes in the transcript (`docs/inbox.md` §4).
+    public enum Flash: Sendable {
+        /// The passage was just quoted, by its swipe or its menu: it is on screen, however little
+        /// of a tall reply shows.
+        case quoted
+        /// A row shown from somewhere else in the chat, such as a finished step's source.
+        case shown
+
+        /// Whether the chat scrolls to the row before it flashes. A quoted passage flashes where
+        /// it is: the chat's visible rows count only one that is 40% on screen, so a tall reply
+        /// read near its top would otherwise jump to the middle as it was quoted.
+        public func scrolls(rowOnScreen: Bool) -> Bool {
+            switch self {
+            case .quoted: false
+            case .shown: !rowOnScreen
+            }
+        }
+    }
+}

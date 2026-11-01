@@ -217,6 +217,9 @@ final class ConversationModel: Identifiable {
     struct FlashRequest: Equatable {
         var rowID: String
         var count: Int
+        /// A passage just quoted flashes where it is; any other row is scrolled to first when it
+        /// isn't on screen.
+        var why: QuotedReply.Flash = .shown
     }
     /// Emoji Hermes put on messages (`message.reaction`), by row id.
     private(set) var reactions: [String: [String]] = [:]
@@ -2054,12 +2057,12 @@ final class ConversationModel: Identifiable {
         let quote = QuotedReply.trimmed(passage)
         guard !quote.isEmpty else { return }
         replyingTo = ReplyTarget(author: author, quote: quote, rowID: rowID)
-        flash(rowID)
+        flash(rowID, why: .quoted)
     }
 
-    /// Flashes a row (a quote's source).
-    func flash(_ rowID: String) {
-        flashRequest = FlashRequest(rowID: rowID, count: (flashRequest?.count ?? 0) + 1)
+    /// Flashes a row (a quote's source, or the passage just quoted).
+    func flash(_ rowID: String, why: QuotedReply.Flash = .shown) {
+        flashRequest = FlashRequest(rowID: rowID, count: (flashRequest?.count ?? 0) + 1, why: why)
     }
 
     func send() {
