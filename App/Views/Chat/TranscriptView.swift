@@ -669,8 +669,8 @@ struct TranscriptView: View {
         return matches.indices.contains(conversation.findIndex) ? matches[conversation.findIndex].id : nil
     }
 
-    /// Brings a row into the window, scrolls it to the middle and flashes it once. A row already
-    /// on screen (a passage just quoted) only flashes.
+    /// Brings a row into the window, scrolls it to the middle and flashes it once. A passage just
+    /// quoted, or a row already on screen, only flashes.
     private func land(on target: TranscriptItem, scrolls: Bool = true) async {
         let all = conversation.rows
         let key = conversation.displayID(for: target)
@@ -1592,7 +1592,7 @@ extension TranscriptView {
             }
             .onChange(of: conversation.flashRequest) { _, request in
                 guard let request, let item = conversation.rows.first(where: { $0.id == request.rowID }) else { return }
-                Task { await land(on: item, scrolls: !isRowVisible(request.rowID)) }
+                Task { await land(on: item, scrolls: request.why.scrolls(rowOnScreen: isRowVisible(request.rowID))) }
             }
             .onChange(of: conversation.jumpToLatestRequests) { jumpToEnd() }
             .onChange(of: isFollowing, initial: true) { _, following in

@@ -677,4 +677,11 @@ struct InboxTests {
         #expect(cut.count <= QuotedReply.maxQuote + 1 && cut.hasSuffix("…"))
         #expect(QuotedReply.key("a  b\n c") != QuotedReply.key("x") && QuotedReply.key("one\ntwo") == QuotedReply.key("one\n  two  "))
     }
+
+    @Test func quotingAPassageNeverScrollsTheChat() {
+        #expect(!QuotedReply.Flash.quoted.scrolls(rowOnScreen: true))
+        #expect(!QuotedReply.Flash.quoted.scrolls(rowOnScreen: false))
+        #expect(QuotedReply.Flash.shown.scrolls(rowOnScreen: false))
+        #expect(!QuotedReply.Flash.shown.scrolls(rowOnScreen: true))
+    }
 }
