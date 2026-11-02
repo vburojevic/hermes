@@ -50,6 +50,7 @@ public struct ConnectionProgress: Sendable, Equatable {
 }
 
 /// Collects one task's metrics, so a timeout can say whether the server had taken the connection.
+/// Redirects are left to the session's own delegate (`HermesClient.probeSession`).
 final class ConnectionWitness: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var progress = ConnectionProgress.none
@@ -61,14 +62,5 @@ final class ConnectionWitness: NSObject, URLSessionTaskDelegate, @unchecked Send
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         let found = ConnectionProgress(metrics.transactionMetrics)
         lock.withLock { progress = found }
-    }
-
-    /// Health checks carry no key, but stay on their server all the same.
-    func urlSession(
-        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest
-    ) async -> URLRequest? {
-        guard let from = task.originalRequest?.url, let to = request.url else { return nil }
-        return SameOriginRedirects.allows(from: from, to: to) ? request : nil
     }
 }

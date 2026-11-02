@@ -57,6 +57,9 @@ final class PluginHubModel {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
         let url = DebugFlags.pluginCatalogURL ?? PluginCatalogStore.feed
         let file = caches?.appending(path: url == PluginCatalogStore.feed ? "plugin-catalog.json" : "plugin-catalog-debug.json")
+        // One of two sessions that follow redirects to another server (`docs/architecture.md`): the
+        // feed's published address answers 301 to where its docs are hosted (github.io). It's a
+        // fixed public file, carries no key and names nothing the person typed.
         let session = URLSession(configuration: .ephemeral)
         return PluginCatalogStore(url: url, cacheFile: file) { url in
             let (data, response) = try await session.data(from: url)

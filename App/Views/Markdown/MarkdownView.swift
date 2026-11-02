@@ -528,11 +528,11 @@ private struct MarkdownImage: View {
                 }
                 .cardButton()
             } else if let url = URL(string: source), WebLink.loadsByItself(url) || (fetches && WebLink.isWeb(url)) {
-                AsyncImage(url: url, transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+                RemoteImage(url: url, transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
                     switch phase {
                     case .success(let image): image.resizable().scaledToFit().transition(.opacity)
                     case .failure: Label("Image unavailable", systemImage: "photo").foregroundStyle(Theme.tertiaryText)
-                    default: Theme.surface.frame(height: 160)
+                    case .empty: Theme.surface.frame(height: 160)
                     }
                 }
             } else {

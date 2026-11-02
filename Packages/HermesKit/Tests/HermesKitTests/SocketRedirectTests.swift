@@ -119,7 +119,8 @@ struct SocketRedirectTests {
 }
 
 /// A tiny HTTP server on 127.0.0.1 that answers each request head with a redirect, a WebSocket
-/// upgrade and one frame, or a closed connection, and records each request line.
+/// upgrade and one frame, a picture, or a closed connection, and records each request line. A TLS
+/// handshake (an https request) is recorded as `TLS` and closed.
 final class LoopbackServer: @unchecked Sendable {
     enum Frame: Sendable {
         case text(String)
@@ -129,6 +130,7 @@ final class LoopbackServer: @unchecked Sendable {
     enum Answer: Sendable {
         case redirect(Int, String)
         case webSocket(Frame)
+        case picture(Data)
         case close
     }
 
@@ -198,7 +200,10 @@ final class LoopbackServer: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [self] data, _, isComplete, error in
             var buffer = buffer
             if let data { buffer.append(data) }
-            if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
+            if buffer.first == 0x16 {
+                recorded.withLock { $0.append("TLS") }
+                connection.cancel()
+            } else if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
                 respond(to: String(decoding: buffer[..<end.lowerBound], as: UTF8.self), on: connection)
             } else if isComplete || error != nil {
                 connection.cancel()
@@ -223,6 +228,10 @@ final class LoopbackServer: @unchecked Sendable {
             var response = Data("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n".utf8)
             response.append(Self.encode(frame))
             connection.send(content: response, completion: .contentProcessed { _ in })
+        case .picture(let data):
+            var response = Data("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: \(data.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".utf8)
+            response.append(data)
+            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
         case .close:
             connection.cancel()
         }

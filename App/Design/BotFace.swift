@@ -497,7 +497,7 @@ struct BotFace: View {
         if source.hasPrefix("data:") || source.hasPrefix("face://"), let image = FaceImageCache.image(for: source) {
             Image(platformImage: image).resizable().scaledToFill()
         } else if let url = URL(string: source), WebLink.loadsByItself(url) {
-            AsyncImage(url: url) { image in
+            RemoteImage(url: url) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 appearance.color.opacity(0.4)

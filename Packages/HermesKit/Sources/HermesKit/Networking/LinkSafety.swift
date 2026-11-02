@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 /// Which links the app follows. Chat text, tool results and Board checks come from pages,
 /// emails and files Hermes read, so a link in them is only followed to the web: never to this
@@ -132,5 +133,69 @@ public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendab
 
     private static func port(of url: URL) -> Int? {
         url.port ?? (web(url) == "https" ? 443 : 80)
+    }
+}
+
+/// Loads the app's remote pictures: a reply's or a sent message's, a widget's media, a Bot's
+/// photo, an app's logo. Never on `URLSession.shared`, which follows every redirect: a picture the
+/// rules let load (`WebLink`), on the gateway or after a tap that names its host, stays on that
+/// server, so a redirect can't send the request to a third party or into this device's network.
+/// Pictures carry no key, and no cookie either.
+public enum RemotePicture {
+    public enum Failure: Error, Equatable {
+        /// Not an http or https URL.
+        case notWeb
+        /// The server didn't answer 2xx, a redirect to another server included.
+        case status(Int)
+        /// The answer wasn't a picture.
+        case notAPicture
+    }
+
+    /// The longest side a picture is decoded at: the largest place one shows (a reply's, 480
+    /// points) at 3×, with room to spare, so a huge file never decodes whole.
+    public static let maxPixelSize = 2048
+
+    public static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 60
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let folder = caches?.appending(path: Bundle.main.bundleIdentifier ?? "HermesKit", directoryHint: .isDirectory)
+            .appending(path: "RemotePictures", directoryHint: .isDirectory)
+        configuration.urlCache = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 96 * 1024 * 1024, directory: folder)
+        configuration.requestCachePolicy = .useProtocolCachePolicy
+        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
+    }()
+
+    /// Fetches and decodes a picture, off the main actor.
+    public static func image(at url: URL, in session: URLSession = RemotePicture.session) async throws -> CGImage {
+        try decode(try await data(at: url, in: session))
+    }
+
+    /// The picture's bytes, once the server answered 2xx.
+    public static func data(at url: URL, in session: URLSession = RemotePicture.session) async throws -> Data {
+        guard WebLink.isWeb(url) else { throw Failure.notWeb }
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse else { throw Failure.notAPicture }
+        guard (200..<300).contains(http.statusCode) else { throw Failure.status(http.statusCode) }
+        return data
+    }
+
+    /// Decodes at most `maxPixelSize` on the longest side, upright.
+    public static func decode(_ data: Data) throws -> CGImage {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { throw Failure.notAPicture }
+        return image
     }
 }

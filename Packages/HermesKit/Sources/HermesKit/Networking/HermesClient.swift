@@ -97,13 +97,14 @@ public struct HermesClient: Sendable {
         }
     }
 
-    /// One health check's session: nothing pooled, nothing cached.
+    /// One health check's session: nothing pooled, nothing cached. A check carries no key, but
+    /// stays on its server all the same.
     static func probeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
     }
 
     /// `GET /health/detailed`, with the key: the gateway's process id, which a restart changes

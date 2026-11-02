@@ -96,4 +96,13 @@ and other Bots' messages can all carry injected instructions, so:
   with `SameOriginRedirects`, never `URLSession.shared`: a redirect to another host or port, or
   from https down to http, isn't followed. A WebSocket's upgrade counts too (ws as http, wss as
   https), so the Board's live events and the Bot Screen open on the backend's own session
-  (`BackendClient.boardEvents`, `displaySocket`) and their token or ticket stays with the gateway.
+  (`BackendClient.boardEvents`, `displaySocket`) and their token or ticket stays with the gateway;
+- every other session the app opens uses `SameOriginRedirects` too, keyless or not: remote
+  pictures (`RemotePicture`, drawn by `RemoteImage`: a reply's, a sent message's, a widget's, a
+  Bot's photo, an app's logo), the health checks (`HermesClient.probeSession`) and the Mac's look
+  for a local Hermes (`MacWelcome`). A picture allowed from one host, by itself or after a tap,
+  stays on that host. Two sessions follow redirects to another host, both for fixed public
+  files that carry nothing from the app: the plugin catalog feed (`PluginHubModel`), whose
+  published address answers 301 to where its docs are hosted, and the Mac's updates (Sparkle, in
+  `HermesMacSupport`), whose appcast and downloads GitHub serves from its release-asset host and
+  which Sparkle trusts by their EdDSA signature, not by where they're hosted.
