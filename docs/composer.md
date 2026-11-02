@@ -38,6 +38,13 @@ appears only when it has content:
    Dictate records a voice message instead: the field and controls become the recorder, locked
    and Review panels ([voice.md](voice.md) §2).
 
+   At every text size, +, Dictate and the trailing button keep their 36 pt and stay inside the
+   panel, and the row is never wider than the panel. The chips (Think or the mode chip, the
+   process chip, the project chip and the status) stop growing at the first accessibility size,
+   and a long press shows a chip large (the Large Content Viewer). When the row still runs out of
+   room, the process chip truncates first, then the project chip (its branch before its name),
+   then Think. VoiceOver reads each chip's full label. The Mac's sizes don't change.
+
 The model picker is in the chat's title, not in the composer.
 
 Menus that grow up from the composer (the "/" and "@" menus, a group chat's members) never pass
@@ -165,6 +172,9 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
 - Light, dark and Increase Contrast match the design.
 - With the keyboard up on the smallest iPhone, typing "/" opens a menu that ends below the top bar
   and scrolls; the same on iPad, the Mac and in a group chat's "@" menu.
+- At the largest text size on the largest iPhone, in a new chat and a project chat, with the
+  keyboard up and down, +, Dictate and Talk or Send are on screen, the project chip truncates,
+  and a long press on a chip shows it large.
 
 ## 7. Setup
 

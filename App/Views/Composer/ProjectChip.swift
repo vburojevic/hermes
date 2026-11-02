@@ -34,18 +34,22 @@ struct ProjectChip: View {
         if projects.isAvailable, !conversation.isBotChat {
             if isNew {
                 let placement = conversation.placement ?? projects.defaultPlacement
+                let branch = placement.newWorktree ? String(localized: "new worktree") : placement.branch ?? projects.branch(of: placement.cwd)
                 Button {
                     projects.runInConversation = conversation
                 } label: {
-                    label(projectID: placement.projectID, branch: placement.newWorktree ? String(localized: "new worktree") : placement.branch ?? projects.branch(of: placement.cwd))
+                    label(projectID: placement.projectID, branch: branch)
                 }
                 .buttonStyle(.plain)
-                .fixedSize()
                 .help("Where this chat runs")
                 .accessibilityLabel("Runs in")
                 .accessibilityValue(accessibilityValue(projectID: placement.projectID))
                 .accessibilityHint("Choose a project or folder for this chat")
+                .accessibilityShowsLargeContentViewer {
+                    Label(largeContentTitle(projectID: placement.projectID, branch: branch), systemImage: "folder")
+                }
             } else if let projectID = runningProjectID {
+                let branch = conversation.liveWorkspace?.branch ?? projects.branch(of: conversation.liveWorkspace?.cwd)
                 Menu {
                     Button("Open Project", systemImage: "folder") {
                         projects.focusLane = nil
@@ -55,14 +59,16 @@ struct ProjectChip: View {
                         projects.movingSession = currentSession
                     }
                 } label: {
-                    label(projectID: projectID, branch: conversation.liveWorkspace?.branch ?? projects.branch(of: conversation.liveWorkspace?.cwd))
+                    label(projectID: projectID, branch: branch)
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .fixedSize()
                 .accessibilityLabel("Runs in")
                 .accessibilityValue(accessibilityValue(projectID: projectID))
+                .accessibilityShowsLargeContentViewer {
+                    Label(largeContentTitle(projectID: projectID, branch: branch), systemImage: "folder")
+                }
             }
         }
     }
@@ -84,10 +90,12 @@ struct ProjectChip: View {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.tertiaryText)
+                    // Where room runs out, the branch gives way before the project's name.
                     Text(branch)
                         .font(.footnote)
                         .foregroundStyle(Theme.secondaryText)
                         .lineLimit(1)
+                        .layoutPriority(-1)
                 }
             } else {
                 Image(systemName: "folder")
@@ -96,6 +104,7 @@ struct ProjectChip: View {
                 Text("No Project")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
             }
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
@@ -106,6 +115,15 @@ struct ProjectChip: View {
         .frame(minHeight: 32)
         .overlay(Capsule().strokeBorder(Theme.hairline))
         .contentShape(Capsule())
+    }
+
+    /// What a long press shows large: the name and branch the chip draws, since the branch is the
+    /// first part to truncate (docs/composer.md §1).
+    private func largeContentTitle(projectID: String?, branch: String?) -> String {
+        guard let projectID else { return String(localized: "No Project") }
+        let name = projects.project(projectID)?.name ?? String(localized: "Project")
+        guard showsBranch, let branch, !branch.isEmpty else { return name }
+        return "\(name) · \(branch)"
     }
 
     private func accessibilityValue(projectID: String?) -> String {

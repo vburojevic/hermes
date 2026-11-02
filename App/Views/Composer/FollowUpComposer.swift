@@ -35,9 +35,11 @@ struct FollowUpModeChip: View {
         }
         .buttonStyle(.plain)
         .allowsHitTesting(!isLocked)
-        .fixedSize()
         .accessibilityLabel("Send mode")
         .accessibilityValue(mode.title)
+        .accessibilityShowsLargeContentViewer {
+            Label(mode.title, systemImage: mode.symbol)
+        }
         .help("Send mode")
         .popover(isPresented: $conversation.showsFollowUpMenu, arrowEdge: .bottom) {
             FollowUpModeMenu(modes: modes, selected: mode) { picked in
