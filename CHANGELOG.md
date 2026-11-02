@@ -31,6 +31,16 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611020415 (November 2, 2026)
+
+- **Skills:** add the App Store Connect CLI skills to the project (#92)
+- **Skills:** add the Apple tool skills to the project (#93)
+- **Skills:** keep machine-specific Claude Code config out of the repo (#95)
+- **Connections:** Board live updates and the Bot Screen never follow a redirect to another server
+- **Chat:** quoting a reply keeps the chat where it is
+- **Talk:** a call started from outside the app shows it is waiting for Bot Mode
+- **Composer:** + and Send stay on screen at the largest text sizes
+
 ### Build 2610292317 (October 29, 2026)
 
 - **Composer:** the "/" menu with the keyboard up stays clear of the top bar, the jump pill included
