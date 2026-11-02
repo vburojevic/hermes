@@ -481,21 +481,28 @@ struct ComposerView: View {
                 .frame(width: collapsesChipSlot ? 0 : nil, alignment: .leading)
                 .padding(.trailing, collapsesChipSlot ? -6 : 0)
                 .animation(.smooth(duration: 0.2), value: collapsesChipSlot)
+                .chipTypeSize()
                 // What runs in the background (`processChip`): the first to shrink, so it never
                 // pushes the buttons at the end.
                 ProcessChipView(conversation: conversation)
+                    .chipTypeSize()
+                    .accessibilityShowsLargeContentViewer()
                     .layoutPriority(-1)
-                // Where the chat runs (projects). It stays in place under the send mode, faded.
+                // Where the chat runs (projects). It stays in place under the send mode, faded,
+                // and gives way (truncates) after the process chip, before Think.
                 ProjectChip(conversation: conversation, workspace: workspace)
+                    .chipTypeSize()
                     .opacity(showsModeChip ? 0 : 1)
                     .allowsHitTesting(!showsModeChip)
                     .animation(.easeOut(duration: 0.18), value: showsModeChip)
+                    .layoutPriority(-0.5)
                 Spacer(minLength: 4)
                 if let status = hint {
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(Theme.tertiaryText)
                         .lineLimit(1)
+                        .chipTypeSize()
                 }
             }
             // Tap to dictate (on the device: it works offline, `docs/voice.md` §5); hold to
@@ -965,6 +972,15 @@ struct ComposerView: View {
     }
 }
 
+extension View {
+    /// The composer's chips stop growing at the first accessibility text size, so +, Dictate and
+    /// the trailing button stay inside the panel at every size; a long press shows a chip large
+    /// (docs/composer.md §1).
+    fileprivate func chipTypeSize() -> some View {
+        dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    }
+}
+
 /// One of the chips that share a place: shown, or faded out and out of reach.
 private struct ChipSlot: ViewModifier {
     let isShown: Bool
@@ -1248,20 +1264,24 @@ private struct EffortMenu: View {
             }
             .pickerStyle(.inline)
         } label: {
-            ChipLabel(
-                title: conversation.reasoningEffort.map { String(localized: "Think: \(Self.title(for: $0))") } ?? String(localized: "Think"),
-                symbol: conversation.reasoningEffort == nil ? "lightbulb" : "lightbulb.fill",
-                isActive: conversation.reasoningEffort != nil
-            )
+            ChipLabel(title: title, symbol: symbol, isActive: conversation.reasoningEffort != nil)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .fixedSize()
         .help("Reasoning effort")
         .accessibilityLabel("Reasoning effort")
         .accessibilityValue(conversation.reasoningEffort.map(Self.title(for:)) ?? String(localized: "Auto"))
+        .accessibilityShowsLargeContentViewer {
+            Label(title, systemImage: symbol)
+        }
     }
+
+    private var title: String {
+        conversation.reasoningEffort.map { String(localized: "Think: \(Self.title(for: $0))") } ?? String(localized: "Think")
+    }
+
+    private var symbol: String { conversation.reasoningEffort == nil ? "lightbulb" : "lightbulb.fill" }
 
     static func title(for level: ReasoningEffort) -> String {
         switch level {
