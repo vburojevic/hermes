@@ -1047,7 +1047,8 @@ final class ConversationModel: Identifiable {
             return true
         case .idle, .loading:
             guard let botName else { return true } // a new chat has nothing to load
-            return roster?.hasLoaded == true && roster?.bot(named: botName)?.canonicalSession == nil
+            // The gateway's own list: the device's copy can be missing a Bot Chat made since.
+            return roster?.hasLiveList == true && roster?.bot(named: botName)?.canonicalSession == nil
         }
     }
 

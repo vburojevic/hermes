@@ -294,7 +294,7 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 | Microphone off | Open Settings and Type Instead | |
 | Waiting for Bot Mode | A call from outside the app that can't start yet (§4.4): the face, "Not started yet", the spinner (after 0.5 s) and "Waiting for Bot Mode", "The call starts as soon as Bot Mode connects.", "Hermes stops waiting after a minute."; Cancel | `talkWaiting` |
 | Didn't start: timed out | Bot Mode didn't connect within the minute: "Bot Mode isn't connected", "<Bot> can't take the call until Bot Mode connects."; Try Again (another minute) and Cancel | `talkWaitTimedOut` |
-| Didn't start: no such Bot | Bot Mode is connected and has no Bot with that name: "No Bot called <name>"; Cancel | `talkNoBot` |
+| Didn't start: no such Bot | Bot Mode is connected and the gateway's list has no Bot with that name: "No Bot called <name>"; Cancel | `talkNoBot` |
 | Didn't start: no Bot Mode | A Bot named on a gateway without Bot Mode: "Bot Mode isn't set up", "Talk with Hermes works without it."; Set Up Bot Mode (the gateway's sheet) and Cancel | `talkNotSetUp` |
 | Didn't start: no gateway | Hermes asleep: "No gateway yet"; Add Gateway and Cancel | `talkNoGateway` |
 
@@ -357,11 +357,14 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
     out. The wait ends by itself after a minute (`PendingCall.timeLimit`): the screen says Bot Mode
     isn't connected, with Try Again, and the call never starts later on its own, so the microphone
     doesn't open when nobody expects it. A call that can't start says why at once: no gateway, no
-    Bot Mode for a Bot, or no Bot with that name. A new request replaces the waiting one; a call
-    started in the app ends the wait. A request that arrives during a call waits behind that call's
-    screen, and if it becomes ready within the minute it ends that call and starts its own, as a
-    request that could start at once would. The wait is kept in memory only, so it never survives a
-    relaunch (`PendingCall`, `PendingCallSlot` in HermesKit; `TalkCenter.request(botName:)`).
+    Bot Mode for a Bot, or no Bot with that name. Only the gateway's own list says a Bot isn't
+    there: the list the device kept from last time, shown at a launch, can be missing a Bot made
+    since, so a call to a Bot it doesn't name waits for the gateway's (`RosterLoad`). A new request
+    replaces the waiting one; a call started in the app ends the wait. A request that arrives during
+    a call waits behind that call's screen, and if it becomes ready within the minute it ends that
+    call and starts its own, as a request that could start at once would. The wait is kept in memory
+    only, so it never survives a relaunch (`PendingCall`, `PendingCallSlot` in HermesKit;
+    `TalkCenter.request(botName:)`).
 
 ### 4.5 iPad and Mac
 

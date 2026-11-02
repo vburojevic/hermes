@@ -580,3 +580,40 @@ struct TurnOutlineTests {
         #expect(tool.name == "delegate_task")
     }
 }
+
+@Suite("Where the roster came from")
+struct RosterLoadTests {
+    @Test func theCachedListShowsBotsButIsntTheGatewaysAnswer() {
+        var load = RosterLoad()
+        #expect(!load.hasList)
+        #expect(load.hasBot(listed: false) == nil)
+        let shown = load.showCached()
+        #expect(shown)
+        #expect(load.hasList)
+        #expect(!load.hasLiveList)
+        // A Bot the copy doesn't name may have been made since.
+        #expect(load.hasBot(listed: false) == nil)
+        #expect(load.hasBot(listed: true) == true)
+        load.gatewayAnswered()
+        #expect(load.hasLiveList)
+        #expect(load.hasBot(listed: false) == false)
+    }
+
+    @Test func theCacheNeverReplacesAListAlreadyShown() {
+        var load = RosterLoad()
+        load.gatewayAnswered()
+        let shown = load.showCached()
+        #expect(!shown)
+        #expect(load.source == .gateway)
+    }
+
+    @Test func aNewAddressStartsOver() {
+        var load = RosterLoad()
+        load.gatewayAnswered()
+        load.reset()
+        #expect(!load.hasList)
+        let shown = load.showCached()
+        #expect(shown)
+        #expect(load.source == .cache)
+    }
+}

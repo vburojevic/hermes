@@ -356,7 +356,7 @@ struct TalkEntry: ViewModifier {
         guard roster.isConnected else { return PendingCall.Facts(hasGateway: true, botMode: .connecting) }
         var hasBot: Bool?
         if let name = callee.botName {
-            hasBot = roster.bot(named: name) != nil ? true : (roster.hasLoaded ? false : nil)
+            hasBot = roster.load.hasBot(listed: roster.bot(named: name) != nil)
         }
         return PendingCall.Facts(hasGateway: true, botMode: .connected, hasBot: hasBot)
     }

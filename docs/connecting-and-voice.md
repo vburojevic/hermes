@@ -321,6 +321,10 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
 - The last roster (`profiles.list` rows) is kept on the device (`RosterCache`, in Caches, like
   the transcripts). An app that iOS ended in the background opens on its Bots and their cached
   Bot Chats, saying "Reconnecting…", instead of "Connecting to your Bots…" on an empty screen.
+  The copy only lists the Bots (with their unread marks and pictures): it never counts as the
+  gateway's answer (`RosterLoad`), so nothing it lacks reads as missing (a call to a Bot made
+  since, "No Bots yet", a chat's empty layout, a notification's chat), and whether a Bot is
+  online, busy or working waits for the gateway's list.
 - Chats re-attach with `session.resume` and replay what they missed with `session.events.since`
   (`docs/sessions-and-models.md` §1).
 
