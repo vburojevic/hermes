@@ -31,6 +31,11 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611020545 (November 2, 2026)
+
+- **Connections:** pictures, health checks and the plugin catalog never follow a redirect to another server
+- **Bots:** a Bot made since the last launch isn't reported missing while the live list loads
+
 ### Build 2611020415 (November 2, 2026)
 
 - **Skills:** add the App Store Connect CLI skills to the project (#92)
