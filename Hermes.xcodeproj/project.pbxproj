@@ -34,6 +34,7 @@
 		18655E6E2F858030BD4FBE42 /* RealtimeTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0D396632008CFC1877E9DA /* RealtimeTalk.swift */; };
 		199EA52B9B260954C0E952AC /* ReadRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB15EAEFAB7E7C3B22F6B3FF /* ReadRecheck.swift */; };
 		1D29FFEFED30AD19557D7263 /* RequestCardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15FE26933154EBF12B5A749D /* RequestCardUITests.swift */; };
+		1E46D1B7FD920F998788F4B1 /* RemoteImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23AD683C8EEECDC0558E71CB /* RemoteImage.swift */; };
 		1E75843BD92DF5E116D855C9 /* GatewayJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1478CE26C0C38DDA9CABDC /* GatewayJobView.swift */; };
 		201AF65BA7D28F4AD433BF12 /* SidebarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AB786670227F23BE604A7E7 /* SidebarChrome.swift */; };
 		20623955B4DCDBFFB4F07A3D /* BoardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF0637C55B964A45E3D01AA /* BoardModel.swift */; };
@@ -417,6 +418,7 @@
 		2138E85D33D435EB2392F28D /* ReferencePills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferencePills.swift; sourceTree = "<group>"; };
 		227CC70F5635186C441A8067 /* PluginCatalogViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginCatalogViews.swift; sourceTree = "<group>"; };
 		23137A90C3B1CD64BA1D3CBD /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		23AD683C8EEECDC0558E71CB /* RemoteImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteImage.swift; sourceTree = "<group>"; };
 		24EAFC5D6AD081C17F3CD302 /* BoardSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSheets.swift; sourceTree = "<group>"; };
 		25C267B6930839E138267F12 /* TalkActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkActivity.swift; sourceTree = "<group>"; };
 		25C62148CB914F130DA29402 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -1163,6 +1165,7 @@
 				DDCAA78C61AB4467E72E5E0F /* Motion.swift */,
 				DFF762D074CAEA5B49F439C4 /* PairingCode.swift */,
 				F6A1CBED0AAD3FDE87A4E72B /* Palette.swift */,
+				23AD683C8EEECDC0558E71CB /* RemoteImage.swift */,
 				0AF11EF50AF78C029BE86579 /* SettingsPage.swift */,
 				F64F1CA13067D78A8E375D18 /* SetupViews.swift */,
 				5EFF89F60A2BD93A621783F1 /* Shaders.metal */,
@@ -1890,6 +1893,7 @@
 				AB8ED4FAF20C225BAA0592BB /* ReferenceContext.swift in Sources */,
 				8E30CC8324EBFED6EBB181DC /* ReferencePills.swift in Sources */,
 				8E240DD6A2C1A481E9CF2A73 /* ReferencePreview.swift in Sources */,
+				1E46D1B7FD920F998788F4B1 /* RemoteImage.swift in Sources */,
 				8B53CD80CF53A85D7090AA7D /* ReplyBody.swift in Sources */,
 				E9DA6571561C7E24A2597A2C /* RequestCard.swift in Sources */,
 				8DEB1664C6DA466AEC5F8A48 /* RequestDock.swift in Sources */,

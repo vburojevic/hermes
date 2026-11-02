@@ -299,11 +299,11 @@ struct WidgetImage: View {
         Group {
             if let url = URL(string: media.src), url.scheme?.lowercased() == "https",
                fetches || WebLink.isOnGateway(url, gatewayHosts: gatewayHosts) {
-                AsyncImage(url: url, transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+                RemoteImage(url: url, transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
                     switch phase {
                     case .success(let image): image.resizable().scaledToFill()
                     case .failure: placeholder(String(localized: "Couldn't load this image"))
-                    default: Theme.controlFill
+                    case .empty: Theme.controlFill
                     }
                 }
             } else if let url = URL(string: media.src), url.scheme?.lowercased() == "https" {

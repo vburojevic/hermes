@@ -445,7 +445,7 @@ that opens to them, and consecutive subagents share one row.
 
 | Source | Shown as | Component |
 |---|---|---|
-| Images in the reply's Markdown (`data:` URLs from image tools, or web URLs) | The image, up to 480 pt. A picture from anywhere but the gateway itself (its own host or its backend's) waits for a tap ("Show Image from …"), this device's network included: loading it would tell that server the chat was read, and let a reply send requests into the network | `MarkdownImage` |
+| Images in the reply's Markdown (`data:` URLs from image tools, or web URLs) | The image, up to 480 pt. A picture from anywhere but the gateway itself (its own host or its backend's) waits for a tap ("Show Image from …"), this device's network included: loading it would tell that server the chat was read, and let a reply send requests into the network. A picture that redirects to another server doesn't load (`RemotePicture`): a tap allows the host it names, not wherever that host sends it | `MarkdownImage` |
 | A `MEDIA:/path` line in the reply | "*Attachment on server: name*"; audio plays as a listen strip before the words ([voice.md](voice.md) §2) | |
 | `message.reaction` (`row_id`, `reactions`) | A pill under that message with the emoji Hermes sent | `reactionRow` |
 | Usage on `message.complete` or `run.completed` | Tokens, cost and context percent, under the reply when "Show usage under replies" is on, or after tapping the header or choosing Show Usage | `usageFooter` |

@@ -15,7 +15,7 @@ struct AppLogo: View {
             RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
                 .fill(Color.white)
             if let url {
-                AsyncImage(url: url) { phase in
+                RemoteImage(url: url) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFit().padding(size * 0.16)
                     } else {

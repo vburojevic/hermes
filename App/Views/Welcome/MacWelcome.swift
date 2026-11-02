@@ -53,7 +53,9 @@ final class LocalGateway {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 2.5
         configuration.timeoutIntervalForResource = 4
-        return URLSession(configuration: configuration)
+        // Unauthenticated, but these ask this Mac's own Hermes: an answer that redirects
+        // elsewhere isn't followed.
+        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
     }()
 
     /// Asks the API server whether it's up (unauthenticated), and the dashboard whether Bot Mode

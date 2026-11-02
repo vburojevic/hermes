@@ -299,7 +299,7 @@ private struct RemoteThumbnail: View {
                 }
             } else if let url = URL(string: source), WebLink.loadsByItself(url) {
                 if fetches || WebLink.isOnGateway(url, gatewayHosts: gatewayHosts) {
-                    AsyncImage(url: url) { image in
+                    RemoteImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         Theme.surface
