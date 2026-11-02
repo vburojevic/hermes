@@ -93,7 +93,9 @@ public enum GatewayFileLink {
 
 /// Keeps a session's requests on the server they were made to. A redirect to another host or
 /// port, or from https down to http, isn't followed, so a key or cookie sent with the request
-/// never reaches a third party; the 3xx comes back as the answer instead.
+/// never reaches a third party; the 3xx comes back as the answer instead. URLSession asks it for
+/// a WebSocket's upgrade too, so the gateway's sockets open on a session with this delegate, never
+/// on `URLSession.shared`, which follows every redirect.
 public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     public static let shared = SameOriginRedirects()
 
@@ -105,10 +107,12 @@ public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendab
         return Self.allows(from: from, to: to) ? request : nil
     }
 
-    /// Same host; same scheme and port, or http upgraded to https.
+    /// Same host; same scheme and port, or http upgraded to https. A WebSocket's ws counts as
+    /// http and wss as https (a socket's Location may name either), so ws to wss is an upgrade
+    /// and wss to ws or http is refused.
     public static func allows(from: URL, to: URL) -> Bool {
         guard let fromHost = from.host()?.lowercased(), fromHost == to.host()?.lowercased() else { return false }
-        switch (from.scheme?.lowercased(), to.scheme?.lowercased()) {
+        switch (web(from), web(to)) {
         case ("https", "https"), ("http", "http"):
             return port(of: from) == port(of: to)
         case ("http", "https"):
@@ -118,7 +122,15 @@ public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendab
         }
     }
 
+    private static func web(_ url: URL) -> String? {
+        switch url.scheme?.lowercased() {
+        case "ws": "http"
+        case "wss": "https"
+        case let scheme: scheme
+        }
+    }
+
     private static func port(of url: URL) -> Int? {
-        url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80)
+        url.port ?? (web(url) == "https" ? 443 : 80)
     }
 }

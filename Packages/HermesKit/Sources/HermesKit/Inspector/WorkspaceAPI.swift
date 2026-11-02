@@ -115,8 +115,15 @@ extension BackendClient {
     // MARK: Bot Screen
 
     /// The Bot Screen's RFB socket (`WS /api/display/ws?display_ticket=`), from a ticket
-    /// `display.observe` gave.
-    public func displaySocketURL(ticket: String, path: String = "api/display/ws") -> URL {
+    /// `display.observe` gave, on this backend's own session so it never follows a redirect to
+    /// another server. The caller resumes it.
+    public func displaySocket(ticket: String, path: String = "api/display/ws") -> URLSessionWebSocketTask {
+        let socket = webSocketTask(with: displaySocketURL(ticket: ticket, path: path))
+        socket.maximumMessageSize = 64 * 1024 * 1024
+        return socket
+    }
+
+    func displaySocketURL(ticket: String, path: String = "api/display/ws") -> URL {
         var components = URLComponents(url: baseURL.appending(path: path.hasPrefix("/") ? String(path.dropFirst()) : path), resolvingAgainstBaseURL: false)!
         components.scheme = baseURL.scheme == "https" ? "wss" : "ws"
         components.queryItems = [URLQueryItem(name: "display_ticket", value: ticket)]

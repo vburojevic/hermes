@@ -166,9 +166,12 @@ final class ScreenController {
             }
             viewerID = observed["viewer_id"]?.stringValue ?? viewerID
             apply(status: observed)
-            let url = await backend.displaySocketURL(ticket: ticket, path: observed["path"]?.stringValue ?? "api/display/ws")
-            guard attempt == attempts else { return }
-            open(url)
+            let socket = await backend.displaySocket(ticket: ticket, path: observed["path"]?.stringValue ?? "api/display/ws")
+            guard attempt == attempts else {
+                socket.cancel()
+                return
+            }
+            open(socket)
         } catch {
             guard attempt == attempts else { return }
             phase = .closed(error.localizedDescription)
@@ -177,11 +180,9 @@ final class ScreenController {
         }
     }
 
-    private func open(_ url: URL) {
+    private func open(_ socket: URLSessionWebSocketTask) {
         decoder = RFBDecoder()
         framebuffer = RFBFramebuffer()
-        let socket = URLSession.shared.webSocketTask(with: url)
-        socket.maximumMessageSize = 64 * 1024 * 1024
         self.socket = socket
         socket.resume()
         receiver = Task { [weak self] in

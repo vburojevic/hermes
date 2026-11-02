@@ -204,6 +204,12 @@ public actor BackendClient {
         return task
     }
 
+    /// A WebSocket to a URL on this backend, on the backend's own URL session: its upgrade never
+    /// follows a redirect to another server, and the token or ticket in its URL stays here.
+    func webSocketTask(with url: URL) -> URLSessionWebSocketTask {
+        session.webSocketTask(with: url)
+    }
+
     /// The headers a gateway file needs (`/api/files/stream` takes no token in the URL).
     func authorizationHeaders() -> [String: String] {
         switch credential {

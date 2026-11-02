@@ -281,9 +281,9 @@ final class BoardModel {
                 continue
             }
             do {
-                let url = try await client.boardEventsURL(slug, since: cursor)
+                let batches = try await client.boardEvents(slug, since: cursor)
                 isLive = true
-                for try await batch in BoardEventStream.batches(url: url) {
+                for try await batch in batches {
                     await apply(batch)
                 }
             } catch is CancellationError {

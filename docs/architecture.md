@@ -91,4 +91,9 @@ and other Bots' messages can all carry injected instructions, so:
 - HTML artifacts run with no network unless the person allows it;
 - a Bot's key and Bot Mode sign-in are read only for the addresses they were saved for, checked
   against the Keychain at each read;
-- keys live in the Keychain on this device only, never follow a redirect, and never reach a log.
+- keys live in the Keychain on this device only, never follow a redirect, and never reach a log;
+- every request and socket that carries a key, token or ticket to the gateway runs on a session
+  with `SameOriginRedirects`, never `URLSession.shared`: a redirect to another host or port, or
+  from https down to http, isn't followed. A WebSocket's upgrade counts too (ws as http, wss as
+  https), so the Board's live events and the Bot Screen open on the backend's own session
+  (`BackendClient.boardEvents`, `displaySocket`) and their token or ticket stays with the gateway.

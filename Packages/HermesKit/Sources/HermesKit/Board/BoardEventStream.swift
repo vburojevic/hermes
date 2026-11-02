@@ -2,13 +2,13 @@ import Foundation
 
 /// The board's live events (`WS /api/plugins/kanban/events?board=&since=`): the gateway sends
 /// `{events, cursor}` whenever cards change, and nothing while the board is quiet. The board is
-/// pinned when the socket opens; another board needs another socket.
-public enum BoardEventStream {
+/// pinned when the socket opens; another board needs another socket. `BackendClient.boardEvents`
+/// opens it on the backend's own session, so it never follows a redirect to another server.
+enum BoardEventStream {
     /// Batches until the socket closes or the caller stops iterating. The stream throws when the
     /// socket fails (refused, dropped, a ping unanswered), so the caller can poll or reconnect.
-    public static func batches(url: URL, session: URLSession = .shared) -> AsyncThrowingStream<BoardEventBatch, any Error> {
+    static func batches(socket: URLSessionWebSocketTask) -> AsyncThrowingStream<BoardEventBatch, any Error> {
         AsyncThrowingStream { continuation in
-            let socket = session.webSocketTask(with: url)
             socket.maximumMessageSize = 8 * 1024 * 1024
             socket.resume()
             let receiver = Task {
