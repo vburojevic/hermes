@@ -25,9 +25,22 @@ final class TalkCenter {
     /// Type: the call's composer takes the cursor (`ChatScreen` follows this).
     var typeRequests = 0
 
-    /// A request from outside the app (a Shortcut, a control) to call a Bot; the root view opens
-    /// that chat and starts the call there.
-    var pendingStart: TalkStart?
+    /// A call asked for from outside the app (a Shortcut, the control, Hey Hermes) that can't start
+    /// yet (`docs/voice.md` §4.4): it shows as waiting, ends by itself after a minute, and says why
+    /// when it can't start. Kept in memory only, so it never outlives the app.
+    private(set) var pending = PendingCallSlot()
+    /// A fix the pending call's screen asked for; the window's root view opens its sheet.
+    var setupRequest: SetupRequest?
+    /// What the app knows about where a call to this callee would go; `TalkEntry` sets it and
+    /// calls `factsChanged()` when the answer changes.
+    @ObservationIgnored var readFacts: ((PendingCall.Callee) -> PendingCall.Facts)?
+    /// Opens the callee's chat and calls it; `TalkEntry` sets it.
+    @ObservationIgnored var startCall: ((PendingCall.Callee) -> Void)?
+    /// Asks Bot Mode to connect now, quietly; `TalkEntry` sets it.
+    @ObservationIgnored var connectBotMode: (() -> Void)?
+    @ObservationIgnored private var deadline: Task<Void, Never>?
+    @ObservationIgnored private var retries: Task<Void, Never>?
+    @ObservationIgnored private var retriesFor: UUID?
 
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private static let recordsKey = "talk.calls"
@@ -35,9 +48,9 @@ final class TalkCenter {
     /// The Mac's call window.
     static let windowID = "talk"
 
-    struct TalkStart: Equatable {
-        /// The Bot to call; `nil` is Hermes.
-        var botName: String?
+    enum SetupRequest: Equatable {
+        case addGateway
+        case setUpBotMode
     }
 
     private init() {
@@ -50,6 +63,126 @@ final class TalkCenter {
 
     var isActive: Bool { session != nil }
 
+    var pendingCall: PendingCall? { pending.call }
+
+    /// A call from outside the app is waiting for Bot Mode (Hey Hermes stays paused meanwhile).
+    var isWaitingToStart: Bool { pending.call?.state == .waitingForBotMode }
+
+    // MARK: A call from outside the app
+
+    /// Calls `botName` (`nil` is Hermes) as soon as it can, within `PendingCall.timeLimit`.
+    func request(botName: String?) {
+        isExpanded = true
+        let callee = PendingCall.Callee(botName: botName)
+        let ready = pending.request(callee, now: .now, facts: facts(for: callee))
+        Self.logger.info("call requested from outside the chat")
+        settle(ready)
+    }
+
+    /// Try Again after a time-out: the same call, another minute.
+    func retryPending() {
+        guard let call = pending.call else { return }
+        settle(pending.retry(now: .now, facts: facts(for: call.callee)))
+    }
+
+    func cancelPending() {
+        guard pending.call != nil else { return }
+        pending.cancel()
+        stopWaiting()
+        isExpanded = true
+        Self.logger.info("waiting call cancelled")
+    }
+
+    /// Cancels the waiting call and opens the fix its screen offered.
+    func fixPending(_ request: SetupRequest) {
+        cancelPending()
+        setupRequest = request
+    }
+
+    /// The gateway, Bot Mode or the Bots changed: a waiting call may start or settle.
+    func factsChanged() {
+        evaluatePending()
+    }
+
+    private func facts(for callee: PendingCall.Callee) -> PendingCall.Facts {
+        readFacts?(callee) ?? .unknown
+    }
+
+    private func evaluatePending() {
+        guard let call = pending.call, !isBehindOtherApps else { return }
+        settle(pending.update(facts(for: call.callee), now: .now))
+    }
+
+    /// On iPhone and iPad a call that started behind another app would open the microphone out
+    /// of sight: the wait stands still there and is judged again when the app is back.
+    private var isBehindOtherApps: Bool {
+        #if os(iOS)
+        UIApplication.shared.applicationState == .background
+        #else
+        false
+        #endif
+    }
+
+    /// Starts the call that's ready, or keeps a timer for the waiting one's limit.
+    private func settle(_ callee: PendingCall.Callee?) {
+        if let callee {
+            stopWaiting()
+            startCall?(callee)
+            return
+        }
+        guard let call = pending.call else { return }
+        switch call.state {
+        case .waitingForBotMode:
+            scheduleDeadline(for: call)
+            keepConnecting(for: call)
+        case .timedOut:
+            Self.logger.info("waiting call timed out")
+            stopWaiting()
+        case .cantStart, .ready:
+            stopWaiting()
+        }
+    }
+
+    private func isWaiting(for id: UUID) -> Bool {
+        pending.call?.id == id && isWaitingToStart
+    }
+
+    private func stopWaiting() {
+        deadline?.cancel()
+        deadline = nil
+        retries?.cancel()
+        retries = nil
+        retriesFor = nil
+    }
+
+    /// Someone is holding on for this call: Bot Mode tries now and every few seconds, where its
+    /// backoff (up to a minute behind other apps on the Mac) would outlast the wait.
+    private func keepConnecting(for call: PendingCall) {
+        guard retriesFor != call.id else { return }
+        retries?.cancel()
+        retriesFor = call.id
+        let id = call.id
+        retries = Task { [weak self] in
+            while !Task.isCancelled, self?.isWaiting(for: id) == true {
+                // Behind other apps nothing reconnects, as with Bot Mode's own retries.
+                if self?.isBehindOtherApps == false { self?.connectBotMode?() }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    private func scheduleDeadline(for call: PendingCall) {
+        deadline?.cancel()
+        let id = call.id
+        let wait = max(0, call.deadline.timeIntervalSinceNow)
+        deadline = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            // A newer request, a cancel or a start replaced this one: its timer has nothing to do.
+            guard !Task.isCancelled, let self, self.pending.call?.id == id else { return }
+            self.evaluatePending()
+        }
+    }
+
     /// Calls the chat, or brings the call back if it's already this chat's.
     func start(conversation: ConversationModel, workspace: BotWorkspace) {
         if let session, session.conversation === conversation {
@@ -57,6 +190,11 @@ final class TalkCenter {
             return
         }
         end()
+        // A call started here replaces one still waiting to start.
+        if pending.call != nil {
+            pending.cancel()
+            stopWaiting()
+        }
         let session = TalkSession(conversation: conversation, workspace: workspace)
         self.session = session
         isExpanded = true

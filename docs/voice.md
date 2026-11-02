@@ -292,6 +292,11 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
 | On hold | A phone call or Siri has the audio; the call carries on after with a tone | |
 | Offline, failed | Try Again and End | |
 | Microphone off | Open Settings and Type Instead | |
+| Waiting for Bot Mode | A call from outside the app that can't start yet (§4.4): the face, "Not started yet", the spinner (after 0.5 s) and "Waiting for Bot Mode", "The call starts as soon as Bot Mode connects.", "Hermes stops waiting after a minute."; Cancel | `talkWaiting` |
+| Didn't start: timed out | Bot Mode didn't connect within the minute: "Bot Mode isn't connected", "<Bot> can't take the call until Bot Mode connects."; Try Again (another minute) and Cancel | `talkWaitTimedOut` |
+| Didn't start: no such Bot | Bot Mode is connected and has no Bot with that name: "No Bot called <name>"; Cancel | `talkNoBot` |
+| Didn't start: no Bot Mode | A Bot named on a gateway without Bot Mode: "Bot Mode isn't set up", "Talk with Hermes works without it."; Set Up Bot Mode (the gateway's sheet) and Cancel | `talkNotSetUp` |
+| Didn't start: no gateway | Hermes asleep: "No gateway yet"; Add Gateway and Cancel | `talkNoGateway` |
 
 - **Cards:** the table or code a reply put in the chat rises above the controls ("Hermes showed
   you a card") and stays in the chat (`talkCard`). The card is as tall as what it shows, up to
@@ -313,6 +318,8 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   Foundation Models framework from the last 12,000 characters of the transcript, labelled
   "Summary by Apple Intelligence". No audio is kept, only the text (`CallRecord`, on this
   device).
+- **Waiting, minimised** (`talkWaitingMinimised`): the pill reads "Calling <Bot>" and the state
+  ("Waiting for Bot Mode"), with Cancel instead of Mute and End. Tap it to open the call screen.
 - The transcript sheet (the captions button at the top) shows the call's words so far.
 - VoiceOver announces each state once it has held for 0.8 s ("Listening", "Hermes is
   speaking"): a reply with pauses doesn't make it repeat itself.
@@ -340,17 +347,33 @@ A call with Hermes or a Bot (`talk.elyx`). Code: `App/Model/TalkCenter.swift` (t
   - Siri and Shortcuts: "Talk to Hermes", "Call Hermes", "Talk to <Bot> in Hermes"
     (`StartTalkIntent`, `HermesShortcuts`; the Bots are kept in the App Group for Shortcuts);
   - a control (`TalkControl`) for Control Center, the Lock Screen and the Action button.
-  - From outside the app the call waits until Bot Mode is connected and the Bot is known.
+  - From outside the app (these, and Hey Hermes, §4.6) the call starts at once when it can. When it
+    has to wait for Bot Mode to connect, or for the Bots to load, the call screen shows that at once
+    (`talkWaiting`, §4.3) with Cancel, and VoiceOver says the state once. While it waits, Bot Mode
+    tries to connect every 5 seconds rather than on its usual backoff, quietly, so offline Bots
+    don't flicker to "Connecting…". On iPhone and iPad the wait stands still while the app is behind
+    other apps: nothing reconnects and no call starts, so the microphone never opens out of sight.
+    Back in front, the call starts if Bot Mode connects within the minute, or the wait has timed
+    out. The wait ends by itself after a minute (`PendingCall.timeLimit`): the screen says Bot Mode
+    isn't connected, with Try Again, and the call never starts later on its own, so the microphone
+    doesn't open when nobody expects it. A call that can't start says why at once: no gateway, no
+    Bot Mode for a Bot, or no Bot with that name. A new request replaces the waiting one; a call
+    started in the app ends the wait. A request that arrives during a call waits behind that call's
+    screen, and if it becomes ready within the minute it ends that call and starts its own, as a
+    request that could start at once would. The wait is kept in memory only, so it never survives a
+    relaunch (`PendingCall`, `PendingCallSlot` in HermesKit; `TalkCenter.request(botName:)`).
 
 ### 4.5 iPad and Mac
 
 - **iPad:** in landscape a floating glass panel over the chat (`ipadTalk`, `TalkPanel`), with the
-  turns landing in the chat behind it; in portrait the iPhone layout. The route button never offers
+  turns landing in the chat behind it, and the waiting call in the same place
+  (`PendingCallPanel`); in portrait the iPhone layout. The route button never offers
   an earpiece.
 - **Mac:** its own small window (`macTalk`), floating over every app, opened and closed with the
-  call; Space mutes while it's focused, ⌥⌘V starts and ends. ActivityKit doesn't run in Mac apps,
-  so the call also shows in the menu bar (`TalkMenuBar`: who, the state, Mute, Show Call, End
-  Call). No `AVAudioSession`: voice processing on the engine, with other audio ducked moderately.
+  call, and also while a call from outside the app waits to start (§4.4); Space mutes while it's
+  focused, ⌥⌘V starts and ends. ActivityKit doesn't run in Mac apps, so the call also shows in the
+  menu bar (`TalkMenuBar`: who, the state, Mute, Show Call, End Call; Show Call and Cancel Call
+  while it waits). No `AVAudioSession`: voice processing on the engine, with other audio ducked moderately.
   Every state has its buttons, including Try Again and Open Settings.
 
 ### 4.6 "Hey Hermes"
@@ -365,8 +388,9 @@ Settings → Voice & Audio → Hey Hermes (off by default) starts a call by voic
   at a time (`wake.feed {pcm, sample_rate}`). A gateway whose own microphone listens
   (`capture: "local"`) gets nothing from the app.
 - **Heard:** `wake.detected {phrase, profile, start_new_session}` opens Talk with the Bot it names
-  (`TalkCenter.pendingStart`), else Hermes in a new chat. Hermes pauses its detector before it says
-  so; the app sends `wake.resume` when the call is over (or if it never started).
+  (`TalkCenter.request(botName:)`, waiting for Bot Mode as §4.4 says), else Hermes in a new chat.
+  Hermes pauses its detector before it says so; the app sends `wake.resume` when the call is over,
+  or once it stopped waiting without starting (cancelled, timed out or refused).
 - **The microphone** is the coordinator's lowest role (`.wake`, §7): play and record, mixed with
   other audio, no Bluetooth call mode, no voice processing. A call, a recording, dictation or a
   reply read aloud pause it, and it listens again after; it lets go of its input on a pause, so

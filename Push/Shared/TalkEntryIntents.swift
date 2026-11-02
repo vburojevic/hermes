@@ -25,7 +25,7 @@ struct StartTalkIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         #if !HERMES_WIDGET
         let name = bot?.id
-        await MainActor.run { TalkCenter.shared.pendingStart = .init(botName: name) }
+        await MainActor.run { TalkCenter.shared.request(botName: name) }
         #endif
         return .result()
     }

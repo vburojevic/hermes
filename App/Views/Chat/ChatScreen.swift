@@ -233,6 +233,12 @@ struct ChatScreen: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 6)
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let waiting = TalkCenter.shared.pendingCall, !TalkCenter.shared.isExpanded {
+                // A call from outside the app, minimised while it waits (`talkWaitingMinimised`).
+                PendingCallPill(call: waiting)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(.snappy(duration: 0.25), value: TalkCenter.shared.isExpanded)

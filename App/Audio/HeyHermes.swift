@@ -291,18 +291,12 @@ final class HeyHermes {
     func detected(_ detection: WakeDetection) {
         guard state == .listening || state == .listeningOnGateway else { return }
         Self.logger.info("wake word heard: \(detection.phrase, privacy: .public)")
-        TalkCenter.shared.pendingStart = .init(botName: detection.profile)
+        TalkCenter.shared.request(botName: detection.profile)
         afterDetection?.cancel()
         afterDetection = Task { [weak self] in
-            // The call starts within moments; listen again once it's over (or if it never began).
-            var started = false
-            for _ in 0..<40 {
-                try? await Task.sleep(for: .milliseconds(250))
-                if TalkCenter.shared.isActive { started = true; break }
-            }
-            if started {
-                for await active in Observations({ TalkCenter.shared.isActive }) where !active { break }
-            }
+            // Listen again once the call is over, or once it stopped waiting without starting
+            // (cancelled, timed out, or it can't start).
+            for await busy in Observations({ TalkCenter.shared.isActive || TalkCenter.shared.isWaitingToStart }) where !busy { break }
             guard !Task.isCancelled, let self, let roster = self.startedOn else { return }
             _ = try? await roster.request("wake.resume", [:], timeout: .seconds(10))
         }
