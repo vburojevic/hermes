@@ -104,6 +104,45 @@ struct PendingCallTests {
         #expect(slot.call?.state == .cantStart(.noSuchBot))
     }
 
+    /// The facts as Talk reads them from a connected roster (`TalkEntry.facts`).
+    private func facts(_ load: RosterLoad, lists bots: Set<String>, _ name: String) -> PendingCall.Facts {
+        PendingCall.Facts(hasGateway: true, botMode: .connected, hasBot: load.hasBot(listed: bots.contains(name)))
+    }
+
+    @Test func aBotMadeSinceTheCacheWaitsForTheLiveListThenStarts() {
+        // A cold launch: the device's copy, written before "atlas" was made, is shown, and Bot Mode
+        // connects before the gateway's own list comes.
+        var load = RosterLoad()
+        let shown = load.showCached()
+        #expect(shown)
+        var slot = PendingCallSlot()
+        #expect(slot.request(.bot("atlas"), now: start, facts: facts(load, lists: ["research"], "atlas")) == nil)
+        #expect(slot.call?.state == .waitingForBotMode)
+        // The gateway's list has it.
+        load.gatewayAnswered()
+        #expect(slot.update(facts(load, lists: ["research", "atlas"], "atlas"), now: at(2)) == .bot("atlas"))
+    }
+
+    @Test func aBotMissingFromTheLiveListIsNoSuchBot() {
+        var load = RosterLoad()
+        let shown = load.showCached()
+        #expect(shown)
+        var slot = PendingCallSlot()
+        _ = slot.request(.bot("atlas"), now: start, facts: facts(load, lists: ["research"], "atlas"))
+        #expect(slot.call?.state == .waitingForBotMode)
+        load.gatewayAnswered()
+        #expect(slot.update(facts(load, lists: ["research"], "atlas"), now: at(2)) == nil)
+        #expect(slot.call?.state == .cantStart(.noSuchBot))
+    }
+
+    @Test func aBotOnTheCachedListStartsAtOnce() {
+        var load = RosterLoad()
+        let shown = load.showCached()
+        #expect(shown)
+        var slot = PendingCallSlot()
+        #expect(slot.request(.bot("research"), now: start, facts: facts(load, lists: ["research"], "research")) == .bot("research"))
+    }
+
     @Test func botNamedWithoutBotMode() {
         var slot = PendingCallSlot()
         let noBotMode = PendingCall.Facts(hasGateway: true, botMode: .notSetUp)

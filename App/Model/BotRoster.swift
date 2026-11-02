@@ -48,7 +48,13 @@ final class BotRoster {
         // Hidden or shown again: a hidden Bot's news leaves the badge, a shown one's comes back.
         didSet { if hiddenBots.map(\.name) != oldValue.map(\.name) { workspace?.unread.update() } }
     }
-    private(set) var hasLoaded = false
+    /// Where the list came from (`RosterLoad`): the device's copy at a launch, then the gateway's.
+    private(set) var load = RosterLoad()
+    /// There are Bots to show, from the gateway or, while it loads, from the device's copy.
+    var hasLoaded: Bool { load.hasList }
+    /// The gateway has answered a roster read: only now can a Bot missing from the list be called
+    /// missing (`docs/connecting-and-voice.md` §8).
+    var hasLiveList: Bool { load.hasLiveList }
     /// Bots with activity the person hasn't seen (keyed by profile name).
     private(set) var unread: Set<String> = [] {
         didSet { if unread != oldValue { workspace?.unread.update() } }
@@ -254,9 +260,12 @@ final class BotRoster {
         let link = link
         Task { [weak self, botID] in
             guard let rows = await RosterCache.load(botID), let self,
-                  !self.hasLoaded, !self.isTornDown, self.link == link else { return }
+                  !self.isTornDown, self.link == link, self.load.showCached() else { return }
             self.cachedRows = rows
-            self.apply(rows.map(BotProfile.init(json:)).filter { !$0.name.isEmpty })
+            // Only the list: whether a Bot is there, online, busy or working is the gateway's to say.
+            self.apply(rows.map(BotProfile.init(json:)).filter { !$0.name.isEmpty }, fromGateway: false)
+            self.updateUnread()
+            self.loadPhotos()
             LaunchTrace.mark("cached Bots shown (\(rows.count))", id: "cached Bots")
             // Connected when the app last ran: its first moments read "Reconnecting…", like a drop's
             // (`reconnectGrace`), not offline at the first failed try.
@@ -399,7 +408,7 @@ final class BotRoster {
         index = [:]
         photos = [:]
         photoRevisions = [:]
-        hasLoaded = false
+        load.reset()
         version = nil
         versionEpoch = nil
         cachedRows = []
@@ -1746,8 +1755,9 @@ final class BotRoster {
         }
     }
 
-    /// - Parameter fromGateway: false for a change made here (`saveFlag`): the list is rebuilt, but
-    ///   nothing that only a read the gateway answered can say (it's not busy, it's online) moves.
+    /// - Parameter fromGateway: false for a change made here (`saveFlag`) or the device's copy
+    ///   (`restoreCachedRoster`): the list is rebuilt, but nothing that only a read the gateway
+    ///   answered can say (the list is the gateway's, it's not busy, it's online) moves.
     /// - Parameter quickly: the read came back quickly; a slow one is the busy Mac itself, so the
     ///   Bots stay (or turn) busy.
     private func apply(_ fresh: [BotProfile], fromGateway: Bool = true, quickly: Bool = true) {
@@ -1768,7 +1778,7 @@ final class BotRoster {
             reorder()
         }
         guard fromGateway else { return }
-        if !hasLoaded { hasLoaded = true }
+        if !load.hasLiveList { load.gatewayAnswered() }
         if socket != nil {
             if !quickly {
                 noteSlow() // not `markBusy`: it answered, so no clock toward "offline"

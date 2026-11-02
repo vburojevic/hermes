@@ -38,7 +38,9 @@ public struct PendingCall: Equatable, Sendable, Identifiable {
 
         public var hasGateway: Bool
         public var botMode: BotMode
-        /// For a Bot: whether the connected roster has it. `nil` while its Bots haven't loaded.
+        /// For a Bot: whether the connected roster has it. `nil` until the gateway's own list has
+        /// come when the list shown doesn't name it (`RosterLoad.hasBot`): the device's copy, shown
+        /// at a launch, can be missing a Bot made since.
         public var hasBot: Bool?
 
         public init(hasGateway: Bool, botMode: BotMode, hasBot: Bool? = nil) {

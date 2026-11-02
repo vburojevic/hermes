@@ -471,7 +471,7 @@ struct SidebarView: View {
         case .failed:
             EmptyView()
         case .online:
-            if roster.hasLoaded, roster.profiles.isEmpty {
+            if roster.hasLiveList, roster.profiles.isEmpty {
                 SidebarState(
                     symbol: "face.smiling",
                     title: String(localized: "No Bots yet"),

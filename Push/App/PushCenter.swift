@@ -787,11 +787,12 @@ final class PushCenter {
         } else if notice.kind == .task || notice.kind == .taskFailed {
             workspace.selection = .tasks
         } else if let chat = notice.chatID {
-            if let roster = workspace.roster, !roster.hasLoaded {
+            if let roster = workspace.roster, !roster.hasLiveList {
                 // A tap that launched the app can come before the Bots have loaded: a moment for
-                // them, since a Bot's own chat opens the Bot.
+                // them, since a Bot's own chat opens the Bot. The device's copy can be missing a
+                // Bot made since, so it's the gateway's list that's waited for.
                 Task { [weak self] in
-                    for _ in 0..<20 where !roster.hasLoaded {
+                    for _ in 0..<20 where !roster.hasLiveList {
                         try? await Task.sleep(for: .milliseconds(250))
                     }
                     self?.showChat(chat, in: workspace)
