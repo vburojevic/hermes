@@ -120,7 +120,9 @@ Every release (not a dry run) records what it shipped on this repository, after 
    *latest* release, which skips pre-releases.
 2. The notes come from the commit subjects since the previous tag (`Scripts/release_notes.py`),
    grouped by area, with links to TestFlight, the Mac DMG and hermesapp.dev. Subjects are written
-   as release notes (AGENTS.md, Commits); docs, tests, mocks and release tooling are left out.
+   as release notes (AGENTS.md, Commits); docs, tests, mocks and release tooling are left out, and
+   so is a commit that only changes the repository's agent setup (its agent skills and
+   instructions), whatever its subject.
 3. It adds the same list to [CHANGELOG.md](../CHANGELOG.md) as the newest "Build" section under the
    version's heading and commits it as `Changelog: Hermes 1.0 beta (2610211200)` with the
    repository's identity. `main` usually moves during a release, so the commit is replayed onto the

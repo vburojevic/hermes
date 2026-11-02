@@ -287,7 +287,8 @@ class AudioRoutes(unittest.TestCase):
         # Not signed in: Hermes's own refusals.
         status, refused = self.call("POST", "/api/audio/speak?profile=researcher", {"text": "Hi."})
         self.assertEqual(status, 400)
-        self.assertTrue(refused["detail"].startswith("TTS configuration error (xai): No xAI credentials found."))
+        self.assertEqual(refused["detail"], "TTS chunk 1 failed (xai): TTS configuration error (xai): No xAI credentials "
+                                            "found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY.")
         status, refused = self.call("POST", "/api/audio/transcribe?profile=researcher", {"data_url": "data:audio/mp4;base64,AAAA"})
         self.assertEqual(status, 400)
         self.assertTrue(refused["detail"].startswith("No STT provider available."))
@@ -325,6 +326,62 @@ class AudioRoutes(unittest.TestCase):
         _, body = self.call("GET", "/api/audio/voice-config?profile=researcher")
         self.assertEqual((body["tts"]["mode"], body["tts"]["wire"], body["tts"]["api_key"]), ("direct", "elevenlabs-tts", "mock-key-not-real"))
         self.assertEqual((body["stt"]["mode"], body["stt"]["provider"]), ("direct", "groq"))
+
+    def test_speech_without_a_key_is_refused_in_hermes_words_for_every_provider(self):
+        # text_to_speech_tool's error, as Hermes's own source gives it with no credentials at all.
+        words = {
+            "openai": "tts is configured to use openai (set via hermes tools), but neither tts.openai.api_key in config "
+                      "nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set. Run 'hermes tools' to change it.",
+            "elevenlabs": "ELEVENLABS_API_KEY not set. Get one at https://elevenlabs.io/",
+            "gemini": "GEMINI_API_KEY not set. Get one at https://aistudio.google.com/app/apikey",
+            "xai": "No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY.",
+            "minimax": "MINIMAX_API_KEY not set for MiniMax TTS region 'global'",
+            "mistral": "MISTRAL_API_KEY not set. Get one at https://console.mistral.ai/",
+            "deepinfra": "DEEPINFRA_API_KEY not set. Run `hermes setup` to configure, or set the env var directly.",
+        }
+        for provider, failure in words.items():
+            with self.subTest(provider=provider):
+                self.call("PUT", "/api/config?profile=researcher", {"config": {"tts": {"provider": provider}}})
+                status, refused = self.call("POST", "/api/audio/speak?profile=researcher", {"text": "Hi."})
+                self.assertEqual((status, refused["detail"]),
+                                 (400, f"TTS chunk 1 failed ({provider}): TTS configuration error ({provider}): {failure}"))
+
+    def test_saving_a_key_answers_and_refuses_as_hermes_does(self):
+        status, body = self.call("PUT", "/api/env?profile=researcher", {"key": "ELEVENLABS_API_KEY", "value": "sk-test-not-real"})
+        self.assertEqual((status, body), (200, {"ok": True, "key": "ELEVENLABS_API_KEY", "config_updates": []}))
+        status, body = self.call("PUT", "/api/env", {"key": "HASS_TOKEN"})
+        self.assertEqual(status, 422)
+        self.assertEqual([(e["type"], e["loc"], e["msg"]) for e in body["detail"]],
+                         [("missing", ["body", "value"], "Field required")])
+        status, body = self.call("PUT", "/api/env", {"key": "HASS_TOKEN", "value": 5})
+        self.assertEqual((status, body["detail"][0]["type"], body["detail"][0]["loc"]), (422, "string_type", ["body", "value"]))
+        for preview in ("***", "sk-a...wxyz", "«redacted:sk-…»"):
+            status, body = self.call("PUT", "/api/env", {"key": "HASS_TOKEN", "value": preview})
+            self.assertEqual((status, body["detail"]), (400, "Refusing to save a redacted credential preview; "
+                                                              "re-enter the full secret to replace it."))
+        status, body = self.call("PUT", "/api/env", {"key": "1HASS", "value": "token"})
+        self.assertEqual((status, body["detail"]), (400, "Invalid environment variable name: '1HASS'"))
+        for name in ("PATH", "DYLD_ANYTHING", "GIT_CONFIG_COUNT"):
+            status, body = self.call("PUT", "/api/env", {"key": name, "value": "x"})
+            self.assertEqual(status, 400)
+            self.assertTrue(body["detail"].startswith(f"Environment variable '{name}' is on the writer denylist."))
+        status, body = self.call("PUT", "/api/env?profile=nobody", {"key": "HASS_TOKEN", "value": "token"})
+        self.assertEqual((status, body["detail"]), (404, "Profile 'nobody' does not exist."))
+        # Hermes checks the body and redacted previews before the profile and the env lock.
+        status, _ = self.call("PUT", "/api/env?profile=nobody", {"key": "HASS_TOKEN"})
+        self.assertEqual(status, 422)
+        self.switch(env_refusal="Managed installs keep their keys elsewhere.")
+        status, body = self.call("PUT", "/api/env?profile=nobody", {"key": "HASS_TOKEN", "value": "***"})
+        self.assertEqual((status, body["detail"]), (400, "Refusing to save a redacted credential preview; "
+                                                          "re-enter the full secret to replace it."))
+        status, body = self.call("PUT", "/api/env", {"key": "HASS_TOKEN", "value": "token"})
+        self.assertEqual((status, body["detail"]), (400, "Managed installs keep their keys elsewhere."))
+        self.switch(env_refusal=None)
+        # A refused voice key isn't counted as set.
+        self.call("PUT", "/api/env?profile=researcher", {"key": "GROQ_API_KEY", "value": "***"})
+        _, listed = self.call("GET", "/api/env?profile=researcher")
+        self.assertFalse(listed["GROQ_API_KEY"]["is_set"])
+        self.assertTrue(listed["ELEVENLABS_API_KEY"]["is_set"])
 
     def test_elevenlabs_voices_are_listed_by_label(self):
         _, body = self.call("GET", "/api/audio/elevenlabs/voices")

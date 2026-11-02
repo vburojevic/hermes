@@ -17,8 +17,9 @@ tools/voice_client_config.py, tools/tts_streaming.py):
     chunks) and {"type":"end"} out; {"type":"fallback"} when switched to fallback.
     The audio is speech-like (syllables of a voiced tone), about 65 ms per character.
   - POST /api/audio/speak {text} → {ok, data_url: data:audio/wav;base64,…, mime_type, provider};
-    400 with Hermes's words when the provider has no credentials ("TTS configuration error (xai):
-    No xAI credentials found. …"), and speak-stream answers {"type":"fallback"} then.
+    400 with Hermes's words when the provider has no credentials ("TTS chunk 1 failed (xai): TTS
+    configuration error (xai): No xAI credentials found. …"), and speak-stream answers
+    {"type":"fallback"} then.
   - POST /api/audio/tts-lease, /api/audio/stt-lease {lease, active}.
   - POST /api/audio/transcribe {data_url}: the transcript set with the switch (Talk's fallback for
     a turn the live socket lost, and a voice message the device heard no words in), after
@@ -240,12 +241,28 @@ def can_transcribe(profile):
     return not keys or has_key(profile, keys) or (provider == "xai" and STATE["xai_oauth"])
 
 
+# Each provider's ValueError for a missing credential: tools/tts_tool_openai.py
+# (_resolve_openai_audio_client_config with tts.provider written, so selection_error in
+# tools/tool_backend_helpers.py; _generate_deepinfra_tts) and tools/tts_tool_providers.py
+# (_require_key, _generate_xai_tts, _resolve_minimax_tts_runtime with no region set, _generate_gemini_tts).
+SPEECH_KEY_ERRORS = {
+    "openai": ("tts is configured to use openai (set via hermes tools), but neither tts.openai.api_key in config "
+               "nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set. Run 'hermes tools' to change it."),
+    "elevenlabs": "ELEVENLABS_API_KEY not set. Get one at https://elevenlabs.io/",
+    "gemini": "GEMINI_API_KEY not set. Get one at https://aistudio.google.com/app/apikey",
+    "xai": "No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY.",
+    "minimax": "MINIMAX_API_KEY not set for MiniMax TTS region 'global'",
+    "mistral": "MISTRAL_API_KEY not set. Get one at https://console.mistral.ai/",
+    "deepinfra": "DEEPINFRA_API_KEY not set. Run `hermes setup` to configure, or set the env var directly.",
+}
+
+
 def speech_refusal(profile):
-    """text_to_speech's error for a provider without credentials (call with LOCK held)."""
+    """POST /api/audio/speak's detail for a provider without credentials (call with LOCK held):
+    text_to_speech_tool's error, which wraps the provider's ValueError twice, as "TTS configuration
+    error" (tools/tts_tool.py `_tool_failure`) and then as the failed chunk (`_synthesize_chunks`)."""
     provider, _ = providers(profile)
-    if provider == "xai":
-        return "TTS configuration error (xai): No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY."
-    return f"TTS configuration error ({provider}): {TTS_KEYS[provider][0]} not set"
+    return f"TTS chunk 1 failed ({provider}): TTS configuration error ({provider}): {SPEECH_KEY_ERRORS[provider]}"
 
 
 NO_STT = ("No STT provider available. Install faster-whisper for free local transcription, configure "
@@ -881,7 +898,7 @@ VOICE_KEYS = {
 
 def install_env():
     """GET /api/env lists the voice keys with is_set and a redacted preview (Hermes's shape), per
-    profile; PUT /api/env records which are set before connections.py stores the value."""
+    profile; PUT /api/env records which are set once connections.py has accepted and stored the value."""
     routes = B["HTTP_ROUTES"]
     previous_get = routes.get(("GET", "/api/env"))
     previous_put = routes.get(("PUT", "/api/env"))
@@ -899,16 +916,23 @@ def install_env():
         return status, payload
 
     def put_env(query, body):
-        key = ((body or {}).get("key") or "").strip()
+        # Hermes checks the body and redacted previews before the profile and the env lock.
+        early = B.get("ENV_REQUEST_REFUSAL")
+        refusal = (early(body) if early else None) or profile_or_404(query, body)
+        if refusal:
+            return refusal
         with LOCK:
             refusal = STATE.get("env_refusal")
         if refusal:
             # Hermes's own refusal: a ValueError from the credential lifecycle is a 400 with its words.
             return 400, {"detail": refusal}
-        if key in VOICE_KEYS and isinstance((body or {}).get("value"), str):
+        status, payload = previous_put(query, body)
+        key = (payload or {}).get("key") if status == 200 else None
+        # Only a key Hermes accepted counts as set.
+        if key in VOICE_KEYS:
             with LOCK:
                 ENV_SET.setdefault(profile_name(query, body), set()).add(key)
-        return previous_put(query, body) if previous_put else (200, {"ok": True, "key": key})
+        return status, payload
 
     routes[("GET", "/api/env")] = get_env
     routes[("PUT", "/api/env")] = put_env
