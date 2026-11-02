@@ -51,6 +51,27 @@ struct LinkSafetyTests {
         #expect(SameOriginRedirects.allows(from: secure, to: try url("https://MAC.tail0.ts.net:443/next")))
         #expect(!SameOriginRedirects.allows(from: secure, to: try url("http://mac.tail0.ts.net/api")))
     }
+
+    /// A WebSocket's upgrade is a request too: ws pairs with http and wss with https.
+    @Test func socketRedirectsStayOnTheSameServer() throws {
+        let socket = try url("ws://mac.local:9119/api/plugins/kanban/events?board=default")
+        #expect(SameOriginRedirects.allows(from: socket, to: try url("ws://mac.local:9119/moved")))
+        #expect(SameOriginRedirects.allows(from: socket, to: try url("http://mac.local:9119/moved")))
+        #expect(SameOriginRedirects.allows(from: socket, to: try url("wss://mac.local/api/display/ws")))
+        #expect(SameOriginRedirects.allows(from: socket, to: try url("https://MAC.local/api/display/ws")))
+        #expect(!SameOriginRedirects.allows(from: socket, to: try url("ws://mac.local:9120/moved")))
+        #expect(!SameOriginRedirects.allows(from: socket, to: try url("ws://mac.local/moved")))
+        #expect(!SameOriginRedirects.allows(from: socket, to: try url("ws://127.0.0.1:9119/moved")))
+        #expect(!SameOriginRedirects.allows(from: socket, to: try url("wss://relay.example.com/api/ws")))
+        #expect(!SameOriginRedirects.allows(from: socket, to: try url("ftp://mac.local:9119/moved")))
+
+        let secure = try url("wss://mac.tail0.ts.net/api/display/ws")
+        #expect(SameOriginRedirects.allows(from: secure, to: try url("wss://mac.tail0.ts.net:443/next")))
+        #expect(SameOriginRedirects.allows(from: secure, to: try url("https://mac.tail0.ts.net/next")))
+        #expect(!SameOriginRedirects.allows(from: secure, to: try url("ws://mac.tail0.ts.net/next")))
+        #expect(!SameOriginRedirects.allows(from: secure, to: try url("http://mac.tail0.ts.net/next")))
+        #expect(!SameOriginRedirects.allows(from: secure, to: try url("wss://mac.tail0.ts.net:8443/next")))
+    }
 }
 
 @Suite("Gateway file links")

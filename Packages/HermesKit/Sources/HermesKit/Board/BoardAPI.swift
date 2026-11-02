@@ -165,8 +165,13 @@ extension BackendClient {
 
     // MARK: Live
 
-    /// The board's event socket (`WS /events?board=&since=`), with this credential attached.
-    public func boardEventsURL(_ board: String, since: Int) async throws -> URL {
+    /// The board's live events (`WS /events?board=&since=`), with this credential attached, on
+    /// this backend's own session (`BoardEventStream`).
+    public func boardEvents(_ board: String, since: Int) async throws -> AsyncThrowingStream<BoardEventBatch, any Error> {
+        BoardEventStream.batches(socket: webSocketTask(with: try await boardEventsURL(board, since: since)))
+    }
+
+    func boardEventsURL(_ board: String, since: Int) async throws -> URL {
         try await socketURL(path: "api/plugins/kanban/events", query: Self.boardQuery(board, [URLQueryItem(name: "since", value: String(since))]))
     }
 }
