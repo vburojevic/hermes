@@ -199,6 +199,8 @@ struct TalkPresentation: ViewModifier {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var isLandscape = false
     private var center: TalkCenter { .shared }
+    /// A call, or one waiting to start.
+    private var hasCall: Bool { center.session != nil || center.pendingCall != nil }
 
     func body(content: Content) -> some View {
         #if os(iOS)
@@ -206,25 +208,36 @@ struct TalkPresentation: ViewModifier {
         content
             .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isLandscape = $0 }
             .overlay(alignment: .topTrailing) {
-                if usesPanel, let session = center.session, center.isExpanded {
-                    TalkPanel(session: session)
-                        .padding(.top, 88)
-                        .padding(.trailing, 24)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
+                if usesPanel, center.isExpanded {
+                    Group {
+                        if let session = center.session {
+                            TalkPanel(session: session)
+                        } else if let call = center.pendingCall {
+                            // A call from outside the app that waits to start (`talkWaiting`).
+                            PendingCallPanel(call: call)
+                        }
+                    }
+                    .padding(.top, 88)
+                    .padding(.trailing, 24)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
                 }
             }
             .fullScreenCover(isPresented: Binding(
-                get: { !usesPanel && center.session != nil && center.isExpanded },
+                get: { !usesPanel && hasCall && center.isExpanded },
                 set: { if !$0 { center.isExpanded = false } }
             )) {
                 if let session = center.session {
                     TalkScreen(session: session)
+                } else if let call = center.pendingCall {
+                    PendingCallScreen(call: call)
                 }
             }
-            .animation(.snappy(duration: 0.22), value: center.session == nil || !center.isExpanded)
+            .animation(.snappy(duration: 0.22), value: !hasCall || !center.isExpanded)
+            .modifier(PendingCallAnnouncer())
         #else
         content
             .modifier(TalkWindowOpener())
+            .modifier(PendingCallAnnouncer())
         #endif
     }
 }
@@ -240,6 +253,9 @@ struct TalkWindowContent: View {
             if let session = center.session {
                 TalkPanel(session: session)
                     .padding(8)
+            } else if let call = center.pendingCall {
+                PendingCallPanel(call: call)
+                    .padding(8)
             } else {
                 Text("No call")
                     .foregroundStyle(Theme.secondaryText)
@@ -250,14 +266,17 @@ struct TalkWindowContent: View {
     }
 }
 
-/// Opens the call window when a call starts and closes it when the call ends.
+/// Opens the call window when a call starts, or one from outside the app waits to, and closes
+/// it when the call ends or the waiting one is cancelled.
 private struct TalkWindowOpener: ViewModifier {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
 
+    private var shown: Bool { TalkCenter.shared.session != nil || TalkCenter.shared.pendingCall != nil }
+
     func body(content: Content) -> some View {
-        content.onChange(of: TalkCenter.shared.session?.id) { _, id in
-            if id != nil { openWindow(id: TalkCenter.windowID) } else { dismissWindow(id: TalkCenter.windowID) }
+        content.onChange(of: shown) { _, shown in
+            if shown { openWindow(id: TalkCenter.windowID) } else { dismissWindow(id: TalkCenter.windowID) }
         }
     }
 }
@@ -266,6 +285,7 @@ private struct TalkWindowOpener: ViewModifier {
 /// doesn't run in Mac apps, so this is the Mac's Live Activity.)
 struct TalkMenuBar: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(AppModel.self) private var app
     private var center: TalkCenter { .shared }
 
     var body: some View {
@@ -275,27 +295,50 @@ struct TalkMenuBar: View {
             Button("Show Call") { openWindow(id: TalkCenter.windowID) }
             Divider()
             Button("End Call", action: center.end)
+        } else if let call = center.pendingCall {
+            let copy = PendingCallCopy(call, workspace: app.currentWorkspace)
+            Text("\(copy.name) · \(copy.title)")
+            Button("Show Call") { openWindow(id: TalkCenter.windowID) }
+            Divider()
+            Button("Cancel Call", action: center.cancelPending)
         }
     }
 }
 #endif
 
-/// Calls started from outside the chat (Shortcuts, the control, the Action button): the Bot's
-/// chat opens (Hermes gets a new chat) and the call starts there. Also keeps the Bots Shortcuts
-/// can name up to date.
+/// Calls started from outside the chat (Shortcuts, the control, the Action button, Hey Hermes):
+/// the Bot's chat opens (Hermes gets a new chat) and the call starts there. Until it can,
+/// `TalkCenter` holds it as a pending call with what the app knows here (`docs/voice.md` §4.4).
+/// Also keeps the Bots Shortcuts can name up to date.
 struct TalkEntry: ViewModifier {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
-            // From a cold launch the Bots arrive a moment later: the call waits for them.
-            .onChange(of: isReady, initial: true) { _, ready in if ready { startIfReady() } }
+            .onAppear {
+                // The model, not this view: the center calls these after the view has gone by.
+                let app = app
+                TalkCenter.shared.startCall = { callee in Self.start(callee, app: app) }
+                TalkCenter.shared.readFacts = { callee in Self.facts(for: callee, app: app) }
+                // Quietly: offline Bots stay offline rather than reading "Connecting…" every try.
+                TalkCenter.shared.connectBotMode = { app.currentWorkspace?.roster?.connectIfNeeded(quietly: true) }
+                TalkCenter.shared.factsChanged()
+            }
+            // From a cold launch the gateway and its Bots arrive a moment later: the call waits.
+            .onChange(of: Self.facts(for: TalkCenter.shared.pendingCall?.callee ?? .hermes, app: app)) {
+                TalkCenter.shared.factsChanged()
+            }
+            // A wait stands still behind other apps: back in front, it starts or times out now.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { TalkCenter.shared.factsChanged() }
+            }
             #if DEBUG
             // `-HERMES_TALK_TO <profile>|hermes` calls as a Shortcut would (screenshots, UI tests).
             .task {
                 guard let name = UserDefaults.standard.string(forKey: "HERMES_TALK_TO") else { return }
                 TalkCenter.logger.info("debug: calling \(name, privacy: .public) as a Shortcut would")
-                TalkCenter.shared.pendingStart = .init(botName: name == "hermes" ? nil : name)
+                TalkCenter.shared.request(botName: name == "hermes" ? nil : name)
             }
             #endif
             .onChange(of: app.currentWorkspace?.roster?.visibleBots.map(\.name), initial: true) {
@@ -305,28 +348,30 @@ struct TalkEntry: ViewModifier {
             }
     }
 
-    /// A call is waiting and what it needs is there: the gateway, and for a Bot, its roster.
-    private var isReady: Bool {
-        guard let start = TalkCenter.shared.pendingStart, let workspace = app.currentWorkspace else { return false }
-        // With Bot Mode, its connection first: that's where the Bot's voice comes from.
-        if let roster = workspace.roster, !roster.isConnected { return false }
-        guard let name = start.botName else { return true }
-        return workspace.roster?.bot(named: name) != nil
+    /// Where a call would go: the gateway, its Bot Mode connection (where a Bot's voice comes
+    /// from), and for a Bot, whether its roster has it.
+    private static func facts(for callee: PendingCall.Callee, app: AppModel) -> PendingCall.Facts {
+        guard let workspace = app.currentWorkspace else { return PendingCall.Facts(hasGateway: false, botMode: .notSetUp) }
+        guard let roster = workspace.roster else { return PendingCall.Facts(hasGateway: true, botMode: .notSetUp) }
+        guard roster.isConnected else { return PendingCall.Facts(hasGateway: true, botMode: .connecting) }
+        var hasBot: Bool?
+        if let name = callee.botName {
+            hasBot = roster.bot(named: name) != nil ? true : (roster.hasLoaded ? false : nil)
+        }
+        return PendingCall.Facts(hasGateway: true, botMode: .connected, hasBot: hasBot)
     }
 
-    private func startIfReady() {
-        guard let start = TalkCenter.shared.pendingStart, let workspace = app.currentWorkspace else { return }
+    private static func start(_ callee: PendingCall.Callee, app: AppModel) {
+        guard let workspace = app.currentWorkspace else { return }
         let conversation: ConversationModel
-        if let name = start.botName {
-            guard let roster = workspace.roster, roster.isConnected, roster.bot(named: name) != nil else { return }
+        if let name = callee.botName {
+            guard let roster = workspace.roster else { return }
             workspace.selection = .bot(name)
             conversation = roster.conversation(for: name)
         } else {
             workspace.startNewChat()
             conversation = workspace.currentConversation
         }
-        TalkCenter.shared.pendingStart = nil
-        TalkCenter.logger.info("call requested from outside the chat")
         TalkCenter.shared.start(conversation: conversation, workspace: workspace)
     }
 }
@@ -349,5 +394,347 @@ struct SpokenMark: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: A call waiting to start
+
+/// What a call from outside the app says while it can't start yet (`talkWaiting`,
+/// `talkWaitTimedOut`, `talkNoBot`, `talkNotSetUp`, `talkNoGateway`; `docs/voice.md` §4.3).
+struct PendingCallCopy {
+    enum Fix {
+        case tryAgain
+        case addGateway
+        case setUpBotMode
+    }
+
+    let name: String
+    let appearance: BotAppearance
+    let isWaiting: Bool
+    /// Asleep when there's no gateway to call through.
+    let mood: BotMood
+    let meta: String
+    let title: String
+    let caption: String
+    let hint: String?
+    let fix: (title: String, action: Fix)?
+
+    init(_ call: PendingCall, workspace: BotWorkspace?) {
+        let roster = workspace?.roster
+        let bot = call.callee.botName.flatMap { roster?.bot(named: $0) }
+        if case .cantStart(.noGateway) = call.state {
+            name = String(localized: "Hermes")
+        } else if let botName = call.callee.botName {
+            name = bot?.title ?? TalkDirectory.bots().first { $0.id == botName }?.title ?? botName
+        } else {
+            name = String(localized: "Hermes")
+        }
+        if let bot, let roster {
+            appearance = roster.appearance(for: bot)
+        } else if call.callee == .hermes, let roster, let main = roster.visibleBots.first(where: \.isDefault) {
+            appearance = roster.appearance(for: main)
+        } else {
+            appearance = BotAppearance(profile: call.callee.botName ?? "hermes")
+        }
+        isWaiting = call.state == .waitingForBotMode
+        mood = call.state == .cantStart(.noGateway) ? .sleeping : .idle
+        meta = isWaiting ? String(localized: "Not started yet") : String(localized: "Didn’t start")
+        switch call.state {
+        case .waitingForBotMode, .ready:
+            title = String(localized: "Waiting for Bot Mode")
+            caption = String(localized: "The call starts as soon as Bot Mode connects.")
+            hint = String(localized: "Hermes stops waiting after a minute.")
+            fix = nil
+        case .timedOut:
+            title = String(localized: "Bot Mode isn’t connected")
+            caption = String(localized: "\(name) can’t take the call until Bot Mode connects.")
+            hint = nil
+            fix = (String(localized: "Try Again"), .tryAgain)
+        case .cantStart(.noSuchBot):
+            title = String(localized: "No Bot called \(call.callee.botName ?? name)")
+            caption = String(localized: "There’s no Bot with that name on this gateway.")
+            hint = nil
+            fix = nil
+        case .cantStart(.botModeNotSetUp):
+            title = String(localized: "Bot Mode isn’t set up")
+            caption = String(localized: "Talking with a Bot needs Bot Mode on this gateway.")
+            hint = String(localized: "Talk with Hermes works without it.")
+            fix = (String(localized: "Set Up Bot Mode"), .setUpBotMode)
+        case .cantStart(.noGateway):
+            title = String(localized: "No gateway yet")
+            caption = String(localized: "Add your Hermes gateway to start a call.")
+            hint = nil
+            fix = (String(localized: "Add Gateway"), .addGateway)
+        }
+    }
+
+    static func perform(_ fix: Fix) {
+        switch fix {
+        case .tryAgain: TalkCenter.shared.retryPending()
+        case .addGateway: TalkCenter.shared.fixPending(.addGateway)
+        case .setUpBotMode: TalkCenter.shared.fixPending(.setUpBotMode)
+        }
+    }
+}
+
+/// The call screen while the call waits to start, or says why it can't (`talkWaiting`): who,
+/// "Not started yet", the state, and Cancel. The spinner is the one moving thing.
+struct PendingCallScreen: View {
+    let call: PendingCall
+    @Environment(AppModel.self) private var app
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    var body: some View {
+        let copy = PendingCallCopy(call, workspace: app.currentWorkspace)
+        let compact = verticalSizeClass == .compact
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    TalkCenter.shared.isExpanded = false
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .tint(nil)
+                .accessibilityLabel("Minimise")
+                .accessibilityHint("Keeps waiting while you read the chat")
+                Spacer()
+                VStack(spacing: 1) {
+                    Text(copy.name)
+                        .font(.headline)
+                        .foregroundStyle(Theme.primaryText)
+                        .lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(copy.meta)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                Spacer()
+                Color.clear.frame(width: 44, height: 44)
+            }
+            .foregroundStyle(Theme.primaryText)
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            Spacer(minLength: 8)
+            PendingCallFigure(appearance: copy.appearance, mood: copy.mood, size: compact ? 84 : 160)
+            PendingCallTexts(copy: copy, large: !compact)
+                .padding(.horizontal, 32)
+                .padding(.top, compact ? 14 : 26)
+            Spacer(minLength: 12)
+            PendingCallButtons(copy: copy, height: 50)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 14)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas.ignoresSafeArea())
+        .accessibilityAction(.escape) { TalkCenter.shared.isExpanded = false }
+    }
+}
+
+/// The waiting call as the iPad panel and in the Mac's call window.
+struct PendingCallPanel: View {
+    let call: PendingCall
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        let copy = PendingCallCopy(call, workspace: app.currentWorkspace)
+        VStack(spacing: 12) {
+            PendingCallFigure(appearance: copy.appearance, mood: copy.mood, size: 84)
+                .frame(height: 150)
+            VStack(spacing: 2) {
+                Text(copy.name)
+                    .font(.headline)
+                    .foregroundStyle(Theme.primaryText)
+                Text(copy.meta)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            PendingCallTexts(copy: copy, large: false)
+            PendingCallButtons(copy: copy, height: 40)
+        }
+        .padding(18)
+        .frame(width: 340)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(copy.name)
+    }
+}
+
+/// The face on its aura, still: what moves while the call waits is the spinner.
+private struct PendingCallFigure: View {
+    let appearance: BotAppearance
+    let mood: BotMood
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(RadialGradient(
+                    stops: [
+                        .init(color: Palette.aura, location: 0),
+                        .init(color: Palette.auraSoft, location: 0.55),
+                        .init(color: Palette.auraSoft.opacity(0), location: 1),
+                    ],
+                    center: .center, startRadius: 0, endRadius: size
+                ))
+                .frame(width: size * 2, height: size * 2)
+                .opacity(mood == .sleeping ? 0.5 : 0.8)
+            BotFace(appearance: appearance, size: size, mood: mood)
+        }
+        .frame(width: size * 1.9, height: size * 1.9)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct PendingCallTexts: View {
+    let copy: PendingCallCopy
+    let large: Bool
+
+    var body: some View {
+        VStack(spacing: large ? 10 : 6) {
+            HStack(spacing: 8) {
+                if copy.isWaiting { Spinner() }
+                Text(copy.title)
+                    .font(large ? .title3.weight(.semibold) : .headline)
+                    .foregroundStyle(Theme.primaryText)
+            }
+            Text(copy.caption)
+                .font(large ? .body : .subheadline)
+                .foregroundStyle(Theme.secondaryText)
+            if let hint = copy.hint {
+                Text(hint)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tertiaryText)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The fix when there is one (Try Again, Set Up Bot Mode, Add Gateway), then Cancel.
+private struct PendingCallButtons: View {
+    let copy: PendingCallCopy
+    let height: CGFloat
+
+    var body: some View {
+        VStack(spacing: 10) {
+            if let fix = copy.fix {
+                Button {
+                    PendingCallCopy.perform(fix.action)
+                } label: {
+                    // Drawn like Cancel rather than `.borderedProminent`, which the Mac greys out
+                    // in a window that isn't key while its label stays ink-coloured.
+                    Text(fix.title)
+                        .font(.headline)
+                        .foregroundStyle(Theme.inkForeground)
+                        .frame(maxWidth: .infinity, minHeight: height)
+                        .background(Theme.ink, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressableStyle())
+            }
+            Button(action: TalkCenter.shared.cancelPending) {
+                Text("Cancel")
+                    .font(.headline)
+                    .foregroundStyle(Theme.primaryText)
+                    .frame(maxWidth: .infinity, minHeight: height)
+                    .background(Theme.controlFill, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            .keyboardShortcut(.cancelAction)
+        }
+    }
+}
+
+/// The waiting call minimised (`talkWaitingMinimised`): who, the state, and Cancel.
+struct PendingCallPill: View {
+    let call: PendingCall
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        let copy = PendingCallCopy(call, workspace: app.currentWorkspace)
+        HStack(spacing: 10) {
+            Button {
+                TalkCenter.shared.isExpanded = true
+            } label: {
+                HStack(spacing: 10) {
+                    BotFace(appearance: copy.appearance, size: 24, mood: copy.mood)
+                        .frame(width: 36, height: 36)
+                        .overlay(Circle().strokeBorder(copy.appearance.color.opacity(0.5), lineWidth: 2))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Calling \(copy.name)")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.primaryText)
+                            .lineLimit(1)
+                        Text(copy.title)
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Calling \(copy.name), \(copy.title)")
+            .accessibilityHint("Opens the call")
+            Button(action: TalkCenter.shared.cancelPending) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.inkForeground)
+                    .frame(width: 34, height: 34)
+                    .background(Theme.ink, in: Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel("Cancel call")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 11)
+        .frame(height: 56)
+        .glassEffect(.regular, in: .capsule)
+    }
+}
+
+/// Says the waiting call's state to VoiceOver once each time it changes, and opens the fix its
+/// screen asked for in this window (`docs/voice.md` §4.4).
+struct PendingCallAnnouncer: ViewModifier {
+    @Environment(AppModel.self) private var app
+    @Environment(WindowRouter.self) private var router: WindowRouter?
+    private var center: TalkCenter { .shared }
+
+    private struct Key: Equatable {
+        let id: UUID
+        let state: PendingCall.State
+    }
+
+    /// Every window has this; the first to see a state says it.
+    private static var announced: Key?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: center.pendingCall.map { Key(id: $0.id, state: $0.state) }, initial: true) { _, key in
+                guard let key, key != Self.announced, let call = center.pendingCall else { return }
+                Self.announced = key
+                let copy = PendingCallCopy(call, workspace: app.currentWorkspace)
+                AccessibilityNotification.Announcement(copy.title).post()
+            }
+            .onChange(of: center.setupRequest) { _, request in
+                guard let request, let router else { return }
+                center.setupRequest = nil
+                switch request {
+                case .addGateway:
+                    router.sheet = .addGateway
+                case .setUpBotMode:
+                    guard let workspace = app.currentWorkspace else { return }
+                    router.sheet = .editGateway(workspace.bot)
+                }
+            }
     }
 }

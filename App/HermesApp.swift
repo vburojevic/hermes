@@ -142,8 +142,13 @@ struct HermesApp: App {
         .defaultPosition(.topTrailing)
         .restorationBehavior(.disabled)
 
-        MenuBarExtra(isInserted: Binding(get: { TalkCenter.shared.isActive }, set: { if !$0 { TalkCenter.shared.end() } })) {
+        // Also while a call from outside the app waits to start.
+        MenuBarExtra(isInserted: Binding(
+            get: { TalkCenter.shared.isActive || TalkCenter.shared.pendingCall != nil },
+            set: { if !$0 { TalkCenter.shared.end(); TalkCenter.shared.cancelPending() } }
+        )) {
             TalkMenuBar()
+                .environment(model)
         } label: {
             Label("Hermes Call", systemImage: "waveform")
         }
