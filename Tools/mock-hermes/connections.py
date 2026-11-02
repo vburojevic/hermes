@@ -373,6 +373,7 @@ def install(backend_globals):
     B["PUBLIC_ROUTES"].update({"/mock/connect": connect_page, "/mock/mcp-oauth": mcp_oauth_page,
                                "/mock/logo/dropbox.png": lambda q: (200, "image/png", png(0x00, 0x61, 0xFE))})
     B["HTTP_ROUTES"][("PUT", "/api/env")] = put_env
+    B["ENV_REQUEST_REFUSAL"] = env_request_refusal  # audio.py's wrapper checks it first, as Hermes does
     # Nous sign-in by device code (hermes_cli/web_routers/oauth.py); one session id in this mock.
     B["HTTP_ROUTES"][("POST", "/api/providers/oauth/nous/start")] = nous_start
     B["HTTP_ROUTES"][("GET", "/api/providers/oauth/nous/poll/nous-mock")] = nous_poll
@@ -980,14 +981,80 @@ def plugins_lookup(params):
     return {"status": "found", "entry": {"name": name, "repo": f"https://github.com/hermes-plugins/{name}", "sha": "a1b2c3d", "subdir": ""}}
 
 
+# The env writer's name rules (hermes_cli/config.py: _ENV_VAR_NAME_RE, _ENV_VAR_NAME_DENYLIST,
+# _ENV_VAR_NAME_DENY_PREFIXES): names that change how the next process runs are never written.
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+ENV_DENY_PREFIXES = ("LD_", "DYLD_", "GIT_CONFIG_")
+ENV_DENYLIST = frozenset({
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_DEBUG", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH", "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_FALLBACK_FRAMEWORK_PATH",
+    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE", "PYTHONEXECUTABLE", "PYTHONNOUSERSITE",
+    "PYTHONBREAKPOINT", "PYTHONCASEOK", "NODE_OPTIONS", "NODE_PATH",
+    "PERL5OPT", "PERL5LIB", "PERLLIB", "RUBYOPT", "RUBYLIB", "CLASSPATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS",
+    "JDK_JAVA_OPTIONS", "GOFLAGS", "RUSTFLAGS",
+    "PATH", "SHELL", "BROWSER", "EDITOR", "VISUAL", "PAGER", "MANPAGER", "GIT_SSH_COMMAND", "GIT_EXEC_PATH",
+    "GIT_SHELL", "GIT_SSH", "GIT_ASKPASS", "SSH_ASKPASS", "SUDO_ASKPASS", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR",
+    "GIT_PAGER", "GIT_EXTERNAL_DIFF", "GIT_PROXY_COMMAND", "GIT_TEMPLATE_DIR", "GIT_DIR",
+    "BASH_ENV", "ENV", "ZDOTDIR", "PROMPT_COMMAND", "VIMINIT", "EXINIT",
+    "HERMES_HOME", "HERMES_PROFILE", "HERMES_CONFIG", "HERMES_ENV", "HERMES_CONFIG_PATH", "HERMES_ENV_PATH",
+    "HERMES_OPTIONAL_MCPS", "HERMES_COPILOT_ACP_COMMAND", "HERMES_COPILOT_ACP_ARGS",
+    "HERMES_YOLO_MODE", "HERMES_ACCEPT_HOOKS", "HERMES_REDACT_SECRETS", "HERMES_INTERACTIVE", "HERMES_EXEC_ASK",
+    "HERMES_GATEWAY_SESSION", "HERMES_CRON_SESSION", "HERMES_SINGLE_QUERY_SESSION", "HERMES_SESSION_KEY",
+    "HERMES_SESSION_PLATFORM"})
+LEGACY_MASK = re.compile(r".{4}\.\.\..{4}")
+
+
+def env_body_refusal(body):
+    """FastAPI's 422 for a body that isn't an EnvVarUpdate (hermes_cli/web_models.py): key and
+    value are required strings."""
+    if not isinstance(body, dict):
+        return 422, {"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required", "input": None}]}
+    errors = []
+    for field in ("key", "value"):
+        if field not in body:
+            errors.append({"type": "missing", "loc": ["body", field], "msg": "Field required", "input": body})
+        elif not isinstance(body[field], str):
+            errors.append({"type": "string_type", "loc": ["body", field], "msg": "Input should be a valid string",
+                           "input": body[field]})
+    return (422, {"detail": errors}) if errors else None
+
+
+def env_request_refusal(body):
+    """What Hermes refuses before it looks at the profile or the env lock (config_env.py
+    `put_env_var`): a body that isn't an EnvVarUpdate (422), then a redacted preview (400)."""
+    refusal = env_body_refusal(body)
+    if refusal:
+        return refusal
+    value = body["value"]
+    # Display-only previews (the redacted sentinel, "***", the legacy "abcd...wxyz") never gain write authority.
+    if value.startswith("«redacted") or value == "***" or LEGACY_MASK.fullmatch(value):
+        return 400, {"detail": "Refusing to save a redacted credential preview; re-enter the full secret to replace it."}
+    return None
+
+
 def put_env(query, body):
-    """`PUT /api/env`: where plugin secrets go. Stored, never returned."""
-    key, value = (body.get("key") or "").strip(), body.get("value")
-    if not key or not isinstance(value, str):
-        return 422, {"detail": "key and value required"}
+    """`PUT /api/env`: where plugin secrets go. Stored, never returned. Hermes answers
+    save_provider_env_credential's {ok, key, config_updates} (hermes_cli/credential_lifecycle.py),
+    and a ValueError from the writer as a 400 with its words (config_env.py `_env_write_errors`)."""
+    refusal = env_request_refusal(body)
+    if refusal:
+        return refusal
+    key, value = body["key"], body["value"]
+    if not ENV_NAME.match(key):
+        return 400, {"detail": f"Invalid environment variable name: {key!r}"}
+    if key in ENV_DENYLIST or key.startswith(ENV_DENY_PREFIXES):
+        return 400, {"detail": (
+            f"Environment variable {key!r} is on the writer denylist. "
+            "Names that influence subprocess execution (LD_PRELOAD, PYTHONPATH, PATH, EDITOR, ...) "
+            "or Hermes runtime location and security policy (HERMES_HOME, HERMES_YOLO_MODE, ...) "
+            "cannot be persisted via the env writer. If you really need this, edit ~/.hermes/.env directly.")}
+    # Hermes drops line breaks and non-ASCII characters (header values must be ASCII).
+    value = value.replace("\n", "").replace("\r", "").encode("ascii", errors="ignore").decode("ascii")
     with LOCK:
         STATE["env"][key] = value
-    return 200, {"ok": True, "key": key}
+    # config_updates lists the config.yaml api_key mirrors a rotation rewrote (model.api_key,
+    # auxiliary.<task>.api_key…); the mock keeps no such mirrors, so it is always empty.
+    return 200, {"ok": True, "key": key, "config_updates": []}
 
 
 # ---------------------------------------------------------------- Nous sign-in

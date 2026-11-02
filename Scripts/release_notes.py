@@ -10,7 +10,8 @@
 
 Subjects read "Area: what changed for the person" (AGENTS.md), so they are the notes. Areas
 that don't change the app for the person using it (docs, tests, mocks, release tooling) are left
-out, and the rest are grouped by area.
+out, and so are commits that only change the repository's agent setup (agent skills and
+instructions), whatever their subject. The rest are grouped by area.
 """
 
 import datetime
@@ -27,6 +28,10 @@ SKIP_AREAS = {
     "AGENTS", "Build", "CI", "Changelog", "Contributing", "Debug", "Design", "Docs", "docs", "Mock",
     "Mocks", "README", "Release", "Repo", "Scripts", "Tests",
 }
+# Files that only set up the agents working in the repository. A commit that changes nothing else
+# is left out whatever its subject says: "Skills" is also an app area.
+AGENT_SETUP = (".claude/", ".agents/", "skills-lock.json", ".worktreeinclude", ".gitignore", "AGENTS.md",
+               "CLAUDE.md")
 SUBJECT = re.compile(r"([^:]{1,40}):\s*(.+)")
 # A subject that reached main in the wrong words, corrected here instead of rewriting public
 # history: one "<commit> <subject>" per line, the commit as a full or short hash.
@@ -43,14 +48,25 @@ def corrections():
     return {sha: subject for sha, subject in pairs}
 
 
+def agent_setup_only(files):
+    """True when every file is agent setup: a folder in AGENT_SETUP (ending in "/") or one of its files."""
+    def setup(path):
+        return any(path.startswith(entry) if entry.endswith("/") else path == entry for entry in AGENT_SETUP)
+    return bool(files) and all(setup(path) for path in files)
+
+
 def changes(previous_tag):
     """(area, text) for each commit since previous_tag (the whole history when there's none)."""
     rev = f"{previous_tag}..HEAD" if previous_tag else "HEAD"
-    log = subprocess.run(["git", "log", "--reverse", "--no-merges", "--format=%H %s", rev],
+    log = subprocess.run(["git", "-c", "core.quotePath=false", "log", "--reverse", "--no-merges",
+                          "--name-only", "--format=%x1e%H %s", rev],
                          check=True, capture_output=True, text=True).stdout
     fixed = corrections()
     rows = []
-    for line in log.splitlines():
+    for entry in log.split("\x1e")[1:]:
+        line, *files = [text for text in entry.splitlines() if text]
+        if agent_setup_only(files):
+            continue
         sha, _, subject = line.partition(" ")
         subject = next((text for prefix, text in fixed.items() if sha.startswith(prefix)), subject)
         match = SUBJECT.match(subject)
