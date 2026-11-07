@@ -77,10 +77,22 @@ final class WindowRouter {
     /// window under 1,400 pt the sidebar collapses (`docs/inspector.md` §1).
     var inspectorIsOpen = false
 
-    /// Settings → Apps and Tools, in the Settings sheet (iPhone, iPad).
+    #if os(macOS)
+    /// Bumped to open the Settings window: the Mac has no Settings sheet, and only a view can
+    /// call `openSettings` (RootView does).
+    private(set) var settingsWindowRequest = 0
+    #endif
+
+    /// Settings → Apps and Tools: the Settings sheet (iPhone, iPad), or the Settings window on
+    /// its Apps & Tools pane (Mac).
     func showAppsAndTools() {
+        #if os(macOS)
+        UserDefaults.standard.set("apps", forKey: MacSettingsView.paneKey)
+        settingsWindowRequest += 1
+        #else
         opensAppsAndTools = true
         sheet = .settings
+        #endif
     }
 
     /// Settings opens on Voice & Audio (a fallback note's Set Up…, `docs/voice.md` §6.1).
@@ -93,7 +105,8 @@ final class WindowRouter {
     }
 
     /// A catalog plugin a `plugin/install?catalog=` link asked for: Settings → Apps and Tools
-    /// takes it and asks before installing.
+    /// takes it and asks before installing. On the Mac, RootView hands it to the gateway's Apps &
+    /// Tools for the Settings window, which has no router.
     var pluginInstallRequest: String?
 
     /// Opens `hermesapp://connect` and `hermesapp://plugin/install?catalog=<name>` links; ignores
@@ -104,7 +117,11 @@ final class WindowRouter {
            let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "catalog" })?.value,
            !name.isEmpty {
             pluginInstallRequest = name
+            #if os(macOS)
+            showAppsAndTools()
+            #else
             sheet = .settings
+            #endif
             return true
         }
         guard let link = PairingLink(url: url) else { return false }
