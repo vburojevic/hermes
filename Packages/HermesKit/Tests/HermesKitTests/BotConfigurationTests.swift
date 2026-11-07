@@ -59,7 +59,7 @@ struct BotConfigurationTests {
 
     /// A Bot's key goes only where the app saved it for: an address changed in bots.json by
     /// something else is put back.
-    @Test func bots_jsonCantSendTheKeyElsewhere() throws {
+    @Test(.realKeychain) func bots_jsonCantSendTheKeyElsewhere() throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "bots-\(UUID().uuidString)")
         let keychain = KeychainStore(service: "co.caffeinatedcode.hermes.tests.\(UUID().uuidString)")
         let store = BotStore(fileURL: directory.appending(path: "bots.json"), keychain: keychain)
@@ -92,7 +92,7 @@ struct BotConfigurationTests {
 
     /// The Keychain is locked as the app loads, and bots.json then names other addresses: once it
     /// opens, the key and the sign-in still go only where they were saved for.
-    @Test func aBotLoadedWhileTheKeychainIsLockedGetsNoSecretsForOtherAddresses() throws {
+    @Test(.realKeychain) func aBotLoadedWhileTheKeychainIsLockedGetsNoSecretsForOtherAddresses() throws {
         let fixture = KeychainFixture()
         let bot = BotConfiguration(
             name: "Home", baseURL: URL(string: "http://mac-mini.local:8642")!, accent: "gold",
@@ -126,7 +126,7 @@ struct BotConfigurationTests {
 
     /// A Bot saved before addresses were pinned, while the Keychain finds no pin and won't take
     /// one: it stays unverified, and none of its secrets is read until the pin is written.
-    @Test func aBotWhosePinCantBeWrittenGetsNoSecrets() throws {
+    @Test(.realKeychain) func aBotWhosePinCantBeWrittenGetsNoSecrets() throws {
         let fixture = KeychainFixture()
         let bot = BotConfiguration(
             name: "Home", baseURL: URL(string: "http://mac-mini.local:8642")!, accent: "gold",
@@ -156,7 +156,7 @@ struct BotConfigurationTests {
 
     /// A Bot with no key says so; one whose addresses can't be checked yet says the Keychain can't
     /// be read, and tries again by itself.
-    @Test func aMissingKeyAndAnUnreadableKeychainAreToldApart() throws {
+    @Test(.realKeychain) func aMissingKeyAndAnUnreadableKeychainAreToldApart() throws {
         let fixture = KeychainFixture()
         let bot = BotConfiguration(name: "Home", baseURL: URL(string: "http://mac-mini.local:8642")!, accent: "gold")
         defer { fixture.tearDown([bot]) }
@@ -175,7 +175,7 @@ struct BotConfigurationTests {
 
     /// The person moves a Bot to a new address with a new key, and the new address can't be
     /// pinned: the edit fails, and the new key never goes to the old address.
-    @Test func aNewKeyWaitsForItsAddressToBePinned() throws {
+    @Test(.realKeychain) func aNewKeyWaitsForItsAddressToBePinned() throws {
         let fixture = KeychainFixture()
         let bot = BotConfiguration(name: "Home", baseURL: URL(string: "http://mac-mini.local:8642")!, accent: "gold")
         defer { fixture.tearDown([bot]) }
@@ -205,7 +205,7 @@ struct BotConfigurationTests {
 
     /// Saving the list after the person edits one Bot moves that Bot's pin alone: another Bot's
     /// addresses, changed in bots.json while the Keychain was locked, stay unverified.
-    @Test func theAppsOwnEditMovesThePinOfTheBotItEdited() throws {
+    @Test(.realKeychain) func theAppsOwnEditMovesThePinOfTheBotItEdited() throws {
         let fixture = KeychainFixture()
         let home = BotConfiguration(name: "Home", baseURL: URL(string: "http://mac-mini.local:8642")!, accent: "gold")
         let studio = BotConfiguration(name: "Studio", baseURL: URL(string: "http://studio.local:8642")!, accent: "ocean")
@@ -241,7 +241,7 @@ struct BotConfigurationTests {
         #expect(!tls.isInsecureOverInternet)
     }
 
-    @Test func storeRoundTripsWithoutSecrets() throws {
+    @Test(.realKeychain) func storeRoundTripsWithoutSecrets() throws {
         // A space in the path, like "Application Support", must survive percent-encoding.
         let directory = FileManager.default.temporaryDirectory.appending(path: "Hermes Store \(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -274,7 +274,8 @@ struct BotConfigurationTests {
 }
 
 /// A Bot store on a Keychain whose reads and writes a test can make fail, as a locked or refusing
-/// one does.
+/// one does. What the rule lets through reaches the real Keychain, so its tests carry
+/// `.realKeychain`.
 private struct KeychainFixture {
     typealias Rule = @Sendable (_ account: String, _ writing: Bool) -> OSStatus?
 
