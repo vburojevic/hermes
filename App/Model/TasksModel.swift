@@ -18,6 +18,7 @@ final class TasksModel {
     /// a detail opened on the new row keeps working.
     private var madeIDs: [String: String] = [:]
     private(set) var isLoading = false
+    @ObservationIgnored private let jobsRead = LatestRead<[CronJob]>()
     private(set) var loadError: HermesError?
     /// What the gateway refused, said once.
     var refusal: RefusedChange?
@@ -40,14 +41,21 @@ final class TasksModel {
         job.id.hasPrefix(Self.newPrefix) && pending.isPending(job.id)
     }
 
+    /// Reads the list. A read cancels the one still on its way, so the newest answer stands.
     func load(client: HermesClient?) async {
         guard let client else { return }
         isLoading = true
-        defer { isLoading = false }
-        do {
-            gatewayJobs = try await client.jobs()
+        guard let result = await jobsRead.read({ try await client.jobs() }) else {
+            // Replaced by a newer read, or Tasks closed: what's shown stays.
+            isLoading = jobsRead.isReading
+            return
+        }
+        isLoading = false
+        switch result {
+        case .success(let jobs):
+            gatewayJobs = jobs
             loadError = nil
-        } catch {
+        case .failure(let error):
             loadError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
         }
     }
