@@ -21,8 +21,10 @@ struct TasksSplitView: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // Half the room, between 240 and 360 pt: the detail keeps its share in a narrow
+            // window (the Mac's smallest, the iPad's sidebar beside it) (`docs/tasks.md` §4).
             list
-                .frame(width: 360)
+                .frame(minWidth: 240, idealWidth: 360, maxWidth: 360)
             Divider()
             Group {
                 if let job = selected {

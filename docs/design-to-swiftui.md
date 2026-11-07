@@ -190,8 +190,10 @@ code field. The Mac reads the pasteboard when asked.
   Routines and a … menu). iPad and Mac add the Inspector button ([inspector.md](inspector.md)).
 - Not built yet: the toolbar shrinking while scrolling (frame `chatReplyMinimized`).
 - iPad and Mac: `NavigationSplitView` (balanced; sidebar 240–380 pt, ideally 290). The sidebar
-  floats as inset glass by default on the current SDK. In a compact width (iPhone, narrow iPad
-  windows) the sidebar is a drawer that slides over the chat.
+  floats as inset glass by default on the current SDK. iPad in portrait, or a window under
+  700 pt, hides the sidebar so the detail runs full width: the toolbar's sidebar button brings it
+  back beside the detail, and picking something puts it away. In a compact width (iPhone, narrow
+  iPad windows) the sidebar is a drawer that slides over the chat.
 - Detail-page actions float in a bottom bar (Task detail: Run Now, Pause) attached with
   `safeAreaBar(edge: .bottom)`.
 - Mac Settings: a page pushed inside a Settings tab (Setup's feature pages, Hermes's voice, a

@@ -165,6 +165,17 @@ struct RootView: View {
         .onOpenURL { url in
             if !openBoardLink(url) { router.open(url) }
         }
+        #if os(macOS)
+        // Settings → Apps & Tools opens in the Settings window, with a plugin link's review there
+        // (`docs/connections.md` §2).
+        .onChange(of: router.settingsWindowRequest) {
+            if let name = router.pluginInstallRequest {
+                router.pluginInstallRequest = nil
+                app.currentWorkspace?.appsAndTools.installRequest = name
+            }
+            openSettings()
+        }
+        #endif
         #if DEBUG
         .task { openDebugSheet() }
         .motionProbe()
@@ -611,6 +622,9 @@ struct MainView: View {
     /// when the Inspector opens.
     @State private var windowWidth: CGFloat = 0
     @State private var boardHidesSidebar = false
+    /// iPad in portrait (or a window under 700 pt): the sidebar rests hidden so the detail runs
+    /// full width; the sidebar button brings it back beside the detail (`docs/design-to-swiftui.md`).
+    @State private var isPortraitLike = false
     @State private var isDrawerOpen = false
     /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
     @SceneStorage("window.selection") private var storedSelection: String?
@@ -695,14 +709,23 @@ struct MainView: View {
 
     private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(workspace: workspace, style: .split)
-                #if os(macOS)
-                // Its height never comes from what it shows either: the footer's priority notice
-                // counts its wrapping text at its narrowest, taller than the window, and the whole
-                // window was laid out that tall, its top under the title bar and its bottom cut off.
-                .frame(minHeight: 0, maxHeight: .infinity)
-                #endif
-                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
+            SidebarView(workspace: workspace, style: .split) {
+                // In portrait, the sidebar the button brought back steps aside once something
+                // is picked.
+                guard isPortraitLike, columnVisibility != .detailOnly else { return }
+                withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
+            }
+            #if os(macOS)
+            // Its height never comes from what it shows either: the footer's priority notice
+            // counts its wrapping text at its narrowest, taller than the window, and the whole
+            // window was laid out that tall, its top under the title bar and its bottom cut off.
+            .frame(minHeight: 0, maxHeight: .infinity)
+            #endif
+            #if os(iOS)
+            // While the app's own sidebar button shows, the system's toggle would sit beside it.
+            .toolbar(removing: sidebarButton == nil ? nil : .sidebarToggle)
+            #endif
+            .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
         } detail: {
             NavigationStack {
                 DetailView(workspace: workspace, onToggleSidebar: sidebarButton)
@@ -735,26 +758,47 @@ struct MainView: View {
         }
         #endif
         #if os(iOS)
+        .onGeometryChange(for: Bool.self) { proxy in
+            proxy.size.width < proxy.size.height || proxy.size.width < 700
+        } action: { portraitLike in
+            isPortraitLike = portraitLike
+            // Turning the iPad puts the sidebar where that orientation keeps it, unless the
+            // Inspector or the Board has it hidden. It waits a turn: set during the split view's
+            // first layout, the change was overwritten and portrait kept the sidebar docked.
+            Task {
+                guard !teamHidesSidebar, !boardHidesSidebar else { return }
+                columnVisibility = restingVisibility
+            }
+        }
         // iPad: the Inspector hides the sidebar while it's open beside the chat; the toolbar's
         // sidebar button brings it back.
         .onChange(of: router?.inspectorIsOpen ?? false) { _, isOpen in
             teamHidesSidebar = isOpen
-            withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : .all }
+            withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : restingVisibility }
         }
         // iPad: the Board takes the sidebar's room (`ipadBoard`); its back button returns home.
         .onChange(of: workspace.selection, initial: true) { _, selection in
             let isBoard = if case .board = selection { true } else { false }
             guard isBoard != boardHidesSidebar else { return }
             boardHidesSidebar = isBoard
-            withAnimation(Theme.snappy) { columnVisibility = isBoard ? .detailOnly : .all }
+            withAnimation(Theme.snappy) { columnVisibility = isBoard ? .detailOnly : restingVisibility }
         }
         #endif
     }
 
-    /// The sidebar button, on iPad while the sidebar is hidden.
+    /// Where the sidebar sits when nothing hides it: beside the detail, or in portrait put away
+    /// until the sidebar button brings it back.
+    private var restingVisibility: NavigationSplitViewVisibility {
+        isPortraitLike ? .detailOnly : .all
+    }
+
+    /// The sidebar button, on iPad while the sidebar is hidden: the Inspector hid it, or in
+    /// portrait it rests put away until the button brings it back. The Board has its own back
+    /// button.
     private var sidebarButton: (() -> Void)? {
         #if os(iOS)
-        guard teamHidesSidebar else { return nil }
+        let isHidden = teamHidesSidebar || (isPortraitLike && columnVisibility == .detailOnly && !boardHidesSidebar)
+        guard isHidden else { return nil }
         return {
             teamHidesSidebar = false
             withAnimation(Theme.snappy) { columnVisibility = .all }

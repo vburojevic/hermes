@@ -80,6 +80,9 @@ private struct MacAppsAndToolsContent: View {
                 model.route = page
             }
         }
+        // A `plugin/install?catalog=` link (`docs/connections.md` §5): that plugin's review in
+        // Suggested. The review is the consent: the link never installs.
+        .task(id: model.installRequest) { await takeInstallRequest() }
         .onChange(of: selection) {
             // "And Passwords" is a way to the Passwords tab, not a page here.
             if selection == .passwords {
@@ -89,6 +92,24 @@ private struct MacAppsAndToolsContent: View {
         }
         .modifier(AppsAndToolsAlerts(model: model))
         .sheet(isPresented: $installingFromGit) { InstallFromGitSheet(model: model) }
+    }
+
+    /// Resolves the link's name in the catalog and opens its review, or says the catalog doesn't
+    /// know it. Cleared only once done: clearing it first would restart this task, cancelling it.
+    /// A newer link cancels this one, which then leaves the route and the request to it.
+    private func takeInstallRequest() async {
+        guard let name = model.installRequest else { return }
+        selection = .suggested
+        for _ in 0..<40 where !model.hasLoaded { try? await Task.sleep(for: .milliseconds(250)) }
+        guard !Task.isCancelled else { return }
+        let found = await model.workspace?.pluginHub.lookUp(name)
+        guard !Task.isCancelled else { return }
+        if let found {
+            model.route = .review(.catalog(found))
+        } else {
+            model.message = String(localized: "\(name) isn't in the Hermes catalog.")
+        }
+        if model.installRequest == name { model.installRequest = nil }
     }
 
     /// "3 to install · 1 update".
