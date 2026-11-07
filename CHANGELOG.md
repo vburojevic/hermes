@@ -31,6 +31,10 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611070707 (November 7, 2026)
+
+- **Chats:** another device switching a chat back to an earlier model is followed too
+
 ### Build 2611020545 (November 2, 2026)
 
 - **Connections:** pictures, health checks and the plugin catalog never follow a redirect to another server
