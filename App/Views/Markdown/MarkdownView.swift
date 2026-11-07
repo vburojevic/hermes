@@ -252,17 +252,26 @@ private struct StreamingReveal: ViewModifier {
 
 /// What isn't text in a streaming reply (a list's bullet, a code block, a table) fades in as it
 /// arrives, with the words beside it, instead of popping in. Opacity only: nothing moves.
+///
+/// The fade goes in steps at the stream's pace (`StreamingFade.appearOpacity`), like the words'
+/// fade: eased frame by frame, each block's fade redrew the whole chat on every frame.
 private struct StreamingAppear: ViewModifier {
     @Environment(\.markdownCaches) private var isSettled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isShown = false
+    @State private var step = 0
 
     func body(content: Content) -> some View {
         content
-            .opacity(isShown || isSettled || reduceMotion ? 1 : 0)
-            .onAppear {
-                guard !isSettled else { return }
-                withAnimation(.easeOut(duration: 0.25)) { isShown = true }
+            .opacity(isSettled || reduceMotion ? 1 : StreamingFade.appearOpacity(step: step))
+            .task {
+                // A block the chat covered and showed again carries on from where it was, so
+                // what already faded in never dims back.
+                guard !isSettled, !reduceMotion, step < StreamingFade.appearSteps else { return }
+                for next in (step + 1)...StreamingFade.appearSteps {
+                    try? await Task.sleep(for: StreamingFade.stepGap)
+                    guard !Task.isCancelled else { return }
+                    step = next
+                }
             }
     }
 }

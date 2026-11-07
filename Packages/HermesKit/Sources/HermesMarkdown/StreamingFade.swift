@@ -71,4 +71,14 @@ public enum StreamingFade {
     public static func opacity(at index: Double, shown: Double) -> Double {
         min(1, max(0, (shown - index) / length))
     }
+
+    /// The steps a block that isn't text (a list's bullet, a code block, a table) fades in over,
+    /// `stepGap` apart, from nothing when it arrives. Eased frame by frame, each block's fade
+    /// redrew the chat on every frame while the reply wrote.
+    public static let appearSteps = 3
+
+    /// The opacity of such a block `step` steps after it arrived.
+    public static func appearOpacity(step: Int) -> Double {
+        min(1, max(0, Double(step) / Double(appearSteps)))
+    }
 }
