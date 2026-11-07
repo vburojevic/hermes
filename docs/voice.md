@@ -512,7 +512,9 @@ stop.
 - Route changes: the holder is told the new route; headphones coming out pause Listen and
   playback (Apple's rule).
 - `AVAudioEngineConfigurationChange` (AirPods connecting): the engine restarts with the tap on
-  the new input format and the holder reschedules what was playing.
+  the new input format and the holder reschedules what was playing. The node can still report the
+  old tap's rate, so the tap goes on at the hardware's rate (`TapFormat`); everyone listening
+  converts each buffer by its own format, so a voice message carries on across the change.
 - `mediaServicesWereReset`: a new engine, the session set up again, and the holder makes its
   players again (`AudioGraph.contains`); whoever listens to the microphone carries on, as the tap
   goes back on the new engine.
