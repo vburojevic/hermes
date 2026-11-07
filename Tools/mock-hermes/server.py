@@ -1088,6 +1088,13 @@ class Handler(BaseHTTPRequestHandler):
                 if sum(1 for r in live if r.session_id == sid and r.status == "queued") >= RUN_CAPS["queue_max"]:
                     # A store refusal: its message is the bare reason (api_server_authority_runs.py).
                     return self.error(409, "queue_full", "queue_full")
+                # The first call of a session sets its row's model (hermes_state_usage.py
+                # `first_accounted_route`); later runs name their own model without changing it.
+                if body.get("model") and not MESSAGES.get(sid):
+                    SESSIONS[sid]["model"] = body["model"]
+                    if body.get("provider"):
+                        SESSIONS[sid]["_provider"] = body["provider"]
+                print(f"[mock-hermes] run in {sid} runs on {body.get('model') or SESSIONS[sid]['model']}", flush=True)
                 run = Run(f"run_{uuid.uuid4().hex}", sid, text if isinstance(text, str) else str(text))
                 run.durable = bool(key)
                 RUNS[run.id] = run

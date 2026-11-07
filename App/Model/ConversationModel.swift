@@ -627,6 +627,9 @@ final class ConversationModel: Identifiable {
     /// Hermes's model switches across this chat's turns: a fallback shows once per switch, a
     /// restore never (`docs/chat.md` §2, "Model switches").
     @ObservationIgnored private var modelSwitches = ModelSwitchNotes()
+    /// Whether the chat takes the model Hermes reports for its session: one picked on another
+    /// device (`docs/sessions-and-models.md` §4).
+    @ObservationIgnored private var modelFollow = ChatModelFollow()
     /// A stuck turn's settle reloads the chat and sends Up Next itself, once the messages the stored
     /// chat already has are held (`settleStuckTurn`): the load doesn't send them first.
     @ObservationIgnored private var checksQueueAfterLoad = false
@@ -685,6 +688,8 @@ final class ConversationModel: Identifiable {
             queue = FollowUpQueueStore.load(key: key)
             keptFromBefore = FollowUpQueueStore.loadOutbox(key: key)
         }
+        // The chat's own model, not the one this device last picked for new chats.
+        sessionRowReported(model: session?.model)
     }
 
     /// A new chat whose first message waited when the app last ran and never left
@@ -2361,7 +2366,7 @@ final class ConversationModel: Identifiable {
         case "model":
             guard hasArgument else { draft = "/model "; return }
             if let selection = modelSelection(for: argument!) {
-                model = selection
+                pickModel(selection)
                 appendLocal(.command(CommandEntry(name: name, argument: argument, outcome: .note(String(localized: "Model changed to \(ModelNames.display(selection.model))")))))
             } else {
                 appendLocal(.command(CommandEntry(name: name, argument: argument, outcome: .failed(String(localized: "No model called “\(argument!)” on this gateway.")))))
@@ -3678,6 +3683,7 @@ final class ConversationModel: Identifiable {
         // The same body each time: Hermes dedupes on the key and the body together.
         let runModel = model
         let runEffort = reasoningEffort
+        modelFollow.sent(runModel)
         var attempt = 0
         var remembered = false
         // A POST that may have reached Hermes (in flight, or its answer lost): Stop can't give the
@@ -5025,10 +5031,13 @@ extension ConversationModel {
             guard let runtime = snapshot["session_id"]?.stringValue else { return nil }
             if runtime != runtimeSessionID {
                 lastAppliedSeq = nil
-                appliedRunSettings = nil
+                // The session runs on the model Hermes reports: it's set again only if the chat's differs.
+                appliedRunSettings = Self.reportedModel(snapshot["info"]).map { RunSettings(model: $0, effort: nil) }
             }
             runtimeSessionID = runtime
             if !isBotChat { roster.attach(self) }
+            // A model picked for this chat on another device is the one its next message uses.
+            sessionReported(snapshot["info"])
             // Attached on this socket now: the app's browser registers on it too (`docs/web.md` §6.2).
             inspectorIfLoaded?.browserIfLoaded?.chatReattached(runtime: runtime)
             if let info = LiveWorkspace(info: snapshot["info"]) { liveWorkspace = info }
@@ -5540,12 +5549,14 @@ extension ConversationModel {
         runtimeSessionID = runtime
         lastAppliedSeq = nil
         appliedRunSettings = RunSettings(model: model, effort: reasoningEffort)
+        modelFollow.sent(model)
         roster.attach(self)
         sessionID = stored
         stableKey = stored
         waitingChatCreated(stored)
         if let workspace { inspectorStore?.restore(chatKey: stored, workspaceID: workspace.id) }
         if let info = LiveWorkspace(info: created["info"]) { liveWorkspace = info }
+        sessionReported(created["info"])
         workspace?.projects.placed(storedID: stored, in: placement?.projectID)
         apply(.sessionChanged(stored))
         workspace?.adopt(self, session: HermesSession(id: stored))
@@ -5555,7 +5566,12 @@ extension ConversationModel {
     /// The chat's model and reasoning effort, set on its gateway session when they change.
     private func applyRunSettings(runtime: String, roster: BotRoster) async {
         let wanted = RunSettings(model: model, effort: reasoningEffort)
-        guard wanted != appliedRunSettings else { return }
+        guard wanted != appliedRunSettings else {
+            // The turn goes with what the session already has, the gateway's default included, so a
+            // pick made here is settled and the chat follows other devices again.
+            modelFollow.sent(appliedRunSettings?.model)
+            return
+        }
         let previous = appliedRunSettings
         var applied = wanted
         if let model, model != previous?.model {
@@ -5578,6 +5594,42 @@ extension ConversationModel {
             ])
         }
         appliedRunSettings = applied
+        modelFollow.sent(applied.model)
+    }
+
+    /// The person picked the chat's model on this device: it wins over another device's pick for
+    /// this device's next message (`docs/sessions-and-models.md` §4).
+    func pickModel(_ selection: ModelSelection?) {
+        model = selection
+        modelFollow.picked()
+    }
+
+    /// The chat's row in the chat list named its model (`HermesSession.model`).
+    func sessionRowReported(model reported: String?) {
+        guard !isBotChat, let reported else { return }
+        follow(ChatModelFollow.Report(model: reported, source: .row))
+    }
+
+    /// The socket's session info (`session.resume`, `session.create`, `session.info`) named the
+    /// session's model and provider.
+    private func sessionReported(_ info: JSONValue?) {
+        guard !isBotChat, let reported = info?["model"]?.stringValue else { return }
+        follow(ChatModelFollow.Report(model: reported, provider: info?["provider"]?.stringValue),
+               running: info?["running"]?.boolValue == true)
+    }
+
+    /// Takes the reported model when another device picked it; silently, as the title shows it.
+    private func follow(_ report: ChatModelFollow.Report, running: Bool = false) {
+        guard let adopted = modelFollow.reported(report, current: model, options: workspace?.modelOptions,
+                                                 turnRunning: running || isWorking) else { return }
+        model = adopted
+    }
+
+    /// The model and provider a session's info names, as the chat would send them.
+    private static func reportedModel(_ info: JSONValue?) -> ModelSelection? {
+        guard let model = info?["model"]?.stringValue, !model.isEmpty,
+              let provider = info?["provider"]?.stringValue, !provider.isEmpty else { return nil }
+        return ModelSelection(provider: provider, model: model)
     }
 
     /// The person confirmed the model Hermes asked about: switch for the next message.
@@ -5591,7 +5643,10 @@ extension ConversationModel {
                 "value": .string("\(confirmation.selection.model) --provider \(confirmation.selection.provider)"),
                 "confirm_expensive_model": .bool(true),
             ])
-            if result != nil { appliedRunSettings = RunSettings(model: confirmation.selection, effort: appliedRunSettings?.effort) }
+            if result != nil {
+                appliedRunSettings = RunSettings(model: confirmation.selection, effort: appliedRunSettings?.effort)
+                modelFollow.sent(confirmation.selection)
+            }
         }
     }
 
@@ -5645,6 +5700,8 @@ extension ConversationModel {
             }
             // A move (`session.workspace.move`) or `session.cwd.set` names the new folder.
             if let info = LiveWorkspace(info: event.payload), info != liveWorkspace { liveWorkspace = info }
+            // Another device switched this chat's model (`config.set`).
+            sessionReported(event.payload)
         case "review.summary":
             if let text = event.payload["text"]?.stringValue.flatMap(ReviewNote.text) { noteReview(text) }
             return
@@ -5785,6 +5842,7 @@ extension ConversationModel {
     private func applyTurnEvent(_ event: GatewayEvent) {
         // Every event, a turn on screen or not: the chat's model switches span its turns.
         let decoded = modelSwitches.filter(GatewayTurnDecoder.decode(event))
+        for case .modelSwitch(.fallback(let route)) in decoded.map(\.event) { modelFollow.fellBack(to: route.fallback) }
         if live == nil {
             guard Self.turnEvents.contains(event.type), !isFinishing else { return }
             beginRemoteTurn()

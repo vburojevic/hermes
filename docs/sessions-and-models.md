@@ -129,6 +129,23 @@ When the chat's model fails, Hermes answers with its fallback model (`fallback_m
 config) and goes back to the chosen one as the next turn starts. The chat says so once per switch
 and never says it went back ([chat.md](chat.md) §2, "Model switches").
 
+A model picked for a chat on another device is the one this device's next message uses. Hermes
+reports a session's model in its info (`model` and `provider` in `session.create`, `session.resume`
+and the `session.info` event, `tui_gateway/server.py` `_session_info`), and a `config.set` model
+switch both keeps it on the session's row and sends `session.info` to every client on the session
+(`model_switch.py` `_commit_agent_switch`). So the app learns it when a chat opens or reattaches,
+while it is open, and from the chat list's rows when the app comes back to the foreground. The chat
+takes the reported model silently (the title shows it, the next turn sends it) only when it differs
+from what this device last sent or took and what Hermes last reported, and the person hasn't picked
+a model on this device since: a pick made here wins for this device's next turn. Reports while a
+turn runs are ignored, and so is the fallback model Hermes moved a turn to. A row names no provider
+and keeps the session's first model while API server turns run on others (each `POST /v1/runs`
+names its own), so a row counts only when it moves. So without Bot Mode, where turns go over
+`/v1/runs`, a pick on another device is followed only once a switch over the socket (a device with
+Bot Mode on) moves the row. The model remembered for new chats doesn't change. The logic is
+`ChatModelFollow` in HermesKit; the mock keeps each chat's model and logs the model each turn runs
+on.
+
 Provider keys are entered during setup, not in the picker: `model.save_key {slug, api_key}` with
 4003 (a provider that signs in, such as an OAuth one: run `hermes model` on the gateway) and 4006
 (a managed install) explained (`docs/onboarding.md` §3).

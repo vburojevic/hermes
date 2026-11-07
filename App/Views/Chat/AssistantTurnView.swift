@@ -1760,7 +1760,7 @@ struct BranchAction: Equatable {
     }
 
     func tryAgain(with model: ModelSelection? = nil) {
-        if let model { conversation.model = model }
+        if let model { conversation.pickModel(model) }
         conversation.retryLastMessage()
     }
 
