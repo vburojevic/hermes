@@ -252,10 +252,34 @@ public final class AudioGraph: @unchecked Sendable {
         }
     }
 
+    /// Puts the one microphone tap on, in a format the engine accepts: its refusal is an exception
+    /// Swift can't catch, so the format is chosen first (`TapFormat`).
     private func installTap() throws {
         let node = engine.inputNode
-        let format = node.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { throw AudioGraphError.noInput }
+        // Clear the bus whatever the flag says: a second tap on it raises.
+        node.removeTap(onBus: 0)
+        tapInstalled = false
+        let output = node.outputFormat(forBus: 0)
+        let hardware = node.inputFormat(forBus: 0)
+        let format: AVAudioFormat
+        switch TapFormat.decide(output: (output.sampleRate, output.channelCount),
+                                hardware: (hardware.sampleRate, hardware.channelCount),
+                                voiceProcessing: voiceProcessing) {
+        case .output:
+            format = output
+        case .hardware(let sampleRate, let channels):
+            Logger(subsystem: "co.caffeinatedcode.hermes", category: "audio")
+                .info("microphone tap follows the hardware: \(output.sampleRate, privacy: .public) Hz given, \(sampleRate, privacy: .public) Hz heard")
+            // Only mono and stereo have a format without a channel layout; the next configuration
+            // change tries again.
+            guard let hardwareRate = AVAudioFormat(commonFormat: output.commonFormat, sampleRate: sampleRate,
+                                                   channels: channels, interleaved: output.isInterleaved) else {
+                throw AudioGraphError.inputChanging
+            }
+            format = hardwareRate
+        case .noInput:
+            throw AudioGraphError.noInput
+        }
         Self.installTap(on: node, format: format, consumers: consumers)
         tapInstalled = true
     }
@@ -350,9 +374,19 @@ public final class AudioGraph: @unchecked Sendable {
     }
 }
 
-public enum AudioGraphError: Error, Equatable {
+public enum AudioGraphError: LocalizedError, Equatable {
     /// There's no microphone input (no permission, or the role doesn't record).
     case noInput
+    /// The microphone is between two routes or sample rates (AirPods connecting, a call): the
+    /// engine's next configuration change puts the tap back.
+    case inputChanging
+
+    public var errorDescription: String? {
+        switch self {
+        case .noInput: "The microphone isn't available."
+        case .inputChanging: "The microphone is switching to another device. Try again in a moment."
+        }
+    }
 }
 
 /// A player node and its time-pitch unit, with the level of what it's playing.

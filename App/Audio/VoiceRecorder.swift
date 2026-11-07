@@ -499,8 +499,11 @@ nonisolated final class VoiceFileWriter: @unchecked Sendable {
             if file == nil {
                 let file = try AVAudioFile(forWriting: url, settings: Self.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
                 self.file = file
-                converter = AVAudioConverter(from: buffer.format, to: file.processingFormat)
                 meter = LevelWindow(window: Int(file.processingFormat.sampleRate / 20))
+            }
+            // The microphone's rate changes mid-message when AirPods connect or a call comes in.
+            if let file, converter?.inputFormat != buffer.format {
+                converter = AVAudioConverter(from: buffer.format, to: file.processingFormat)
             }
             guard let file, let converter else { return }
             let ratio = file.processingFormat.sampleRate / buffer.format.sampleRate
