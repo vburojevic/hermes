@@ -90,12 +90,19 @@ final class NowPlayingPublisher {
 
     private static func legacyArtwork(_ appearance: BotAppearance?) -> MPMediaItemArtwork? {
         guard let image = ListenArtwork.image(appearance, side: 600) else { return nil }
+        return artwork(image)
+    }
+
+    /// MediaPlayer asks for the image on its own queue. A handler made in main-actor code is
+    /// main-actor isolated and traps when called there, so this is built outside the main actor
+    /// and its handler only hands back the image made here.
+    private nonisolated static func artwork(_ image: CGImage) -> MPMediaItemArtwork {
         #if os(iOS)
         let platform = UIImage(cgImage: image)
         #else
         let platform = NSImage(cgImage: image, size: NSSize(width: 600, height: 600))
         #endif
-        return MPMediaItemArtwork(boundsSize: CGSize(width: 600, height: 600)) { _ in platform }
+        return MPMediaItemArtwork(boundsSize: CGSize(width: 600, height: 600)) { @Sendable _ in platform }
     }
 }
 

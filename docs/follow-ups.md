@@ -134,7 +134,9 @@ design's component names, used in code comments.
 - **Why a message is there.** A row the person didn't put there says why on a second line
   (`UpNextNote`): a steer that goes next instead (§2), Ask Aside or Run in Background with no live
   chat ("Ask Aside needs a live chat, so it sends next"), one Stop cleared from the gateway's
-  queue ("Stop cleared it from <gateway>'s queue before it ran", marked **Not sent**), one kept
+  queue ("Stop cleared it from <gateway>'s queue before it ran", marked **Not sent**), one the
+  gateway dropped from its queue while the app was away ("<gateway> cleared it from its queue
+  before it ran", marked **Not sent**, below), one kept
   from before a relaunch that the chat doesn't show, or that the chat shows after a missed turn
   end ("Hermes may already have this. Check the chat before you send it.", marked **Maybe
   sent**), and a refusal only the gateway can settle (Hermes's words). Not sent and Maybe sent go
@@ -188,7 +190,15 @@ design's component names, used in code comments.
   steer while it compacts, or one it queued behind a turn this device hadn't seen) shows first in
   the tray, read-only, marked "on <gateway name>" (`queueItemOnGateway`). After a reconnect the app
   reads it from `session.resume` (`queued`), shows one held message, and expects it as the next
-  turn.
+  turn. When an attach finds Hermes holding nothing the tray showed, Hermes either ran it while
+  the app was away or let the chat go: a session no socket came back to within 20 s is closed with
+  its queue, and the next `session.resume` sets aside the rows it kept for messages that never ran
+  (`retire_undrained_queue_rows`). The stored chat says which, as after Stop: a message whose own
+  turn is stored ran and stays gone (messages Hermes joined into one turn ran together); the rest come back to the top of Up Next, in order and whole
+  (attachments and skills included), marked **Not sent** ("<gateway> cleared it from its queue
+  before it ran"), or **Maybe sent** when Hermes still stores its waiting row or the chat can't be
+  read. Only this device's own messages come back, held steers included: one it heard of from
+  Hermes stays with the device that sent it (`GatewayHeldQueue.Dropped`).
 
 ## 4a. iPad
 
