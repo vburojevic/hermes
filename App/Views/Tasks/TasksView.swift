@@ -21,13 +21,21 @@ struct TasksView: View {
         #endif
     }
 
+    /// Leading, as in a chat. On iPad in portrait `.navigation` put it on the trailing side, among
+    /// the selected task's actions.
+    #if os(iOS)
+    private static let sidebarPlacement = ToolbarItemPlacement.topBarLeading
+    #else
+    private static let sidebarPlacement = ToolbarItemPlacement.navigation
+    #endif
+
     var body: some View {
         content
             .background(Theme.canvas)
             .navigationTitle("Tasks")
             .toolbar {
                 if let onToggleSidebar {
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: Self.sidebarPlacement) {
                         SidebarButton(action: onToggleSidebar)
                     }
                     .sidebarButtonGlass()
@@ -44,7 +52,13 @@ struct TasksView: View {
                 }
                 #endif
             }
-            .task(id: workspace.id) { await model.load(client: workspace.client) }
+            .task(id: LoadTrigger(workspace: workspace)) {
+                // Read when Tasks opens and again whenever the gateway comes online (a late
+                // connect, a reconnect, a new address). Offline, a read only says why the list is
+                // empty: a list already shown stays as it is.
+                guard workspace.connection.isOnline || model.jobs.isEmpty else { return }
+                await model.load(client: workspace.client)
+            }
             .task(id: workspace.pendingNewTask) {
                 // Something suggested a task (setup's morning briefing): New Task, filled in.
                 guard let pending = workspace.pendingNewTask else { return }
@@ -173,6 +187,20 @@ struct TasksView: View {
 
     private var refusalBinding: Binding<Bool> {
         Binding(get: { model.refusal != nil }, set: { if !$0 { model.refusal = nil } })
+    }
+
+    /// What Tasks reads the list again for: another gateway, a new address for it, or the gateway
+    /// coming online or going offline.
+    private struct LoadTrigger: Equatable {
+        let workspace: UUID
+        let address: URL
+        let isOnline: Bool
+
+        init(workspace: BotWorkspace) {
+            self.workspace = workspace.id
+            address = workspace.bot.baseURL
+            isOnline = workspace.connection.isOnline
+        }
     }
 }
 

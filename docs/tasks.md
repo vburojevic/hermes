@@ -17,7 +17,7 @@ and the iPad and Mac layouts. Design components: `Tasks.taskRow`, `Tasks.runRow`
 
 | Action | Call | Notes |
 |---|---|---|
-| Tasks list | `GET /api/jobs?include_disabled=true` | Paused jobs only appear with `include_disabled`. Sorted active first by next run, paused last. Loaded when Tasks opens and on pull to refresh |
+| Tasks list | `GET /api/jobs?include_disabled=true` | Paused jobs only appear with `include_disabled`. Sorted active first by next run, paused last. Loaded when Tasks opens, again whenever the gateway comes online (Tasks opened before it connected, a reconnect, a new address), and on pull to refresh or Try Again. One read at a time: a new one replaces the read on its way, so the newest answer stands. Offline with nothing loaded, the list says why it couldn't load |
 | New Task | `POST /api/jobs {name, schedule, prompt}` | Name, prompt and schedule are required. Hermes allows a name up to 200 characters and a prompt up to 5000, and sets `deliver: local` when none is given. Create closes the sheet at once; the task shows in the list, tagged "Adding…", until the gateway's job replaces it. A refusal (an invalid schedule) takes the row away and says why, with Edit Task to open New Task again with what was typed |
 | Pause / Resume | `POST /api/jobs/{id}/pause`, `…/resume` | The row moves at once (Paused, or back among the active ones) and the job in the answer settles it, next run included. A refusal puts it back and says so |
 | Run Now | `POST /api/jobs/{id}/run` | The row says "Starting…" until the gateway has the run, and VoiceOver hears "<task> started" |
@@ -54,7 +54,8 @@ Not built yet:
   deliver, skills, repeat, enabled) and `PUT /api/cron/jobs/{id}` on the backend; the app has no
   editor.
 - Choosing skills, a model, where results go, or a repeat count in New Task.
-- Refreshing on the `cron.changed` event; the lists refresh when opened and on pull to refresh.
+- Refreshing on the `cron.changed` event; the lists refresh when opened, when the gateway comes
+  online and on pull to refresh.
 - Recent runs in the iPhone task detail.
 
 ## 2. Schedules and delivery
@@ -104,6 +105,8 @@ it was made" for `origin`, else the target's platform name.
 - A routine created for one Bot appears only in that Bot's routines and, with Post results in the
   Bot Chat on, posts there (try Run Now against the mock backend).
 - A failed run shows "Last run failed" in the list and its error in the detail.
+- Open Tasks with the gateway stopped ("Couldn't load tasks"), then start it: the list fills in
+  by itself once the gateway connects, with no pull to refresh.
 - On iPad and Mac, a run row opens that run's chat in Chats.
 
 ## 4. iPad and Mac
@@ -112,7 +115,8 @@ it was made" for `origin`, else the target's platform name.
   beside the selected task's detail: prompt, schedule (runs, next run or Paused, where results
   go), skills, last error, then recent runs (`Tasks.runRow`, `runRowFailed`: when, how long, and
   what it said or why it failed). Pause and Run Now float in a bottom glass bar over the
-  scroll-edge fade. + adds a task; the … menu deletes the selected one.
+  scroll-edge fade. + adds a task; the … menu deletes the selected one. With the sidebar hidden
+  (portrait), the sidebar button sits top left, as in a chat, and the page's actions top right.
 - The list takes half the room, between 240 and 360 pt, so the detail keeps its share in a narrow
   window (the Mac's smallest, the iPad with its sidebar beside it).
 - **Mac** (`macTasks`): the same list and detail in the window. Pause (or Resume) and Run Now move
