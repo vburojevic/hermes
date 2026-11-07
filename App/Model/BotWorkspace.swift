@@ -414,16 +414,14 @@ final class BotWorkspace: Identifiable {
     }
 
     /// The chat list this device saw last, shown until the gateway's arrives: a busy Mac can take
-    /// minutes over it, and a cold launch meanwhile showed an empty sidebar (`SessionsCache`).
+    /// minutes over it, and a cold launch meanwhile showed an empty sidebar (`SessionsCache`). It's
+    /// read here, before the first frame, so the rows are in the window when it shows rather than
+    /// sliding in after it as one animated insert.
     private func restoreCachedSessions() {
-        let endpoint = bot.baseURL
-        Task { [weak self, id] in
-            guard let cached = await SessionsCache.load(id), let self,
-                  !self.hasFetchedSessions, self.sessions.isEmpty, self.bot.baseURL == endpoint else { return }
-            self.sessions = cached
-            self.nextSessionOffset = cached.count
-            LaunchTrace.mark("cached chats shown (\(cached.count))", id: "cached chats")
-        }
+        guard let cached = SessionsCache.load(id) else { return }
+        sessions = cached
+        nextSessionOffset = cached.count
+        LaunchTrace.mark("cached chats shown (\(cached.count))", id: "cached chats")
     }
 
     /// Applies edited settings; reconnects when the address or key changed.
@@ -687,6 +685,7 @@ final class BotWorkspace: Identifiable {
     /// screen again.
     func open(_ hit: ChatSearch.Hit) {
         let result = hit.result
+        LoadTrace.mark(result.lineageRoot ?? result.sessionID, "search result opened")
         let focus = SearchFocus(result: result)
         if let botName = hit.botName, let roster, roster.bot(named: botName) != nil {
             sidebarMode = .bots

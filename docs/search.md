@@ -88,7 +88,8 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
   loaded yet, the app loads up to five older pages to find it, and only then settles for a message
   with all the words, else any of them: a chat's latest rows often have the words but aren't the
   result. It scrolls the message to the middle and flashes it once (`surface` → `canvas`, fading
-  over 0.8 s).
+  over 0.8 s). It goes as soon as the chat's first page is in and the drawer is still, so on a Mac,
+  which has no drawer, it doesn't wait at all.
 - **Empty** (`drawerNoResults`): "No chats mention “…”", with **Search All** when a chip narrowed it, else "Try a
   different word, or a shorter one."
 - **Without full text,** chats match by title only (the first message for untitled chats), every

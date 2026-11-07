@@ -2972,6 +2972,8 @@ def main():
     parser.add_argument("--bandwidth", type=int, default=0, metavar="KBPS",
                         help="answer HTTP like a phone over the network at this many kbit/s (0: localhost speed)")
     parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one")
+    parser.add_argument("--many-chats", type=int, default=0, metavar="N",
+                        help="seed N more ordinary chats on the gateway, to measure a long chat list")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: both mocks answer in bursts every MIN-MAX seconds, "
                              "health checks too (starve.py; POST /api/mock/starve to start, change or stop it)")
@@ -3052,6 +3054,8 @@ def main():
         gateway.RUN_STREAM["ttl"] = args.run_stream_ttl
         if args.long_chat:
             gateway.seed_long_chat()
+        if args.many_chats:
+            gateway.seed_many_chats(args.many_chats)
         GATEWAY_PAGING.extend([gateway.page_rows, gateway.throttle])
         GATEWAY.append(gateway)
         api = ThreadingHTTPServer((args.host, args.gateway_port), gateway.Handler)
