@@ -650,7 +650,13 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   keeps its finished lines tinted (`CodeHighlighter.Stream`) and tints only new ones. Both give
   exactly what parsing the whole text gives. An opened bold or code span is shown closed until its
   closer arrives, so raw `**` and backticks never flash. New words fade in along the line, a
-  little behind the stream; blocks such as lists and tables fade in as they arrive. The words go
+  little behind the stream; blocks such as lists and tables fade in as they arrive. The words'
+  fade moves with each redraw, never frame by frame, and once the words pause the rest of it goes
+  in three short steps (`StreamingFade`); words that come after a pause fade in on their own and
+  never dim what was already drawn. Animated frame by frame, the fade laid the whole chat out
+  again on every frame, a quarter of the Mac's main thread while a reply wrote. The transcript
+  tells the stack around it that it has no alignment guides: asked for them, a layout places its
+  content to find them, and the whole chat was laid out again several times a redraw. The words go
   into the turn as they arrive, but the reply redraws with them at most 15 times a second
   (`applyToLive`): tens of pieces a second each redrawing it were a tenth of the Mac's main thread
   while it wrote. Anything else that changes the turn (a tool, an approval, the end) redraws it at

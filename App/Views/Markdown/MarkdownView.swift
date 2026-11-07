@@ -214,21 +214,16 @@ private struct MarkdownBlockView: View, Equatable {
 /// While a reply streams, its newest words fade in along the line, a little behind the stream,
 /// instead of appearing a chunk at a time. Only the drawing changes: the text takes its full
 /// room at once, so following the reply and the scroll position never wait on the fade.
+///
+/// The fade moves with the redraws, never frame by frame (`StreamingFade`): a renderer that
+/// animated changed every frame, and each change laid the whole chat out again.
 private struct StreamingReveal: ViewModifier {
     let length: Int
     @Environment(\.markdownCaches) private var isSettled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown: Double
-
-    init(length: Int) {
-        self.length = length
-        // A paragraph appears with what has arrived of it: only its last words fade in, so a
-        // burst doesn't leave a list's bullets waiting for their text (and a chat opened
-        // mid-reply doesn't sweep in from the top).
-        _shown = State(initialValue: Double(max(0, length - Self.freshTail)))
-    }
-
-    private static let freshTail = 24
+    /// When the words last stopped coming. A new length ends the pause, so the words that arrive
+    /// start the fade again in the same redraw, and what the pause drew stays drawn.
+    @State private var pause = StreamingFade.Pause.none
 
     func body(content: Content) -> some View {
         // The swap from streaming to settled is instant: a reply settles inside an animated
@@ -238,23 +233,20 @@ private struct StreamingReveal: ViewModifier {
                 .transition(.identity)
         } else {
             content
-                .textRenderer(RevealRenderer(shown: shown))
-                .onAppear { reveal(from: max(0, length - Self.freshTail), to: length) }
-                .onChange(of: length) { old, new in reveal(from: old, to: new) }
+                .textRenderer(RevealRenderer(edge: StreamingFade.Edge(count: length, pause: pause)))
+                .task(id: length) { await finishFade() }
                 .transition(.identity)
         }
     }
 
-    private func reveal(from old: Int, to new: Int) {
-        let target = RevealRenderer.target(new)
-        guard target > shown else {
-            shown = target // the text got shorter (a marker held back): no fade backwards
-            return
+    /// The words stopped coming: the end of the fade goes in a few steps, at the stream's pace.
+    private func finishFade() async {
+        let length = length
+        for step in 1...StreamingFade.restSteps {
+            try? await Task.sleep(for: step == 1 ? StreamingFade.restDelay : StreamingFade.stepGap)
+            guard !Task.isCancelled else { return }
+            pause = pause.rested(count: length, step: step)
         }
-        // Keeps up with the stream: a few words ease in quickly, a burst sweeps in over at most
-        // 0.4 s. Overlapping reveals add up into one steady movement.
-        let added = Double(max(1, new - old))
-        withAnimation(.linear(duration: min(0.4, max(0.2, added / 240)))) { shown = target }
     }
 }
 
@@ -275,18 +267,10 @@ private struct StreamingAppear: ViewModifier {
     }
 }
 
-/// Draws glyphs up to `shown` and fades the ones after it in over `fade` glyphs.
-private nonisolated struct RevealRenderer: TextRenderer, Animatable {
-    var shown: Double
-    static let fade = 14.0
-
-    var animatableData: Double {
-        get { shown }
-        set { shown = newValue }
-    }
-
-    /// Everything fully drawn.
-    static func target(_ length: Int) -> Double { Double(length) + fade }
+/// Draws the glyphs up to the fade's edge, fading in the `StreamingFade.length` glyphs behind it.
+/// Not animatable: an animation would change it, and lay the chat out, every frame.
+private nonisolated struct RevealRenderer: TextRenderer {
+    var edge: StreamingFade.Edge
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
         var index = 0.0
@@ -294,14 +278,14 @@ private nonisolated struct RevealRenderer: TextRenderer, Animatable {
             for run in line {
                 let count = Double(run.count)
                 defer { index += count }
-                if index + count + Self.fade <= shown {
+                if edge.isWhole(before: index + count) {
                     context.draw(run)
-                } else if index < shown {
+                } else if index < edge.shown {
                     for (offset, slice) in run.enumerated() {
-                        let opacity = (shown - index - Double(offset)) / Self.fade
+                        let opacity = edge.opacity(at: index + Double(offset))
                         guard opacity > 0 else { break }
                         var glyph = context
-                        glyph.opacity = min(1, opacity)
+                        glyph.opacity = opacity
                         glyph.draw(slice)
                     }
                 }
