@@ -93,15 +93,26 @@ def new_chat_runtime(stored):
     return sid
 
 
+def session_model(stored):
+    """The session's model and provider as Hermes's `_session_info` reports them: the live agent's,
+    which `config.set` persists to the row (`agent_factory._persist_live_session_runtime`). The
+    provider is the row's billing provider, which the API server's rows don't show."""
+    with G.LOCK:
+        row = G.SESSIONS.get(stored) or {}
+        return {"model": row.get("model") or G.MODEL_OPTIONS["model"],
+                "provider": row.get("_provider") or G.MODEL_OPTIONS["provider"]}
+
+
 def create_chat(params):
     stored = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     now = time.time()
     with G.LOCK:
         G.session_row(stored, params.get("title") or "", params.get("source") or "hermes_app", now, now, "",
-                      model=params.get("model") or "anthropic/claude-sonnet-4.6")
+                      model=params.get("model") or G.MODEL_OPTIONS["model"])
+        G.SESSIONS[stored]["_provider"] = params.get("provider") or G.MODEL_OPTIONS["provider"]
     sid = new_chat_runtime(stored)
     return {"session_id": sid, "stored_session_id": stored, "message_count": 0, "messages": [],
-            "info": {"model": params.get("model") or "anthropic/claude-sonnet-4.6", "running": False}}
+            "info": {**session_model(stored), "running": False}}
 
 
 def resume_chat(params):
@@ -114,7 +125,7 @@ def resume_chat(params):
     with G.LOCK:
         count = len(G.MESSAGES.get(stored, []))
     return {"session_id": sid, "resumed": stored, "message_count": count, "messages": [], "messages_omitted": True,
-            "info": {"model": "anthropic/claude-sonnet-4.6", "running": runtime["running"]},
+            "info": {**session_model(stored), "running": runtime["running"]},
             **B["live_turn"](runtime), "running": runtime["running"], "session_key": stored,
             "status": "streaming" if runtime["running"] else "idle", "open_requests": B["open_requests"](sid),
             "queued": {"user": runtime["queue"][0]["text"]} if runtime.get("queue") else None}
@@ -174,7 +185,34 @@ def config_set(params):
         # Like Hermes's selection guards: an expensive model waits for the person to confirm.
         message = f"{value.split(' --')[0]} costs about 5x more per token than your current model."
         return {"key": key, "value": value, "warning": message, "confirm_required": True, "confirm_message": message}
+    if key == "model" and params.get("session_id"):
+        switch_model(params["session_id"], value)
     return {"key": key, "value": value, "scope": "session" if params.get("session_id") else "global"}
+
+
+def switch_model(sid, value):
+    """`config.set model` on a live session (tui_gateway/model_switch.py `_commit_agent_switch`): the
+    agent switches, the row keeps it, and `session.info` tells every client on the session."""
+    model, _, provider = str(value).partition(" --provider ")
+    model, provider = model.strip(), provider.strip()
+    with B["LOCK"]:
+        runtime = B["RUNTIME"].get(sid)
+        stored = runtime and runtime["stored"]
+    if not stored or not model:
+        return
+    with G.LOCK:
+        row = G.SESSIONS.get(stored)
+        if row is None:
+            return
+        row["model"] = model
+        if provider:
+            row["_provider"] = provider
+    info = session_model(stored)
+    print(f"[mock-hermes] {stored} model set to {info['model']} via {info['provider']}", flush=True)
+    with B["LOCK"]:
+        live = [k for k, r in B["RUNTIME"].items() if r["stored"] == stored and not r.get("dead")]
+    for each in live:
+        emit(each, "session.info", {**info, "running": B["RUNTIME"][each]["running"]})
 
 
 def file_attach(params):
@@ -909,7 +947,7 @@ def finish(sid, stored, text, *, status="complete", error=None, recoverable=None
     with B["LOCK"]:
         B["RUNTIME"][sid]["running"] = False
         B["RUNTIME"][sid]["inflight"] = None
-    emit(sid, "session.info", {"running": False, "model": "anthropic/claude-sonnet-4.6"})
+    emit(sid, "session.info", {"running": False, **session_model(stored)})
     B["after_turn"](sid, run_chat_turn)
 
 
@@ -972,6 +1010,8 @@ def run_snapshots_turn(sid, stored, lower):
 
 def run_chat_turn(sid, text):
     stored = B["RUNTIME"][sid]["stored"]
+    # The model each turn runs on, for checking which device's pick it carried.
+    print(f"[mock-hermes] turn in {stored} runs on {session_model(stored)['model']}", flush=True)
     B["begin_turn"](sid, stored, text, G.add_message)
     title_later(sid, stored, text)
     lower = text.lower()

@@ -1046,6 +1046,8 @@ final class BotWorkspace: Identifiable {
             nextSessionOffset = limit
             for session in sessions {
                 conversations[session.stableID]?.adoptSessionID(session.id)
+                // A model picked on another device follows into the open chat (`docs/sessions-and-models.md` §4).
+                conversations[session.stableID]?.sessionRowReported(model: session.model)
             }
             if case .failed = connection { connection = .online(version: nil) }
             prefetchRecent()

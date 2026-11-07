@@ -382,7 +382,7 @@ struct ModelPickerView: View {
     }
 
     private func select(_ selection: ModelSelection?) {
-        conversation.model = selection
+        conversation.pickModel(selection)
         workspace.rememberModelChoice(selection, effort: conversation.reasoningEffort)
         onDone()
     }
