@@ -71,4 +71,17 @@ struct StreamingFadeTests {
         // Everything the last full rest drew stays whole.
         #expect(frames.last?.edge.isWhole(before: 90) == true)
     }
+
+    @Test func aBlockFadesInOverItsStepsAndStaysWhole() {
+        #expect(StreamingFade.appearOpacity(step: 0) == 0)
+        var last = 0.0
+        for step in 1...StreamingFade.appearSteps {
+            let opacity = StreamingFade.appearOpacity(step: step)
+            #expect(opacity > last)
+            last = opacity
+        }
+        #expect(last == 1)
+        #expect(StreamingFade.appearOpacity(step: StreamingFade.appearSteps + 2) == 1)
+        #expect(StreamingFade.appearOpacity(step: -1) == 0)
+    }
 }

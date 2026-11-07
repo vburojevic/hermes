@@ -654,7 +654,9 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   fade moves with each redraw, never frame by frame, and once the words pause the rest of it goes
   in three short steps (`StreamingFade`); words that come after a pause fade in on their own and
   never dim what was already drawn. Animated frame by frame, the fade laid the whole chat out
-  again on every frame, a quarter of the Mac's main thread while a reply wrote. The transcript
+  again on every frame, a quarter of the Mac's main thread while a reply wrote. A list's bullet,
+  a code block or a table fades in the same way, in three steps a redraw apart: eased frame by
+  frame, each one redrew the chat on every frame while it faded. The transcript
   tells the stack around it that it has no alignment guides: asked for them, a layout places its
   content to find them, and the whole chat was laid out again several times a redraw. The words go
   into the turn as they arrive, but the reply redraws with them at most 15 times a second
