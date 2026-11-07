@@ -12,6 +12,7 @@ struct CompactionDivider: View {
 
     @State private var isOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -31,7 +32,8 @@ struct CompactionDivider: View {
                     }
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.tertiaryText)
-                    .lineLimit(2)
+                    // At the accessibility sizes the line wraps in full rather than cutting off.
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)

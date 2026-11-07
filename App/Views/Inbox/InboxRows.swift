@@ -205,24 +205,29 @@ struct InboxRowLayout<Line: View>: View {
     @ViewBuilder let line: Line
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(macOS)
+    private let markSize: CGFloat = InboxMetrics.glyphSize * 0.9
+    #else
+    @ScaledMetric(relativeTo: .footnote) private var markSize: CGFloat = InboxMetrics.glyphSize * 0.9
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: InboxMetrics.lineSpacing) {
-            HStack(spacing: 6) {
-                if live {
-                    LiveDot()
-                        .transition(.scale.combined(with: .opacity))
+            if dynamicTypeSize.isAccessibilitySize {
+                // At the accessibility sizes the time and marks beside the title left it a word
+                // or two, so they get the line under it (`docs/inbox.md` §6).
+                HStack(spacing: 6) {
+                    liveDot
+                    titleText
                 }
-                Text(title)
-                    .font(strong ? InboxMetrics.unreadTitleFont : InboxMetrics.titleFont)
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if routine { mark("clock") }
-                if muted { mark("bell.slash.fill") }
-                if pinned { mark("pin.fill") }
-                if let date {
-                    InboxTimeText(date: date, emphasized: emphasizeTime ?? strong)
+                if hasMeta {
+                    HStack(spacing: 6) { meta }
+                }
+            } else {
+                HStack(spacing: 6) {
+                    liveDot
+                    titleText
+                    meta
                 }
             }
             HStack(spacing: 6) {
@@ -236,9 +241,37 @@ struct InboxRowLayout<Line: View>: View {
         .frame(minHeight: InboxMetrics.rowHeight - 18)
     }
 
+    @ViewBuilder
+    private var liveDot: some View {
+        if live {
+            LiveDot()
+                .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(strong ? InboxMetrics.unreadTitleFont : InboxMetrics.titleFont)
+            .foregroundStyle(Theme.primaryText)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var hasMeta: Bool { routine || muted || pinned || date != nil }
+
+    @ViewBuilder
+    private var meta: some View {
+        if routine { mark("clock") }
+        if muted { mark("bell.slash.fill") }
+        if pinned { mark("pin.fill") }
+        if let date {
+            InboxTimeText(date: date, emphasized: emphasizeTime ?? strong)
+        }
+    }
+
     private func mark(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: InboxMetrics.glyphSize * 0.9))
+            .font(.system(size: markSize))
             .foregroundStyle(Theme.tertiaryText)
             .accessibilityHidden(true)
     }

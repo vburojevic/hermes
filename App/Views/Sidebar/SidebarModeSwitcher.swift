@@ -10,6 +10,7 @@ struct SidebarModeSwitcher: View {
 
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #if os(macOS)
     private let height: CGFloat = 24
     #else
@@ -22,18 +23,42 @@ struct SidebarModeSwitcher: View {
         return unread.unreadCount(inBots: value == .bots)
     }
 
+    /// At the accessibility sizes "Chats" and its count no longer fit half the drawer, so the two
+    /// sides stack and the pill slides down instead of across (`docs/inbox.md` §6).
+    private var isStacked: Bool {
+        #if os(macOS)
+        false
+        #else
+        dynamicTypeSize.isAccessibilitySize
+        #endif
+    }
+
     var body: some View {
-        HStack(spacing: 2) {
+        let layout = isStacked ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
+        track(layout {
             tab(.chats, title: "Chats", badge: unreadCount(.chats))
             tab(.bots, title: "Bots", badge: unreadCount(.bots))
         }
-        .padding(3)
-        .background(Theme.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
+        .padding(3))
         .animation(reduceMotion ? nil : Theme.snappy, value: mode)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: unreadCount(.chats) + unreadCount(.bots))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Show")
+    }
+
+    /// Stacked, the track keeps the pill's rounding so the two stay concentric.
+    @ViewBuilder
+    private func track(_ content: some View) -> some View {
+        if isStacked {
+            let shape = RoundedRectangle(cornerRadius: height / 2 + 3, style: .continuous)
+            content
+                .background(Theme.surface, in: shape)
+                .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 0.5))
+        } else {
+            content
+                .background(Theme.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
+        }
     }
 
     private func tab(_ value: SidebarMode, title: LocalizedStringKey, badge: Int = 0) -> some View {

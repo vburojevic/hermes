@@ -717,6 +717,8 @@ enum GatewayAvatarRasterizer {
 struct ConnectionStatusLabel: View {
     let workspace: BotWorkspace
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         let status = ConnectionStatus(workspace)
         HStack(spacing: 8) {
@@ -725,7 +727,8 @@ struct ConnectionStatusLabel: View {
         }
         .font(.footnote)
         .foregroundStyle(Theme.secondaryText)
-        .lineLimit(1)
+        // One line until the accessibility sizes, where it wraps rather than stopping at "Connecte…".
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
         .accessibilityElement(children: .combine)
     }
 }

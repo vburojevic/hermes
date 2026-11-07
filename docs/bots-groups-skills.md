@@ -123,7 +123,8 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   first frame was built, and kept the grid or a new chat under a selected row.
 - **Grid tiles** (`BotsHomeView`) show the face, title, @handle, role and one status line:
   "Working: <step>", "New: <preview>", "Active now", "Last active <time>" (the row's time) or
-  "Say hi to start".
+  "Say hi to start". At the accessibility text sizes on iPhone and iPad the grid is one column
+  of full-width tiles, and the title, handle, role and status wrap in full instead of cutting off.
 - **Previews** describe the Bot Chat when there is one. Hermes's control frames read as what they
   mean ("Steered the reply", "Used the <name> skill") or are hidden, messages from other Bots read
   "Name: text", and routine deliveries read "⏰ <routine>: <output>". A compaction's summary is

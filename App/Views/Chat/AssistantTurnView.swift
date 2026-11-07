@@ -362,6 +362,13 @@ private struct MessageActions<More: View>: View {
     @ViewBuilder var more: () -> More
 
     @State private var copied = false
+    // The glyphs grow with the text, but stop where five of them still fit on the narrowest
+    // iPhone at the largest size (`docs/chat.md` §5).
+    @ScaledMetric(relativeTo: .body) private var scaledGlyph: CGFloat = 15
+    @ScaledMetric(relativeTo: .body) private var scaledMoreGlyph: CGFloat = 13
+    @ScaledMetric(relativeTo: .body) private var scaledSide: CGFloat = 32
+    private var glyph: CGFloat { min(scaledGlyph, 24) }
+    private var side: CGFloat { min(scaledSide, 44) }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -374,6 +381,7 @@ private struct MessageActions<More: View>: View {
                 }
             } label: {
                 Image(systemName: copied ? "checkmark" : "square.on.square")
+                    .font(.system(size: glyph, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
             }
             .help("Copy")
@@ -381,6 +389,7 @@ private struct MessageActions<More: View>: View {
 
             ShareLink(item: text) {
                 Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: glyph, weight: .semibold))
             }
             .help("Share")
             .accessibilityLabel("Share")
@@ -392,6 +401,7 @@ private struct MessageActions<More: View>: View {
                     ListenPlayer.shared.toggle(listen)
                 } label: {
                     Image(systemName: isListening ? "stop.circle" : "speaker.wave.2")
+                        .font(.system(size: glyph, weight: .semibold))
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .help(isListening ? "Stop listening" : "Listen")
@@ -401,6 +411,7 @@ private struct MessageActions<More: View>: View {
             if let onBranch {
                 Button { onBranch() } label: {
                     Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: glyph, weight: .semibold))
                 }
                 .help("Branch from here")
                 .accessibilityLabel("Branch from here")
@@ -408,7 +419,8 @@ private struct MessageActions<More: View>: View {
 
             Menu(content: more) {
                 Image(systemName: "ellipsis")
-                    .frame(width: 32, height: 32)
+                    .font(.system(size: min(scaledMoreGlyph, 21), weight: .medium))
+                    .frame(width: side, height: side)
                     .contentShape(Rectangle())
             }
             .menuStyle(.button)
@@ -418,9 +430,8 @@ private struct MessageActions<More: View>: View {
             .help("More")
             .accessibilityLabel("More")
         }
-        .buttonStyle(IconButtonStyle(size: 32))
+        .buttonStyle(IconButtonStyle(size: side))
         .foregroundStyle(Theme.tertiaryText)
-        .font(.system(size: 13, weight: .medium))
         .padding(.leading, -8)
         .sensoryFeedback(.success, trigger: copied) { _, new in new }
     }
