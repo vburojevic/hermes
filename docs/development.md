@@ -442,9 +442,13 @@ ones it deleted and the ones still waiting, even when nothing waits (without it,
 doesn't touch WebKit).
 
 Measuring a cold launch (same build): `-HERMES_LAUNCH_LOG YES` prints each launch step once with
-its time since the process started (`LaunchTrace`: the model, the first view, the kept chats, Bots
-and last lines, the gateway's answer, the socket, the fresh lists, each row's last line), and the
-chat load steps above with it. `-HERMES_RESTORE bot:ops` (or `session:<key>`) opens as if the
+its time since the process started (`LaunchTrace`: the model, the first view, the kept chats, the
+window turning visible on a Mac (its first frame), the first chat row on screen, Bots and last
+lines, the gateway's answer, the socket, the fresh lists, each row's last line), and the chat load
+steps above with it. `--many-chats N` on either mock adds N ordinary chats (every fifth with two
+unread replies), for a list as long as a well-used gateway's.
+With `-HERMES_SEARCH` and `-HERMES_SEARCH_OPEN YES`, `-HERMES_SEARCH_AFTER <s>` waits that long
+after launch before typing, and the load log marks `search result opened` for the chat it opens. `-HERMES_RESTORE bot:ops` (or `session:<key>`) opens as if the
 window had been showing that chat; with `-HERMES_OPEN bot:ops` (or `-HERMES_OPEN_SESSION <key>`)
 too, it's the launch where the Mac's detail once missed the selection
 ([bots-groups-skills.md](bots-groups-skills.md) §1.2). A Mac window behind other windows isn't drawn, so its chat

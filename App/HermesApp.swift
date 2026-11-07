@@ -27,6 +27,20 @@ struct HermesApp: App {
         // a file, stdout otherwise holds 4 KB, and loses it when the app is stopped.
         setvbuf(stdout, nil, _IOLBF, 0)
         LaunchTrace.mark("app init")
+        #if os(macOS)
+        // The first view's `onAppear` comes before its first frame is drawn; the window turning
+        // visible is when the person sees it.
+        if LaunchTrace.enabled {
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main
+            ) { note in
+                guard let window = note.object as? NSWindow else { return }
+                MainActor.assumeIsolated {
+                    if window.occlusionState.contains(.visible) { LaunchTrace.mark("window on screen") }
+                }
+            }
+        }
+        #endif
         // `-HERMES_VOICE_INPUT /path/clip.m4a@1.5,/path/stop.m4a@9`: spoken clips heard as if by
         // the microphone, at their second from when listening starts (`docs/voice.md` §12).
         if let spec = UserDefaults.standard.string(forKey: "HERMES_VOICE_INPUT") {

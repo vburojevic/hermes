@@ -111,6 +111,9 @@ struct RootView: View {
                             for _ in 0..<40 where workspace.roster?.isConnected != true {
                                 try? await Task.sleep(for: .milliseconds(250))
                             }
+                            // `-HERMES_SEARCH_AFTER <s>`: once launch has settled, to time a search alone.
+                            let after = UserDefaults.standard.double(forKey: "HERMES_SEARCH_AFTER")
+                            if after > 0 { try? await Task.sleep(for: .seconds(after)) }
                             workspace.sidebarMode = .chats
                             workspace.searchText = text
                             // `-HERMES_SEARCH_OPEN YES` opens the first result, as a tap would.

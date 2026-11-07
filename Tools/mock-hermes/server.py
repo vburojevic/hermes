@@ -153,6 +153,29 @@ def seed_long_chat(turns=60):
     SESSIONS[sid]["_last_read_at"] = NOW - 2 * 86400  # read two days ago: many replies since
 
 
+MANY_TOPICS = ["inventory sync", "release checklist", "garden plan", "invoice export", "backup rotation",
+               "trip budget", "recipe scaling", "photo cleanup", "router firmware", "reading list"]
+
+
+def seed_many_chats(count):
+    """`--many-chats N`: N ordinary chats over the past two months (one question, one answer each),
+    as a long-used gateway lists them: sources mixed, every fifth with replies since it was read,
+    so launch, the list's order, its unread counts and search can be measured at that size."""
+    for i in range(count):
+        sid = f"many_{i:04d}"
+        topic = MANY_TOPICS[i % len(MANY_TOPICS)]
+        started = NOW - (i + 1) * 5 * HOUR - (i % 7) * 60
+        source = ("cli", "api_server", "telegram", "discord")[i % 4]
+        session_row(sid, f"{topic.capitalize()} {i + 1}", source, started, started + 120, "")
+        add_message(sid, "user", f"Help me with the {topic} for item {i + 1}.", timestamp=started)
+        add_message(sid, "assistant", f"Done: the {topic} for item {i + 1} is in order. I checked each step "
+                                      f"and noted what to look at next.", timestamp=started + 60)
+        add_message(sid, "assistant", f"One more thing about the {topic}: it runs again next week.",
+                    timestamp=started + 120)
+        # Read before the last two replies (2 unread), or after everything.
+        SESSIONS[sid]["_last_read_at"] = started + 30 if i % 5 == 0 else started + 600
+
+
 def add_message(sid, role, content, **extra):
     with LOCK:
         rows = MESSAGES.setdefault(sid, [])
@@ -1327,6 +1350,8 @@ def main():
                              "(Hermes: 300); its status stays and its events answer 404")
     parser.add_argument("--late-events", type=float, default=0, metavar="SECONDS",
                         help="hold every run's events this long after its stream opens, as a stream that attached late")
+    parser.add_argument("--many-chats", type=int, default=0, metavar="N",
+                        help="seed N more ordinary chats (seed_many_chats), to measure a long chat list")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
@@ -1334,6 +1359,8 @@ def main():
     RUN_STREAM["late"] = args.late_events
     Handler.key = args.key
     seed()
+    if args.many_chats:
+        seed_many_chats(args.many_chats)
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True

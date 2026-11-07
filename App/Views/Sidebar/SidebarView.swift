@@ -18,6 +18,9 @@ struct SidebarView: View {
     @State private var renameText = ""
     @State private var deleting: HermesSession?
     @State private var actionError: HermesError?
+    /// Until the window is on screen the chats list one screenful, so the window shows without
+    /// laying out every kept chat first (`docs/inbox.md` §1).
+    @State private var isFirstFrame = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var query: String { workspace.searchText.trimmingCharacters(in: .whitespaces) }
@@ -68,6 +71,14 @@ struct SidebarView: View {
         .animation(listMotion, value: botOrder)
         .animation(listMotion, value: chatOrder)
         .onAppear { workspace.activity.listAppeared() }
+        .task {
+            #if os(macOS)
+            // The list's own task runs before the window's first frame is drawn.
+            await WindowOnScreen.wait()
+            #endif
+            isFirstFrame = false
+            LaunchTrace.mark("every chat listed (\(workspace.inboxSessions.count))", id: "every chat listed")
+        }
         .onDisappear { workspace.activity.listDisappeared() }
         .modifier(ArchivedToast(workspace: workspace) { actionError = $0 })
         .sensoryFeedback(.selection, trigger: workspace.sidebarMode)
@@ -240,10 +251,13 @@ struct SidebarView: View {
     @ViewBuilder
     private var sessionSections: some View {
         let shown = workspace.inboxSessions
-        ForEach(shown, id: \.stableID) { session in
+        let listed = ChatListSnapshot.listed(shown, firstFrame: isFirstFrame)
+        ForEach(listed, id: \.stableID) { session in
             sessionRow(session)
         }
-        if workspace.inboxFilter == .unread, !shown.isEmpty {
+        // Nothing goes below a list cut for the first frame: it is whole a moment later.
+        let isWhole = listed.count == shown.count
+        if isWhole, workspace.inboxFilter == .unread, !shown.isEmpty {
             // Mark All as Read, at the end of the Unread list (`docs/inbox.md` §5).
             Button("Mark All as Read") {
                 Task { await workspace.unread.markAllRead(workspace.unreadChatKeys) }
@@ -255,7 +269,7 @@ struct SidebarView: View {
             .padding(.vertical, 16)
             .modifier(SidebarRowInsets())
         }
-        if workspace.hasMoreSessions && workspace.inboxFilter == .all {
+        if isWhole, workspace.hasMoreSessions && workspace.inboxFilter == .all {
             SkeletonRows(count: 2)
                 .padding(.vertical, 8)
                 .modifier(SidebarRowInsets())
@@ -543,6 +557,9 @@ private struct SessionRow: View {
         } label: {
             ChatInboxRow(session: session, workspace: workspace, isSelected: isSelected)
         }
+        #if DEBUG
+        .onAppear { LaunchTrace.mark("first chat row on screen (\(workspace.sessions.count) chats)", id: "first chat row") }
+        #endif
     }
 }
 

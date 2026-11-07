@@ -116,9 +116,6 @@ nonisolated enum RosterCache {
 /// The last chat list seen for each gateway (`GET /api/sessions` rows), kept the same way: a cold
 /// launch while the gateway's Mac is too busy to answer opens on its chats, not an empty sidebar.
 nonisolated enum SessionsCache {
-    /// The rows kept: the newest page, as far as a sidebar shows before scrolling for more.
-    private static let maxRows = 200
-
     private static var root: URL? {
         try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appending(path: "Sessions", directoryHint: .isDirectory)
@@ -130,19 +127,17 @@ nonisolated enum SessionsCache {
 
     private static let writes = DispatchQueue(label: "co.caffeinatedcode.hermes.sessions-cache", qos: .utility)
 
-    static func load(_ gateway: UUID) async -> [HermesSession]? {
-        guard let url = file(gateway) else { return nil }
-        return await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? JSONDecoder().decode([HermesSession].self, from: data)
-        }.value
+    /// Read on the spot, before the first frame: a read that came later landed after it and
+    /// slid all the rows in as one animated insert (`ChatListSnapshot`).
+    static func load(_ gateway: UUID) -> [HermesSession]? {
+        file(gateway).flatMap(ChatListSnapshot.read)
     }
 
     static func save(_ gateway: UUID, sessions: [HermesSession]) {
         guard let url = file(gateway), !sessions.isEmpty else { return }
-        let kept = Array(sessions.prefix(maxRows))
+        let kept = Array(sessions.prefix(ChatListSnapshot.maxRows))
         writes.async {
-            guard let data = try? JSONEncoder().encode(kept) else { return }
+            guard let data = ChatListSnapshot.encode(kept) else { return }
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
         }

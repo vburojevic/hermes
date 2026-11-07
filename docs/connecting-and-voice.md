@@ -251,9 +251,13 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   Bots too, from their roster reads). Mock: `--starve 5-30` ([development.md](development.md)).
 - The chat list is kept on the device (`SessionsCache`, the newest 200 rows, in Caches): a cold
   launch shows it at once and the gateway's replaces it when it comes, so a busy Mac no longer
-  means an empty sidebar. The model list is kept the same way (`ModelOptionsCache`), so the model
-  picker opens on it instead of "Loading models…". After health and capabilities, the chat list,
-  the model list and widget support are read side by side. Each row's last message is kept too
+  means an empty sidebar. It's read as the gateway's workspace is made, before the first frame
+  (`ChatListSnapshot`, about a millisecond for 200 rows), so the window opens with its rows in
+  place instead of sliding them in after it. The first frame lists a screenful
+  (`ChatListSnapshot.firstFrameRows`, 40) and the rest join right after it, so laying out every
+  row doesn't hold the window back. The model list is kept the same way (`ModelOptionsCache`), so
+  the model picker opens on it instead of "Loading models…". After health and capabilities, the
+  chat list, the model list and widget support are read side by side. Each row's last message is kept too
   (`LastLinesCache`, `docs/inbox.md` §1), so the rows read right before the gateway answers.
 - Opening a chat, the copy this device kept (`TranscriptCache`) goes up while the gateway's newest
   rows are asked for, not before: the request leaves as soon as the copy is read from disk, with

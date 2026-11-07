@@ -468,8 +468,14 @@ struct TranscriptView: View {
                 #endif
                 withAnimation(.easeOut(duration: 0.15)) { settled = true }
             }
-            // After the opening animation (the drawer closing), the rest of the page.
-            try? await Task.sleep(for: .milliseconds(450))
+            // After the opening animation (the drawer closing), the rest of the page. A chat
+            // opened from a search result goes on as soon as the drawer is still: its landing
+            // waits for this page, and the fixed wait kept it 0.45 s even with no drawer.
+            if conversation.searchFocus != nil {
+                await Settling.untilSettled()
+            } else {
+                try? await Task.sleep(for: .milliseconds(450))
+            }
             pageDue = true
         }
         .modifier(WhenSettled(isDue: pageDue, action: fillWindow))
@@ -600,6 +606,13 @@ struct TranscriptView: View {
     private static let loadingRowHeight: CGFloat = 20
     private static let loadingRoom: CGFloat = loadingRowHeight + 30
 
+    /// `fillWindow` has rows to add and hasn't started on them.
+    private var isFillDue: Bool {
+        let all = conversation.rows
+        return !isPrepending && !isScrolledByHand && lastShownKey == nil
+            && pageStart(in: all, above: all.count) < firstShownIndex(in: all)
+    }
+
     /// The rest of the first page, above the rows on screen: the end stays where it is. A few
     /// rows a frame: the page's twelve in one frame took up to half a second in chats of long
     /// replies and tables, a freeze just as the chat had opened.
@@ -637,13 +650,15 @@ struct TranscriptView: View {
     /// iPhone the drawer slides away over the chat) and the first page, so the flash is seen.
     private func landOnSearchMatch() async {
         guard let focus = conversation.searchFocus else { return }
-        for _ in 0..<60 where conversation.loadState != .loaded || conversation.rows.isEmpty || !settled || !pageDue {
-            try? await Task.sleep(for: .milliseconds(100))
+        // Checked every 20 ms: every 100 ms added up to a tenth of a second.
+        for _ in 0..<300 where conversation.loadState != .loaded || conversation.rows.isEmpty || !settled || !pageDue {
+            try? await Task.sleep(for: .milliseconds(20))
             guard !Task.isCancelled else { return }
         }
-        try? await Task.sleep(for: .milliseconds(100))
-        for _ in 0..<10 where isPrepending {
-            try? await Task.sleep(for: .milliseconds(100))
+        // The rest of the first page goes in first: it keeps the row at the top in place as it
+        // fills, which would move the match off the middle.
+        for _ in 0..<60 where isPrepending || isFillDue {
+            try? await Task.sleep(for: .milliseconds(20))
         }
         guard !Task.isCancelled else { return }
         // The result's own message, from earlier pages if it takes them; only then a looser match.

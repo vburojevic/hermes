@@ -91,7 +91,9 @@ chat was left scrolled up, the row at the top (it opens there next time unless t
 new). Each row's last message (`LastLineBook`): Hermes' list rows carry the first message, so
 the app reads the last one itself and keeps it on the device (`LastLinesCache`, in Caches with the
 transcripts), with the time it was written and the chat activity it was read at. A launch shows
-them before the gateway answers; a line kept without its time is read again once.
+them before the gateway answers; a line kept without its time is read again once. The list
+itself is kept the same way and its first screenful is in the window's first frame, the rest
+right after it ([connecting-and-voice.md](connecting-and-voice.md) §8).
 
 - **The chats the app follows** (open, or opened this launch): the line follows the chat as it
   changes, the reply that just ended included, before Hermes stores it (`rowLastLine`: the rows,
