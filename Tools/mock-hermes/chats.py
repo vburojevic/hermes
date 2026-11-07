@@ -118,9 +118,13 @@ def create_chat(params):
 def resume_chat(params):
     stored = params["session_id"]
     with B["LOCK"]:
-        # A runtime Hermes let go (a reap, a restart) isn't resumed: the chat gets a fresh one.
-        sid = next((k for k, r in B["RUNTIME"].items() if r["stored"] == stored and not r.get("dead")), None) \
-            or new_chat_runtime(stored)
+        # A runtime Hermes let go (a reap, a restart) isn't resumed: the chat gets a fresh one, and
+        # the rows its queue kept for prompts that never ran are retired, as in a Bot's chat.
+        sid = next((k for k, r in B["RUNTIME"].items() if r["stored"] == stored and not r.get("dead")), None)
+        if sid is None:
+            with G.LOCK:
+                B["retire_undrained_queue_rows"](G.MESSAGES.get(stored, []))
+            sid = new_chat_runtime(stored)
         runtime = B["RUNTIME"][sid]
     with G.LOCK:
         count = len(G.MESSAGES.get(stored, []))

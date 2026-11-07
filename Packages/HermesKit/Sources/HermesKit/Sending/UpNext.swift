@@ -67,6 +67,9 @@ public enum UpNextNote: Sendable, Equatable {
     case sendsNextInstead(SendsNextReason)
     /// Stop emptied the gateway's queue with the turn: it never ran, and waits for a Send.
     case clearedByStop
+    /// Hermes let the chat go while this device was away and dropped its queue with it: it
+    /// never ran, and waits for a Send.
+    case droppedByGateway
     /// Hermes refused it; it waits for what the refusal says (`SendRefusal.action`).
     case refused(SendRefusal)
     /// Kept from before a relaunch, or shown by the chat after a missed turn end: Hermes may
@@ -86,6 +89,8 @@ public enum UpNextNote: Sendable, Equatable {
             return reason.line(gateway: gateway)
         case .clearedByStop:
             return "Stop cleared it from \(gateway)'s queue before it ran"
+        case .droppedByGateway:
+            return "\(gateway) cleared it from its queue before it ran"
         case .mayHaveArrived:
             return "Hermes may already have this. Check the chat before you send it."
         case .refused(let refusal):
@@ -103,6 +108,7 @@ public enum UpNextNote: Sendable, Equatable {
         switch self {
         case .sendsNextInstead(let reason): "next.\(reason.rawValue)"
         case .clearedByStop: "cleared"
+        case .droppedByGateway: "dropped"
         case .mayHaveArrived: "maybe"
         case .refused: nil
         }
@@ -111,6 +117,7 @@ public enum UpNextNote: Sendable, Equatable {
     public init?(storedKey: String?) {
         switch storedKey {
         case "cleared": self = .clearedByStop
+        case "dropped": self = .droppedByGateway
         case "maybe": self = .mayHaveArrived
         case let key? where key.hasPrefix("next."):
             guard let reason = SendsNextReason(rawValue: String(key.dropFirst(5))) else { return nil }
