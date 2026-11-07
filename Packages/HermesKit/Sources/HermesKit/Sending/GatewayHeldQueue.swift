@@ -18,20 +18,28 @@ public struct GatewayHeldQueue<Item> {
     public struct Entry {
         /// The tray's line.
         public var line: String
-        /// The message as sent from here; nil for one this device only heard of from Hermes.
+        /// The message as sent from here, when there's more to it than its words.
         public var item: Item?
         /// Words only, nothing attached: Hermes may join it into the head envelope.
         public var isTextOnly: Bool
+        /// Sent from this device; false for Hermes's head, sent from another device.
+        public var isOwn: Bool
 
-        public init(line: String, item: Item?, isTextOnly: Bool = true) {
+        public init(line: String, item: Item?, isTextOnly: Bool = true, isOwn: Bool = true) {
             self.line = line
             self.item = item
             self.isTextOnly = isTextOnly
+            self.isOwn = isOwn
         }
     }
 
     /// Hermes's envelopes, in the order it sends them; each one turn.
-    public private(set) var envelopes: [[Entry]] = []
+    public private(set) var envelopes: [[Entry]] = [] {
+        didSet { if envelopes.isEmpty { after = nil } }
+    }
+    /// The newest stored message before the turn the tray's first message waited behind: what
+    /// happened to the tray while this device was away is in the stored chat past it (`Dropped`).
+    public private(set) var after: Int?
 
     public init() {}
 
@@ -39,8 +47,11 @@ public struct GatewayHeldQueue<Item> {
     public var lines: [String] { entries.map(\.line) }
     public var isEmpty: Bool { envelopes.isEmpty }
 
-    /// Hermes took it into its queue, joined to the head as Hermes joins it, or as an envelope of its own.
-    public mutating func hold(_ line: String, item: Item?, isTextOnly: Bool = true) {
+    /// Hermes took this device's message into its queue, joined to the head as Hermes joins it, or
+    /// as an envelope of its own. `after`: the newest stored message before the turn it waits
+    /// behind; the tray keeps its first own message's.
+    public mutating func hold(_ line: String, item: Item?, isTextOnly: Bool = true, after: Int? = nil) {
+        if !entries.contains(where: \.isOwn) { self.after = after }
         let entry = Entry(line: line, item: item, isTextOnly: isTextOnly)
         if isTextOnly, envelopes.count == 1, envelopes[0].allSatisfy(\.isTextOnly) {
             envelopes[0].append(entry)
@@ -86,32 +97,86 @@ public struct GatewayHeldQueue<Item> {
     /// never ran. `ranSince` is the person's stored messages since the stopped turn began.
     public mutating func purged(ranSince stored: [SessionMessage]) -> [Entry] {
         var ran = stored.filter { $0.role == "user" && !$0.isWaitingInQueue }.map { Self.words($0.content.text) }
-        return purged().filter { entry in
-            guard let index = ran.firstIndex(where: { $0.contains(Self.words(entry.line)) && !Self.words(entry.line).isEmpty }) else { return true }
-            ran.remove(at: index)
-            return false
-        }
+        return purged().filter { !Self.take($0.line, from: &ran) }
     }
 
     /// Attached again (`session.resume`): `head` is the first message Hermes still holds, or nil.
-    /// With nothing held, what the tray had ran while this device was away, or went with a Stop
-    /// elsewhere: the stored chat says which, so nothing is given back. Otherwise the messages this
-    /// device sent stay (Hermes shows only the first, in its own words: a photo's message, a
-    /// file's `@file:` line), and with none of its own the tray shows Hermes's head, sent from
-    /// another device.
-    public mutating func attached(head: String?) {
+    /// With nothing held, the tray empties and what it had comes back as `Dropped`: it ran while
+    /// this device was away, or Hermes let the chat go (and its queue with it) before it could,
+    /// and only the stored chat says which. Otherwise the messages this device sent stay (Hermes
+    /// shows only the first, in its own words: a photo's message, a file's `@file:` line), and
+    /// with none of its own the tray shows Hermes's head, sent from another device.
+    @discardableResult
+    public mutating func attached(head: String?) -> Dropped? {
         guard let head else {
+            guard !envelopes.isEmpty else { return nil }
+            let dropped = Dropped(entries: entries, after: after)
             envelopes = []
-            return
+            return dropped
         }
-        if envelopes.isEmpty { envelopes = [[Entry(line: head, item: nil)]] }
+        if envelopes.isEmpty { envelopes = [[Entry(line: head, item: nil, isOwn: false)]] }
+        return nil
+    }
+
+    /// What the tray held when an attach found Hermes holding nothing (`attached(head:)`). Hermes
+    /// lets a chat go about 20 s after its last socket closes (hermes-agent `tui_gateway`
+    /// `_close_sessions_for_transport`, the WS-orphan reap), and the next `session.resume` retires
+    /// the rows of messages its queue never sent (`retire_undrained_queue_rows`): those messages
+    /// are gone from Hermes, and this device's copy is the only one left.
+    public struct Dropped {
+        public let entries: [Entry]
+        /// The newest stored message before the turn they waited behind.
+        public let after: Int?
+
+        public struct GivenBack {
+            public let entry: Entry
+            /// Its waiting row is still stored, or the chat couldn't be read: Hermes may yet have it.
+            public let maybeSent: Bool
+        }
+
+        /// Read against the stored chat (`stored`, nil when it couldn't be read): a message whose
+        /// own turn started (a row of its own, not the one Hermes keeps while it waits) ran, and
+        /// isn't given back to run again; one whose waiting row is still stored comes back Maybe
+        /// sent; the rest never ran and come back Not sent. In order, each with this device's whole
+        /// message. Hermes's head, sent from another device, isn't given back here: the device
+        /// that sent it keeps its own copy.
+        public func givenBack(stored: [SessionMessage]?) -> [GivenBack] {
+            let own = entries.filter(\.isOwn)
+            guard let stored else { return own.map { GivenBack(entry: $0, maybeSent: true) } }
+            // A hidden row is nobody's turn (a row Hermes set aside, a summary): it says nothing ran.
+            let since = stored.filter { $0.role == "user" && $0.displayKind != "hidden" && ($0.id ?? 0) > (after ?? -1) }
+            // The turn they waited behind stored its own message first: it isn't one of theirs.
+            let rows = since.firstIndex { !$0.isWaitingInQueue }.map { Array(since[since.index(after: $0)...]) } ?? since
+            var ran = rows.filter { !$0.isWaitingInQueue }.map { GatewayHeldQueue.words($0.content.text) }
+            var waiting = rows.filter(\.isWaitingInQueue).map { GatewayHeldQueue.words($0.content.text) }
+            return own.compactMap { entry in
+                if GatewayHeldQueue.take(entry.line, from: &ran) { return nil }
+                return GivenBack(entry: entry, maybeSent: GatewayHeldQueue.take(entry.line, from: &waiting))
+            }
+        }
     }
 
     /// Words only: Hermes joins messages with blank lines and the tray collapses them.
     static func words(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
+
+    /// Whether `line` is in one of the stored `rows` (words only); if so, its words leave that row.
+    /// Hermes runs text-only messages it joined as one turn (one row), so each of them is found
+    /// in it, once.
+    static func take(_ line: String, from rows: inout [String]) -> Bool {
+        let words = words(line)
+        guard !words.isEmpty else { return false }
+        for index in rows.indices {
+            guard let range = rows[index].range(of: words) else { continue }
+            rows[index].removeSubrange(range)
+            return true
+        }
+        return false
+    }
 }
 
 extension GatewayHeldQueue: Sendable where Item: Sendable {}
 extension GatewayHeldQueue.Entry: Sendable where Item: Sendable {}
+extension GatewayHeldQueue.Dropped: Sendable where Item: Sendable {}
+extension GatewayHeldQueue.Dropped.GivenBack: Sendable where Item: Sendable {}

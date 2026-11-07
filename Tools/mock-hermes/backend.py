@@ -1884,6 +1884,8 @@ def reap_orphans():
             runtime["running"] = False
             runtime["inflight"] = None
             runtime["peers"] = set()
+            # The session closes with its queue (`_close_sessions_for_transport`): nothing it held runs.
+            runtime["queue"] = []
 
 
 def deliver_routine(profile, title, output, reply):
@@ -2063,8 +2065,10 @@ def method_session_resume(params):
             session = STORED[add_session(profile, "Untitled", source="desktop", sid=stored)]
         if session is None or session["profile"] != profile:
             raise RPCError(4007, "session not found")
-        sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored and not r.get("dead")), None) \
-            or new_runtime(stored, profile)
+        sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored and not r.get("dead")), None)
+        if sid is None:
+            retire_undrained_queue_rows(session["messages"])
+            sid = new_runtime(stored, profile)
         runtime = RUNTIME[sid]
         if DROP["settle"] > 0 and runtime["running"]:
             DROP["settle"] -= 1
@@ -2077,6 +2081,22 @@ def method_session_resume(params):
                 "started_at": session["started_at"], "status": "streaming" if runtime["running"] else "idle",
                 "open_requests": open_requests(sid),
                 "queued": {"user": runtime["queue"][0]["text"]} if runtime.get("queue") else None}
+
+
+def retire_undrained_queue_rows(rows):
+    """Hermes's `retire_undrained_queue_rows` (#125577), as a resume mints a fresh runtime: the rows a
+    queue kept for prompts that never ran are deactivated (here hidden, as a drain does), so the
+    stored chat no longer shows them and nothing glues them into the turn before."""
+    for row in rows:
+        meta = row.get("display_metadata")
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except ValueError:
+                meta = None
+        if row["role"] == "user" and isinstance(meta, dict) and meta.get("_queued_prompt"):
+            row["display_kind"] = "hidden"
+            row.pop("display_metadata", None)
 
 
 def live_turn(runtime):

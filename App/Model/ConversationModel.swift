@@ -389,6 +389,8 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var lastRunEventAt = Date.distantPast
     /// Gives back what Stop cleared from Hermes's queue once the stopped turn settled.
     @ObservationIgnored private var stopGiveBack: Task<Void, Never>?
+    /// Gives back what Hermes dropped from its queue while the app was away, once an attach found it.
+    @ObservationIgnored private var droppedGiveBack: Task<Void, Never>?
 
     /// How many of this chat's messages wait in the gateway's own queue, behind work the gateway
     /// runs in this chat (`session.info` `pending_submissions`), for the tray to say so.
@@ -3261,7 +3263,9 @@ final class ConversationModel: Identifiable {
     /// message, given back if Hermes drops it (Stop).
     private func holdOnGateway(_ text: String, item: QueuedFollowUp? = nil) {
         // Words alone join Hermes's head envelope; photos, files and skills are envelopes of their own.
-        gatewayHeld.hold(text, item: item, isTextOnly: item.map { !$0.hasAttachments && $0.skills.isEmpty } ?? true)
+        // `after`: where the turn they wait behind starts, should Hermes drop them while away.
+        gatewayHeld.hold(text, item: item, isTextOnly: item.map { !$0.hasAttachments && $0.skills.isEmpty } ?? true,
+                         after: turnBaseline?.newest ?? newestBeforeTurn)
         captionsByText[text] = .fromQueue
         expectedFromGateway.append((text, .fromQueue))
     }
@@ -4884,6 +4888,7 @@ final class ConversationModel: Identifiable {
         queuedRunWatch?.cancel()
         runStatusWatch?.cancel()
         stopGiveBack?.cancel()
+        droppedGiveBack?.cancel()
         processesPublish?.cancel()
         justFinishedReset?.cancel()
         outputFlush?.cancel()
@@ -5058,13 +5063,14 @@ extension ConversationModel {
             // Hermes shows only the first it holds: what this device sent stays, whole (`GatewayHeldQueue`).
             let head = GatewayQueue.queuedPrompt(in: snapshot)
             let heldNone = gatewayHeld.isEmpty
-            gatewayHeld.attached(head: head)
+            let dropped = gatewayHeld.attached(head: head)
             if let head, heldNone {
                 captionsByText[head] = .fromQueue
                 expectedFromGateway.append((head, .fromQueue))
             } else if head == nil, !heldNone {
                 expectedFromGateway.removeAll { $0.caption == .fromQueue }
             }
+            if let dropped { giveBackDropped(dropped) }
             if let pending = snapshot["pending_connection"], let connection = HermesRequest.connection(from: pending) {
                 receive(connection)
             }
@@ -6516,6 +6522,33 @@ extension ConversationModel {
                     var item = entry.item ?? QueuedFollowUp(text: entry.line)
                     item.isHeld = true
                     item.note = .clearedByStop
+                    return item
+                }, at: 0)
+            }
+        }
+    }
+
+    /// An attach found Hermes holding nothing this device had in the tray: it ran them while the
+    /// app was away, or it let the chat go and dropped its queue (`docs/follow-ups.md` §4). The
+    /// stored chat says which ran; the rest come back to the top of Up Next, whole, held for a
+    /// Send (Maybe sent when Hermes still stores their waiting row, or the chat can't be read).
+    private func giveBackDropped(_ dropped: GatewayHeldQueue<QueuedFollowUp>.Dropped) {
+        // One give-back at a time and none lost: a later attach's waits for an earlier one's.
+        let earlier = droppedGiveBack
+        droppedGiveBack = Task { [weak self] in
+            await earlier?.value
+            guard let self, !Task.isCancelled else { return }
+            var stored: [SessionMessage]?
+            if let id = self.sessionID { stored = try? await self.fetchLatest(id).messages }
+            guard !Task.isCancelled else { return }
+            let given = dropped.givenBack(stored: stored)
+            guard !given.isEmpty else { return }
+            ConnectionLog.logger.notice("chat: the gateway dropped \(given.count) held message(s); back in Up Next")
+            self.animateRows {
+                self.queue.insert(contentsOf: given.map { back in
+                    var item = back.entry.item ?? QueuedFollowUp(text: back.entry.line)
+                    item.isHeld = true
+                    item.note = back.maybeSent ? .mayHaveArrived : .droppedByGateway
                     return item
                 }, at: 0)
             }

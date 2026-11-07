@@ -369,6 +369,29 @@ class Sending(MockCase):
             time.sleep(0.3)
         self.assertEqual([r.get("display_kind") for r in rows], ["hidden", None])
 
+    def test_a_chat_hermes_let_go_comes_back_holding_nothing_and_its_waiting_rows_are_retired(self):
+        for create in ({}, {"title": "Bot Chat"}):
+            ws, sid, stored = self.open_chat(**create)
+            self.submit(ws, sid, "slow please")
+            time.sleep(0.6)
+            self.assertEqual(self.submit(ws, sid, "never ran", queued=True)["result"]["status"], "queued")
+            self.call("POST", "/api/mock/drop-sockets", {"reap": 0.2})
+            time.sleep(0.6)
+            ws = Socket(self.port, f"/api/ws?token={TOKEN}")
+            self.addCleanup(ws.close)
+            ws.sock.settimeout(40)
+            resumed = self.rpc(ws, "session.resume", {"session_id": stored, "omit_messages": True})["result"]
+            self.assertFalse(resumed.get("queued"))
+            if create:
+                # A Bot's chat is stored by the backend, as `hermes serve` keeps it.
+                status, body = self.call("GET", f"/api/sessions/{stored}/messages")
+                self.assertEqual(status, 200)
+                stored_rows = body["messages"]
+            else:
+                stored_rows = self.stored_rows(stored)
+            rows = [r for r in stored_rows if r["content"] == "never ran"]
+            self.assertEqual([(r.get("display_kind"), r.get("display_metadata")) for r in rows], [("hidden", None)])
+
     # ------------------------------------------------------------ the API server
 
     def test_a_run_behind_another_answers_started_but_waits_queued(self):
