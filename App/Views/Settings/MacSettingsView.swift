@@ -394,7 +394,7 @@ private struct ChatPane: View {
                         Text(option.title).tag(option)
                     }
                 } label: {
-                    Text("Open Chats At")
+                    Text("Open chats at")
                     Text("A chat with new messages opens at the first one, or at the latest.")
                 }
                 Toggle(isOn: $chatSounds) {

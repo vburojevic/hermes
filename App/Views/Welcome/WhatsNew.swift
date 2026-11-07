@@ -30,7 +30,7 @@ enum WhatsNewCatalog {
     static let releases: [Release] = [
         Release(id: "2026-10-plugins", features: [
             WhatsNewFeature(
-                symbol: "widget.small", title: String(localized: "Cards in Replies"),
+                symbol: "widget.small", title: String(localized: "Cards in replies"),
                 detail: String(localized: "Hermes can answer with cards you can tap: the weather, a chart, a checklist, an approval."),
                 macDetail: String(localized: "Hermes can answer with cards you can click: the weather, a chart, a checklist, an approval."),
                 plugin: .widgets

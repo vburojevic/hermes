@@ -223,7 +223,7 @@ search).
 - It opens with the line a quarter of the way down; when everything new fits on screen, at the
   end with the line in view. If the rows on the device stop short, it waits up to 1.2 s for the
   gateway's.
-- Settings → Chat → Open Chats At: First Unread (default) or Latest (the line is still drawn).
+- Settings → Chat → Open chats at: First Unread (default) or Latest (the line is still drawn).
 - The line stays until the chat closes, and never appears for messages that arrive while it's
   open.
 - Nothing new: where it was left scrolled up, else at the end.

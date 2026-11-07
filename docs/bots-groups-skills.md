@@ -224,7 +224,9 @@ Rescan (`skills.reload`).
   show a grid of `Skills.skillCard` (glyph tile, name, two-line description, Use), with search in
   the toolbar.
 - Skills starts with a "Tools and Apps" row that opens Settings → Apps and Tools
-  ([connections.md](connections.md)). Toolsets are not switched from Skills.
+  ([connections.md](connections.md)). Toolsets are not switched from Skills. While the gateway's
+  tools load, the row's second line is a placeholder line (`SkeletonRows`), never the word
+  Loading. Skills opened before Bot Mode connects asks for them once it does.
 - The top of Skills links to What Hermes Learned. On the Mac, Skills has a Library | Learned
   picker in the toolbar (`macLearned`).
 
