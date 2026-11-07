@@ -30,6 +30,55 @@ public enum CodeHighlighter {
         return lexer.run()
     }
 
+    /// Code still arriving, tokenized as it grows. A line's tokens can't change once the line
+    /// after it is complete and the lexer starts that line afresh (no comment or string still
+    /// open), so those are handed out once and each call tokenizes only what follows: about the
+    /// last two lines, not the whole block. What it hands out, in order, is `tokenize` of the
+    /// whole code, except that a plain run may be split at a line start.
+    public struct Stream: Sendable {
+        public let language: String?
+        /// The code whose tokens were handed out for good.
+        private var done = ""
+
+        public init(language: String?) {
+            self.language = language
+        }
+
+        /// How much of the code has its tokens handed out for good, in UTF-8 bytes.
+        public var finishedLength: Int { done.utf8.count }
+
+        /// Whether `code` keeps the part whose tokens were handed out for good.
+        public func continues(_ code: String, language: String?) -> Bool {
+            language == self.language && code.sharesPrefix(with: done, bytes: done.utf8.count)
+        }
+
+        /// The tokens of `code` that are new and final, to keep after the ones handed out before,
+        /// and the tokens of the rest, which can still change. `code` must continue the code
+        /// before (`continues`).
+        public mutating func advance(to code: String) -> (final: [Token], rest: [Token]) {
+            let start = done.utf8.count
+            let rest = code.utf8Slice(start, code.utf8.count)
+            guard let grammar = Grammar(language: language), !grammar.isDiff else {
+                // Plain and diff code are tinted line by line: every finished line is final.
+                guard let newline = rest.lastIndex(of: "\n") else { return ([], CodeHighlighter.tokenize(rest, language: language)) }
+                let finished = String(rest[...newline])
+                done += finished
+                return (CodeHighlighter.tokenize(finished, language: language),
+                        CodeHighlighter.tokenize(String(rest[rest.index(after: newline)...]), language: language))
+            }
+            var lexer = Lexer(characters: Array(rest), grammar: grammar, marksLines: true)
+            let tokens = lexer.run()
+            let characters = lexer.characters
+            // The latest fresh line start whose line is complete: nothing before it looks past it.
+            guard let mark = lexer.lineStarts.last(where: { characters[$0.index...].contains("\n") }) else {
+                return ([], tokens)
+            }
+            let final = Array(tokens[..<mark.tokens])
+            done += final.map(\.text).joined()
+            return (final, Array(tokens[mark.tokens...]))
+        }
+    }
+
     /// Normalised display name for a fence's info string, e.g. `"py"` → `"Python"`.
     public static func displayName(for language: String?) -> String? {
         guard let language = language?.lowercased(), !language.isEmpty else { return nil }
@@ -166,15 +215,25 @@ private struct Lexer {
     var index = 0
     var tokens: [CodeHighlighter.Token] = []
     var plain = ""
+    /// For `CodeHighlighter.Stream`: where a line starts afresh, with the tokens before it.
+    let marksLines: Bool
+    var lineStarts: [(index: Int, tokens: Int)] = []
 
-    init(characters: [Character], grammar: Grammar) {
+    init(characters: [Character], grammar: Grammar, marksLines: Bool = false) {
         self.characters = characters
         self.grammar = grammar
+        self.marksLines = marksLines
     }
 
     mutating func run() -> [CodeHighlighter.Token] {
         while index < characters.count {
             let character = characters[index]
+            if marksLines, index > 0, characters[index - 1] == "\n" {
+                // Nothing the lexer decides here looks back past the newline, so starting a
+                // new lexer here gives the same tokens.
+                flushPlain()
+                lineStarts.append((index, tokens.count))
+            }
             if let comment = grammar.lineComments.first(where: { matches($0) }), !(comment == "#" && isShebangLikeVariable()) {
                 emit(.comment, readUntilLineEnd())
             } else if let block = grammar.blockComment, matches(block.open) {

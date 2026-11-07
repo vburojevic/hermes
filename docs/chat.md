@@ -644,8 +644,11 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   fenced block they show as code.
 - **Bots and gateway files** named in a reply draw as pills (`mentionInline`,
   [commands-and-references.md](commands-and-references.md) §3).
-- **Streaming**: finished paragraphs are parsed once and cached; only the text after the last
-  safe cut is parsed again per update. An opened bold or code span is shown closed until its
+- **Streaming**: finished paragraphs are parsed once and kept (`MarkdownDocument.Stream`), and the
+  search for the next safe cut carries on from where it stopped, so an update parses only the text
+  after the last safe cut and never scans the finished part again. A code block still arriving
+  keeps its finished lines tinted (`CodeHighlighter.Stream`) and tints only new ones. Both give
+  exactly what parsing the whole text gives. An opened bold or code span is shown closed until its
   closer arrives, so raw `**` and backticks never flash. New words fade in along the line, a
   little behind the stream; blocks such as lists and tables fade in as they arrive. The words go
   into the turn as they arrive, but the reply redraws with them at most 15 times a second

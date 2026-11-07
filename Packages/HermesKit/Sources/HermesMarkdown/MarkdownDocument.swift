@@ -87,29 +87,133 @@ public struct MarkdownDocument: Hashable, Sendable {
     /// Where text still arriving can be cut so that its two halves parse to the same blocks as
     /// the whole: after a blank line outside a code fence, before a paragraph that can't belong
     /// to what came before (a list item, a quote, a table row, an indented line or HTML could).
-    /// The latest such place, looking back a little; `nil` when there is none.
-    ///
-    /// While a reply streams only what follows the cut changes, so what precedes it is parsed once.
+    /// The latest such place; `nil` when there is none.
     public static func streamingCut(in text: String) -> String.Index? {
-        var searchEnd = text.endIndex
-        for _ in 0..<24 {
-            guard let gap = text.range(of: "\n\n", options: .backwards, range: text.startIndex..<searchEnd) else { return nil }
-            var start = gap.upperBound
-            while start < text.endIndex, text[start] == "\n" { start = text.index(after: start) }
-            if start < text.endIndex, startsFreshBlock(text[start]), fencesClosed(text[..<gap.lowerBound]) {
-                return start
-            }
-            searchEnd = gap.lowerBound
-        }
-        return nil
+        var stream = Stream()
+        _ = stream.blocks(for: text, parsingTail: false)
+        guard stream.cut > 0 else { return nil }
+        return text.utf8.index(text.utf8.startIndex, offsetBy: stream.cut)
     }
 
-    private static func startsFreshBlock(_ first: Character) -> Bool {
+    fileprivate static func startsFreshBlock(_ first: Character) -> Bool {
         first.isLetter || "#`\"“‘(".contains(first)
     }
 
-    private static func fencesClosed(_ head: Substring) -> Bool {
-        head.countBytes("```") % 2 == 0 && !head.containsBytes("~~~")
+    /// A reply still arriving, parsed as it grows. While it streams only what follows its last
+    /// safe cut (`streamingCut`) changes, so what precedes it is parsed once and kept, and the
+    /// search for the next cut picks up where the last one stopped: each redraw costs about
+    /// the paragraph still arriving, not the whole reply. The blocks are the same as a parse of
+    /// the whole text.
+    public struct Stream: Sendable {
+        /// The text last read. Everything this stream knows is about its first `scanned` bytes.
+        private var text = ""
+        /// The blocks of `text`'s first `cut` bytes, which end at a safe cut.
+        private var head: [MarkdownBlock] = []
+        fileprivate private(set) var cut = 0
+        /// The end of the character after the cut, which decided that the cut is safe: a text that
+        /// has another character there (a list item where a paragraph began) can't keep the cut.
+        private var decided = 0
+        /// Where the search for blank lines resumes.
+        private var scanned = 0
+        /// The ``` marks found (without overlaps) before `fenceSearch`, where that search resumes.
+        private var fences = 0
+        private var fenceSearch = 0
+        /// Whether a "~~~" came before `scanned`: no cut after it is safe.
+        private var sawTilde = false
+
+        public init() {}
+
+        /// Whether `text` keeps the part of the last text this stream has already parsed.
+        public func continues(_ text: String) -> Bool {
+            Self.sharePrefix(text, self.text, bytes: decided)
+        }
+
+        /// How much of the text this stream has parsed for good, in UTF-8 bytes.
+        public var parsedLength: Int { cut }
+
+        /// The blocks of `text`. A text that doesn't keep the part already parsed starts over.
+        public mutating func blocks(for text: String) -> [MarkdownBlock] {
+            blocks(for: text, parsingTail: true)
+        }
+
+        fileprivate mutating func blocks(for text: String, parsingTail: Bool) -> [MarkdownBlock] {
+            var text = text
+            text.makeContiguousUTF8()
+            if !Self.sharePrefix(text, self.text, bytes: decided) {
+                self = Stream()
+            } else if !Self.sharePrefix(text, self.text, bytes: scanned) {
+                // The end changed (a marker held back): the search starts again at the cut,
+                // where every fence is closed.
+                scanned = cut
+                fenceSearch = cut
+                fences = 0
+                sawTilde = false
+            }
+            self.text = text
+            let next = text.utf8.withContiguousStorageIfAvailable { advance(over: $0) } ?? nil
+            if let next, next.cut > cut {
+                head += MarkdownDocument(parsing: Self.slice(text, cut, next.cut)).blocks
+                cut = next.cut
+                decided = next.decided
+            }
+            guard parsingTail else { return head }
+            let tail = Self.slice(text, cut, text.utf8.count)
+            return tail.isEmpty ? head : head + MarkdownDocument(parsing: tail).blocks
+        }
+
+        /// Looks for blank lines past `scanned` and answers the latest safe cut among them, with the
+        /// end of the character that made it safe.
+        private mutating func advance(over bytes: UnsafeBufferPointer<UInt8>) -> (cut: Int, decided: Int)? {
+            let newline = UInt8(ascii: "\n")
+            var latest: (cut: Int, decided: Int)?
+            var index = scanned
+            while !sawTilde, index + 1 < bytes.count {
+                guard bytes[index] == newline, bytes[index + 1] == newline else {
+                    index += 1
+                    continue
+                }
+                var start = index + 2
+                while start < bytes.count, bytes[start] == newline { start += 1 }
+                // Not decided until the line after the gap has begun.
+                guard start < bytes.count else { break }
+                countMarks(in: bytes, upTo: index)
+                if !sawTilde, fences % 2 == 0, let first = Self.character(in: bytes, at: start),
+                   MarkdownDocument.startsFreshBlock(first) {
+                    latest = (start, start + first.utf8.count)
+                }
+                index = start
+            }
+            scanned = min(index, bytes.count)
+            return latest
+        }
+
+        /// Counts ``` (greedily, as `countBytes` does) and looks for "~~~" in what precedes `end`.
+        private mutating func countMarks(in bytes: UnsafeBufferPointer<UInt8>, upTo end: Int) {
+            guard let base = bytes.baseAddress, fenceSearch < end else { return }
+            let tick = Array("```".utf8)
+            let tilde = Array("~~~".utf8)
+            if memmem(base + fenceSearch, end - fenceSearch, tilde, 3) != nil { sawTilde = true }
+            var start = fenceSearch
+            while start + 3 <= end, let hit = memmem(base + start, end - start, tick, 3) {
+                fences += 1
+                start = UnsafeRawPointer(base).distance(to: hit) + 3
+            }
+            // A mark can't straddle `end`, which is a newline: the search resumes there.
+            fenceSearch = max(start, end)
+        }
+
+        private static func character(in bytes: UnsafeBufferPointer<UInt8>, at offset: Int) -> Character? {
+            let end = min(bytes.count, offset + 16)
+            return String(decoding: UnsafeBufferPointer(rebasing: bytes[offset..<end]), as: UTF8.self).first
+        }
+
+        private static func slice(_ text: String, _ from: Int, _ to: Int) -> String {
+            text.utf8Slice(from, to)
+        }
+
+        private static func sharePrefix(_ a: String, _ b: String, bytes count: Int) -> Bool {
+            a.sharesPrefix(with: b, bytes: count)
+        }
     }
 }
 
