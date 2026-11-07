@@ -957,7 +957,7 @@ struct ComposerView: View {
             .disabled(!Pasteboard.hasImage || !conversation.supportsImages)
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 16, weight: .medium))
+                .composerGlyph(16)
                 .foregroundStyle(Theme.primaryText)
                 .frame(width: 36, height: 36)
                 .overlay { Circle().strokeBorder(Theme.hairline) }
@@ -978,6 +978,28 @@ extension View {
     /// (docs/composer.md §1).
     fileprivate func chipTypeSize() -> some View {
         dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    }
+
+    /// A composer button's glyph at `size`, growing with the text on iPhone and iPad. The button
+    /// itself keeps its size at every text size, so the glyph stops at 1.4 times (docs/composer.md §1).
+    func composerGlyph(_ size: CGFloat, weight: Font.Weight = .medium) -> some View {
+        modifier(ComposerGlyph(size: size, weight: weight))
+    }
+}
+
+struct ComposerGlyph: ViewModifier {
+    let size: CGFloat
+    let weight: Font.Weight
+    #if os(iOS)
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+    #endif
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.font(.system(size: size * min(scale, 1.4), weight: weight))
+        #else
+        content.font(.system(size: size, weight: weight))
+        #endif
     }
 }
 
@@ -1071,7 +1093,7 @@ private struct TrailingButton: View {
             // Only the glyph and its tone animate: the button itself never eases from where it
             // was, which inside a composer that just grew would float it out of place.
             Image(systemName: symbol)
-                .font(.system(size: symbolSize, weight: .bold))
+                .composerGlyph(symbolSize, weight: .bold)
                 .contentTransition(.symbolEffect(.replace))
                 .animation(Theme.snappy, value: mode)
                 .foregroundStyle(Theme.inkForeground)
@@ -1103,7 +1125,7 @@ private struct DictationRow: View {
         HStack(spacing: 12) {
             Button(action: onCancel) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
+                    .composerGlyph(13, weight: .semibold)
                     .foregroundStyle(Theme.primaryText)
                     .frame(width: 36, height: 36)
                     .background(Theme.surfaceRaised, in: Circle())
@@ -1143,7 +1165,7 @@ private struct DictationRow: View {
             }
             Button(action: onDone) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .bold))
+                    .composerGlyph(15, weight: .bold)
                     .foregroundStyle(Theme.inkForeground)
                     .frame(width: 36, height: 36)
                     .background(Theme.ink, in: Circle())
@@ -1164,7 +1186,7 @@ private struct DictationFailureRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .composerGlyph(13, weight: .semibold)
                 .foregroundStyle(Theme.warning)
                 .accessibilityHidden(true)
             Text(message)
@@ -1178,7 +1200,7 @@ private struct DictationFailureRow: View {
                 .foregroundStyle(Theme.primaryText)
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
+                    .composerGlyph(12, weight: .semibold)
                     .foregroundStyle(Theme.secondaryText)
                     .frame(width: 32, height: 32)
                     .contentShape(Circle())

@@ -45,6 +45,10 @@ appears only when it has content:
    room, the process chip truncates first, then the project chip (its branch before its name),
    then Think. VoiceOver reads each chip's full label. The Mac's sizes don't change.
 
+   The glyphs on +, Dictate, the trailing button and the dictation row grow with the text, up to
+   1.4 times, inside their 36 pt. At the accessibility sizes the field's placeholder ("Reply to
+   Hermes…") wraps and the field grows to hold it, rather than cutting it off.
+
 The model picker is in the chat's title, not in the composer.
 
 Menus that grow up from the composer (the "/" and "@" menus, a group chat's members) never pass

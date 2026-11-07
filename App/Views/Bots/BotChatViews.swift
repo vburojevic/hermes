@@ -449,13 +449,20 @@ struct BotsHomeView: View {
 
     @State private var appeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(WindowRouter.self) private var router: WindowRouter?
 
     private var columns: [GridItem] {
         #if os(macOS)
         [GridItem(.adaptive(minimum: 200, maximum: 240), spacing: 16, alignment: .top)]
         #else
-        [GridItem(.adaptive(minimum: 158, maximum: 240), spacing: 12, alignment: .top)]
+        // At the accessibility sizes two tiles side by side leave a name a few letters wide, so
+        // each Bot gets the whole row (`docs/bots-groups-skills.md` §1.2).
+        if dynamicTypeSize.isAccessibilitySize {
+            [GridItem(.flexible(), spacing: 12, alignment: .top)]
+        } else {
+            [GridItem(.adaptive(minimum: 158, maximum: 240), spacing: 12, alignment: .top)]
+        }
         #endif
     }
 
@@ -590,8 +597,13 @@ private struct BotTile: View {
     let bot: BotProfile
 
     @State private var isHovered = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .footnote) private var pinSize: CGFloat = 11
 
     private var isUnread: Bool { roster.unread.contains(bot.name) }
+    /// At the accessibility sizes a tile has the row to itself, so its words wrap instead of
+    /// stopping a few letters in.
+    private var wraps: Bool { dynamicTypeSize.isAccessibilitySize }
 
     private var mood: BotMood {
         let mood = roster.faceMood(for: bot.name)
@@ -625,7 +637,7 @@ private struct BotTile: View {
                 HStack(spacing: 6) {
                     if bot.meta.isPinned {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: pinSize, weight: .semibold))
                             .foregroundStyle(Theme.tertiaryText)
                             .accessibilityHidden(true)
                     }
@@ -641,16 +653,17 @@ private struct BotTile: View {
                 Text(bot.title)
                     .font(.headline)
                     .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
                 Text("@\(bot.mentionTag)")
                     .font(.footnote)
                     .foregroundStyle(Theme.tertiaryText)
-                    .lineLimit(1)
-                // Two lines kept for the role on every tile, so a row of tiles lines up.
+                    .lineLimit(wraps ? nil : 1)
+                // Two lines kept for the role on every tile, so a row of tiles lines up. A tile
+                // alone on its row has nothing to line up with.
                 Text(bot.role ?? "")
                     .font(.subheadline)
                     .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(2, reservesSpace: true)
+                    .lineLimit(wraps ? 12 : 2, reservesSpace: !wraps)
                     .padding(.top, 2)
             }
             HStack(spacing: 6) {
@@ -658,7 +671,7 @@ private struct BotTile: View {
                 Text(status.text)
                     .font(.footnote)
                     .foregroundStyle(Theme.tertiaryText)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? 3 : 1)
             }
         }
         .padding(16)

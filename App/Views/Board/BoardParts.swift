@@ -217,7 +217,9 @@ struct ColumnChip: View {
             }
             .lineLimit(1)
             .padding(.horizontal, 12)
-            .frame(height: 32)
+            // Grows with the text at the larger sizes instead of letting it spill past the capsule.
+            .padding(.vertical, 4)
+            .frame(minHeight: 32)
             .background(isSelected ? Theme.ink : Theme.controlFill, in: Capsule())
             .contentShape(Capsule())
         }

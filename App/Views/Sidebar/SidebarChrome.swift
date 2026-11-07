@@ -146,13 +146,22 @@ struct SidebarNavRow: View {
     var shortcut: String?
     let action: () -> Void
 
+    // The glyph grows with its label on iPhone and iPad, up to 1.6 times, so "New Chat" keeps
+    // its one line at the largest sizes.
+    #if os(macOS)
+    private let glyphSize = SidebarMetrics.glyphSize
+    #else
+    @ScaledMetric(relativeTo: .callout) private var scaledGlyph = SidebarMetrics.glyphSize
+    private var glyphSize: CGFloat { min(scaledGlyph, SidebarMetrics.glyphSize * 1.6) }
+    #endif
+
     var body: some View {
         SidebarRow(isSelected: isSelected, action: action) {
             HStack(spacing: SidebarMetrics.rowPadding) {
                 Image(systemName: symbol)
-                    .font(.system(size: SidebarMetrics.glyphSize * 0.82, weight: .regular))
+                    .font(.system(size: glyphSize * 0.82, weight: .regular))
                     .foregroundStyle(SidebarMetrics.glyphColor)
-                    .frame(width: SidebarMetrics.glyphSize, height: SidebarMetrics.glyphSize)
+                    .frame(width: glyphSize, height: glyphSize)
                     .accessibilityHidden(true)
                 Text(title)
                     .font(SidebarMetrics.navFont)
@@ -190,6 +199,12 @@ struct SidebarFooter: View {
     @Environment(WindowRouter.self) private var router: WindowRouter?
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
+    #else
+    // Settings' gear grows with the status line beside it, up to 1.5 times.
+    @ScaledMetric(relativeTo: .footnote) private var scaledGear: CGFloat = 15
+    private var gearSize: CGFloat { min(scaledGear, 22) }
+    private var gearSide: CGFloat { gearSize + 7 }
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #endif
 
     var body: some View {
@@ -216,40 +231,74 @@ struct SidebarFooter: View {
         }
     }
 
+    @ViewBuilder
     private var row: some View {
+        #if os(macOS)
         HStack(spacing: 10) {
             ConnectionStatusLabel(workspace: workspace)
             Spacer(minLength: 8)
-            Button {
-                #if os(macOS)
-                openSettings()
-                #else
-                router?.sheet = .settings
-                onNavigate()
-                #endif
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Theme.primaryText)
-                    #if os(macOS)
-                    .frame(width: 20, height: 20)
-                    #else
-                    .frame(width: 22, height: 22)
-                    #endif
-            }
-            #if os(macOS)
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.secondaryText)
-            #else
-            .glassButton()
-            .buttonBorderShape(.circle)
-            #endif
-            .accessibilityLabel("Settings")
-            .help("Settings")
+            settingsButton
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 12)
-        .padding(.vertical, 10)
+        .modifier(SidebarFooterPadding())
+        #else
+        if dynamicTypeSize.isAccessibilitySize {
+            // Beside the gear, "Connected" no longer fits a line: the status takes the full width
+            // and the gear sits under it (`docs/inbox.md` §6).
+            VStack(alignment: .leading, spacing: 8) {
+                ConnectionStatusLabel(workspace: workspace)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                settingsButton
+            }
+            .modifier(SidebarFooterPadding())
+        } else {
+            HStack(spacing: 10) {
+                ConnectionStatusLabel(workspace: workspace)
+                Spacer(minLength: 8)
+                settingsButton
+            }
+            .modifier(SidebarFooterPadding())
+        }
+        #endif
+    }
+
+    private var settingsButton: some View {
+        Button {
+            #if os(macOS)
+            openSettings()
+            #else
+            router?.sheet = .settings
+            onNavigate()
+            #endif
+        } label: {
+            Image(systemName: "gearshape")
+                #if os(macOS)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.primaryText)
+                .frame(width: 20, height: 20)
+                #else
+                .font(.system(size: gearSize, weight: .medium))
+                .foregroundStyle(Theme.primaryText)
+                .frame(width: gearSide, height: gearSide)
+                #endif
+        }
+        #if os(macOS)
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.secondaryText)
+        #else
+        .glassButton()
+        .buttonBorderShape(.circle)
+        #endif
+        .accessibilityLabel("Settings")
+        .help("Settings")
+    }
+}
+
+private struct SidebarFooterPadding: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, 18)
+            .padding(.trailing, 12)
+            .padding(.vertical, 10)
     }
 }
 

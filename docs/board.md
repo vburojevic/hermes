@@ -254,6 +254,8 @@ so new card titles must be added there too (`Relay/convex/validate.ts`).
   you"), assignee, then "2 of 5 sub-cards done, 3 comments".
 - On iPhone, the column switcher is a tab bar to VoiceOver ("Running, 2 cards, tab 4 of 7"), with
   "N needs you" where it applies.
+- At the accessibility text sizes on iPhone the column chips grow with their text, and the
+  Board's subtitle wraps instead of cutting off.
 - On Mac, drag and drop has a keyboard path: ⌘→ / ⌘← (View → Move Card Right / Left) move the open
   card to the next allowed column. They are off while typing in the card's reply or comment field,
   where the arrows move the cursor.

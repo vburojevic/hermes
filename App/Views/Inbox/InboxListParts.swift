@@ -60,7 +60,9 @@ struct InboxFilterChips: View {
             }
             .font(InboxChipMetrics.font)
             .padding(.horizontal, 10)
-            .frame(height: InboxChipMetrics.height)
+            // Grows with the text rather than letting it spill past the capsule.
+            .padding(.vertical, 4)
+            .frame(minHeight: InboxChipMetrics.height)
             .background {
                 if selected {
                     Capsule().fill(Theme.surfaceRaised)
