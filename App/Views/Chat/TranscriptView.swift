@@ -2134,6 +2134,17 @@ private struct TakesOfferedSize: ViewModifier {
         func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
             subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
         }
+
+        // The stack around the transcript asks where its alignment guides are while measuring,
+        // and by default a layout finds out by placing its content: the whole chat laid out again
+        // several times a redraw while a reply streamed. A scroll view has no guides to pass up.
+        func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+            nil
+        }
+
+        func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+            nil
+        }
     }
 }
 
