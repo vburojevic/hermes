@@ -106,7 +106,7 @@ struct TasksView: View {
             StateMessage(
                 symbol: "calendar.badge.clock",
                 title: String(localized: "No scheduled tasks"),
-                message: String(localized: "Ask Hermes to do something on a schedule — a morning briefing, a nightly backup check — and it runs on its own."),
+                message: String(localized: "Ask Hermes to do something on a schedule, like a morning briefing or a nightly backup check, and it runs on its own."),
                 actionTitle: String(localized: "New Task")
             ) {
                 isCreating = true

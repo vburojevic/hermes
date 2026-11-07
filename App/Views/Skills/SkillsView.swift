@@ -58,7 +58,7 @@ struct SkillsView: View {
         }
         .background(Theme.canvas)
         #if os(iOS)
-        .searchable(text: $query, placement: .toolbar, prompt: usesGrid ? "Search skills" : "Search Skills")
+        .searchable(text: $query, placement: .toolbar, prompt: "Search skills")
         #else
         .modifier(SkillsSearch(query: $query, isShown: !workspace.showsLearned))
         #endif
@@ -91,6 +91,9 @@ struct SkillsView: View {
         }
         #endif
         .task(id: workspace.id) { await load() }
+        // Tools and Apps asks Bot Mode: a Skills page opened before it connected asks once it does,
+        // so the row's placeholder doesn't wait forever.
+        .task(id: workspace.roster?.isConnected == true) { await loadAppsAndTools() }
         .onChange(of: workspace.pendingSkillQuery, initial: true) { _, pending in
             // Show Skill on a skill chip opens Skills filtered to it.
             guard let pending else { return }
@@ -211,9 +214,13 @@ struct SkillsView: View {
         } catch {
             skillsError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
         }
-        if workspace.roster?.isConnected == true, !workspace.appsAndTools.hasLoaded {
-            await workspace.appsAndTools.load()
-        }
+        await loadAppsAndTools()
+    }
+
+    private func loadAppsAndTools() async {
+        guard workspace.roster?.isConnected == true, !workspace.appsAndTools.hasLoaded,
+              !workspace.appsAndTools.isLoading else { return }
+        await workspace.appsAndTools.load()
     }
 
     /// Settings → Apps and Tools: the Settings sheet (iPhone, iPad) or the Settings window's tab.
@@ -290,10 +297,15 @@ private struct ToolsAndAppsRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tools and Apps")
                         .foregroundStyle(Theme.primaryText)
-                    Text(isWide ? model.toolsSummary + " · " + String(localized: "managed in Settings") : model.toolsSummary)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(2)
+                    if model.hasLoaded || !model.isOnline {
+                        Text(isWide ? model.toolsSummary + " · " + String(localized: "managed in Settings") : model.toolsSummary)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondaryText)
+                            .lineLimit(2)
+                    } else {
+                        // Still asking the gateway: a placeholder line, never the word Loading.
+                        SkeletonRows(count: 1, twoLines: false)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
