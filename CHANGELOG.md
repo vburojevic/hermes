@@ -31,6 +31,12 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611071010 (November 7, 2026)
+
+- **Voice:** the microphone keeps working when headphones connect or the sound route changes
+- **Listen:** reading a reply aloud no longer crashes on iOS 26 and macOS 26
+- **Chat:** a message Hermes held comes back to Up Next when Hermes lets the chat go while you're away
+
 ### Build 2611070707 (November 7, 2026)
 
 - **Chats:** another device switching a chat back to an earlier model is followed too
