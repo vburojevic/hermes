@@ -31,6 +31,14 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611071344 (November 7, 2026)
+
+- **Settings:** the gateway row fits at every text size, and rows read in sentence case
+- **Accessibility:** at the largest text sizes Bots, the sidebar, the Board and chat stack and scale instead of clipping
+- **iPad and Mac:** portrait chats and Tasks run full width, and a plugin link opens the Mac Settings window
+- **Chat:** very long replies stream without re-parsing their finished Markdown
+- **Chat:** a streaming reply no longer lays out the whole chat again on every update
+
 ### Build 2611071010 (November 7, 2026)
 
 - **Voice:** the microphone keeps working when headphones connect or the sound route changes
