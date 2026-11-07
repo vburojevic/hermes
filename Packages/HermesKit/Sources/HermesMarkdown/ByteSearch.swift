@@ -28,3 +28,25 @@ extension StringProtocol {
         return counted ?? Swift.min(components(separatedBy: needle).count - 1, limit)
     }
 }
+
+extension String {
+    /// Whether this text and `other` both have at least `count` UTF-8 bytes and the same first `count`.
+    func sharesPrefix(with other: String, bytes count: Int) -> Bool {
+        guard count > 0 else { return true }
+        guard utf8.count >= count, other.utf8.count >= count else { return false }
+        var left = self, right = other
+        left.makeContiguousUTF8()
+        right.makeContiguousUTF8()
+        return left.utf8.withContiguousStorageIfAvailable { a in
+            right.utf8.withContiguousStorageIfAvailable { b in
+                memcmp(a.baseAddress, b.baseAddress, count) == 0
+            } ?? false
+        } ?? false
+    }
+
+    /// The text between two UTF-8 offsets, which fall on character boundaries.
+    func utf8Slice(_ from: Int, _ to: Int) -> String {
+        let start = utf8.index(utf8.startIndex, offsetBy: from)
+        return String(self[start..<utf8.index(start, offsetBy: to - from)])
+    }
+}

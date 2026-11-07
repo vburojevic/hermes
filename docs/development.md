@@ -61,6 +61,8 @@ team and their own tools.
 cd Packages/HermesKit && swift test
 # plus a round trip over a real WebSocket against the mock backend:
 HERMES_MOCK_BACKEND=http://127.0.0.1:19119 swift test --filter BackendIntegrationTests
+# how long a 50 KB reply takes to parse and tint as it streams, in release (about 80 s):
+HERMES_STREAMING_TIMING=1 swift test -c release -Xswiftc -enable-testing --filter StreamingTiming
 ```
 
 The tests (Swift Testing) cover the API client, the SSE parser, transcript folding, live turns,
