@@ -90,7 +90,8 @@ keeps them.
 - **Skills:** the Skills page's "Tools and Apps" row ("7 built-in tools on · 4 apps · 4 MCP
   servers") opens the same page.
 - **A plugin link:** `hermesapp://plugin/install?catalog=<name>` opens Settings → Apps and Tools
-  and asks before installing (§5).
+  and asks before installing (§5). On the Mac it opens the Settings window on Apps & Tools, with
+  the plugin's review in Suggested; iPhone and iPad open the Settings sheet.
 - Not built yet: a "Manage…" link from a chat's request card (when Hermes says an app is missing)
   to this page.
 

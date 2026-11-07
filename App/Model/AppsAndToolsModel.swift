@@ -78,6 +78,9 @@ final class AppsAndToolsModel {
     }
 
     var route: Route?
+    /// The Mac: a catalog plugin a `plugin/install?catalog=` link asked for, for the Settings
+    /// window's Apps & Tools to open its review (iPhone and iPad keep it on `WindowRouter`).
+    var installRequest: String?
     /// Sheets the plugin hub opens, kept here so they hang off the page, not a Form section.
     var installsFromGit = false
     var pluginKeysFor: HermesPlugin?

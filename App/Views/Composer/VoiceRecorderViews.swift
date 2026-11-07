@@ -52,7 +52,7 @@ struct MicButton: View {
 
     var body: some View {
         Image(systemName: "mic")
-            .font(.system(size: 16, weight: .medium))
+            .composerGlyph(16)
             .foregroundStyle(Theme.secondaryText)
             .frame(width: 36, height: 36)
             .contentShape(Circle())

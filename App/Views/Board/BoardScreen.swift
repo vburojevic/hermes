@@ -16,6 +16,7 @@ struct BoardScreen: View {
     var onToggleSidebar: (() -> Void)?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var size: CGSize = .zero
     @State private var targetedColumn: String?
 
@@ -186,10 +187,12 @@ struct BoardScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 HStack(spacing: 8) {
                     ProjectTile(appearance: projects.appearance(projectID), size: 20)
+                    // One line until the accessibility sizes, where it wraps instead of stopping
+                    // at the project's name (`docs/board.md` §6).
                     Text(phoneSubtitle)
                         .font(.footnote)
                         .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 }
                 .accessibilityElement(children: .combine)
             }

@@ -36,27 +36,7 @@ struct SettingsView: View {
                         Button {
                             editing = bot
                         } label: {
-                            HStack(spacing: 12) {
-                                BotAvatar(bot: bot, size: 34)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(bot.name)
-                                        .foregroundStyle(Theme.primaryText)
-                                    Text(bot.displayAddress)
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.secondaryText)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-                                Spacer()
-                                if let workspace = app.workspaces[bot.id] {
-                                    ConnectionStatusLabel(workspace: workspace)
-                                        .labelsHidden()
-                                }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Theme.tertiaryText)
-                            }
-                            .contentShape(Rectangle())
+                            GatewayRow(bot: bot, workspace: app.workspaces[bot.id])
                         }
                         .buttonStyle(.plain)
                     }
@@ -93,7 +73,7 @@ struct SettingsView: View {
                     FollowUpDefaultPicker()
                     Toggle("Show usage under replies", isOn: $showUsage)
                     Toggle("Send with Return", isOn: $sendWithReturn)
-                    Picker("Open Chats At", selection: $openChatsAt) {
+                    Picker("Open chats at", selection: $openChatsAt) {
                         ForEach(OpenChatsAt.allCases) { option in
                             Text(option.title).tag(option)
                         }
@@ -199,6 +179,71 @@ struct SettingsView: View {
         let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = info?["CFBundleVersion"] as? String ?? "1"
         return "\(version) (\(build))"
+    }
+}
+
+/// A gateway in Settings (`iphone-settings`): its name, its address with the Hermes version, and a
+/// status dot with one short word, so nothing is cut off. The status is the sidebar's, Bot Mode's
+/// in Bots mode. At the accessibility text sizes the status goes under the name and the address
+/// wraps.
+private struct GatewayRow: View {
+    let bot: BotConfiguration
+    let workspace: BotWorkspace?
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let stacks = typeSize.isAccessibilitySize
+        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        let status = workspace.map(ConnectionStatus.init)
+        HStack(spacing: 12) {
+            layout {
+                BotAvatar(bot: bot, size: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(bot.name)
+                        .foregroundStyle(Theme.primaryText)
+                    let addressLine = ([bot.displayAddress] + [status?.detail].compactMap(\.self))
+                        .joined(separator: " · ")
+                    Group {
+                        if stacks {
+                            Text(addressLine)
+                        } else {
+                            // The address and version share a line when they fit; otherwise the
+                            // version moves under the address, so neither is cut short.
+                            ViewThatFits(in: .horizontal) {
+                                Text(addressLine)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(bot.displayAddress)
+                                        .truncationMode(.middle)
+                                    if let detail = status?.detail {
+                                        Text(detail)
+                                    }
+                                }
+                            }
+                            .lineLimit(1)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+                }
+                if !stacks { Spacer(minLength: 8) }
+                if let status {
+                    HStack(spacing: 6) {
+                        StatusDot(color: status.color)
+                        Text(status.title)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.tertiaryText)
+        }
+        .contentShape(Rectangle())
     }
 }
 

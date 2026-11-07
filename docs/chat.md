@@ -1002,6 +1002,9 @@ once when the chat's stored rows show the other turn ending.
 - Reduce Motion: no shimmer on the working header, no streaming fade (text appears as it
   arrives), and folds and title changes cross-fade instead of sliding.
 - VoiceOver hears a turn three times: "<Bot> is thinking", "Replying", "Reply finished" (§4a).
+- Dynamic Type: a reply's actions (copy, share, listen, branch, more) grow with the text up to
+  44 pt, so the row still fits, and the "Earlier messages" line wraps in full at the
+  accessibility sizes.
 - Not built yet: one VoiceOver container per turn with the steps summarised ("3 steps") and
   skipped by default.
 

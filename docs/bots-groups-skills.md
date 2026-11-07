@@ -123,7 +123,8 @@ the roster, and treats `session.info {running: false}` as the turn having settle
   first frame was built, and kept the grid or a new chat under a selected row.
 - **Grid tiles** (`BotsHomeView`) show the face, title, @handle, role and one status line:
   "Working: <step>", "New: <preview>", "Active now", "Last active <time>" (the row's time) or
-  "Say hi to start".
+  "Say hi to start". At the accessibility text sizes on iPhone and iPad the grid is one column
+  of full-width tiles, and the title, handle, role and status wrap in full instead of cutting off.
 - **Previews** describe the Bot Chat when there is one. Hermes's control frames read as what they
   mean ("Steered the reply", "Used the <name> skill") or are hidden, messages from other Bots read
   "Name: text", and routine deliveries read "⏰ <routine>: <output>". A compaction's summary is
@@ -224,7 +225,9 @@ Rescan (`skills.reload`).
   show a grid of `Skills.skillCard` (glyph tile, name, two-line description, Use), with search in
   the toolbar.
 - Skills starts with a "Tools and Apps" row that opens Settings → Apps and Tools
-  ([connections.md](connections.md)). Toolsets are not switched from Skills.
+  ([connections.md](connections.md)). Toolsets are not switched from Skills. While the gateway's
+  tools load, the row's second line is a placeholder line (`SkeletonRows`), never the word
+  Loading. Skills opened before Bot Mode connects asks for them once it does.
 - The top of Skills links to What Hermes Learned. On the Mac, Skills has a Library | Learned
   picker in the toolbar (`macLearned`).
 

@@ -999,8 +999,13 @@ struct PillTextView {
             let inset = textView.textContainerInset
             let padding = textView.textContainer.lineFragmentPadding
             let width = max(0, textView.bounds.width - inset.left - inset.right - padding * 2 - commandWidth)
+            // At the accessibility sizes the placeholder wraps instead of cutting off, and the field
+            // grows to hold it (docs/composer.md §1).
+            let wraps = textView.traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+            label.numberOfLines = wraps ? 0 : 1
             let height = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
-            label.frame = CGRect(x: inset.left + padding + commandWidth, y: inset.top, width: width, height: min(height, PillTextView.font.lineHeight))
+            label.frame = CGRect(x: inset.left + padding + commandWidth, y: inset.top, width: width,
+                                 height: wraps ? height : min(height, PillTextView.font.lineHeight))
             #else
             label.stringValue = placeholder
             label.isHidden = !empty
@@ -1226,7 +1231,14 @@ extension PillTextView: UIViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView view: PillUITextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 320
-        let fitting = view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        var fitting = view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        if !view.emptyTextLabel.isHidden, view.emptyTextLabel.numberOfLines == 0 {
+            // A wrapped placeholder sets the height while the field is empty.
+            let inset = view.textContainerInset
+            let labelWidth = max(0, width - inset.left - inset.right - view.textContainer.lineFragmentPadding * 2)
+            let label = view.emptyTextLabel.sizeThatFits(CGSize(width: labelWidth, height: .greatestFiniteMagnitude))
+            fitting.height = max(fitting.height, label.height + inset.top + inset.bottom)
+        }
         let height = max(Self.font.lineHeight, min(fitting.height, maxHeight))
         let scrolls = fitting.height > maxHeight
         if view.isScrollEnabled != scrolls {

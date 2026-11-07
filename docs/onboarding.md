@@ -160,7 +160,9 @@ the checklist above the composer.
   person has had a reason to need it. Got It and ✕ put a tip away for good. A tip never gets in
   the way of what it points at: it hangs off a clear stand-in laid over the control
   (`hermesTip`), because wrapped by the popover the toolbar's sidebar button and a Bot Chat's title
-  stopped answering taps (`ToolbarButtonsUITests`).
+  stopped answering taps (`ToolbarButtonsUITests`). A tip on something that scrolls (the undo
+  bar in the chat) waits until that control is wholly in view, so it never opens cut off in a
+  corner of the screen for a control scrolled away.
 
   | Tip | Shown on | After |
   |---|---|---|
@@ -184,9 +186,9 @@ the checklist above the composer.
   it.
 - "What's New in Hermes", four rows at most, Continue. On the Mac each row names its shortcut or
   where it lives ("⇧⌘B", "Settings → Memory").
-- The current release lists Cards in Replies and Plugins; the one before, the Board, the
+- The current release lists Cards in replies and Plugins; the one before, the Board, the
   Inspector, Memory and What Hermes Learned.
-- A feature that needs one of the app's plugins (Cards in Replies) has its offer card under the
+- A feature that needs one of the app's plugins (Cards in replies) has its offer card under the
   row (`pluginWhatsNew`, `pluginOfferWidgets`), only while the plugin is missing or off on the
   current gateway: Set Up opens the review, Turn On turns an installed copy back on, Not Now
   leaves it in Suggested (the card may come back once after 14 days), and its … menu hides it.

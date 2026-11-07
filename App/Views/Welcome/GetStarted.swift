@@ -328,14 +328,32 @@ extension View {
     /// a Bot Chat's title stopped answering taps, tip shown or not.
     func hermesTip(_ tip: some Tip, arrowEdge: Edge = .top) -> some View {
         overlay {
-            Color.clear
-                .popoverTip(tip, arrowEdge: arrowEdge) { action in
-                    HermesTips.handle(action, for: tip)
-                }
-                .tipViewStyle(HermesTipStyle())
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            TipAnchor(tip: tip, arrowEdge: arrowEdge)
         }
+    }
+}
+
+/// The clear stand-in a tip hangs off. In a scroll view it offers the tip only while the whole
+/// control is in view: offered for a control scrolled away, the popover opened in the screen's
+/// corner, cut off by its edge.
+private struct TipAnchor<Anchored: Tip>: View {
+    let tip: Anchored
+    let arrowEdge: Edge
+    @State private var isInView = false
+
+    var body: some View {
+        Color.clear
+            .onGeometryChange(for: Bool.self) { proxy in
+                // Outside a scroll view (toolbars, the composer) the control is always in view.
+                guard let visible = proxy.bounds(of: .scrollView) else { return true }
+                return visible.contains(CGRect(origin: .zero, size: proxy.size))
+            } action: { isInView = $0 }
+            .popoverTip(isInView ? tip : nil, arrowEdge: arrowEdge) { action in
+                HermesTips.handle(action, for: tip)
+            }
+            .tipViewStyle(HermesTipStyle())
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

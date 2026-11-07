@@ -717,65 +717,94 @@ enum GatewayAvatarRasterizer {
 struct ConnectionStatusLabel: View {
     let workspace: BotWorkspace
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
+        let status = ConnectionStatus(workspace)
         HStack(spacing: 8) {
-            if workspace.sidebarMode == .bots, let roster = workspace.roster {
-                botStatus(roster)
-            } else {
-                gatewayStatus
-            }
+            StatusDot(color: status.color)
+            Text(status.line)
         }
         .font(.footnote)
         .foregroundStyle(Theme.secondaryText)
-        .lineLimit(1)
+        // One line until the accessibility sizes, where it wraps rather than stopping at "Connecte…".
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
         .accessibilityElement(children: .combine)
     }
+}
 
-    @ViewBuilder
-    private var gatewayStatus: some View {
+/// How the gateway (and in Bots mode, Bot Mode) is doing, said two ways from one mapping: the
+/// sidebar's one line, and Settings' short word with a detail for the address line.
+struct ConnectionStatus {
+    let color: Color
+    /// The sidebar's line.
+    let line: String
+    /// Settings' short word beside the dot.
+    let title: String
+    /// What Settings adds to the address line: the version, or why it's slow.
+    let detail: String?
+
+    init(_ workspace: BotWorkspace) {
+        if workspace.sidebarMode == .bots, let roster = workspace.roster {
+            self.init(roster: roster, botName: workspace.bot.name)
+        } else {
+            self.init(gateway: workspace)
+        }
+    }
+
+    private init(color: Color, line: String, title: String, detail: String? = nil) {
+        self.color = color
+        self.line = line
+        self.title = title
+        self.detail = detail
+    }
+
+    private init(gateway workspace: BotWorkspace) {
         switch workspace.connection {
         case .online where workspace.isBusy:
             // Its Mac is overloaded: everything still works, only slowly.
-            StatusDot(color: Theme.warning)
-            Text("Connected · busy, replies are slow")
+            self.init(color: Theme.warning, line: String(localized: "Connected · busy, replies are slow"),
+                      title: String(localized: "Busy"), detail: String(localized: "replies are slow"))
         case .online(let version):
-            StatusDot(color: Theme.success)
-            Text(version.map { String(localized: "Connected · Hermes \($0)") } ?? String(localized: "Connected"))
+            self.init(online: version)
         case .connecting where workspace.isBusy:
-            StatusDot(color: Theme.warning)
-            Text("Waiting for a busy Mac…")
+            self.init(color: Theme.warning, line: String(localized: "Waiting for a busy Mac…"),
+                      title: String(localized: "Waiting…"), detail: String(localized: "its Mac is busy"))
         case .connecting, .idle:
-            StatusDot(color: Theme.warning)
-            Text("Connecting…")
+            self.init(color: Theme.warning, line: String(localized: "Connecting…"), title: String(localized: "Connecting…"))
         case .failed:
-            StatusDot(color: Theme.danger)
-            Text("Offline")
+            self.init(color: Theme.danger, line: String(localized: "Offline"), title: String(localized: "Offline"))
         }
     }
 
-    @ViewBuilder
-    private func botStatus(_ roster: BotRoster) -> some View {
+    private init(roster: BotRoster, botName: String) {
         switch roster.state {
         case .online where roster.isBusy:
-            StatusDot(color: Theme.warning)
-            Text("\(workspace.bot.name) is busy · Bots are slow")
+            self.init(color: Theme.warning, line: String(localized: "\(botName) is busy · Bots are slow"),
+                      title: String(localized: "Busy"), detail: String(localized: "Bots are slow"))
         case .online(let version):
-            StatusDot(color: Theme.success)
-            Text(version.map { String(localized: "Connected · Hermes \($0)") } ?? String(localized: "Connected"))
+            self.init(online: version)
         case .connecting, .idle:
-            StatusDot(color: Theme.warning)
             if roster.isBusy {
-                Text("\(workspace.bot.name) is busy · Bots will catch up")
+                self.init(color: Theme.warning, line: String(localized: "\(botName) is busy · Bots will catch up"),
+                          title: String(localized: "Busy"), detail: String(localized: "Bots will catch up"))
             } else {
-                Text(roster.hasLoaded ? "Reconnecting…" : "Connecting…")
+                let title = roster.hasLoaded ? String(localized: "Reconnecting…") : String(localized: "Connecting…")
+                self.init(color: Theme.warning, line: title, title: title)
             }
         case .signInRequired:
-            StatusDot(color: Theme.warning)
-            Text("Sign-in needed")
+            self.init(color: Theme.warning, line: String(localized: "Sign-in needed"), title: String(localized: "Sign-in needed"))
         case .failed:
-            StatusDot(color: Theme.danger)
-            Text("Bots offline · chats still work")
+            self.init(color: Theme.danger, line: String(localized: "Bots offline · chats still work"),
+                      title: String(localized: "Bots offline"), detail: String(localized: "chats still work"))
         }
+    }
+
+    private init(online version: String?) {
+        self.init(color: Theme.success,
+                  line: version.map { String(localized: "Connected · Hermes \($0)") } ?? String(localized: "Connected"),
+                  title: String(localized: "Connected"),
+                  detail: version.map { String(localized: "Hermes \($0)") })
     }
 }
 

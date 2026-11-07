@@ -113,6 +113,8 @@ it was made" for `origin`, else the target's platform name.
   go), skills, last error, then recent runs (`Tasks.runRow`, `runRowFailed`: when, how long, and
   what it said or why it failed). Pause and Run Now float in a bottom glass bar over the
   scroll-edge fade. + adds a task; the … menu deletes the selected one.
+- The list takes half the room, between 240 and 360 pt, so the detail keeps its share in a narrow
+  window (the Mac's smallest, the iPad with its sidebar beside it).
 - **Mac** (`macTasks`): the same list and detail in the window. Pause (or Resume) and Run Now move
   to the toolbar, Run Now as the default button (Return); the … menu holds New Task… and Delete
   Task.

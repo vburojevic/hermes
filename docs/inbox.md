@@ -223,7 +223,7 @@ search).
 - It opens with the line a quarter of the way down; when everything new fits on screen, at the
   end with the line in view. If the rows on the device stop short, it waits up to 1.2 s for the
   gateway's.
-- Settings → Chat → Open Chats At: First Unread (default) or Latest (the line is still drawn).
+- Settings → Chat → Open chats at: First Unread (default) or Latest (the line is still drawn).
 - The line stays until the chat closes, and never appears for messages that arrive while it's
   open.
 - Nothing new: where it was left scrolled up, else at the end.
@@ -363,6 +363,11 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 - The open chat's activity line is announced at most every 10 s, never the words as they stream.
 - Never colour alone: needs you has the hand, failed the triangle, muted the slashed bell, unread
   the weight and the count.
+- At the accessibility text sizes on iPhone and iPad the drawer keeps everything and cuts nothing
+  off: the Chats / Bots switcher stacks its two halves, the filter chips grow with their text and
+  scroll, a row's title wraps with its marks and time on the line below it, the New Chat, Tasks,
+  Skills and settings glyphs grow with the text up to a cap, and the connection line wraps with
+  the settings button below it.
 
 ## 7. Checks
 
