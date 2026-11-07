@@ -306,8 +306,10 @@ else
   security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
 fi
 IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN")"
-DIST_SHA="$(echo "$IDENTITIES" | awk '/Apple Distribution: .*\(29ZNGBT83H\)/ {print $2; exit}')"
-DEVID_SHA="$(echo "$IDENTITIES" | awk '/Developer ID Application: .*\(29ZNGBT83H\)/ {print $2; exit}')"
+# Under pipefail a reader that stops at its first match can kill the writer with SIGPIPE and fail
+# the step, so every early-stopping match below reads a here-string or a file, never a pipe.
+DIST_SHA="$(awk '/Apple Distribution: .*\(29ZNGBT83H\)/ {print $2; exit}' <<<"$IDENTITIES")"
+DEVID_SHA="$(awk '/Developer ID Application: .*\(29ZNGBT83H\)/ {print $2; exit}' <<<"$IDENTITIES")"
 [ -n "$DIST_SHA" ] && [ -n "$DEVID_SHA" ] || { echo "escrowed identities missing from the signing keychain"; exit 1; }
 echo "Apple Distribution $DIST_SHA · Developer ID $DEVID_SHA (team $TEAM_ID)"
 
@@ -322,13 +324,15 @@ archive() { # <iOS|macOS>
     -destination "generic/platform=$1" -archivePath "$OUT/Hermes-$1.xcarchive" -derivedDataPath "$RELEASE_DERIVED_DATA" \
     -allowProvisioningUpdates "${AUTH[@]}" DEVELOPMENT_TEAM="$TEAM_ID" ${style[@]+"${style[@]}"} \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" > "$OUT/archive-$1.log" 2>&1 \
-    || { grep -E "error:" "$OUT/archive-$1.log" | head -20; exit 1; }
+    || { grep -m 20 -E "error:" "$OUT/archive-$1.log" || true; exit 1; }
 }
 
 assert_release_app() { # <Info.plist> <binary> — the real app, never the demo build
   [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1")" = "$BUNDLE_ID" ] || { echo "wrong bundle id in $1"; exit 1; }
   [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$1")" = "$BUILD_NUMBER" ] || { echo "wrong build number in $1"; exit 1; }
-  if strings "$2" | grep -q HERMES_BOOTSTRAP; then echo "demo bootstrap compiled into a Release build"; exit 1; fi
+  local text
+  text="$(strings "$2")" || { echo "couldn't read the strings in $2"; exit 1; }
+  if grep -q HERMES_BOOTSTRAP <<<"$text"; then echo "demo bootstrap compiled into a Release build"; exit 1; fi
 }
 
 # --- iOS → TestFlight ----------------------------------------------------------------------------
@@ -375,7 +379,7 @@ EOF
   ios_options export
   "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios" \
     -exportOptionsPlist "$OUT/ExportOptions-iOS-export.plist" "${AUTH[@]}" > "$OUT/export-iOS.log" 2>&1 \
-    || { grep -E "error" "$OUT/export-iOS.log" | head -20; exit 1; }
+    || { grep -m 20 -E "error" "$OUT/export-iOS.log" || true; exit 1; }
   IPA="$(ls "$OUT"/ios/*.ipa)"
   # Push only works if the signed entitlements say so: production APNs, Time Sensitive and
   # communication notifications, and the App Group the extensions share with the app.
@@ -404,14 +408,14 @@ EOF
   # altool finds the key only under ./private_keys.
   mkdir -p "$WORK/private_keys" && cp "$ASC_KEY_PATH" "$WORK/private_keys/"
   (cd "$WORK" && xcrun altool --validate-app -f "$IPA" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format json > "$OUT/validate-iOS.json" 2>&1) \
-    || { cat "$OUT/validate-iOS.json" | head -40; exit 1; }
+    || { head -40 "$OUT/validate-iOS.json"; exit 1; }
   echo "validated $(basename "$IPA")"
   if [ $DRY_RUN = 0 ]; then
     log "upload iOS to App Store Connect"
     ios_options upload
     "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-iOS.xcarchive" -exportPath "$OUT/ios-upload" \
       -exportOptionsPlist "$OUT/ExportOptions-iOS-upload.plist" "${AUTH[@]}" > "$OUT/upload-iOS.log" 2>&1 \
-      || { grep -E "error" "$OUT/upload-iOS.log" | head -20; exit 1; }
+      || { grep -m 20 -E "error" "$OUT/upload-iOS.log" || true; exit 1; }
     echo "uploaded iOS $VERSION ($BUILD_NUMBER) — internal testers get it once processing finishes; Public Beta after the Mac"
   fi
 fi
@@ -433,7 +437,7 @@ if [ $MAC = 1 ]; then
 EOF
   "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-macOS.xcarchive" -exportPath "$OUT/mac" \
     -exportOptionsPlist "$OUT/ExportOptions-macOS.plist" > "$OUT/export-macOS.log" 2>&1 \
-    || { grep -E "error" "$OUT/export-macOS.log" | head -20; exit 1; }
+    || { grep -m 20 -E "error" "$OUT/export-macOS.log" || true; exit 1; }
   APP="$OUT/mac/Hermes.app"
   assert_release_app "$APP/Contents/Info.plist" "$APP/Contents/MacOS/Hermes"
   [ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist")" != "" ] || { echo "no SUFeedURL"; exit 1; }
@@ -487,7 +491,7 @@ EOF
   spctl -a -t exec -v "$APP"
 
   log "Sparkle appcast"
-  SPARKLE_BIN="$(dirname "$(find "$RELEASE_DERIVED_DATA/SourcePackages/artifacts" -type f -name sign_update -path '*/Sparkle/bin/*' 2>/dev/null | head -1)")"
+  SPARKLE_BIN="$(dirname "$(find "$RELEASE_DERIVED_DATA/SourcePackages/artifacts" -type f -name sign_update -path '*/Sparkle/bin/*' -print -quit 2>/dev/null)")"
   [ -x "$SPARKLE_BIN/sign_update" ] || { echo "Sparkle sign_update not found in $RELEASE_DERIVED_DATA"; exit 1; }
   ED_KEY="$WORK/sparkle-ed.key"
   secret_file /hermes/ci SPARKLE_ED_PRIVATE_KEY=HERMES_SPARKLE_ED_PRIVATE_KEY "$ED_KEY"
@@ -522,7 +526,8 @@ EOF
       --title "Hermes $VERSION beta ($BUILD_NUMBER)" --notes "Hermes $VERSION beta for Mac. Signed by Caffeinated Code (team 29ZNGBT83H), notarized by Apple. Existing installs update through Sparkle. What's new: https://github.com/$SOURCE_REPO/releases/tag/$TAG"
     # Verify what customers get, not the exit codes.
     FEED="https://github.com/$RELEASES_REPO/releases/latest/download/appcast.xml"
-    curl -fsSL "$FEED" | grep -q "<sparkle:version>$BUILD_NUMBER</sparkle:version>" || { echo "feed doesn't serve $BUILD_NUMBER yet"; exit 1; }
+    FEED_XML="$(curl -fsSL "$FEED" || true)"   # an unreachable feed fails the match below
+    grep -q "<sparkle:version>$BUILD_NUMBER</sparkle:version>" <<<"$FEED_XML" || { echo "feed doesn't serve $BUILD_NUMBER yet"; exit 1; }
     curl -fsSIL "$DMG_URL" -o /dev/null || { echo "DMG not downloadable"; exit 1; }
     echo "macOS: published $DMG_URL"
   else
