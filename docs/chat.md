@@ -1008,7 +1008,8 @@ once when the chat's stored rows show the other turn ending.
   "Changed 3 files, 106 lines added, 1 removed" with the hint "Shows the changes". Task list items read "Done" or "Not done". Headings and time
   separators carry the header trait.
 - Reduce Motion: no shimmer on the working header, no streaming fade (text appears as it
-  arrives), and folds and title changes cross-fade instead of sliding.
+  arrives), and folds and title changes cross-fade instead of sliding. Turned off mid-reply,
+  the blocks it drew (bullets, code, tables) stay drawn: none dims, vanishes or fades in again.
 - VoiceOver hears a turn three times: "<Bot> is thinking", "Replying", "Reply finished" (§4a).
 - Dynamic Type: a reply's actions (copy, share, listen, branch, more) grow with the text up to
   44 pt, so the row still fits, and the "Earlier messages" line wraps in full at the
