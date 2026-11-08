@@ -46,6 +46,10 @@ struct ProcessChipView: View {
     let conversation: ConversationModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The composer's sizes at the current text size (docs/composer.md §1).
+    @Environment(\.composerChipSizing) private var composerSizing
+
+    private var sizing: ComposerSizing { composerSizing ?? .large }
 
     private var chip: ProcessChip { conversation.processChip }
 
@@ -91,7 +95,7 @@ struct ProcessChipView: View {
         }
         .padding(.leading, 9)
         .padding(.trailing, 11)
-        .frame(minHeight: 32)
+        .frame(minHeight: sizing.chipMinHeight)
         .overlay(Capsule().strokeBorder(Theme.hairline))
         .contentShape(Capsule())
         .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.3), value: chip)
@@ -101,18 +105,18 @@ struct ProcessChipView: View {
         switch chip {
         case .finished:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 14))
+                .font(.system(size: sizing.chipGlyph(14)))
                 .foregroundStyle(Theme.success)
                 .transition(.opacity)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
+                .font(.system(size: sizing.chipGlyph(14)))
                 .foregroundStyle(Theme.danger)
                 .symbolEffect(.wiggle, options: .nonRepeating, isActive: !reduceMotion)
                 .transition(.opacity)
         default:
             StatusDot(color: Theme.success)
-                .frame(width: 14, height: 14)
+                .frame(width: sizing.processDotSize, height: sizing.processDotSize)
                 .transition(.opacity)
         }
     }

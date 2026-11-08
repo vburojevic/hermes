@@ -18,8 +18,8 @@ Chats), or the gateway's API server. Several controls only exist on the first.
 
 ## 1. Layout
 
-One floating Liquid Glass panel (regular glass, corner radius 28). Top to bottom, each row
-appears only when it has content:
+One floating Liquid Glass panel (regular glass, corner radius 28 at the default text size, see
+below). Top to bottom, each row appears only when it has content:
 
 1. The queue tray (Send Next, [follow-ups.md](follow-ups.md) §4)
 2. A strip for what the field is doing: editing a queued message (`composerQueueEditing`),
@@ -38,16 +38,32 @@ appears only when it has content:
    Dictate records a voice message instead: the field and controls become the recorder, locked
    and Review panels ([voice.md](voice.md) §2).
 
-   At every text size, +, Dictate and the trailing button keep their 36 pt and stay inside the
-   panel, and the row is never wider than the panel. The chips (Think or the mode chip, the
-   process chip, the project chip and the status) stop growing at the first accessibility size,
-   and a long press shows a chip large (the Large Content Viewer). When the row still runs out of
-   room, the process chip truncates first, then the project chip (its branch before its name),
-   then Think. VoiceOver reads each chip's full label. The Mac's sizes don't change.
+   The composer grows with the text (`composerTypeLarge`, `composerTypeAX1`, `composerTypeAX3`,
+   `composerTypeAX5`, `composerTypeAX5Busy`, `composerTypeAX5Pad`; the sizes are
+   `ComposerSizing`). +, Dictate, the trailing button and the dictation row's buttons are 36 pt
+   circles at Large, the default, and grow 2 pt a size to 52 pt at AX5; their glyphs grow with
+   them and keep their size against the circle (the design draws each glyph's frame at half its
+   circle, 18 pt at Large and 26 pt at AX5; the + symbol draws at 16 pt at Large and 23 pt at
+   AX5). Each has a hit area of at least 44 pt, centered on the circle, and so does the close
+   button on a dictation error. The panel's corner radius follows the buttons, half a button plus
+   10 pt: 28 at Large, 36 at AX5. The buttons and chips on the controls row are 8 pt apart at
+   every size. The chips (Think or the mode chip, the process chip, the project
+   chip and the status) grow until the first accessibility size, AX1, and stop there at 44 pt
+   tall, with 20 pt glyphs, a 21 pt running dot and a 28 pt project tile; a long press shows a
+   chip large (the Large Content Viewer).
 
-   The glyphs on +, Dictate, the trailing button and the dictation row grow with the text, up to
-   1.4 times, inside their 36 pt. At the accessibility sizes the field's placeholder ("Reply to
-   Hermes…") wraps and the field grows to hold it, rather than cutting it off.
+   Up to xxxLarge, and on iPad and the Mac at every size, the controls are one row and it is
+   never wider than the panel: when it runs out of room, the process chip truncates first, then
+   the project chip (its branch before its name), then Think. From AX1 in a compact width (an
+   iPhone, an iPad in Slide Over), the chips move to their own row (`chipRow`) under the field,
+   8 pt apart: it scrolls sideways within the panel's edges and never truncates, a chip that isn't shown takes no room,
+   and the project chip stays beside the mode chip while a turn runs. The controls row under it
+   keeps +, the status, Dictate and the trailing button. VoiceOver and the keyboard
+   go field, chips, +, Dictate, then the trailing button, and VoiceOver reads each chip's full
+   label. The Mac keeps the Large sizes at every text size.
+
+   At the accessibility sizes the field's placeholder ("Reply to Hermes…") wraps and the field
+   grows to hold it, rather than cutting it off.
 
 The model picker is in the chat's title, not in the composer.
 
