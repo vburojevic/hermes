@@ -34,7 +34,8 @@ AGENT_SETUP = (".claude/", ".agents/", "skills-lock.json", ".worktreeinclude", "
                "CLAUDE.md")
 SUBJECT = re.compile(r"([^:]{1,40}):\s*(.+)")
 # A subject that reached main in the wrong words, corrected here instead of rewriting public
-# history: one "<commit> <subject>" per line, the commit as a full or short hash.
+# history: one "<commit> <subject>" per line, the commit as a full or short hash. A commit on
+# several lines gets a note for each, for one that landed several changes under one subject.
 CORRECTIONS = "Scripts/release-note-corrections.txt"
 
 
@@ -44,8 +45,10 @@ def corrections():
             lines = [line.strip() for line in file]
     except FileNotFoundError:
         return {}
-    pairs = (line.split(maxsplit=1) for line in lines if line and not line.startswith("#"))
-    return {sha: subject for sha, subject in pairs}
+    fixed = {}
+    for sha, subject in (line.split(maxsplit=1) for line in lines if line and not line.startswith("#")):
+        fixed.setdefault(sha, []).append(subject)
+    return fixed
 
 
 def agent_setup_only(files):
@@ -68,13 +71,14 @@ def changes(previous_tag):
         if agent_setup_only(files):
             continue
         sha, _, subject = line.partition(" ")
-        subject = next((text for prefix, text in fixed.items() if sha.startswith(prefix)), subject)
-        match = SUBJECT.match(subject)
-        if not match:
-            continue  # the first public commit ("Hermes 1.0 beta") and anything without an area
-        area, text = match.groups()
-        if area not in SKIP_AREAS:
-            rows.append((area, text))
+        subjects = next((texts for prefix, texts in fixed.items() if sha.startswith(prefix)), [subject])
+        for subject in subjects:
+            match = SUBJECT.match(subject)
+            if not match:
+                continue  # the first public commit ("Hermes 1.0 beta") and anything without an area
+            area, text = match.groups()
+            if area not in SKIP_AREAS:
+                rows.append((area, text))
     return rows
 
 
