@@ -9,8 +9,23 @@ struct ProjectChip: View {
     let workspace: BotWorkspace
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// The composer's sizes at the current text size (docs/composer.md §1).
+    @Environment(\.composerChipSizing) private var composerSizing
 
     private var projects: ProjectsModel { workspace.projects }
+
+    private var sizing: ComposerSizing { composerSizing ?? .large }
+
+    /// Whether the chip shows for this chat: so the composer's chip row (docs/composer.md §1)
+    /// takes no room when nothing would be in it.
+    static func isShown(conversation: ConversationModel, workspace: BotWorkspace) -> Bool {
+        ProjectChip(conversation: conversation, workspace: workspace).isShown
+    }
+
+    /// The one condition the body and `isShown(conversation:workspace:)` share.
+    private var isShown: Bool {
+        projects.isAvailable && !conversation.isBotChat && (isNew || runningProjectID != nil)
+    }
 
     private var showsBranch: Bool {
         #if os(macOS)
@@ -31,7 +46,7 @@ struct ProjectChip: View {
     }
 
     var body: some View {
-        if projects.isAvailable, !conversation.isBotChat {
+        if isShown {
             if isNew {
                 let placement = conversation.placement ?? projects.defaultPlacement
                 let branch = placement.newWorktree ? String(localized: "new worktree") : placement.branch ?? projects.branch(of: placement.cwd)
@@ -81,14 +96,14 @@ struct ProjectChip: View {
     private func label(projectID: String?, branch: String?) -> some View {
         HStack(spacing: 6) {
             if let projectID {
-                ProjectTile(appearance: projects.appearance(projectID), size: 20)
+                ProjectTile(appearance: projects.appearance(projectID), size: sizing.projectTileSize)
                 Text(projects.project(projectID)?.name ?? String(localized: "Project"))
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
                     .lineLimit(1)
                 if showsBranch, let branch, !branch.isEmpty {
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 11))
+                        .font(.system(size: sizing.chipGlyph(11)))
                         .foregroundStyle(Theme.tertiaryText)
                     // Where room runs out, the branch gives way before the project's name.
                     Text(branch)
@@ -99,7 +114,7 @@ struct ProjectChip: View {
                 }
             } else {
                 Image(systemName: "folder")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: sizing.chipGlyph(13), weight: .medium))
                     .foregroundStyle(Theme.secondaryText)
                 Text("No Project")
                     .font(.footnote.weight(.semibold))
@@ -107,12 +122,12 @@ struct ProjectChip: View {
                     .lineLimit(1)
             }
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: sizing.chipChevronSize, weight: .semibold))
                 .foregroundStyle(Theme.tertiaryText)
         }
         .padding(.leading, projectID == nil ? 11 : 6)
         .padding(.trailing, 11)
-        .frame(minHeight: 32)
+        .frame(minHeight: sizing.chipMinHeight)
         .overlay(Capsule().strokeBorder(Theme.hairline))
         .contentShape(Capsule())
     }

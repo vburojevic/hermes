@@ -312,11 +312,14 @@ struct ChipLabel: View {
     var isActive = false
     var showsChevron = false
 
+    /// In the composer, its sizes at the current text size (docs/composer.md §1).
+    @Environment(\.composerChipSizing) private var composerSizing
+
     var body: some View {
         HStack(spacing: 6) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: composerSizing?.chipGlyph(13) ?? 13, weight: .medium))
                     .foregroundStyle(isActive ? Theme.primaryText : Theme.secondaryText)
             }
             Text(title)
@@ -325,12 +328,12 @@ struct ChipLabel: View {
                 .lineLimit(1)
             if showsChevron {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: composerSizing?.chipChevronSize ?? 9, weight: .semibold))
                     .foregroundStyle(Theme.tertiaryText)
             }
         }
         .padding(.horizontal, 11)
-        .frame(minHeight: 32)
+        .frame(minHeight: composerSizing?.chipMinHeight ?? 32)
         .background(Capsule().fill(isActive ? Theme.surfaceRaised : .clear))
         .overlay(Capsule().strokeBorder(Theme.hairline))
         .contentShape(Capsule())

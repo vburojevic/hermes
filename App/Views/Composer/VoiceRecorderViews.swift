@@ -54,8 +54,7 @@ struct MicButton: View {
         Image(systemName: "mic")
             .composerGlyph(16)
             .foregroundStyle(Theme.secondaryText)
-            .frame(width: 36, height: 36)
-            .contentShape(Circle())
+            .composerButtonFrame()
             .opacity(isRecordingHeld ? 0 : 1)
             .overlay {
                 if isRecordingHeld {
@@ -83,6 +82,7 @@ struct MicButton: View {
                 }
             }
             .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.28, bounce: 0.2), value: isRecordingHeld)
+            .composerHitArea()
             .gesture(press)
             .sensoryFeedback(.start, trigger: isRecordingHeld) { _, new in new }
             .sensoryFeedback(.impact, trigger: hold.cancelArmed) { _, new in new }
@@ -98,6 +98,7 @@ struct MicButton: View {
                 onLock()
             }
             .help("Dictate · hold to record a voice message")
+            .composerHitAreaOutset()
     }
 
     private var press: some Gesture {

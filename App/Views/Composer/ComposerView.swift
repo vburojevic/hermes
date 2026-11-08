@@ -17,6 +17,10 @@ struct ComposerView: View {
 
     @AppStorage(PreferenceKey.sendWithReturn) private var sendWithReturn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var showsPhotoPicker = false
     @State private var showsFileImporter = false
@@ -407,6 +411,23 @@ struct ComposerView: View {
                             .transition(.opacity)
                     }
                 }
+                if showsChipRow {
+                    // From AX1 in a compact width (`chipRow` in `composerTypeAX1`): the chips on
+                    // their own row, scrolling sideways, so they never truncate (docs/composer.md §1).
+                    ScrollView(.horizontal) {
+                        HStack(spacing: ComposerSizing.chipRowSpacing) {
+                            chips(inRow: true)
+                        }
+                        .padding(.horizontal, 10)
+                    }
+                    .scrollIndicators(.hidden)
+                    // The capsules' strokes and shadows may reach above and below the row, but a
+                    // chip scrolled sideways stops at the panel's edges: the glass doesn't clip.
+                    .scrollClipDisabled()
+                    .mask { Rectangle().padding(.vertical, -12) }
+                    .padding(.bottom, 6)
+                    .transition(.opacity.animation(reduceMotion ? nil : Theme.snappy))
+                }
                 // The controls stay put while the finger holds the microphone: it keeps its press.
                 Group {
                     if dictation.isActive {
@@ -424,10 +445,33 @@ struct ComposerView: View {
                 .padding(.bottom, 10)
             }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.composer))
-        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous))
+        .environment(\.composerSizing, sizing)
+        .glassEffect(.regular, in: .rect(cornerRadius: sizing.cornerRadius))
+        .contentShape(RoundedRectangle(cornerRadius: sizing.cornerRadius, style: .continuous))
         .onTapGesture { if !recorder.isActive { focused.wrappedValue = true } }
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { panelWidth = $0 }
+    }
+
+    /// The buttons, chips and corners at this text size; the Mac keeps Large's.
+    private var sizing: ComposerSizing {
+        #if os(iOS)
+        ComposerSizing(dynamicTypeSize)
+        #else
+        .large
+        #endif
+    }
+
+    /// From AX1 a compact width puts the chips on their own row, when one shows and the controls
+    /// row is there to go with it (not while dictating or holding to record).
+    private var showsChipRow: Bool {
+        #if os(iOS)
+        guard sizing.usesChipRow(isCompactWidth: horizontalSizeClass == .compact) else { return false }
+        #else
+        guard sizing.usesChipRow(isCompactWidth: false) else { return false }
+        #endif
+        guard !isHoldingToRecord, !dictation.isActive, dictation.failure == nil else { return false }
+        return !collapsesChipSlot || conversation.processChip != .hidden
+            || ProjectChip.isShown(conversation: conversation, workspace: workspace)
     }
 
     /// The finger is on the microphone and a voice message is recording.
@@ -457,45 +501,57 @@ struct ComposerView: View {
     static let rowAppears = AnyTransition.opacity.animation(.easeOut(duration: 0.22))
 
 
+    /// Think (or the send mode), the process chip and the project chip: in the controls row, or
+    /// from AX1 in a compact width on their own row (`inRow`), where none truncates and the project
+    /// chip stays beside the send mode (`composerTypeAX5Busy`).
+    @ViewBuilder private func chips(inRow: Bool) -> some View {
+        let spacing = inRow ? ComposerSizing.chipRowSpacing : ComposerSizing.controlSpacing
+        // Think and the send mode share one place and cross-fade. Neither comes or goes, so
+        // no leaving copy can linger where the chip was while the composer changes height.
+        ZStack(alignment: .leading) {
+            if !conversation.isBotChat {
+                EffortMenu(conversation: conversation, workspace: workspace)
+                    .modifier(ChipSlot(isShown: !showsModeChip && !answersQuestion))
+            }
+            FollowUpModeChip(conversation: conversation, focused: focused)
+                .modifier(ChipSlot(isShown: showsModeChip))
+                // The first time the person types while Hermes works (`SteerTip.typedWhileWorking`).
+                .hermesTip(SteerTip(), arrowEdge: .bottom)
+        }
+        // A Bot Chat and the answer composer have no Think: the slot takes no room until the
+        // send mode shows in it, so what follows (the process chip) sits next to +.
+        .frame(width: collapsesChipSlot ? 0 : nil, alignment: .leading)
+        .padding(.trailing, collapsesChipSlot ? -spacing : 0)
+        .animation(.smooth(duration: 0.2), value: collapsesChipSlot)
+        .composerChip()
+        // What runs in the background (`processChip`): the first to shrink, so it never
+        // pushes the buttons at the end.
+        ProcessChipView(conversation: conversation)
+            .composerChip()
+            .accessibilityShowsLargeContentViewer()
+            .layoutPriority(-1)
+            .fixedSize(horizontal: inRow, vertical: false)
+        // Where the chat runs (projects). In the controls row it stays in place under the send
+        // mode, faded, and gives way (truncates) after the process chip, before Think.
+        ProjectChip(conversation: conversation, workspace: workspace)
+            .composerChip()
+            .opacity(showsModeChip && !inRow ? 0 : 1)
+            .allowsHitTesting(!showsModeChip || inRow)
+            .animation(.easeOut(duration: 0.18), value: showsModeChip)
+            .layoutPriority(-0.5)
+            .fixedSize(horizontal: inRow, vertical: false)
+    }
+
     private var controls: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: ComposerSizing.controlSpacing) {
             if isHoldingToRecord {
                 RecorderHoldBar(recorder: recorder, hold: hold)
                     .transition(.opacity)
             } else {
                 attachMenu
-                // Think and the send mode share one place and cross-fade. Neither comes or goes, so
-                // no leaving copy can linger where the chip was while the composer changes height.
-                ZStack(alignment: .leading) {
-                    if !conversation.isBotChat {
-                        EffortMenu(conversation: conversation, workspace: workspace)
-                            .modifier(ChipSlot(isShown: !showsModeChip && !answersQuestion))
-                    }
-                    FollowUpModeChip(conversation: conversation, focused: focused)
-                        .modifier(ChipSlot(isShown: showsModeChip))
-                        // The first time the person types while Hermes works (`SteerTip.typedWhileWorking`).
-                        .hermesTip(SteerTip(), arrowEdge: .bottom)
+                if !showsChipRow {
+                    chips(inRow: false)
                 }
-                // A Bot Chat and the answer composer have no Think: the slot takes no room until the
-                // send mode shows in it, so what follows (the process chip) sits next to +.
-                .frame(width: collapsesChipSlot ? 0 : nil, alignment: .leading)
-                .padding(.trailing, collapsesChipSlot ? -6 : 0)
-                .animation(.smooth(duration: 0.2), value: collapsesChipSlot)
-                .chipTypeSize()
-                // What runs in the background (`processChip`): the first to shrink, so it never
-                // pushes the buttons at the end.
-                ProcessChipView(conversation: conversation)
-                    .chipTypeSize()
-                    .accessibilityShowsLargeContentViewer()
-                    .layoutPriority(-1)
-                // Where the chat runs (projects). It stays in place under the send mode, faded,
-                // and gives way (truncates) after the process chip, before Think.
-                ProjectChip(conversation: conversation, workspace: workspace)
-                    .chipTypeSize()
-                    .opacity(showsModeChip ? 0 : 1)
-                    .allowsHitTesting(!showsModeChip)
-                    .animation(.easeOut(duration: 0.18), value: showsModeChip)
-                    .layoutPriority(-0.5)
                 Spacer(minLength: 4)
                 if let status = hint {
                     Text(status)
@@ -959,47 +1015,117 @@ struct ComposerView: View {
             Image(systemName: "plus")
                 .composerGlyph(16)
                 .foregroundStyle(Theme.primaryText)
-                .frame(width: 36, height: 36)
+                .composerButtonFrame()
                 .overlay { Circle().strokeBorder(Theme.hairline) }
-                .contentShape(Circle())
+                .composerHitArea()
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .composerHitAreaOutset()
         .help("Attach")
         .accessibilityLabel("Attach")
     }
 }
 
+extension ComposerSizing {
+    /// The sizes for a text size: Large is step 0, each size above it one more (AX5 is 8).
+    init(_ size: DynamicTypeSize) {
+        let sizes = DynamicTypeSize.allCases
+        let index = sizes.firstIndex(of: size) ?? 0
+        self.init(step: index - (sizes.firstIndex(of: .large) ?? 0))
+    }
+}
+
+extension EnvironmentValues {
+    /// The composer's sizes at the current text size, set on its panel (docs/composer.md §1).
+    @Entry var composerSizing = ComposerSizing.large
+    /// Set only on the composer's chips, which then grow with its sizes up to AX1; chips anywhere
+    /// else keep their own.
+    @Entry var composerChipSizing: ComposerSizing?
+}
+
 extension View {
     /// The composer's chips stop growing at the first accessibility text size, so +, Dictate and
-    /// the trailing button stay inside the panel at every size; a long press shows a chip large
+    /// the trailing button keep their room at every size; a long press shows a chip large
     /// (docs/composer.md §1).
     fileprivate func chipTypeSize() -> some View {
         dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
-    /// A composer button's glyph at `size`, growing with the text on iPhone and iPad. The button
-    /// itself keeps its size at every text size, so the glyph stops at 1.4 times (docs/composer.md §1).
+    /// One of the composer's chips: its text stops at AX1 and its glyphs, tile and height follow
+    /// the composer's sizes.
+    fileprivate func composerChip() -> some View {
+        modifier(ComposerChip())
+    }
+
+    /// A composer button's glyph at `size`, its size at Large, growing with its circle
+    /// (docs/composer.md §1).
     func composerGlyph(_ size: CGFloat, weight: Font.Weight = .medium) -> some View {
         modifier(ComposerGlyph(size: size, weight: weight))
+    }
+
+    /// A composer button's circle: 36 pt at Large to 52 pt at AX5 (docs/composer.md §1).
+    func composerButtonFrame() -> some View {
+        modifier(ComposerButtonFrame())
+    }
+
+    /// The last thing in a composer button's label: the tap area reaches 44 pt around a smaller
+    /// circle. The button itself then takes `composerHitAreaOutset()`, so the row keeps the
+    /// circle's size. A content shape alone can't reach past a view's frame.
+    func composerHitArea(around diameter: CGFloat? = nil) -> some View {
+        modifier(ComposerHitArea(diameter: diameter, outset: false))
+    }
+
+    /// On a button whose label ends in `composerHitArea()`: gives the row back the circle's size.
+    func composerHitAreaOutset(around diameter: CGFloat? = nil) -> some View {
+        modifier(ComposerHitArea(diameter: diameter, outset: true))
+    }
+}
+
+private struct ComposerChip: ViewModifier {
+    @Environment(\.composerSizing) private var sizing
+
+    func body(content: Content) -> some View {
+        content
+            .chipTypeSize()
+            .environment(\.composerChipSizing, sizing)
     }
 }
 
 struct ComposerGlyph: ViewModifier {
     let size: CGFloat
     let weight: Font.Weight
-    #if os(iOS)
-    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
-    #endif
+    @Environment(\.composerSizing) private var sizing
 
     func body(content: Content) -> some View {
-        #if os(iOS)
-        content.font(.system(size: size * min(scale, 1.4), weight: weight))
-        #else
-        content.font(.system(size: size, weight: weight))
-        #endif
+        content.font(.system(size: sizing.glyph(size), weight: weight))
+    }
+}
+
+struct ComposerButtonFrame: ViewModifier {
+    @Environment(\.composerSizing) private var sizing
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: sizing.buttonDiameter, height: sizing.buttonDiameter)
+    }
+}
+
+private struct ComposerHitArea: ViewModifier {
+    /// The circle's diameter, when it isn't a composer button's.
+    let diameter: CGFloat?
+    let outset: Bool
+    @Environment(\.composerSizing) private var sizing
+
+    func body(content: Content) -> some View {
+        let margin = sizing.hitMargin(around: diameter ?? sizing.buttonDiameter)
+        if outset {
+            content.padding(-margin)
+        } else {
+            content.padding(margin).contentShape(Circle())
+        }
     }
 }
 
@@ -1097,12 +1223,13 @@ private struct TrailingButton: View {
                 .contentTransition(.symbolEffect(.replace))
                 .animation(Theme.snappy, value: mode)
                 .foregroundStyle(Theme.inkForeground)
-                .frame(width: 36, height: 36)
+                .composerButtonFrame()
                 .background(Circle().fill(Theme.ink))
                 .animation(Theme.snappy) { $0.opacity(isEnabled ? 1 : 0.35) }
-                .contentShape(Circle())
+                .composerHitArea()
         }
         .buttonStyle(PressableStyle())
+        .composerHitAreaOutset()
         .disabled(!isEnabled)
         // While a turn runs ⌘Return redirects; the field handles it.
         .keyboardShortcut(mode == .send && !conversation.isWorking ? KeyboardShortcut(.return, modifiers: .command) : nil)
@@ -1127,10 +1254,12 @@ private struct DictationRow: View {
                 Image(systemName: "xmark")
                     .composerGlyph(13, weight: .semibold)
                     .foregroundStyle(Theme.primaryText)
-                    .frame(width: 36, height: 36)
+                    .composerButtonFrame()
                     .background(Theme.surfaceRaised, in: Circle())
+                    .composerHitArea()
             }
             .buttonStyle(PressableStyle())
+            .composerHitAreaOutset()
             .accessibilityLabel("Cancel dictation")
             if let progress = dictation.downloadProgress {
                 // The speech model downloads once per language (`docs/voice.md` §5).
@@ -1167,10 +1296,12 @@ private struct DictationRow: View {
                 Image(systemName: "checkmark")
                     .composerGlyph(15, weight: .bold)
                     .foregroundStyle(Theme.inkForeground)
-                    .frame(width: 36, height: 36)
+                    .composerButtonFrame()
                     .background(Theme.ink, in: Circle())
+                    .composerHitArea()
             }
             .buttonStyle(PressableStyle())
+            .composerHitAreaOutset()
             .disabled(dictation.state != .listening)
             .accessibilityLabel("Done")
         }
@@ -1182,6 +1313,8 @@ private struct DictationFailureRow: View {
     let message: String
     let onRetry: () -> Void
     let onDismiss: () -> Void
+
+    @Environment(\.composerSizing) private var sizing
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1202,13 +1335,14 @@ private struct DictationFailureRow: View {
                 Image(systemName: "xmark")
                     .composerGlyph(12, weight: .semibold)
                     .foregroundStyle(Theme.secondaryText)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Circle())
+                    .frame(width: sizing.buttonDiameter - 4, height: sizing.buttonDiameter - 4)
+                    .composerHitArea(around: sizing.buttonDiameter - 4)
             }
             .buttonStyle(PressableStyle())
+            .composerHitAreaOutset(around: sizing.buttonDiameter - 4)
             .accessibilityLabel("Close")
         }
-        .frame(minHeight: 36)
+        .frame(minHeight: sizing.buttonDiameter)
     }
 }
 
