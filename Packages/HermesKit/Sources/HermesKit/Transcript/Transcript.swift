@@ -1126,3 +1126,46 @@ public enum TranscriptBuilder {
         }
     }
 }
+
+/// How many rows a chat holds around the screen while the reader scrolls back through it
+/// (`docs/chat.md` §4, "Reading back"). Every row held costs every frame of a scroll, so the rows
+/// the reader is leaving go once they're a few past the screen, and rows come back a few screens
+/// ahead of the reader. The arithmetic is on row indexes into the chat's rows.
+public enum TranscriptWindow {
+    /// Rows a window grows by per frame as it fills, so no frame builds many at once.
+    public static let fillStep = 3
+
+    /// Rows kept past the screen on the side the reader is leaving. Ten kept about twenty
+    /// screens of long replies around the one being read.
+    public static let keptBeyond = 4
+
+    /// Rows past `keptBeyond` there may be before they go, so they don't go every frame.
+    public static let dropSlack = 4
+
+    /// Rows that come back in at a time below the screen.
+    public static let readingPage = 10
+
+    /// Frames of `fillStep` rows that bring back a `readingPage` of rows above the screen.
+    public static let bringBackSteps = (readingPage + fillStep - 1) / fillStep
+
+    /// Reading back up: the row that becomes the window's last, or nil while the rows below the
+    /// screen are still few. `end` is one past the window's last row.
+    public static func lastAfterDropBelow(lastVisible: Int, end: Int) -> Int? {
+        let target = lastVisible + keptBeyond
+        return end - 1 - target >= dropSlack ? target : nil
+    }
+
+    /// Reading back down: the row that becomes the window's first, or nil while the rows above the
+    /// screen are still few.
+    public static func firstAfterDropAbove(firstVisible: Int, first: Int) -> Int? {
+        let target = firstVisible - keptBeyond
+        return target - first >= dropSlack ? target : nil
+    }
+
+    /// Back down near the window's last row: the row the window grows to, or nil at the end of
+    /// the chat.
+    public static func lastAfterShowLater(last: Int, count: Int) -> Int? {
+        let target = min(count - 1, last + readingPage)
+        return target > last ? target : nil
+    }
+}

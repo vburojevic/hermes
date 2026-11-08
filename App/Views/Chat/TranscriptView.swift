@@ -3,11 +3,11 @@ import SwiftUI
 
 /// The scrolling conversation, following new output while the reader is at the end.
 ///
-/// The latest rows (`recentCount`) sit in a plain stack, measured exactly; older history is lazy
-/// above them. At the end the lazy part is entirely out of sight, so nothing there is being
-/// measured and the content height holds still: the end is exactly where it is. (One lazy stack
-/// for everything kept swapping estimated and measured heights near the bottom, by hundreds of
-/// points a frame, which threw the view past the end into an empty screen.)
+/// The rows sit in a plain stack, measured exactly, so the content height holds still and the end
+/// is exactly where it is. (A lazy stack swapped estimated and measured heights near the bottom,
+/// by hundreds of points a frame, which threw the view past the end into an empty screen.) The
+/// stack holds a window of the chat's rows (`firstShownKey`, `lastShownKey`), not all of them:
+/// every row held costs every frame of a scroll (`TranscriptWindow`, `docs/chat.md` §4).
 ///
 /// Following is explicit: while the reader is at the end, any change of the content or the
 /// composer eases the view to the new end. Scrolling up stops it; the arrow resumes.
@@ -590,10 +590,10 @@ struct TranscriptView: View {
     private static let trimSlack = 10
 
     /// Rows the window grows by per frame as it fills.
-    private static let fillStep = 3
+    private static let fillStep = TranscriptWindow.fillStep
 
     /// Rows kept past the screen on the side the reader is leaving, reading back.
-    private static let keptBeyond = 10
+    private static let keptBeyond = TranscriptWindow.keptBeyond
 
     /// How near the top a page of earlier messages comes in.
     private static let nearTop: CGFloat = 400
@@ -763,7 +763,7 @@ struct TranscriptView: View {
         instant.disablesAnimations = true
         isPrepending = true
         Task { @MainActor in
-            for _ in 0..<(Self.pageSize / Self.fillStep) {
+            for _ in 0..<TranscriptWindow.bringBackSteps {
                 guard let rows = edge.droppedAbove.last else { break }
                 let all = conversation.rows
                 guard let index = all.firstIndex(where: { conversation.displayID(for: $0) == rows.key }) else {
@@ -812,8 +812,7 @@ struct TranscriptView: View {
             self.lastShownKey = nil
             return
         }
-        let target = min(all.count - 1, last + Self.pageSize)
-        guard target > last else {
+        guard let target = TranscriptWindow.lastAfterShowLater(last: last, count: all.count) else {
             self.lastShownKey = nil
             return
         }
@@ -849,8 +848,7 @@ struct TranscriptView: View {
         let visible = Set(edge.visibleKeys)
         guard let lastVisible = all.lastIndex(where: { visible.contains(conversation.displayID(for: $0)) }) else { return }
         let end = windowEnd(in: all, from: firstShownIndex(in: all))
-        let target = lastVisible + Self.keptBeyond
-        guard end - 1 - target >= Self.trimSlack else { return }
+        guard let target = TranscriptWindow.lastAfterDropBelow(lastVisible: lastVisible, end: end) else { return }
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG") { print("SCROLLLOG drop below \(end - 1)->\(target) of \(all.count)") }
         #endif
@@ -874,8 +872,7 @@ struct TranscriptView: View {
         let visible = Set(edge.visibleKeys)
         guard let firstVisible = all.firstIndex(where: { visible.contains(conversation.displayID(for: $0)) }) else { return false }
         let first = firstShownIndex(in: all)
-        let target = firstVisible - Self.keptBeyond
-        guard target - first >= Self.trimSlack else {
+        guard let target = TranscriptWindow.firstAfterDropAbove(firstVisible: firstVisible, first: first) else {
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG") { print("SCROLLLOG no drop above: first \(first), first on screen \(firstVisible)") }
             #endif
