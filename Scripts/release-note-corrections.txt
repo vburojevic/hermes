@@ -1,6 +1,12 @@
 # Release notes come from commit subjects (Scripts/release_notes.py). When a subject reaches main
-# in the wrong words, its notes line is corrected here: "<commit> <subject>", one per line.
+# in the wrong words, its notes line is corrected here: "<commit> <subject>", one per line. A commit
+# that landed several changes under one subject gets a line for each.
 9f9f7a4 Appearance: the launch screen and the window behind Hermes follow Dark Mode explicitly
 962b90f Bot Chats: a Bot answers with the widget its answer calls for, so "Weather today?" gets the weather card
 77301da Talk: a call started from outside the app shows it is waiting for Bot Mode
 4deaa64 Composer: + and Send stay on screen at the largest text sizes
+7d900cd Tasks: on iPad the sidebar button sits top left, as in a chat
+7d900cd Tasks: the list fills in when the gateway connects after Tasks opened
+3d203b1 Sidebar: a cold launch opens on your chats instead of filling them in a moment later
+3d203b1 Search: a result opens its chat on the match about 0.6 s sooner
+2af478a Chat: scrolling back through a long chat holds fewer rows, so it scrolls smoother and uses less memory
