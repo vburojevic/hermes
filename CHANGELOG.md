@@ -31,6 +31,17 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611080939 (November 8, 2026)
+
+- **Chat:** bullets, code blocks and tables fade in at the stream's pace while a reply writes
+- **Chat:** reply blocks stay visible when Reduce Motion is turned off mid-reply
+- **Chat:** scrolling back through a long chat holds fewer rows, so it scrolls smoother and uses less memory
+- **Tasks:** on iPad the sidebar button sits top left, as in a chat
+- **Tasks:** the list fills in when the gateway connects after Tasks opened
+- **Sidebar:** a cold launch opens on your chats instead of filling them in a moment later
+- **Search:** a result opens its chat on the match about 0.6 s sooner
+- **Composer:** buttons grow with the largest text sizes
+
 ### Build 2611071344 (November 7, 2026)
 
 - **Settings:** the gateway row fits at every text size, and rows read in sentence case
