@@ -754,16 +754,18 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   newest page plus ten stay), so it stays as quick as when it opened; nothing on screen moves when
   they go.
 - **Reading back.** Every row the chat holds costs every frame of a scroll, so reading far back
-  keeps a few pages around the screen, never the whole chat: as earlier pages come in above, rows
-  more than ten below the screen go, and scrolling back down brings them back a page at a time
-  while rows far above go into blank room of exactly their height, and come back into it when the
-  reader scrolls up again. Nothing on screen moves either way, and rows coming back don't grow in
-  (they aren't new). The pill, ⌘↓, sending and search all reach rows that aren't held: the end's
-  page comes back at once, and a search result brings its rows with it. A chat opened where it
-  was left, or at a New Messages line with a lot new, holds a page past that row to begin with. In
-  a long chat of code replies this took scrolling back through it from about 80% of the main
-  thread, with every frame late, to about 45% (measured with `-HERMES_SCROLL_RUN`,
-  `docs/development.md`).
+  keeps a few screens of rows around the one on screen, never the whole chat: as earlier pages
+  come in above, rows more than four below the screen go, and scrolling back down brings them back
+  ten at a time while rows far above go into blank room of exactly their height, and come back
+  into it when the reader scrolls up again. Nothing on screen moves either way, and rows coming
+  back don't grow in (they aren't new). The pill, ⌘↓, sending and search all reach rows that
+  aren't held: the end's page comes back at once, and a search result brings its rows with it. A
+  chat opened where it was left, or at a New Messages line with a lot new, holds a page past that
+  row to begin with. In a long chat of code replies this took scrolling back through it from about
+  80% of the main thread, with every frame late, to about 45% (measured with `-HERMES_SCROLL_RUN`,
+  `docs/development.md`). Keeping four rows past the screen rather than ten took a Mac scroll at
+  3,000 points a second from about 67% to 58%, and what the scroll adds to the app's memory from
+  about 70 MB to about 10 MB (`TranscriptWindow`).
 - **Long press on your message** (`Overlays.userMessageMenu`): Copy (the plain form, with `@`
   handles and `/skill` prefixes), Edit and Resend, Send Again, Branch from Here, Share. Edit and
   Resend and Branch from Here need the gateway protocol; Send Again works everywhere and queues
