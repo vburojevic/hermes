@@ -81,4 +81,12 @@ public enum StreamingFade {
     public static func appearOpacity(step: Int) -> Double {
         min(1, max(0, Double(step) / Double(appearSteps)))
     }
+
+    /// The step such a block's fade goes on from when it shows, having reached `step` before. A
+    /// block the chat covered and showed again carries on, so it never dims back. Under Reduce
+    /// Motion it is whole at once: turning Reduce Motion off before the reply ends then leaves it
+    /// drawn, where it would otherwise vanish or fade in a second time.
+    public static func appearStart(from step: Int, reduceMotion: Bool) -> Int {
+        reduceMotion ? appearSteps : min(max(0, step), appearSteps)
+    }
 }

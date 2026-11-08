@@ -84,4 +84,23 @@ struct StreamingFadeTests {
         #expect(StreamingFade.appearOpacity(step: StreamingFade.appearSteps + 2) == 1)
         #expect(StreamingFade.appearOpacity(step: -1) == 0)
     }
+
+    @Test func aBlockDrawnUnderReduceMotionStaysWholeOnceItIsTurnedOff() {
+        // Under Reduce Motion a block starts whole, whatever step it had reached, so its opacity
+        // is 1 when Reduce Motion goes off mid-reply and it has no steps left to fade in again.
+        for step in [0, 1, StreamingFade.appearSteps] {
+            let start = StreamingFade.appearStart(from: step, reduceMotion: true)
+            #expect(start == StreamingFade.appearSteps)
+            #expect(StreamingFade.appearOpacity(step: start) == 1)
+        }
+    }
+
+    @Test func aBlockShownAgainCarriesOnFromWhereItWas() {
+        #expect(StreamingFade.appearStart(from: 0, reduceMotion: false) == 0)
+        #expect(StreamingFade.appearStart(from: 2, reduceMotion: false) == 2)
+        // One that had faded in has nothing left to go, so it never dims back.
+        #expect(StreamingFade.appearStart(from: StreamingFade.appearSteps, reduceMotion: false) == StreamingFade.appearSteps)
+        #expect(StreamingFade.appearStart(from: StreamingFade.appearSteps + 2, reduceMotion: false) == StreamingFade.appearSteps)
+        #expect(StreamingFade.appearStart(from: -1, reduceMotion: false) == 0)
+    }
 }

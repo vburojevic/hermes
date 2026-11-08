@@ -265,9 +265,13 @@ private struct StreamingAppear: ViewModifier {
             .opacity(isSettled || reduceMotion ? 1 : StreamingFade.appearOpacity(step: step))
             .task {
                 // A block the chat covered and showed again carries on from where it was, so
-                // what already faded in never dims back.
-                guard !isSettled, !reduceMotion, step < StreamingFade.appearSteps else { return }
-                for next in (step + 1)...StreamingFade.appearSteps {
+                // what already faded in never dims back. Under Reduce Motion it is whole at once,
+                // in one write, so turning Reduce Motion off mid-reply leaves it drawn.
+                guard !isSettled else { return }
+                let start = StreamingFade.appearStart(from: step, reduceMotion: reduceMotion)
+                if start != step { step = start }
+                guard start < StreamingFade.appearSteps else { return }
+                for next in (start + 1)...StreamingFade.appearSteps {
                     try? await Task.sleep(for: StreamingFade.stepGap)
                     guard !Task.isCancelled else { return }
                     step = next
