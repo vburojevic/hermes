@@ -207,7 +207,7 @@ mention the person, are sent by the gateway plugin ([notifications.md](notificat
 
 | Action | Call | Notes |
 |---|---|---|
-| Skills page (by category) | `GET /v1/skills` (the API server, `HermesClient.skills()`) | Name, description and category, grouped by category, with search. |
+| Skills page (by category) | `GET /v1/skills` (the API server, `HermesClient.skills()`) | Name, description and category, grouped by category, with search. Loaded when Skills opens, again whenever the gateway comes online (Skills opened before it connected, a reconnect, a new address), and on pull to refresh. One read at a time: a new one replaces the read on its way, so the newest answer stands. Offline, a list already shown stays; with nothing loaded, the page says why (`SkillsLoadTrigger`, `SkillsList`). |
 | Use | none | Puts the skill in the composer's skill tray of the chat that was open last, or of a new chat. A chat that only talks to the API server gets "Use the <name> skill to " typed instead. |
 | "/" menu skills | `commands.catalog {profile}` for names, `complete.slash {profile, text: "/"}` for descriptions | Over the socket only (`SlashCatalog`). |
 | Run with skills | `command.dispatch {name: <first skill>, arg: "/<other skills> <message>", session_id}`, then `prompt.submit` with the expanded message | The gateway expands the skills into the message. See [commands-and-references.md](commands-and-references.md). |
@@ -230,6 +230,8 @@ Rescan (`skills.reload`).
   Loading. Skills opened before Bot Mode connects asks for them once it does.
 - The top of Skills links to What Hermes Learned. On the Mac, Skills has a Library | Learned
   picker in the toolbar (`macLearned`).
+- On iPad with the sidebar hidden (portrait), the sidebar button sits top left, as in a chat, and
+  the search top right. The Mac keeps it beside the window's sidebar.
 
 ## 4. Acceptance checks
 

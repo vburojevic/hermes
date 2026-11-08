@@ -9,8 +9,8 @@ struct SkillsView: View {
     let workspace: BotWorkspace
     var onToggleSidebar: (() -> Void)?
 
-    @State private var skills: [Skill] = []
-    @State private var skillsError: HermesError?
+    @State private var library = SkillsList()
+    @State private var reads = LatestRead<[Skill]>()
     @State private var isLoading = false
     /// The window's skill filter, kept with the window.
     @SceneStorage("skills.query") private var query = ""
@@ -42,6 +42,20 @@ struct SkillsView: View {
         #endif
     }
 
+    private var skills: [Skill] { library.skills }
+
+    /// What Skills reads the list again for (`docs/bots-groups-skills.md` §3).
+    private var loadTrigger: SkillsLoadTrigger {
+        SkillsLoadTrigger(workspace: workspace.id, address: workspace.bot.baseURL, isOnline: workspace.connection.isOnline)
+    }
+
+    /// Leading, as in a chat. On iPad in portrait `.navigation` put it on the trailing side.
+    #if os(iOS)
+    private static let sidebarPlacement = ToolbarItemPlacement.topBarLeading
+    #else
+    private static let sidebarPlacement = ToolbarItemPlacement.navigation
+    #endif
+
     var body: some View {
         Group {
             #if os(macOS)
@@ -65,7 +79,7 @@ struct SkillsView: View {
         .navigationTitle("Skills")
         .toolbar {
             if let onToggleSidebar {
-                ToolbarItem(placement: .navigation) {
+                ToolbarItem(placement: Self.sidebarPlacement) {
                     SidebarButton(action: onToggleSidebar)
                 }
                 .sidebarButtonGlass()
@@ -90,7 +104,12 @@ struct SkillsView: View {
                 .id(workspace.learnedScope)
         }
         #endif
-        .task(id: workspace.id) { await load() }
+        .task(id: loadTrigger) {
+            // Read when Skills opens and again whenever the gateway comes online (a late connect, a
+            // reconnect, a new address). Offline, a list already shown stays as it is.
+            guard loadTrigger.reads(showing: skills) else { return }
+            await load()
+        }
         // Tools and Apps asks Bot Mode: a Skills page opened before it connected asks once it does,
         // so the row's placeholder doesn't wait forever.
         .task(id: workspace.roster?.isConnected == true) { await loadAppsAndTools() }
@@ -197,23 +216,21 @@ struct SkillsView: View {
             SkeletonRows()
                 .listRowBackground(Color.clear)
         }
-        if let skillsError, skills.isEmpty {
+        if let skillsError = library.error, skills.isEmpty {
             Text("This Hermes version couldn't list its skills. \(skillsError.errorDescription ?? "")")
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryText)
         }
     }
 
+    /// Reads the list. A read cancels the one still on its way, so the newest answer stands.
     private func load() async {
         guard let client = workspace.client else { return }
         isLoading = true
-        defer { isLoading = false }
-        do {
-            skills = try await client.skills()
-            skillsError = nil
-        } catch {
-            skillsError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-        }
+        let answer = await reads.read { try await client.skills() }
+        // No answer: a newer read replaced this one, or Skills closed. What's shown stays.
+        isLoading = answer == nil && reads.isReading
+        library.take(answer)
         await loadAppsAndTools()
     }
 
