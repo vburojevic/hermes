@@ -246,7 +246,12 @@ widget is private) follow contract §9:
   as what it did ("Approved"), without its words. Push notifications are the push plugin's
   (`docs/notifications.md`): a private widget there says "Hermes sent a widget."
 - **The app switcher:** on iPhone and iPad a private card is blurred, with a lock, whenever the app
-  isn't in front (`PrivateWidgetCover`).
+  isn't in front (`PrivateWidgetCover`), its pictures included.
+- **Pictures on the gateway** (`hermes-file:`, §9) are held in memory by the card that shows them
+  and nowhere else: read through the backend, whose session keeps no URL cache, decoded in memory,
+  never written to a temporary file, the picture cache (`RemotePictures`) or the widget cache,
+  which keeps the payload and its address only. This holds for every widget, so a private one's
+  picture never reaches the disk.
 - **Never indexed:** nothing from widgets goes to Spotlight, Siri suggestions or the Home Screen.
 - **Group chats:** the plugin refuses private widgets there.
 
@@ -269,6 +274,19 @@ widgets.
   one line (`Collections.details`), and a table reflows into blocks. Only a code snippet keeps
   its lines and scrolls sideways inside its well; output and logs wrap (`Things.code`).
 - **Surfaces:** cards are `surface`, never glass; an unresolved alert is tinted by its severity.
+- **Pictures** (`media`, a guide step's `image`, a flashcard's `media`): one from the gateway's
+  own address shows by itself; one from anywhere else waits for "Tap to load from <host>". One
+  the Bot keeps on its gateway (`hermes-file:<path>`) is read through the backend
+  (`/api/fs/download`) with the chat's Bot profile, as Open reads it (`WidgetFile`): a relative
+  path is in the chat's working folder, the one its Inspector opens; the address is
+  percent-decoded, a `#L42` fragment is dropped, and a path with a `..` step is refused. In a
+  Bot group chat a widget has no chat of its own: a relative path is in the gateway's default
+  folder and is read without a profile, and Open on its link shows that same file. It's decoded
+  off the main thread at the size it's drawn at (`GatewayFileImage`) and the read stops when the
+  card leaves the screen. A video's own file is never read, only its `thumb`. While it loads the
+  well is `controlFill`; when the file is missing or the gateway refuses it, the description
+  with "Couldn't load this image"; without Bot Mode, the description with "Turn on Bot Mode to
+  load this image". VoiceOver reads the `alt` either way.
 - **Loading:** a skeleton in the type's shape while a payload is on its way; "Couldn't load this
   widget" with Try Again when it never comes; text with "Shown as text" for an unknown type, a
   newer version or an invalid payload (the widget menu says why).
@@ -391,9 +409,12 @@ claim and get, and `/app-widgets` session, room, get and keys, with the plugin's
 messages, signatures checked for real. Its words are in its docstring and
 [development.md](development.md): "widgets" pages through every example, "widget <type>",
 "widget publish" (an approval without Face ID), "widget lunch" (with it), "widget expiring",
-"widget silent" (Try Again), "widget private", "widget fence", "widget unknown", "widget
-invalid", "widget suggestions", "widget wide" and "widget wide table" (one of everything long, §9), "Weather today?" (a lookup, `widget_examples`, then the weather card,
-as an agent with plugin 1.3.0's rules answers), and in a marked room the same words. Over the socket
+"widget silent" (Try Again), "widget private", "widget gateway image", "widget private
+image" (pictures kept on the gateway, §9) and "widget missing image" (one that isn't there),
+"widget fence", "widget unknown", "widget invalid", "widget suggestions", "widget wide" and
+"widget wide table" (one of everything long, §9), "Weather today?" (a lookup, `widget_examples`,
+then the weather card, as an agent with plugin 1.3.0's rules answers), and in a marked room the
+same words. Over the socket
 a chat the app didn't mark gets each widget's `fallback_text`, as the plugin's
 `transform_llm_output` gives it. `POST
 /api/mock/widget-answer {id, action}` answers from another device. `--no-widgets` leaves the
@@ -421,6 +442,12 @@ light, dark and Increase Contrast:
   text" (the widget menu says why).
 - "widget private": the lock on the card, nothing of it in the chat list, the card blurred in the
   app switcher; the transcript cache (`Caches/Transcripts`) has no payload for it.
+- "widget gateway image": the media, guide step and flashcard pictures show, and so does the
+  reply's own image below them (docs/chat.md §3), also in a chat reopened after a cold launch.
+  Without Bot Mode each reads "Turn on Bot Mode to load this image".
+- "widget missing image": "Sign-ups" reads its description with "Couldn't load this image".
+- "widget private image": the same pictures, covered in the app switcher; nothing of them in the
+  app's container (search it for the pictures' hashes after they've shown).
 - "widget suggestions": rows under the newest reply only; tapping one sends its words.
 - A Bot group chat: "widget publish" in the room, the card from Ops, answered into the room.
 - VoiceOver reads each card as one sentence-led container; Audio Graphs plays a chart.
@@ -446,8 +473,9 @@ light, dark and Increase Contrast:
     has no glyph field, so the bar is plain.
   - scoreboard-3 reads "1 votes": the example sends `unit: "votes"` with the value 1, and the
     client shows a unit as sent.
-- **Stored images and client refresh** need a gateway route a plugin can't add today: remote
-  images still wait for a tap.
+- **Client refresh** needs a gateway route a plugin can't add today. Pictures a Bot keeps on its
+  gateway load through `/api/fs/download` (§9), which needs Bot Mode; without it they read
+  their description, and remote images from other hosts still wait for a tap.
 - **Answering in a room** goes through `groups.send` as the person's message; which Bot picks it
   up is the room's choice, so the producing Bot's claim is what makes it count.
 

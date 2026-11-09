@@ -490,8 +490,9 @@ private struct FencedCode: View {
     }
 }
 
-/// Images embedded in replies: inline `data:` URLs (generated images) or remote URLs. Inline
-/// images are decoded and downsampled off the main thread, once, then fade in.
+/// Images embedded in replies: inline `data:` URLs (generated images), remote URLs, or a picture
+/// file on the gateway (`GatewayFileLink`, read through it). Inline and gateway images are decoded
+/// and downsampled off the main thread, once, then fade in (docs/chat.md §3).
 private struct MarkdownImage: View {
     let source: String
 
@@ -532,6 +533,14 @@ private struct MarkdownImage: View {
                     case .empty: Theme.surface.frame(height: 160)
                     }
                 }
+            } else if let path = gatewayPicture {
+                GatewayFileImage(source: .path(path), fits: CGSize(width: 480, height: 480), transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().scaledToFit().transition(.opacity)
+                    case .failure: Label("Image unavailable", systemImage: "photo").foregroundStyle(Theme.tertiaryText)
+                    case .empty: Theme.surface.frame(height: 160)
+                    }
+                }
             } else {
                 Label("Image", systemImage: "photo").foregroundStyle(Theme.tertiaryText)
             }
@@ -547,6 +556,18 @@ private struct MarkdownImage: View {
             }
         }
     }
+
+    /// A picture file on the gateway the image names: only a picture's extension, so a reply
+    /// that names a log or an archive doesn't download it.
+    private var gatewayPicture: String? {
+        guard let path = GatewayFileLink.path(fromLink: source),
+              let dot = path.lastIndex(of: "."),
+              Self.pictureExtensions.contains(path[path.index(after: dot)...].lowercased())
+        else { return nil }
+        return path
+    }
+
+    private static let pictureExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp"]
 }
 
 // MARK: - Inline rendering

@@ -326,8 +326,7 @@ struct WidgetCard: View {
     private func perform(_ url: URL) {
         pendingOpen = nil
         if url.scheme?.lowercased() == "hermes-file" {
-            let path = String(url.absoluteString.dropFirst("hermes-file:".count))
-            references.openInInspector(path.removingPercentEncoding ?? path)
+            references.openWidgetFile(url.absoluteString)
         } else if WebLink.isWeb(url) {
             openURL(url)
         }

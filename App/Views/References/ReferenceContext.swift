@@ -1,4 +1,6 @@
 import HermesKit
+import ImageIO
+import OSLog
 import SwiftUI
 
 /// What pills need to know about where they're shown: the gateway's Bots, skills and files, and
@@ -90,6 +92,53 @@ struct ReferenceContext: Equatable {
         }
     }
 
+    /// A widget's `hermes-file:` link: the same file a picture with that address reads
+    /// (`gatewayPicture`). In a chat, its Inspector joins a relative path onto the chat's folder;
+    /// in a group room it's joined onto the gateway's default folder here, and nothing opens
+    /// until that folder is known.
+    func openWidgetFile(_ address: String) {
+        if conversation != nil {
+            if let path = WidgetFile.path(address) { openInInspector(path) }
+        } else if let path = WidgetFile.resolve(address, in: workspace?.projects.defaultFolder) {
+            openInInspector(path)
+        }
+    }
+
+    // MARK: Gateway pictures
+
+    /// Where a picture kept on the gateway is read (docs/widgets.md §9).
+    enum GatewayPicture: Hashable {
+        /// The file to read through the backend, with the Bot's profile.
+        case file(path: String, profile: String?)
+        /// No backend to read it through: Bot Mode is off.
+        case needsBotMode
+        /// The address names no file the gateway could read (`WidgetFile`).
+        case unreadable
+    }
+
+    /// In a chat, a widget's relative path is in the chat's working folder, the one its Inspector
+    /// opens files from, and is read with its Bot's profile. A group room has no chat of its own:
+    /// the gateway's default folder, read without a profile (docs/widgets.md §9). Reading the
+    /// chat's folder makes its Inspector if it has none yet; a chat's screen has made it already.
+    func gatewayPicture(_ source: GatewayImageSource) -> GatewayPicture {
+        guard workspace?.roster != nil else { return .needsBotMode }
+        let path: String? = switch source {
+        case .widget(let address):
+            WidgetFile.resolve(address, in: conversation?.inspector.workingFolder ?? workspace?.projects.defaultFolder)
+        case .path(let path):
+            path
+        }
+        guard let path else { return .unreadable }
+        return .file(path: path, profile: conversation?.gatewayProfileForCheckpoints)
+    }
+
+    /// The picture's bytes, read through the backend, whose session keeps no URL cache: a private
+    /// widget's picture is held in memory only and never reaches the disk.
+    func pictureData(_ path: String, profile: String?) async throws -> Data {
+        guard let client = roster?.boardClient else { throw URLError(.notConnectedToInternet) }
+        return try await client.downloadFile(path, profile: profile).0
+    }
+
     func openFile(_ reference: MessageReference) {
         workspace?.openedFile = GatewayFile(path: reference.value, isFolder: reference.kind == .folder)
     }
@@ -140,5 +189,155 @@ struct GatewayFile: Identifiable, Hashable {
         var sizeText: String? {
             size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
         }
+    }
+}
+
+/// A picture kept on the gateway.
+enum GatewayImageSource: Hashable {
+    /// A widget's `hermes-file:` address (`WidgetFile`).
+    case widget(String)
+    /// The absolute or home path a reply's image names (`GatewayFileLink`).
+    case path(String)
+}
+
+/// Where a gateway picture is: loading, shown, or failed, with the note that says why.
+enum GatewayImagePhase {
+    case empty
+    case success(Image)
+    case failure(note: String)
+}
+
+/// A picture from a file on the gateway: a widget's `hermes-file:` media, or a reply's image
+/// that names a file. It's read through the backend with the Bot's profile, decoded and
+/// downsampled off the main thread to the size it's drawn at, and held by this view alone: no
+/// disk or shared cache, so a private widget's picture never reaches the disk (docs/widgets.md
+/// §8). Leaving the screen cancels the read.
+struct GatewayFileImage<Content: View>: View {
+    let source: GatewayImageSource
+    /// The size it fits inside, in points (a reply's image). Nil: it fills the frame it's given
+    /// (a widget's well), measured as it's laid out.
+    var fits: CGSize?
+    var transaction = Transaction()
+    @ViewBuilder let content: (GatewayImagePhase) -> Content
+
+    @Environment(\.references) private var references
+    @Environment(\.displayScale) private var displayScale
+    @State private var phase = GatewayImagePhase.empty
+    /// The pixels the picture is wanted at. It only grows, in steps, so a window being resized
+    /// doesn't read the file again for every point.
+    @State private var wanted = Pixels(width: 0, height: 0)
+    @State private var shown: Request?
+
+    struct Pixels: Hashable, Sendable {
+        var width: Int
+        var height: Int
+    }
+
+    private struct Request: Hashable {
+        var source: GatewayImageSource
+        var pixels: Pixels
+        /// Where it's read. A picture drawn before Bot Mode is on or the chat's folder is known
+        /// reads again once they are.
+        var picture: ReferenceContext.GatewayPicture
+    }
+
+    var body: some View {
+        Group {
+            if let fits {
+                let request = Request(source: source, pixels: Self.pixels(fits, scale: displayScale), picture: references.gatewayPicture(source))
+                content(phase).task(id: request) { await load(request) }
+            } else {
+                let request = Request(source: source, pixels: wanted, picture: references.gatewayPicture(source))
+                Color.clear
+                    .overlay { content(phase) }
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                        let pixels = Self.pixels(size, scale: displayScale)
+                        if pixels.width > wanted.width || pixels.height > wanted.height {
+                            wanted = Pixels(width: max(pixels.width, wanted.width), height: max(pixels.height, wanted.height))
+                        }
+                    }
+                    .task(id: request) { await load(request) }
+            }
+        }
+    }
+
+    private func load(_ request: Request) async {
+        // Not laid out yet, or shown at this size already: a row scrolled back into view
+        // doesn't read it again.
+        guard request.pixels.width > 0, request.pixels.height > 0, shown != request else { return }
+        // A sharper copy for a larger frame keeps the one shown until it's there.
+        if shown?.source != request.source, !isEmpty { phase = .empty }
+        switch request.picture {
+        case .needsBotMode:
+            phase = .failure(note: String(localized: "Turn on Bot Mode to load this image"))
+        case .unreadable:
+            phase = .failure(note: String(localized: "Couldn't load this image"))
+        case .file(let path, let profile):
+            do {
+                let data = try await references.pictureData(path, profile: profile)
+                let image = try await GatewayPictureDecoder.decode(
+                    data, width: request.pixels.width, height: request.pixels.height, fills: fits == nil)
+                guard !Task.isCancelled else { return }
+                withTransaction(transaction) {
+                    phase = .success(Image(decorative: image, scale: displayScale))
+                    shown = request
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                // Domain and code only: a URL error's description carries the gateway's address.
+                let nsError = error as NSError
+                var status = 0
+                if case BackendClient.Failure.http(let code, _) = error { status = code }
+                GatewayPictureDecoder.logger.error("Gateway picture failed: \(nsError.domain, privacy: .public) \(nsError.code) HTTP \(status)")
+                if shown?.source == request.source { return }
+                withTransaction(transaction) { phase = .failure(note: String(localized: "Couldn't load this image")) }
+            }
+        }
+    }
+
+    private var isEmpty: Bool {
+        if case .empty = phase { true } else { false }
+    }
+
+    /// Points to pixels, rounded up to a step of 128.
+    private static func pixels(_ size: CGSize, scale: CGFloat) -> Pixels {
+        func step(_ points: CGFloat) -> Int {
+            guard points.isFinite, points > 0 else { return 0 }
+            return (Int((points * scale).rounded(.up)) + 127) / 128 * 128
+        }
+        return Pixels(width: step(size.width), height: step(size.height))
+    }
+}
+
+/// Outside the generic view, so decoding off the main actor needs nothing from its content.
+private nonisolated enum GatewayPictureDecoder {
+    static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "widgets")
+
+    /// Decodes only as many pixels as the frame shows: filled, the picture covers it; fitted, it
+    /// sits inside it. Never larger than the file itself.
+    @concurrent
+    static func decode(_ data: Data, width wantedWidth: Int, height wantedHeight: Int, fills: Bool) async throws -> CGImage {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              var width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              var height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0
+        else { throw RemotePicture.Failure.notAPicture }
+        // Orientations 5 to 8 turn the picture a quarter: its sides swap once it's upright.
+        if let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue, (5...8).contains(orientation) {
+            swap(&width, &height)
+        }
+        let across = Double(wantedWidth) / width, down = Double(wantedHeight) / height
+        let scale = min(1, fills ? max(across, down) : min(across, down))
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(1, Int((max(width, height) * scale).rounded(.up))),
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw RemotePicture.Failure.notAPicture
+        }
+        return image
     }
 }

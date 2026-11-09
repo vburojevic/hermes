@@ -287,7 +287,9 @@ struct EntityBody: View {
 }
 
 /// A picture from a payload. One from the internet waits for a tap that names its domain, so
-/// the person's address reaches a third party only when they choose (contract §9).
+/// the person's address reaches a third party only when they choose (contract §9). One the Bot
+/// keeps on its gateway (`hermes-file:`) is read through the gateway and never reaches the disk
+/// (docs/widgets.md §8, §9).
 struct WidgetImage: View {
     let media: WidgetMedia
     var maxHeight: CGFloat = 220
@@ -311,6 +313,15 @@ struct WidgetImage: View {
                     placeholder(String(localized: "Tap to load from \(url.host(percentEncoded: true) ?? "")"))
                 }
                 .buttonStyle(.plain)
+            } else if WidgetFile.path(media.src) != nil, media.kind != .video || media.src == media.thumb {
+                // A video's own file isn't read: only its poster is a picture.
+                GatewayFileImage(source: .widget(media.src), transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().scaledToFill()
+                    case .failure(let note): placeholder(note)
+                    case .empty: Theme.controlFill
+                    }
+                }
             } else {
                 placeholder(nil)
             }
