@@ -21,6 +21,11 @@ Words in a message:
   widget expiring              the publish approval, expiring 60 s from now
   widget silent                the publish approval; its first answer gets no update (Try Again)
   widget private               a private widget (health): never in a notification or a preview
+  widget gateway image         pictures a Bot keeps on its gateway (hermes-file:, inspector.py `PICTURES`):
+                               a media widget, a guide step and a flashcard card with one, then a
+                               Markdown image naming the first file
+  widget private image         the same widgets, private: the pictures never reach the disk
+  widget missing image         a media widget whose gateway picture isn't there (404)
   widget links                 a metric whose note has an https address (a link, asks first) and an http one (text)
   widget fence                 an agent-typed ```widget fence in a normal reply (it must stay code)
   widget unknown               a widget of a type this app doesn't know (a newer plugin)
@@ -725,6 +730,16 @@ def script(text, session="", producer=None):
         raw["items"][0]["note"] = "Details at https://example.com/revenue (the old page was http://example.com/old)."
         payload = create(raw)
         return steps + [("text", "Revenue, with where it comes from.\n\n" + directive(payload))]
+    if re.search(r"\bwidget missing image\b", lower):
+        payload = create(missing_image_widget())
+        return steps + [("text", "Here is the chart I meant to save.\n\n" + directive(payload))]
+    if re.search(r"\bwidget (gateway|private) image\b", lower):
+        private = "private" in lower
+        payloads = [create(raw) for raw in gateway_image_widgets(private)]
+        lead = "Here are the private pictures." if private else "Here are the pictures from the project."
+        # A reply's own image that names a file on the gateway (docs/chat.md §3).
+        reply = [] if private else ["The diagram itself:\n\n![The launch flow diagram](~/Code/hermes-site/diagrams/launch-flow.png)"]
+        return steps + [("text", "\n\n".join([lead] + [directive(p) for p in payloads] + reply))]
     if "private" in lower:
         _, raw = examples("chart")[0]
         payload = create({**raw, "sensitivity": "private"})
@@ -756,6 +771,46 @@ def script(text, session="", producer=None):
         lead = f"Widgets, page {page} of {pages}." if chosen else f"There are {pages} pages of widgets."
     parts = [f"{name}\n\n" + directive(create(raw)) for name, raw in chosen]
     return steps + [("text", "\n\n".join([lead] + parts))]
+
+
+def gateway_image_widgets(private):
+    """"widget gateway image": the media, guide and flashcard examples with their pictures moved to
+    files in the project (`hermes-file:`, relative to the chat's folder, which is the home folder
+    here). "widget private image" marks them all private. Three, as many as a reply shows
+    (docs/widgets.md §2)."""
+    extra = {"sensitivity": "private"} if private else {}
+    _, media = examples("media")[0]
+    media.pop("source", None)
+    media["items"][0]["media"] = {"src": "hermes-file:Code/hermes-site/diagrams/launch-flow.png", "width": 960, "height": 640,
+                                  "alt": "A diagram of the launch flow: three white steps joined left to right on a violet to blue background"}
+    media["items"][0]["caption"] = "The launch flow, from the project's diagrams."
+    media["items"][0].pop("credit", None)
+    media["title"] = "Launch flow"
+    media.pop("actions", None)
+    media["fallback_text"] = "The launch flow diagram (diagrams/launch-flow.png): three steps, left to right."
+    _, guide = examples("guide")[0]
+    # On the step the guide opens at, so it shows without paging.
+    opening = next(s for s in guide["steps"] if s["id"] == guide.get("start_at", guide["steps"][0]["id"]))
+    opening["image"] = {"src": "hermes-file:Code/hermes-site/diagrams/hinge-step.png", "width": 800, "height": 500,
+                                  "alt": "Three white bars of different lengths on a green background"}
+    _, card = examples("flashcard")[1]
+    card["cards"][0]["media"] = {"src": "hermes-file:Code/hermes-site/diagrams/orbit-card.png",
+                                 "alt": "A white square in the middle of an orange to pink square, with two small squares at its corners"}
+    return [{**raw, **extra} for raw in (media, guide, card)]
+
+
+def missing_image_widget():
+    """"widget missing image": a media widget whose `hermes-file:` picture isn't on the gateway (404)."""
+    _, media = examples("media")[0]
+    media.pop("source", None)
+    media.pop("actions", None)
+    media["items"][0]["media"] = {"src": "hermes-file:Code/hermes-site/diagrams/missing-chart.png",
+                                  "alt": "A chart of sign-ups by week that the Bot meant to save"}
+    media["items"][0]["caption"] = "Sign-ups by week."
+    media["items"][0].pop("credit", None)
+    media["title"] = "Sign-ups"
+    media["fallback_text"] = "Sign-ups by week (Code/hermes-site/diagrams/missing-chart.png)."
+    return media
 
 
 WIDE_PATH = "~/projects/hermes-app/Packages/HermesKit/Sources/HermesKit/Transcript/LiveTurnReducer+FoldingHelpers.swift"

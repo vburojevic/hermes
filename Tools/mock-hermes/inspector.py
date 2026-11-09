@@ -2,6 +2,9 @@
 
 - Files: `/api/fs/list`, `read-text`, `write-text`, `download`, `git-root`, `default-cwd` over an
   in-memory project, "hermes-site" (`/Users/studio/Code/hermes-site`, project "Hermes Site").
+  `download` also serves the project's pictures (`PICTURES`, PNGs drawn here, no real image), 404
+  `File not found` for a missing file and 403 `Path is outside the managed read boundary` outside
+  the project, as a locked deployment answers.
 - Git: `/api/git/status`, `/api/git/review/{list,diff,rev-parse,stage,unstage,commit,push,create-pr,
   ship-info,commit-context}`, `/api/git/gh-auth`, against that project's committed copy.
 - `llm.oneshot` (template `commit_message`) drafts a fixed message; `preview.restart` starts the dev
@@ -48,6 +51,7 @@ import struct
 import threading
 import time
 import uuid
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 B = None   # backend.py's globals
@@ -248,6 +252,9 @@ def pricing_html(version):
 
 def rel(path):
     path = (path or "").rstrip("/")
+    # Hermes expands a home path before it checks the read boundary.
+    if path == "~" or path.startswith("~/"):
+        path = HOME + path[1:]
     if path == ROOT:
         return ""
     if path.startswith(ROOT + "/"):
@@ -331,13 +338,56 @@ def fs_write_text(query, body):
     return 200, {"ok": True, "path": path}
 
 
+def png(width, height, top, bottom, boxes):
+    """A PNG drawn here: a vertical gradient from `top` to `bottom` (RGB) with white boxes
+    (x, y, w, h as fractions), so a widget's picture is a real image without shipping one."""
+    rects = [(int(x * width), int(y * height), int((x + w) * width), int((y + h) * height)) for x, y, w, h in boxes]
+    rows = bytearray()
+    for y in range(height):
+        t = y / max(1, height - 1)
+        shade = bytes(round(a + (b - a) * t) for a, b in zip(top, bottom))
+        row = bytearray(shade * width)
+        for x0, y0, x1, y1 in rects:
+            if y0 <= y < y1:
+                row[x0 * 3:x1 * 3] = b"\xff" * ((x1 - x0) * 3)
+        rows += b"\x00" + row
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + chunk(b"IEND", b"")
+
+
+# The project's pictures (relative path -> bytes), apart from the text files so Git and the
+# File tab stay as they are. `widgets.py` "widget gateway image" names them.
+PICTURES = {
+    "diagrams/launch-flow.png": png(960, 640, (139, 92, 246), (47, 140, 246),
+                                    [(0.08, 0.38, 0.22, 0.24), (0.39, 0.38, 0.22, 0.24), (0.70, 0.38, 0.22, 0.24),
+                                     (0.30, 0.48, 0.09, 0.04), (0.61, 0.48, 0.09, 0.04)]),
+    "diagrams/hinge-step.png": png(800, 500, (16, 185, 129), (13, 148, 136),
+                                   [(0.15, 0.20, 0.70, 0.12), (0.15, 0.44, 0.48, 0.12), (0.15, 0.68, 0.60, 0.12)]),
+    "diagrams/orbit-card.png": png(600, 600, (249, 115, 22), (236, 72, 153),
+                                   [(0.40, 0.40, 0.20, 0.20), (0.12, 0.12, 0.10, 0.10), (0.78, 0.70, 0.10, 0.10)]),
+}
+
+
 def fs_download(query):
-    key = rel(q(query, "path"))
+    path = q(query, "path")
+    if not path:
+        return 400, "application/json", b'{"detail": "Path is required"}'
+    if sensitive(path):
+        return 403, "application/json", b'{"detail": "Access to sensitive files is not allowed"}'
+    key = rel(path)
+    if key is None and (path.startswith("/") or path.startswith("~")):
+        return 403, "application/json", b'{"detail": "Path is outside the managed read boundary"}'
     with LOCK:
         text = STATE["work"].get(key) if key is not None else None
-    if text is None:
-        return 404, "application/json", b'{"detail": "File not found"}'
-    return 200, mime_of(key), text.encode()
+    if text is not None:
+        return 200, mime_of(key), text.encode()
+    if key in PICTURES:
+        return 200, mime_of(key), PICTURES[key]
+    return 404, "application/json", b'{"detail": "File not found"}'
 
 
 def fs_git_root(query, body):

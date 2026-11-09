@@ -630,7 +630,12 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   dropped). A command, a route, a folder or a relative path stays plain code
   (`GatewayFileLink`, [inspector.md](inspector.md) §2).
 - **Images**: a paragraph that is only an image draws the image (§2). Remote images from outside
-  the gateway's network wait for a tap.
+  the gateway's network wait for a tap. An image that names a picture file on the gateway (an
+  absolute or `~/` path, or a local `file:` URL, ending in a picture's extension such as `.png`
+  or `.jpg`) is read through the gateway with the chat's Bot profile, as the Inspector reads it,
+  downsampled to the 480 pt it can show at and kept in memory only. Without Bot Mode, or when the
+  gateway refuses it or the file is missing, it reads "Image unavailable". A relative path stays
+  "Image": a reply has no folder to read it from.
 - **Horizontal rule**: a hairline with 6 pt above and below.
 - **Wide tables and long code lines** scroll sideways inside their block; the page never scrolls
   sideways. Table cells are 60 to 320 pt wide.
