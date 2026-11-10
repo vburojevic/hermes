@@ -172,6 +172,11 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
   Responding) stops; ⌥⌘V starts Talk, and ends it while a call runs. Dictate is the button only; it has no shortcut of
   its own.
 - The slash and `@` menus follow the arrow keys, Tab and Escape, with key hints on iPad and Mac.
+- **Input methods** (Pinyin, kana, Hangul): a word still being composed stays in the field while
+  the chat updates around it, and words typed in the middle of the field land at the caret. The
+  Mac reports a composed word only once it's chosen, so until then the draft lacks it
+  (`PillTextView`'s `apply` leaves the field alone). Sending, or anything else that changes the
+  draft meanwhile, drops the half-typed word.
 - **Paste** (⌘V, Edit ▸ Paste, the field's edit menu): files copied in the Finder or the Files
   app attach as files (pictures among them as pictures); a copied picture attaches as a picture,
   even with its address alongside it (a browser's Copy Image); text goes into the field (pasted
@@ -189,6 +194,8 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
 - Talk turns appear in the transcript like typed ones, marked Spoken.
 - Denied microphone permission never leaves the person stuck: Type Instead and End both work.
 - Nothing typed or attached is lost when a send fails: it is back in the field.
+- With Pinyin on the Mac, words typed in the middle of the field while a reply streams land at the
+  caret, and no half-typed word is wiped.
 - Light, dark and Increase Contrast match the design.
 - With the keyboard up on the smallest iPhone, typing "/" opens a menu that ends below the top bar
   and scrolls; the same on iPad, the Mac and in a group chat's "@" menu.
