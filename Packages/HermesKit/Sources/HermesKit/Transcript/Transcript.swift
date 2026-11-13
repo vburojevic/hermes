@@ -519,8 +519,6 @@ public enum TranscriptBuilder {
 
             switch message.role {
             case "user":
-                if kind == "hidden" { continue }
-                if kind == nil, HermesScaffold.isHidden(message.content.text) { continue }
                 if kind == "steer" {
                     // A steer lands mid-turn, after a tool result, and the same reply goes on: it
                     // stays in that turn, read after the steps so far, as it showed live.
@@ -534,17 +532,15 @@ public enum TranscriptBuilder {
                     }
                     continue
                 }
-                // A finished process or helpers reads as such whatever Hermes tagged it: on a
-                // messaging platform it's an `internal_notification` with a footer.
-                let noticeKind = finishedWorkKind(message.content.text) ?? kind ?? untaggedNoticeKind(message.content.text)
-                if let kind = noticeKind, noticeKinds.contains(kind),
-                   !isDelivered(kind: kind, text: message.content.text) {
+                switch reading(id: rowID, message: message) {
+                case .nothing: continue
+                case .notice(let notice):
                     closeTurn()
-                    items.append(.notice(notice(id: rowID, kind: kind, message: message)))
-                    continue
+                    items.append(.notice(notice))
+                case .message(let entry):
+                    closeTurn()
+                    items.append(.user(entry))
                 }
-                closeTurn()
-                items.append(.user(userEntry(id: rowID, message: message)))
 
             case "assistant":
                 if let kind, noticeKinds.contains(kind) {
@@ -688,6 +684,33 @@ public enum TranscriptBuilder {
     /// How soon after starting a process its turn must end for the chat to have been idle.
     static let idleTurnEnd: TimeInterval = 10
 
+    /// What a message stored as the person's reads as (`docs/chat.md` §2a): the stored chat's
+    /// rows and the message a live turn answers (`InflightTurn`) both read it here, so a notice
+    /// Hermes starts a turn for reads the same while the turn runs as once it's stored.
+    public enum UserRowReading: Hashable, Sendable {
+        /// The person's message, or a message something delivered (another Bot, a routine).
+        case message(UserEntry)
+        /// One of Hermes's own notes: a finished process or helpers, a heartbeat, a model switch.
+        case notice(Notice)
+        /// Scaffolding Hermes keeps for the model only.
+        case nothing
+    }
+
+    /// Hidden rows and scaffolding first, then finished work by its words, whatever Hermes tagged
+    /// it: on a messaging platform it's an `internal_notification` with a footer. A steer is read
+    /// by `build` inside its turn before it gets here.
+    static func reading(id: String, message: SessionMessage) -> UserRowReading {
+        let kind = message.displayKind
+        let text = message.content.text
+        if kind == "hidden" { return .nothing }
+        if kind == nil, HermesScaffold.isHidden(text) { return .nothing }
+        let noticeKind = finishedWorkKind(text) ?? kind ?? untaggedNoticeKind(text)
+        if let noticeKind, noticeKinds.contains(noticeKind), !isDelivered(kind: noticeKind, text: text) {
+            return .notice(notice(id: id, kind: noticeKind, message: message))
+        }
+        return .message(userEntry(id: id, message: message))
+    }
+
     /// A stored notice, with what it's about when it's finished work.
     static func notice(id: String, kind: String, message: SessionMessage) -> Notice {
         let work = FinishedWork.parse(kind: kind, text: message.content.text)
@@ -715,6 +738,13 @@ public enum TranscriptBuilder {
             kept.append(item)
         }
         return kept
+    }
+
+    /// `rows` and then `shown`, a live turn's notice not stored yet, folded into a line of finished
+    /// work it follows as the stored chat will fold it: the line keeps its place and identity.
+    public static func appending(_ shown: [TranscriptItem], to rows: [TranscriptItem]) -> [TranscriptItem] {
+        guard case .notice = shown.first, case .notice? = rows.last else { return rows + shown }
+        return rows.dropLast() + foldingFinishedWork([rows[rows.count - 1], shown[0]]) + shown.dropFirst()
     }
 
     /// The kind of a finished process's or helpers' notice by its words, however it's tagged.

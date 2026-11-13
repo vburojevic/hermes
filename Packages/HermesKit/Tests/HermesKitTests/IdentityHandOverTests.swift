@@ -75,4 +75,18 @@ struct IdentityHandOverTests {
                                          existing: ["m0", "live-ask", "live-reply"], before: ["m0"])
             == ["m2": "live-reply"])
     }
+
+    @Test func noticeAHermesTurnAnsweredKeepsItsKey() {
+        // Hermes started the turn for a finished process: its line, then the reply.
+        let notice = { (id: String) in TranscriptItem.notice(Notice(id: id, kind: "process_complete", text: "Ada replied")) }
+        let shown = [notice("live-notice"), Self.reply("live-reply")]
+        let stored = [Self.reply("m0"), notice("m1"), Self.reply("m2")]
+        #expect(IdentityHandOver.matches(shown: shown, in: stored,
+                                         existing: ["m0", "live-notice", "live-reply"], before: ["m0"])
+            == ["m1": "live-notice", "m2": "live-reply"])
+        // The person's message stops it: an older notice never takes the line's key.
+        let older = [notice("m0"), Self.you("m1")]
+        #expect(IdentityHandOver.matches(shown: [notice("live-notice")], in: older,
+                                         existing: ["m0", "live-notice"], before: ["m0"]).isEmpty)
+    }
 }

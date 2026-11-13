@@ -104,8 +104,13 @@ shows the message it answers (`inflight.user`) at once, until the stored copy ta
 turn ends. A chat opened while a turn runs reads the same from its `session.resume` snapshot,
 with the turn's start time (`turn_started_at`) and the reply so far (`inflight.assistant`). This
 matters most with `dashboard.turn_isolation`, where Hermes stores the message only once the turn's
-own process has started: until then no other device could see it. A `hidden` send (a widget's)
-shows no message.
+own process has started: until then no other device could see it. A `hidden` send (a widget's, a
+heartbeat the TUI gateway starts) shows no message. A turn Hermes starts by itself reads, while it
+runs, as the stored chat will read it (§2a, `InflightTurn.reading`): a finished process's notice is
+its finished-work line ("Writer replied", joined to the line just before it as the stored chat
+joins them), a heartbeat its line, helpers' results theirs, scaffolding nothing. It is never the
+person's bubble, unread or counted, and once the chat has it stored it shows once
+(`InflightTurn.isStored`).
 
 Hermes starts the next turn the moment one ends: a steer the turn never read, or what its queue
 holds, goes as a turn of its own right after the idle notice (hermes-agent
@@ -554,7 +559,7 @@ counted as "You", offered for Edit and Resend, Branch or a voice reply (`UserEnt
 | A routine's output: `[Cronjob "<name>" output — …]` (Bot Chat), `[Cron delivery: <name>]` (mirrored into the chat that made it), `Cronjob Response: <name>` | `cron/scheduler_delivery.py`, `cron/scheduler.py` | The routine's card: an ink "Routine" tag, its name, its time and the output as Markdown (§3); links open through `WebLink` only. The name opens the routine in the Bot's Routines, picked out | `routineCard` (`RoutineDeliveryRow`) |
 | A webhook's event mirrored into a chat: `[Webhook delivery: <route>]` | `gateway/platforms/webhook.py` | The same card, tagged "Webhook", with the route | `routineCard` |
 | Anything else tagged `internal_notification`: a script's `hermes peer dm`, a `/v1/runs` call, a plugin's `inject_message` | `gateway/response_filters.py` (`display_kind_for_event`) | The same card, tagged "Automation". The row has nothing that names its sender, so the card names none; a sender's name needs Hermes to store one | `routineCard` |
-| The message a live turn answers, from another device or a delivery (`inflight.user`) | `session.resume`, `session.activate`, with its `display_kind` | As it will read stored: a delivery's card, never the person's bubble while it runs | |
+| The message a live turn answers, from another device or a delivery (`inflight.user`) | `session.resume`, `session.activate`, with its `display_kind` | As it will read stored (`TranscriptBuilder.reading`, the same for both): another Bot's message or a delivery's card; a finished process, a heartbeat or helpers' results as their line (below), joined to a finished-work line just before it; nothing for scaffolding or a `hidden` send. Never the person's bubble while it runs, unread or counted | `userBubble`, `routineCard`, `finishedNotice` |
 | A skill used elsewhere: `[IMPORTANT: The user has invoked the "<name>" skill …]`, a bundle, a channel's auto-load | `agent/skill_commands.py` | The person's message with the skill as a chip and the words they typed with it (`SkillInvocation`, as `describe_skill_invocation`) | `userBubble` |
 | `[System: …]` recovery nudges without a kind; the task list and planning state compaction carries over | `agent/conversation_loop.py`, `tools/todo_tool.py` | Nothing: Hermes's REST projection hides them and its TUI drops them | |
 | An interrupted turn picked up again (`auto_continue`, or untyped `[System note: Your previous turn was interrupted …`) | `tui_gateway/session_auto_continue.py` | One quiet line, "Resumed an interrupted turn" | `NoticeRow` |
