@@ -69,7 +69,8 @@ struct JumpPillView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .matchedGeometryEffect(id: "glyph", in: morph)
                     Text(count == 1 ? String(localized: "1 new message") : String(localized: "\(UnreadCounter.label(count)) new messages"))
-                        .contentTransition(.numericText(value: Double(count)))
+                        // The count rolls to its new value; with Reduce Motion it just changes.
+                        .contentTransition(reduceMotion ? .identity : .numericText(value: Double(count)))
                 }
             case .mention(let name, _):
                 capsule {
@@ -113,8 +114,11 @@ struct JumpPillView: View {
         switch pill {
         case .latest: Text("Scroll to latest")
         case .live: Text("\(liveText). Jump to the latest.")
-        case .newMessages(let count, _):
-            count == 1 ? Text("1 new message. Jump to it.") : Text("\(count) new messages. Jump to the first one.")
+        // What the next tap does: the first new message, or the end once the first tap went there.
+        case .newMessages(1, nil): Text("1 new message. Jump to the latest.")
+        case .newMessages(1, _): Text("1 new message. Jump to it.")
+        case .newMessages(let count, nil): Text("\(count) new messages. Jump to the latest.")
+        case .newMessages(let count, _): Text("\(count) new messages. Jump to the first one.")
         case .mention(let name, _): Text("\(name) mentioned you. Jump to it.")
         }
     }

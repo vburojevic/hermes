@@ -1592,6 +1592,33 @@ def deliver_dm(sender, target, text):
     threading.Thread(target=reply, daemon=True).start()
 
 
+def deliver_dms(senders, target, gap):
+    """Several Bots' messages to one Bot, as Hermes runs them: one one-shot `hermes -p <target> chat`
+    after another, each storing its Bot's message and then the reply, `gap` seconds apart, while
+    the chat stays held. The app reads a chat held this way every 10 s, so several messages land
+    in one read."""
+    with LOCK:
+        chat = bot_chat(target)
+        if chat is None:
+            return False
+        HELD_CHATS[chat["id"]] = {"surface": "cli", "since": time.time()}
+
+    def run():
+        try:
+            for sender in senders:
+                handle = "hermes" if PROFILES[sender]["is_default"] else sender
+                add_message(chat["id"], "user", f"Message from 🤖 {bot_title(sender)} ({'@' + handle}): "
+                            "Can you check the release notes before tonight?")
+                time.sleep(gap)
+                add_message(chat["id"], "assistant", f"Checked them, {bot_title(sender)}. They read well and "
+                            "match what's on the release branch.")
+                time.sleep(gap)
+        finally:
+            HELD_CHATS.pop(chat["id"], None)
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
 def routine_elsewhere(profile, title, output, reply, seconds):
     """A routine's follow-up as Hermes's scheduler runs it: the output stored with no display kind as
     a one-shot `hermes -p <bot> chat` starts, which holds the chat until its reply `seconds` later."""
@@ -2802,6 +2829,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(404, {"detail": "Unknown profile"})
             deliver_dm(body["from"], body["to"], body.get("text") or "")
             return self.send_json(200, {"ok": True})
+        if url.path == "/api/mock/message-agents":
+            # Mock-only: several Bots' messages to one Bot back to back, landing in one read.
+            senders = body.get("from") or ["writer", "ops", "default"]
+            if body.get("to") not in PROFILES or any(sender not in PROFILES for sender in senders):
+                return self.send_json(404, {"detail": "Unknown profile"})
+            done = deliver_dms(senders, body["to"], float(body.get("gap") or 1))
+            return self.send_json(200 if done else 404, {"ok": done})
         if url.path == "/api/mock/routine-elsewhere":
             # Mock-only: a routine's follow-up in a one-shot `hermes chat`, holding the Bot Chat.
             done = routine_elsewhere(body.get("profile") or "researcher", body.get("title") or "Issue alerts",

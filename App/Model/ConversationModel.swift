@@ -973,6 +973,8 @@ final class ConversationModel: Identifiable {
         var shown: [TranscriptItem]
         /// The newest stored message from before the turn.
         var after: Int?
+        /// The rows on screen when the turn started (`IdentityHandOver`), when this device saw it start.
+        var before: Set<String>?
         /// Where Hermes said it stored the turn (`message.complete.persisted_turn`).
         var persisted: PersistedTurn?
         /// It ended without hearing how (a lost run, a re-attach that never came back): a turn
@@ -1467,7 +1469,7 @@ final class ConversationModel: Identifiable {
         applyOverlays()
         if let stored = heldOver, held == nil {
             heldOver = nil
-            handOverIdentity(shown: stored.shown, existing: existing)
+            handOverIdentity(shown: stored.shown, existing: existing, before: stored.before)
             if let reply = stored.reply { carryOverExtras(from: reply, heldAs: reply.id) }
             LoadTrace.mark(stableKey ?? "?", "held turn: \(stored.shown.filter { id in items.contains { displayID(for: $0) == id.id } }.count)/\(stored.shown.count) rows kept their identity")
         }
@@ -1645,7 +1647,7 @@ final class ConversationModel: Identifiable {
             live = joined.live
             redirectedParts = []
         }
-        if let live { turnBaseline = (live.turn.id, newestBeforeTurn) }
+        if let live { turnBaseline = (live.turn.id, newestBeforeTurn, Set(items.map(\.id))) }
         turnGate = TurnSettleGate()
         isRemoteTurn = false
         turnUsesGateway = false
@@ -1693,7 +1695,8 @@ final class ConversationModel: Identifiable {
         TranscriptBuilder.newestBeforeTurn(rawMessages, ask: pendingUser?.text, sentAt: pendingUser?.timestamp)
     }
     /// `newestBeforeTurn` as the turn started: at its end the stored rows may hold the turn itself.
-    @ObservationIgnored private var turnBaseline: (turnID: String, newest: Int?)?
+    /// `rows`: what was on screen then, so rows that came in while it ran never stop its hand-over.
+    @ObservationIgnored private var turnBaseline: (turnID: String, newest: Int?, rows: Set<String>)?
 
     /// A page that starts partway through a turn starts at its next message from the person
     /// instead (the rest of that turn comes with the earlier page).
@@ -1881,39 +1884,16 @@ final class ConversationModel: Identifiable {
         }
     }
 
-    /// The stored rows that replace the ones shown while the turn ran (your message, the reply, and
-    /// around a redirect the work before it and the redirect) keep their on-screen identities.
-    /// Matched from the end; a reply never matches across the person's message, so an older reply
-    /// never takes a live turn's place (a turn that stored nothing).
-    /// - Parameter existing: the rows on screen before these stored rows came. One of them is older
-    ///   than this turn and never takes its identity: a silent reply (dropped from the transcript)
-    ///   would otherwise hand its key, and its open folds, to the reply before it.
-    private func handOverIdentity(shown: [TranscriptItem], existing: Set<String>) {
-        func isPersonsMessage(_ item: TranscriptItem) -> Bool {
-            if case .user(let entry) = item { entry.isFromPerson && !entry.isSteer } else { false }
-        }
-        let shownIDs = Set(shown.map(\.id))
-        var index = items.count - 1
-        for row in shown.reversed() {
-            var match: Int?
-            var probe = index
-            while probe >= 0 {
-                let stored = items[probe]
-                if existing.contains(stored.id), !shownIDs.contains(stored.id) { break }
-                if case .assistant = row {
-                    if case .assistant = stored { match = probe; break }
-                    if isPersonsMessage(stored) { break } // no stored reply (yet): the message still matches
-                } else if isPersonsMessage(stored) {
-                    match = probe
-                    break
-                }
-                probe -= 1
-            }
-            guard let match else { continue }
-            // Handed over once, it stays: a later turn never takes a row's identity away.
-            if items[match].id != row.id, rowAliases[items[match].id] == nil { rowAliases[items[match].id] = row.id }
-            index = match - 1
-        }
+    /// The stored rows that replace the ones shown while the turn ran keep their on-screen
+    /// identities (`IdentityHandOver`).
+    /// - Parameters:
+    ///   - existing: the rows on screen before these stored rows came.
+    ///   - before: the rows on screen when the turn started. Unknown, every row in `existing`
+    ///     counts as older than the turn.
+    private func handOverIdentity(shown: [TranscriptItem], existing: Set<String>, before: Set<String>?) {
+        let matches = IdentityHandOver.matches(shown: shown, in: items, existing: existing, before: before ?? existing)
+        // Handed over once, it stays: a later turn never takes a row's identity away.
+        for (stored, live) in matches where rowAliases[stored] == nil { rowAliases[stored] = live }
     }
 
     /// Puts command cards and notes back after the items they followed.
@@ -3185,7 +3165,7 @@ final class ConversationModel: Identifiable {
         if let runID = current.runID { next.apply(SequencedTurnEvent(seq: nil, event: .runStarted(runID: runID))) }
         armedSteers = []
         // Still one turn on screen: its stored rows start where they did.
-        if let baseline = turnBaseline { turnBaseline = (next.turn.id, baseline.newest) }
+        if let baseline = turnBaseline { turnBaseline = (next.turn.id, baseline.newest, baseline.rows) }
         animateRows {
             redirectedParts += [.assistant(part), .user(entry)]
             live = next
@@ -3637,7 +3617,7 @@ final class ConversationModel: Identifiable {
             pendingUser = entry
             redirectedParts = []
             live = LiveTurn(id: "live-\(UUID().uuidString)", sessionID: sessionID)
-            if let live { turnBaseline = (live.turn.id, newestBeforeTurn) }
+            if let live { turnBaseline = (live.turn.id, newestBeforeTurn, Set(items.map(\.id))) }
             sentTurns += 1
         }
         beginDelivery(QueuedFollowUp(text: text, parts: parts?.hasStructure == true ? parts : nil, skills: skills, images: images, files: files))
@@ -4269,6 +4249,7 @@ final class ConversationModel: Identifiable {
         // without them would swap your message for its stored copy as a new row (it left and came
         // back) and drop the reply: ask again for up to about 2 s, then keep what's on screen.
         let newestBefore = turnBaseline?.turnID == finished.turn.id ? turnBaseline?.newest : newestBeforeTurn
+        let rowsBefore = turnBaseline?.turnID == finished.turn.id ? turnBaseline?.rows : nil
         turnBaseline = nil
         var transcript: SessionTranscript?
         // Folded off the main thread, the reply's Markdown parsed ahead: the swap below is then
@@ -4329,7 +4310,7 @@ final class ConversationModel: Identifiable {
                     rebuild(from: prepared.messages, built: prepared.items)
                     saveCache()
                 }
-                handOverIdentity(shown: shownRows, existing: existing)
+                handOverIdentity(shown: shownRows, existing: existing, before: rowsBefore)
                 needsReconcile = false
                 // As it is now: what came after its end (Hermes's self-review) goes along.
                 carryOverExtras(from: ending.turn)
@@ -4355,8 +4336,8 @@ final class ConversationModel: Identifiable {
                 // Failed without knowing how it ended ("Couldn't reconnect…"): the same, for a turn running again.
                 var uncertain = finished.endedUnheard
                 if case .failed = finished.turn.state, !failureIsRetryable { uncertain = true }
-                heldOver = HeldTurn(shown: held, after: newestBefore, persisted: finished.persisted, endUnheard: uncertain,
-                                     cutOff: finished.cutOff)
+                heldOver = HeldTurn(shown: held, after: newestBefore, before: rowsBefore, persisted: finished.persisted,
+                                     endUnheard: uncertain, cutOff: finished.cutOff)
                 items = TurnPlacement.place(held, userRowID: finished.persisted?.userRowID, after: newestBefore, in: items, messages: rawMessages)
                 needsReconcile = true
             }
@@ -6290,7 +6271,7 @@ extension ConversationModel {
             redirectedParts = []
             takeExpectedFromGateway()
         }
-        if let live { turnBaseline = (live.turn.id, newestBeforeTurn) }
+        if let live { turnBaseline = (live.turn.id, newestBeforeTurn, Set(items.map(\.id))) }
         isRemoteTurn = true
         // Its events come over the socket, so a steer goes there too.
         turnUsesGateway = true

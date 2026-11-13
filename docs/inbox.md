@@ -210,7 +210,7 @@ search).
 | New Messages line | Fades in with the chat, out (0.3 s) |
 | Jump pill | Rises 12 pt with scale 0.9 → 1; its content morphs |
 | The live line before the first words | Fades in with the turn header; its words cross-fade into the running step, then "Worked for …" |
-| Haptics | A tick when the pill's count goes up, a light impact on a jump |
+| Haptics | A tick when messages arrive below (never as they're seen), a light impact on a jump |
 | Sounds | Off; Settings → Chat → Sounds plays soft sent and received sounds |
 
 ## 4. In the chat
@@ -258,12 +258,29 @@ fits between the bars: a "/" or "@" menu that takes that room hides it ([compose
 |---|---|---|
 | Nothing new | The round arrow | To the end |
 | A turn running | "Hermes is writing…" or the running step, shimmering | To the end, following |
-| New messages | ↓ "2 new messages" | To the first of them (a quarter down), then to the end |
+| New messages | ↓ "2 new messages" | To the first (a quarter down), then to the end, following |
 | A mention (group chats) | Face + @ + "Ada mentioned you" | To the mention |
 | A Bot chat | The Bot's face leads | As above |
 
-Mentions come first, then new messages, then the running turn (`JumpPill.choose`). Messages count
-as seen as they come on screen (`onScrollTargetVisibilityChange`).
+Mentions come first, then new messages, then the running turn (`JumpPill.choose`).
+
+What counts is every message below where you got to (`NewMessagesBelow`), in the chat's order:
+
+- Leaving the end, what's there is seen. From then on, every message that lands below counts,
+  however many come in one update (a chat read again while another Hermes process held it) and
+  in whatever order their replies end. A reply still running isn't seen while it runs: it counts
+  once it ends, wherever its stored copy lands (above messages that came in while it ran, too),
+  unless it's on screen then.
+- Messages count as seen as they come on screen (`onScrollTargetVisibilityChange`), with
+  everything above them, so the count only goes down as you read. Scrolling back up doesn't
+  count them again.
+- Where you got to is kept by the row and its neighbours, so a reply settling into the stored one
+  or a reload under new ids neither counts it again nor counts the whole chat.
+- The first tap goes to the first new message and the next to the end. Messages that arrive
+  after the first tap, or scrolling back up above where it went, start over at the first new
+  message.
+- The tick sounds once per update that brings messages, never as they're seen or as rows change
+  identity. Group chats count their members' messages the same way.
 
 ### Before the first words
 
@@ -361,7 +378,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   swift test"; muted "…, muted, 12 unread"; needs you "…, waiting for your approval".
 - Rows have custom actions: Mark as Read / Unread, Pin / Unpin, Mute / Unmute, Archive.
 - The New Messages line is a header; an "Unread" rotor goes between it and the new messages.
-- The pill is a button: "2 new messages. Jump to the first one."
+- The pill is a button that says where it goes: "2 new messages. Jump to the first one.", after
+  the first tap "2 new messages. Jump to the latest.", for one message "1 new message. Jump to
+  it.". The count rolls to its new value; with Reduce Motion it just changes.
 - The open chat's activity line is announced at most every 10 s, never the words as they stream.
 - Never colour alone: needs you has the hand, failed the triangle, muted the slashed bell, unread
   the weight and the count.
@@ -384,6 +403,9 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   gateway (`curl` the dashboard's `GET /api/sessions/{id}?profile=default` for `last_read_at`).
 - Scrolled up during a turn ("marathon"), the pill shows what Hermes is doing; when the turn ends
   it says "1 new message" and goes to it.
+- Scrolled up in a Bot Chat, `POST /api/mock/message-agents` sends six messages from three Bots:
+  the pill counts all six, goes to the first a quarter down, counts down as they come on screen,
+  and the next tap goes to the end. In a group chat several `room-say` posts count one each.
 - In a group chat, a mention shows the @ on the row and the mention pill in the chat (`POST
   /api/mock/room-say`).
 - A muted chat shows a grey count, isn't in the badges, and its pushes are quiet; approvals in it
@@ -406,9 +428,10 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   scrolls sideways) quotes it in the composer, and a scroll up or down that starts on a reply
   scrolls the chat.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
-  reads, pill priority, activity, quotes, row times and their order, compaction summaries, Bot
-  faces, group mentions, last lines and the `LastLineBook`), `SidewaysSwipeTests`
-  (which drags a row's swipe takes), `SidewaysScrollTests` (which Mac scrolls reply).
+  reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
+  compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),
+  `SidewaysSwipeTests` (which drags a row's swipe takes), `SidewaysScrollTests` (which Mac scrolls
+  reply).
 
 ## 8. Setup
 
