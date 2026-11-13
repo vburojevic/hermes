@@ -210,6 +210,82 @@ code field. The Mac reads the pasteboard when asked.
 - Not built yet: the zoom from a Bot tile into its chat ([bot-faces.md](bot-faces.md)); a tap opens
   the chat directly.
 
+### Navigation map
+
+The peek drawer goes. One `NavigationSplitView` serves every platform: on iPhone it collapses to a
+`NavigationStack` whose root is the chat list and whose chats are pushed; on iPad it is a sidebar and
+a detail with the system sidebar toggle; on the Mac it is a source list, a unified toolbar, menus and
+shortcuts. The design frames are `navigation.elyx` in `screens/iphone`, `screens/ipad` and
+`screens/mac`; the drawer frames (`drawer`, `drawerBots`…) stay in the design project only as a
+record, each captioned with its new home. Not built yet: this map is the target, and the "Today"
+column is what the code does now.
+
+Today is read from `RootView` and `App/Views/Sidebar/`: one sidebar in all three places, a drawer
+over the chat on iPhone. "Root" below is the iPhone root list; "toolbar" on the Mac is the window's
+unified toolbar.
+
+| Item | Today (iPhone drawer · iPad · Mac) | iPhone | iPad | Mac | Design |
+|---|---|---|---|---|---|
+| Open the chat list | `SidebarButton` leading in the chat toolbar · the same, while the sidebar is hidden · the system toggle | The system back button of a pushed chat, and swipe back | The system sidebar toggle | The system toggle in the source list's titlebar, ⌃⌘S | `backButton`; `ipadNavSplit` bar; `macNavWindow` tools |
+| Unread count outside the list | On `SidebarButton` | On the back button | No badge on the system toggle (as in Mail): the Chats / Bots switch and rows in the sidebar, and the app icon badge | Dock badge (unchanged) | `backButton`, `ipadNavPortrait` |
+| New Chat | Trailing in the chat toolbar, and a sidebar row · the same · a sidebar row and ⌘N | Trailing in the root's bottom toolbar, and trailing in the pushed chat's toolbar (unchanged) | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions |
+| New Bot, New Group Chat | Rows in Bots mode | The compose pull-down in the Bots root's bottom toolbar | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` |
+| Model picker (a Bot Chat shows its title) | Centered in the chat toolbar | Centered in the pushed chat's toolbar | Centered in the detail toolbar | Centered in the toolbar | `chatToolbarPushed`, `botToolbarPushed` |
+| Routines, … menu (Bot Chat) | Trailing in the Bot Chat toolbar | Trailing in the pushed Bot Chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar; Routines ⌥⌘R | `botToolbarPushed` |
+| Inspector | Not on iPhone · detail toolbar · toolbar, ⌥⌘I | Not on iPhone (unchanged) | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions |
+| Chats / Bots switch and counts | Mode switcher pill at the top of the sidebar | Segmented control under the root's large title | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` |
+| Gateway name, switcher, Add Gateway, Pair a Device, Manage Gateways | The sidebar header and its menu | The root's large title with a menu; connection line under it | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header |
+| Connection status | The sidebar footer | The subtitle under the large title | The sidebar footer | The source list footer | `navChats` |
+| Settings | Gear in the sidebar footer | Gear trailing in the root's top bar | Gear in the sidebar footer | The app menu, ⌘, | `rootHeader` |
+| Default list | Every chat, every platform | This app's recent chats (`api_server`, `desktop`, `hermes_app`, no source) | The same | The same | `navChats`, `macNavWindow` |
+| Other platforms, scheduled chats | In the one list, with a source glyph | The filter: All Chats, Other Platforms, Scheduled Tasks | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu |
+| Unread, Needs You, Running filters | Chips under Tasks and Skills, above Projects and the chats (All first; no All on the Mac) | In the filter menu, with counts; a filtered list tints the button | The filter menu | The filter menu and View ▸ Filter | `inboxFilterMenu`, `rootBottomBarFiltered` |
+| Mark All as Read | At the end of the Unread list | Last item of the filter menu, and at the end of the Unread list | The same | The same, and View ▸ Filter | `inboxFilterMenu` |
+| Search chats | The field at the top of the sidebar | `.searchable` in the root's bottom toolbar, with scope chips | The sidebar's search field | The source list's field, ⌥⌘F | `navSearch`, `macSearch` |
+| Quick Open | Sheet on iOS; palette on the Mac, ⌘K | ⌘K with a hardware keyboard only | ⌘K | ⌘K palette, File menu | `macSearch` |
+| Tasks, Skills | Sidebar rows | Rows at the top of the root; push | Sidebar rows | Source list rows; ⇧⌘1, ⇧⌘2, View menu | `navChats` |
+| Board | From a project; ⇧⌘B on the Mac | From a project; push | From a project | From a project, ⇧⌘B, View menu | `macNavMenuView` `boardItem` |
+| Projects (recent, All Projects) | A collapsible sidebar section | A section of the root; All Projects pushes | Sidebar section | Source list disclosure tree | `navChats`, `macSidebar` |
+| Bots roster, groups, All Bots | Bots mode rows; All Bots opens the grid | The Bots root: All Bots pushes the grid, then the roster | Sidebar rows | Source list rows | `navBots`, `macSidebarBots` |
+| Pinned chats | A Pinned section | A Pinned section of the root | The same | The same | `navChats` |
+| Archived chats | Out of the list; found by search | Search (unchanged) | Search | Search | `navSearch` |
+| Row swipe actions | Leading Read / Unread, Pin; trailing Mute, Archive | The same on root rows | The same | Context menu | `sessionMenu` |
+| Session menu: Mark as Read / Unread, Pin / Unpin, Rename…, Move to Project… (with projects), Branch (where the gateway forks), Checkpoints… (with Bot Mode connected), Copy Session ID, Archive (Mac only; a swipe on iOS), Delete… | Long-press a row · the same · right-click | Long-press a root row | The same | Right-click, with Archive and ⇧⌘U for Read / Unread | `sessionMenu` |
+| A new chat waiting for the gateway (its first message not sent yet) | Delete… only, in its menu and as a trailing swipe | The same on its root row | The same | Delete… only, right-click | `sessionMenu` |
+| Bot menu | Long-press a Bots row | Long-press a Bots root row | The same | Right-click | `botMenu` |
+| Empty, loading, sign-in, offline states | Centered in the sidebar's free space | Centered in the root list | The sidebar | The source list | `drawerEmpty`, `drawerNoResults`, `drawerBots*` states |
+| Setup states | `SetupStatus` rows and Settings → Setup | Unchanged; Settings from the root | Unchanged | Unchanged | `docs/setup.md` |
+| Plugin suggestions | Get Started and Settings → Plugins | Unchanged | Unchanged | Unchanged | `pluginsAsk` |
+| Mac background priority notice | Sidebar footer | Not on iPhone | Not on iPad | Source list footer | `macPriorityNotice` |
+| Move between chats | ⌥⌘↓/⌥⌘↑ unread, ⌃Tab/⌃⇧Tab, ⌘↓, ⇧⌘U on the Mac | Back, then another row | Sidebar rows; the same keys | Chat menu: Jump to Latest, Next and Previous Unread Chat, Mark as Read, Next and Previous Conversation | `macNavMenuChat` |
+
+Where the running app differs from the design files, as the code shows it (to check against the
+app):
+
+- The Mac's filter chips have no All (`InboxFilterChips`); the design's chip rows did.
+- The Board uses its own chevron back, not the system back button.
+- `SidebarButton` sits on every screen's toolbar (chat, Tasks, Skills, Board, projects, groups);
+  the design drew it on chats only.
+- Quick Open is a palette on the Mac and a sheet on iOS; the design drew only the Mac palette.
+- The mode switcher pill draws its own shadow on glass, a stacked shadow the design doesn't have.
+- Tasks and Skills (`largeTitleHeader` in the design) show `SidebarButton` in their toolbar;
+  pushed from the iPhone root they get the system back button instead.
+- On the Mac, sidebar rows can overlap at the largest text sizes.
+- The app's Chat menu has the move-between-chats commands and its View menu has Board ⇧⌘B; the
+  earlier menu designs lacked them (now in `macNavMenuChat`, `macNavMenuView`).
+
+Hard to place:
+
+- **Quick Open on iPhone:** no toolbar item; ⌘K with a keyboard, and search covers the rest.
+- **Archived chats:** no list of their own; search finds them.
+- **The unread count on iPad with the sidebar hidden:** the system sidebar toggle has no badge,
+  and the direction rules out a custom toggle. As in Mail and Notes, the toggle stays plain; the
+  count shows in the sidebar it opens (the Chats / Bots switch and the rows) and on the app icon.
+- **New Chat in a pushed iPhone chat:** the root's bottom toolbar has it, as in Mail and Messages.
+  It stays trailing in the chat's toolbar too, as today, so a new chat is one tap from a chat.
+- **Plugin suggestions:** they stay in Get Started and Settings; the list has no room for them.
+- **Routines and … in a Bot Chat** stay in its toolbar on the Mac too, not in a menu only.
+
 ## 7. Type
 
 The design's type tokens hold the sizes for iOS and iPadOS and for macOS. On iPhone and iPad each
