@@ -256,6 +256,233 @@ struct InboxTests {
         // A count with nowhere to jump to isn't offered.
         #expect(JumpPill.choose(mention: nil, newCount: 3, firstNewRowID: nil, isLive: false) == .latest)
         #expect(JumpPill.newMessages(count: 2, firstRowID: "m7").target == "m7" && JumpPill.live.target == nil)
+        // After the first tap the count stays, and the next tap goes to the end.
+        let second = JumpPill.choose(mention: nil, newCount: 2, firstNewRowID: "m8", isLive: true, toEnd: true)
+        #expect(second == .newMessages(count: 2, firstRowID: nil) && second.target == nil)
+        // A mention still comes first.
+        #expect(JumpPill.choose(mention: ("Ada", "m9"), newCount: 2, firstNewRowID: "m7", isLive: false, toEnd: true).target == "m9")
+    }
+
+    /// Rows for the pill: `m` a message that counts, `y` yours, `r` a reply still running.
+    private static func rows(_ spec: String) -> [PillRow] {
+        spec.split(separator: " ").map { word in
+            PillRow(key: String(word), counts: word.hasPrefix("m"), isRunning: word.hasPrefix("r"))
+        }
+    }
+
+    @Test func pillCountsOneMessageBelow() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1 y2 m3"))
+        below.update(rows: Self.rows("m1 y2 m3"), visible: ["m1"])
+        #expect(below.keys.isEmpty && below.arrivals == 0)
+        below.update(rows: Self.rows("m1 y2 m3 m4"), visible: ["m1"])
+        #expect(below.keys == ["m4"] && below.arrivals == 1)
+    }
+
+    @Test func pillCountsSeveralMessagesThatLandInOneUpdate() {
+        // A chat read again while another Hermes process held it: six messages at once.
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1 m2"))
+        below.update(rows: Self.rows("m1 m2 m3 m4 m5 m6 m7 m8"), visible: ["m1"])
+        #expect(below.keys == ["m3", "m4", "m5", "m6", "m7", "m8"])
+        #expect(below.first == "m3" && below.arrivals == 1)
+    }
+
+    @Test func pillCountsMessagesThatArriveOneByOne() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1"))
+        below.update(rows: Self.rows("m1 m2"), visible: ["m1"])
+        below.update(rows: Self.rows("m1 m2 y3"), visible: ["m1"])
+        below.update(rows: Self.rows("m1 m2 y3 m4"), visible: ["m1"])
+        #expect(below.keys == ["m2", "m4"] && below.arrivals == 2)
+    }
+
+    @Test func pillKeepsTheChatsOrderWhenRepliesEndOutOfOrder() {
+        // Two replies running below; the later one ends first.
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1 r2 r3"))
+        below.update(rows: Self.rows("m1 r2 m3"), visible: ["m1"])
+        #expect(below.keys == ["m3"])
+        below.update(rows: Self.rows("m1 m2 m3"), visible: ["m1"])
+        #expect(below.keys == ["m2", "m3"] && below.first == "m2" && below.arrivals == 2)
+    }
+
+    @Test func pillCountsAReplyThatEndsAfterTheReaderLeft() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1 y2 r3"))
+        #expect(below.keys.isEmpty)
+        // On screen while it ran, it isn't seen: the place waits in front of it.
+        below.update(rows: Self.rows("m1 y2 r3 m4"), visible: ["y2", "r3", "m4"])
+        #expect(below.keys.isEmpty)
+        below.update(rows: Self.rows("m1 y2 m3 m4"), visible: ["m1"])
+        #expect(below.keys == ["m3"])
+    }
+
+    @Test func pillCountsDownAsMessagesComeOnScreen() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1"))
+        below.update(rows: Self.rows("m1 m2 m3 m4"), visible: ["m1"])
+        below.update(rows: Self.rows("m1 m2 m3 m4"), visible: ["m1", "m2"])
+        #expect(below.keys == ["m3", "m4"])
+        // Seen is seen: scrolling back up doesn't count them again.
+        below.update(rows: Self.rows("m1 m2 m3 m4"), visible: ["m1"])
+        #expect(below.keys == ["m3", "m4"] && below.arrivals == 1)
+    }
+
+    @Test func pillFindsItsPlaceWhenRowsChangeIdentity() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1 m2 m3"))
+        below.update(rows: Self.rows("m1 m2 m3 m4 m5"), visible: ["m2"])
+        // The last row read settles under another id: the row after it still finds the place.
+        below.update(rows: Self.rows("m1 m2 m3b m4 m5"), visible: ["m2"])
+        #expect(below.keys == ["m4", "m5"] && below.arrivals == 1)
+        // A reload gives the new rows other ids too: they're still the two below.
+        below.update(rows: Self.rows("m1 m2 m3c m4c m5c"), visible: ["m2"])
+        #expect(below.keys == ["m4c", "m5c"] && below.arrivals == 1)
+        // Every id gone: nothing counts, rather than the whole chat.
+        below.update(rows: Self.rows("x1 x2 x3 x4 x5"), visible: [])
+        #expect(below.keys.isEmpty)
+    }
+
+    @Test func pillGoesToTheFirstNewMessageThenToTheEnd() {
+        var below = NewMessagesBelow()
+        let rows = Self.rows("m1 m2 m3 m4 m5")
+        below.leave(rows: Array(rows.prefix(2)))
+        below.update(rows: rows, visible: ["m1"])
+        #expect(!below.nextTapGoesToEnd)
+        #expect(below.tap() == .row("m3"))
+        // Landed with m3 and m4 on screen: one left, and the next tap goes to the end.
+        below.update(rows: rows, visible: ["m2", "m3", "m4"])
+        #expect(below.keys == ["m5"] && below.nextTapGoesToEnd)
+        #expect(below.tap() == .end)
+        below.follow()
+        #expect(below.keys.isEmpty && !below.isTracking)
+    }
+
+    @Test func pillStartsOverWhenMoreArriveAfterTheFirstTap() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1"))
+        below.update(rows: Self.rows("m1 m2 m3 m4"), visible: ["m1"])
+        #expect(below.tap() == .row("m2"))
+        below.update(rows: Self.rows("m1 m2 m3 m4"), visible: ["m2"])
+        #expect(below.nextTapGoesToEnd)
+        below.update(rows: Self.rows("m1 m2 m3 m4 m5"), visible: ["m2"])
+        #expect(below.keys == ["m3", "m4", "m5"] && !below.nextTapGoesToEnd)
+        #expect(below.tap() == .row("m3"))
+    }
+
+    /// A reply that ended: it keeps the key it ran under and counts now.
+    private static func ended(_ key: String) -> PillRow { PillRow(key: key, counts: true) }
+
+    @Test func pillCountsAReplyThatEndsAboveWhereTheReaderGotTo() {
+        // The reply runs at the end; Ada's message comes in under it and the reader reads it. The
+        // reply's stored copy then takes its place after the ask, above Ada's message.
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("y0 r2"))
+        below.update(rows: Self.rows("y0 m1 r2"), visible: ["y0", "m1"])
+        #expect(below.keys.isEmpty)
+        below.update(rows: [Self.rows("y0")[0], Self.ended("r2"), Self.rows("m1")[0]], visible: ["m1"])
+        #expect(below.keys == ["r2"] && below.arrivals == 1 && below.first == "r2")
+        // Seen once it comes on screen.
+        below.update(rows: [Self.rows("y0")[0], Self.ended("r2"), Self.rows("m1")[0]], visible: ["r2", "m1"])
+        #expect(below.keys.isEmpty)
+    }
+
+    @Test func pillCountsAStoredReplyWhoseRowCameUnderANewKey() {
+        // Ada's message comes in under the running reply; the stored rows give the ask and the
+        // reply new ids and put the reply above her message. Handed over, they keep the live keys.
+        let live = [Self.you("live-ask", at: 0), Self.bot("m3", "Ada", at: 10),
+                    TranscriptItem.assistant(AssistantTurn(id: "live-reply", state: .streaming, startedAt: Self.t(5)))]
+        let stored = [Self.you("m1", at: 0), Self.reply("m2", from: 5, to: 20), Self.bot("m3", "Ada", at: 10)]
+        let aliases = IdentityHandOver.matches(shown: [live[0], live[2]], in: stored,
+                                               existing: Set(live.map(\.id)), before: [])
+        let rows = stored.map { PillRow($0, key: aliases[$0.id] ?? $0.id) }
+        #expect(rows.map(\.key) == ["live-ask", "live-reply", "m3"])
+        var below = NewMessagesBelow()
+        below.leave(rows: [PillRow(live[0], key: "live-ask"), PillRow(live[2], key: "live-reply")])
+        below.update(rows: live.map { PillRow($0, key: $0.id) }, visible: ["m3"])
+        #expect(below.keys.isEmpty)
+        below.update(rows: rows, visible: ["m3"])
+        #expect(below.keys == ["live-reply"] && below.arrivals == 1 && below.first == "live-reply")
+        below.update(rows: rows, visible: ["live-reply", "m3"])
+        #expect(below.keys.isEmpty)
+    }
+
+    @Test func pillCountsAReplyRunningAboveTheLastMessageWhenTheReaderLeaves() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1 r2 m3"))
+        #expect(below.keys.isEmpty)
+        below.update(rows: [Self.rows("m1")[0], Self.ended("r2"), Self.rows("m3")[0]], visible: ["m3"])
+        #expect(below.keys == ["r2"] && below.arrivals == 1)
+    }
+
+    @Test func pillDoesNotCountAReplyThatEndsOnScreen() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("y0 r2"))
+        below.update(rows: Self.rows("y0 m1 r2"), visible: ["y0", "m1"])
+        below.update(rows: [Self.rows("y0")[0], Self.ended("r2"), Self.rows("m1")[0]], visible: ["r2", "m1"])
+        #expect(below.keys.isEmpty && below.arrivals == 0)
+    }
+
+    @Test func pillStartsOverWhenTheReaderScrollsBackUp() {
+        var below = NewMessagesBelow()
+        let rows = Self.rows("m1 m2 m3 m4 m5 m6")
+        below.leave(rows: Array(rows.prefix(2)))
+        below.update(rows: rows, visible: ["m1"])
+        #expect(below.tap() == .row("m3"))
+        // On the way there it isn't reached yet: still the next tap goes to the end.
+        below.update(rows: rows, visible: ["m1", "m2"])
+        #expect(below.nextTapGoesToEnd)
+        below.update(rows: rows, visible: ["m3"])
+        #expect(below.keys == ["m4", "m5", "m6"] && below.nextTapGoesToEnd)
+        // Back up by hand: the next tap goes to the first new message again.
+        below.update(rows: rows, visible: ["m1", "m2"])
+        #expect(!below.nextTapGoesToEnd && below.tap() == .row("m4"))
+    }
+
+    @Test func pillCountsFromTheNewMessagesLine() {
+        var below = NewMessagesBelow()
+        below.open(at: "m3", rows: Self.rows("m1 y2 m3 y4 m5"))
+        #expect(below.isTracking && below.keys == ["m3", "m5"] && below.arrivals == 0)
+        // Leaving the end later doesn't move the place the line set.
+        below.leave(rows: Self.rows("m1 y2 m3 y4 m5"))
+        #expect(below.keys == ["m3", "m5"])
+        // The line on the first row of the chat; earlier pages coming in above don't count.
+        below.open(at: "m1", rows: Self.rows("m1 m2"))
+        below.update(rows: Self.rows("m0 m1 m2"), visible: [])
+        #expect(below.keys == ["m1", "m2"])
+    }
+
+    @Test func pillTicksOnlyForArrivals() {
+        var below = NewMessagesBelow()
+        below.leave(rows: Self.rows("m1"))
+        below.update(rows: Self.rows("m1 m2 m3"), visible: ["m1"])
+        below.update(rows: Self.rows("m1 m2 m3"), visible: ["m2"])
+        below.update(rows: Self.rows("m1 m2b m3"), visible: ["m1"])
+        below.update(rows: Self.rows("m1 m2b m3c"), visible: ["m1"])
+        #expect(below.arrivals == 1)
+        // Following clears the count; the tick doesn't go back.
+        below.follow()
+        #expect(below.arrivals == 1 && below.keys.isEmpty)
+        // Following, nothing counts.
+        below.update(rows: Self.rows("m1 m2b m3c m4"), visible: [])
+        #expect(below.keys.isEmpty)
+    }
+
+    @Test func pillReadsTranscriptRows() {
+        let rows = [Self.bot("m1", "Ada", at: 10), Self.you("m2", at: 20), Self.reply("m3", from: 20, to: 30),
+                    .assistant(AssistantTurn(id: "m4", state: .streaming, startedAt: Self.t(40)))].map { PillRow($0, key: $0.id) }
+        #expect(rows.map(\.counts) == [true, false, true, false])
+        #expect(rows.map(\.isRunning) == [false, false, false, true])
+        let room: [RoomItem] = [.user(id: "post-1", text: "Hi", date: nil), .member(id: "e2", memberID: "ada", text: "Hello", date: nil),
+                                .passed(id: "e3", memberID: "bo"), .round(id: "r2", index: 2)]
+        #expect(room.map(PillRow.init).map(\.counts) == [false, true, false, false])
+    }
+
+    @Test func pillCountLabelIsCappedButReadOutWhole() {
+        let pill = JumpPill.choose(mention: nil, newCount: 150, firstNewRowID: "m1", isLive: false)
+        #expect(pill == .newMessages(count: 150, firstRowID: "m1"))
+        #expect(UnreadCounter.label(150) == "99+" && UnreadCounter.label(99) == "99")
     }
 
     // MARK: Row times

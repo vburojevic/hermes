@@ -22,6 +22,11 @@ struct GroupChatScreen: View {
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var isAtEnd = true
     @State private var lastVisibleSeq = 0
+    /// Members' messages below not seen yet, with the pill's two steps (`newMessagesPill`).
+    @State private var below = NewMessagesBelow()
+    @State private var visibleIDs: [String] = []
+    /// Taps on the pill (a light tap of haptics each).
+    @State private var jumps = 0
     /// Where the top bar ends: the members menu above the composer stops there.
     @State private var ceiling: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -167,7 +172,21 @@ struct GroupChatScreen: View {
         .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.4) { ids in
             let seqs = ids.compactMap { $0.hasPrefix("e") ? Int($0.dropFirst()) : nil }
             if let last = seqs.max(), last > lastVisibleSeq { lastVisibleSeq = last }
+            visibleIDs = ids
+            if !isAtEnd { updateBelow { $0.update(rows: pillRows, visible: ids) } }
         }
+        // At the end nothing is below; leaving it, what was there is seen.
+        .onChange(of: isAtEnd) { _, atEnd in
+            if atEnd { updateBelow { $0.follow() } } else { updateBelow { $0.leave(rows: pillRows) } }
+        }
+        // Every member's message that lands below while the reader is up counts, however many
+        // came in one read.
+        .onChange(of: chat.shownItems) {
+            guard !isAtEnd else { return }
+            updateBelow { $0.update(rows: pillRows, visible: visibleIDs) }
+        }
+        .sensoryFeedback(.selection, trigger: below.arrivals) { old, new in new > old }
+        .sensoryFeedback(.impact(weight: .light), trigger: jumps)
         .overlay(alignment: .bottom) {
             if !isAtEnd {
                 JumpPillView(pill: pill, activity: chat.isWorking ? .thinking : nil, face: pillFace, action: jump)
@@ -201,9 +220,18 @@ struct GroupChatScreen: View {
 
     /// A mention first, then what's new below, then the room at work; else the arrow.
     private var pill: JumpPill {
-        let unseen = newSeqs.filter { $0 > lastVisibleSeq }
         let pending = mention.flatMap { $0.seq > lastVisibleSeq ? (name: name($0.memberID), rowID: "e\($0.seq)") : nil }
-        return JumpPill.choose(mention: pending, newCount: unseen.count, firstNewRowID: unseen.first.map { "e\($0)" }, isLive: chat.isWorking)
+        return JumpPill.choose(mention: pending, newCount: below.count, firstNewRowID: below.first, isLive: chat.isWorking,
+                               toEnd: below.nextTapGoesToEnd)
+    }
+
+    private var pillRows: [PillRow] { chat.shownItems.map(PillRow.init) }
+
+    /// Changes the messages below, and the view only when they changed.
+    private func updateBelow(_ change: (inout NewMessagesBelow) -> Void) {
+        var next = below
+        change(&next)
+        if next != below { below = next }
     }
 
     private var pillFace: BotAppearance? {
@@ -211,14 +239,29 @@ struct GroupChatScreen: View {
         return nil
     }
 
+    /// The pill: to the mention, else to the first new message, then to the end.
     private func jump() {
-        if let target = pill.target {
-            if case .mention = pill { mention = nil }
-            withAnimation(reduceMotion ? nil : .smooth(duration: 0.35)) { position.scrollTo(id: target, anchor: UnitPoint(x: 0.5, y: 0.25)) }
-        } else if let last = chat.shownItems.last?.id {
+        jumps += 1
+        if case .mention(_, let rowID) = pill {
+            mention = nil
+            return reveal(rowID)
+        }
+        var next = below
+        let target = next.tap()
+        below = next
+        switch target {
+        case .row(let rowID):
+            reveal(rowID)
+        case .end:
             // To the last row, not the edge: a lazy stack's edge is only an estimate.
+            guard let last = chat.shownItems.last?.id else { return }
             withAnimation(reduceMotion ? nil : Theme.spring) { position.scrollTo(id: last, anchor: .bottom) }
         }
+    }
+
+    /// A row a quarter of the way down.
+    private func reveal(_ rowID: String) {
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.35)) { position.scrollTo(id: rowID, anchor: UnitPoint(x: 0.5, y: 0.25)) }
     }
 
     @ViewBuilder

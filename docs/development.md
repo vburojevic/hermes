@@ -337,6 +337,10 @@ the message is stored, then 12 s with no rows and no `session.active_list` entry
 reply ("long": a command step for 25 s first; "dies": no reply ever, as when Hermes stops a
 delivery with the sender's chat). That process holds the Bot Chat until it replies, so a send is
 refused with Hermes's own sentence ([chat.md](chat.md), a chat another Hermes process holds).
+`POST /api/mock/message-agents {to, from, gap}` is several of those back to back (`from` a list,
+Ada, Ops and Hermes by default): each Bot's message and its reply `gap` seconds apart (default 1),
+the chat held throughout, so the app's read every 10 s brings several at once, for the jump pill
+(`docs/inbox.md` §4).
 `POST /api/mock/routine-elsewhere {profile, title, output, reply, seconds}` is a routine's
 follow-up the same way (its output stored with no display kind, held `seconds`, default 20).
 `POST /api/mock/deliver {profile, text, reply}` (profile `ops` by default) is a script's alert

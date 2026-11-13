@@ -85,16 +85,13 @@ struct TranscriptView: View {
     /// (`docs/composer.md` §1) hides it, rather than pushing it up over the top bar.
     @State private var pillFits = true
     @State private var pillHeight: CGFloat = 52
-    /// Rows that arrived at the end while the reader was up in the history.
-    @State private var arrivalsBelow = 0
     /// The New Messages line (`docs/inbox.md` §4): placed when the chat opens with something new,
     /// gone when it closes. Never for messages that arrive while it's open.
     @State private var divider: NewMessagesMarker?
-    /// Counted messages below the view not seen yet, oldest first: from the line, and those that
-    /// arrive while the reader is up in the history (`newMessagesPill`).
-    @State private var unseenBelow: [String] = []
-    /// The pill's first tap went to the first new message; the next goes to the end.
-    @State private var jumpedToFirst = false
+    /// Counted messages below the view not seen yet, in the chat's order: from the line, and
+    /// those that arrive while the reader is up in the history (`newMessagesPill`), with the
+    /// pill's two steps.
+    @State private var below = NewMessagesBelow()
     /// Taps on the pill (a light tap of haptics each).
     @State private var jumps = 0
     @AppStorage(PreferenceKey.openChatsAt) private var openChatsAt = OpenChatsAt.firstUnread
@@ -435,7 +432,9 @@ struct TranscriptView: View {
                     .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .scale(scale: 0.9)).combined(with: .opacity))
             }
         }
-        .modifier(InboxBehaviour(view: self, rowCount: all.count, lastRowID: all.last?.id))
+        .modifier(InboxBehaviour(view: self, rowCount: all.count,
+                                 rowsChange: RowsChange(count: all.count, lastRowID: all.last?.id, completedTurns: conversation.completedTurns,
+                                                        isWorking: conversation.isWorking, runsElsewhere: conversation.runsElsewhere)))
 
         .animation(Theme.snappy, value: isFollowing)
         .onAppear {
@@ -1554,29 +1553,33 @@ extension TranscriptView {
     struct InboxBehaviour: ViewModifier {
         let view: TranscriptView
         let rowCount: Int
-        let lastRowID: String?
+        let rowsChange: RowsChange
 
         func body(content: Content) -> some View {
-            view.inbox(content, rowCount: rowCount, lastRowID: lastRowID)
+            view.inbox(content, rowCount: rowCount, rowsChange: rowsChange)
         }
     }
 
-    fileprivate func inbox(_ content: some View, rowCount: Int, lastRowID: String?) -> some View {
+    /// What changes the messages below: new rows at the end, a reply ending (anywhere: replies
+    /// can end out of order), a turn starting or stopping here or elsewhere.
+    struct RowsChange: Hashable {
+        let count: Int
+        let lastRowID: String?
+        let completedTurns: Int
+        let isWorking: Bool
+        let runsElsewhere: Bool
+    }
+
+    fileprivate func inbox(_ content: some View, rowCount: Int, rowsChange: RowsChange) -> some View {
         content
-            .sensoryFeedback(.selection, trigger: unseenBelow.count) { old, new in new > old && !isFollowing }
+            // A tick when messages arrive below, never as they're seen (`docs/inbox.md` §4).
+            .sensoryFeedback(.selection, trigger: below.arrivals) { old, new in new > old }
             .sensoryFeedback(.impact(weight: .light), trigger: jumps)
-            // Something new at the end while the reader is up in the history: the pill counts it.
-            // (Earlier pages coming in above don't change the last row.)
-            .onChange(of: lastRowID) {
+            // The rows changed while the reader is up in the history: the pill counts every new
+            // message below, however many came at once and in whatever order their replies ended.
+            .onChange(of: rowsChange) {
                 guard !isFollowing else { return }
-                arrivalsBelow += 1
-                if let last = conversation.rows.last, UnreadCounter.counts(last), !unseenBelow.contains(last.id) { unseenBelow.append(last.id) }
-            }
-            // A reply finished below while the reader is up in the history.
-            .onChange(of: conversation.completedTurns) {
-                guard !isFollowing, let turn = conversation.rows.last(where: { if case .assistant = $0 { true } else { false } }),
-                      UnreadCounter.counts(turn), !unseenBelow.contains(turn.id) else { return }
-                unseenBelow.append(turn.id)
+                updateBelow { $0.update(rows: pillRows, visible: settled ? edge.visibleKeys : []) }
             }
             // What's on screen: the line's messages count as seen as they come into view, and this
             // device remembers how far it got (`docs/inbox.md` §4).
@@ -1609,6 +1612,8 @@ extension TranscriptView {
             .onChange(of: conversation.jumpToLatestRequests) { jumpToEnd() }
             .onChange(of: isFollowing, initial: true) { _, following in
                 if conversation.isReadingBack == following { conversation.isReadingBack = !following }
+                // Following the end, nothing is below. Leaving it, what was there is seen.
+                if following { updateBelow { $0.follow() } } else { updateBelow { $0.leave(rows: pillRows) } }
             }
             .accessibilityRotor("Unread") {
                 ForEach(unreadRotorKeys, id: \.self) { key in
@@ -1674,8 +1679,21 @@ extension TranscriptView {
     /// What the pill says: new messages below (the first tap goes to the first of them), else
     /// the running turn, else the arrow.
     fileprivate var pill: JumpPill {
-        JumpPill.choose(mention: nil, newCount: unseenBelow.count, firstNewRowID: unseenBelow.first,
-                        isLive: conversation.isWorking || conversation.runsElsewhere)
+        JumpPill.choose(mention: nil, newCount: below.count, firstNewRowID: below.first,
+                        isLive: conversation.isWorking || conversation.runsElsewhere, toEnd: below.nextTapGoesToEnd)
+    }
+
+    /// The chat's rows as the pill reads them, under the identity each is drawn with (it holds
+    /// while a reply settles into the stored one).
+    fileprivate var pillRows: [PillRow] {
+        conversation.rows.map { PillRow($0, key: conversation.displayID(for: $0)) }
+    }
+
+    /// Changes the messages below, and the view only when they changed.
+    fileprivate func updateBelow(_ change: (inout NewMessagesBelow) -> Void) {
+        var next = below
+        change(&next)
+        if next != below { below = next }
     }
 
     fileprivate static func activityLine(_ conversation: ConversationModel, _ workspace: BotWorkspace) -> ActivityLine? {
@@ -1716,21 +1734,23 @@ extension TranscriptView {
     }
 
     fileprivate var unreadRotorKeys: [String] {
-        let rows = conversation.listRows
-        var ids = unseenBelow
-        if let divider, !ids.contains(divider.rowID) { ids.insert(divider.rowID, at: 0) }
-        var seen = Set<String>()
-        return ids.compactMap { id in rows.first { $0.id == id }.map(conversation.displayID(for:)) }.filter { seen.insert($0).inserted }
+        var keys = below.keys
+        if let divider, let row = conversation.listRows.first(where: { $0.id == divider.rowID }) {
+            let key = conversation.displayID(for: row)
+            if !keys.contains(key) { keys.insert(key, at: 0) }
+        }
+        return keys
     }
 
     /// The pill: to the first new message, then (or with nothing new) to the end.
     fileprivate func jump() {
         jumps += 1
-        if case .newMessages(_, let first) = pill, !jumpedToFirst {
-            jumpedToFirst = true
-            reveal(first)
-        } else {
-            jumpToEnd()
+        var next = below
+        let target = next.tap()
+        below = next
+        switch target {
+        case .row(let key): reveal(key)
+        case .end: jumpToEnd()
         }
     }
 
@@ -1738,8 +1758,7 @@ extension TranscriptView {
     fileprivate func jumpToEnd() {
         isFollowing = true
         holdsTurn = false
-        jumpedToFirst = false
-        unseenBelow = []
+        updateBelow { $0.follow() }
         if lastShownKey != nil {
             showEndPage()
         } else {
@@ -1748,11 +1767,11 @@ extension TranscriptView {
         markRead()
     }
 
-    /// A row a quarter of the way down, brought into the window first.
-    fileprivate func reveal(_ rowID: String) {
+    /// A row (by the key it's drawn under) a quarter of the way down, brought into the window
+    /// first. A row that's gone takes the reader to the end rather than nowhere.
+    fileprivate func reveal(_ key: String) {
         let all = conversation.rows
-        guard let index = all.firstIndex(where: { $0.id == rowID }) else { return }
-        let key = conversation.displayID(for: all[index])
+        guard let index = all.firstIndex(where: { conversation.displayID(for: $0) == key }) else { return jumpToEnd() }
         bringIntoWindow(index, of: all)
         isFollowing = false
         Task { @MainActor in
@@ -1770,7 +1789,6 @@ extension TranscriptView {
     fileprivate func followIfAtEnd() {
         guard !isFollowing, !isScrolledByHand, edge.distance <= 72, lastShownKey == nil else { return }
         isFollowing = true
-        jumpedToFirst = false
     }
 
     fileprivate func isRowVisible(_ rowID: String) -> Bool {
@@ -1791,11 +1809,7 @@ extension TranscriptView {
             let previous = workspace.unread.seenThrough(chat).flatMap { id in rows.lastIndex { $0.id == id } } ?? -1
             if lastIndex > previous { workspace.unread.setSeenThrough(chat, rowID: rows[lastIndex].id) }
         }
-        if !unseenBelow.isEmpty {
-            let remaining = unseenBelow.filter { id in (rows.firstIndex { $0.id == id } ?? .max) > lastIndex }
-            if remaining != unseenBelow { unseenBelow = remaining }
-        }
-        if unseenBelow.isEmpty, jumpedToFirst { jumpedToFirst = false }
+        if !isFollowing { updateBelow { $0.update(rows: pillRows, visible: keys) } }
     }
 
     /// Read on the gateway: the newest message has been on screen for a second in the window in
@@ -1824,8 +1838,9 @@ extension TranscriptView {
         let all = conversation.rows
         guard let index = all.firstIndex(where: { $0.id == marker.rowID }) else { return false }
         divider = marker
-        unseenBelow = all[index...].filter(UnreadCounter.counts).map(\.id)
         guard openChatsAt == .firstUnread else { return false }
+        // The line and every message after it are new, until they're seen.
+        updateBelow { $0.open(at: conversation.displayID(for: all[index]), rows: pillRows) }
         // The whole page goes in at once, so filling the window later doesn't move the line.
         let windowStart = min(index, max(0, all.count - Self.pageSize))
         if windowStart < firstShownIndex(in: all) {

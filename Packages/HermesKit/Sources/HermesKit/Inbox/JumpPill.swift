@@ -6,8 +6,9 @@ import Foundation
 public enum JumpPill: Hashable, Sendable {
     /// "Ada mentioned you": jumps to the mention.
     case mention(name: String, rowID: String)
-    /// "2 new messages": jumps to the first new one (the line), then to the bottom.
-    case newMessages(count: Int, firstRowID: String)
+    /// "2 new messages": jumps to the first new one (the line), then to the bottom. No row: the
+    /// first tap already went there, and the next goes to the bottom.
+    case newMessages(count: Int, firstRowID: String?)
     /// The turn still running below: the activity line.
     case live
     /// The round arrow (`Transcript.scrollToLatest`).
@@ -18,9 +19,11 @@ public enum JumpPill: Hashable, Sendable {
     ///   - newCount: messages that arrived below while you were reading up.
     ///   - firstNewRowID: the first of them (or the New Messages line).
     ///   - isLive: a turn is running.
-    public static func choose(mention: (name: String, rowID: String)?, newCount: Int, firstNewRowID: String?, isLive: Bool) -> JumpPill {
+    ///   - toEnd: the first tap went to the first of them: the next goes to the bottom.
+    public static func choose(mention: (name: String, rowID: String)?, newCount: Int, firstNewRowID: String?, isLive: Bool,
+                              toEnd: Bool = false) -> JumpPill {
         if let mention { return .mention(name: mention.name, rowID: mention.rowID) }
-        if newCount > 0, let firstNewRowID { return .newMessages(count: newCount, firstRowID: firstNewRowID) }
+        if newCount > 0, let firstNewRowID { return .newMessages(count: newCount, firstRowID: toEnd ? nil : firstNewRowID) }
         if isLive { return .live }
         return .latest
     }

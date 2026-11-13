@@ -689,9 +689,11 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   never scrolls past the message at the top into blank; when the keyboard starts to go the room
   grows first, so the message stays put, and if anything else pulls it down (the composer losing
   a line) it goes straight back up until you scroll it yourself. Nothing chases the reply; when it runs past the bottom, the jump pill shows: what the running
-  turn is doing, "n new messages" when replies landed below, else the round arrow back to the
-  latest (`newMessagesPill`, `docs/inbox.md` §4). Otherwise, while the reader is within 72 pt of
-  the end, the chat follows any growth; scrolling up stops following and the pill resumes it.
+  turn is doing, "n new messages" when messages landed below (every one, however many came at
+  once; the first tap goes to the first of them, the next to the end), else the round arrow back
+  to the latest (`newMessagesPill`, `docs/inbox.md` §4). Otherwise, while the reader is within
+  72 pt of the end, the chat follows any growth; scrolling up stops following and the pill
+  resumes it.
 - **Sending on a busy or away gateway.** Send never waits on the gateway, and is never greyed out
   for it. The message shows at once; a quick gateway takes it before anything else shows. After
   half a second it says "Sending…" under it (a big upload to a healthy Mac stays there;
@@ -808,7 +810,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
 - **Nothing blinks as the chat updates.** What only the live turn knew (its plan, usage, warning,
   diffs and outputs from events, that it was stopped) is put back on every rebuild, not once. A
   reply Hermes hasn't stored yet stays on screen until it is. Older rows never take a new turn's
-  identity, and a load that finished after a newer rebuild is dropped. A stored turn reads as
+  identity, and a load that finished after a newer rebuild is dropped. A turn's stored rows take
+  its rows' identities, matched from the end (`IdentityHandOver`): a row that came in while it
+  ran (a delivery, a routine's post) is passed over wherever its stored copy lands, and a row from
+  before the turn or a message of the person's ends the match. A stored turn reads as
   working only on the rows the transcript itself keeps (a hidden nudge or a steer stored last
   doesn't flip it).
 - **Motion comes from what changed.** A tap animates its fold; a new step, card or warning fades
