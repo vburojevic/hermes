@@ -111,7 +111,10 @@ each, said as this step says it ("Tests", "Failed · exit 1 · 40 s"); a row, or
 to its command and last lines, with Show Step back to this step ([chat.md](chat.md) §2a). The notice
 carries no duration: it is the gateway's own start and exit times while it still lists the
 process (`FinishedProcess.timed`), else the time from this step to the notice when Hermes was idle
-meanwhile, else none.
+meanwhile, else none. Hermes answers the notice with a turn of its own, and while that turn runs
+the notice is already this line ("Writer replied", "Message to Writer · Delivered" opened), never
+the person's message with its `Command:` and `Output:`; the stored line takes its place once the
+turn ends ([chat.md](chat.md) §2).
 
 | State | From | Look |
 |---|---|---|

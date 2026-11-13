@@ -35,6 +35,7 @@ import json
 import pathlib
 import re
 import secrets
+import shlex
 import socket
 import struct
 import sys
@@ -1703,6 +1704,16 @@ def process_notice(proc, command, exit_code, output, outcome="completed normally
     return text, {"display_text": f"Background Process {title}: {short}"}
 
 
+def delivery_runner(target, query):
+    """Hermes's own runner for a `message_agent` delivery (tools/bot_mode_dm.py `_delivery_command`), as
+    a finished process's notice quotes it: the sending Bot as JSON, the query file, the target's home."""
+    author = json.dumps({"id": "bot:default", "name": "Hermes", "is_bot": True}, separators=(",", ":"))
+    return shlex.join(["/Users/sam/.hermes/hermes-agent/venv/bin/python",
+                       "/Users/sam/.hermes/hermes-agent/tools/bot_mode_dm.py", "--run-delivery", "--author", author,
+                       "query-file", query, "--profile-home", f"/Users/sam/.hermes/profiles/{target}",
+                       "/Users/sam/.local/bin/hermes", "-p", target, "chat", "-c", "Bot Chat", "--create-if-missing", "-Q"])
+
+
 def every_tool(sid, stored):
     """The words "every tool" in a Bot Chat: one finished step of each kind of tool, with the result
     shapes Hermes's tools answer with, including a command that printed nothing, a result of only
@@ -1760,9 +1771,7 @@ def overnight(sid, stored, profile):
     delivery = f"proc_{uuid.uuid4().hex[:12]}"
     tests = f"proc_{uuid.uuid4().hex[:12]}"
     fetch = f"proc_{uuid.uuid4().hex[:12]}"
-    runner = ("/Users/sam/.hermes/hermes-agent/venv/bin/python /Users/sam/.hermes/hermes-agent/tools/bot_mode_dm.py "
-              f"--run-delivery query-file /tmp/dm-{delivery[5:11]}.json /Users/sam/.local/bin/hermes -p {target} chat "
-              f"-c 'Bot Chat' --create-if-missing -Q")
+    runner = delivery_runner(target, f"/tmp/dm-{delivery[5:11]}.json")
     tool(sid, stored, "message_agent", {"target": target, "message": OVERNIGHT_MESSAGE},
          json.dumps({"status": "queued", "delivery_id": f"dm_{uuid.uuid4().hex[:8]}", "to": f"@{target}",
                      "reply_delivery": "notification", "detail": f"Message queued for {recipient}.",
@@ -1856,15 +1865,26 @@ def deliver_alert(profile, text, reply):
     return True
 
 
-PROCESS_NOTICE = "[Background process proc_7f3a finished with exit code 0: `npm run build` (2m 14s)]"
-PROCESS_REPLY = "The build finished cleanly: no warnings, and the bundle is 4% smaller than yesterday's."
+# A `message_agent` delivery finishing, as the TUI gateway starts its turn (`_notif_submit` with
+# `process_complete` and the notice's own receipt line): the runner's long command, its JSON in quotes
+# and the one JSON line it prints (docs/background-processes.md §4).
+PROCESS_NOTICE, PROCESS_META = process_notice(
+    "proc_7f3a9c2e41d0", delivery_runner("writer", "/tmp/dm-7f3a9c.json"), 0,
+    json.dumps({"outcome": "@writer answered.", "reply": "The release notes are in notes/1.4.md: three fixes and the new "
+                "share sheet.", "status": "settled", "delivery_id": "dm_7f3a9c2e"}))
+PROCESS_REPLY = "Writer finished the release notes: three fixes and the new share sheet. They're in notes/1.4.md."
 
 
-def turn_elsewhere(stored, text, reply, seconds):
+def turn_elsewhere(stored, text, reply, seconds, display_kind="internal_notification", display_metadata=None):
     """A turn Hermes starts in a chat by itself, the way a background process's completion notice or a
     routine run in the live session does: no prompt from a client, its events go to whoever is attached
-    (the app joins it as a turn started elsewhere), and it runs about `seconds`. A reap
-    (`/api/mock/drop-sockets {reap}`) interrupts it where it is: nothing more is stored or sent."""
+    (the app joins it as a turn started elsewhere), and it runs about `seconds`. The live session's
+    `inflight` carries the notice and its `display_kind` (`_start_inflight_turn`); with
+    `--turn-isolation` its row is stored that much later. A reap (`/api/mock/drop-sockets {reap}`)
+    interrupts it where it is: nothing more is stored or sent."""
+    extra = {"display_kind": display_kind}
+    if display_metadata:
+        extra["display_metadata"] = display_metadata
     with LOCK:
         if stored not in STORED:
             return False
@@ -1872,7 +1892,7 @@ def turn_elsewhere(stored, text, reply, seconds):
                 if runtime.get("stored") == stored and not runtime.get("dead") and not runtime.get("running")]
     if not sids:
         with LOCK:
-            add_message(stored, "user", text, display_kind="internal_notification")
+            add_message(stored, "user", text, **extra)
             add_message(stored, "assistant", reply, ts=time.time() + 2)
         return True
     sid = sids[0]
@@ -1881,10 +1901,15 @@ def turn_elsewhere(stored, text, reply, seconds):
         with LOCK:
             runtime = RUNTIME[sid]
             runtime.update(running=True, interrupt=False, turn_started=time.time())
-            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": "internal_notification"}
-        add_message(stored, "user", text, display_kind="internal_notification")
+            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": display_kind}
+        late = CONFIG.get("turn_isolation") or 0
+        if late <= 0:
+            add_message(stored, "user", text, **extra)
         emit(sid, "session.info", {"running": True})
         emit(sid, "message.start", {})
+        if late > 0:
+            time.sleep(late)
+            add_message(stored, "user", text, **extra)
         # Thinks for most of it, then streams the reply over the last two seconds.
         deadline = time.time() + max(0.0, seconds - 2)
         while time.time() < deadline:
@@ -2849,8 +2874,12 @@ class Handler(BaseHTTPRequestHandler):
             stored = body.get("session_id") or (bot_chat(body.get("profile") or "default") or {}).get("id")
             # A normal chat is the API server's (chats.py); a Bot Chat is this mock's own.
             run = turn_elsewhere if stored in STORED else globals().get("CHAT_TURN_ELSEWHERE")
+            # Without `text`, a finished delivery's notice; with it, `display_kind` (default
+            # `internal_notification`) says how Hermes tagged it.
+            kind, meta = ("process_complete", PROCESS_META) if not body.get("text") else (body.get("display_kind") or "internal_notification", None)
             done = bool(stored and run) and run(stored, body.get("text") or PROCESS_NOTICE,
-                                               body.get("reply") or PROCESS_REPLY, float(body.get("seconds") or 8))
+                                               body.get("reply") or PROCESS_REPLY, float(body.get("seconds") or 8),
+                                               kind, meta)
             return self.send_json(200 if done else 404, {"ok": done})
         if url.path == "/api/mock/deliver":
             # Mock-only: a script's alert in a Bot Chat, answered live (docs/chat.md §2a).

@@ -401,7 +401,8 @@ final class ConversationModel: Identifiable {
     private(set) var followUps: [FollowUpRecord] = []
 
     /// The work of the running turn before a redirect, the mark where it changed course, and the
-    /// redirect itself; the stored transcript replaces them when the turn ends.
+    /// redirect itself; or the notice a turn Hermes started by itself answers, until the chat has
+    /// it (`adopt`). The stored transcript replaces them when the turn ends.
     private(set) var redirectedParts: [TranscriptItem] = []
 
     /// The queued message being edited in the field: where it goes back, and how it was.
@@ -1066,7 +1067,8 @@ final class ConversationModel: Identifiable {
         var rows = items
         if let pendingUser { rows.append(.user(pendingUser)) }
         rows += turnReceipts
-        rows += redirectedParts
+        // A live notice of finished work joins the line just before it, as the stored chat folds it.
+        rows = TranscriptBuilder.appending(redirectedParts, to: rows)
         if let liveRow { rows.append(.assistant(liveRow)) }
         return rows
     }
@@ -1078,7 +1080,8 @@ final class ConversationModel: Identifiable {
         var rows = items
         if let pendingUser { rows.append(.user(pendingUser)) }
         rows += turnReceipts
-        rows += redirectedParts
+        // A live notice of finished work joins the line just before it, as the stored chat folds it.
+        rows = TranscriptBuilder.appending(redirectedParts, to: rows)
         if let liveOutline { rows.append(.assistant(liveOutline)) }
         return rows
     }
@@ -6299,8 +6302,15 @@ extension ConversationModel {
     /// and the reply so far, for a device that joins partway (`docs/chat.md` §2).
     private func adopt(_ inflight: InflightTurn) {
         guard isRemoteTurn, live != nil, !isFinishing else { return }
-        if pendingUser == nil, !inflight.isStored(in: items), let entry = inflight.userEntry(id: "local-\(UUID().uuidString)") {
-            animateRows { pendingUser = entry }
+        switch inflight.reading(id: "local-\(UUID().uuidString)") {
+        case .message(let entry):
+            if pendingUser == nil, !inflight.isStored(in: items) { animateRows { pendingUser = entry } }
+        case .notice(let notice):
+            // A finished process, a heartbeat, helpers' results: shown as the stored chat will show
+            // them, never as the person's message (`docs/chat.md` §2a).
+            if redirectedParts.isEmpty, !inflight.isStored(in: items) { animateRows { redirectedParts = [.notice(notice)] } }
+        case .nothing:
+            break
         }
         if let live, !inflight.assistant.isEmpty, live.pendingText.isEmpty, live.turn.steps.isEmpty, live.turn.answer.isEmpty {
             apply(.textDelta(inflight.assistant))
