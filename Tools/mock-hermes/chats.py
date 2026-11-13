@@ -135,9 +135,12 @@ def resume_chat(params):
             "queued": {"user": runtime["queue"][0]["text"]} if runtime.get("queue") else None}
 
 
-def turn_elsewhere(stored, text, reply, seconds):
+def turn_elsewhere(stored, text, reply, seconds, display_kind="internal_notification", display_metadata=None):
     """backend.py's `turn_elsewhere` for a normal chat (`/api/mock/turn-elsewhere`): Hermes starts a
     turn by itself, its events go to whoever is attached, and a reap stops it where it is."""
+    extra = {"display_kind": display_kind}
+    if display_metadata:
+        extra["display_metadata"] = display_metadata
     with G.LOCK:
         if stored not in G.SESSIONS:
             return False
@@ -145,7 +148,7 @@ def turn_elsewhere(stored, text, reply, seconds):
         sid = next((k for k, r in B["RUNTIME"].items()
                     if r["stored"] == stored and not r.get("dead") and not r["running"]), None)
     if sid is None:
-        G.add_message(stored, "user", text, display_kind="internal_notification")
+        G.add_message(stored, "user", text, **extra)
         G.add_message(stored, "assistant", reply, finish_reason="stop")
         return True
 
@@ -153,8 +156,8 @@ def turn_elsewhere(stored, text, reply, seconds):
         with B["LOCK"]:
             runtime = B["RUNTIME"][sid]
             runtime.update(running=True, interrupt=False, turn_started=time.time())
-            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": "internal_notification"}
-        G.add_message(stored, "user", text, display_kind="internal_notification")
+            runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": display_kind}
+        G.add_message(stored, "user", text, **extra)
         emit(sid, "session.info", {"running": True})
         emit(sid, "message.start", {})
         deadline = time.time() + max(0.0, seconds - 2)

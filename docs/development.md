@@ -312,10 +312,14 @@ end handing over: `-HERMES_SEND "write swift widgets" -HERMES_SEND_AFTER 6 -HERM
 chat answer 4009, new sockets are cut for `outage` seconds, and with `reap` (Hermes's is 20) a
 session no socket came back for in that many seconds is interrupted and let go, so the next resume
 gets a fresh, idle one with nothing to replay), `POST /api/mock/turn-elsewhere {session_id | profile,
-seconds, text, reply}` has Hermes start a turn in that chat by itself, as when a background process
-finishes (about 8 s; with `{"outage": 25, "reap": 20}` above in its middle, the app never hears it
-end: a stuck turn, `docs/chat.md` §4b; `-HERMES_STUCK_TURN <s>` holds the open chat that way that
-long after launch, without the mock's help), `POST /api/mock/freeze-sockets`
+seconds, text, reply, display_kind}` has Hermes start a turn in that chat by itself, as when a
+background process finishes (about 8 s; without `text` it answers a finished `message_agent`
+delivery's notice, tagged `process_complete` as the TUI gateway starts it, with the delivery
+runner's long command, its quoted JSON and its JSON reply under `Output:`, stored late under
+`--turn-isolation`; with `text`, `display_kind` (default `internal_notification`) tags it; with
+`{"outage": 25, "reap": 20}` above in its middle, the app never hears it end: a stuck turn,
+`docs/chat.md` §4b; `-HERMES_STUCK_TURN <s>` holds the open chat that way that long after launch,
+without the mock's help), `POST /api/mock/freeze-sockets`
 leaves them half-open, `POST /api/mock/history-down {seconds, status}` refuses stored chats' messages that
 long while the socket keeps working (a 502, or `status: 404` for a chat Hermes no longer has: a reply the app
 lost track of then says why, `docs/chat.md` §2), `POST /api/mock/stall {seconds}` freezes the backend the way Hermes's

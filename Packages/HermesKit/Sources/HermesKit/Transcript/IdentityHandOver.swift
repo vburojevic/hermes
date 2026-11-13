@@ -1,8 +1,9 @@
 import Foundation
 
-/// The stored rows that replace the ones shown while a turn ran (your message, the reply, and
-/// around a redirect the work before it and the redirect) keep their on-screen identities, so the
-/// rows aren't laid out again and open folds stay open (`docs/chat.md` §4).
+/// The stored rows that replace the ones shown while a turn ran (your message or the notice Hermes
+/// started the turn for, the reply, and around a redirect the work before it and the redirect)
+/// keep their on-screen identities, so the rows aren't laid out again and open folds stay open
+/// (`docs/chat.md` §4).
 public enum IdentityHandOver {
     /// Each stored row in `items` that takes over a row of `shown`, as stored id → on-screen id
     /// (a row whose stored copy kept its id is left out). Matched from the end; a reply never
@@ -33,6 +34,9 @@ public enum IdentityHandOver {
                 if case .assistant = row {
                     if case .assistant = stored { match = probe; break }
                     if isPersonsMessage(stored) { break } // no stored reply (yet): the message still matches
+                } else if case .notice = row {
+                    if case .notice = stored { match = probe; break }
+                    if isPersonsMessage(stored) { break }
                 } else if isPersonsMessage(stored) {
                     match = probe
                     break
