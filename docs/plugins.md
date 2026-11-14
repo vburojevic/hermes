@@ -309,7 +309,7 @@ What each device gets is its own preferences, set in the app and sent with `regi
 
 ### 5.5 Compatibility
 
-- Tested against Hermes Agent 0.22.2. It needs the hooks above (`VALID_HOOKS` in
+- Tested against Hermes Agent 0.23.1. It needs the hooks above (`VALID_HOOKS` in
   `hermes_cli/plugins.py`) and `command.dispatch` on the backend socket, so the app needs Bot Mode
   to reach it.
 - With `plugins.isolation: host`, Hermes refuses plugin delivery platforms: notifications and the
@@ -404,7 +404,7 @@ messaging platforms).
 
 ### 6.5 Compatibility
 
-Tested against Hermes Agent 0.22.2. It needs `jsonschema` and `referencing` (Hermes's `[all]`
+Tested against Hermes Agent 0.23.1. It needs `jsonschema` and `referencing` (Hermes's `[all]`
 extra) and `cryptography`. The app's commands need `command.dispatch`, so they need Bot Mode;
 without it, `app_platforms` stands in for the chat marks. A gateway without the plugin has no
 widgets, and agents answer in Markdown as before.
