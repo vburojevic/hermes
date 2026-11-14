@@ -20,6 +20,7 @@ final class DeviceSetup {
         static let microphone = "device.microphone"
         static let camera = "device.camera"
         static let deviceOwner = "device.faceID"
+        static let hiddenSuggestions = HiddenSuggestionsSync.id
     }
 
     /// A pane of System Settings: this app's own on iPhone and iPad, the privacy pane on the Mac.
@@ -33,6 +34,8 @@ final class DeviceSetup {
     private(set) var biometryError: LAError.Code?
     /// A passcode (or a Mac's password) is set, so approvals can be confirmed at all.
     private(set) var canConfirmOwner = true
+    /// Signed in to iCloud with it on for this app; nil token when off or signed out.
+    private(set) var iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
 
     func refresh() {
         microphone = AVAudioApplication.shared.recordPermission
@@ -43,6 +46,7 @@ final class DeviceSetup {
         biometry = context.biometryType
         biometryError = biometric ? nil : error.map { LAError.Code(rawValue: $0.code) } ?? nil
         canConfirmOwner = LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
+        iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
     }
 
     /// Every permission the app uses on this device.
@@ -52,7 +56,13 @@ final class DeviceSetup {
         all.append(cameraStatus)
         #endif
         all.append(deviceOwnerStatus)
+        all.append(hiddenSuggestionsStatus)
         return all
+    }
+
+    /// Whether plugins hidden from Suggested reach the person's other devices (`docs/setup.md` §4.22).
+    var hiddenSuggestionsStatus: SetupStatus {
+        HiddenSuggestionsSync(entitled: PluginHubModel.syncsHidden, iCloudAvailable: iCloudAvailable).setupStatus
     }
 
     var microphoneStatus: SetupStatus {

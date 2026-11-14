@@ -104,6 +104,7 @@ struct HermesApp: App {
         #endif
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { model.didEnterBackground() }
+            if phase == .active { PluginHubModel.syncHidden() }
             #if HERMES_PUSH
             if phase == .active { PushCenter.shared.sceneDidBecomeActive() }
             if phase == .inactive { PushCenter.shared.sceneWillResignActive() }

@@ -119,10 +119,13 @@ struct PluginOffersTests {
 
     @Test func hiddenAndShowAgain() {
         var answers = PluginAnswers()
-        answers.hide("blender")
+        var list = HiddenSuggestions()
+        list.hide("blender")
+        answers.hidden = list.hidden
         #expect(answers.isHidden("blender"))
         #expect(!answers.mayOffer("blender", at: "suggested"))
-        answers.showAgain("blender")
+        list.showAgain("blender")
+        answers.hidden = list.hidden
         #expect(!answers.isHidden("blender"))
         #expect(answers.mayOffer("blender", at: "suggested"))
     }
@@ -135,15 +138,18 @@ struct PluginOffersTests {
         #expect(answers.unseen(in: ["a", "b", "c"]).isEmpty)
     }
 
-    @Test func hiddenNamesKeepPerGateway() throws {
+    @MainActor @Test func hiddenNamesKeepPerGateway() throws {
         let defaults = try #require(UserDefaults(suiteName: "plugins-hidden-\(UUID().uuidString)"))
         let store = LocalHiddenSuggestions(defaults: defaults)
+        let studio = HiddenSuggestionsGateway(deviceID: "studio-mac"), nas = HiddenSuggestionsGateway(deviceID: "nas")
         let when = Date(timeIntervalSince1970: 1_700_000_000)
-        store.setHidden(["touchdesigner": when], gateway: "studio-mac")
-        #expect(store.hidden(gateway: "studio-mac") == ["touchdesigner": when])
-        #expect(store.hidden(gateway: "nas").isEmpty)
-        store.setHidden([:], gateway: "studio-mac")
-        #expect(store.hidden(gateway: "studio-mac").isEmpty)
+        var list = HiddenSuggestions()
+        list.hide("touchdesigner", on: when)
+        store.save(list, for: studio)
+        #expect(store.suggestions(for: studio).hidden == ["touchdesigner": when])
+        #expect(store.suggestions(for: nas).hidden.isEmpty)
+        store.forget(studio)
+        #expect(store.suggestions(for: studio).hidden.isEmpty)
     }
 
     // MARK: The catalog store

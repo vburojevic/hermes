@@ -596,6 +596,28 @@ desktop) is shown in Hermes's words with no Start. Installing from the app (`dis
 for the host's sudo password through a server request and isn't built, so the app gives the line
 to run. Docs: `user-guide/features/bot-screen`.
 
+### 4.22 Hidden Suggestions sync
+
+`HiddenSuggestionsSync` (HermesKit, `Plugins/PluginAnswers.swift`, tested in
+`HiddenSuggestionsSyncTests.swift`), shown by `DeviceSetup` under On This Device: whether plugins
+hidden from Suggested ([plugins.md](plugins.md) §9.3) reach the person's other devices. Nothing on
+the gateway takes part; it needs the build's iCloud key-value entitlement (the app reads
+`HermesICloudKeyValueSync` in Info.plist) and iCloud on this device
+(`FileManager.ubiquityIdentityToken`, read again with each check).
+
+| State | Told by | The app shows |
+|---|---|---|
+| Ready | The build has the entitlement and iCloud is on | "Synced with your other devices through iCloud." |
+| Partly set up | The build has the entitlement; iCloud is off or signed out here | "iCloud is off or signed out on this device.", the fallback, and the step: in Settings (System Settings on the Mac) → your name → iCloud, sign in, then turn on Hermes under Saved to iCloud |
+| Ready | The build has no iCloud entitlement | "This version of Hermes keeps them on this device.", the fallback, no steps |
+
+The fallback is the same for the last two: "Plugins you hide stay hidden on this device only."
+Without the entitlement the row is Ready, so it doesn't count as something to set up: hiding works,
+and nothing on the device can make it sync. There's no fix button: iOS and macOS have no link to
+iCloud's settings. Builds without the entitlement, the
+mocks' Debug builds included, always read as the last row. With `-HERMES_SETTINGS_SETUP
+device.hiddenSuggestions` the row's page opens straight away.
+
 ## 5. Mocks and launch flags
 
 `Tools/mock-hermes/setup.py` serves each "not set up" state: start the backend with `--setup
