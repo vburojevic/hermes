@@ -614,9 +614,9 @@ the gateway takes part; it needs the build's iCloud key-value entitlement (the a
 The fallback is the same for the last two: "Plugins you hide stay hidden on this device only."
 Without the entitlement the row is Ready, so it doesn't count as something to set up: hiding works,
 and nothing on the device can make it sync. There's no fix button: iOS and macOS have no link to
-iCloud's settings. Builds without the entitlement, the
-mocks' Debug builds included, always read as the last row. With `-HERMES_SETTINGS_SETUP
-device.hiddenSuggestions` the row's page opens straight away.
+iCloud's settings. Builds without the entitlement (the Mac's Debug builds) always read as the last
+row; iPhone and iPad builds carry it, so a simulator signed out of iCloud reads Partly set up.
+With `-HERMES_SETTINGS_SETUP device.hiddenSuggestions` the row's page opens straight away.
 
 ## 5. Mocks and launch flags
 

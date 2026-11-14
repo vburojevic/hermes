@@ -61,6 +61,10 @@
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<!-- Whether this build carries the iCloud key-value entitlement, so hidden plugins sync
+	     (docs/plugins.md §9.3). YES or NO, from a build setting in project.yml. -->
+	<key>HermesICloudKeyValueSync</key>
+	<string>$(HERMES_ICLOUD_KEY_VALUE_SYNC)</string>
 	<key>HermesAppGroup</key>
 	<string>$(HERMES_APP_GROUP)</string>
 	<key>HermesKeychainGroup</key>

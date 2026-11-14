@@ -268,6 +268,19 @@ struct HiddenSuggestionsSyncTests {
         #expect(notInBuild.setupStatus.steps.isEmpty)
     }
 
+    /// Info.plist's `HermesICloudKeyValueSync` comes from a build setting, so it reads as text:
+    /// "YES" where the build carries the entitlement, "NO" (the Mac's Debug builds) or nothing where not.
+    @Test func theInfoPlistFlagReadsAsTextOrABoolean() {
+        #expect(HiddenSuggestionsSync.entitled(infoValue: "YES"))
+        #expect(HiddenSuggestionsSync.entitled(infoValue: "yes"))
+        #expect(HiddenSuggestionsSync.entitled(infoValue: true))
+        #expect(!HiddenSuggestionsSync.entitled(infoValue: "NO"))
+        #expect(!HiddenSuggestionsSync.entitled(infoValue: ""))
+        #expect(!HiddenSuggestionsSync.entitled(infoValue: "$(HERMES_ICLOUD_KEY_VALUE_SYNC)"))
+        #expect(!HiddenSuggestionsSync.entitled(infoValue: false))
+        #expect(!HiddenSuggestionsSync.entitled(infoValue: nil))
+    }
+
     /// Settings → Setup's "N things to set up" counts only what the person can set up: a build
     /// without the entitlement never adds one, a device with iCloud off does.
     @Test func onlyICloudOffCountsAsSomethingToSetUp() {

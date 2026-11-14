@@ -2212,6 +2212,8 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				HERMES_APPCAST_URL = "";
+				HERMES_ICLOUD_KEY_VALUE_SYNC = YES;
+				"HERMES_ICLOUD_KEY_VALUE_SYNC[sdk=macosx*]" = NO;
 				HERMES_SPARKLE_PUBLIC_KEY = "";
 				HERMES_URL_SCHEME = "hermesapp-dev";
 				INFOPLIST_FILE = App/Resources/Info.plist;
@@ -2298,9 +2300,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "Push/App/Hermes-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "Push/App/Hermes-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Manual;
+				"CODE_SIGN_STYLE[sdk=macosx*]" = Manual;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -2308,6 +2313,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				HERMES_APPCAST_URL = "https://github.com/vburojevic/hermes-releases/releases/latest/download/appcast.xml";
+				HERMES_ICLOUD_KEY_VALUE_SYNC = YES;
 				HERMES_SPARKLE_PUBLIC_KEY = "IUPLRKpg3gIVLpvG7a59SUTYCB6j707Jwmk9oYNlP4c=";
 				HERMES_URL_SCHEME = hermesapp;
 				INFOPLIST_FILE = App/Resources/Info.plist;
@@ -2333,7 +2339,8 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = co.caffeinatedcode.hermes;
 				PRODUCT_NAME = Hermes;
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Hermes App Store";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Hermes App Store iCloud";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "Hermes Developer ID";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;

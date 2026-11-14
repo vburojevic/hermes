@@ -49,13 +49,17 @@ BUNDLE_ID="co.caffeinatedcode.hermes"
 ASC_APP_ID="6822000332"
 APP_GROUP="group.co.caffeinatedcode.hermes"
 # App Store profiles on Distribution P6CMUV82AA, by bundle id: the app and its push extensions
-# (docs/notifications.md). The iOS archive signs with them by hand (project.yml, Release).
+# (docs/notifications.md). The iOS archive signs with them by hand (project.yml, Release). The app's
+# carries the iCloud key-value entitlement (hidden plugins sync, docs/plugins.md §9.3).
 IOS_PROFILES=(
-  "$BUNDLE_ID|Hermes App Store"
+  "$BUNDLE_ID|Hermes App Store iCloud"
   "$BUNDLE_ID.NotificationService|Hermes Notifications App Store"
   "$BUNDLE_ID.NotificationContent|Hermes Requests App Store"
   "$BUNDLE_ID.Widgets|Hermes Widgets App Store"
 )
+# The Mac app's Developer ID profile, for the same iCloud key-value entitlement (project.yml, Release).
+MAC_PROFILE="Hermes Developer ID"
+PROFILES_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 INFISICAL_PROJECT="2afda67b-d54c-4256-808e-a6027fc22c15"
 ESCROW="/shared/apple/signing-caf73-20261005-e4rd77v8r4"
 ASC_KEY_ID="8BNZ87QD3D"
@@ -317,9 +321,11 @@ archive() { # <iOS|macOS>
   log "archive $1"
   # Both sign by hand with the escrowed identities, so no development certificate is ever minted:
   # iOS with project.yml's App Store profiles (push needs the production aps-environment), the Mac
-  # with Developer ID (it has no entitlements, so no profile), re-signed after export below.
+  # with Developer ID and project.yml's Developer ID profile (the iCloud key-value entitlement needs
+  # one), re-signed after export below. The profile stays set on the app target alone: given here,
+  # it would reach every target the archive builds, and not all of them can take a profile.
   local style=()
-  [ "$1" = macOS ] && style=(CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$DEVID_SHA" PROVISIONING_PROFILE_SPECIFIER=)
+  [ "$1" = macOS ] && style=(CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$DEVID_SHA")
   "${XCB[@]}" archive -project Hermes.xcodeproj -scheme Hermes -configuration Release \
     -destination "generic/platform=$1" -archivePath "$OUT/Hermes-$1.xcarchive" -derivedDataPath "$RELEASE_DERIVED_DATA" \
     -allowProvisioningUpdates "${AUTH[@]}" DEVELOPMENT_TEAM="$TEAM_ID" ${style[@]+"${style[@]}"} \
@@ -335,24 +341,39 @@ assert_release_app() { # <Info.plist> <binary> — the real app, never the demo 
   if grep -q HERMES_BOOTSTRAP <<<"$text"; then echo "demo bootstrap compiled into a Release build"; exit 1; fi
 }
 
+install_profile() { # <name> <mobileprovision|provisionprofile> — the one active profile so named
+  # Installed where Xcode looks and recorded, so the cleanup removes it unless it was there before.
+  local name="$1" kind="$2" id profile uuid installed
+  id="$("${ASC[@]}" profiles list --name "$name" --profile-state ACTIVE --fields name --output json \
+    | jq -r --arg name "$name" '[.data[] | select(.attributes.name == $name)] | if length == 1 then .[0].id else empty end')"
+  [ -n "$id" ] || { echo "no single active profile named \"$name\""; exit 1; }
+  profile="$WORK/$id.$kind"
+  "${ASC[@]}" profiles download --id "$id" --output "$profile" >/dev/null
+  uuid="$(security cms -D -i "$profile" | plutil -extract UUID raw -o - -)"
+  installed="$PROFILES_DIR/$uuid.$kind"
+  [ -e "$installed" ] || echo "$installed" >> "$INSTALLED_PROFILES"
+  cp "$profile" "$installed"
+  printf '%s (%s)' "$name" "$id"
+}
+
+entitlement() { # <bundle> <key path>
+  codesign -d --entitlements - --xml "$1" 2>/dev/null > "$WORK/entitlements.plist"
+  /usr/libexec/PlistBuddy -c "Print :$2" "$WORK/entitlements.plist" 2>/dev/null || true
+}
+expect() { # <bundle> <key path> <value>
+  [ "$(entitlement "$1" "$2")" = "$3" ] || { echo "$(basename "$1"): $2 isn't $3"; exit 1; }
+}
+
 # --- iOS → TestFlight ----------------------------------------------------------------------------
 if [ $IOS = 1 ]; then
   log "App Store profiles"
-  mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+  mkdir -p "$PROFILES_DIR"
   PROFILE_MAP=""
   for entry in "${IOS_PROFILES[@]}"; do
     bundle="${entry%%|*}" name="${entry#*|}"
-    id="$("${ASC[@]}" profiles list --name "$name" --profile-state ACTIVE --fields name --output json \
-      | jq -r --arg name "$name" '[.data[] | select(.attributes.name == $name)] | if length == 1 then .[0].id else empty end')"
-    [ -n "$id" ] || { echo "no single active profile named \"$name\""; exit 1; }
-    profile="$WORK/$id.mobileprovision"
-    "${ASC[@]}" profiles download --id "$id" --output "$profile" >/dev/null
-    uuid="$(security cms -D -i "$profile" | plutil -extract UUID raw -o - -)"
-    installed="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.mobileprovision"
-    [ -e "$installed" ] || echo "$installed" >> "$INSTALLED_PROFILES"
-    cp "$profile" "$installed"
+    install_profile "$name" mobileprovision
+    echo " → $bundle"
     PROFILE_MAP+="<key>$bundle</key><string>$name</string>"
-    echo "$name ($id) → $bundle"
   done
 
   archive iOS
@@ -384,13 +405,6 @@ EOF
   # Push only works if the signed entitlements say so: production APNs, Time Sensitive and
   # communication notifications, and the App Group the extensions share with the app.
   unzip -q "$IPA" -d "$WORK/ipa"
-  entitlement() { # <bundle> <key path>
-    codesign -d --entitlements - --xml "$1" 2>/dev/null > "$WORK/entitlements.plist"
-    /usr/libexec/PlistBuddy -c "Print :$2" "$WORK/entitlements.plist" 2>/dev/null || true
-  }
-  expect() { # <bundle> <key path> <value>
-    [ "$(entitlement "$1" "$2")" = "$3" ] || { echo "$(basename "$1"): $2 isn't $3"; exit 1; }
-  }
   PAYLOAD="$WORK/ipa/Payload/Hermes.app"
   expect "$PAYLOAD" aps-environment production
   expect "$PAYLOAD" com.apple.developer.usernotifications.time-sensitive true
@@ -405,6 +419,9 @@ EOF
   # this the Camera opens them in Safari instead of Hermes.
   expect "$PAYLOAD" com.apple.developer.associated-domains:0 applinks:hermesapp.dev
   echo "pairing links ok (applinks:hermesapp.dev)"
+  # Plugins hidden from Suggested sync through iCloud key-value storage (docs/plugins.md §9.3).
+  expect "$PAYLOAD" com.apple.developer.ubiquity-kvstore-identifier "$TEAM_ID.$BUNDLE_ID"
+  echo "iCloud key-value entitlement ok (iOS)"
   # altool finds the key only under ./private_keys.
   mkdir -p "$WORK/private_keys" && cp "$ASC_KEY_PATH" "$WORK/private_keys/"
   (cd "$WORK" && xcrun altool --validate-app -f "$IPA" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format json > "$OUT/validate-iOS.json" 2>&1) \
@@ -422,6 +439,10 @@ fi
 
 # --- macOS → notarized DMG + Sparkle ---------------------------------------------------------------
 if [ $MAC = 1 ]; then
+  log "Developer ID profile"
+  mkdir -p "$PROFILES_DIR"
+  install_profile "$MAC_PROFILE" provisionprofile
+  echo " → $BUNDLE_ID"
   archive macOS
   log "export macOS (Developer ID)"
   cat > "$OUT/ExportOptions-macOS.plist" <<EOF
@@ -433,6 +454,7 @@ if [ $MAC = 1 ]; then
   <key>teamID</key><string>$TEAM_ID</string>
   <key>signingStyle</key><string>manual</string>
   <key>signingCertificate</key><string>$DEVID_SHA</string>
+  <key>provisioningProfiles</key><dict><key>$BUNDLE_ID</key><string>$MAC_PROFILE</string></dict>
 </dict></plist>
 EOF
   "${XCB[@]}" -exportArchive -archivePath "$OUT/Hermes-macOS.xcarchive" -exportPath "$OUT/mac" \
@@ -453,6 +475,15 @@ EOF
   done
   codesign --force --options runtime --timestamp --preserve-metadata=entitlements,requirements,flags --sign "$DEVID_SHA" "$APP"
   codesign --verify --deep --strict "$APP"
+  # Hidden plugins sync through iCloud key-value storage (docs/plugins.md §9.3): the re-signed app
+  # keeps the entitlement, and embeds the Developer ID profile that allows it, or it won't launch.
+  [ -f "$APP/Contents/embedded.provisionprofile" ] || { echo "Hermes.app: no embedded.provisionprofile"; exit 1; }
+  embedded="$(security cms -D -i "$APP/Contents/embedded.provisionprofile" 2>/dev/null | plutil -extract Name raw -o - - 2>/dev/null || true)"
+  [ "$embedded" = "$MAC_PROFILE" ] || { echo "Hermes.app: the embedded profile isn't \"$MAC_PROFILE\""; exit 1; }
+  expect "$APP" com.apple.developer.ubiquity-kvstore-identifier "$TEAM_ID.$BUNDLE_ID"
+  # The microphone entitlement comes from a build setting (project.yml); it must survive the file.
+  expect "$APP" com.apple.security.device.audio-input true
+  echo "iCloud key-value entitlement ok (macOS, $MAC_PROFILE)"
   # The loader must find the embedded framework (the trap that once shipped dead DMGs).
   RPATHS="$(otool -l "$APP/Contents/MacOS/Hermes" | awk '/LC_RPATH/ {getline; getline; print $2}')"
   case "$RPATHS" in *"@executable_path/../Frameworks"*) ;; *) echo "missing @executable_path/../Frameworks rpath"; exit 1 ;; esac

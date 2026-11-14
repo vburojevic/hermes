@@ -76,7 +76,7 @@ final class PluginHubModel {
     static let hiddenStore: any HiddenSuggestionStore = syncsHidden ? CloudHiddenSuggestions() : LocalHiddenSuggestions()
 
     static var syncsHidden: Bool {
-        Bundle.main.object(forInfoDictionaryKey: "HermesICloudKeyValueSync") as? Bool == true
+        HiddenSuggestionsSync.entitled(infoValue: Bundle.main.object(forInfoDictionaryKey: "HermesICloudKeyValueSync"))
     }
 
     /// This device's id for the gateway, and, when they sync, the key every device shares for it:

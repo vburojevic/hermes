@@ -547,14 +547,16 @@ holds one gateway's list.
 - **Which applies** shows in Settings → Setup → On This Device → Hidden Suggestions
   ([setup.md](setup.md) §4.22): synced, this device only because iCloud is off or signed out (with
   the steps to sign in), or this device only because the build has no iCloud entitlement.
-- **The entitlement** takes three things outside the code. In the developer portal, iCloud with
-  key-value storage on the App IDs `co.caffeinatedcode.hermes` and `co.caffeinatedcode.hermes.dev`;
-  then the App Store provisioning profile(s) and the Mac Developer ID profile regenerated so they
-  carry it. In the app's entitlements (iOS and Mac),
-  `com.apple.developer.ubiquity-kvstore-identifier` = `$(TeamIdentifierPrefix)$(CFBundleIdentifier)`,
-  so the iPhone, iPad and Mac apps share one store (and the dev app its own). And
-  `HermesICloudKeyValueSync` = `YES` in Info.plist (`project.yml`). A build without them keeps each
-  device's list on that device, as above.
+- **The entitlement** ships in every iPhone and iPad build and in the Mac's Release builds:
+  `com.apple.developer.ubiquity-kvstore-identifier` = `$(TeamIdentifierPrefix)$(CFBundleIdentifier)`
+  (`Push/App/Hermes-iOS.entitlements`, `Push/App/Hermes-macOS.entitlements`), so the iPhone, iPad
+  and Mac apps share one store (and the dev app its own). iCloud with key-value storage is on for the
+  App IDs `co.caffeinatedcode.hermes` and `co.caffeinatedcode.hermes.dev`, and releases sign with
+  profiles that carry it ([releasing.md](releasing.md)). `HermesICloudKeyValueSync` in Info.plist
+  follows it, from the `HERMES_ICLOUD_KEY_VALUE_SYNC` build setting (`project.yml`). Mac Debug
+  builds ("Hermes Dev") go without: the entitlement would need a development profile, which only a
+  developer portal change makes, so they keep hidden names on that Mac, as above. A device build
+  of the dev app on an iPhone or iPad needs its development profile refreshed in Xcode once.
 
 ## 10. Open points
 
