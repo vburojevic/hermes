@@ -606,6 +606,18 @@ final class BotRoster {
         }
     }
 
+    /// Hermes's version for something that depends on it (how large a file it takes,
+    /// `FileUpload.limit`): the read that runs beside the connect, waited for up to `timeout`.
+    /// Nil when it hasn't landed by then.
+    func hermesVersion(waitingUpTo timeout: Duration) async -> String? {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while version == nil, versionTask != nil, clock.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        return version
+    }
+
     /// Opens `/api/ws`. A local backend's token changes on restart, so on a refusal the
     /// token is read again once.
     private func openSocket() async throws -> GatewaySocket {
