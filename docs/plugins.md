@@ -514,20 +514,52 @@ tests never reach the network.
 - **Answers** (`PluginAnswers`): Not Now (an offer card) answers that moment for that gateway on
   this device, and the card may come back once at its next natural moment after 14 days. Don't
   Suggest Again (a row's or card's … menu) moves it to Hidden Suggestions until Show Again; it
-  stays in the catalog. Hidden names are kept per gateway behind `HiddenSuggestionStore`: on this
-  device for now, and in iCloud key-value storage (`CloudHiddenSuggestions`) once the app has that
-  entitlement and `HermesICloudKeyValueSync` is set. Remove puts a plugin back in Suggested (the
-  app's) or the catalog.
+  stays in the catalog. Hidden names are kept per gateway and follow the person's devices (§9.3).
+  Remove puts a plugin back in Suggested (the app's) or the catalog.
+
+### 9.3 Hidden Suggestions on every device
+
+`HiddenSuggestions`, `HiddenSuggestionStore` and its two stores (HermesKit,
+`Plugins/PluginAnswers.swift`, tested in `HiddenSuggestionsSyncTests.swift`); `PluginHubModel`
+holds one gateway's list.
+
+- **What's kept:** each name with its last answer and when: hidden (Don't Suggest Again) or shown
+  again (Show Again, kept as a dated tombstone). Two lists merge name by name and the newer answer
+  wins, so hiding one plugin on the iPhone and showing another again on the Mac both survive; equal
+  dates keep it hidden. A tap starts from every answer that has reached that device and is dated after
+  them, even when another device's clock ran ahead; an answer still on its way can outrank it. Tombstones older than 180 days are dropped.
+- **This device** (`LocalHiddenSuggestions`): UserDefaults, under the gateway's id on this device.
+  A list from before tombstones (names and dates) is read as all hidden and rewritten.
+  Forgetting a gateway drops this device's copy only.
+- **Every device** (`CloudHiddenSuggestions`): iCloud key-value storage as well, in builds with the
+  iCloud key-value entitlement (`HermesICloudKeyValueSync` set in Info.plist). Every device asks
+  the gateway for its machine's name (`GET /api/system/stats` `hostname`); the key is
+  `hidden-suggestions.` and the first 32 hex digits of that name's SHA-256, trimmed, lowercased and
+  without `.local`, so it's 51 bytes (iCloud allows 64 here) and no URL, address, key or token the
+  person typed goes into it. Each read and write merges this device's copy with iCloud's and writes
+  the result to whichever lacks it, then calls `synchronize()`; so does the app each time it
+  becomes active, launch included.
+  `didChangeExternallyNotification` (another device, or the first sync) merges the changed keys
+  into each gateway that uses them and Suggested and Hidden Suggestions follow on screen. Over
+  quota, or another Apple Account (or none), this device's copy stays as it is and is never wiped;
+  the next read or write merges it with whatever iCloud holds then. A copy in iCloud this version
+  can't read is left for the newer version that wrote it.
+- **Which applies** shows in Settings → Setup → On This Device → Hidden Suggestions
+  ([setup.md](setup.md) §4.22): synced, this device only because iCloud is off or signed out (with
+  the steps to sign in), or this device only because the build has no iCloud entitlement.
+- **The entitlement** takes three things outside the code. In the developer portal, iCloud with
+  key-value storage on the App IDs `co.caffeinatedcode.hermes` and `co.caffeinatedcode.hermes.dev`;
+  then the App Store provisioning profile(s) and the Mac Developer ID profile regenerated so they
+  carry it. In the app's entitlements (iOS and Mac),
+  `com.apple.developer.ubiquity-kvstore-identifier` = `$(TeamIdentifierPrefix)$(CFBundleIdentifier)`,
+  so the iPhone, iPad and Mac apps share one store (and the dev app its own). And
+  `HermesICloudKeyValueSync` = `YES` in Info.plist (`project.yml`). A build without them keeps each
+  device's list on that device, as above.
 
 ## 10. Open points
 
-- **Syncing Hidden Suggestions.** The app has no iCloud entitlement yet, so hidden names stay on
-  each device. To sync them: turn on iCloud with key-value storage for the app's App IDs (iOS and
-  Mac) in the developer portal, regenerate the App Store profiles and the Mac Developer ID profile
-  in the signing escrow, add `com.apple.developer.ubiquity-kvstore-identifier =
-  $(TeamIdentifierPrefix)$(CFBundleIdentifier)` to both entitlements, and set
-  `HermesICloudKeyValueSync` to `YES` in the Info.plist (`project.yml`). `CloudHiddenSuggestions`
-  then keys them by the gateway's hostname, which every device sees the same.
+- **Two gateways on one machine** (another port, the same `hostname`) share one iCloud list of
+  Hidden Suggestions (§9.3): Hermes reports no id of its own that every device reads the same.
 - **Git links** install as they did (`install {repo, ref, enable: true}` from Install from a Git
   Link…). The design's review first (install with `enable: false`, read the manifest, review, then
   `toggle`) needs the manifest's hooks, which `plugins.manage list` doesn't report.

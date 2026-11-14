@@ -140,6 +140,7 @@ struct SetupOverviewView: View {
         case DeviceSetup.ID.microphone: "mic"
         case DeviceSetup.ID.camera: "camera"
         case DeviceSetup.ID.deviceOwner: "faceid"
+        case DeviceSetup.ID.hiddenSuggestions: "icloud"
         default: "gearshape"
         }
     }

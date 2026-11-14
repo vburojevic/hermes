@@ -32,6 +32,7 @@ final class PluginHubModel {
     /// The feed was asked for at least once (nil catalog after that: it couldn't be read).
     private(set) var catalogChecked = false
     private(set) var system: GatewaySystem?
+    /// `answers.hidden` mirrors the names `hiddenStore` keeps hidden now (`docs/plugins.md` §9.3).
     private(set) var answers: PluginAnswers
     private(set) var runs: [String: Run] = [:]
     /// Catalog entries' state on the gateway, for their reviews.
@@ -44,9 +45,10 @@ final class PluginHubModel {
         gatewayID = workspace.id
         var answers = (UserDefaults.standard.data(forKey: "plugins.answers.\(workspace.id.uuidString)"))
             .flatMap { try? JSONDecoder().decode(PluginAnswers.self, from: $0) } ?? PluginAnswers()
-        // This device's copy; once they sync, `load()` adds the gateway's shared one.
-        answers.hidden = Self.hiddenStore.hidden(gateway: workspace.id.uuidString)
+        let list = Self.hiddenStore.suggestions(for: HiddenSuggestionsGateway(deviceID: workspace.id.uuidString))
+        answers.hidden = list.hidden
         self.answers = answers
+        observeHidden()
     }
 
     // MARK: Where things come from
@@ -68,19 +70,35 @@ final class PluginHubModel {
         }
     }()
 
-    /// Hidden names stay on this device until the app has iCloud key-value storage
-    /// (`HermesICloudKeyValueSync` in Info.plist); then every device agrees.
+    /// Hidden names stay on this device in builds without iCloud key-value storage
+    /// (`HermesICloudKeyValueSync` in Info.plist); with it, every device merges its list
+    /// (`docs/plugins.md` §9.3).
     static let hiddenStore: any HiddenSuggestionStore = syncsHidden ? CloudHiddenSuggestions() : LocalHiddenSuggestions()
 
     static var syncsHidden: Bool {
         Bundle.main.object(forInfoDictionaryKey: "HermesICloudKeyValueSync") as? Bool == true
     }
 
-    /// Hidden names are kept by gateway: this device's id for it, or, when they sync, the
-    /// gateway's hostname, which every device sees the same.
-    private var hiddenKey: String {
-        guard Self.syncsHidden, let host = system?.hostname, !host.isEmpty else { return gatewayID.uuidString }
-        return host.lowercased()
+    /// This device's id for the gateway, and, when they sync, the key every device shares for it:
+    /// the gateway's machine, which each device reads the same.
+    private var hiddenGateway: HiddenSuggestionsGateway {
+        let shared = Self.syncsHidden ? system.flatMap { HiddenSuggestionKey.shared(hostname: $0.hostname) } : nil
+        return HiddenSuggestionsGateway(deviceID: gatewayID.uuidString, sharedKey: shared)
+    }
+
+    /// At launch and on coming back to the front: iCloud brings what other devices changed
+    /// meanwhile, and `didChangeExternallyNotification` merges it.
+    static func syncHidden() {
+        (hiddenStore as? CloudHiddenSuggestions)?.synchronize()
+    }
+
+    /// Another device hid or showed a plugin: Suggested follows.
+    private func observeHidden() {
+        Self.hiddenStore.observe(hiddenGateway) { [weak self] list in self?.applyHidden(list) }
+    }
+
+    private func applyHidden(_ list: HiddenSuggestions) {
+        if answers.hidden != list.hidden { answers.hidden = list.hidden }
     }
 
     private var roster: BotRoster? { workspace?.roster }
@@ -96,7 +114,8 @@ final class PluginHubModel {
         if system == nil, let backend = roster?.backendClient, isOnline {
             system = try? await backend.system()
             if Self.syncsHidden, system != nil {
-                answers.hidden.merge(Self.hiddenStore.hidden(gateway: hiddenKey)) { mine, _ in mine }
+                applyHidden(Self.hiddenStore.suggestions(for: hiddenGateway))
+                observeHidden()
             }
         }
         catalog = await feed
@@ -180,22 +199,18 @@ final class PluginHubModel {
 
     // MARK: Answers
 
+    // Each tap starts from the store's list, so every mark that has reached this device is in it
+    // and the tap is dated after them (`docs/plugins.md` §9.3).
     func hide(_ name: String) {
-        answers.hide(name)
-        storeHidden()
+        var list = Self.hiddenStore.suggestions(for: hiddenGateway)
+        list.hide(name)
+        applyHidden(Self.hiddenStore.save(list, for: hiddenGateway))
     }
 
     func showAgain(_ name: String) {
-        answers.showAgain(name)
-        storeHidden()
-    }
-
-    /// Under this device's id, and under the gateway's shared key when they sync, so the next
-    /// launch reads the same names either way.
-    private func storeHidden() {
-        Self.hiddenStore.setHidden(answers.hidden, gateway: gatewayID.uuidString)
-        if hiddenKey != gatewayID.uuidString { Self.hiddenStore.setHidden(answers.hidden, gateway: hiddenKey) }
-        save()
+        var list = Self.hiddenStore.suggestions(for: hiddenGateway)
+        list.showAgain(name)
+        applyHidden(Self.hiddenStore.save(list, for: hiddenGateway))
     }
 
     func notNow(_ name: String, at moment: AppPlugin.Moment) {
@@ -225,8 +240,8 @@ final class PluginHubModel {
         answers = PluginAnswers()
         newNames = []
         UserDefaults.standard.removeObject(forKey: "plugins.answers.\(gatewayID.uuidString)")
-        Self.hiddenStore.setHidden([:], gateway: hiddenKey)
-        if hiddenKey != gatewayID.uuidString { Self.hiddenStore.setHidden([:], gateway: gatewayID.uuidString) }
+        // This device's copy only: the person's other devices may still use the gateway.
+        Self.hiddenStore.forget(hiddenGateway)
     }
 
     /// Entries known only from `plugins.catalog.lookup`, when the feed can't be read.
