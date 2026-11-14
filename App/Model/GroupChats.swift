@@ -103,10 +103,14 @@ final class GroupRooms {
                 continue
             }
             guard latest > seen, countedSeq[room.id] != latest else { continue }
+            // Read from near where the person got to, page by page: a room whose log ran past one
+            // page counted none of its news. A read that fails is tried again at the next refresh.
+            guard let found = try? await RoomTranscript.countUnread(after: seen, latest: latest, names: PushShared.current.preferences.mentionNames, read: { since, limit in
+                let page = try await roster.request("groups.log", ["room_id": .string(room.id), "since_seq": .number(Double(since)), "limit": .number(Double(limit))])
+                guard let page = RoomLogPage.parse(page) else { throw URLError(.cannotParseResponse) }
+                return page
+            }) else { continue }
             countedSeq[room.id] = latest
-            guard let page = try? await roster.request("groups.log", ["room_id": .string(room.id), "since_seq": .number(0), "limit": .number(200)]),
-                  case .array(let rows)? = page["events"] else { continue }
-            let found = RoomTranscript.unread(rows.compactMap(RoomEvent.parse), after: seen, names: PushShared.current.preferences.mentionNames)
             unreadCounts[room.id] = found.count
             mentions[room.id] = found.mention
         }
