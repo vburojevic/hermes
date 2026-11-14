@@ -378,6 +378,15 @@ swapped for the turn's own row when it drains and left as it is when Stop emptie
 Hermes does. Every refusal but the owner's busy one leaves staged photos for the next prompt, as Hermes does,
 until `image.detach` takes them back by the `path` `image.attach_bytes` answered, and a turn takes
 what was staged for it. A message that is exactly "stop talking" answers `{voice_stopped: true}`.
+Files attach as on Hermes, and the backend log prints each one's name and size as it arrives
+(`file.attach`, `pdf.attach`, then the `@file:` references `prompt.submit` carried). A file whose
+name has "refuseupload" is refused as a full disk would be (5028 `[Errno 28] No space left on
+device`), "toolarge" as over the 256 MB cap, and a PDF named with "nopdftoppm" as on a gateway
+without poppler (5028), so it goes again with `file.attach`. `POST /api/mock/close-sessions` closes
+every idle chat's session as another client's `session.close` would, with the sockets left up: the
+next upload or prompt on it answers 4001 "session not found", and the app resumes and sends again.
+`--hermes-version` (default 0.21.6) is the version `/api/status` reports; before 0.23.1 the socket
+closes with 1009 on a message over 16 MiB, as uvicorn's did, so a file over about 12 MB never arrives.
 `session.steer` refuses 4010 "agent does not support steer" in a turn's first half second (its
 agent being built; 6 s when the message says "cold start", as on a loaded Mac) and answers `rejected` when idle; while Hermes compacts the chat (a "snapshot"
 message with "compact", or a Bot Chat's "slow … compact", compacts for 8 s after its first step,

@@ -15,6 +15,8 @@ Scripted chat behaviour by message content (gateway-protocol events):
   anything else       -> a plan, a web search, a command and a file edit, then the answer
 """
 
+import base64
+import binascii
 import json
 import re
 import threading
@@ -57,6 +59,9 @@ def install(backend_globals, gateway_module):
     def submit(params):
         sid = params.get("session_id") or ""
         runtime = B["RUNTIME"].get(sid)
+        refs = re.findall(r"@file:\S+", params.get("text") or "")
+        if refs:
+            print(f"[mock-hermes] prompt.submit with {', '.join(refs)}", flush=True)
         if runtime is None or runtime.get("kind") != "chat":
             return original["prompt.submit"](params)
         return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")))
@@ -222,9 +227,32 @@ def switch_model(sid, value):
         emit(each, "session.info", {**info, "running": B["RUNTIME"][each]["running"]})
 
 
+def _payload_size(encoded):
+    try:
+        return len(base64.b64decode(encoded, validate=True))
+    except (ValueError, binascii.Error):
+        return None
+
+
 def file_attach(params):
+    # Like `tui_gateway` `file.attach`: 4015 without bytes, 5028 with the reason for a payload it
+    # can't decode (`_stage_session_file_attachment`). A name with "refuseupload" is refused as a
+    # full disk would be, and one with "toolarge" as a file over Hermes's 256 MB cap.
     B["runtime_for"](params)
     name = params.get("name") or "file"
+    data_url = str(params.get("data_url") or "").strip()
+    if not data_url and not params.get("path"):
+        raise B["RPCError"](4015, "path or data_url required")
+    # The `data:…;base64,` wrapper is optional: bare base64 decodes too (`_b64_payload`).
+    match = re.match(r"^data:[^;,]*(?:;[^;,=]+=[^;,]+)*;base64,(.*)$", data_url, re.DOTALL | re.IGNORECASE)
+    size = _payload_size(re.sub(r"\s+", "", match.group(1) if match else data_url))
+    print(f"[mock-hermes] file.attach {name!r}: {size if size is not None else 'bad'} bytes", flush=True)
+    if size is None:
+        raise B["RPCError"](5028, "invalid data_url payload")
+    if "refuseupload" in name:
+        raise B["RPCError"](5028, f"[Errno 28] No space left on device: '{name}'")
+    if "toolarge" in name:
+        raise B["RPCError"](5028, f"attachment too large ({size} bytes; cap is 256 MB)")
     path = f"/home/hermes/.hermes/uploads/{uuid.uuid4().hex[:6]}/{name}"
     return {"attached": True, "name": name, "path": path, "ref_path": path, "ref_text": f"@file:{path}", "uploaded": True}
 
@@ -232,8 +260,10 @@ def file_attach(params):
 def pdf_attach(params):
     B["runtime_for"](params)
     name = params.get("filename") or "document.pdf"
+    size = _payload_size(str(params.get("content_base64") or ""))
+    print(f"[mock-hermes] pdf.attach {name!r}: {size if size is not None else 'bad'} bytes", flush=True)
     if "nopdftoppm" in name:
-        raise B["RPCError"](5000, "pdftoppm is not installed on this host")
+        raise B["RPCError"](5028, "pdftoppm not installed (poppler-utils package required)")
     return {"attached": True, "filename": name, "pages_attached": 2,
             "pages": [{"path": f"/tmp/{name}-1.png", "page": 1}, {"path": f"/tmp/{name}-2.png", "page": 2}],
             "count": 2, "text": ""}

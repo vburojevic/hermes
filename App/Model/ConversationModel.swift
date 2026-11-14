@@ -5173,20 +5173,34 @@ extension ConversationModel {
                     await takeBack(staged, runtime: runtime, roster: roster)
                     staged = StagedImages()
                 }
-                stagedOn = runtime
-                for (index, image) in images.enumerated() {
-                    staged.staged(try await roster.request("image.attach_bytes", [
-                        "session_id": .string(runtime),
-                        "content_base64": .string(image.jpegData.base64EncodedString()),
-                        "filename": .string("image-\(index + 1).jpg"),
-                    ]))
+                var references: [String] = []
+                var resumed = false
+                uploading: while true {
+                    do {
+                        stagedOn = runtime
+                        for (index, image) in images.enumerated() {
+                            staged.staged(try await roster.request("image.attach_bytes", [
+                                "session_id": .string(runtime),
+                                "content_base64": .string(image.jpegData.base64EncodedString()),
+                                "filename": .string("image-\(index + 1).jpg"),
+                            ]))
+                        }
+                        references = []
+                        for file in files {
+                            references.append(try await attach(file, runtime: runtime, roster: roster, staged: &staged))
+                        }
+                        break uploading
+                    } catch let error as GatewayRPCError where error.isSessionNotFound && !resumed {
+                        // The backend no longer has this runtime id (another client closed the session,
+                        // or a restart): what was staged went with it. Resume and upload again, once.
+                        resumed = true
+                        staged = StagedImages()
+                        runtimeSessionID = nil
+                        runtime = try await ensureRuntime()
+                    }
                 }
                 if !images.isEmpty, let key = stableKey {
                     workspace?.imageStore.remember(images, conversation: key, text: text)
-                }
-                var references: [String] = []
-                for file in files {
-                    references.append(try await attach(file, runtime: runtime, roster: roster, staged: &staged))
                 }
                 if let transcription, text.isEmpty {
                     // Hermes reads the words, not the recording: the prompt waits for them.
@@ -5357,7 +5371,7 @@ extension ConversationModel {
                     refused(refusal, text: text, images: images, files: files)
                     return
                 }
-                if !isBotChat, submitted == nil, !(error is GatewayRPCError) || failure == .notSent {
+                if !isBotChat, submitted == nil, !(error is GatewayRPCError || error is FileRefusal) || failure == .notSent {
                     // The socket couldn't take it and the prompt never left; the API server still can,
                     // if nothing started. Never around an answer Hermes gave: that would be a second
                     // writer, or a second copy of a message it may hold.
@@ -5469,21 +5483,44 @@ extension ConversationModel {
     /// pages go as images (`pdf.attach`, which needs pdftoppm on the gateway), anything else, or
     /// a PDF the gateway can't render, as an `@file:` reference (`file.attach`).
     private func attach(_ file: FileAttachment, runtime: String, roster: BotRoster, staged: inout StagedImages) async throws -> String {
-        if file.isPDF {
-            if let result = try? await roster.request("pdf.attach", [
-                "session_id": .string(runtime),
-                "content_base64": .string(file.data.base64EncodedString()),
-                "filename": .string(file.name),
-            ], timeout: .seconds(120)), result["attached"]?.boolValue != false {
-                staged.staged(result) // its pages go as photos
-                return AttachedFiles.pdfNote(name: file.name)
+        // The file goes whole in one socket frame, and a Hermes before 0.23.1 closes the socket on a
+        // frame over 16 MiB: the message would never arrive, and a Bot Chat would try again forever.
+        if file.data.count > FileUpload.olderHermesLimit {
+            let version = await roster.hermesVersion(waitingUpTo: .seconds(5))
+            if file.data.count > FileUpload.limit(hermesVersion: version) {
+                throw FileRefusal.tooLargeForThisHermes(name: file.name)
             }
         }
-        let result = try await roster.request("file.attach", [
-            "session_id": .string(runtime),
-            "data_url": .string(file.dataURL),
-            "name": .string(file.name),
-        ], timeout: .seconds(120))
+        if file.isPDF {
+            do {
+                let result = try await roster.request("pdf.attach", [
+                    "session_id": .string(runtime),
+                    "content_base64": .string(file.data.base64EncodedString()),
+                    "filename": .string(file.name),
+                ], timeout: .seconds(120))
+                if result["attached"]?.boolValue != false {
+                    staged.staged(result) // its pages go as photos
+                    return AttachedFiles.pdfNote(name: file.name)
+                }
+            } catch where FileRefusal(name: file.name, refusing: error) == nil {
+                // A lost session or socket is the send's to handle, not a reason to go as a file.
+                throw error
+            } catch {
+                // No pdftoppm on the gateway, or a PDF over its 50 MB: it goes as a file instead.
+            }
+        }
+        let result: JSONValue
+        do {
+            result = try await roster.request("file.attach", [
+                "session_id": .string(runtime),
+                "data_url": .string(file.dataURL),
+                "name": .string(file.name),
+            ], timeout: .seconds(120))
+        } catch {
+            // Hermes's own words are an exception's text ("[Errno 28] …"): say it plainly, with the
+            // file's name (`docs/composer.md` §2). Anything else is the send's to handle.
+            throw FileRefusal(name: file.name, refusing: error) ?? error
+        }
         return result["ref_text"]?.stringValue ?? "@file:\(result["path"]?.stringValue ?? file.name)"
     }
 
@@ -6896,7 +6933,7 @@ extension ConversationModel {
     /// Whether a failed send may still have reached Hermes: it went out and the answer was lost.
     /// Hermes refusing it, or no socket to send it on, is a clear no.
     nonisolated static func mayHaveArrived(_ error: any Error) -> Bool {
-        if error is GatewayRPCError || error is CancellationError { return false }
+        if error is GatewayRPCError || error is FileRefusal || error is CancellationError { return false }
         if let failure = error as? GatewaySocket.Failure, failure == .notConnected { return false }
         return true
     }

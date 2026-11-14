@@ -142,8 +142,15 @@ struct ComposerView: View {
             }
         }
         .fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-            guard case .success(let urls) = result else { return }
-            Task { await attachFiles(urls) }
+            switch result {
+            case .success(let urls):
+                Task { await attachFiles(urls) }
+            case .failure(let error):
+                // The picker couldn't hand the file over: said, never dropped (`docs/composer.md` §2).
+                if (error as? CocoaError)?.code != .userCancelled {
+                    attachError = String(localized: "What you picked couldn't be opened. Try picking it again.")
+                }
+            }
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showsCamera) {
@@ -796,9 +803,7 @@ struct ComposerView: View {
         var problems: [String] = []
         for url in urls {
             if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true, conversation.supportsImages {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+                let data = await Task.detached(priority: .userInitiated) { try? FileAttachment.read(url).data }.value
                 if let data, let attachment = await ImageAttachment.make(from: data) {
                     conversation.attachments.append(attachment)
                     continue

@@ -28,7 +28,8 @@ public enum SendFailure: Equatable, Sendable {
             if refusal.code == 5035 { .notSent }
             else if SendRefusal(refusal)?.action == .checkTheChat { .mayHaveArrived }
             else { .refused }
-        case is CancellationError:
+        // Hermes refused a file on the way: nothing was submitted, so the message goes back.
+        case is FileRefusal, is CancellationError:
             .refused
         default:
             .mayHaveArrived
