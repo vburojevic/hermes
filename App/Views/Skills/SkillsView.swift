@@ -7,7 +7,6 @@ import SwiftUI
 /// composer's tray (`docs/bots-groups-skills.md`).
 struct SkillsView: View {
     let workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     /// The window's skill filter, kept with the window.
     @SceneStorage("skills.query") private var query = ""
@@ -18,14 +17,6 @@ struct SkillsView: View {
     #endif
 
     private var catalog: SkillCatalog { workspace.skillCatalog }
-
-    /// Top left on iPhone and iPad, as in a chat: `.navigation` lands on the trailing side, beside
-    /// search, in iPad portrait.
-    #if os(iOS)
-    private static let sidebarPlacement = ToolbarItemPlacement.topBarLeading
-    #else
-    private static let sidebarPlacement = ToolbarItemPlacement.navigation
-    #endif
 
     private var groupedSkills: [SkillCatalog.Group] {
         catalog.groups(matching: query, generalTitle: String(localized: "General"))
@@ -62,12 +53,6 @@ struct SkillsView: View {
         #endif
         .navigationTitle("Skills")
         .toolbar {
-            if let onToggleSidebar {
-                ToolbarItem(placement: Self.sidebarPlacement) {
-                    SidebarButton(action: onToggleSidebar)
-                }
-                .sidebarButtonGlass()
-            }
             #if os(macOS)
             // Skills → Library | Learned (`macLearned`).
             ToolbarItem(placement: .primaryAction) {

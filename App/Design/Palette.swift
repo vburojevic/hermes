@@ -118,7 +118,7 @@ nonisolated enum Palette {
         light: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.702),
         dark: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.702)
     )
-    /// Dims content behind modals and drawers.
+    /// Dims content behind modals.
     static let scrim = Color(
         light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.3216),
         dark: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.502)
@@ -153,7 +153,7 @@ nonisolated enum Palette {
         dark: Color(.sRGB, red: 0.1725, green: 0.1725, blue: 0.1804),
         increasedContrastDark: Color(.sRGB, red: 0.2118, green: 0.2118, blue: 0.2196)
     )
-    /// Sidebar and drawer.
+    /// The sidebar.
     static let sidebar = Color(
         light: Color(.sRGB, red: 0.9647, green: 0.9647, blue: 0.9647),
         dark: Color(.sRGB, red: 0.0549, green: 0.0549, blue: 0.0549),

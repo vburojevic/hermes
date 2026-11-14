@@ -59,8 +59,6 @@ struct EmptyChatView: View {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.05)) {
                 appeared = true
             }
-            // The drawer's tip, on the first chat.
-            DrawerTip.firstChatShown = true
         }
     }
 

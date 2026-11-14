@@ -1222,20 +1222,6 @@ final class ConversationModel: Identifiable {
 
     // MARK: - Loading
 
-    /// Starts loading if it hasn't, and returns once the rows this device kept are showing (or
-    /// it has none), or after `limit`. Never waits on the gateway. The drawer waits on this
-    /// before it slides, so a chat slides in with its rows instead of getting them mid-slide.
-    func firstRows(within limit: Duration) async {
-        loadIfNeeded()
-        let deadline = ContinuousClock.now + limit
-        while loadState == .loading, items.isEmpty, !cacheChecked, ContinuousClock.now < deadline, !Task.isCancelled {
-            try? await Task.sleep(for: .milliseconds(8))
-        }
-    }
-
-    /// The device's copy has been looked at (`showCached`), shown or not there.
-    @ObservationIgnored private var cacheChecked = false
-
     func loadIfNeeded() {
         LoadTrace.mark(stableKey, "loadIfNeeded state=\(loadState) client=\(workspace?.client != nil)")
         guard loadState == .idle, sessionID != nil || isBotChat else { return }
@@ -1383,15 +1369,13 @@ final class ConversationModel: Identifiable {
     }
 
     /// `apply` for a transcript being opened: the rows are folded into turns and the newest
-    /// replies' Markdown parsed off the main thread, so the main thread (and the drawer or window
+    /// replies' Markdown parsed off the main thread, so the main thread (and the push or window
     /// animating meanwhile) only takes the result.
     private func applyLoaded(_ transcript: SessionTranscript) async {
         guard let merged = merge(transcript) else { return }
         let generation = rowsGeneration
         let built = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
         await preloadImages(for: built)
-        // A chat picked in the drawer lands once the drawer has slid away, not in the middle.
-        await Settling.untilSettled()
         // Nor under a turn still on screen: one whose reply is in but that hasn't handed over to
         // its stored rows yet showed twice, live and stored, and the turn's end then took its own
         // rows for history and kept the live copy too. The turn's end fetches the chat itself.
@@ -1735,14 +1719,11 @@ final class ConversationModel: Identifiable {
     /// The transcript this device saw last, while the gateway's copy is on its way. Also under a
     /// message that went out before anything showed (`historyUnderTurn`).
     private func showKept(_ cached: TranscriptCache.Entry?) async {
-        defer { cacheChecked = true }
         guard let cached else { return }
         let messages = turnInFlight ? historyUnderTurn(cached.messages) : cached.messages
         guard !messages.isEmpty else { return }
         let built = await Self.prepare(messages, hasEarlier: cached.hasEarlier, hidesSilence: botName != nil)
         await preloadImages(for: built)
-        // Too late for the drawer's wait (`firstRows`): after its slide, not in the middle.
-        await Settling.untilSettled()
         guard items.isEmpty, !isFinishing, !Task.isCancelled else { return }
         hasEarlierMessages = cached.hasEarlier
         rebuild(from: messages, built: built)
@@ -1770,7 +1751,6 @@ final class ConversationModel: Identifiable {
         else { return }
         let built = await Self.prepare(merged, hasEarlier: hasEarlierMessages, hidesSilence: botName != nil)
         await preloadImages(for: built)
-        await Settling.untilSettled()
         guard !Task.isCancelled, items.isEmpty, turnInFlight, !isFinishing else { return }
         rebuild(from: merged, built: built)
         loadState = .loaded

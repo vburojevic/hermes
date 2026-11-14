@@ -13,7 +13,6 @@ import AppKit
 struct BoardScreen: View {
     let workspace: BotWorkspace
     let projectID: String
-    var onToggleSidebar: (() -> Void)?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -470,22 +469,8 @@ struct BoardScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        #if os(iOS)
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                workspace.selection = .project(projectID)
-            } label: {
-                Image(systemName: "chevron.left")
-            }
-            .accessibilityLabel(String(localized: "Back to \(model.projectName)"))
-        }
-        #else
-        if let onToggleSidebar {
-            ToolbarItem(placement: .navigation) {
-                SidebarButton(action: onToggleSidebar)
-            }
-            .sidebarButtonGlass()
-        }
+        // Back to the project is the system's back button: the Board pushes over it.
+        #if os(macOS)
         ToolbarSpacer(.flexible)
         #endif
         if !isCompact {

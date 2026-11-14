@@ -46,95 +46,55 @@ enum SidebarMetrics {
 }
 
 extension EnvironmentValues {
-    /// The rows sit in a plain lazy stack (the iPhone drawer) rather than a `List`, so they draw
-    /// their own insets and highlight.
-    @Entry var sidebarRowsInStack = false
+    /// Whether rows show which one is open. On iPhone the list is its own screen, so a row
+    /// stays plain once its chat is pushed and the person comes back.
+    @Entry var sidebarShowsSelection = true
+    /// Whether the window is as narrow as an iPhone, so the list is a screen of its own. Read from
+    /// the window: inside a split view's sidebar column the size class is always compact, even on
+    /// an iPad in landscape.
+    @Entry var sidebarIsCompact = false
 }
 
-/// A row in the sidebar or drawer: a quiet rounded wash when selected, and a lighter one under
-/// the pointer. The system list selection would fill with the Mac's accent colour instead.
+/// A row in the sidebar: a quiet rounded wash when selected, and a lighter one under the
+/// pointer. The system list selection would fill with the Mac's accent colour instead.
 struct SidebarRow<Label: View>: View {
     let isSelected: Bool
     var height: CGFloat = SidebarMetrics.rowHeight
     let action: () -> Void
     @ViewBuilder let label: Label
 
-    @Environment(\.sidebarRowsInStack) private var inStack
+    @Environment(\.sidebarShowsSelection) private var showsSelection
     @State private var isHovered = false
 
     var body: some View {
-        if inStack {
-            Button {
-                // A press that ends as the drawer is swiped shut was a swipe, not a tap.
-                guard !RowSwipe.drawerJustDragged else { return }
-                action()
-            } label: {
-                label
-                    .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
-                    .padding(.horizontal, SidebarMetrics.rowPadding)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(StackRowStyle(isSelected: isSelected, isHovered: isHovered))
-            .foregroundStyle(Theme.primaryText)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .onHover { isHovered = $0 }
-            #if os(iOS)
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous))
-            #endif
-            .padding(.horizontal, SidebarMetrics.listInset)
-        } else {
-            Button(action: action) {
-                label
-                    .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.primaryText)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .onHover { isHovered = $0 }
-            .listRowBackground(
-                RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
-                    .fill(isSelected ? Theme.rowSelected : isHovered ? Theme.rowHover : .clear)
-                    .padding(.horizontal, SidebarMetrics.listInset)
-                    .animation(.easeOut(duration: 0.12), value: isHovered)
-            )
-            .listRowSeparator(.hidden)
-            .listRowInsets(SidebarMetrics.rowInsets)
+        let isLit = isSelected && showsSelection
+        Button(action: action) {
+            label
+                .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.primaryText)
+        .accessibilityAddTraits(isLit ? .isSelected : [])
+        .onHover { isHovered = $0 }
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
+                .fill(isLit ? Theme.rowSelected : isHovered ? Theme.rowHover : .clear)
+                .padding(.horizontal, SidebarMetrics.listInset)
+                .animation(.easeOut(duration: 0.12), value: isHovered)
+        )
+        .listRowSeparator(.hidden)
+        .listRowInsets(SidebarMetrics.rowInsets)
     }
 }
 
-/// A drawer row: the selected wash, and the lighter one under the finger (or pointer).
-private struct StackRowStyle: ButtonStyle {
-    let isSelected: Bool
-    let isHovered: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        let lit = configuration.isPressed || isHovered
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
-                    .fill(isSelected ? Theme.rowSelected : lit ? Theme.rowHover : .clear)
-                    .animation(.easeOut(duration: 0.12), value: lit)
-            )
-    }
-}
-
-/// Insets for a row that isn't a `SidebarRow` (a title, a toggle, a spinner): `List` row
-/// insets in a list, padding in the drawer's stack.
+/// Insets for a row that isn't a `SidebarRow` (a title, a toggle, a spinner).
 struct SidebarRowInsets: ViewModifier {
-    @Environment(\.sidebarRowsInStack) private var inStack
-
     func body(content: Content) -> some View {
-        if inStack {
-            content
-                .padding(.horizontal, SidebarMetrics.listInset + SidebarMetrics.rowPadding)
-        } else {
-            content
-                .listRowInsets(SidebarMetrics.rowInsets)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-        }
+        content
+            .listRowInsets(SidebarMetrics.rowInsets)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
 
@@ -189,12 +149,10 @@ struct SidebarSectionTitle: View {
     }
 }
 
-/// The bottom of the sidebar and drawer: how the gateway (or Bot Mode) is doing, and Settings.
+/// The bottom of the sidebar (iPad, Mac): how the gateway (or Bot Mode) is doing, and Settings.
+/// On iPhone the list's subtitle and its gear say the same.
 struct SidebarFooter: View {
     let workspace: BotWorkspace
-    /// The drawer is opaque; the split sidebar is glass and keeps the soft scroll edge.
-    var isOpaque = false
-    var onNavigate: () -> Void = {}
 
     @Environment(WindowRouter.self) private var router: WindowRouter?
     #if os(macOS)
@@ -220,9 +178,6 @@ struct SidebarFooter: View {
             }
             #endif
             row
-        }
-        .background {
-            if isOpaque { Theme.sidebar.ignoresSafeArea(edges: .bottom) }
         }
         .overlay(alignment: .top) {
             Rectangle()
@@ -267,7 +222,6 @@ struct SidebarFooter: View {
             openSettings()
             #else
             router?.sheet = .settings
-            onNavigate()
             #endif
         } label: {
             Image(systemName: "gearshape")

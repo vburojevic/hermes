@@ -15,18 +15,43 @@ enum InboxFilter: String, CaseIterable {
     }
 }
 
+/// Show's choices, as the filter menu names them (`inboxFilterMenu`, `docs/inbox.md` §5).
+extension InboxShow {
+    var title: String {
+        switch self {
+        case .thisApp: String(localized: "This App")
+        case .all: String(localized: "All Chats")
+        case .otherPlatforms: String(localized: "Other Platforms")
+        case .scheduled: String(localized: "Scheduled Tasks")
+        }
+    }
+
+    /// Each launch starts with this app's chats. `-HERMES_INBOX_SHOW all|otherPlatforms|scheduled`
+    /// starts with another choice, for screenshots.
+    static var atLaunch: InboxShow {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "HERMES_INBOX_SHOW").flatMap(InboxShow.init(rawValue:)) ?? .thisApp
+        #else
+        .thisApp
+        #endif
+    }
+}
+
 extension BotWorkspace {
     /// The chats in the list: pinned first, then by activity, newest first; no date sections
-    /// (`docs/inbox.md` §2). Without a filter, chats in a project stay in the project (pinned
-    /// ones show here too); a filter covers every chat.
+    /// (`docs/inbox.md` §2). Show picks where they come from, this app's by default
+    /// (`docs/inbox.md` §5). In the whole list (This App or All Chats, no Only), chats in a project
+    /// stay in the project (pinned ones show here too); a narrower list covers every chat it holds.
     var inboxSessions: [HermesSession] {
         let projects = projects!
-        let shown = inboxFilter == .all
-            ? sessions.filter { $0.pinned || !projects.isScoped($0) }
-            : sessions.filter { matches(inboxFilter, key: $0.stableID) }
+        let held = sessions.filter(shows)
+        let shown = showsProjects
+            ? held.filter { $0.pinned || !projects.isScoped($0) }
+            : held.filter { matches(inboxFilter, key: $0.stableID) }
         let ordered = RowTime.ordered(shown, pinned: \.pinned) { self.rowTime($0) }
         // New chats whose first message waits for the gateway, under the pinned ones (`docs/chat.md` §4).
-        guard inboxFilter == .all, !waitingChats.isEmpty else { return ordered }
+        // They are this app's, so they show wherever this app's chats do.
+        guard inboxFilter == .all, inboxShow.includes(.thisApp), !waitingChats.isEmpty else { return ordered }
         let waiting = WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
         let pinned = ordered.prefix { $0.pinned }.count
         return Array(ordered[..<pinned]) + waiting + ordered[pinned...]
@@ -47,6 +72,24 @@ extension BotWorkspace {
                           activity: session.lastActive, created: session.startedAt)
     }
 
+    /// Whether Show holds a chat (`docs/inbox.md` §5).
+    func shows(_ session: HermesSession) -> Bool {
+        inboxShow.shows(session.origin, pinned: session.pinned)
+    }
+
+    /// The list is whole: this app's chats or all of them, nothing narrowed to a state. Only then
+    /// do projects keep their chats in the Projects section.
+    var showsProjects: Bool {
+        inboxFilter == .all && (inboxShow == .thisApp || inboxShow == .all)
+    }
+
+    /// Show holds no chat at all, projects' and new ones' included, while the gateway has some: the
+    /// Show empty state (`caughtUpThisApp`…). With no chats at all, "No chats yet" says so instead.
+    var showHoldsNothing: Bool {
+        !sessions.isEmpty && !hasMoreSessions && !sessions.contains(where: shows)
+            && (waitingChats.isEmpty || !inboxShow.includes(.thisApp))
+    }
+
     func matches(_ filter: InboxFilter, key: String) -> Bool {
         switch filter {
         case .all: true
@@ -56,14 +99,14 @@ extension BotWorkspace {
         }
     }
 
-    /// How many chats a filter would show.
+    /// How many of the chats Show holds a filter would show.
     func count(for filter: InboxFilter) -> Int {
-        sessions.reduce(0) { matches(filter, key: $1.stableID) ? $0 + 1 : $0 }
+        sessions.reduce(0) { shows($1) && matches(filter, key: $1.stableID) ? $0 + 1 : $0 }
     }
 
-    /// The chats' keys, for Mark All as Read.
+    /// The unread chats Show holds, for Mark All as Read.
     var unreadChatKeys: [String] {
-        sessions.map(\.stableID).filter { unread.badge(for: $0).isUnread }
+        sessions.filter(shows).map(\.stableID).filter { unread.badge(for: $0).isUnread }
     }
 
     /// ⌥⌘↓ / ⌥⌘↑: the next or previous unread chat (or Bot) along the list.

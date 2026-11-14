@@ -262,18 +262,6 @@ enum HermesTips {
     }
 }
 
-/// The drawer, on the first chat.
-struct DrawerTip: Tip {
-    @Parameter static var firstChatShown: Bool = false
-
-    var title: Text { Text("Everything lives here") }
-    var message: Text? { Text("Your chats, Bots, projects, the Board and Skills. Swipe from the left edge any time.") }
-    var image: Image? { Image(systemName: "sparkles") }
-    var rules: [Rule] { #Rule(Self.$firstChatShown) { $0 } }
-    var options: [any TipOption] { MaxDisplayCount(1) }
-    var actions: [Action] { [HermesTips.gotIt] }
-}
-
 /// The Inspector pill, the first time something opens there.
 struct InspectorTip: Tip {
     static let opened = Event(id: "inspector-opened")

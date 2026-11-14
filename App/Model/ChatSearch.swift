@@ -1,7 +1,7 @@
 import HermesKit
 import SwiftUI
 
-/// Search (`docs/search.md`): chats found by what was said in them, for the drawer (iPhone), the
+/// Search (`docs/search.md`): chats found by what was said in them, for the chat list (iPhone), the
 /// sidebar (iPad, Mac ⌥⌘F) and the ⌘K palette (Mac). One per gateway workspace.
 ///
 /// Full text needs Bot Mode: `GET /api/sessions/search` lives on the `hermes serve` dashboard, not

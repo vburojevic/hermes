@@ -75,7 +75,7 @@ The gateway has no count; the app counts (`UnreadCounter`).
 The gateway has no mute; it's on the device (`MuteList`), per gateway: For 1 Hour, For 8 Hours,
 For 1 Week, Until I Turn It Back On. A swipe mutes until turned back on.
 
-- A muted chat keeps a grey count and shows the slashed bell; it's left out of the drawer button,
+- A muted chat keeps a grey count and shows the slashed bell; it's left out of the back button's count,
   the mode switch and the app icon badge.
 - The mutes are shared with the Notification Service (`PushShared.setMutes`, under the chat's key
   and its live session id). It delivers a muted chat's notices quietly (`interruptionLevel =
@@ -217,6 +217,12 @@ search).
 
 ### Opening a chat
 
+- On iPhone the chat list is the first screen and a chat opens on top of it. A launch comes back
+  where the window was, the way the system restores apps: a chat that was open is open again,
+  already pushed, with the back button to the list; a window that was back on the list opens on
+  the list, its last chat selected under it but not open (`BotWorkspace.openAtLaunch`).
+- A chat deleted or archived while it's open, or a Bot removed while its chat is open, goes back
+  to the list rather than leave an empty screen (`CompactNavigation.dismiss`).
 - Just before a chat opens (`BotWorkspace.selection` `willSet`), the store notes how far it was
   read (`UnreadStore.noteOpening`). Opening isn't reading: what's been on screen is (below).
 - Something new: the transcript finds the New Messages line (`NewMessagesMarker`): above the head
@@ -298,9 +304,9 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
   scroll sideways themselves, so they take Reply from the menu.
   - SwiftUI has no way to add Reply to the text selection menu itself; Reply to Words… stands in.
   - On iPhone and iPad the swipe is a UIKit pan that begins only on a drag to the left
-    (`SidewaysSwipe`), as the drawer's rows do (§5): a SwiftUI drag on each reply took the chat's
-    vertical drags, and the chat stopped scrolling under a finger that started on a reply. A drag
-    to the right from the screen's edge stays the drawer's.
+    (`SidewaysSwipe`): a SwiftUI drag on each reply took the chat's vertical drags, and the chat
+    stopped scrolling under a finger that started on a reply. A drag to the right from the
+    screen's edge stays the system's back swipe.
   - On the Mac a mouse drag to the left does it, and so does a sideways scroll: a trackpad's or a
     Magic Mouse's swipe, or a mouse that scrolls sideways (`SidewaysScroll`). SwiftUI has no
     scroll-wheel events, so the message reads them from the window before the chat does. A scroll
@@ -324,33 +330,41 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 
 ## 5. Lists: filters, menus, swipes, counts
 
-- **Filters** (Chats mode): All · Unread n · Needs You n · Running n. The Mac has no All; clicking
-  the selected filter clears it. Filters cover project chats too. An empty filter shows "You're all
-  caught up" (`CaughtUpState`).
-- **Mark All as Read** at the end of the Unread list and on a long press (right-click) of the
-  Unread chip: every badge clears at once, and the gateway hears of them 4 calls at a time. A mark
-  this device set holds over the gateway's until its call is back and 10 s more (or the gateway
-  agrees), so a busy Mac's list read meanwhile doesn't bring a badge back.
+- **Filters** (Chats mode): one filter button (`inboxFilterMenu`; `InboxFilterButton`) with a
+  menu: a Show section, then Only Unread n, Only Needs You n, Only Running n (one at a time;
+  turning the one that's on off shows everything again), then Mark All as Read. On iPhone it
+  leads the root's bottom toolbar, on iPad it sits in the sidebar's toolbar, on the Mac in the
+  source list's titlebar and as View ▸ Filter. For anything but This App with no Only the button
+  fills, and VoiceOver reads both choices ("This App", "Other Platforms, Unread").
+- **Show** picks which chats the list holds, by the session's `source`
+  ([sessions-and-models.md](sessions-and-models.md) §1; `SessionOrigin`, `InboxShow`):
+  - **This App**, the default: chats started here, in Hermes Desktop or another API client (no
+    source, `api_server`, `desktop`, `hermes_app`), plus any chat the person pinned, wherever it
+    came from. Each launch starts here.
+  - **All Chats**: every chat, as the list was before.
+  - **Other Platforms**: the terminal, messaging platforms, editors and the Board's workers
+    (`cli`, `tui`, `telegram`, `discord`, `acp`, `kanban`…).
+  - **Scheduled Tasks**: the runs of scheduled tasks (`cron`).
+
+  The Only filters narrow what Show holds, and their counts count it. Projects show only under
+  This App or All Chats with no Only; the rest is one flat list. Older pages load while the end
+  of the list is on screen, under every Show: a page that brings too few chats the list shows to
+  fill the screen loads the next one, until the end is off screen or the gateway has no more.
+  Search still finds every chat, whatever Show holds.
+- **Empty lists** (`CaughtUpState`): an Only with nothing in it shows "You're all caught up". A
+  Show that holds nothing, once every page is in, says so, with or without an Only: "No chats
+  from this app" (This App), "No chats from other platforms", "No scheduled runs", each with
+  where they come from (design: `caughtUpThisApp`, `caughtUpOtherPlatforms`,
+  `caughtUpScheduled`). A gateway with no chats at all shows "No chats yet" instead.
+- **Mark All as Read** at the end of the Unread list and in the filter menu: every badge clears at
+  once, and the gateway hears of them 4 calls at a time. A mark this device set holds over the
+  gateway's until its call is back and 10 s more (or the gateway agrees), so a busy Mac's list
+  read meanwhile doesn't bring a badge back.
 - **Swipes:** from the leading edge Read / Unread (the main one) and Pin; from the trailing edge
-  Mute and Archive. The iPad and Mac lists use system swipe actions. The system draws their
-  symbols white on the tint in both modes, so the main action is ink in Light Mode and a raised
-  grey in Dark Mode (`Theme.swipeAction`; white ink hid its envelope), the others a quieter grey
-  (`Theme.swipeActionQuiet`). The iPhone drawer isn't a `List`: from
-  iOS 27 its rows use the system's swipe actions too, coordinated by `swipeActionsContainer()` (one
-  row open at a time, closed by scrolling or a tap elsewhere). That container keeps the actions a
-  row first showed, so a row becomes a new row to it when they change: read, pinned or muted
-  (`DrawerSwipeState`); muted, it offered Mute again until the app was opened anew. Before iOS 27,
-  only `List` rows swipe, so the drawer's draw their own (`DrawerSwipeActions`): the row, opaque, slides over its
-  actions, which share the room it uncovers and grow in; pulled past them the first fills the room
-  and runs (a tap of haptics). Never both on one row: they fought over the drag, drew over each
-  other and stopped the list scrolling.
-  - The drag is a UIKit pan that begins only sideways, so vertical drags stay the list's (a
-    SwiftUI drag on each row took them).
-  - A row swiped toward the drawer's edge claims the drag (`RowSwipe`), so a leftward swipe on a row
-    shows its actions instead of closing the drawer; the drawer still closes from its header, the
-    chat beside it, or a tap. A press that ends as the drawer is swiped shut doesn't open the row.
-  - A tap on an open row closes it; a tap on an action runs it. What catches the row's tap slides
-    with the row: left where the row had been, it lay over the actions and took their taps.
+  Mute and Archive. Every list is a `List` and uses the system's swipe actions, on iPhone as on
+  iPad and the Mac. The system draws their symbols white on the tint in both modes, so the main
+  action is ink in Light Mode and a raised grey in Dark Mode (`Theme.swipeAction`; white ink hid
+  its envelope), the others a quieter grey (`Theme.swipeActionQuiet`).
 - **Archive:** `PATCH /api/sessions/{id} {archived: true}` (the same as `session.archive`), with
   Undo for 5 s. Archived chats leave the list (Hermes' lists leave them out). The row goes and
   Undo shows at once; Undo brings the row back at once and sends its call after the archive's,
@@ -359,8 +373,10 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   Checkpoints…, Copy Session ID, Delete…. The Mac adds Archive. Bot menus: Mark as Read / Unread,
   Pin, Mute ▸, then Edit Bot…, Routines…, Hide, Copy @handle.
 - **Counts outside the list:**
-  - The drawer and sidebar buttons: unread chats (not messages) elsewhere, muted and open ones
-    left out (`unreadBadgeCutout`).
+  - iPhone's back button, over a pushed chat: unread chats (not messages) elsewhere, muted and
+    open ones left out (`UnreadStore.unreadElsewhere`). Without any it shows the chevron alone.
+    The system's sidebar button on iPad and the Mac has no count, as in Mail: the sidebar it
+    opens shows them.
   - Chats / Bots: each segment shows the other mode's unread count: unread chats again, not
     messages, with the same rows left out. Bots and group chats count on Bots, every other chat on
     Chats (`BadgeScope.isBotsRow`).
@@ -381,6 +397,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 - Rows read "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs"; live "…, Hermes: Running
   swift test"; muted "…, muted, 12 unread"; needs you "…, waiting for your approval".
 - Rows have custom actions: Mark as Read / Unread, Pin / Unpin, Mute / Unmute, Archive.
+- VoiceOver stays where the person put it while replies arrive: on a row of the list, and on a
+  message in the open chat. A reply changes a row's words and moves it up, but never takes the
+  focus with it (`VoiceOverFocusUITests`, against the mock's "slow marathon" turn).
 - The New Messages line is a header; an "Unread" rotor goes between it and the new messages.
 - The pill is a button that says where it goes: "2 new messages. Jump to the first one.", after
   the first tap "2 new messages. Jump to the latest.", for one message "1 new message. Jump to
@@ -388,9 +407,8 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 - The open chat's activity line is announced at most every 10 s, never the words as they stream.
 - Never colour alone: needs you has the hand, failed the triangle, muted the slashed bell, unread
   the weight and the count.
-- At the accessibility text sizes on iPhone and iPad the drawer keeps everything and cuts nothing
-  off: the Chats / Bots switcher stacks its two halves, the filter chips grow with their text and
-  scroll, a row's title wraps with its marks and time on the line below it, the New Chat, Tasks,
+- At the accessibility text sizes on iPhone and iPad the list keeps everything and cuts nothing
+  off: the Chats / Bots switcher stacks its two halves, a row's title wraps with its marks and time on the line below it, the New Chat, Tasks,
   Skills and settings glyphs grow with the text up to a cap, and the connection line wraps with
   the settings button below it.
 
@@ -425,11 +443,11 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   reply read on another device) shows on its row within a second of the list moving. A cold launch
   shows the last messages from the device before the gateway answers (`-HERMES_LAUNCH_LOG YES`:
   "kept last lines shown").
-- The drawer button's count is the unread, unmuted chats other than the open one.
+- The back button's count is the unread, unmuted chats other than the open one.
 - Reduce Motion: no shimmer or slide. Light, dark and Increase Contrast match the renders.
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
-  actions open all scroll the chat and the drawer; a swipe left on a reply still replies, and one
-  right from the edge still opens the drawer.
+  actions open all scroll the chat and the list; a swipe left on a reply still replies, and one
+  right from the edge goes back to the list on iPhone.
 - On the Mac, a sideways scroll to the left on a reply (trackpad, Magic Mouse, a mouse that
   scrolls sideways) quotes it in the composer, and a scroll up or down that starts on a reply
   scrolls the chat.

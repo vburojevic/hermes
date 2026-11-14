@@ -9,16 +9,16 @@ nonisolated enum Theme {
 
     /// The app canvas: pure white or pure black, like ink on paper.
     static let canvas = Palette.canvas
-    /// Sidebar and drawer background, a half-step off the canvas.
+    /// The sidebar's background, a half-step off the canvas.
     static let sidebar = Palette.sidebar
     /// User bubbles, code blocks, chips, cards in the transcript.
     static let surface = Palette.surface
     /// Pressed rows and nested surfaces.
     static let surfaceRaised = Palette.surfaceRaised
-    /// A selected sidebar row: a quiet wash that reads on the opaque drawer and the vibrant
-    /// Mac and iPad sidebars alike (the design's surface-raised over the sidebar). Increase
-    /// Contrast deepens it, but in Dark Mode only so far that a status line in the row (warning
-    /// orange) keeps 4.5:1 on the Mac's vibrant sidebar.
+    /// A selected sidebar row: a quiet wash that reads on the vibrant Mac and iPad sidebars (the
+    /// design's surface-raised over the sidebar). Increase Contrast deepens it, but in Dark Mode
+    /// only so far that a status line in the row (warning orange) keeps 4.5:1 on the Mac's
+    /// vibrant sidebar.
     static let rowSelected = Color(
         light: .black.opacity(0.075), dark: .white.opacity(0.11),
         increasedContrastLight: .black.opacity(0.16), increasedContrastDark: .white.opacity(0.15)

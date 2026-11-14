@@ -1,6 +1,6 @@
 # Chats, models and background processes
 
-This document covers the chat list (the sidebar on iPad and Mac, the drawer on iPhone), the chat
+This document covers the chat list (the sidebar on iPad and Mac, the first screen on iPhone), the chat
 and message menus, context use and compacting, the model picker and reasoning level, and the card
 for background processes. For each action it names the Hermes call the app makes. Design component
 names (`sessionMenu`, `replyMenu`, `contextNotice`…) are in backticks so code and
@@ -25,14 +25,17 @@ is `ConversationModel.usesGateway`. See `docs/connecting-and-voice.md` §1.
 
 ## 1. Chat list and lifecycle
 
-A chat's menu (`sessionMenu`) is its context menu in the sidebar or drawer: Rename…, Pin, Move to
-Project…, Branch, Checkpoints…, Copy Session ID and Delete…. The iPad and Mac sidebar also has
-swipe actions (Delete, Pin); in the iPhone drawer a swipe closes the drawer, so there are none.
+A chat's menu (`sessionMenu`) is its context menu in the list: Rename…, Pin, Move to Project…,
+Branch, Checkpoints…, Copy Session ID and Delete…. Rows also have the system's swipe actions on
+every platform (Read / Unread and Pin leading, Mute and Archive trailing; `docs/inbox.md` §5). On
+iPhone the list is the first screen and a chat pushes over it, with the system back button and
+swipe back; on iPad and the Mac it is the sidebar beside the chat (`docs/design-to-swiftui.md` §6).
 
 | Action | Call | Notes |
 |---|---|---|
 | Chat list | `GET /api/sessions?limit&offset` | Refreshes ask for at least 50 rows (more once the list has grown, at most 200); scrolling to the end loads 50 more while `has_more`. Pinned rows are back-filled outside the page. Rows with `is_internal_child` are left out, and Hermes leaves out archived ones. Refreshed on connect, when the app comes to the front, on pull to refresh, after `sessions.changed` (at most every 3 s), and every 15 s while the list is on screen without Bot Mode |
-| Order | local | Pinned first, then by activity, newest first; no date sections (`BotWorkspace.inboxSessions`). Chats that belong to a project are left out of the list unless pinned or a filter is on (`docs/projects.md` §2) |
+| Order | local | Pinned first, then by activity, newest first; no date sections (`BotWorkspace.inboxSessions`). Chats that belong to a project are left out of the list unless pinned, an Only filter is on or Show is Other Platforms or Scheduled Tasks (`docs/projects.md` §2) |
+| Which chats | local | By the row's `source` (`SessionOrigin`): the list starts with this app's chats (no source, `api_server`, `desktop`, `hermes_app`) and the ones the person pinned. The filter's Show section picks All Chats, Other Platforms (`cli`, `tui`, `telegram`, `discord`, `acp`, `kanban`…) or Scheduled Tasks (`cron`) instead (`docs/inbox.md` §5). Search finds every chat |
 | Row | local | Two lines: title and time, then the last message or what's happening, then what's new (count, dot, needs-you hand). Read state, counts, the activity line, filters and swipes: `docs/inbox.md` |
 | Read state | The dashboard's `GET /api/sessions?order=recent` | `unread`, `last_read_at` and `last_active` are only on the dashboard's rows (Bot Mode); without it the device keeps its own watermarks (`docs/inbox.md` §1) |
 | Mark as Read / Unread | `PATCH /api/sessions/{id} {unread}` | One mark per chat, shared by every device; menu, leading swipe, ⇧⌘U (`docs/inbox.md` §1) |

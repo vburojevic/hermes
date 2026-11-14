@@ -93,7 +93,9 @@ final class BotWorkspace: Identifiable {
     /// closes, as its deliveries showed (`DeliveryProtection`, Settings → Setup): nil until a
     /// delivery has been seen on the current version. Kept per gateway on the device.
     private(set) var deliveryProtection: DeliveryProtection?
-    /// The chat list's filter (`docs/inbox.md` §5).
+    /// The chat list's filter (`docs/inbox.md` §5): which chats it holds (Show), then which of
+    /// those (Only).
+    var inboxShow = InboxShow.atLaunch
     var inboxFilter = InboxFilter.all
     /// A chat just archived from the list, for Undo.
     var recentlyArchived: HermesSession?
@@ -102,8 +104,9 @@ final class BotWorkspace: Identifiable {
     private(set) var isLoadingSessions = false
     private(set) var hasMoreSessions = false
     /// Server-side paging position. Pinned rows are back-filled outside the page, so
-    /// `sessions.count` can't be used as the next offset.
-    @ObservationIgnored private var nextSessionOffset = 0
+    /// `sessions.count` can't be used as the next offset. Observed: the loading rows at the end of
+    /// the list load again each time it moves (`docs/inbox.md` §5).
+    private(set) var nextSessionOffset = 0
     /// The gateway's chat list arrived this launch: the device's copy never goes over it.
     @ObservationIgnored private var hasFetchedSessions = false
     private(set) var modelOptions: ModelOptions?
@@ -148,20 +151,59 @@ final class BotWorkspace: Identifiable {
             if let key, newValue != selection { unread.noteOpening(key) }
         }
         didSet {
-            if case .bot(let name) = selection {
-                roster?.openBot = name
-            } else if roster?.openBot != nil {
-                roster?.openBot = nil
-            }
             if case .session(let key) = selection { lastChatKey = key }
             if selection == nil { lastChatKey = nil }
-            if let key = unread.openKey {
-                activity.opened(key)
-                // Marked unread by hand: opening it clears the dot (`docs/inbox.md` §4).
-                if unread.badge(for: key) == .dot || unread.readMark(for: key) == .markedUnread { unread.markRead(key) }
-            }
-            unread.update()
+            navigation.selectionChanged(to: selection, keepsPlace: keepsPlace)
+            openSelection()
         }
+    }
+    /// Whether the selected screen is on screen and when a compact window pushes it
+    /// (`docs/design-to-swiftui.md` §6).
+    private(set) var navigation = CompactNavigation()
+    /// The next selection change keeps a compact window where it is (`CompactNavigation`).
+    @ObservationIgnored private var keepsPlace = false
+
+    /// Selects without pushing: the other mode's selection coming back under its list, or the
+    /// screen on show getting a new name.
+    private func reselect(_ item: SidebarItem?) {
+        keepsPlace = true
+        selection = item
+        keepsPlace = false
+    }
+
+    /// The window shows the selected screen, or went back to the list over it (iPhone). A chat
+    /// that was backed out of stays selected but isn't open: replies to it count as unread.
+    func setShowsDetail(_ shows: Bool) {
+        guard navigation.showsDetail != shows else { return }
+        navigation.showsDetail = shows
+        if shows, let key = selectionUnreadKey { unread.noteOpening(key) }
+        openSelection()
+    }
+
+    /// Asks a compact window to push the selected screen, which may be the one already selected.
+    func showSelection() {
+        navigation.show()
+    }
+
+    private var selectionUnreadKey: String? {
+        switch selection {
+        case .session(let key): key
+        case .bot(let name): UnreadStore.botKey(name)
+        default: nil
+        }
+    }
+
+    /// The selected chat, Bot Chat or group chat, as far as it is on screen, is open: it never
+    /// counts as unread and opening it clears a dot.
+    private func openSelection() {
+        let bot: String? = if navigation.showsDetail, case .bot(let name) = selection { name } else { nil }
+        if roster?.openBot != bot { roster?.openBot = bot }
+        if let key = unread.openKey {
+            activity.opened(key)
+            // Marked unread by hand: opening it clears the dot (`docs/inbox.md` §4).
+            if unread.badge(for: key) == .dot || unread.readMark(for: key) == .markedUnread { unread.markRead(key) }
+        }
+        unread.update()
     }
     /// The chat open last (Skills' Use adds to its tray; `nil`: the new-chat draft).
     @ObservationIgnored private(set) var lastChatKey: String?
@@ -177,12 +219,19 @@ final class BotWorkspace: Identifiable {
     /// A row picked in the sidebar: the row that is already selected shows its screen again.
     func pick(_ item: SidebarItem?) {
         if detailPass.pick(item, current: selection) { selection = item }
+        navigation.show()
     }
 
     /// What the window opens on: restored from when it last closed, before the gateway answers.
-    func openAtLaunch(_ item: SidebarItem) {
+    /// An iPhone that was back on the list keeps the item selected under it, unpushed.
+    func openAtLaunch(_ item: SidebarItem, pushed: Bool = true) {
         detailPass.open(item)
-        selection = item
+        if pushed {
+            selection = item
+            navigation.show()
+        } else {
+            reselect(item)
+        }
     }
 
     /// The gateway answered (or gave up): the detail resolves what the window opened on again,
@@ -237,7 +286,7 @@ final class BotWorkspace: Identifiable {
             UserDefaults.standard.set(sidebarMode.rawValue, forKey: "sidebarMode.\(id.uuidString)")
             // Each mode remembers what it last showed.
             selectionByMode[oldValue] = selection
-            selection = selectionByMode[sidebarMode] ?? nil
+            reselect(selectionByMode[sidebarMode] ?? nil)
             searchText = ""
         }
     }
@@ -489,7 +538,7 @@ final class BotWorkspace: Identifiable {
         client = (apiKey?.isEmpty ?? true) ? nil : HermesClient(baseURL: bot.baseURL, apiKey: apiKey ?? "")
         conversations.values.forEach { $0.cancelAll() }
         conversations = [:]
-        selection = nil
+        closeSelection()
         draft = ConversationModel(workspace: self)
         hasFetchedSessions = false
         sessions = []
@@ -514,7 +563,7 @@ final class BotWorkspace: Identifiable {
             roster.tearDown()
             self.roster = nil
             sidebarMode = .chats
-            if case .bot = selection { selection = nil }
+            if case .bot = selection { closeSelection() }
         case (let roster?, let link?):
             if link != roster.link {
                 roster.update(link: link)
@@ -719,6 +768,14 @@ final class BotWorkspace: Identifiable {
             draft.placement = projects.placement(in: projectID)
         }
         selection = nil
+        navigation.show()
+    }
+
+    /// The open screen went away under the person (deleted, archived, its Bot or gateway gone):
+    /// nothing is selected, and on iPhone the chat list comes back rather than an empty screen.
+    private func closeSelection() {
+        selection = nil
+        navigation.dismiss()
     }
 
     /// Opens a chat that may not be in the loaded history page (a project's chats come from the
@@ -786,7 +843,7 @@ final class BotWorkspace: Identifiable {
     func adopt(_ conversation: ConversationModel, session: HermesSession) {
         // Listed as a waiting chat until now (`keepWaiting`): its row becomes the chat's.
         if case .session(let key)? = selection, key != session.stableID, WaitingChat.isKey(key), conversations[key] === conversation {
-            selection = .session(session.stableID)
+            reselect(.session(session.stableID))
         }
         conversations = conversations.filter { !WaitingChat.isKey($0.key) || $0.value !== conversation }
         conversations[session.stableID] = conversation
@@ -800,13 +857,13 @@ final class BotWorkspace: Identifiable {
         if conversation === draft {
             draft = ConversationModel(workspace: self)
             if selection == nil {
-                selection = .session(session.stableID)
+                reselect(.session(session.stableID))
             }
         } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
             // Sent from a project home: the chat opens.
             projectDrafts[projectID] = nil
             if selection == .project(projectID) {
-                selection = .session(session.stableID)
+                reselect(.session(session.stableID))
             }
         }
     }
@@ -832,10 +889,10 @@ final class BotWorkspace: Identifiable {
         backgroundChats.removeAll { $0 === conversation }
         if conversation === draft {
             draft = ConversationModel(workspace: self)
-            if selection == nil { selection = .session(chat.rowKey) }
+            if selection == nil { reselect(.session(chat.rowKey)) }
         } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
             projectDrafts[projectID] = nil
-            if selection == .project(projectID) { selection = .session(chat.rowKey) }
+            if selection == .project(projectID) { reselect(.session(chat.rowKey)) }
         }
     }
 
@@ -906,7 +963,7 @@ final class BotWorkspace: Identifiable {
         conversations[chat.rowKey]?.discardWaiting()
         conversations[chat.rowKey] = nil
         forgetWaiting(chat)
-        if selection == .session(chat.rowKey) { selection = nil }
+        if selection == .session(chat.rowKey) { closeSelection() }
         if let sessionID = chat.sessionID, let client {
             try? await client.deleteSession(id: sessionID)
             sessions.removeAll { $0.stableID == sessionID }
@@ -1280,7 +1337,7 @@ final class BotWorkspace: Identifiable {
         guard let client else { return }
         let index = sessions.firstIndex { $0.stableID == session.stableID }
         sessions.removeAll { $0.stableID == session.stableID }
-        if selection == .session(session.stableID) { selection = nil }
+        if selection == .session(session.stableID) { closeSelection() }
         // Undo is offered at once, not once a busy Mac has answered.
         recentlyArchived = session
         let call = Task { _ = try await client.setSessionFlags(id: session.id, archived: true) }
@@ -1342,7 +1399,7 @@ final class BotWorkspace: Identifiable {
         FollowUpQueueStore.save([], key: session.stableID)
         FollowUpQueueStore.saveOutbox([], key: session.stableID)
         if selection == .session(session.stableID) {
-            selection = nil
+            closeSelection()
         }
     }
 

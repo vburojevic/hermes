@@ -77,7 +77,7 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
 
 ## 2. Navigation
 
-- **Sidebar / drawer (Chats mode):** New Chat, Tasks, Skills, then **Projects** (collapsible; the
+- **Chat list and sidebar (Chats mode):** Tasks, Skills, then **Projects** (collapsible; the
   collapsed state is remembered), then the chat history. Projects lists pinned projects first, then
   the rest by their time (below), newest first, at most five, then **All Projects** with the
   project count. The history
@@ -192,8 +192,8 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
 ## 5. SwiftUI notes
 
 - Sidebar: the Projects header is a plain button that collapses the section (`@AppStorage
-  "sidebar.projectsExpanded"`). On iPhone the drawer is a `LazyVStack` in a `ScrollView`, not a
-  `List`, for scrolling performance. On Mac each project is a custom disclosure row
+  "sidebar.projectsExpanded"`). The chat list is one `List` on every platform, so rows get the
+  system's swipe actions and the iPhone's push and back swipe. On Mac each project is a custom disclosure row
   (`MacProjectRows`), with its lanes loaded when it expands.
 - Project home: a `NavigationStack` destination on iPhone. On iPad and Mac it is the detail column
   of the `NavigationSplitView`, with two columns where there is room.

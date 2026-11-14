@@ -132,8 +132,7 @@ final class ScrollRun {
 }
 
 /// The open chat's scroll view, on either platform: the one showing the most of the window, with
-/// more to show than fits (the drawer's list sits off screen while it's closed; the sidebar's
-/// list is narrower).
+/// more to show than fits (the sidebar's list is narrower).
 @MainActor
 private struct Scrolled {
     #if os(iOS)

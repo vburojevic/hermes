@@ -6,11 +6,9 @@ import SwiftUI
 struct BotRosterSections: View {
     let roster: BotRoster
     @Bindable var workspace: BotWorkspace
-    var onNavigate: () -> Void = {}
 
     @State private var showsHidden = false
     @State private var actionError: HermesError?
-    @Environment(\.sidebarRowsInStack) private var inStack
 
     private var query: String {
         workspace.searchText.trimmingCharacters(in: .whitespaces)
@@ -63,36 +61,20 @@ struct BotRosterSections: View {
         let muted = workspace.unread.isMuted(key)
         return SidebarRow(isSelected: isSelected, height: InboxMetrics.botRowHeight) {
             workspace.pick(item)
-            onNavigate()
         } label: {
             BotInboxRow(roster: roster, bot: bot, workspace: workspace, isSelected: isSelected)
         }
         .contextMenu { BotActions(roster: roster, bot: bot, onError: { actionError = $0 }) }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            if !inStack || DrawerSwipe.isSystems {
-                Button(isUnread ? "Read" : "Unread", systemImage: isUnread ? "envelope.open" : "envelope.badge") { toggleRead(key, isUnread: isUnread) }
-                    .tint(Theme.swipeAction)
-                Button(bot.meta.isPinned ? "Unpin" : "Pin", systemImage: bot.meta.isPinned ? "pin.slash" : "pin") { togglePin(bot) }
-                    .tint(Theme.swipeActionQuiet)
-            }
+            Button(isUnread ? "Read" : "Unread", systemImage: isUnread ? "envelope.open" : "envelope.badge") { toggleRead(key, isUnread: isUnread) }
+                .tint(Theme.swipeAction)
+            Button(bot.meta.isPinned ? "Unpin" : "Pin", systemImage: bot.meta.isPinned ? "pin.slash" : "pin") { togglePin(bot) }
+                .tint(Theme.swipeActionQuiet)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            if !inStack || DrawerSwipe.isSystems {
-                Button(muted ? "Unmute" : "Mute", systemImage: muted ? "bell" : "bell.slash") { toggleMute(key, muted: muted) }
-                    .tint(Theme.swipeActionQuiet)
-            }
+            Button(muted ? "Unmute" : "Mute", systemImage: muted ? "bell" : "bell.slash") { toggleMute(key, muted: muted) }
+                .tint(Theme.swipeActionQuiet)
         }
-        .modifier(DrawerSwipeActions(
-            isInDrawer: inStack,
-            leading: [
-                SwipeTile(title: isUnread ? String(localized: "Read") : String(localized: "Unread"), symbol: isUnread ? "envelope.open" : "envelope.badge", isInk: true) { toggleRead(key, isUnread: isUnread) },
-                SwipeTile(title: bot.meta.isPinned ? String(localized: "Unpin") : String(localized: "Pin"), symbol: bot.meta.isPinned ? "pin.slash" : "pin") { togglePin(bot) },
-            ],
-            trailing: [
-                SwipeTile(title: muted ? String(localized: "Unmute") : String(localized: "Mute"), symbol: muted ? "bell" : "bell.slash") { toggleMute(key, muted: muted) },
-            ]
-        ))
-        .modifier(DrawerSwipeState(isInDrawer: inStack, value: [isUnread, bot.meta.isPinned, muted]))
         .accessibilityAction(named: isUnread ? Text("Mark as Read") : Text("Mark as Unread")) { toggleRead(key, isUnread: isUnread) }
         .accessibilityAction(named: bot.meta.isPinned ? Text("Unpin") : Text("Pin")) { togglePin(bot) }
         .accessibilityAction(named: muted ? Text("Unmute") : Text("Mute")) { toggleMute(key, muted: muted) }
@@ -124,7 +106,6 @@ struct BotRosterSections: View {
         let muted = workspace.unread.isMuted(key)
         return SidebarRow(isSelected: isSelected, height: InboxMetrics.botRowHeight) {
             workspace.pick(item)
-            onNavigate()
         } label: {
             GroupInboxRow(room: room, roster: roster, workspace: workspace, isSelected: isSelected)
         }

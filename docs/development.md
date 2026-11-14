@@ -454,7 +454,9 @@ its time since the process started (`LaunchTrace`: the model, the first view, th
 window turning visible on a Mac (its first frame), the first chat row on screen, Bots and last
 lines, the gateway's answer, the socket, the fresh lists, each row's last line), and the chat load
 steps above with it. `--many-chats N` on either mock adds N ordinary chats (every fifth with two
-unread replies), for a list as long as a well-used gateway's.
+unread replies), for a list as long as a well-used gateway's. With `--sparse-chats` they come
+mostly from Telegram and Discord: each page of 50 holds one or two of this app's chats and one
+scheduled run, for the end of a list that loads under This App or Scheduled Tasks.
 With `-HERMES_SEARCH` and `-HERMES_SEARCH_OPEN YES`, `-HERMES_SEARCH_AFTER <s>` waits that long
 after launch before typing, and the load log marks `search result opened` for the chat it opens. `-HERMES_RESTORE bot:ops` (or `session:<key>`) opens as if the
 window had been showing that chat; with `-HERMES_OPEN bot:ops` (or `-HERMES_OPEN_SESSION <key>`)
@@ -497,6 +499,7 @@ command) with no event, `…/close {process}` sends `terminal.close`, `…/reset
 `…/deliveries {persist}` lists later `message_agent` deliveries with `persist_on_release` (Hermes
 with upstream #136220) or without (Hermes 0.22, the default), for Settings → Setup's Bot-to-Bot row.
 `-HERMES_SEND_HERE <text> -HERMES_SEND_HERE_ROUNDS 1` sends it once into the open chat.
+`-HERMES_SEND_HERE_CHAT <id>` sends into that chat instead, open or not.
 In a Bot Chat, "links" answers with addresses written out every way agents write them (bare on a
 line, in a sentence, `www.`, a Markdown link, `localhost`, one in code) to check that they open.
 "clarify dose" (a Bot Chat or a Hermes chat) asks a long question with three short picks, as a Bot
@@ -564,8 +567,7 @@ too: zsh startup time (dotfiles, last spoken in 32 days ago) had a heartbeat 7 m
 Building Hermes for iPhone (Blog) was compacted 25 minutes ago; search for "zsh" or "outline" to see
 their results' times, and All Projects to see dotfiles stay last. Debug flags: `-HERMES_OPEN projects`,
 `-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
-`-HERMES_OPEN project-chat:<id>`, `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin` and
-`-HERMES_DRAWER YES`.
+`-HERMES_OPEN project-chat:<id>`, and `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin`.
 
 Unread and live activity (`Tools/mock-hermes/inbox.py`, `docs/inbox.md`): the gateway's chats keep
 Hermes' read mark (`last_read_at`); seeded, Release prep has 3 replies since it was read, Morning
@@ -576,6 +578,12 @@ makes Swift 6 migration plan look like it keeps writing (a 40 s cycle) and Disk 
 wait on an approval, for screenshots. Read marks change by `PATCH /api/sessions/{id} {unread}` on
 either server; `GET /api/sessions/{id}?profile=default` on the backend shows one. A chat a launch
 opened with `-HERMES_OPEN_SESSION` opens at its New Messages line when it has news.
+The list starts with this app's chats; the seeded Telegram, Slack, Discord and CLI chats and the
+scheduled run "Morning briefing · …" (`cron`) show under the filter's Show (`docs/inbox.md` §5).
+`-HERMES_INBOX_SHOW all|otherPlatforms|scheduled` starts the list there.
+`VoiceOverFocusUITests` turns VoiceOver on inside the simulator, puts it on a row or a message, and only then
+starts a "slow marathon" turn: in the open chat, or in a chat listed below the row, which moves above it. Each
+test checks the reply landed while it listened and that VoiceOver stayed put (about 3 minutes each).
 Activity moves as in Hermes, not only with messages (`docs/inbox.md` §2): a Bot Chat's
 `last_active` is its heartbeat, a Bot's `last_session` is any of its sessions but workers, and a
 compaction stores its summary as the newest row. Seeded, Ada's routine ran silently 7 minutes ago
@@ -681,8 +689,9 @@ On the Mac, a window on another Space takes no input from outside (cua-driver re
 bringing the app forward would take over the screen). `-HERMES_MAC_DRIVE "<steps>"` drives the
 Debug app from inside instead: `wait <s>`, `press <toolbar item>` (a Settings tab), `tap <x> <y>`
 (points from the Settings window's top left, a screenshot's pixels halved), `click top-button` (a
-pushed page's back button), `key cmd+[`, and `dump` / `views` to see what's there. Each step logs
-`HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked without a
+pushed page's back button), `key cmd+[`, `menu <title>` (a menu bar menu's items and shortcuts,
+which a locked or off-Space screen can't capture), and `dump` / `views` to see what's there. Each
+step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked without a
 screenshot (`App/Support/MacDebugDriver.swift`); `tabs` logs how many Settings tabs show, of how
 many. Capture with `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts
 the Settings tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR
@@ -757,7 +766,7 @@ And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`
 Check NAS backups and Ada's "Release notes draft"; prefixes match ("reconn"), `source`/`profile`
 filters work, and replies take 150 ms. Tasks have three recent runs, one failed
 (`/api/cron/jobs/<id>/runs`). Debug flags: `-HERMES_SEARCH <text>` types into the chat search
-(with `-HERMES_DRAWER YES` on iPhone), `-HERMES_PALETTE <text>` opens the Mac's ⌘K palette,
+(on iPhone, the chat list's), `-HERMES_PALETTE <text>` opens the Mac's ⌘K palette,
 `-HERMES_OPEN chat:<session id>` opens a chat, and `-HERMES_GALLERY talk[:n]` shows the Talk states
 without the microphone (a Mac build started from a shell can't use it).
 
