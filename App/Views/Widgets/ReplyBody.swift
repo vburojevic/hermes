@@ -11,11 +11,14 @@ struct ReplyBody: View, Equatable {
     var caches = true
     /// Inline ` ```widget ` blocks draw (a delivery the plugin processed, or the developer setting).
     var inlineWidgets = WidgetSettings.rendersInlineBlocks
+    /// A payload typed into a fence reads as its words, never code: a routine's delivery, where
+    /// the model wrote the widget instead of making it.
+    var typedAsText = false
     /// The sentence Listen is reading (`docs/voice.md` §3), in a reply that's all Markdown.
     var highlight: SpokenSentence?
 
     var body: some View {
-        let segments = ReplySplitter.split(text, inlineWidgets: inlineWidgets, streaming: streaming)
+        let segments = ReplySplitter.split(text, inlineWidgets: inlineWidgets, streaming: streaming, typedAsText: typedAsText)
         if segments.count == 1, case .markdown(let markdown) = segments[0] {
             MarkdownView(text: markdown, caches: caches, highlight: highlight)
         } else {
@@ -25,6 +28,8 @@ struct ReplyBody: View, Equatable {
                     case .markdown(let markdown): MarkdownView(text: markdown, caches: caches)
                     case .widget(let directive): WidgetSlot(directive: directive)
                     case .inline(let json): InlineWidgetSlot(json: json)
+                    case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json))
+                    case .unreadable: WidgetFallbackView(fallback: Self.unreadableFallback)
                     }
                 }
             }
@@ -32,10 +37,29 @@ struct ReplyBody: View, Equatable {
     }
 
     /// Whether `text` has anything but Markdown in it.
-    static func hasWidgets(_ text: String, inlineWidgets: Bool) -> Bool {
-        ReplySplitter.split(text, inlineWidgets: inlineWidgets).contains { segment in
+    static func hasWidgets(_ text: String, inlineWidgets: Bool, typedAsText: Bool = false) -> Bool {
+        ReplySplitter.split(text, inlineWidgets: inlineWidgets, typedAsText: typedAsText).contains { segment in
             if case .markdown = segment { false } else { true }
         }
+    }
+
+    /// A typed payload shown as its words, the way a widget the app can't draw is: never as a
+    /// card, since nothing stored or checked it (`docs/widgets.md` §2).
+    static func typedFallback(_ json: JSONValue) -> WidgetFallback {
+        WidgetFallback(
+            id: nil, rev: 1, type: json["type"]?.stringValue, title: json["title"]?.stringValue,
+            text: ReplySplitter.typedWords(json),
+            reason: .invalid(String(localized: "the routine wrote this widget out instead of making it")),
+            isPrivate: json["sensitivity"]?.stringValue != "normal", json: json)
+    }
+
+    /// A payload that couldn't be read (cut off, not JSON, no words): a plain line in its place,
+    /// never its raw text (`docs/widgets.md` §2).
+    static var unreadableFallback: WidgetFallback {
+        WidgetFallback(
+            id: nil, rev: 1, type: nil, title: nil, text: String(localized: "Couldn't show this card."),
+            reason: .invalid(String(localized: "its payload couldn't be read")),
+            isPrivate: false, json: .object([:]))
     }
 }
 

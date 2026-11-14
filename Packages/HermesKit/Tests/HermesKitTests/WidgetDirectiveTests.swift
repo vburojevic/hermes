@@ -98,9 +98,11 @@ struct WidgetDirectiveTests {
         ])
     }
 
-    @Test func inlineBlockThatIsntJSONStaysCode() {
+    /// The plugin wrote it as a widget, so it keeps its place as one that couldn't be read,
+    /// never raw text (`WidgetMisfireTests`).
+    @Test func inlineBlockThatIsntJSONKeepsItsPlace() {
         let text = "```widget\nnot json\n```"
-        #expect(ReplySplitter.split(text, inlineWidgets: true) == [.markdown(text)])
+        #expect(ReplySplitter.split(text, inlineWidgets: true) == [.unreadable])
     }
 
     /// U+1FEF GREEK VARIA decomposes to a backtick, so Swift's `Character` equality took it for

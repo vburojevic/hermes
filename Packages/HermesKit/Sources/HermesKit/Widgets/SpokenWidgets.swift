@@ -20,11 +20,12 @@ public enum SpokenWidgets {
     }
 
     /// A reply's or a routine delivery's words. `stored` finds a widget by id: a directive's
-    /// payload, or a stack child's newer revision.
-    public static func words(of text: String, inlineWidgets: Bool, stored: (String) -> WidgetPayload?, locale: Locale = .current) -> Words {
-        guard text.contains("::widget{") || text.contains("```widget") else { return Words(text: text) }
+    /// payload, or a stack child's newer revision. `typedAsText`: a delivery, where a payload the
+    /// routine typed reads as its words (`ReplySplitter.typedWidget`).
+    public static func words(of text: String, inlineWidgets: Bool, typedAsText: Bool = false, stored: (String) -> WidgetPayload?, locale: Locale = .current) -> Words {
+        guard text.contains("::widget{") || text.contains("```widget") || typedAsText else { return Words(text: text) }
         var isPrivate = false
-        let parts = ReplySplitter.split(text, inlineWidgets: inlineWidgets).compactMap { segment -> String? in
+        let parts = ReplySplitter.split(text, inlineWidgets: inlineWidgets, typedAsText: typedAsText).compactMap { segment -> String? in
             let words: Words?
             switch segment {
             case .markdown(let markdown):
@@ -38,6 +39,11 @@ public enum SpokenWidgets {
                     // Unreadable payloads fail closed: private unless they say otherwise.
                     words = json["fallback_text"]?.stringValue.map { Words(text: $0, isPrivate: json["sensitivity"]?.stringValue != "normal") }
                 }
+            case .typed(let json):
+                // Never checked, so it fails closed the same way.
+                words = ReplySplitter.typedWords(json).map { Words(text: $0, isPrivate: json["sensitivity"]?.stringValue != "normal") }
+            case .unreadable:
+                words = nil
             }
             if words?.isPrivate == true { isPrivate = true }
             return words?.text

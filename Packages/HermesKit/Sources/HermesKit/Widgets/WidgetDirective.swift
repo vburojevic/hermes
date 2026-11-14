@@ -34,8 +34,8 @@ public struct WidgetDirective: Hashable, Sendable {
         return (6...40).contains(rest.count) && rest.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
     }
 
-    /// `key="value"` pairs separated by spaces; `\"` escapes a quote. Anything malformed is not a
-    /// directive.
+    /// `key="value"` pairs separated by spaces, or by a comma as models often write them (the
+    /// plugin reads both); `\"` escapes a quote. Anything malformed is not a directive.
     private static func parseAttributes(_ text: Substring) -> [String: String]? {
         var result: [String: String] = [:]
         var index = text.startIndex
@@ -70,6 +70,12 @@ public struct WidgetDirective: Hashable, Sendable {
             if result[key] == nil { result[key] = value }
             let before = index
             skipSpaces()
+            if index < text.endIndex, text[index] == "," {
+                index = text.index(after: index)
+                skipSpaces()
+                guard index < text.endIndex else { return nil }
+                continue
+            }
             guard index == text.endIndex || index > before else { return nil }
         }
         return result
@@ -82,6 +88,13 @@ public enum ReplySegment: Hashable, Sendable {
     case widget(WidgetDirective)
     /// A ` ```widget ` block the plugin wrote into a scheduled delivery (`docs/widgets.md` §2).
     case inline(JSONValue)
+    /// A widget's payload a routine typed into its delivery instead of making it with the tool
+    /// (`docs/widgets.md` §2): shown as its words, never drawn. Only with `typedAsText`.
+    case typed(JSONValue)
+    /// A widget's payload that couldn't be read: cut off, not JSON, or without words to show
+    /// (`docs/widgets.md` §2). It keeps its place as a plain "couldn't show this card", never code
+    /// and never drawn. Only where inline blocks draw or with `typedAsText`.
+    case unreadable
 }
 
 public enum ReplySplitter {
@@ -91,12 +104,15 @@ public enum ReplySplitter {
     ///     the debug setting); otherwise they stay code.
     ///   - streaming: the text is still arriving: a last line that could become a directive is held
     ///     back, so `::widget{…}` never shows raw.
-    public static func split(_ text: String, inlineWidgets: Bool = false, streaming: Bool = false) -> [ReplySegment] {
+    ///   - typedAsText: a routine's delivery: a ` ```json ` (or undrawn ` ```widget `) block that is
+    ///     a widget's payload reads as its words (`typedWidget`), never as code.
+    public static func split(_ text: String, inlineWidgets: Bool = false, streaming: Bool = false, typedAsText: Bool = false) -> [ReplySegment] {
         // Every reply body asks, a streaming one for each word: most have no widget, and are
         // told so by a scan of their bytes before anything is split.
         let lastLine = text.lastIndex(of: "\n").map { text[text.index(after: $0)...] } ?? text[...]
         let holdsLastLine = streaming && !text.hasSuffix("\n") && couldBecomeDirective(lastLine)
-        guard holdsLastLine || text.containsBytes("::widget{") || (inlineWidgets && text.containsBytes("widget")) else {
+        guard holdsLastLine || text.containsBytes("::widget{") || ((inlineWidgets || typedAsText) && text.containsBytes("widget"))
+                || (typedAsText && text.containsBytes("\"type\"")) else {
             return [.markdown(text)]
         }
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -116,21 +132,34 @@ public enum ReplySplitter {
         for line in lines {
             if let open = fence {
                 if closesFence(line, marker: open.marker, length: open.length) {
-                    if open.isWidget {
+                    if open.isTyped {
+                        let code = open.lines.joined(separator: "\n")
+                        if let json = typedWidget(language: open.info, code: code) {
+                            flushProse()
+                            segments.append(.typed(json))
+                        } else if looksLikeWidget(language: open.info, code: code) {
+                            flushProse()
+                            segments.append(.unreadable)
+                        } else {
+                            prose.append(open.opening)
+                            prose.append(contentsOf: open.lines)
+                            prose.append(line)
+                        }
+                    } else if open.isWidget {
                         if let json = JSONValue.parse(open.lines.joined(separator: "\n")), case .object = json {
                             flushProse()
                             segments.append(.inline(json))
                         } else {
-                            // Not a payload: the block stays code.
-                            prose.append(open.opening)
-                            prose.append(contentsOf: open.lines)
-                            prose.append(line)
+                            // The plugin wrote this block as a widget, but it isn't one it can be
+                            // read as: it keeps its place, never as raw JSON.
+                            flushProse()
+                            segments.append(.unreadable)
                         }
                     } else {
                         prose.append(line)
                     }
                     fence = nil
-                } else if open.isWidget {
+                } else if open.isWidget || open.isTyped {
                     fence?.lines.append(line)
                 } else {
                     prose.append(line)
@@ -139,8 +168,9 @@ public enum ReplySplitter {
             }
             if let opening = opensFence(line) {
                 let isWidget = inlineWidgets && opening.info.unicodeScalars.elementsEqual("widget".unicodeScalars)
-                fence = Fence(marker: opening.marker, length: opening.length, isWidget: isWidget, opening: line)
-                if !isWidget { prose.append(line) }
+                let isTyped = typedAsText && !isWidget && ["json", "widget"].contains(opening.info.lowercased())
+                fence = Fence(marker: opening.marker, length: opening.length, isWidget: isWidget, isTyped: isTyped, info: opening.info, opening: line)
+                if !isWidget && !isTyped { prose.append(line) }
                 continue
             }
             if let directive = WidgetDirective.parse(line) {
@@ -155,10 +185,16 @@ public enum ReplySplitter {
             }
             prose.append(line)
         }
-        // An unclosed widget block is code once the reply is whole; while it streams, it waits.
-        if let open = fence, open.isWidget, !streaming {
-            prose.append(open.opening)
-            prose.append(contentsOf: open.lines)
+        // An unclosed widget block was cut off: once the reply is whole it keeps its place as a
+        // payload that couldn't be read; while it streams, it waits. Other unclosed json is code.
+        if let open = fence, (open.isWidget && !streaming) || open.isTyped {
+            if open.isWidget || looksLikeWidget(language: open.info, code: open.lines.joined(separator: "\n")) {
+                flushProse()
+                segments.append(.unreadable)
+            } else {
+                prose.append(open.opening)
+                prose.append(contentsOf: open.lines)
+            }
         }
         flushProse()
         return segments.isEmpty ? [.markdown("")] : segments
@@ -168,6 +204,8 @@ public enum ReplySplitter {
         var marker: Unicode.Scalar
         var length: Int
         var isWidget: Bool
+        var isTyped = false
+        var info = ""
         var opening: Substring
         var lines: [Substring] = []
     }
@@ -181,15 +219,53 @@ public enum ReplySplitter {
 
     /// The text with each widget as words: a directive as its `alt`, an inline block as its
     /// `fallback_text`. What Copy, Share and Read Aloud take.
-    public static func readableText(_ text: String) -> String {
-        guard text.containsBytes("::widget{") || text.containsBytes("```widget") else { return text }
-        return split(text, inlineWidgets: true).compactMap { segment -> String? in
+    public static func readableText(_ text: String, typedAsText: Bool = false) -> String {
+        guard text.containsBytes("::widget{") || text.containsBytes("```widget") || typedAsText else { return text }
+        return split(text, inlineWidgets: true, typedAsText: typedAsText).compactMap { segment -> String? in
             switch segment {
             case .markdown(let markdown): markdown
             case .widget(let directive): directive.alt
             case .inline(let json): json["fallback_text"]?.stringValue
+            case .typed(let json): typedWords(json)
+            case .unreadable: nil
             }
         }.joined(separator: "\n\n")
+    }
+
+    /// The payload a fenced block is, when a routine typed a widget instead of making it with the
+    /// tool: a JSON object with a `type`, something only a widget carries (`v`, `fallback_text` or
+    /// a widget id) and words to show. The plugin from 1.4.0 makes such a block into a card itself;
+    /// an older one passes it through as json. It is shown as text and never drawn: the plugin's
+    /// checks never saw it.
+    public static func typedWidget(language: String?, code: String) -> JSONValue? {
+        guard let language = language?.lowercased(), language == "json" || language == "widget",
+              code.first(where: { !$0.isWhitespace }) == "{",
+              let json = JSONValue.parse(Data(code.utf8)), case .object(let object) = json,
+              let type = object["type"]?.stringValue, !type.isEmpty,
+              object["v"] != nil || object["fallback_text"] != nil || object["id"]?.stringValue.map(WidgetDirective.isWidgetID) == true,
+              typedWords(json) != nil else { return nil }
+        return json
+    }
+
+    /// A fenced block meant as a widget that `typedWidget` couldn't read: a ` ```widget ` block,
+    /// or ` ```json ` that opens an object naming a `type` and a `v` or `fallback_text`, whether
+    /// or not it parses (a model can stop halfway or leave the words out). JSON that names neither
+    /// is someone's data and stays code.
+    static func looksLikeWidget(language: String?, code: String) -> Bool {
+        guard let language = language?.lowercased() else { return false }
+        if language == "widget" { return true }
+        guard language == "json", code.first(where: { !$0.isWhitespace }) == "{" else { return false }
+        func names(_ key: String) -> Bool {
+            code.range(of: "\"\(key)\"\\s*:", options: .regularExpression) != nil
+        }
+        return names("type") && (names("v") || names("fallback_text"))
+    }
+
+    /// A typed payload's words: its `fallback_text`, else its title.
+    public static func typedWords(_ json: JSONValue) -> String? {
+        [json["fallback_text"]?.stringValue, json["title"]?.stringValue]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 
     /// The widget a fenced JSON block is a copy of: a payload's id and revision, when the whole

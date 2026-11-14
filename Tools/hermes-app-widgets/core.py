@@ -24,7 +24,7 @@ from .validate import MAX_PAYLOAD, Checks, Spec, WidgetError, schema_issues
 
 logger = logging.getLogger("hermes_app_widgets")
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 # Bumped when the one-time reminder (prompt.REMINDER) changes enough to send again.
 REMINDER_VERSION = 2
 OPS = ("create", "update", "resolve", "claim", "get")
@@ -840,13 +840,70 @@ class Widgets:
         gets each widget's fallback_text."""
         if not response_text:
             return None
-        text = rewrite.neutralise_fences(response_text)
         s = self.session(session_id, str(platform or "").lower())
+        if s.platform == "cron" and s.app:
+            text = self._typed_widgets(response_text, s)
+        else:
+            text = rewrite.neutralise_fences(response_text)
         if s.platform in ("cron", "bot_room") and s.app:
             text = rewrite.replace_directives(text, self._inline)
         elif not s.app:
             text = rewrite.replace_directives(text, self._as_text)
         return text if text != response_text else None
+
+    def _typed_widgets(self, text: str, s: Session) -> str:
+        """A scheduled task's model sometimes types a widget's payload into its output (a ```widget or
+        ```json fence) instead of calling the tool. Each such payload is made here as the tool makes
+        it (its own id, rev and producer, the same checks) and becomes an inline block, so the
+        delivery shows the card, never the code. One that can be answered, needs a signature or
+        fails the checks becomes its fallback_text: only the tool, which the agent sees refuse,
+        makes a widget a person acts on. Everything else is neutralised as usual."""
+        lines = text.split("\n")
+        out: list[str] = []
+        at = made = 0
+
+        def plain(upto: int) -> None:
+            if upto > at:
+                out.extend(rewrite.neutralise_fences("\n".join(lines[at:upto])).split("\n"))
+
+        for block in rewrite.typed_blocks(text):
+            replacement = self._typed_widget(block, s, made < rewrite.MAX_DIRECTIVES)
+            if replacement is None:
+                continue
+            plain(block.first)
+            if replacement.startswith("```"):
+                made += 1
+            if replacement:
+                out.extend(replacement.split("\n"))
+            at = block.last + 1
+        plain(len(lines))
+        return "\n".join(out)
+
+    def _typed_widget(self, block: rewrite.Fenced, s: Session, drawable: bool) -> str | None:
+        """The fence's replacement: an inline block, the payload's text, or None to leave it code."""
+        try:
+            raw = json.loads(block.body)
+        except ValueError:
+            return None
+        if not isinstance(raw, dict) or raw.get("type") not in self.spec.catalog:
+            return None
+        if block.info == "json" and not ("fallback_text" in raw or "v" in raw or str(raw.get("id", "")).startswith("w_")):
+            return None
+        text = rewrite.neutralise_fences(_cap(str(raw.get("fallback_text") or raw.get("title") or "")))
+        parts = [raw] + [c for c in raw.get("children") or [] if isinstance(c, dict)]
+        now = self.clock()
+        if not drawable or any(self.actions_of(p, now) or fallback.requires_signature(p) for p in parts):
+            return text
+        payload = {k: v for k, v in raw.items() if k not in ("id", "rev", "producer")}
+        if isinstance(payload.get("children"), list):
+            payload["children"] = [{k: v for k, v in c.items() if k not in ("id", "rev", "producer")}
+                                   if isinstance(c, dict) else c for c in payload["children"]]
+        try:
+            stored = self.op_create({"payload": payload}, s)["payload"]
+        except Exception as exc:
+            logger.warning("widgets: a %s typed into a scheduled task's output wasn't made: %s", raw.get("type"), exc)
+            return text
+        return rewrite.inline_block(stored)
 
     # A directive's alt and a widget's fallback_text are the agent's words put in after the fences
     # were neutralised, so they're neutralised too: otherwise alt="```widget" puts back the opener

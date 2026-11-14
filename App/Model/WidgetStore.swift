@@ -121,7 +121,10 @@ final class WidgetStore {
                 return
             }
             await conversation?.fetchWidgetRows(limit: 200)
-            if results[id] == nil { missing.insert(id) }
+            if results[id] == nil, missing.insert(id).inserted {
+                // The id alone: a directive's alt is the agent's words and stays out of logs.
+                WidgetStore.logger.notice("widgets: no stored widget for directive \(id, privacy: .public)")
+            }
         }
     }
 
