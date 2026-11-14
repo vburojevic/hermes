@@ -834,6 +834,13 @@ spoken; with `-HERMES_DRAFT <text>` it sits over a grown composer.
 `-HERMES_TYPE_AFTER <seconds>` after it appears (8): "/" opens the command menu with the keyboard
 up, without taps (and on the Mac without clicks). With `-HERMES_SCROLL_LOG YES`, `MENULOG` lines give
 where the top bar ends and the composer's top, the two the menu's room comes from.
+`-HERMES_IME <script>` composes words in the open chat's composer as an input method does,
+`-HERMES_IME_AFTER <seconds>` after it appears (8), each letter left marked while the composer
+redraws. `nihao>你好` marks n, ni… then chooses 你好; `dajia>` leaves its letters marked; `|2`
+puts the caret after the second character. `IMELOG` lines give the field, caret, marked text,
+draft and how often the draft was written over the field; `-HERMES_IME_LOG <path>` saves them.
+With `-HERMES_SEND "marathon please"`, `nihao>你好 shijie>世界 |2 dajia>大家` ends at 你好大家世界,
+caret 4, while the reply runs (docs/composer.md §5).
 
 Voice without a microphone (simulators, UI tests, a Mac build started from a shell, which TCC stops
 at the real microphone): `-HERMES_VOICE_INPUT <path>@<seconds>,…` plays spoken clips as if heard by
