@@ -360,3 +360,93 @@ struct TurnRecoveryTests {
         #expect(chat.next(after: dead, elapsed: 1.2) == .wait(2))
     }
 }
+
+/// A reply that finished while the app heard nothing shows, instead of an endless "Thinking…"
+/// timer (`docs/chat.md` §4b): the socket went quiet without closing, the turn's end never came,
+/// and the header counted on until the app's cache was cleared.
+@Suite("A quiet turn reads the stored chat")
+struct QuietTurnTests {
+    let now = Date(timeIntervalSince1970: 1_792_000_000)
+
+    private func at(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(seconds) }
+
+    /// The chat before the turn, the person's message, and the turn's rows so far.
+    private func stored(_ turn: [SessionMessage]) -> [SessionMessage] {
+        [
+            SessionMessage(id: 8, role: "user", content: .text("Log breakfast"), timestamp: at(-900)),
+            SessionMessage(id: 9, role: "assistant", content: .text("Logged."), timestamp: at(-880)),
+            SessionMessage(id: 10, role: "user", content: .text("Think it over"), timestamp: at(-120)),
+        ] + turn
+    }
+
+    private let reply = SessionMessage(id: 11, role: "assistant", content: .text("Here's what I think."))
+    private let call = SessionMessage(id: 11, role: "assistant", content: .text(""),
+                                      toolCalls: [ToolCall(id: "c1", name: "terminal", arguments: #"{"command": "make"}"#)])
+
+    @Test("A turn that heard something lately isn't quiet; one silent past the threshold is")
+    func quietness() {
+        #expect(!QuietTurn.isQuiet(heardAt: at(-5), now: now))
+        #expect(!QuietTurn.isQuiet(heardAt: at(-QuietTurn.quietAfter + 1), now: now))
+        #expect(QuietTurn.isQuiet(heardAt: at(-QuietTurn.quietAfter), now: now))
+        #expect(QuietTurn.isQuiet(heardAt: at(-600), now: now))
+    }
+
+    @Test("The reply stored while the app heard nothing settles the turn, whatever the gateway says")
+    func storedReplySettles() {
+        for running in [true, false, nil] as [Bool?] {
+            #expect(QuietTurn.verdict(stored: stored([reply]), after: 9, running: running) == .settle)
+        }
+    }
+
+    @Test("A message sent again with the same words never takes the earlier one's reply as its own")
+    func sameWordsSentAgainKeeps() {
+        // The chat held "Think it over" and its reply when the same words were sent again, and the
+        // send never reached Hermes. Found by its words, the turn starts before the earlier one.
+        let chat = stored([reply])
+        let after = TranscriptBuilder.newestBeforeTurn(chat, ask: "Think it over", sentAt: at(0))
+        #expect(after == 9)
+        #expect(QuietTurn.verdict(stored: chat, after: after, running: nil, heldAtSend: 11) == .keep)
+        // Once Hermes stores the new message and its reply, the turn settles.
+        let again = chat + [
+            SessionMessage(id: 12, role: "user", content: .text("Think it over"), timestamp: at(1)),
+            SessionMessage(id: 13, role: "assistant", content: .text("Still yes.")),
+        ]
+        #expect(QuietTurn.verdict(stored: again, after: after, running: nil, heldAtSend: 11) == .settle)
+    }
+
+    @Test("A turn still running on the gateway, or one the app can't ask about, stays")
+    func runningStays() {
+        #expect(QuietTurn.verdict(stored: stored([call]), after: 9, running: true) == .keep)
+        #expect(QuietTurn.verdict(stored: stored([call]), after: 9, running: nil) == .keep)
+        #expect(QuietTurn.verdict(stored: nil, after: 9, running: true) == .keep)
+        #expect(QuietTurn.verdict(stored: nil, after: 9, running: nil) == .keep)
+    }
+
+    @Test("Nothing running and no reply stored: the turn's end went unheard, and its recovery decides")
+    func nothingRunningRecovers() {
+        #expect(QuietTurn.verdict(stored: stored([call]), after: 9, running: false) == .recover)
+        #expect(QuietTurn.verdict(stored: stored([]), after: 9, running: false) == .recover)
+        #expect(QuietTurn.verdict(stored: nil, after: 9, running: false) == .recover)
+    }
+
+    @Test("A socket gone silent asks whether the turn runs at every look")
+    func silentSocketAsksEveryLook() {
+        #expect(QuietTurn.asksRunning(socketHeard: false, lastAsked: nil, now: now))
+        #expect(QuietTurn.asksRunning(socketHeard: false, lastAsked: at(-1), now: now))
+    }
+
+    @Test("A socket that still hears its heartbeat asks once, then at most once a minute")
+    func liveSocketAsksOnceAMinute() {
+        #expect(QuietTurn.asksRunning(socketHeard: true, lastAsked: nil, now: now))
+        #expect(!QuietTurn.asksRunning(socketHeard: true, lastAsked: at(-15), now: now))
+        #expect(!QuietTurn.asksRunning(socketHeard: true, lastAsked: at(-QuietTurn.askRunningEvery + 1), now: now))
+        #expect(QuietTurn.asksRunning(socketHeard: true, lastAsked: at(-QuietTurn.askRunningEvery), now: now))
+    }
+
+    @Test("An earlier turn's reply never settles this one")
+    func earlierReplyDoesNotSettle() {
+        let before = Array(stored([]).prefix(2))
+        #expect(QuietTurn.verdict(stored: before, after: 9, running: nil) == .keep)
+        #expect(QuietTurn.verdict(stored: stored([]), after: 9, running: true) == .keep)
+    }
+}

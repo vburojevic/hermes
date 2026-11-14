@@ -962,6 +962,13 @@ final class BotRoster {
         }
     }
 
+    /// Whether the socket heard anything (a frame or a heartbeat answer) within `seconds`: a
+    /// quiet turn on one that did still has a live connection to hear its end on (`QuietTurn`).
+    func socketHeard(within seconds: Double) async -> Bool {
+        guard let socket else { return false }
+        return await socket.heard(within: seconds)
+    }
+
     /// The race behind `verify`. True: the socket answered and stays. False: it was replaced (a
     /// new one won, or it's being replaced quietly) or is gone.
     private func prove(_ socket: GatewaySocket, heardWithin seconds: Double) async -> Bool {
