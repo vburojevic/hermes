@@ -229,7 +229,7 @@ struct HermesCommands: Commands {
             }
             .disabled(model.selectedBotID == nil || router == nil)
         }
-        // View (macMenuView): Chats, Bots; Tasks, Skills; then the system's sidebar items.
+        // View (macMenuView): Chats, Bots; Tasks, Skills, Board, Filter; then the system's sidebar items.
         CommandGroup(before: .sidebar) {
             Button("Chats") { model.currentWorkspace?.sidebarMode = .chats }
                 .keyboardShortcut("1", modifiers: .command)
@@ -270,6 +270,12 @@ struct HermesCommands: Commands {
             Button("Move Card Left") { Task { await board?.moveOpenCard(forward: false) } }
                 .keyboardShortcut(.leftArrow, modifiers: .command)
                 .disabled(!canMove)
+            // The chat list's filter, as the sidebar's filter button has it (`docs/inbox.md` §5).
+            if let workspace = model.currentWorkspace {
+                Menu("Filter") { InboxFilterMenuContent(workspace: workspace) }
+            } else {
+                Menu("Filter") {}.disabled(true)
+            }
             Divider()
         }
         // Chat (macMenuChat): the turn, the conversation, then the gateways.

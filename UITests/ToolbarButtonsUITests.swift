@@ -1,8 +1,8 @@
 import XCTest
 
 /// The buttons in a chat's toolbar answer a tap, whether or not a tip hangs off them
-/// (`hermesTip`). Wrapped by a popover tip, the sidebar button and a Bot Chat's title did nothing
-/// on iPhone: the drawer opened only with a swipe from the edge. Start the mock first:
+/// (`hermesTip`). Wrapped by a popover tip, the button that showed the chat list and a Bot Chat's
+/// title once did nothing on iPhone. Start the mock first:
 /// `python3 -I Tools/mock-hermes/backend.py --port 19119 --gateway-port 18642`.
 final class ToolbarButtonsUITests: XCTestCase {
     override func setUp() {
@@ -10,18 +10,18 @@ final class ToolbarButtonsUITests: XCTestCase {
     }
 
     @MainActor
-    func testTheSidebarButtonOpensTheDrawerInABotChat() throws {
+    func testTheBackButtonShowsTheListFromABotChat() throws {
         let app = launch(["-HERMES_OPEN", "bot:researcher"])
         XCTAssertTrue(app.buttons["botChatTitle"].waitForExistence(timeout: 60), "the Bot Chat didn't open")
-        try expectTheButtonOpensTheDrawer(app)
+        try expectTheBackButtonShowsTheList(app)
     }
 
     @MainActor
-    func testTheSidebarButtonOpensTheDrawerInAHermesChat() throws {
+    func testTheBackButtonShowsTheListFromAHermesChat() throws {
         let app = launch(["-HERMES_SEND", "hello there"])
         let sent = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'hello there'")).firstMatch
         XCTAssertTrue(sent.waitForExistence(timeout: 60), "the chat didn't open")
-        try expectTheButtonOpensTheDrawer(app)
+        try expectTheBackButtonShowsTheList(app)
     }
 
     @MainActor
@@ -47,29 +47,22 @@ final class ToolbarButtonsUITests: XCTestCase {
         add(attachment)
         gotIt.tap()
         XCTAssertTrue(gotIt.waitForNonExistence(timeout: 5), "the tip didn't go")
-        try expectTheButtonOpensTheDrawer(app)
+        try expectTheBackButtonShowsTheList(app)
     }
 
     // MARK: Helpers
 
     @MainActor
-    private func expectTheButtonOpensTheDrawer(_ app: XCUIApplication) throws {
-        // iPad shows the sidebar beside the chat; the drawer is the iPhone's.
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "no drawer on iPad")
-        let button = app.buttons["Show sidebar"]
-        XCTAssertTrue(button.waitForExistence(timeout: 30), "no sidebar button")
+    private func expectTheBackButtonShowsTheList(_ app: XCUIApplication) throws {
+        // iPad shows the list beside the chat; only iPhone pushes the chat over it.
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "no back button on iPad")
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 30), "no back button")
         // Settled first: the screen it's on can still be coming in.
         Thread.sleep(forTimeInterval: 2)
-        // Open, the drawer pushes the screen aside, the button with it (a shut drawer's rows can
-        // still reach the test, so where things are is the tell).
-        let before = button.frame.minX
-        button.tap()
-        let deadline = Date.now.addingTimeInterval(5)
-        while Date.now < deadline, button.exists, button.frame.minX < before + 100 {
-            Thread.sleep(forTimeInterval: 0.2)
-        }
-        XCTAssertTrue(!button.exists || button.frame.minX >= before + 100,
-                      "the sidebar button didn't open the drawer (it's still at \(button.frame.minX))")
+        back.tap()
+        XCTAssertTrue(app.buttons["sidebar.compose"].firstMatch.waitForExistence(timeout: 5),
+                      "the back button didn't return to the chat list")
     }
 
     @MainActor

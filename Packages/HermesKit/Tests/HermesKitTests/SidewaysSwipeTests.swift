@@ -27,7 +27,7 @@ struct SidewaysSwipeTests {
     @Test func replyBeginsOnlyToTheLeft() {
         #expect(SidewaysSwipe.begins(velocity: CGPoint(x: -900, y: 120), translation: CGPoint(x: -12, y: 2), direction: .left))
         #expect(SidewaysSwipe.begins(velocity: .zero, translation: CGPoint(x: -16, y: 4), direction: .left))
-        // To the right (the drawer's edge swipe): not a reply.
+        // To the right (the back swipe): not a reply.
         #expect(!SidewaysSwipe.begins(velocity: CGPoint(x: 900, y: 120), translation: CGPoint(x: 12, y: 2), direction: .left))
         #expect(!SidewaysSwipe.begins(velocity: .zero, translation: CGPoint(x: 16, y: 4), direction: .left))
     }

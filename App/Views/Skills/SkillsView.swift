@@ -7,7 +7,6 @@ import SwiftUI
 /// composer's tray (`docs/bots-groups-skills.md`).
 struct SkillsView: View {
     let workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     @State private var skills: [Skill] = []
     @State private var skillsError: HermesError?
@@ -64,12 +63,6 @@ struct SkillsView: View {
         #endif
         .navigationTitle("Skills")
         .toolbar {
-            if let onToggleSidebar {
-                ToolbarItem(placement: .navigation) {
-                    SidebarButton(action: onToggleSidebar)
-                }
-                .sidebarButtonGlass()
-            }
             #if os(macOS)
             // Skills → Library | Learned (`macLearned`).
             ToolbarItem(placement: .primaryAction) {

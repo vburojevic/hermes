@@ -6,7 +6,6 @@ import SwiftUI
 /// disclosure row whose lanes (branch or worktree) indent under it.
 struct ProjectSidebarSection: View {
     let workspace: BotWorkspace
-    var onNavigate: () -> Void = {}
 
     /// Collapsed until opened: the chats come first (`docs/inbox.md` §2).
     @AppStorage("sidebar.projectsExpanded") private var isExpanded = false
@@ -21,7 +20,7 @@ struct ProjectSidebarSection: View {
                     #if os(macOS)
                     MacProjectRows(workspace: workspace, node: node)
                     #else
-                    ProjectSidebarRow(workspace: workspace, node: node, onNavigate: onNavigate)
+                    ProjectSidebarRow(workspace: workspace, node: node)
                     #endif
                 }
                 allProjectsRow
@@ -59,7 +58,6 @@ struct ProjectSidebarSection: View {
     private var allProjectsRow: some View {
         SidebarRow(isSelected: workspace.selection == .allProjects) {
             workspace.pick(.allProjects)
-            onNavigate()
         } label: {
             HStack(spacing: SidebarMetrics.rowPadding) {
                 OutlineTile(symbol: "square.grid.2x2", size: ProjectSidebarRow.tileSize)
@@ -79,12 +77,11 @@ struct ProjectSidebarSection: View {
     }
 }
 
-/// One project in the iPhone drawer or iPad sidebar (`projectRow`): tile, name, then a working dot
+/// One project in the iPhone chat list or the sidebar (`projectRow`): tile, name, then a working dot
 /// or the chat count. Long-press for the project menu.
 struct ProjectSidebarRow: View {
     let workspace: BotWorkspace
     let node: ProjectNode
-    var onNavigate: () -> Void = {}
 
     #if os(macOS)
     static let tileSize: CGFloat = 16
@@ -98,7 +95,6 @@ struct ProjectSidebarRow: View {
         let isSelected = workspace.selection == .project(node.id)
         SidebarRow(isSelected: isSelected) {
             workspace.pick(.project(node.id))
-            onNavigate()
         } label: {
             ProjectRowLabel(workspace: workspace, node: node, isSelected: isSelected)
         }

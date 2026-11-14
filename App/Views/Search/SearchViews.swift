@@ -1,13 +1,12 @@
 import HermesKit
 import SwiftUI
 
-// Search results (`docs/search.md`, `screens/iphone/drawer.elyx` → `drawerSearch`): the drawer on
+// Search results (`docs/search.md`, `screens/iphone/drawer.elyx` → `drawerSearch`): the chat list on
 // iPhone and the sidebar on iPad and Mac show these in place of the history while searching.
 
 /// The filter chips, the count line, matching projects, then one row per chat.
 struct SearchResultsSection: View {
     let workspace: BotWorkspace
-    var onNavigate: () -> Void = {}
 
     private var search: ChatSearch { workspace.search }
 
@@ -32,7 +31,6 @@ struct SearchResultsSection: View {
             ForEach(search.projects) { project in
                 SidebarRow(isSelected: workspace.selection == .project(project.id), height: 44) {
                     workspace.pick(.project(project.id))
-                    onNavigate()
                 } label: {
                     HStack(spacing: 10) {
                         ProjectTile(appearance: ProjectAppearance(color: project.color, icon: project.icon), size: 22)
@@ -52,7 +50,6 @@ struct SearchResultsSection: View {
             ForEach(search.hits) { hit in
                 SearchResultRow(hit: hit, time: search.time(of: hit), place: search.place(of: hit), isSelected: isSelected(hit)) {
                     workspace.open(hit)
-                    onNavigate()
                 }
             }
         }

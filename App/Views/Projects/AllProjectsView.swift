@@ -5,7 +5,6 @@ import SwiftUI
 /// the git folders Hermes found that aren't projects yet ("Found on Studio Mac"), then Archived.
 struct AllProjectsView: View {
     let workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     @State private var adding: Set<String> = []
     @State private var error: String?
@@ -261,12 +260,6 @@ struct AllProjectsView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if let onToggleSidebar {
-            ToolbarItem(placement: .navigation) {
-                SidebarButton(action: onToggleSidebar)
-            }
-            .sidebarButtonGlass()
-        }
         #if os(macOS)
         // The trailing side on the Mac.
         ToolbarSpacer(.flexible)

@@ -98,7 +98,7 @@ nothing in between.
 
 **And the rest:** steer or queue a follow-up while Hermes works, and undo any turn that changed files.
 Projects group chats by folder and branch. Read and edit what Hermes remembers about you, and see the
-skills it wrote for itself. Search everything that was said. A drawer on iPhone, a split view on iPad,
+skills it wrote for itself. Search everything that was said. The chat list first on iPhone, a sidebar on iPad,
 menus and shortcuts on the Mac, with Dynamic Type, VoiceOver and Reduce Motion throughout.
 
 <details>

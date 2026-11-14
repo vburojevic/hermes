@@ -118,3 +118,42 @@ public struct DetailPass: Equatable, Sendable {
         if opened == current { count += 1 }
     }
 }
+
+/// Where the selected screen shows on iPhone, and in an iPad window too narrow for a sidebar
+/// (`docs/design-to-swiftui.md` §6): the chat list is the first screen, and the selected screen
+/// opens on top of it, with the system's back button and swipe back. On a wider window both show
+/// side by side and nothing here moves.
+public struct CompactNavigation: Equatable, Sendable {
+    /// Bumped each time the selected screen should come on screen; a compact window pushes it.
+    public private(set) var pushes = 0
+    /// Bumped each time the screen on show went away under the person (its chat deleted or
+    /// archived, its Bot removed); a compact window goes back to the list rather than show a
+    /// screen with nothing in it.
+    public private(set) var pops = 0
+    /// The selected screen is on screen. Always on a regular width; on a compact one only while
+    /// it is pushed. A chat that was backed out of stays selected, but isn't open: it reads no
+    /// replies and counts as unread again.
+    public var showsDetail = true
+
+    public init() {}
+
+    /// The selection changed. It keeps its place when switching Chats and Bots brings back the
+    /// other mode's selection under its list, or when the screen on show only gets a new name (a
+    /// draft filed under its chat once sent); a selection that clears (its chat deleted) leaves
+    /// the window where it is too, and `dismiss()` says when it should go back.
+    public mutating func selectionChanged(to item: SidebarItem?, keepsPlace: Bool) {
+        guard item != nil, !keepsPlace else { return }
+        pushes += 1
+    }
+
+    /// A screen asked for by name: a row picked (even the selected one), New Chat, All Bots, a
+    /// window opening on what it showed last.
+    public mutating func show() {
+        pushes += 1
+    }
+
+    /// The selected screen is gone: back to the list.
+    public mutating func dismiss() {
+        pops += 1
+    }
+}

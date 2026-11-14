@@ -113,3 +113,50 @@ struct SidebarSelectionTests {
         #expect(SidebarItem(storedValue: "nonsense") == nil)
     }
 }
+
+@Suite("Compact navigation")
+struct CompactNavigationTests {
+    @Test func aNewSelectionOpensItsScreen() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false)
+        #expect(navigation.pushes == 1)
+        navigation.selectionChanged(to: .bot("ada"), keepsPlace: false)
+        #expect(navigation.pushes == 2)
+    }
+
+    @Test func aSelectionThatKeepsItsPlaceStaysOnTheList() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .bot("ada"), keepsPlace: true)
+        navigation.selectionChanged(to: nil, keepsPlace: true)
+        #expect(navigation.pushes == 0)
+    }
+
+    @Test func aClearedSelectionStaysWhereItIs() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: nil, keepsPlace: false)
+        #expect(navigation.pushes == 0)
+    }
+
+    @Test func askingByNameAlwaysOpens() {
+        var navigation = CompactNavigation()
+        // New Chat and All Bots select nothing; a row picked again keeps its selection.
+        navigation.show()
+        navigation.show()
+        #expect(navigation.pushes == 2)
+    }
+
+    @Test func aScreenThatWentAwayGoesBackToTheList() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false)
+        // The open chat is deleted: its selection clears, which alone moves nothing.
+        navigation.selectionChanged(to: nil, keepsPlace: false)
+        navigation.dismiss()
+        #expect(navigation.pushes == 1)
+        #expect(navigation.pops == 1)
+    }
+
+    @Test func theScreenStartsOnScreen() {
+        // Wide windows never push: the detail is always there.
+        #expect(CompactNavigation().showsDetail)
+    }
+}

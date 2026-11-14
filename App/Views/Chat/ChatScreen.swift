@@ -6,8 +6,6 @@ import UniformTypeIdentifiers
 struct ChatScreen: View {
     @Bindable var conversation: ConversationModel
     let workspace: BotWorkspace
-    /// Set on compact layouts, where the sidebar is a drawer.
-    var onToggleSidebar: (() -> Void)?
 
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -515,22 +513,8 @@ struct ChatScreen: View {
 
     // MARK: Toolbar
 
-    /// Leading. On iPad `.navigation` lands on the trailing side while the Team inspector is open.
-    #if os(iOS)
-    private static let sidebarPlacement = ToolbarItemPlacement.topBarLeading
-    #else
-    private static let sidebarPlacement = ToolbarItemPlacement.navigation
-    #endif
-
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if let onToggleSidebar {
-            ToolbarItem(placement: Self.sidebarPlacement) {
-                SidebarButton(action: onToggleSidebar)
-                    .hermesTip(DrawerTip())
-            }
-            .sidebarButtonGlass()
-        }
         if let roster, let name = conversation.botName {
             botToolbar(roster: roster, name: name)
         } else {

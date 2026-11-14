@@ -3,7 +3,7 @@ import QuartzCore
 import UIKit
 
 /// Debug only (`-HERMES_FRAME_LOG YES`): logs every frame that took longer than its budget, so a
-/// hitch during an animation (opening a chat, the drawer) shows as a line with its length. Times
+/// hitch during an animation (opening a chat, going back) shows as a line with its length. Times
 /// count from the process's start, so a launch reads straight off the log.
 @MainActor
 final class FrameMonitor: NSObject {
