@@ -54,6 +54,11 @@ final class InboxUITests: XCTestCase {
         chats.tap()
         // The chat, not the task runs of the same name, which list above it.
         let briefing = row("Morning briefing", saying: "You have 3 events today", in: app)
+        // These chats came from Telegram, Slack and the terminal: hidden while Show is This App,
+        // the default (`docs/inbox.md` §5), so the test picks All Chats itself.
+        XCTAssertTrue(row("Swift 6 migration plan", in: app).waitForExistence(timeout: 30), "no chat from this app")
+        XCTAssertFalse(briefing.exists, "a Telegram chat shows under This App")
+        showAllChats(in: app)
         XCTAssertTrue(briefing.waitForExistence(timeout: 30), "no Morning briefing row")
         try await eventually(timeout: 20) { briefing.label.contains("1 unread") }
 
@@ -91,6 +96,17 @@ final class InboxUITests: XCTestCase {
         ] + arguments
         app.launch()
         return app
+    }
+
+    /// Show ▸ All Chats, through the filter menu.
+    @MainActor
+    private func showAllChats(in app: XCUIApplication) {
+        let filter = app.buttons["inbox.filter"].firstMatch
+        XCTAssertTrue(filter.waitForExistence(timeout: 5), "no filter button")
+        filter.tap()
+        let all = app.buttons["All Chats"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5), "no All Chats in the filter")
+        all.tap()
     }
 
     @MainActor

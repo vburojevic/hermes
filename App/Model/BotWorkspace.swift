@@ -93,7 +93,9 @@ final class BotWorkspace: Identifiable {
     /// closes, as its deliveries showed (`DeliveryProtection`, Settings → Setup): nil until a
     /// delivery has been seen on the current version. Kept per gateway on the device.
     private(set) var deliveryProtection: DeliveryProtection?
-    /// The chat list's filter (`docs/inbox.md` §5).
+    /// The chat list's filter (`docs/inbox.md` §5): which chats it holds (Show), then which of
+    /// those (Only).
+    var inboxShow = InboxShow.atLaunch
     var inboxFilter = InboxFilter.all
     /// A chat just archived from the list, for Undo.
     var recentlyArchived: HermesSession?
@@ -102,8 +104,9 @@ final class BotWorkspace: Identifiable {
     private(set) var isLoadingSessions = false
     private(set) var hasMoreSessions = false
     /// Server-side paging position. Pinned rows are back-filled outside the page, so
-    /// `sessions.count` can't be used as the next offset.
-    @ObservationIgnored private var nextSessionOffset = 0
+    /// `sessions.count` can't be used as the next offset. Observed: the loading rows at the end of
+    /// the list load again each time it moves (`docs/inbox.md` §5).
+    private(set) var nextSessionOffset = 0
     /// The gateway's chat list arrived this launch: the device's copy never goes over it.
     @ObservationIgnored private var hasFetchedSessions = false
     private(set) var modelOptions: ModelOptions?

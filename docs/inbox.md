@@ -331,13 +331,31 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 ## 5. Lists: filters, menus, swipes, counts
 
 - **Filters** (Chats mode): one filter button (`inboxFilterMenu`; `InboxFilterButton`) with a
-  menu: Only Unread n, Only Needs You n, Only Running n (one at a time; turning the one that's on
-  off shows everything again), then Mark All as Read. On iPhone it leads the root's bottom
-  toolbar, on iPad it sits in the sidebar's toolbar, on the Mac in the source list's titlebar and
-  as View ▸ Filter. While a filter is on the button fills, and VoiceOver reads which one. The menu
-  keeps the place of its Show section (This App, All Chats, Other Platforms, Scheduled Tasks) for
-  the chat-source filter, which isn't built yet. Filters cover project chats too. An empty filter
-  shows "You're all caught up" (`CaughtUpState`).
+  menu: a Show section, then Only Unread n, Only Needs You n, Only Running n (one at a time;
+  turning the one that's on off shows everything again), then Mark All as Read. On iPhone it
+  leads the root's bottom toolbar, on iPad it sits in the sidebar's toolbar, on the Mac in the
+  source list's titlebar and as View ▸ Filter. For anything but This App with no Only the button
+  fills, and VoiceOver reads both choices ("This App", "Other Platforms, Unread").
+- **Show** picks which chats the list holds, by the session's `source`
+  ([sessions-and-models.md](sessions-and-models.md) §1; `SessionOrigin`, `InboxShow`):
+  - **This App**, the default: chats started here, in Hermes Desktop or another API client (no
+    source, `api_server`, `desktop`, `hermes_app`), plus any chat the person pinned, wherever it
+    came from. Each launch starts here.
+  - **All Chats**: every chat, as the list was before.
+  - **Other Platforms**: the terminal, messaging platforms, editors and the Board's workers
+    (`cli`, `tui`, `telegram`, `discord`, `acp`, `kanban`…).
+  - **Scheduled Tasks**: the runs of scheduled tasks (`cron`).
+
+  The Only filters narrow what Show holds, and their counts count it. Projects show only under
+  This App or All Chats with no Only; the rest is one flat list. Older pages load while the end
+  of the list is on screen, under every Show: a page that brings too few chats the list shows to
+  fill the screen loads the next one, until the end is off screen or the gateway has no more.
+  Search still finds every chat, whatever Show holds.
+- **Empty lists** (`CaughtUpState`): an Only with nothing in it shows "You're all caught up". A
+  Show that holds nothing, once every page is in, says so, with or without an Only: "No chats
+  from this app" (This App), "No chats from other platforms", "No scheduled runs", each with
+  where they come from (design: `caughtUpThisApp`, `caughtUpOtherPlatforms`,
+  `caughtUpScheduled`). A gateway with no chats at all shows "No chats yet" instead.
 - **Mark All as Read** at the end of the Unread list and in the filter menu: every badge clears at
   once, and the gateway hears of them 4 calls at a time. A mark this device set holds over the
   gateway's until its call is back and 10 s more (or the gateway agrees), so a busy Mac's list
@@ -375,6 +393,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 - Rows read "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs"; live "…, Hermes: Running
   swift test"; muted "…, muted, 12 unread"; needs you "…, waiting for your approval".
 - Rows have custom actions: Mark as Read / Unread, Pin / Unpin, Mute / Unmute, Archive.
+- VoiceOver stays where the person put it while replies arrive: on a row of the list, and on a
+  message in the open chat. A reply changes a row's words and moves it up, but never takes the
+  focus with it (`VoiceOverFocusUITests`, against the mock's "slow marathon" turn).
 - The New Messages line is a header; an "Unread" rotor goes between it and the new messages.
 - The pill is a button that says where it goes: "2 new messages. Jump to the first one.", after
   the first tap "2 new messages. Jump to the latest.", for one message "1 new message. Jump to

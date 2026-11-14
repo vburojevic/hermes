@@ -123,11 +123,22 @@ final class NativeNavigationUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", chatTitle)).firstMatch
     }
 
-    /// The list opens in whichever mode it showed last.
+    /// The list opens in whichever mode it showed last. The chat these tests use came from the
+    /// terminal, so after the list's own chats are in, it's hidden until Show is All Chats
+    /// (`docs/inbox.md` §5); each test picks that itself.
     @MainActor
     private func showChats(in app: XCUIApplication) {
         let chats = app.buttons["Chats"].firstMatch
         if chats.waitForExistence(timeout: 60) { chats.tap() }
+        let own = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Swift 6 migration plan'")).firstMatch
+        XCTAssertTrue(own.waitForExistence(timeout: 60), "no chat from this app in the list")
+        XCTAssertFalse(chatRow(in: app).exists, "a chat from the terminal shows under This App")
+        let filter = app.buttons["inbox.filter"].firstMatch
+        XCTAssertTrue(filter.waitForExistence(timeout: 5), "no filter button")
+        filter.tap()
+        let all = app.buttons["All Chats"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5), "no All Chats in the filter")
+        all.tap()
     }
 
     @MainActor

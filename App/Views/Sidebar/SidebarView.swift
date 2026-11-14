@@ -149,7 +149,7 @@ struct SidebarView: View {
         }
         if !isSearching {
             navigationRows
-            if botRoster == nil, workspace.inboxFilter == .all {
+            if botRoster == nil, workspace.showsProjects {
                 ProjectSidebarSection(workspace: workspace)
             }
         }
@@ -257,7 +257,7 @@ struct SidebarView: View {
     private var navigationHeight: CGFloat {
         let switcher: CGFloat = isCompact && workspace.roster != nil ? 46 : 0
         guard botRoster == nil else { return switcher + CGFloat(isCompact ? 3 : 4) * SidebarMetrics.rowHeight }
-        guard workspace.inboxFilter == .all else { return switcher + 2 * SidebarMetrics.rowHeight }
+        guard workspace.showsProjects else { return switcher + 2 * SidebarMetrics.rowHeight }
         let projects = workspace.projects!
         guard projects.isAvailable else { return switcher + 2 * SidebarMetrics.rowHeight }
         let expanded = UserDefaults.standard.object(forKey: "sidebar.projectsExpanded") as? Bool ?? false
@@ -293,7 +293,10 @@ struct SidebarView: View {
             SkeletonRows(count: 2)
                 .padding(.vertical, 8)
                 .modifier(SidebarRowInsets())
-                .task { await workspace.loadMoreSessions() }
+                // Keyed to the paging position: a page can bring too few rows the list shows to
+                // push these off screen (This App on a gateway used mostly from Telegram), and
+                // they would then wait for a scroll that can't come (`docs/inbox.md` §5).
+                .task(id: workspace.nextSessionOffset) { await workspace.loadMoreSessions() }
         }
     }
 
@@ -425,6 +428,10 @@ struct SidebarView: View {
             if workspace.search.isEmpty {
                 SearchEmptyState(search: workspace.search)
             }
+        } else if workspace.showHoldsNothing {
+            // The gateway has chats, none of them from where Show looks (`docs/inbox.md` §5), so
+            // that is what an Only on top of it shows too.
+            CaughtUpState(show: workspace.inboxShow)
         } else if workspace.inboxFilter != .all {
             if workspace.inboxSessions.isEmpty {
                 CaughtUpState(filter: workspace.inboxFilter)

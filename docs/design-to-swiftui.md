@@ -236,8 +236,8 @@ column says where each item lives in the code now.
 | Gateway name, switcher, Add Gateway, Pair a Device, Manage Gateways | The root's large title with a menu | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `CompactListChrome` and `GatewayMenuContent` (`SidebarView`); `BotSwitcher` |
 | Connection status | The subtitle under the large title | The sidebar footer | The source list footer | `navChats` | `CompactListChrome`; `SidebarFooter` |
 | Settings | Gear trailing in the root's top bar | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `SidebarView.toolbar`; `SidebarFooter` |
-| Default list | This app's recent chats (`api_server`, `desktop`, `hermes_app`, no source) | The same | The same | `navChats`, `macNavWindow` | Not built yet: every chat shows until the chat-source filter; its Show section has its place in `InboxFilterMenuContent` |
-| Other platforms, scheduled chats | The filter: All Chats, Other Platforms, Scheduled Tasks | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu | As above |
+| Default list | This app's recent chats (`api_server`, `desktop`, `hermes_app`, no source) | The same | The same | `navChats`, `macNavWindow` | `BotWorkspace.inboxShow` (This App), `SessionOrigin`; `BotWorkspace.inboxSessions` |
+| Other platforms, scheduled chats | The filter: All Chats, Other Platforms, Scheduled Tasks | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu | The Show section of `InboxFilterMenuContent`; `CaughtUpState(show:)` for an empty one (`caughtUpThisApp`, `caughtUpOtherPlatforms`, `caughtUpScheduled`) |
 | Unread, Needs You, Running filters | In the filter menu, with counts; a filtered list tints the button | The filter menu | The filter menu and View ▸ Filter | `inboxFilterMenu`, `rootBottomBarFiltered` | `InboxFilterMenuContent`, `InboxFilterButton`; `HermesCommands` |
 | Mark All as Read | Last item of the filter menu, and at the end of the Unread list | The same | The same, and View ▸ Filter | `inboxFilterMenu` | `InboxFilterMenuContent`; `SidebarView.sessionSections` |
 | Search chats | `.searchable` in the root's bottom toolbar; the results open with filter chips (All, Chats, Projects, Bots, Tasks) | The sidebar's search field, the same chips | The source list's field, ⌥⌘F, the same chips | `navSearch`, `macSearch` | `CompactListChrome`, `SidebarView.toolbar`; `SearchField`; `SearchResultsSection`, `SearchChips` |
@@ -261,8 +261,6 @@ column says where each item lives in the code now.
 Where the running app differs from the design files, as the code shows it (to check against the
 app):
 
-- The default list still shows every chat; This App and the other sources come with the
-  chat-source filter.
 - Quick Open is a palette on the Mac and a sheet on iOS; the design drew only the Mac palette.
 - The mode switcher pill draws its own shadow on glass, a stacked shadow the design doesn't have.
 - On the Mac, sidebar rows can overlap at the largest text sizes.

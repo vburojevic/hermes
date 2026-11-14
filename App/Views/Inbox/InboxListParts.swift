@@ -10,8 +10,15 @@ struct InboxFilterMenuContent: View {
     @Bindable var workspace: BotWorkspace
 
     var body: some View {
-        // Show: This App, All Chats, Other Platforms, Scheduled Tasks (`docs/inbox.md` §5). The
-        // section is reserved here; its sources come with the chat-source filter.
+        Section("Show") {
+            Picker("Show", selection: $workspace.inboxShow) {
+                ForEach(InboxShow.allCases, id: \.self) { show in
+                    Label(show.title, systemImage: show.symbol).tag(show)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        }
         Section("Only") {
             ForEach([InboxFilter.unread, .needsYou, .running], id: \.self) { filter in
                 Toggle(isOn: only(filter)) {
@@ -39,46 +46,76 @@ struct InboxFilterMenuContent: View {
     }
 }
 
-/// The filter button: tinted while a filter is on, and saying which in VoiceOver.
+/// The filter button: filled for any choice but the default (This App, nothing narrowed), so a
+/// narrowed list is never a surprise, and saying both choices in VoiceOver.
 struct InboxFilterButton: View {
     @Bindable var workspace: BotWorkspace
+
+    private var isNarrowed: Bool {
+        workspace.inboxShow != .thisApp || workspace.inboxFilter != .all
+    }
+
+    private var value: String {
+        workspace.inboxFilter == .all
+            ? workspace.inboxShow.title
+            : "\(workspace.inboxShow.title), \(workspace.inboxFilter.title)"
+    }
 
     var body: some View {
         Menu {
             InboxFilterMenuContent(workspace: workspace)
         } label: {
-            Label("Filter", systemImage: workspace.inboxFilter == .all
-                  ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+            Label("Filter", systemImage: isNarrowed
+                  ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
         }
         .accessibilityLabel("Filter")
-        .accessibilityValue(workspace.inboxFilter == .all ? Text("All chats") : Text(workspace.inboxFilter.title))
+        .accessibilityValue(value)
         .accessibilityIdentifier("inbox.filter")
     }
 }
 
-/// A filter with nothing in it (`caughtUp`), centred in the free space.
+/// A filter with nothing in it (`caughtUp`), centred in the free space: Only with no chat in that
+/// state, or Show holding no chat (`caughtUpThisApp`, `caughtUpOtherPlatforms`,
+/// `caughtUpScheduled`, `docs/inbox.md` §5).
 struct CaughtUpState: View {
-    let filter: InboxFilter
+    private let symbol: String
+    private let title: String
+    private let message: String
 
-    private var title: String {
+    init(filter: InboxFilter) {
+        symbol = "checkmark.circle.fill"
         switch filter {
-        case .unread, .all: String(localized: "You’re all caught up")
-        case .needsYou: String(localized: "Nothing needs you")
-        case .running: String(localized: "Nothing running")
+        case .unread, .all:
+            title = String(localized: "You’re all caught up")
+            message = String(localized: "Nothing unread in your chats.")
+        case .needsYou:
+            title = String(localized: "Nothing needs you")
+            message = String(localized: "Hermes isn’t waiting on you in any chat.")
+        case .running:
+            title = String(localized: "Nothing running")
+            message = String(localized: "No chat is running right now.")
         }
     }
 
-    private var message: String {
-        switch filter {
-        case .unread, .all: String(localized: "Nothing unread in your chats.")
-        case .needsYou: String(localized: "Hermes isn’t waiting on you in any chat.")
-        case .running: String(localized: "No chat is running right now.")
+    /// A list that is simply empty, so its Show glyph rather than a check.
+    init(show: InboxShow) {
+        symbol = show.symbol
+        switch show {
+        case .thisApp, .all:
+            title = String(localized: "No chats from this app")
+            message = String(localized: "Chats you start in this app show up here.")
+        case .otherPlatforms:
+            title = String(localized: "No chats from other platforms")
+            message = String(localized: "Telegram, Discord and CLI chats show up here.")
+        case .scheduled:
+            title = String(localized: "No scheduled runs")
+            message = String(localized: "Runs from your scheduled tasks show up here.")
         }
     }
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: symbol)
                 .font(.system(size: 30))
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
@@ -93,6 +130,23 @@ struct CaughtUpState: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
+    }
+}
+
+extension InboxShow {
+    /// The choice's glyph, in the menu and on its empty state. This App is the device it runs on.
+    var symbol: String {
+        switch self {
+        case .thisApp:
+            #if os(macOS)
+            "macbook"
+            #else
+            UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            #endif
+        case .all: "tray"
+        case .otherPlatforms: "bubble.left.and.bubble.right"
+        case .scheduled: "calendar.badge.clock"
+        }
     }
 }
 
