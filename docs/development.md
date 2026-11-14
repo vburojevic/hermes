@@ -853,7 +853,7 @@ The mock plays the app's own plugins per profile (`Tools/mock-hermes/app_plugins
 `plugins.manage`, [plugins.md](plugins.md) §2.1). `--app-plugins current` (the default) has
 both plugins in every profile, installed by hand; `missing` (the default with `--push-relay
 none`) has them nowhere, and `/app-push` answers 4018 until the root has it; `partial` leaves out Ada
-(`writer`) and Scout; `old` has the previous versions everywhere (push 1.1.0, widgets 1.1.1: the
+(`writer`) and Scout; `old` has the previous versions everywhere (push 1.1.0, widgets 1.3.0: the
 same access), so the app updates them quietly; `widened` has widgets 1.1.0, whose pin adds a hook,
 so the update waits for the consent card; `off` has the root's hermes-app-push turned off (Turn On);
 `failing` has them nowhere and every install fails like a gateway that can't reach GitHub. Installs
