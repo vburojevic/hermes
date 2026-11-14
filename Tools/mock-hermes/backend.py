@@ -89,7 +89,7 @@ PROFILES = {}      # name -> profile dict
 # stored session id -> {profile, title, hidden, source, started_at, last_active, messages}. `last_active` is
 # Hermes' `last_activity_at`: the turn heartbeat (any API call, tool, compaction), not the newest message.
 STORED = {}
-LOSE_ANSWER = {}   # method -> taken: the next such request loses its answer (/api/mock/lose-answer)
+LOSE_ANSWER = {}   # method -> taken or "freeze": the next such request loses its answer (/api/mock/lose-answer)
 # /api/mock/stall {seconds}: the dashboard's event loop frozen, as Hermes logs it ("event loop
 # stalled N s (GIL pressure suspected)"). Requests, socket frames and pings wait, then all answer;
 # the API-server mock (the gateway, another process) keeps answering meanwhile.
@@ -2832,9 +2832,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"ok": True, "id": rid, "method": method})
         if url.path == "/api/mock/lose-answer":
             # Mock-only: the next request for `method` loses its answer and the socket is cut, after
-            # the request ran (`taken: true`) or before (`taken: false`). An unanswered send.
+            # the request ran (`taken: true`) or before (`taken: false`). An unanswered send. With
+            # `freeze: true` the request runs and its socket goes silent instead (half-open): no
+            # answer and no event ever reach the app, while the turn runs and is stored.
+            freeze = bool(body.get("freeze", False))
             with LOCK:
-                LOSE_ANSWER[str(body.get("method") or "prompt.submit")] = bool(body.get("taken", True))
+                LOSE_ANSWER[str(body.get("method") or "prompt.submit")] = "freeze" if freeze else bool(body.get("taken", True))
             return self.send_json(200, {"ok": True})
         if url.path == "/api/mock/freeze-sockets":
             # Mock-only: every open socket goes silent but stays connected (half-open).
@@ -3001,6 +3004,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             CURRENT.peer = peer  # each frame runs on its own thread (browser_control.py binds to the socket)
             result = handler(frame.get("params") or {})
+            if lose == "freeze":
+                peer.frozen = True
+                return
             if lose:
                 return peer.cut()
             if method in ("session.create", "session.resume", "session.activate") and result.get("session_id") in RUNTIME:

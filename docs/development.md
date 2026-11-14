@@ -331,8 +331,10 @@ checks included (`health: "prompt"` keeps those quick), until the process gets a
 of CPU every `gap` seconds (5–30 by default), when everything waiting goes out at once. It is what
 Hermes did at load 500 on 2026-10-19, and how the app tells busy from offline
 ([connecting-and-voice.md](connecting-and-voice.md) §8); `{"seconds": 0}` ends it. `POST
-/api/mock/lose-answer {method, taken}` loses the next answer to
-`method` (default `prompt.submit`) with the request run (`taken: true`) or not, and `POST
+/api/mock/lose-answer {method, taken, freeze}` loses the next answer to
+`method` (default `prompt.submit`) with the request run (`taken: true`) or not; with `freeze: true`
+the request runs and its socket goes half-open, so the turn is stored and the app hears nothing
+(`docs/chat.md` §4b), and `POST
 /api/mock/fail-reads {count}` refuses the next `count` read marks with 503 on both servers, as a busy
 gateway does, for the read outbox (`docs/inbox.md` §4), and `POST
 /api/mock/message-agent {from, to, text}` delivers another Bot's message off the socket (profile

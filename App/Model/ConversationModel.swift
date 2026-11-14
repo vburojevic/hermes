@@ -622,6 +622,19 @@ final class ConversationModel: Identifiable {
     /// Asks the gateway about a turn flag that holds the chat with nothing streaming
     /// (`watchStuckTurn`).
     @ObservationIgnored private var stuckTurnWatch: Task<Void, Never>?
+    /// When this chat last heard from the gateway's socket: a turn working there that hears
+    /// nothing for a while reads the stored chat (`watchQuietTurn`, `QuietTurn`).
+    @ObservationIgnored private var heardAt = Date.now
+    /// Reads the stored chat while a turn works over the socket and nothing is heard (`QuietTurn`).
+    @ObservationIgnored private var quietTurnWatch: Task<Void, Never>?
+    /// When the quiet-turn watch last asked whether the turn runs (`QuietTurn.asksRunning`).
+    @ObservationIgnored private var runningAskedAt: Date?
+    /// The newest stored row this chat held when this device sent the turn now working: its rows
+    /// all come after it (`QuietTurn.verdict`). Nil for a turn started elsewhere.
+    @ObservationIgnored private var heldAtSend: Int?
+    /// The `prompt.submit` waiting for its answer, which the stored chat may answer first
+    /// (`submitWatched`).
+    @ObservationIgnored private var submitRace: (id: UUID, continuation: CheckedContinuation<JSONValue?, any Error>)?
     /// Events that arrive while catching up after a reconnect wait here.
     @ObservationIgnored private var catchUpBuffer: [GatewayEvent]?
     /// What Hermes sends for the next turn while this device still finishes the last one waits
@@ -3764,6 +3777,13 @@ final class ConversationModel: Identifiable {
                 pause = RunStatusWatch.longestSleep
                 guard let status = try? await client.runStatus(runID: runID), !Task.isCancelled, self.live?.runID == runID else { continue }
                 self.applyRunQuestions(status, runID: runID, readAt: now)
+                // The run ended while its stream said nothing (a connection gone quiet without
+                // closing): the stream is let go, and `follow` ends the turn from this status
+                // rather than waiting out the stream (`docs/chat.md` §4b).
+                if status.isTerminal {
+                    self.subscription?.cancel()
+                    return
+                }
             }
         }
     }
@@ -4824,6 +4844,10 @@ final class ConversationModel: Identifiable {
     /// Back from the background: what happened meanwhile is read now, over HTTP, while the socket
     /// is still coming back (a connect, the Bots and a re-attach take seconds on a busy Mac).
     func catchUpOnReturn() {
+        // A turn working over the socket, this device's or one started elsewhere, looks at the
+        // stored chat now: it may have ended while the phone slept, and a socket that went quiet
+        // never says so (`QuietTurn`).
+        if turnUsesGateway, isWorking { watchQuietTurn(lookNow: true) }
         guard loadState == .loaded, sessionID != nil || isBotChat, isQuiet, !isFetching else { return }
         if let lastFetchedAt, Date.now.timeIntervalSince(lastFetchedAt) < 3 { return }
         reload()
@@ -4844,6 +4868,8 @@ final class ConversationModel: Identifiable {
         settleFallback?.cancel()
         stuckTurnWatch?.cancel()
         stuckTurnWatch = nil
+        quietTurnWatch?.cancel()
+        quietTurnWatch = nil
         processWatch?.cancel()
         processWatch = nil
         processGeneration += 1
@@ -5204,21 +5230,33 @@ extension ConversationModel {
                 submit["queued"] = .bool(true)
                 if let voice = turnVoice { submit.merge(voice.submitParams) { $1 } }
                 // Patient: on an open socket the answer comes when a frozen backend wakes; a socket that
-                // dies fails it at once.
-                var answer: JSONValue
+                // dies fails it at once. One that goes quiet never answers, so the stored chat is read
+                // meanwhile (`submitWatched`), counted from here.
+                heardAt = .now
+                heldAtSend = rawMessages.compactMap(\.id).max()
+                watchQuietTurn()
+                var answer: JSONValue?
                 do {
-                    answer = try await roster.request("prompt.submit", submit, timeout: BotRoster.patientTimeout)
+                    answer = try await submitWatched(submit, roster: roster)
                 } catch let error as GatewayRPCError where error.isSessionNotFound {
                     // The backend forgot this runtime id (a restart); resume and send again.
                     runtimeSessionID = nil
                     runtime = try await ensureRuntime()
                     submit["session_id"] = .string(runtime)
-                    answer = try await roster.request("prompt.submit", submit, timeout: BotRoster.patientTimeout)
+                    answer = try await submitWatched(submit, roster: roster)
                 }
                 endDelivery()
                 chatWaitAttempts = 0
                 chatHold = nil
                 chatHolder = nil
+                guard let answer else {
+                    // The answer never came, and the stored chat holds the message and its reply:
+                    // the turn ended while the socket said nothing, and its stored rows take over.
+                    turnGate.take()
+                    if live?.isFinished == false { apply(.completed(output: nil, usage: nil, runtime: nil)) }
+                    await finishBotTurn()
+                    return
+                }
                 // Only Hermes's answer says whether the message started its own turn (`SubmitAnswer`).
                 let outcome = SubmitAnswer(result: answer)
                 guard case .started(let userRowID) = outcome else {
@@ -5470,6 +5508,9 @@ extension ConversationModel {
 
     private func waitForBotTurn() async {
         guard live != nil, live?.isFinished == false || settleFallback != nil else { return }
+        // Hermes just answered the send: the quiet is counted from here.
+        heardAt = .now
+        watchQuietTurn()
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 // Never strand an earlier waiter.
@@ -5483,7 +5524,16 @@ extension ConversationModel {
 
     private func finishBotTurn() async {
         let generation = botTurnGeneration
-        defer { if botTurnGeneration == generation { isBotTurnOpen = false } }
+        defer {
+            if botTurnGeneration == generation {
+                isBotTurnOpen = false
+                // Its quiet watch ends with it, unless a turn started meanwhile works on.
+                if live?.isFinished != false {
+                    quietTurnWatch?.cancel()
+                    quietTurnWatch = nil
+                }
+            }
+        }
         endDelivery()
         if roster != nil || workspace?.client != nil || gatewayRoster != nil {
             await finishTurn { try await self.fetchLatest($0) }
@@ -5624,6 +5674,7 @@ extension ConversationModel {
 
     /// Events for this chat, routed by the roster.
     func receive(_ event: GatewayEvent) {
+        heardAt = .now
         // Helpers report on this session, during the turn and after it (background delegation):
         // their team card keeps its own state and never reopens the turn.
         if event.type.hasPrefix("subagent.") {
@@ -6265,6 +6316,10 @@ extension ConversationModel {
         if isBotTurnOpen { botTurnGeneration &+= 1 }
         isBotTurnOpen = true
         turnGate.take()
+        // Its events come only over the socket, which can go quiet without closing (`QuietTurn`).
+        heardAt = .now
+        heldAtSend = nil
+        watchQuietTurn()
     }
 
     /// A turn started elsewhere while this chat was open: another device, a routine, another Bot.
@@ -6358,6 +6413,92 @@ extension ConversationModel {
                 }
             }
         }
+    }
+
+    /// Looks at the stored chat while a turn works over the socket (this device's, from its send
+    /// on, or one started elsewhere) and the socket says nothing (`QuietTurn`, `docs/chat.md` §4b).
+    /// A socket can go quiet without closing (a phone asleep as the turn ended, a network that
+    /// drops its traffic), and the turn's end then never comes: the header counted "Thinking…"
+    /// until the app's cache was cleared. Starting it again replaces the one watching.
+    /// - Parameter lookNow: the first look is taken at once (back from the background, where the
+    ///   phone heard nothing), not after `QuietTurn.lookEvery`.
+    private func watchQuietTurn(lookNow: Bool = false) {
+        quietTurnWatch?.cancel()
+        runningAskedAt = nil
+        quietTurnWatch = Task { [weak self] in
+            var wait = !lookNow
+            while !Task.isCancelled {
+                if wait { try? await Task.sleep(for: QuietTurn.lookEvery) }
+                wait = true
+                guard !Task.isCancelled, let self, await self.lookAtQuietTurn() else { return }
+            }
+        }
+    }
+
+    /// One look at a turn working over the socket, once it has heard nothing for
+    /// `QuietTurn.quietAfter`: the stored chat first, read over HTTP (a quiet socket answers
+    /// nothing), then the gateway's `running` when the rows don't settle it and the socket itself
+    /// is quiet (`QuietTurn.asksRunning`). While the send still waits for its answer only the
+    /// stored chat ends it: Hermes may not have started the turn yet. Returns false once the turn
+    /// is over.
+    private func lookAtQuietTurn() async -> Bool {
+        guard let live, !live.isFinished else { return false }
+        // Before the message leaves (uploads, waiting for the Bots) there's nothing to look at yet.
+        let submit = submitRace?.id
+        guard turnUsesGateway, submit != nil || botTurnDone != nil || isRemoteTurn else { return true }
+        guard QuietTurn.isQuiet(heardAt: heardAt), let id = sessionID else { return true }
+        let turnID = live.turn.id
+        let after = turnBaseline?.turnID == turnID ? turnBaseline?.newest : newestBeforeTurn
+        let stored = try? await fetchLatest(id, within: QuietTurn.readTimeout).messages
+        var verdict = QuietTurn.verdict(stored: stored, after: after, running: nil, heldAtSend: heldAtSend)
+        if verdict == .keep, submit == nil, let roster = gatewayRoster,
+           QuietTurn.asksRunning(socketHeard: await roster.socketHeard(within: QuietTurn.quietAfter), lastAsked: runningAskedAt) {
+            runningAskedAt = .now
+            let running = try? await Self.within(QuietTurn.readTimeout) { await self.gatewayRunning() }
+            verdict = QuietTurn.verdict(stored: stored, after: after, running: running ?? nil, heldAtSend: heldAtSend)
+        }
+        // Something was heard meanwhile, or the turn ended, changed or got its send's answer:
+        // this look is stale.
+        guard !Task.isCancelled, self.live?.turn.id == turnID, self.live?.isFinished == false,
+              submitRace?.id == submit, QuietTurn.isQuiet(heardAt: heardAt)
+        else { return self.live?.isFinished == false }
+        guard verdict != .keep else { return true }
+        ConnectionLog.logger.notice("chat: a turn heard nothing for \(Int(Date.now.timeIntervalSince(self.heardAt)))s\(submit == nil ? "" : " waiting for its send's answer", privacy: .public); the stored chat \(verdict == .settle ? "holds its reply" : "says nothing runs", privacy: .public)")
+        if let submit {
+            // The send ends from the stored chat (`submitWatched`), and its turn with it.
+            resolveSubmit(submit, with: .success(nil))
+            return false
+        }
+        // Its end went unheard: it ends here, and the stored chat says how (`finishTurn`).
+        settle()
+        return false
+    }
+
+    /// `prompt.submit`, patient (`BotRoster.patientTimeout`), that gives way to the stored chat. A
+    /// socket that goes quiet before the answer never sends it, while Hermes may have stored the
+    /// message and its reply already (`lookAtQuietTurn`). Nil when the stored chat answered
+    /// first. The request is left to end on its own then, never cancelled: its answer, if it comes,
+    /// changes nothing. Stop still cancels it.
+    private func submitWatched(_ params: [String: JSONValue], roster: BotRoster) async throws -> JSONValue? {
+        let request = Task { try await roster.request("prompt.submit", params, timeout: BotRoster.patientTimeout) }
+        let race = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue?, any Error>) in
+                // Never strand an earlier send's wait.
+                if let earlier = submitRace { resolveSubmit(earlier.id, with: .failure(CancellationError())) }
+                submitRace = (race, continuation)
+                Task { self.resolveSubmit(race, with: await request.result.map { Optional($0) }) }
+            }
+        } onCancel: {
+            request.cancel()
+        }
+    }
+
+    /// Ends the send's wait `race`, once: a later answer to a send already ended does nothing.
+    private func resolveSubmit(_ race: UUID, with result: Result<JSONValue?, any Error>) {
+        guard let submitRace, submitRace.id == race else { return }
+        self.submitRace = nil
+        submitRace.continuation.resume(with: result)
     }
 
     /// Whether a turn runs in this chat on the gateway now: `session.resume`'s `running`, which
