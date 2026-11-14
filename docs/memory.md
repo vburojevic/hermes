@@ -205,5 +205,6 @@ entry's store.
 Memory needs Bot Mode; without it the page says so with Link Bot Mode. A provider in use that isn't
 set up runs on the built-in memory: the page marks it "not set up" with its setup command. A
 provider that needs its settings is set up from the provider list (Set Up a Provider on the Mac),
-with Hermes's own fields for it. One that's unavailable installs what it needs from there (Install
+with Hermes's own fields for it, one row per key even where the provider repeats a key per mode.
+One that's unavailable installs what it needs from there (Install
 a Provider on the Mac), after showing the commands Hermes will run ([setup.md](setup.md) §4.4).

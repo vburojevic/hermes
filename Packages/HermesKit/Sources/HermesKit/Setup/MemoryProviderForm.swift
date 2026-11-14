@@ -71,8 +71,11 @@ public struct MemoryProviderForm: Sendable, Equatable {
         name = json["name"]?.stringValue ?? ""
         label = json["label"]?.stringValue ?? name
         setup = Setup(json: json["setup"])
+        // Hermes trims each key and drops an empty one (`_normalize_memory_provider_schema`). A key
+        // can repeat: a provider declares one field per mode, each with its own `when` (Hindsight's
+        // `api_url` and `api_key`), and Hermes lists every one of them.
         fields = json["fields"].items.compactMap { row in
-            guard let key = row["key"]?.stringValue, !key.isEmpty else { return nil }
+            guard let key = row["key"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return nil }
             let kind: Field.Kind = switch row["kind"]?.stringValue {
             case "secret", "password": .secret
             case "text", "string", "url", nil: .text
@@ -101,17 +104,27 @@ public struct MemoryProviderForm: Sendable, Equatable {
     }
 
     /// The fields to show with `edits` laid over what's on the gateway: a field whose `when`
-    /// doesn't hold is hidden, as Hermes hides it.
+    /// doesn't hold is hidden, as Hermes hides it. One row per key: where two fields that share a
+    /// key both hold, the last one shows, the one Hermes saves the value with.
     public func visibleFields(edits: [String: String]) -> [Field] {
-        let current = Dictionary(uniqueKeysWithValues: fields.map { ($0.key, edits[$0.key] ?? $0.value) })
+        let shown = fieldsWhoseWhenHolds(edits: edits)
+        var seen = Set<String>()
+        return shown.reversed().filter { seen.insert($0.key).inserted }.reversed()
+    }
+
+    /// Every field whose `when` holds, repeated keys included. A condition on a repeated key reads
+    /// the last field with that key, as Hermes's `fields_by_key` does.
+    private func fieldsWhoseWhenHolds(edits: [String: String]) -> [Field] {
+        let current = Dictionary(fields.map { ($0.key, edits[$0.key] ?? $0.value) }, uniquingKeysWith: { _, last in last })
         return fields.filter { field in
             field.when.allSatisfy { key, expected in (current[key] ?? "").caseInsensitiveCompare(expected) == .orderedSame }
         }
     }
 
-    /// Whether every required field shown has a value, new or already set.
+    /// Whether every required field shown has a value, new or already set. Like Hermes's
+    /// `_memory_provider_is_configured`, this counts every field whose `when` holds.
     public func isComplete(edits: [String: String]) -> Bool {
-        visibleFields(edits: edits).allSatisfy { field in
+        fieldsWhoseWhenHolds(edits: edits).allSatisfy { field in
             !field.required || field.isSet || !(edits[field.key] ?? field.value).trimmingCharacters(in: .whitespaces).isEmpty
         }
     }

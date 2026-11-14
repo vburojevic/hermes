@@ -263,7 +263,12 @@ its command. A provider that needs its settings (`needs_config`) opens Set Up fr
 list (iPhone, iPad) or Set Up a Provider (Mac): Hermes's own fields for it (`GET
 /api/memory/providers/{name}/config`: secrets, text, choices, switches, numbers, each shown or
 hidden by its `when` as Hermes does), saved with `PUT …/config` (only what changed; an empty
-secret is left as it is). Mock: Mem0 needs its key; saving one makes it ready.
+secret is left as it is). A key can repeat: a provider may declare one field per mode under the
+same key (Hindsight's `api_url` and `api_key`). Hermes trims keys and drops an empty one, lists
+every field, reads a `when` against the last field with that key and saves the last one shown
+(`_normalize_memory_provider_schema`, `_write_memory_provider_config_values`), so the form shows
+one row per key, the last one whose `when` holds. Mock: Mem0 needs its key; saving one makes it
+ready.
 
 An `unavailable` provider offers Install… (Install a Provider on the Mac). Its sheet first lists
 what Hermes will run on the gateway, from the provider's plugin (the config route's `setup`:
@@ -280,8 +285,9 @@ Then:
 - Its packages are in place but it's still unavailable: says so, with `hermes memory setup`.
 
 A provider Hermes can't find (`missing`) gives `hermes memory setup`. Mock: Hindsight installs in
-about 4 s and then needs its key; `POST /api/mock/memory/install {"fails": true}` makes its `uv`
-step fail.
+about 4 s and then needs its key in Cloud mode; its form repeats `api_url` and `api_key` per mode,
+as Hindsight's schema does. `POST /api/mock/memory/install {"fails": true}` makes its `uv` step
+fail.
 
 A provider that signs in with OAuth (Honcho) signs in on the gateway with `hermes memory setup
 <provider>`: Hermes has no dashboard route to start that sign-in, and its settings route leaves a
