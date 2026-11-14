@@ -76,7 +76,8 @@ extension AppPlugin {
     )
 
     /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.4.0 makes a
-    /// widget a routine typed into its report the way the tool does, with the same access. 1.3.0 keeps a
+    /// widget a routine typed into its report the way the tool does, with the same access, so the app
+    /// moves every profile to it quietly and a routine's card draws instead of its code. 1.3.0 keeps a
     /// chat Hermes compacted into a new session the app's, says that a short question ("Weather
     /// today?") gets its widget and tells marked chats so again, with the same access, so the app
     /// moves every profile to it quietly. 1.2.2 is 1.2.1
@@ -88,7 +89,7 @@ extension AppPlugin {
     /// brought marking many chats in one `session` call and unprompted widgets.
     public static let widgets = AppPlugin(
         name: "hermes-app-widgets", repo: "vburojevic/hermes-app-widgets",
-        ref: "23b7a2d5e08e6284dad51b864256afe48fe7c4ff", version: "1.3.0", minimumVersion: "1.3.0",
+        ref: "0c9f40667da7c8cc41bc313b7c27f11838507a01", version: "1.4.0", minimumVersion: "1.4.0",
         capabilities: ["1.0.0": widgetsAccess(since111: false), "1.1.0": widgetsAccess(since111: false),
                        "1.1.1": widgetsAccess(since111: true), "1.2.0": widgetsAccess(since111: true),
                        "1.2.1": widgetsAccess(since111: true), "1.2.2": widgetsAccess(since111: true),
