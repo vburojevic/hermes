@@ -1977,6 +1977,9 @@ def method_profiles_list(params):
 
 
 def method_profiles_get_asset(params):
+    # Logged so a check can count the app's fetches: one per Bot and revision, plus one after
+    # memory pressure drops the photo (docs/bots-groups-skills.md §1).
+    print(f"[backend] profiles.get_asset {params.get('name')} {params.get('asset')}", flush=True)
     profile = PROFILES.get(params.get("name") or "")
     if profile is None:
         raise RPCError(4064, "profile not found")

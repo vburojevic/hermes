@@ -290,7 +290,8 @@ struct BotFace: View {
 
     @ViewBuilder
     private var content: some View {
-        if let image = appearance.imageURL {
+        // A photo memory pressure dropped draws the Bot's own face until it's fetched again.
+        if let image = appearance.imageURL, FaceImageCache.canDraw(image) {
             photoFace(image)
         } else if boopable {
             drawnFace
@@ -558,9 +559,11 @@ private nonisolated struct SparkleSpot: View {
     }
 }
 
-/// Decoded, downsampled photo avatars, keyed by `face://<name>#<revision>`, so faces
-/// never decode base64 on the main thread or hash a whole data URL per redraw. Inline images in
-/// chats land here too, so it's bounded by decoded size and empties under memory pressure.
+/// Decoded, downsampled photo avatars, keyed by `face://<gateway>/<name>#<revision>`
+/// (`FacePhotoBook.key`), so faces never decode base64 on the main thread or hash a whole data URL
+/// per redraw. Inline images in chats land here too, in a cache of their own, so a long chat never
+/// pushes the faces out. Both are bounded by decoded size and empty under memory pressure; a face
+/// that finds its photo gone tells the roster that fetched it, which fetches it again.
 @MainActor
 enum FaceImageCache {
     private static let images: NSCache<NSString, PlatformImage> = {
@@ -569,17 +572,82 @@ enum FaceImageCache {
         return cache
     }()
 
+    /// Bot photos: about 50 faces at 288 px.
+    private static let faces: NSCache<NSString, PlatformImage> = {
+        let cache = NSCache<NSString, PlatformImage>()
+        cache.totalCostLimit = 16 * 1024 * 1024
+        return cache
+    }()
+
+    /// Who to tell about a dropped photo, by key scope (a roster's gateway).
+    private static var refetchers: [String: @MainActor (String) -> Void] = [:]
+    /// Misses reported but not yet handed over: a redraw asks several times per face.
+    private static var missesReported: Set<String> = []
+
+    private static func cache(for key: String) -> NSCache<NSString, PlatformImage> {
+        key.hasPrefix("face://") ? faces : images
+    }
+
     private static func cached(_ key: String) -> PlatformImage? {
-        images.object(forKey: key as NSString)
+        cache(for: key).object(forKey: key as NSString)
     }
 
     /// Cost is the decoded bitmap: width × height × 4 bytes.
     private static func store(_ image: PlatformImage, key: String, pixels: CGSize) {
-        images.setObject(image, forKey: key as NSString, cost: max(1, Int(pixels.width * pixels.height * 4)))
+        cache(for: key).setObject(image, forKey: key as NSString, cost: max(1, Int(pixels.width * pixels.height * 4)))
+        #if DEBUG
+        scheduleDebugEviction()
+        #endif
+    }
+
+    #if DEBUG
+    private static var debugEvictionScheduled = false
+
+    /// `-HERMES_EVICT_FACES 20`: empties both caches that many seconds after the first image
+    /// lands, as memory pressure does, so a face's refetch can be checked against the mocks.
+    private static func scheduleDebugEviction() {
+        guard !debugEvictionScheduled else { return }
+        debugEvictionScheduled = true
+        let after = UserDefaults.standard.double(forKey: "HERMES_EVICT_FACES")
+        guard after > 0 else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(after))
+            images.removeAllObjects()
+            faces.removeAllObjects()
+        }
+    }
+    #endif
+
+    /// Calls `handler` with each dropped photo key a face asks for under `scope`.
+    static func refetch(scope: String, with handler: @escaping @MainActor (String) -> Void) {
+        refetchers[scope] = handler
+    }
+
+    static func stopRefetching(scope: String) {
+        refetchers[scope] = nil
+    }
+
+    /// False for a Bot photo the cache no longer has: the face draws itself instead of a blank
+    /// square while the photo is fetched again.
+    static func canDraw(_ source: String) -> Bool {
+        !source.hasPrefix("face://") || image(for: source) != nil
+    }
+
+    /// Called from view bodies, so the roster hears about it after the update, once per redraw.
+    private static func reportMiss(_ key: String) {
+        guard missesReported.insert(key).inserted else { return }
+        Task {
+            missesReported.remove(key)
+            for refetcher in refetchers.values { refetcher(key) }
+        }
     }
 
     static func image(for key: String) -> PlatformImage? {
         if let cached = cached(key) { return cached }
+        if key.hasPrefix("face://") {
+            reportMiss(key)
+            return nil
+        }
         // A raw data URL (previews, tests): decode once, synchronously.
         guard key.hasPrefix("data:"), let comma = key.firstIndex(of: ","),
               let data = Data(base64Encoded: String(key[key.index(after: comma)...]), options: .ignoreUnknownCharacters),

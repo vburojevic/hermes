@@ -137,8 +137,10 @@ final class BotRoster {
     private var allConversations: [ConversationModel] {
         Array(conversations.values) + gatewayChats.values.compactMap(\.value)
     }
-    @ObservationIgnored private var photoRevisions: [String: Int] = [:]
-    @ObservationIgnored private var photoTasks: [String: Task<Void, Never>] = [:]
+    /// When each Bot's photo is fetched (`FacePhotoBook`).
+    @ObservationIgnored private var photoBook = FacePhotoBook()
+    /// Photo fetches, by their `photoBook` ticket.
+    @ObservationIgnored private var photoTasks: [Int: Task<Void, Never>] = [:]
     @ObservationIgnored private var index: [String: BotProfile] = [:]
     @ObservationIgnored private var watermarks: [String: Double]
     /// The Bot Chat's read mark on the server (`last_read_at`, shared by every device), by profile
@@ -251,6 +253,8 @@ final class BotRoster {
             }
         }
         #endif
+        // A photo memory pressure dropped is fetched again when a face next asks for it.
+        FaceImageCache.refetch(scope: botID.uuidString) { [weak self] key in self?.photoMissed(key) }
         restoreCachedRoster()
     }
 
@@ -407,7 +411,7 @@ final class BotRoster {
         hiddenBots = []
         index = [:]
         photos = [:]
-        photoRevisions = [:]
+        photoBook.reset()
         load.reset()
         version = nil
         versionEpoch = nil
@@ -810,7 +814,7 @@ final class BotRoster {
         pollTask = nil
         photoTasks.values.forEach { $0.cancel() }
         photoTasks = [:]
-        photoRevisions = [:] // refetch on reconnect
+        photoBook.reset() // refetch on reconnect
         elsewhereReads.values.forEach { $0.cancel() }
         elsewhereReads = [:]
         elsewhereRecheck?.cancel()
@@ -842,6 +846,7 @@ final class BotRoster {
         rosterRecheck = nil
         sessionsTick?.cancel()
         sessionsTick = nil
+        FaceImageCache.stopRefetching(scope: botID.uuidString)
         disconnect()
         resumeConnectedWaiters()
         conversations.values.forEach { $0.cancelAll() }
@@ -1300,7 +1305,7 @@ final class BotRoster {
         pollTask?.cancel()
         photoTasks.values.forEach { $0.cancel() }
         photoTasks = [:]
-        photoRevisions = [:]
+        photoBook.reset()
         for conversation in allConversations {
             conversation.botChatConnectionLost()
         }
@@ -1996,40 +2001,65 @@ final class BotRoster {
 
     // MARK: - Avatars
 
-    /// Fetches picture avatars. Desktop also stores a 160 px raster of every drawn face;
-    /// those are skipped (unless marked as a photo) so the native face can animate.
+    /// Fetches picture avatars, once per revision (`FacePhotoBook`). Desktop also stores a 160 px
+    /// raster of every drawn face; those are skipped (unless marked as a photo) so the native face
+    /// can animate.
     private func loadPhotos() {
         for bot in profiles {
-            let revision = bot.metaRevision ?? 0
             guard bot.hasAvatar else {
                 if photos[bot.name] != nil { photos[bot.name] = nil }
-                photoRevisions[bot.name] = nil
+                photoBook.forget(bot.name)
                 continue
             }
-            guard photoRevisions[bot.name] != revision, photoTasks[bot.name] == nil else { continue }
-            let name = bot.name
-            let isPhoto = bot.meta.imageKind == "photo"
-            photoTasks[name] = Task { [weak self] in
-                defer { self?.photoTasks[name] = nil }
-                guard let self,
-                      let result = try? await self.request("profiles.get_asset", ["name": .string(name), "asset": .string("avatar")]),
-                      !Task.isCancelled
-                else { return }
-                guard let data = result["data"]?.stringValue, data.hasPrefix("data:image/") else {
-                    self.photoRevisions[name] = revision // the backend has none; don't ask again
-                    return
-                }
-                if !isPhoto, Self.isBackfilledFace(data) {
-                    self.photos[name] = nil
-                } else {
-                    // Decode and downsample off the main thread; faces never draw above ~100 pt.
-                    let key = "face://\(name)#\(revision)"
-                    guard let image = await FaceImageCache.prepare(dataURL: data, key: key), !Task.isCancelled else { return }
-                    _ = image
-                    self.photos[name] = key
-                }
-                self.photoRevisions[name] = revision
+            let revision = bot.metaRevision ?? 0
+            if photoBook.needsFetch(bot.name, revision: revision) { fetchPhoto(bot, revision: revision) }
+        }
+    }
+
+    /// A face asked for a photo the face cache dropped under memory pressure. Nothing else fetches
+    /// it again, so the face draws the Bot's own face while this fetches the same revision, once.
+    private func photoMissed(_ key: String) {
+        guard let (name, revision) = FacePhotoBook.parse(key, scope: botID.uuidString), photos[name] == key,
+              let bot = profiles.first(where: { $0.name == name }), photoBook.missed(name, revision: revision)
+        else { return }
+        photos[name] = nil
+        fetchPhoto(bot, revision: revision)
+    }
+
+    private func fetchPhoto(_ bot: BotProfile, revision: Int) {
+        let name = bot.name
+        let isPhoto = bot.meta.imageKind == "photo"
+        let key = FacePhotoBook.key(scope: botID.uuidString, name: name, revision: revision)
+        let ticket = photoBook.begin(name, revision: revision)
+        photoTasks[ticket] = Task { [weak self] in
+            defer { self?.photoTasks[ticket] = nil }
+            guard let self else { return }
+            let result = try? await self.request("profiles.get_asset", ["name": .string(name), "asset": .string("avatar")])
+            // A finish from before a reset or a newer fetch changes nothing (`FacePhotoBook.finish`).
+            guard let result, !Task.isCancelled else {
+                self.photoBook.finish(name, ticket: ticket, outcome: .failed) // asked again at the next refresh
+                return
             }
+            guard let data = result["data"]?.stringValue, data.hasPrefix("data:image/") else {
+                self.photoBook.finish(name, ticket: ticket, outcome: .absent) // the backend has none; don't ask again
+                return
+            }
+            if !isPhoto, Self.isBackfilledFace(data) {
+                if self.photoBook.finish(name, ticket: ticket, outcome: .absent) { self.photos[name] = nil }
+                return
+            }
+            // Decode and downsample off the main thread; faces never draw above ~100 pt.
+            let image = await FaceImageCache.prepare(dataURL: data, key: key)
+            guard !Task.isCancelled else {
+                self.photoBook.finish(name, ticket: ticket, outcome: .failed)
+                return
+            }
+            // A picture that doesn't decode leaves the drawn face, and isn't asked for again.
+            guard image != nil else {
+                self.photoBook.finish(name, ticket: ticket, outcome: .absent)
+                return
+            }
+            if self.photoBook.finish(name, ticket: ticket, outcome: .photo) { self.photos[name] = key }
         }
     }
 
