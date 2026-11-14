@@ -31,6 +31,7 @@ import argparse
 import base64
 import hashlib
 import importlib.util
+import itertools
 import json
 import pathlib
 import re
@@ -143,7 +144,19 @@ PATTERN_ROUTES = []  # (method, compiled regex, fn(match, query, body) -> (statu
 WS_ROUTES = {}      # path -> fn(handler, query): other WebSockets (kanban.py's event stream)
 RAW_ROUTES = {}     # (method, path) -> fn(query) -> (status, content_type, bytes): authenticated files (inspector.py)
 
-CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin"}
+CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin", "hermes_version": "0.21.6"}
+
+
+def ws_max_bytes():
+    """The largest socket message Hermes reads: uvicorn's 16 MiB default before 0.23.1, then 384 MiB
+    (hermes-agent `hermes_cli/web_server_boundary.py`, `_DESKTOP_ATTACHMENT_WS_MAX_BYTES`)."""
+    parts = []
+    for part in CONFIG["hermes_version"].lstrip("vV").split("."):
+        digits = "".join(itertools.takewhile(str.isdigit, part))
+        if not digits:
+            break
+        parts.append(int(digits))
+    return 384 * 1024 * 1024 if (parts + [0, 0, 0])[:3] >= [0, 23, 1] else 16 * 1024 * 1024
 GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
 GATEWAY = []  # server.py itself, when it runs alongside: the default profile's chats are its sessions
 
@@ -500,6 +513,15 @@ class Peer:
             elif length == 127:
                 length = struct.unpack(">Q", self.handler.rfile.read(8))[0]
             mask = self.handler.rfile.read(4) if head[1] & 0x80 else b"\0\0\0\0"
+            if len(message) + length > ws_max_bytes():
+                # As uvicorn does: the socket closes with 1009 and the message is never read.
+                print(f"[mock-hermes] socket closed: a {len(message) + length}-byte message is over "
+                      f"{ws_max_bytes()} (1009)", flush=True)
+                with self.write_lock:
+                    self.handler.wfile.write(bytes([0x88, 2]) + struct.pack(">H", 1009))
+                    self.handler.wfile.flush()
+                self.cut()
+                return None
             payload = bytearray(self.handler.rfile.read(length))
             for i in range(len(payload)):
                 payload[i] ^= mask[i % 4]
@@ -2558,7 +2580,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     return self.wfile.write(data)
-            return self.send_json(200, {"version": "0.21.6", "auth_required": bool(CONFIG["password"]),
+            return self.send_json(200, {"version": CONFIG["hermes_version"], "auth_required": bool(CONFIG["password"]),
                                         "auth_providers": ["basic"] if CONFIG["password"] else [],
                                         "install_id": "mock-install-0001", "gateway_running": True, **STATUS_EXTRA})
         if url.path == "/api/health":
@@ -2781,6 +2803,20 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("reap") is not None:
                 threading.Timer(float(body["reap"]), reap_orphans).start()
             return self.send_json(200, {"ok": True, "dropped": len(peers)})
+        if url.path == "/api/mock/close-sessions":
+            # Mock-only: another client closes the idle chats' sessions (Hermes's `session.close`, as Desktop
+            # does) while this app's socket stays up. Its runtime ids are then unknown: the next call on one
+            # answers 4001 "session not found", and the app has to resume before it can go on.
+            with LOCK:
+                closed = 0
+                for runtime in RUNTIME.values():
+                    if runtime.get("dead") or runtime.get("running"):
+                        continue
+                    runtime["dead"] = True
+                    runtime["peers"] = set()
+                    runtime["queue"] = []
+                    closed += 1
+            return self.send_json(200, {"ok": True, "closed": closed})
         if url.path == "/api/mock/restart-gateway":
             # Mock-only: Hermes restarts under a running turn (`hermes gateway restart`, a crash). Every socket
             # drops, the turns die where they are (stored rows stop there, nothing more is sent), and a resume
@@ -3034,6 +3070,8 @@ def main():
     parser.add_argument("--port", type=int, default=19119)
     parser.add_argument("--password", help="gate the backend behind username/password sign-in (user: admin)")
     parser.add_argument("--token", help="fixed session token for the ungated mode")
+    parser.add_argument("--hermes-version", default="0.21.6",
+                        help="the version /api/status reports; before 0.23.1 the socket closes on a message over 16 MiB")
     parser.add_argument("--quiet-world", action="store_true", help="no background activity")
     parser.add_argument("--long-bot-chats", action="store_true", help="give Ops a long Bot Chat (180 messages)")
     parser.add_argument("--seed-bot-chat", metavar="JSON", help="load Ops's Bot Chat from a local export of message rows")
@@ -3102,6 +3140,7 @@ def main():
                         help="a gateway without the hermes-app-widgets plugin (widgets.py)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
+    CONFIG["hermes_version"] = args.hermes_version
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
     CONFIG["late_store"] = args.late_store
