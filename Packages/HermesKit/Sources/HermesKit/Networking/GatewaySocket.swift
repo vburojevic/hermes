@@ -480,14 +480,7 @@ public actor GatewaySocket {
     ///   replaces it itself (and doesn't want its close read as a drop).
     public func probe(timeout: Duration = .seconds(4), closesOnFailure: Bool = true) async -> Bool {
         guard let task, isOpen else { return false }
-        let answered = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let once = ResumeOnce(continuation)
-            task.sendPing { error in once.resume(error == nil) }
-            Task {
-                try? await Task.sleep(for: timeout)
-                once.resume(false)
-            }
-        }
+        let answered = await task.pingAnswered(within: timeout)
         guard self.task === task else { return false }
         if answered {
             heard()
@@ -535,23 +528,5 @@ public actor GatewaySocket {
             subscriber.finish()
         }
         subscribers.removeAll()
-    }
-}
-
-/// Resumes a continuation once, whichever of a ping's answer and its deadline comes first.
-private final class ResumeOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Bool, Never>?
-
-    init(_ continuation: CheckedContinuation<Bool, Never>) {
-        self.continuation = continuation
-    }
-
-    func resume(_ value: Bool) {
-        lock.lock()
-        let pending = continuation
-        continuation = nil
-        lock.unlock()
-        pending?.resume(returning: value)
     }
 }

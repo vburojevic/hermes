@@ -30,14 +30,13 @@ enum BoardEventStream {
                 }
             }
             // A quiet board sends nothing, so a dead connection would go unnoticed without pings.
+            // The wait ends once even when URLSession calls the ping's handler twice or never
+            // (docs/board.md §1.2).
             let pinger = Task {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(25))
                     guard !Task.isCancelled else { return }
-                    let answered = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
-                        socket.sendPing { error in done.resume(returning: error == nil) }
-                    }
-                    if !answered {
+                    if await !socket.pingAnswered(within: .seconds(10)) {
                         socket.cancel(with: .abnormalClosure, reason: nil)
                         return
                     }
