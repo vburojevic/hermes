@@ -235,8 +235,17 @@ Rescan (`skills.reload`).
   ([connections.md](connections.md)). Toolsets are not switched from Skills. While the gateway's
   tools load, the row's second line is a placeholder line (`SkeletonRows`), never the word
   Loading. Skills opened before Bot Mode connects asks for them once it does.
+- The list is read once per gateway, when Skills first opens or the gateway first comes online,
+  and kept while the app runs: opening Skills again shows it at once, and pull to refresh (iPhone
+  and iPad) reads it again. A read that failed is tried again the next time Skills opens. A turn
+  that writes a skill ("Learned a new skill" under the reply) marks the list stale: it is read
+  again the next time Skills opens, or at once when Skills is on screen, keeping the old list
+  shown meanwhile. That is how a new skill reaches the Mac, which has no pull to refresh. Until
+  the first answer the page shows placeholder rows (`SkeletonRows`), never an empty page.
 - The top of Skills links to What Hermes Learned. On the Mac, Skills has a Library | Learned
   picker in the toolbar (`macLearned`).
+- The sidebar button sits at the top left on iPhone and iPad, as in Tasks; in iPad portrait the
+  navigation placement would put it beside search, on the right.
 
 ## 4. Acceptance checks
 
@@ -253,6 +262,8 @@ Rescan (`skills.reload`).
 - A group chat runs its rounds, shows passes, failures and the settled divider, takes an approval,
   stops the whole room, renames and deletes after confirmation.
 - Use on a skill puts it in the tray of the last chat, or of a new chat.
+- Opening Skills a second time asks the gateway for nothing and shows the list at once; the first
+  time it shows placeholder rows until the list arrives.
 - On the Mac, a launch on a Bot or a chat (`-HERMES_RESTORE bot:default` with `-HERMES_OPEN
   bot:default`, or `-HERMES_RESTORE session:<id>` with `-HERMES_OPEN_SESSION <id>`) shows its chat
   under its selected row every time; clicking the selected row again keeps it.

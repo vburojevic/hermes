@@ -4221,6 +4221,8 @@ final class ConversationModel: Identifiable {
         connectionNote = nil
         settleFallback?.cancel()
         guard let finished = live else { return }
+        // Skills shows a skill Hermes wrote here without a refresh (docs/bots-groups-skills.md §3).
+        if !finished.turn.createdSkills.isEmpty { workspace?.skillsChanged() }
         // A question the turn asked goes with it; the turn says how it ended.
         for id in runQuestions.endAll() { applyRunQuestion(.drop(id: id)) }
         runApprovals.endAll()

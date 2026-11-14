@@ -14,6 +14,8 @@ struct LearnedSkillPage: View {
     @State private var refusedEdit: (draft: String, error: String)?
     @State private var openedMemory: LearningNode?
     @State private var copied = false
+    /// A related skill opened from here, pushed by item like every Learned page (`LearnedPage`).
+    @State private var pushed: LearnedRoute?
     /// iPad: the SKILL.md in the Inspector's File tab, in a sheet.
     @State private var inspectorTarget: LearnedModel.InspectorTarget?
     @Environment(\.dismiss) private var dismiss
@@ -70,6 +72,9 @@ struct LearnedSkillPage: View {
                     editing = true
                 }
             }
+        }
+        .navigationDestination(item: $pushed) { route in
+            LearnedPage.page(for: route, model: model)
         }
         .sheet(item: $openedMemory) { memory in
             LearnedMemorySheet(model: model, memory: memory)
@@ -210,7 +215,7 @@ struct LearnedSkillPage: View {
     @ViewBuilder
     private func connectionRow(_ other: LearningNode) -> some View {
         if other.isSkill {
-            NavigationLink(value: LearnedRoute.skill(other.id)) {
+            Button { pushed = .skill(other.id) } label: {
                 LearnedSkillRow(skill: other, subtitle: other.useCount == 1 ? String(localized: "Related skill · used once") : String(localized: "Related skill · used \(other.useCount) times"))
             }
             .buttonStyle(.plain)

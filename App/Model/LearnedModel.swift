@@ -113,6 +113,7 @@ final class LearnedModel {
         async let latest = try? backend.latestCuratorReport(profile: profile)
         curator = await status ?? curator
         report = await latest ?? report
+        if scope == .hermes, graph != nil { workspace.noteLearnedSkillsSubtitle(skillsRowSubtitle) }
     }
 
     func loadArchived() async {
