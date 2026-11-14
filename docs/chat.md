@@ -925,10 +925,44 @@ out with a message waiting in Up Next, and the queue never sent either.
     one place). Settling it here dropped the turn and the person's message from the chat when
     Bot Mode answered those reads with a 502, which is read again as a busy answer past the 10 s
     (`StuckTurn.outcome(running:recovering:)`).
+- **A quiet turn never counts forever** (`QuietTurn`). A socket can go quiet without closing (a
+  phone asleep as the reply ended, a network that drops a connection's traffic), so a turn
+  working over it never hears its end, and the header counted "Thinking…" until the app's cache
+  was cleared. That covers a turn this device sent, from its send on, and a turn started
+  elsewhere (a routine, another device, a finished process). Hermes can also be quiet for minutes
+  on its own (a long tool call sends nothing between its start and end), so quiet alone decides
+  nothing. A turn that hears nothing for 30 s reads the stored chat over HTTP, again every 15 s,
+  and at once when the app comes back to the foreground:
+  - The stored chat holds the reply: the turn ends and its stored rows take over. This holds
+    while the send still waits for its answer too: the answer, if it ever comes, changes nothing.
+    A turn this device sent counts only rows stored after the newest row the chat held at the
+    send, so a message sent again with the same words never takes the earlier one's reply.
+  - Nothing stored past the message and the gateway says nothing runs: the turn's end went
+    unheard, and its recovery finds out how it ended (§2): stopped where Hermes stored it, or
+    the lost-track line with Reload. The gateway is asked only after the send was answered, at
+    every look while the socket hears nothing (not even its heartbeat), and otherwise once a
+    minute, since asking attaches the chat again. A socket that answers nothing can't answer that
+    either: its turn counts until the socket gives up (75 s, or up to 10 minutes while Hermes's
+    gateway still answers, a frozen dashboard, `docs/connecting-and-voice.md` §8), and the
+    reconnect asks again and ends it the same way.
+  - A turn still runs, or neither could be read: it stays as it is and is looked at again.
+  Over the API server, a run whose status reads finished while its stream says nothing ends
+  from that status at once, without waiting out the stream.
 - **Checks:** with the mock, start a turn elsewhere in an open chat (`POST
   /api/mock/turn-elsewhere`), then drop the sockets past the reap (`POST /api/mock/drop-sockets
   {"outage": 25, "reap": 20}`, `docs/development.md`). Typed text queues while the chat is held, and
-  within about 10 s of the socket coming back the chat settles and Up Next sends, once.
+  within about 10 s of the socket coming back the chat settles and Up Next sends, once. Send
+  "slow" in a chat over the socket, then freeze the sockets (`POST /api/mock/freeze-sockets`):
+  within about 45 s of the reply being stored it shows, and the header stops counting. The same
+  holds for a turn started elsewhere and then frozen, and for a send whose answer never comes
+  (`POST /api/mock/lose-answer {"freeze": true}`). The same words sent again over the still-frozen
+  socket aren't settled by the first reply: the second message waits ("Waiting for Hermes…"),
+  and after a relaunch it shows in Up Next as "Maybe sent". Send "slow", go to the Home Screen,
+  freeze the sockets, and come back once the run is done: the reply shows at once. Send "slow"
+  and quit the app; relaunched after the run ended, the chat shows the reply and no timer. Send
+  "slow", freeze the sockets, then stop the turn (`POST /api/mock/stop-turns`): the header counts
+  until the frozen socket gives up (about 11 minutes while the gateway answers), then the turn
+  shows as stopped where Hermes stored it.
 
 ## 4c. What Hermes does with a message
 
