@@ -96,6 +96,10 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Resources/Info.plist
         "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": Push/App/Hermes-iOS.entitlements
+        # Plugins hidden from Suggested sync through iCloud key-value storage where the build carries
+        # its entitlement (docs/plugins.md §9.3): iPhone and iPad always, the Mac in Release only
+        # (below). Info.plist's HermesICloudKeyValueSync says which, so it must match the entitlement.
+        HERMES_ICLOUD_KEY_VALUE_SYNC: YES
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) HERMES_PUSH"
         INFOPLIST_KEY_CFBundleDisplayName: Hermes
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
@@ -139,15 +143,23 @@ targets:
           INFOPLIST_KEY_CFBundleDisplayName: Hermes Dev
           ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
           HERMES_URL_SCHEME: hermesapp-dev
+          # A Mac Debug build with the iCloud entitlement would need a development profile, which only
+          # a developer portal write makes, so it keeps hidden plugins on this Mac.
+          "HERMES_ICLOUD_KEY_VALUE_SYNC[sdk=macosx*]": NO
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: co.caffeinatedcode.hermes
           INFOPLIST_KEY_CFBundleDisplayName: Hermes
           ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
           # iOS releases sign by hand with the App Store profiles (Scripts/release.sh downloads them):
-          # the app and its three extensions each have one. The Mac keeps Developer ID signing.
+          # the app and its three extensions each have one. The Mac signs by hand with Developer ID
+          # and its Developer ID profile, which carries the iCloud key-value entitlement.
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Manual
           "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Distribution
-          "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]": Hermes App Store
+          "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]": Hermes App Store iCloud
+          "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Push/App/Hermes-macOS.entitlements
+          "CODE_SIGN_STYLE[sdk=macosx*]": Manual
+          "CODE_SIGN_IDENTITY[sdk=macosx*]": Developer ID Application
+          "PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]": Hermes Developer ID
           # Mac updates: the appcast rides along with each GitHub release; the EdDSA public key
           # pairs with Infisical prod /hermes/ci/SPARKLE_ED_PRIVATE_KEY (never rotate).
           HERMES_APPCAST_URL: https://github.com/vburojevic/hermes-releases/releases/latest/download/appcast.xml

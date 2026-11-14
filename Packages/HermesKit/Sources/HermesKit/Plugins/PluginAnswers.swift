@@ -383,6 +383,16 @@ public enum HiddenSuggestionsSync: Hashable, Sendable {
         self = !entitled ? .notInThisBuild : iCloudAvailable ? .syncing : .iCloudUnavailable
     }
 
+    /// Whether the build carries the iCloud key-value entitlement, from `HermesICloudKeyValueSync`
+    /// in its Info.plist. A build setting fills it in, so it arrives as the text "YES" or "NO".
+    public static func entitled(infoValue: Any?) -> Bool {
+        switch infoValue {
+        case let text as String: ["YES", "TRUE", "1"].contains(text.uppercased())
+        case let flag as Bool: flag
+        default: false
+        }
+    }
+
     public var setupStatus: SetupStatus {
         let title = String(localized: "Hidden Suggestions")
         let fallback = String(localized: "Plugins you hide stay hidden on this device only.")

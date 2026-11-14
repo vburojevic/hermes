@@ -93,10 +93,12 @@ for work in "${TMPDIR:-/tmp}"/hermes-release.*; do
   rm -rf "$work"
   echo "removed $(basename "$work")"
 done
-for profile in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision; do
+# By name: the App Store profiles (the app's before and after it gained iCloud) and the Mac's Developer ID one.
+for profile in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision \
+    "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.provisionprofile; do
   name="$(security cms -D -i "$profile" 2>/dev/null | plutil -extract Name raw -o - - 2>/dev/null || true)"
   case "$name" in
-    "Hermes App Store"|"Hermes Notifications App Store"|"Hermes Requests App Store"|"Hermes Widgets App Store")
+    "Hermes App Store"|"Hermes App Store iCloud"|"Hermes Notifications App Store"|"Hermes Requests App Store"|"Hermes Widgets App Store"|"Hermes Developer ID")
       rm -f "$profile"; echo "removed the profile $name" ;;
   esac
 done

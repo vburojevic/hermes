@@ -16,11 +16,14 @@ no platform choice. If one leg fails (an upload, notarization, the appcast), the
 Fix the cause and release both again under a new build number, never one platform alone.
 
 - **iPhone and iPad → TestFlight.** The app and its three extensions are signed with the studio's
-  Apple Distribution identity and App Store profiles, validated and uploaded. Internal testers get
-  every build automatically, and every build goes to the public beta too (§Public TestFlight below).
+  Apple Distribution identity and App Store profiles, validated and uploaded. The app's profile is
+  "Hermes App Store iCloud": it carries the iCloud key-value entitlement that keeps plugins hidden
+  from Suggested in sync (docs/plugins.md §9.3). Internal testers get every build automatically, and
+  every build goes to the public beta too (§Public TestFlight below).
 - **Mac → a notarized DMG with Sparkle.** Developer ID signed (Sparkle's nested code re-signed
-  inside-out with the Hardened Runtime), notarized and stapled, then published with its
-  `appcast.xml` as a release on
+  inside-out with the Hardened Runtime) with the "Hermes Developer ID" profile, which allows the
+  same iCloud key-value entitlement and is embedded in the app, notarized and stapled, then
+  published with its `appcast.xml` as a release on
   [vburojevic/hermes-releases](https://github.com/vburojevic/hermes-releases). The app reads
   `…/releases/latest/download/appcast.xml`. That repository stays where it is: every Mac build has
   the feed's URL built in.
@@ -50,7 +53,8 @@ is retired.
    ```
 
    It signs, validates, notarizes and packages, and publishes nothing. Check its log for
-   `push entitlements ok`, two `Accepted` notarizations and `macOS: dry run`, and its artifacts for
+   `push entitlements ok`, `iCloud key-value entitlement ok` (once for iOS, once for macOS), two
+   `Accepted` notarizations and `macOS: dry run`, and its artifacts for
    the DMG and the appcast.
 2. **Then the release**: the same with **Release** chosen (`RELEASE_MODE=release`). It builds only a
    commit that is on `main`, and always ships both platforms.
@@ -62,7 +66,8 @@ once per build and kept, so a retried job ships under the same number and can't 
 
 The job's `.buildkite/steps/release.sh` readies the agent and runs `Scripts/release.sh` with the same
 flags. Before that it removes whatever a killed release left behind (its keychain, its work folder
-and its App Store profiles), installs a pinned, checksum-checked `asc` and checks the other tools.
+and its App Store and Developer ID profiles, by name, both `.mobileprovision` and
+`.provisionprofile`), installs a pinned, checksum-checked `asc` and checks the other tools.
 It refuses a pipeline that doesn't clone over https. `Scripts/release.sh` sees `BUILDKITE=true` and then reads its secrets from the cluster instead of
 Infisical: each one with `buildkite-agent secret get`, where it's used, given to the log redactor
 before anything prints, and never put in the job's environment, argv or a file outside its private
