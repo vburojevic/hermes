@@ -656,12 +656,44 @@ struct PillTextView {
 
         // MARK: Model ↔ field
 
+        /// Where an input method (Pinyin, kana, Hangul) has a word it's still composing.
+        private var markedRange: NSRange? {
+            #if os(iOS)
+            guard let textView, let marked = textView.markedTextRange else { return nil }
+            let start = textView.offset(from: textView.beginningOfDocument, to: marked.start)
+            return NSRange(location: start, length: textView.offset(from: marked.start, to: marked.end))
+            #else
+            guard let textView, textView.hasMarkedText() else { return nil }
+            let range = textView.markedRange()
+            return range.location == NSNotFound ? nil : range
+            #endif
+        }
+
+        /// The input method gives up the word it was composing.
+        private func endComposing() {
+            #if os(macOS)
+            textView?.inputContext?.discardMarkedText()
+            #endif
+            textView?.unmarkText()
+        }
+
         /// Puts the model's draft in the field when it changed from elsewhere (sent, dictated,
         /// Edit and Resend).
         func apply(text: String, references: [MessageReference], command: String?) {
             guard let storage else { return }
             let current = decode(storage)
             guard current.text != text || current.references != references || current.command != command else { return }
+            if let marked = markedRange, NSMaxRange(marked) <= storage.length {
+                // The word being composed is in the field but not yet in the draft: the Mac
+                // reports it once it's chosen. A redraw meanwhile changes nothing, and putting the
+                // draft back would throw the word away and move the caret.
+                let settled = NSMutableAttributedString(attributedString: storage)
+                settled.deleteCharacters(in: marked)
+                let rest = decode(settled)
+                if rest.text == text, rest.references == references, rest.command == command { return }
+                // The draft did change (sent, dictated, Edit and Resend): the half-typed word goes.
+                endComposing()
+            }
             isApplying = true
             let caretAtEnd = selection.location >= storage.length
             storage.setAttributedString(attributedString(text: text, references: references, command: command))
