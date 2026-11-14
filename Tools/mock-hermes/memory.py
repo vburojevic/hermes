@@ -8,8 +8,9 @@
   - GET /api/memory, PUT /api/memory/provider, POST /api/memory/reset {target: all|memory|user}.
   - GET/PUT /api/memory/providers/{mem0,hindsight}/config and POST …/hindsight/setup: Mem0 needs its
     key; Hindsight is unavailable until its packages and `uv tool install hindsight-api` are
-    installed (about 4 s), then needs its key. POST /api/mock/memory/install {"fails": true} makes
-    the install fail on the uv step, with uv's words.
+    installed (about 4 s), then needs its key in Cloud mode. Its form repeats `api_url` and
+    `api_key`, one of each per mode, as Hindsight's own schema does. POST /api/mock/memory/install
+    {"fails": true} makes the install fail on the uv step, with uv's words.
   - GET/PUT /api/config: the `memory` section (memory_enabled, user_profile_enabled, write_approval,
     limits, provider), merged with whatever else serves /api/config.
   - command.dispatch {name: "memory"}: pending | approve <id|all> | reject <id|all> | approval on|off,
@@ -53,14 +54,37 @@ PROVIDERS = [
      "status": "unavailable"},
 ]
 # Hindsight's install as Hermes runs it (memory_providers.py `_install_memory_provider_setup`).
-HINDSIGHT = {"installed": False, "fails": False, "api_key": ""}
+HINDSIGHT = {"installed": False, "fails": False, "api_key": "", "values": {}}
 HINDSIGHT_SETUP = {"pip_dependencies": ["hindsight-client>=0.4"], "python_dependencies_declared": True,
                    "external_dependencies": [{"name": "hindsight-api", "install": "uv tool install hindsight-api",
                                               "check": "hindsight-api --version"}],
                    "required_env": ["HINDSIGHT_API_KEY"]}
+
+
+def _hindsight_field(key, kind="text", description="", default="", choices=(), url="", when=None):
+    """One field as `_normalize_memory_provider_schema` hands it on, label from the key. Hermes keeps a
+    schema's `required`; this cut-down schema sets it on no field."""
+    return {"key": key, "label": key.replace("_", " ").title(), "kind": kind, "description": description,
+            "placeholder": "", "required": False, "default": default,
+            "options": [{"value": c, "label": c, "description": ""} for c in choices], "url": url, "when": when,
+            "minimum": None, "maximum": None, "step": None}
+
+
+# Hindsight's `get_config_schema` (its Hermes plugin), cut down: one `api_url` and one `api_key` per
+# mode, so both keys repeat, each with its own `when` and default. Hermes lists every one of them.
 HINDSIGHT_FIELDS = [
-    {"key": "api_key", "label": "API key", "kind": "secret", "description": "From hindsight.vectorize.io → Keys.",
-     "placeholder": "hs-…", "required": True, "options": [], "url": "https://hindsight.vectorize.io", "when": None},
+    _hindsight_field("mode", "select", "Connection mode", "cloud", ("cloud", "local_embedded", "local_external")),
+    _hindsight_field("api_url", description="Hindsight Cloud API URL", default="https://api.hindsight.vectorize.io",
+                     when={"mode": "cloud"}),
+    _hindsight_field("api_key", "secret", "Hindsight Cloud API key", url="https://ui.hindsight.vectorize.io",
+                     when={"mode": "cloud"}),
+    _hindsight_field("api_url", description="Hindsight API URL", default="http://localhost:8888",
+                     when={"mode": "local_external"}),
+    _hindsight_field("api_key", "secret", "API key (optional)", when={"mode": "local_external"}),
+    _hindsight_field("llm_provider", "select", "LLM provider", "openai", ("openai", "anthropic", "ollama"),
+                     when={"mode": "local_embedded"}),
+    _hindsight_field("bank_id", description="Memory bank name (static fallback when bank_id_template is unset)",
+                     default="hermes"),
 ]
 ACTIVE = {}    # profile -> provider ("" built-in)
 # Mem0's settings as Hermes describes them (hermes_cli/web_routers/memory_providers.py):
@@ -667,9 +691,36 @@ def set_hindsight(status, **changes):
             provider.update(available=status == "ready", configured=status == "ready", status=status)
 
 
+def _hindsight_value(field, data):
+    """`_field_value`: the saved value, else the field's own default; a select keeps to its options."""
+    if field["kind"] == "secret":
+        return ""
+    value = data.get(field["key"]) or field["default"]
+    if field["kind"] == "select" and value not in {o["value"] for o in field["options"]}:
+        return field["default"]
+    return str(value)
+
+
+def _hindsight_visible(field, data):
+    """`_field_visible`: a condition reads the last field with that key (`fields_by_key`)."""
+    by_key = {f["key"]: f for f in HINDSIGHT_FIELDS}
+    return all(_hindsight_value(by_key.get(key) or _hindsight_field(key), data) == str(expected)
+               for key, expected in (field["when"] or {}).items())
+
+
+def _hindsight_status():
+    if not HINDSIGHT["installed"]:
+        return "unavailable"
+    cloud = _hindsight_value(HINDSIGHT_FIELDS[0], HINDSIGHT["values"]) == "cloud"
+    return "ready" if HINDSIGHT["api_key"] or not cloud else "needs_config"
+
+
 def hindsight_config(query, body):
     with LOCK:
-        fields = [{**f, "value": "", "is_set": bool(HINDSIGHT["api_key"])} for f in HINDSIGHT_FIELDS]
+        data = HINDSIGHT["values"]
+        fields = [{**{k: v for k, v in f.items() if k != "default"}, "value": _hindsight_value(f, data),
+                   "is_set": bool(HINDSIGHT["api_key"]) if f["kind"] == "secret" else bool(_hindsight_value(f, data))}
+                  for f in HINDSIGHT_FIELDS]
         setup = {**HINDSIGHT_SETUP, "dependencies_installed": HINDSIGHT["installed"]}
     return 200, {"name": "hindsight", "label": "Hindsight", "fields": fields, "setup": setup}
 
@@ -693,24 +744,46 @@ def hindsight_install(query, body):
         else:
             results += [row("external_install", "installed", "uv tool install hindsight-api"),
                         row("external_check", "verified", "hindsight-api --version")]
-            status = "ready" if HINDSIGHT["api_key"] else "needs_config"
-            set_hindsight(status, installed=True)
+            HINDSIGHT["installed"] = True
+            status = _hindsight_status()
+            set_hindsight(status)
         ok = all(r["status"] != "failed" for r in results)
     return 200, {"ok": ok, "provider": "hindsight", "results": results,
                  "status": {"name": "hindsight", "status": status}}
 
 
 def hindsight_save(query, body):
+    """`_write_memory_provider_config_values`: walk the fields in order and keep each one shown, so
+    where a key repeats, the field for the chosen mode decides its value; a key goes to the env."""
     values = (body or {}).get("values") or {}
     with LOCK:
         if not HINDSIGHT["installed"]:
             return 400, {"detail": "Memory provider 'hindsight' is not ready (unavailable). Install its dependencies first."}
-        if values.get("api_key"):
-            set_hindsight("ready", api_key=values["api_key"])
+        existing, config, secret = HINDSIGHT["values"], {}, ""
+        for field in HINDSIGHT_FIELDS:
+            if not _hindsight_visible(field, {**existing, **config}):
+                continue
+            key = field["key"]
+            if field["kind"] == "secret":
+                secret = str(values.get(key) or "").strip() or secret
+                continue
+            raw = values[key] if key in values else existing.get(key, field["default"])
+            value = str(raw if raw is not None else "").strip() or field["default"]
+            if field["kind"] == "select" and value not in {o["value"] for o in field["options"]}:
+                return 400, {"detail": f"Invalid value for '{key}'"}
+            config[key] = value
+        existing.update(config)
+        if secret:
+            HINDSIGHT["api_key"] = secret
+        status = _hindsight_status()
+        set_hindsight(status)
+        if status != "ready":
+            return 400, {"detail": f"Memory provider 'hindsight' is not ready ({status.replace('_', ' ')}). "
+                                   "Configure it in the dashboard first."}
     return 200, {"ok": True, "active": "hindsight"}
 
 
 def hindsight_mock(query, body):
     with LOCK:
-        set_hindsight("unavailable", installed=False, api_key="", fails=bool((body or {}).get("fails")))
+        set_hindsight("unavailable", installed=False, api_key="", values={}, fails=bool((body or {}).get("fails")))
     return 200, {"ok": True, "fails": HINDSIGHT["fails"]}
