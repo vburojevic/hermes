@@ -157,7 +157,18 @@ MANY_TOPICS = ["inventory sync", "release checklist", "garden plan", "invoice ex
                "trip budget", "recipe scaling", "photo cleanup", "router firmware", "reading list"]
 
 
-def seed_many_chats(count):
+def sparse_source(i):
+    """`--sparse-chats`: a gateway used mostly from Telegram and Discord. Each page of 50 holds one
+    or two of this app's chats and one scheduled run, too few to fill the screen under This App or
+    Scheduled Tasks (docs/inbox.md §5)."""
+    if i % 40 == 39:
+        return "api_server"
+    if i % 45 == 44:
+        return "cron"
+    return ("telegram", "discord")[i % 2]
+
+
+def seed_many_chats(count, sparse=False):
     """`--many-chats N`: N ordinary chats over the past two months (one question, one answer each),
     as a long-used gateway lists them: sources mixed, every fifth with replies since it was read,
     so launch, the list's order, its unread counts and search can be measured at that size."""
@@ -165,7 +176,7 @@ def seed_many_chats(count):
         sid = f"many_{i:04d}"
         topic = MANY_TOPICS[i % len(MANY_TOPICS)]
         started = NOW - (i + 1) * 5 * HOUR - (i % 7) * 60
-        source = ("cli", "api_server", "telegram", "discord")[i % 4]
+        source = sparse_source(i) if sparse else ("cli", "api_server", "telegram", "discord")[i % 4]
         session_row(sid, f"{topic.capitalize()} {i + 1}", source, started, started + 120, "")
         add_message(sid, "user", f"Help me with the {topic} for item {i + 1}.", timestamp=started)
         add_message(sid, "assistant", f"Done: the {topic} for item {i + 1} is in order. I checked each step "
@@ -295,6 +306,15 @@ def seed():
     session_row("api_old_2", "Kubernetes ingress debugging", "api_server", NOW - 45 * DAY, NOW - 45 * DAY, "Why does my ingress 404?")
     add_message("api_old_2", "user", "Why does my ingress 404?", timestamp=NOW - 45 * DAY)
     add_message("api_old_2", "assistant", "Your `pathType` is `Exact`; switch it to `Prefix`.", timestamp=NOW - 45 * DAY + 30)
+
+    # A scheduled task's run, as Hermes's scheduler stores it (cron/scheduler.py): source `cron`, the
+    # id `cron_<job>_<YYYYmmdd_HHMMSS>` and the title `<job name> · <Mon DD HH:MM>`.
+    ran = NOW - 6 * HOUR
+    sid = f"cron_job_brief_{time.strftime('%Y%m%d_%H%M%S', time.localtime(ran))}"
+    session_row(sid, f"Morning briefing · {time.strftime('%b %d %H:%M', time.localtime(ran))}", "cron", ran, ran + 40,
+                "Summarise overnight news, my calendar and the weather.")
+    add_message(sid, "user", "Summarise overnight news, my calendar and the weather.", timestamp=ran)
+    add_message(sid, "assistant", "**Weather:** 14°, clear. **Calendar:** stand-up at 09:30. **News:** nothing urgent.", timestamp=ran + 40)
 
     seed_read_marks()
 
@@ -1352,6 +1372,8 @@ def main():
                         help="hold every run's events this long after its stream opens, as a stream that attached late")
     parser.add_argument("--many-chats", type=int, default=0, metavar="N",
                         help="seed N more ordinary chats (seed_many_chats), to measure a long chat list")
+    parser.add_argument("--sparse-chats", action="store_true",
+                        help="with --many-chats: mostly Telegram and Discord, a few of this app's chats and scheduled runs per page")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
@@ -1360,7 +1382,7 @@ def main():
     Handler.key = args.key
     seed()
     if args.many_chats:
-        seed_many_chats(args.many_chats)
+        seed_many_chats(args.many_chats, sparse=args.sparse_chats)
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True

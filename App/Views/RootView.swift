@@ -385,13 +385,15 @@ struct RootView: View {
         #endif
         // `-HERMES_SEND_HERE <text>` sends into the chat that's open, `-HERMES_SEND_HERE_AFTER <s>`
         // after launch (default 6), three times 20 s apart (send-animation checks), or
-        // `-HERMES_SEND_HERE_ROUNDS <n>` times (1: once, as typed).
+        // `-HERMES_SEND_HERE_ROUNDS <n>` times (1: once, as typed). `-HERMES_SEND_HERE_CHAT <id>`
+        // sends into that chat instead, open or not (a reply landing below the row VoiceOver reads).
         if let text = UserDefaults.standard.string(forKey: "HERMES_SEND_HERE"), !text.isEmpty {
             let after = UserDefaults.standard.double(forKey: "HERMES_SEND_HERE_AFTER")
             let rounds = UserDefaults.standard.integer(forKey: "HERMES_SEND_HERE_ROUNDS")
+            let chat = UserDefaults.standard.string(forKey: "HERMES_SEND_HERE_CHAT").flatMap { $0.isEmpty ? nil : $0 }
             try? await Task.sleep(for: .seconds(after > 0 ? after : 6))
             for round in 1...max(1, rounds > 0 ? rounds : 3) {
-                let conversation = workspace.currentConversation
+                let conversation = chat.map { workspace.conversation(forKey: $0) } ?? workspace.currentConversation
                 conversation.draft = rounds == 1 ? text : "\(text) (\(round))"
                 conversation.send()
                 try? await Task.sleep(for: .seconds(20))

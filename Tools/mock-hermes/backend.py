@@ -3037,6 +3037,8 @@ def main():
     parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one")
     parser.add_argument("--many-chats", type=int, default=0, metavar="N",
                         help="seed N more ordinary chats on the gateway, to measure a long chat list")
+    parser.add_argument("--sparse-chats", action="store_true",
+                        help="with --many-chats: mostly Telegram and Discord, a few of this app's chats and scheduled runs per page")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: both mocks answer in bursts every MIN-MAX seconds, "
                              "health checks too (starve.py; POST /api/mock/starve to start, change or stop it)")
@@ -3118,7 +3120,7 @@ def main():
         if args.long_chat:
             gateway.seed_long_chat()
         if args.many_chats:
-            gateway.seed_many_chats(args.many_chats)
+            gateway.seed_many_chats(args.many_chats, sparse=args.sparse_chats)
         GATEWAY_PAGING.extend([gateway.page_rows, gateway.throttle])
         GATEWAY.append(gateway)
         api = ThreadingHTTPServer((args.host, args.gateway_port), gateway.Handler)
