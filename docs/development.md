@@ -446,6 +446,11 @@ accessibility queries a tapping tool sends. `--seed-bot-chat` with an export of 
 and tables makes Ops a heavy chat to open. `-HERMES_INLINE_SELECTION YES` makes iPhone and iPad
 replies selectable in place again, as they were, to measure what that costs.
 
+Bot photos after memory pressure ([bots-groups-skills.md](bots-groups-skills.md) §1):
+`-HERMES_EVICT_FACES <s>` empties the decoded image caches that many seconds after the first
+image lands, as memory pressure does. Every face showing a photo draws the Bot's own face, and the
+roster fetches each photo again once (one more `profiles.get_asset` per Bot in the mock's log).
+
 Removed gateways' web data (`docs/connecting-and-voice.md` §7): `-HERMES_WEB_STORES_LOG YES`
 prints one `WEBSTORES` line at launch with the stores WebKit has before and after the sweep, the
 ones it deleted and the ones still waiting, even when nothing waits (without it, such a launch
