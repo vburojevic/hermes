@@ -27,8 +27,6 @@ struct LearnedSkillsRow: View {
     var isWide = false
     let open: () -> Void
 
-    @State private var subtitle: String?
-
     var body: some View {
         Button(action: open) {
             HStack(spacing: 12) {
@@ -43,7 +41,7 @@ struct LearnedSkillsRow: View {
                     Text("What Hermes Learned")
                         .font(.body)
                         .foregroundStyle(Theme.primaryText)
-                    Text(subtitle ?? String(localized: "Skills it wrote and things it remembers"))
+                    Text(workspace.learnedSkillsSubtitle ?? String(localized: "Skills it wrote and things it remembers"))
                         .font(.footnote)
                         .foregroundStyle(Theme.secondaryText)
                         .lineLimit(1)
@@ -61,12 +59,16 @@ struct LearnedSkillsRow: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .task(id: workspace.roster?.isConnected) {
-            guard workspace.roster?.isConnected == true else { return }
-            let model = LearnedModel(workspace: workspace)
-            await model.load()
-            subtitle = model.skillsRowSubtitle
+        // Read once per gateway, when Bot Mode is up, and again after a turn writes a skill; pull
+        // to refresh on Skills reads it again.
+        .task(id: SubtitleTrigger(isConnected: workspace.roster?.isConnected == true, generation: workspace.skillsGeneration)) {
+            await workspace.loadLearnedSkillsSubtitle()
         }
+    }
+
+    private struct SubtitleTrigger: Equatable {
+        let isConnected: Bool
+        let generation: Int
     }
 }
 
@@ -121,13 +123,6 @@ struct LearnedSkillSheet: View {
     var body: some View {
         NavigationStack {
             LearnedSkillPage(model: model, skillID: skillID)
-                .navigationDestination(for: LearnedRoute.self) { route in
-                    switch route {
-                    case .map: LearnedMapPage(model: model)
-                    case .skill(let id): LearnedSkillPage(model: model, skillID: id)
-                    case .tidying: LearnedTidyingPage(model: model)
-                    }
-                }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close", systemImage: "xmark") { dismiss() }

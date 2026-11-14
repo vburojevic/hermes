@@ -357,6 +357,61 @@ final class BotWorkspace: Identifiable {
         if case .board(let id) = selection { board(for: id) } else { nil }
     }
 
+    /// The Skills page's list, kept while the app runs so Skills opens on it at once.
+    private(set) var skillCatalog = SkillCatalog()
+    private(set) var isLoadingSkills = false
+    /// Counts the turns that wrote a skill, so a Skills page on screen reads its list again.
+    private(set) var skillsGeneration = 0
+
+    /// Reads the skills when this gateway's list hasn't been read yet (or the last read failed),
+    /// or always with `force` (pull to refresh).
+    func loadSkills(force: Bool = false) async {
+        let address = bot.baseURL
+        guard let client, !isLoadingSkills,
+              force || skillCatalog.needsLoad(from: address, isOnline: connection.isOnline) else { return }
+        isLoadingSkills = true
+        defer { isLoadingSkills = false }
+        do {
+            skillCatalog.received(try await client.skills(), from: address)
+        } catch {
+            // Skills closed before the answer: the next open asks again.
+            guard !Task.isCancelled else { return }
+            skillCatalog.failed(error as? HermesError ?? .invalidResponse(error.localizedDescription), from: address)
+        }
+    }
+
+    /// The line under What Hermes Learned on Skills ("2 new skills this week · tidied today"),
+    /// read once per gateway like the list: it takes six Bot Mode calls.
+    private(set) var learnedSkillsSubtitle: String?
+    @ObservationIgnored private var hasLearnedSkillsSubtitle = false
+    @ObservationIgnored private var isLoadingLearnedSkillsSubtitle = false
+
+    /// Reads the line when Bot Mode is up and it hasn't been read yet, or always with `force`.
+    /// The model notes the line itself once the learning graph arrives, so a failed read leaves
+    /// it unread and the next open tries again.
+    func loadLearnedSkillsSubtitle(force: Bool = false) async {
+        guard roster?.isConnected == true, !isLoadingLearnedSkillsSubtitle,
+              force || !hasLearnedSkillsSubtitle else { return }
+        isLoadingLearnedSkillsSubtitle = true
+        defer { isLoadingLearnedSkillsSubtitle = false }
+        await LearnedModel(workspace: self).load()
+    }
+
+    /// A turn wrote a skill: the list and the line are read again the next time Skills opens,
+    /// or now when it shows. The Mac has no pull to refresh, so this is how a new skill shows
+    /// there without a relaunch.
+    func skillsChanged() {
+        skillCatalog.markStale()
+        hasLearnedSkillsSubtitle = false
+        skillsGeneration += 1
+    }
+
+    /// What Hermes Learned read its page: the row shows the same, with no read of its own.
+    func noteLearnedSkillsSubtitle(_ subtitle: String?) {
+        learnedSkillsSubtitle = subtitle
+        hasLearnedSkillsSubtitle = true
+    }
+
     @ObservationIgnored private var appsAndToolsModel: AppsAndToolsModel?
     /// What Hermes on this gateway can reach: Settings → Apps and Tools.
     var appsAndTools: AppsAndToolsModel {

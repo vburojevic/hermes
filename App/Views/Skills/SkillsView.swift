@@ -8,9 +8,6 @@ import SwiftUI
 struct SkillsView: View {
     let workspace: BotWorkspace
 
-    @State private var skills: [Skill] = []
-    @State private var skillsError: HermesError?
-    @State private var isLoading = false
     /// The window's skill filter, kept with the window.
     @SceneStorage("skills.query") private var query = ""
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -19,17 +16,10 @@ struct SkillsView: View {
     @Environment(\.openSettings) private var openSettings
     #endif
 
-    private var filteredSkills: [Skill] {
-        guard !query.isEmpty else { return skills }
-        return skills.filter {
-            $0.name.localizedCaseInsensitiveContains(query) || ($0.description?.localizedCaseInsensitiveContains(query) ?? false)
-        }
-    }
+    private var catalog: SkillCatalog { workspace.skillCatalog }
 
-    private var groupedSkills: [(String, [Skill])] {
-        Dictionary(grouping: filteredSkills) { $0.category?.replacingOccurrences(of: "-", with: " ").capitalized ?? String(localized: "General") }
-            .map { ($0.key, $0.value.sorted { $0.name < $1.name }) }
-            .sorted { $0.0 < $1.0 }
+    private var groupedSkills: [SkillCatalog.Group] {
+        catalog.groups(matching: query, generalTitle: String(localized: "General"))
     }
 
     /// iPad (regular width) and Mac: the grid of cards.
@@ -83,7 +73,10 @@ struct SkillsView: View {
                 .id(workspace.learnedScope)
         }
         #endif
-        .task(id: workspace.id) { await load() }
+        // The list is read once per gateway (kept by the workspace), when Skills first opens or
+        // the gateway first comes online, and again after a turn writes a skill; opening Skills
+        // again shows it at once.
+        .task(id: LoadTrigger(workspace: workspace)) { await workspace.loadSkills() }
         // Tools and Apps asks Bot Mode: a Skills page opened before it connected asks once it does,
         // so the row's placeholder doesn't wait forever.
         .task(id: workspace.roster?.isConnected == true) { await loadAppsAndTools() }
@@ -93,9 +86,13 @@ struct SkillsView: View {
             query = pending
             workspace.pendingSkillQuery = nil
         }
-        .refreshable { await load() }
+        .refreshable {
+            await workspace.loadSkills(force: true)
+            await workspace.loadLearnedSkillsSubtitle(force: true)
+            await loadAppsAndTools()
+        }
         .overlay {
-            if !query.isEmpty && filteredSkills.isEmpty && !skills.isEmpty {
+            if !query.isEmpty && groupedSkills.isEmpty && !catalog.skills.isEmpty {
                 ContentUnavailableView.search(text: query)
             }
         }
@@ -121,9 +118,9 @@ struct SkillsView: View {
                 }
             }
             loadingAndErrors
-            ForEach(groupedSkills, id: \.0) { category, skills in
-                Section(category) {
-                    ForEach(skills) { skill in
+            ForEach(groupedSkills) { group in
+                Section(group.title) {
+                    ForEach(group.skills) { skill in
                         SkillRow(skill: skill) { workspace.use(skill) }
                     }
                 }
@@ -158,15 +155,15 @@ struct SkillsView: View {
                         .padding(.bottom, 8)
                 }
                 loadingAndErrors
-                ForEach(groupedSkills, id: \.0) { category, skills in
-                    Text(category)
+                ForEach(groupedSkills) { group in
+                    Text(group.title)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.secondaryText)
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                         .accessibilityAddTraits(.isHeader)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 360), spacing: 14)], alignment: .leading, spacing: 14) {
-                        ForEach(skills) { skill in
+                        ForEach(group.skills) { skill in
                             SkillCard(skill: skill) { workspace.use(skill) }
                         }
                     }
@@ -186,28 +183,34 @@ struct SkillsView: View {
 
     @ViewBuilder
     private var loadingAndErrors: some View {
-        if isLoading && skills.isEmpty {
+        // Placeholders until the first answer, never an empty page, unless the gateway can't be
+        // reached (`docs/bots-groups-skills.md` §3).
+        if catalog.skills.isEmpty, workspace.isLoadingSkills
+            || (catalog.isWaiting(for: workspace.bot.baseURL) && !workspace.connection.isFailed) {
             SkeletonRows()
                 .listRowBackground(Color.clear)
         }
-        if let skillsError, skills.isEmpty {
-            Text("This Hermes version couldn't list its skills. \(skillsError.errorDescription ?? "")")
+        if let failure = catalog.failure, catalog.skills.isEmpty, !workspace.isLoadingSkills {
+            Text("This Hermes version couldn't list its skills. \(failure.errorDescription ?? "")")
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryText)
         }
     }
 
-    private func load() async {
-        guard let client = workspace.client else { return }
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            skills = try await client.skills()
-            skillsError = nil
-        } catch {
-            skillsError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
+    /// What reads the list again: another workspace, a new address, the gateway coming online, a
+    /// turn that wrote a skill.
+    private struct LoadTrigger: Equatable {
+        let workspace: UUID
+        let address: URL
+        let isOnline: Bool
+        let generation: Int
+
+        init(workspace: BotWorkspace) {
+            self.workspace = workspace.id
+            address = workspace.bot.baseURL
+            isOnline = workspace.connection.isOnline
+            generation = workspace.skillsGeneration
         }
-        await loadAppsAndTools()
     }
 
     private func loadAppsAndTools() async {

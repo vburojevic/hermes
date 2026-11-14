@@ -24,7 +24,10 @@ The protocol comes from Hermes Agent: `agent/learning_graph.py`, `agent/learning
 Entry points:
 
 - The top row of Skills, "What Hermes Learned", with what's new and when it last tidied ("2 new
-  skills this week · tidied 2 days ago").
+  skills this week · tidied 2 days ago"). The line is read once per gateway, when Bot Mode is up,
+  and again on pull to refresh, when this page loads, or after a turn writes a skill; opening
+  Skills again reads nothing. A read that failed leaves the line unread, so the next open tries
+  again.
 - The Memory page's options ("What <Hermes or the Bot> Learned"), for that learner.
 - The "Learned a new skill" note in chats (§6).
 - Mac: Skills → Library | Learned.
@@ -77,6 +80,10 @@ Until the graph arrives the page shows `SkeletonRows`.
   curator card sit beside it. On the Mac, pushed pages carry their own large title, since the main
   window hides toolbar titles.
 - On iPhone and iPad the … menu has Tidying, Tidy Up Now and Refresh.
+- A skill, the map or Tidying opens on top of the page, and back returns to it. Skills and Memory
+  open this page with a push of their own, so the pages it opens are pushed one at a time by item,
+  never by value: SwiftUI kept the page above value pushes, so a skill opened from it showed the
+  page again.
 - Not available: "What <learner> learned isn't available" with the reason, and Try Again unless
   Bot Mode is missing.
 
@@ -159,6 +166,8 @@ Until the graph arrives the page shows `SkeletonRows`.
 ## 8. Acceptance checks
 
 - The page reflects `GET /api/learning/graph` for the chosen learner; bundled skills never appear.
+- Opened from Skills or Memory on iPhone and iPad, a skill (from New This Week, Most Used, a
+  related skill or Tidying) shows the skill, and back returns to the page.
 - New This Week uses when a skill was written, not when it was last used.
 - Keep As Is pins the skill, and the next tidy leaves it alone.
 - Tidy Up Now runs the curator and refreshes the page when it finishes.
