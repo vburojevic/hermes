@@ -12,8 +12,10 @@ import AppKit
 /// main window); `click top-button` (the topmost
 /// AppKit button, which on a pushed page is its back button); `key cmd+[`, `key return` (a sheet's
 /// default button); `tabs` (Settings tabs
-/// shown and clipped); `dump`, `views` and `toolbar` (the accessibility, content and toolbar view
-/// trees, with frames). Each step logs `HERMES_MAC_DRIVE` with
+/// shown and clipped); `frame <width> <height>` (resizes the chats window, top left kept, which a
+/// locked screen refuses from outside); `menu <title>` (a menu bar menu's items and shortcuts, which a locked or
+/// off-Space screen can't capture); `dump`, `views` and `toolbar` (the accessibility, content and
+/// toolbar view trees, with frames). Each step logs `HERMES_MAC_DRIVE` with
 /// its result and the Settings window's title, which is the page it shows.
 @MainActor
 enum MacDebugDriver {
@@ -40,6 +42,10 @@ enum MacDebugDriver {
                 result = tap(argument, in: mainWindow)
             case "tabs":
                 result = tabs()
+            case "frame":
+                result = frame(argument)
+            case "menu":
+                result = menu(argument)
             case "toolbar":
                 if let frame = settingsWindow?.contentView?.superview { dumpToolbar(frame, depth: 0) }
             case "views":
@@ -110,6 +116,16 @@ enum MacDebugDriver {
         return "tapped \(location)"
     }
 
+    private static func frame(_ size: String) -> String {
+        let numbers = size.split(separator: " ").compactMap { Double($0) }
+        guard numbers.count == 2, let window = mainWindow else { return "frame needs width height and a window" }
+        var frame = window.frame
+        frame.origin.y += frame.height - numbers[1]
+        frame.size = NSSize(width: numbers[0], height: numbers[1])
+        window.setFrame(frame, display: true)
+        return "frame \(window.frame.size)"
+    }
+
     private static func find(_ label: String, in element: any NSAccessibilityProtocol, depth: Int) -> (any NSAccessibilityProtocol)? {
         guard depth < 40 else { return nil }
         if let own = element.accessibilityLabel(), own == label || own.hasPrefix(label + ",") {
@@ -149,6 +165,37 @@ enum MacDebugDriver {
         let text = (view as? NSTextField).map { " \"\($0.stringValue)\" font=\($0.font?.pointSize ?? 0) \($0.font?.fontName ?? "")" } ?? ""
         log(String(repeating: "  ", count: depth) + "\(type(of: view)) \(view.convert(view.bounds, to: nil))\(text)")
         for subview in view.subviews { dumpToolbar(subview, depth: depth + 1) }
+    }
+
+    /// `menu View`: each item of a menu bar menu with its shortcut, one level of submenus indented.
+    private static func menu(_ title: String) -> String {
+        guard let menu = NSApp.mainMenu?.items.first(where: { $0.title == title })?.submenu else { return "no \(title) menu" }
+        menu.update()
+        func list(_ menu: NSMenu, depth: Int) {
+            for item in menu.items {
+                guard !item.isSeparatorItem else { log(String(repeating: "  ", count: depth) + "—"); continue }
+                let shortcut = item.keyEquivalent.isEmpty ? "" : " " + shortcutText(item)
+                log(String(repeating: "  ", count: depth) + item.title + shortcut + (item.isEnabled ? "" : " (disabled)"))
+                if depth == 0, let submenu = item.submenu { list(submenu, depth: 1) }
+            }
+        }
+        list(menu, depth: 0)
+        return "\(menu.items.count) items"
+    }
+
+    private static func shortcutText(_ item: NSMenuItem) -> String {
+        let flags = item.keyEquivalentModifierMask
+        var text = ""
+        if flags.contains(.control) { text += "⌃" }
+        if flags.contains(.option) { text += "⌥" }
+        if flags.contains(.shift) || item.keyEquivalent != item.keyEquivalent.lowercased() { text += "⇧" }
+        if flags.contains(.command) { text += "⌘" }
+        let names: [Character: String] = [
+            Character(UnicodeScalar(NSUpArrowFunctionKey)!): "↑", Character(UnicodeScalar(NSDownArrowFunctionKey)!): "↓",
+            Character(UnicodeScalar(NSLeftArrowFunctionKey)!): "←", Character(UnicodeScalar(NSRightArrowFunctionKey)!): "→",
+            "\t": "⇥", "\r": "↩", " ": "Space",
+        ]
+        return text + item.keyEquivalent.map { names[$0] ?? String($0).uppercased() }.joined()
     }
 
     /// `tabs`: how many Settings tabs show, of how many, at what window width; none should be in

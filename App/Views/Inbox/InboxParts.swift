@@ -38,8 +38,6 @@ enum InboxMetrics {
 struct UnreadCountBadge: View {
     let count: Int
     var muted = false
-    /// Cut out of what's behind it (`unreadBadgeCutout`, the drawer button).
-    var cutout = false
 
     var body: some View {
         Text(UnreadCounter.label(count))
@@ -53,11 +51,6 @@ struct UnreadCountBadge: View {
             .padding(.horizontal, InboxMetrics.badgeHeight * 0.3)
             .frame(minWidth: InboxMetrics.badgeHeight, minHeight: InboxMetrics.badgeHeight)
             .background(muted ? Theme.controlFill : Theme.ink, in: Capsule())
-            .background {
-                if cutout {
-                    Capsule().fill(Theme.canvas).padding(-2)
-                }
-            }
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
             .accessibilityHidden(true)
     }

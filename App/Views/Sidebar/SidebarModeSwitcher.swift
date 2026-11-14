@@ -23,7 +23,7 @@ struct SidebarModeSwitcher: View {
         return unread.unreadCount(inBots: value == .bots)
     }
 
-    /// At the accessibility sizes "Chats" and its count no longer fit half the drawer, so the two
+    /// At the accessibility sizes "Chats" and its count no longer fit half the list, so the two
     /// sides stack and the pill slides down instead of across (`docs/inbox.md` §6).
     private var isStacked: Bool {
         #if os(macOS)

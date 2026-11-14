@@ -159,14 +159,13 @@ the checklist above the composer.
 - **Tips** (`tipBubble`, TipKit): each shown once, at most one an hour, each only after the
   person has had a reason to need it. Got It and ✕ put a tip away for good. A tip never gets in
   the way of what it points at: it hangs off a clear stand-in laid over the control
-  (`hermesTip`), because wrapped by the popover the toolbar's sidebar button and a Bot Chat's title
+  (`hermesTip`), because wrapped by the popover a toolbar button and a Bot Chat's title
   stopped answering taps (`ToolbarButtonsUITests`). A tip on something that scrolls (the undo
   bar in the chat) waits until that control is wholly in view, so it never opens cut off in a
   corner of the screen for a control scrolled away.
 
   | Tip | Shown on | After |
   |---|---|---|
-  | Everything lives here | the button that opens the sidebar or drawer | the first new chat appears |
   | What Hermes is working on | the Inspector pill (iPhone, iPad portrait) | something first opens in the Inspector |
   | Take back a turn | the undo bar | a turn first changes files |
   | Its face says what it's doing | the Bot's face and name at the top of its chat | a Bot Chat first opens |

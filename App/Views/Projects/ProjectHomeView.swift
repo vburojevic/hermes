@@ -7,7 +7,6 @@ import SwiftUI
 struct ProjectHomeView: View {
     let workspace: BotWorkspace
     let projectID: String
-    var onToggleSidebar: (() -> Void)?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var composerFocused = false
@@ -361,12 +360,6 @@ struct ProjectHomeView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if let onToggleSidebar {
-            ToolbarItem(placement: .navigation) {
-                SidebarButton(action: onToggleSidebar)
-            }
-            .sidebarButtonGlass()
-        }
         #if os(macOS)
         // Without a centred item the Mac lines items up from the leading edge.
         ToolbarSpacer(.flexible)

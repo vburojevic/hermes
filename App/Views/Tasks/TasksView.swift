@@ -3,7 +3,6 @@ import SwiftUI
 
 struct TasksView: View {
     let workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     @State private var model = TasksModel()
     @State private var isCreating = false
@@ -21,25 +20,11 @@ struct TasksView: View {
         #endif
     }
 
-    /// Leading, as in a chat. On iPad in portrait `.navigation` put it on the trailing side, among
-    /// the selected task's actions.
-    #if os(iOS)
-    private static let sidebarPlacement = ToolbarItemPlacement.topBarLeading
-    #else
-    private static let sidebarPlacement = ToolbarItemPlacement.navigation
-    #endif
-
     var body: some View {
         content
             .background(Theme.canvas)
             .navigationTitle("Tasks")
             .toolbar {
-                if let onToggleSidebar {
-                    ToolbarItem(placement: Self.sidebarPlacement) {
-                        SidebarButton(action: onToggleSidebar)
-                    }
-                    .sidebarButtonGlass()
-                }
                 #if os(iOS)
                 ToolbarItem(placement: .primaryAction) {
                     Button {

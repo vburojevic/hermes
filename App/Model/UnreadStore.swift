@@ -110,9 +110,11 @@ final class UnreadStore {
     static func botKey(_ name: String) -> String { "bot:\(name)" }
     static func groupKey(_ id: String) -> String { "group:\(id)" }
 
-    /// The chat on screen: never unread, and read as it's shown.
+    /// The chat on screen: never unread, and read as it's shown. A chat backed out of on iPhone
+    /// stays selected under the list, but isn't on screen.
     var openKey: String? {
-        switch workspace?.selection {
+        guard workspace?.navigation.showsDetail != false else { return nil }
+        return switch workspace?.selection {
         case .session(let key): key
         case .bot(let name): Self.botKey(name)
         case .group(let id): Self.groupKey(id)
@@ -156,7 +158,7 @@ final class UnreadStore {
         BadgeScope.counts(key, isUnread: badge(for: key).isUnread, open: open, isMuted: mutes.isMuted(key), hiddenBots: hidden)
     }
 
-    /// Every unread, unmuted chat, Bot and group chat but the open one (the drawer button).
+    /// Every unread, unmuted chat, Bot and group chat but the open one (the back button on iPhone).
     var unreadElsewhere: Int {
         unreadChats(in: badges.keys)
     }

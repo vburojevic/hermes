@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the app icon and Dock badge, and the list's unread counts (the drawer, the Chats and Bots
+/// What the app icon and Dock badge, and the list's unread counts (the chat list, the Chats and Bots
 /// segments), take from the rows (`docs/notifications.md` §2 Badge, `docs/inbox.md` §5). Keys are
 /// `UnreadStore`'s: a session's stable key, `bot:<profile>`, `group:<id>`.
 public enum BadgeScope {

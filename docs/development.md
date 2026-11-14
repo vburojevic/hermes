@@ -545,8 +545,7 @@ too: zsh startup time (dotfiles, last spoken in 32 days ago) had a heartbeat 7 m
 Building Hermes for iPhone (Blog) was compacted 25 minutes ago; search for "zsh" or "outline" to see
 their results' times, and All Projects to see dotfiles stay last. Debug flags: `-HERMES_OPEN projects`,
 `-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
-`-HERMES_OPEN project-chat:<id>`, `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin` and
-`-HERMES_DRAWER YES`.
+`-HERMES_OPEN project-chat:<id>`, and `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin`.
 
 Unread and live activity (`Tools/mock-hermes/inbox.py`, `docs/inbox.md`): the gateway's chats keep
 Hermes' read mark (`last_read_at`); seeded, Release prep has 3 replies since it was read, Morning
@@ -662,8 +661,9 @@ On the Mac, a window on another Space takes no input from outside (cua-driver re
 bringing the app forward would take over the screen). `-HERMES_MAC_DRIVE "<steps>"` drives the
 Debug app from inside instead: `wait <s>`, `press <toolbar item>` (a Settings tab), `tap <x> <y>`
 (points from the Settings window's top left, a screenshot's pixels halved), `click top-button` (a
-pushed page's back button), `key cmd+[`, and `dump` / `views` to see what's there. Each step logs
-`HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked without a
+pushed page's back button), `key cmd+[`, `menu <title>` (a menu bar menu's items and shortcuts,
+which a locked or off-Space screen can't capture), and `dump` / `views` to see what's there. Each
+step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked without a
 screenshot (`App/Support/MacDebugDriver.swift`); `tabs` logs how many Settings tabs show, of how
 many. Capture with `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts
 the Settings tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR
@@ -738,7 +738,7 @@ And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`
 Check NAS backups and Ada's "Release notes draft"; prefixes match ("reconn"), `source`/`profile`
 filters work, and replies take 150 ms. Tasks have three recent runs, one failed
 (`/api/cron/jobs/<id>/runs`). Debug flags: `-HERMES_SEARCH <text>` types into the chat search
-(with `-HERMES_DRAWER YES` on iPhone), `-HERMES_PALETTE <text>` opens the Mac's ⌘K palette,
+(on iPhone, the chat list's), `-HERMES_PALETTE <text>` opens the Mac's ⌘K palette,
 `-HERMES_OPEN chat:<session id>` opens a chat, and `-HERMES_GALLERY talk[:n]` shows the Talk states
 without the microphone (a Mac build started from a shell can't use it).
 

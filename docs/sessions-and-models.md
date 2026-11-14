@@ -1,6 +1,6 @@
 # Chats, models and background processes
 
-This document covers the chat list (the sidebar on iPad and Mac, the drawer on iPhone), the chat
+This document covers the chat list (the sidebar on iPad and Mac, the first screen on iPhone), the chat
 and message menus, context use and compacting, the model picker and reasoning level, and the card
 for background processes. For each action it names the Hermes call the app makes. Design component
 names (`sessionMenu`, `replyMenu`, `contextNotice`…) are in backticks so code and
@@ -25,9 +25,11 @@ is `ConversationModel.usesGateway`. See `docs/connecting-and-voice.md` §1.
 
 ## 1. Chat list and lifecycle
 
-A chat's menu (`sessionMenu`) is its context menu in the sidebar or drawer: Rename…, Pin, Move to
-Project…, Branch, Checkpoints…, Copy Session ID and Delete…. The iPad and Mac sidebar also has
-swipe actions (Delete, Pin); in the iPhone drawer a swipe closes the drawer, so there are none.
+A chat's menu (`sessionMenu`) is its context menu in the list: Rename…, Pin, Move to Project…,
+Branch, Checkpoints…, Copy Session ID and Delete…. Rows also have the system's swipe actions on
+every platform (Read / Unread and Pin leading, Mute and Archive trailing; `docs/inbox.md` §5). On
+iPhone the list is the first screen and a chat pushes over it, with the system back button and
+swipe back; on iPad and the Mac it is the sidebar beside the chat (`docs/design-to-swiftui.md` §6).
 
 | Action | Call | Notes |
 |---|---|---|

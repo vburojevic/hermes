@@ -110,7 +110,7 @@ struct TranscriptView: View {
     @State private var selectingText: SelectTextChoice?
     private static let pageSize = 20
     /// Opening a chat lays out only the latest rows (more than a screen), so the first frame is
-    /// cheap while the drawer or the window animates; the rest of the page follows a moment later,
+    /// cheap while a push or the window animates; the rest of the page follows a moment later,
     /// above, out of sight. At most this many, fewer when they're long (`openingRows`).
     private static let firstFrameRows = 8
     /// The fewest rows a chat opens with, and the room they must cover at the least: two and a
@@ -130,7 +130,7 @@ struct TranscriptView: View {
         _settled = State(initialValue: conversation.pendingUser != nil || conversation.isWorking)
     }
 
-    /// Time for the rest of the first page (`fillWindow`), once the drawer has settled.
+    /// Time for the rest of the first page (`fillWindow`), once the opening animation is done.
     @State private var pageDue = false
     /// Calls whose turns are open under their card (Transcript).
     @State private var openCalls: Set<UUID> = []
@@ -467,17 +467,16 @@ struct TranscriptView: View {
                 #endif
                 withAnimation(.easeOut(duration: 0.15)) { settled = true }
             }
-            // After the opening animation (the drawer closing), the rest of the page. A chat
-            // opened from a search result goes on as soon as the drawer is still: its landing
-            // waits for this page, and the fixed wait kept it 0.45 s even with no drawer.
-            if conversation.searchFocus != nil {
-                await Settling.untilSettled()
-            } else {
+            // After the opening animation (the push), the rest of the page. A chat opened from a
+            // search result goes on at once: its landing waits for this page.
+            if conversation.searchFocus == nil {
                 try? await Task.sleep(for: .milliseconds(450))
             }
             pageDue = true
         }
-        .modifier(WhenSettled(isDue: pageDue, action: fillWindow))
+        .onChange(of: pageDue) { _, due in
+            if due { fillWindow() }
+        }
         .opacity(settled ? 1 : 0)
         .modifier(TakesOfferedSize())
     }
@@ -646,7 +645,7 @@ struct TranscriptView: View {
 
     /// Scrolls to the first message with the search result's words and flashes it. A message
     /// not loaded yet brings in older pages, at most 5. Waits for the opening animation (on
-    /// iPhone the drawer slides away over the chat) and the first page, so the flash is seen.
+    /// iPhone the push) and the first page, so the flash is seen.
     private func landOnSearchMatch() async {
         guard let focus = conversation.searchFocus else { return }
         // Checked every 20 ms: every 100 ms added up to a tenth of a second.
@@ -2126,20 +2125,6 @@ private struct TurnErrorRow: View {
             } catch {
                 fixFailed = (error as? BackendClient.Failure)?.errorDescription ?? error.localizedDescription
             }
-        }
-    }
-}
-
-/// Runs `action` once it's due and the drawer isn't sliding (`isSliding`). Reading the slide
-/// here, not in the transcript, keeps the slide's start and end from redrawing the transcript.
-private struct WhenSettled: ViewModifier {
-    let isDue: Bool
-    let action: () -> Void
-    @Environment(\.isSliding) private var isSliding
-
-    func body(content: Content) -> some View {
-        content.onChange(of: isDue && !isSliding) { _, ready in
-            if ready { action() }
         }
     }
 }

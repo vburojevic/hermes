@@ -445,7 +445,6 @@ struct RoutineDeliveryRow: View {
 struct BotsHomeView: View {
     let roster: BotRoster
     @Bindable var workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     @State private var appeared = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -554,12 +553,6 @@ struct BotsHomeView: View {
         .toolbarTitleDisplayMode(.large)
         #endif
         .toolbar {
-            if let onToggleSidebar {
-                ToolbarItem(placement: .navigation) {
-                    SidebarButton(action: onToggleSidebar)
-                }
-                .sidebarButtonGlass()
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     roster.isCreatingBot = true

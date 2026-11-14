@@ -1,6 +1,6 @@
 import Foundation
 
-/// Whether a drag on a row is a sideways swipe (the drawer's swipe actions, Reply on a message),
+/// Whether a drag on a row is a sideways swipe (Reply on a message, scrubbing a voice clip),
 /// decided as it starts. Anything else stays the list's or the chat's to scroll: a drag the rows
 /// took whatever its direction stopped them scrolling (`docs/inbox.md` §4, §5).
 public enum SidewaysSwipe {
@@ -8,7 +8,7 @@ public enum SidewaysSwipe {
     public enum Direction: Sendable {
         case either
         /// Only toward the left (Reply on a message): a drag to the right from the screen's edge
-        /// stays the drawer's.
+        /// stays the system's back swipe.
         case left
     }
 

@@ -612,7 +612,9 @@ struct RootView: View {
     #endif
 }
 
-/// Split view on iPad and Mac, a Grok-style drawer on iPhone.
+/// One split view everywhere (`docs/design-to-swiftui.md` §6): the system sidebar beside the
+/// detail on iPad and Mac; on iPhone it collapses to the chat list, and what is picked pushes
+/// over it with the system back button and swipe.
 struct MainView: View {
     @Bindable var workspace: BotWorkspace
 
@@ -626,16 +628,19 @@ struct MainView: View {
     @State private var windowWidth: CGFloat = 0
     @State private var boardHidesSidebar = false
     /// iPad in portrait (or a window under 700 pt): the sidebar rests hidden so the detail runs
-    /// full width; the sidebar button brings it back beside the detail (`docs/design-to-swiftui.md`).
+    /// full width; the system's sidebar button brings it back beside the detail
+    /// (`docs/design-to-swiftui.md` §6).
     @State private var isPortraitLike = false
-    @State private var isDrawerOpen = false
+    /// iPhone (and an iPad window narrow enough to collapse): the list or what was picked. Kept
+    /// through rotation, so turning the device keeps the open chat.
+    @State private var compactColumn = NavigationSplitViewColumn.sidebar
     /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
     @SceneStorage("window.selection") private var storedSelection: String?
+    /// iPhone: the window was back on the list, so it opens there again with the chat unpushed.
+    @SceneStorage("window.onList") private var storedOnList = false
 
     var body: some View {
-        layout
-            // The drawer and sidebar buttons show what's unread elsewhere (`SidebarButton`).
-            .environment(\.unreadStore, workspace.unread)
+        splitView
             // Replies' pictures from the gateway itself show by themselves (`WebLink.isOnGateway`).
             .environment(\.gatewayHosts, workspace.bot.hosts)
             .modifier(BotSheets(workspace: workspace))
@@ -675,7 +680,7 @@ struct MainView: View {
                 #endif
                 if workspace.selection == nil, let restored, let item = SidebarItem(storedValue: restored) {
                     if case .project = item { workspace.sidebarMode = .chats }
-                    workspace.openAtLaunch(item)
+                    workspace.openAtLaunch(item, pushed: !(horizontalSizeClass == .compact && storedOnList))
                 }
             }
             // Another chat, Bot or page: the composer it typed into is gone.
@@ -686,52 +691,22 @@ struct MainView: View {
                 FrameMonitor.shared.mark("selection changed")
                 #endif
             }
-            #if DEBUG
-            // `-HERMES_DRAWER YES` opens the iPhone drawer (screenshots).
-            .task {
-                if UserDefaults.standard.bool(forKey: "HERMES_DRAWER") {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    isDrawerOpen = true
-                }
-            }
-            #endif
-    }
-
-    @ViewBuilder
-    private var layout: some View {
-        #if os(macOS)
-        splitView
-        #else
-        if horizontalSizeClass == .compact {
-            drawerLayout
-        } else {
-            splitView
-        }
-        #endif
     }
 
     private var splitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(workspace: workspace, style: .split) {
-                // In portrait, the sidebar the button brought back steps aside once something
-                // is picked.
-                guard isPortraitLike, columnVisibility != .detailOnly else { return }
-                withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
-            }
-            #if os(macOS)
-            // Its height never comes from what it shows either: the footer's priority notice
-            // counts its wrapping text at its narrowest, taller than the window, and the whole
-            // window was laid out that tall, its top under the title bar and its bottom cut off.
-            .frame(minHeight: 0, maxHeight: .infinity)
-            #endif
-            #if os(iOS)
-            // While the app's own sidebar button shows, the system's toggle would sit beside it.
-            .toolbar(removing: sidebarButton == nil ? nil : .sidebarToggle)
-            #endif
-            .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
+        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
+            SidebarView(workspace: workspace)
+                .environment(\.sidebarIsCompact, horizontalSizeClass == .compact)
+                #if os(macOS)
+                // Its height never comes from what it shows either: the footer's priority notice
+                // counts its wrapping text at its narrowest, taller than the window, and the whole
+                // window was laid out that tall, its top under the title bar and its bottom cut off.
+                .frame(minHeight: 0, maxHeight: .infinity)
+                #endif
+                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
         } detail: {
             NavigationStack {
-                DetailView(workspace: workspace, onToggleSidebar: sidebarButton)
+                DetailView(workspace: workspace)
                     #if os(macOS)
                     // The column fills its room, and its minimum never comes from what it shows. A
                     // chat's minimum counted its question card at its narrowest, picks as tall as
@@ -747,6 +722,21 @@ struct MainView: View {
         // kept the Mac's split view resizing it in a loop until AppKit gave up and crashed.
         .environment(\.windowWidth, windowWidth)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        // Something was picked (a row, a link, a notification, New Chat): a collapsed window
+        // pushes it; in portrait the sidebar the system button brought back steps aside.
+        .onChange(of: workspace.navigation.pushes) {
+            compactColumn = .detail
+            #if os(iOS)
+            if horizontalSizeClass != .compact, isPortraitLike, !boardHidesSidebar, columnVisibility != .detailOnly {
+                withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
+            }
+            #endif
+        }
+        // What was on show went away (its chat deleted or archived): a collapsed window goes back
+        // to the list.
+        .onChange(of: workspace.navigation.pops) {
+            compactColumn = .sidebar
+        }
         #if os(macOS)
         // Mac: opening the Inspector in a window under 1,400 pt collapses the sidebar
         // (`docs/inspector.md` §1); closing it brings the sidebar back.
@@ -761,6 +751,14 @@ struct MainView: View {
         }
         #endif
         #if os(iOS)
+        // Back on the list (iPhone), the chat under it isn't open: its replies count as unread.
+        .onChange(of: horizontalSizeClass == .compact && compactColumn != .detail, initial: true) { _, showsList in
+            workspace.setShowsDetail(!showsList)
+        }
+        // Only a change the person made is kept: the list the window first draws isn't one.
+        .onChange(of: compactColumn) { _, column in
+            if horizontalSizeClass == .compact { storedOnList = column != .detail }
+        }
         .onGeometryChange(for: Bool.self) { proxy in
             proxy.size.width < proxy.size.height || proxy.size.width < 700
         } action: { portraitLike in
@@ -769,67 +767,33 @@ struct MainView: View {
             // Inspector or the Board has it hidden. It waits a turn: set during the split view's
             // first layout, the change was overwritten and portrait kept the sidebar docked.
             Task {
-                guard !teamHidesSidebar, !boardHidesSidebar else { return }
+                guard horizontalSizeClass != .compact, !teamHidesSidebar, !boardHidesSidebar else { return }
                 columnVisibility = restingVisibility
             }
         }
-        // iPad: the Inspector hides the sidebar while it's open beside the chat; the toolbar's
+        // iPad: the Inspector hides the sidebar while it's open beside the chat; the system's
         // sidebar button brings it back.
         .onChange(of: router?.inspectorIsOpen ?? false) { _, isOpen in
+            guard horizontalSizeClass != .compact else { return }
             teamHidesSidebar = isOpen
             withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : restingVisibility }
         }
-        // iPad: the Board takes the sidebar's room (`ipadBoard`); its back button returns home.
+        // iPad: the Board takes the sidebar's room (`ipadBoard`); its back button returns to the
+        // project.
         .onChange(of: workspace.selection, initial: true) { _, selection in
             let isBoard = if case .board = selection { true } else { false }
             guard isBoard != boardHidesSidebar else { return }
             boardHidesSidebar = isBoard
+            guard horizontalSizeClass != .compact else { return }
             withAnimation(Theme.snappy) { columnVisibility = isBoard ? .detailOnly : restingVisibility }
         }
         #endif
     }
 
     /// Where the sidebar sits when nothing hides it: beside the detail, or in portrait put away
-    /// until the sidebar button brings it back.
+    /// until the system's sidebar button brings it back.
     private var restingVisibility: NavigationSplitViewVisibility {
         isPortraitLike ? .detailOnly : .all
-    }
-
-    /// The sidebar button, on iPad while the sidebar is hidden: the Inspector hid it, or in
-    /// portrait it rests put away until the button brings it back. The Board has its own back
-    /// button.
-    private var sidebarButton: (() -> Void)? {
-        #if os(iOS)
-        let isHidden = teamHidesSidebar || (isPortraitLike && columnVisibility == .detailOnly && !boardHidesSidebar)
-        guard isHidden else { return nil }
-        return {
-            teamHidesSidebar = false
-            withAnimation(Theme.snappy) { columnVisibility = .all }
-        }
-        #else
-        nil
-        #endif
-    }
-
-    private var drawerLayout: some View {
-        DrawerContainer(isOpen: $isDrawerOpen) {
-            SidebarView(workspace: workspace, style: .drawer) {
-                // What was picked draws first, under the drawer, with its rows (the ones this
-                // device kept arrive in a moment); then the drawer slides away with nothing left
-                // to build. SwiftUI animates on the main thread: a chat built, or filled in,
-                // during the slide made it jump.
-                Task { @MainActor in
-                    await workspace.currentConversation.firstRows(within: .milliseconds(250))
-                    NextFrame.run { withAnimation(Theme.spring) { isDrawerOpen = false } }
-                }
-            }
-        } content: {
-            NavigationStack {
-                DetailView(workspace: workspace) {
-                    withAnimation(Theme.spring) { isDrawerOpen.toggle() }
-                }
-            }
-        }
     }
 }
 
@@ -895,7 +859,6 @@ private struct BotSheetTarget: Identifiable {
 /// The main area for the current sidebar selection.
 struct DetailView: View {
     @Bindable var workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     var body: some View {
         // Read so the screen is resolved again when the selection stays the same: the selected
@@ -905,31 +868,33 @@ struct DetailView: View {
             switch workspace.detailRoute {
             case .botsHome:
                 if let roster = workspace.roster {
-                    BotsHomeView(roster: roster, workspace: workspace, onToggleSidebar: onToggleSidebar)
+                    BotsHomeView(roster: roster, workspace: workspace)
                 }
             case .tasks:
-                TasksView(workspace: workspace, onToggleSidebar: onToggleSidebar)
+                TasksView(workspace: workspace)
             case .skills:
-                SkillsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
+                SkillsView(workspace: workspace)
             case .group(let id):
                 if let rooms = workspace.roster?.groupRooms, let chat = rooms.chat(for: id) {
-                    GroupChatScreen(chat: chat, rooms: rooms, workspace: workspace, onToggleSidebar: onToggleSidebar)
+                    GroupChatScreen(chat: chat, rooms: rooms, workspace: workspace)
                         .id(id)
                 } else {
                     StateMessage(symbol: "person.3", title: String(localized: "Group chat not found"), message: String(localized: "It may have been deleted on the gateway."))
                 }
-            case .project(let id):
-                ProjectHomeView(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
-                    .id(id)
-            case .board(let id):
-                BoardScreen(workspace: workspace, projectID: id, onToggleSidebar: onToggleSidebar)
+            case .project(let id), .board(let id):
+                // The Board pushes over its project, so its back button is the system's and
+                // leads to the project (`docs/projects.md`).
+                ProjectHomeView(workspace: workspace, projectID: id)
+                    .navigationDestination(isPresented: boardShown(id)) {
+                        BoardScreen(workspace: workspace, projectID: id)
+                    }
                     .id(id)
             case .allProjects:
-                AllProjectsView(workspace: workspace, onToggleSidebar: onToggleSidebar)
+                AllProjectsView(workspace: workspace)
             case .chat:
                 // One screen for every chat: opening another one swaps its data and its transcript,
                 // not the toolbar, the composer and its text view (that cost a long frame per switch).
-                ChatScreen(conversation: workspace.currentConversation, workspace: workspace, onToggleSidebar: onToggleSidebar)
+                ChatScreen(conversation: workspace.currentConversation, workspace: workspace)
             }
         }
         .sheet(item: $workspace.openedFile) { file in
@@ -937,160 +902,18 @@ struct DetailView: View {
                 .environment(\.references, ReferenceContext(workspace: workspace))
         }
     }
-}
 
-/// A sidebar that slides in from the leading edge, pushing the content aside.
-struct DrawerContainer<Drawer: View, Content: View>: View {
-    @Binding var isOpen: Bool
-    @ViewBuilder let drawer: Drawer
-    @ViewBuilder let content: Content
-
-    /// How far the finger has moved the content. Reset in the same animation that opens or
-    /// closes the drawer, so letting go carries on from where the finger left it.
-    @State private var dragOffset: CGFloat = 0
-    /// Decided once per drag: a drawer swipe, or something else (a scroll) to leave alone.
-    @State private var dragIsDrawerSwipe: Bool?
-    /// A drag inside the open drawer is decided a step later: a row it started on may claim it
-    /// for its swipe actions first (`RowSwipe`).
-    @State private var dragWaited = false
-    /// Notices drags the system takes over (a scroll, a sheet), which end without `onEnded`.
-    @GestureState private var isDragging = false
-    /// Where the drawer last came to rest. While `isOpen` differs from it, the drawer is sliding
-    /// (`isSliding`), known in the very update that flips `isOpen`.
-    @State private var restingOpen: Bool?
-    /// The slide's spring hasn't settled yet (a quick open-and-close never rests in between).
-    @State private var isSettling = false
-    @State private var slideEnd: Task<Void, Never>?
-
-    private var isSliding: Bool {
-        isSettling || restingOpen.map { $0 != isOpen } ?? false
-    }
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = min(geometry.size.width * 0.84, 360)
-            let base = isOpen ? width : 0
-            let offset = min(max(base + dragOffset, 0), width)
-            let progress = offset / width
-
-            ZStack(alignment: .leading) {
-                drawer
-                    .frame(width: width)
-                    .offset(x: reduceMotion ? 0 : (progress - 1) * width * 0.25)
-                    .opacity(reduceMotion ? (isOpen ? 1 : 0) : 1)
-                    .accessibilityHidden(!isOpen)
-                    // Shut, it's under the chat: its Bot faces and shimmer hold still rather than
-                    // redrawing out of sight.
-                    .transformEnvironment(\.pausesDecorativeMotion) { paused in
-                        paused = paused || (!isOpen && !isSliding && dragOffset == 0)
-                    }
-
-                content
-                    .frame(width: geometry.size.width)
-                    .overlay {
-                        Color.black
-                            .opacity(0.32 * progress)
-                            .ignoresSafeArea()
-                            .allowsHitTesting(isOpen)
-                            .onTapGesture { withAnimation(Theme.spring) { isOpen = false } }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel("Close sidebar")
-                            .accessibilityHidden(!isOpen)
-                    }
-                    .background(Theme.canvas.ignoresSafeArea())
-                    // The edge's shadow is a gradient strip: a blurred shadow of the whole chat had
-                    // to be rendered again on every frame of the slide.
-                    .overlay(alignment: .leading) {
-                        LinearGradient(colors: [.black.opacity(0.16 * progress), .clear], startPoint: .trailing, endPoint: .leading)
-                            .frame(width: 18)
-                            .offset(x: -18)
-                            .ignoresSafeArea()
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-                    .offset(x: offset)
-                    .environment(\.isSliding, isSliding)
-                    .accessibilityHidden(isOpen)
-            }
-            .simultaneousGesture(dragGesture(width: width))
-            // No implicit animation here: it animated everything that changed with the drawer,
-            // the chat being opened included (old and new chats cross-faded, both rendered, for
-            // the whole slide). Opening and closing animate explicitly.
-            .onAppear { restingOpen = isOpen }
-            .onChange(of: isOpen) { _, open in
-                if open { Keyboard.dismiss() }
-                #if DEBUG && os(iOS)
-                FrameMonitor.shared.mark(open ? "drawer opening" : "drawer closing")
-                #endif
-                isSettling = true
-                Settling.isSliding = true
-                slideEnd?.cancel()
-                slideEnd = Task {
-                    // `Theme.spring` (response 0.38) has visibly settled by then.
-                    try? await Task.sleep(for: .milliseconds(420))
-                    guard !Task.isCancelled else { return }
-                    restingOpen = open
-                    isSettling = false
-                    Settling.isSliding = false
-                }
-            }
-            .onDisappear { Settling.isSliding = false }
-            .onChange(of: isDragging) { _, dragging in
-                if !dragging { dragWaited = false }
-                guard !dragging, dragOffset != 0 || dragIsDrawerSwipe != nil else { return }
-                dragIsDrawerSwipe = nil
-                withAnimation(Theme.spring) { dragOffset = 0 }
+    /// The project's Board is on show; going back from it shows the project.
+    private func boardShown(_ id: String) -> Binding<Bool> {
+        Binding {
+            workspace.selection == .board(id)
+        } set: { shown in
+            if shown {
+                if workspace.selection != .board(id) { workspace.selection = .board(id) }
+            } else if workspace.selection == .board(id) {
+                workspace.selection = .project(id)
             }
         }
-        .ignoresSafeArea(.keyboard)
-    }
-
-    /// Opening needs a swipe from the leading edge, so horizontal scrollers in the
-    /// transcript (code blocks, tables, chips) keep their own swipes.
-    private var edgeWidth: CGFloat { 32 }
-
-    private func isDrawerSwipe(_ value: DragGesture.Value) -> Bool {
-        // Only horizontal swipes; leave vertical scrolling alone. A chat row swiped in the drawer
-        // shows its actions instead (`docs/inbox.md` §5).
-        guard abs(value.translation.width) > abs(value.translation.height) * 1.4, !RowSwipe.isClaimed else { return false }
-        return isOpen || value.startLocation.x <= edgeWidth
-    }
-
-    private func dragGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 18, coordinateSpace: .global)
-            .updating($isDragging) { _, state, _ in state = true }
-            .onChanged { value in
-                if dragIsDrawerSwipe == nil, isOpen, value.startLocation.x < width, !dragWaited {
-                    dragWaited = true
-                    return
-                }
-                if dragIsDrawerSwipe == nil {
-                    dragIsDrawerSwipe = isDrawerSwipe(value)
-                    // The drawer starts sliding in: the keyboard leaves with the chat, not after it.
-                    if dragIsDrawerSwipe == true, !isOpen { Keyboard.dismiss() }
-                }
-                guard dragIsDrawerSwipe == true else { return }
-                RowSwipe.drawerDraggedAt = .now
-                dragOffset = isOpen ? min(0, value.translation.width) : max(0, value.translation.width)
-            }
-            .onEnded { value in
-                defer {
-                    dragIsDrawerSwipe = nil
-                    dragWaited = false
-                }
-                guard dragIsDrawerSwipe == true else { return }
-                RowSwipe.drawerDraggedAt = .now
-                let projected = value.predictedEndTranslation.width
-                withAnimation(Theme.spring) {
-                    if isOpen {
-                        if projected < -width * 0.35 { isOpen = false }
-                    } else if projected > width * 0.35 {
-                        isOpen = true
-                    }
-                    dragOffset = 0
-                }
-            }
     }
 }
 
@@ -1126,7 +949,7 @@ enum NextFrame {
 }
 
 /// The software keyboard, put away when what it was typing into leaves the screen (another chat,
-/// the drawer, a sheet). macOS has none to put away.
+/// the list, a sheet). macOS has none to put away.
 enum Keyboard {
     @MainActor static func dismiss() {
         #if os(iOS)

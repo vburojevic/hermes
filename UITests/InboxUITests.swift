@@ -47,12 +47,13 @@ final class InboxUITests: XCTestCase {
     @MainActor
     func testMarkAsUnreadSyncsBetweenClients() async throws {
         let before = Date.now.timeIntervalSince1970 - 1
-        let app = launch(["-HERMES_DRAWER", "YES"])
-        // The drawer opens in the mode it was left in.
+        let app = launch([])
+        // The chat list opens in the mode it was left in.
         let chats = app.buttons["Chats"]
         XCTAssertTrue(chats.waitForExistence(timeout: 30))
         chats.tap()
-        let briefing = row("Morning briefing", in: app)
+        // The chat, not the task runs of the same name, which list above it.
+        let briefing = row("Morning briefing", saying: "You have 3 events today", in: app)
         XCTAssertTrue(briefing.waitForExistence(timeout: 30), "no Morning briefing row")
         try await eventually(timeout: 20) { briefing.label.contains("1 unread") }
 
@@ -65,15 +66,17 @@ final class InboxUITests: XCTestCase {
         try await eventually(timeout: 15) { try await self.mock.readMark("tg_88213") == 0 }
         XCTAssertTrue(briefing.label.contains("marked unread"))
 
-        // Another device reads Stand-up summary and marks Disk cleanup unread.
+        // Another device reads Stand-up summary and marks Disk cleanup unread. Both list further
+        // down, under the fold of the iPhone's chat list.
         let standUp = row("Stand-up summary", in: app)
+        reveal(standUp, in: app)
         XCTAssertTrue(standUp.label.contains("marked unread"))
         try await mock.setUnread("slack_5521", false)
         try await mock.setUnread("cli_2026_1011", true)
+        try await eventually(timeout: 30) { !standUp.label.contains("marked unread") }
         let disk = row("Disk cleanup on the NAS", in: app)
-        try await eventually(timeout: 30) {
-            !standUp.label.contains("marked unread") && disk.label.contains("marked unread")
-        }
+        reveal(disk, in: app)
+        try await eventually(timeout: 30) { disk.label.contains("marked unread") }
     }
 
     // MARK: Helpers
@@ -93,6 +96,21 @@ final class InboxUITests: XCTestCase {
     @MainActor
     private func row(_ title: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+    }
+
+    /// The row with this title whose last message says this, when other rows share the title.
+    @MainActor
+    private func row(_ title: String, saying text: String, in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", title, text)).firstMatch
+    }
+
+    /// Scrolls the chat list until the row is on screen; the list builds only the rows it shows.
+    @MainActor
+    private func reveal(_ row: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<8 where !row.exists || !row.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(row.exists, "the row never came on screen")
     }
 
     /// Waits for something that takes a round trip or two to come true.

@@ -7,7 +7,6 @@ struct GroupChatScreen: View {
     @Bindable var chat: GroupChatModel
     let rooms: GroupRooms
     let workspace: BotWorkspace
-    var onToggleSidebar: (() -> Void)?
 
     @State private var showsActivity = false
     @State private var showsSettings = false
@@ -356,12 +355,6 @@ struct GroupChatScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if let onToggleSidebar {
-            ToolbarItem(placement: .navigation) {
-                SidebarButton(action: onToggleSidebar)
-            }
-            .sidebarButtonGlass()
-        }
         ToolbarItem(placement: .principal) {
             GroupTitle(chat: chat, roster: roster)
         }
