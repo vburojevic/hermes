@@ -81,14 +81,14 @@ plugin. Anywhere else a ` ```widget ` fence is code, except in Debug builds or w
 Developer → Render Inline Widgets (§11).
 
 A task's agent sometimes types a payload into its report instead of calling the tool. Plugin 1.4.0
-makes such a ` ```widget ` fence, or a ` ```json ` fence holding a payload, the way the tool would:
-its own id and revision, the same checks, then an inline block. One that can be answered, needs a
-signature, fails the checks or comes after the third becomes its plain text, so only the tool makes
-a card a person acts on. With an older plugin, or none, a routine delivery reads such a fence as its
-`fallback_text` (or title) with "Shown as text", never as code and never as a card
-(`ReplySplitter` `typedAsText`, `Parts.fallbackText`). JSON that isn't a widget (no `type`, or none
-of `v`, `fallback_text` or a widget id) stays code, and outside routine deliveries every fence
-stays code.
+(the version the app installs, [plugins.md](plugins.md) §6) makes such a ` ```widget ` fence, or a
+` ```json ` fence holding a payload, the way the tool would: its own id and revision, the same
+checks, then an inline block. One that can be answered, needs a signature, fails the checks or
+comes after the third becomes its plain text, so only the tool makes a card a person acts on.
+With an older plugin, or none, a routine delivery reads such a fence as its `fallback_text` (or
+title) with "Shown as text", never as code and never as a card (`ReplySplitter` `typedAsText`,
+`Parts.fallbackText`). JSON that isn't a widget (no `type`, or none of `v`, `fallback_text` or a
+widget id) stays code, and outside routine deliveries every fence stays code.
 
 A smaller model can stop halfway through a payload or leave its words out. Where inline blocks
 draw, or in a routine delivery, a payload that can't be read keeps its place as "Couldn't show this

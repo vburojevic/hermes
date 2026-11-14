@@ -49,8 +49,12 @@ def test_the_skill_and_the_command(hermes):
 
 
 def test_the_manifest_matches_the_code(hermes):
-    import yaml
-    manifest = yaml.safe_load((PLUGIN / "plugin.yaml").read_text())
+    # Hermes Agent 0.23 dropped PyYAML and reads manifests with its own loader.
+    try:
+        from hermes_yaml import safe_load
+    except ImportError:
+        from yaml import safe_load
+    manifest = safe_load((PLUGIN / "plugin.yaml").read_text())
     assert manifest["version"] == plugin_module("core").VERSION
     assert set(manifest["provides_tools"]) == {"widget", "widget_examples"}
 

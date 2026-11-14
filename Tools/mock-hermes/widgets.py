@@ -78,7 +78,7 @@ from datetime import date, datetime, timedelta
 
 HERE = pathlib.Path(__file__).resolve().parent
 EXAMPLES = HERE.parent.parent / "Packages/HermesKit/Sources/HermesKit/Widgets/Spec/examples"
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 ID_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 RESOLUTIONS = ("done", "failed", "rejected", "cancelled", "expired", "elsewhere")
 BUILT_IN = {"choice": {"answer"}, "form": {"submit", "cancel"}, "checklist": {"check"}, "control": {"set"},

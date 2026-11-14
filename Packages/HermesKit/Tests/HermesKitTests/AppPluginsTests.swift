@@ -24,6 +24,16 @@ struct AppPluginsTests {
         }
     }
 
+    /// Widgets 1.4.0 draws the widget a routine typed into its report with 1.3.0's access, so a gateway
+    /// with 1.3.0 updates to it without the consent card.
+    @Test func widgets130UpdatesQuietlyTo140() {
+        let widgets = AppPlugin.widgets
+        #expect(widgets.version == "1.4.0" && widgets.minimumVersion == "1.4.0")
+        #expect(widgets.state(in: [row("hermes-app-widgets", version: "1.3.0")]) == .outdated(version: "1.3.0"))
+        #expect(widgets.widening(from: "1.3.0") == nil, "1.4.0 asks for no more access than 1.3.0")
+        #expect(widgets.state(in: [row("hermes-app-widgets", version: "1.4.0")]) == .current(version: "1.4.0"))
+    }
+
     @Test func versionsCompareByNumber() {
         #expect(AppPlugin.version("1.0.0", isAtLeast: "1.0.0"))
         #expect(AppPlugin.version("1.10.0", isAtLeast: "1.9.2"))
