@@ -22,8 +22,8 @@ and the iPad and Mac layouts. Design components: `Tasks.taskRow`, `Tasks.runRow`
 | Pause / Resume | `POST /api/jobs/{id}/pause`, `…/resume` | The row moves at once (Paused, or back among the active ones) and the job in the answer settles it, next run included. A refusal puts it back and says so |
 | Run Now | `POST /api/jobs/{id}/run` | The row says "Starting…" until the gateway has the run, and VoiceOver hears "<task> started" |
 | Delete | `DELETE /api/jobs/{id}` | Removed from the list at once and put back if the call fails. No confirmation |
-| Recent runs | `GET /api/cron/jobs/{id}/runs?limit=20&profile?` | On the backend, so only with Bot Mode connected, and only on iPad and Mac (§4). Each agent run is a chat with id `cron_<jobId>_<timestamp>` and source `cron`; script-only runs have output but no chat |
-| Open a run | `GET /api/sessions/{id}/messages` | The run opens in Chats like any other chat, and can be continued |
+| Recent runs | `GET /api/cron/jobs/{id}/runs?limit=100&profile?` | On the backend, so only with Bot Mode connected, in the task's detail on every device (§4). Each agent run is a chat with id `cron_<jobId>_<timestamp>` and source `cron`; script-only runs have output but no chat. Hermes's most (100), because most runs of a frequent task say nothing: runs with no messages, no output and no error are left out, and the rest show newest first (`ScheduledRuns.shown`, §5) |
+| Open a run | `GET /api/sessions/{id}/messages` | The run opens in Chats like any other chat, and can be continued. It isn't listed among the chats: a run is found under Show → Scheduled Tasks, here, and Search's Tasks filter ([inbox.md](inbox.md) §5) |
 | Last run failed | `state: error`, or `last_status` `error` or `blocked_config`, and `last_error` | A red tag in the list, the error in the detail |
 | Results didn't arrive | `last_status: delivery_failed`, `last_delivery_error` | An orange tag in the list; the reason in the detail, with what it means (§6) |
 | Last run didn't start | `last_fire_error.detail` (cleared by the next run that works) | An orange tag in the list; the reason in the detail (§6) |
@@ -56,7 +56,6 @@ Not built yet:
 - Choosing skills, a model, where results go, or a repeat count in New Task.
 - Refreshing on the `cron.changed` event; the lists refresh when opened, when the gateway comes
   online and on pull to refresh.
-- Recent runs in the iPhone task detail.
 
 ## 2. Schedules and delivery
 
@@ -108,6 +107,9 @@ it was made" for `origin`, else the target's platform name.
 - Open Tasks with the gateway stopped ("Couldn't load tasks"), then start it: the list fills in
   by itself once the gateway connects, with no pull to refresh.
 - On iPad and Mac, a run row opens that run's chat in Chats.
+- A Bot's Routines → Past runs (mock backend: Research Buddy) lists the digest, the MLX watch and the failed
+  reading list newest first, with no empty run and no chevron; tapping the digest expands its whole
+  reply, and the context menu copies it.
 
 ## 4. iPad and Mac
 
@@ -122,12 +124,14 @@ it was made" for `origin`, else the target's platform name.
 - **Mac** (`macTasks`): the same list and detail in the window. Pause (or Resume) and Run Now move
   to the toolbar, Run Now as the default button (Return); the … menu holds New Task… and Delete
   Task.
-- A run row opens that run's chat. Runs without a chat can't be opened.
+- A run row opens that run's chat. Runs without a chat can't be opened. Runs that said nothing
+  aren't listed (§5).
 - The selected task is restored per window (`SceneStorage("tasks.selected")`).
 - Calls are the same as §1.
 
 On iPhone, Tasks is a list; a tap opens the detail as a sheet (prompt, schedule, skills, last error,
-Run Now and Pause), swipe left for Delete and Pause, and a context menu adds Run Now.
+Run Now and Pause, then Recent runs as on iPad and Mac), swipe left for Delete and Pause, and a
+context menu adds Run Now. A run tapped there closes the sheet and opens in Chats.
 
 ## 5. Routines on screen
 
@@ -145,6 +149,23 @@ Run Now and Pause), swipe left for Delete and Pause, and a context menu adds Run
   opens New Routine again with everything as it was.
 - The Enabled switch, Pause, Resume and Delete show at once and settle when the gateway answers;
   Run Now shows "Starting…". A refusal puts the row back and says so ([chat.md](chat.md) §4a).
+- **A routine's runs** (`ScheduledRuns`): Hermes makes a chat for every run, source `cron`, so a
+  routine every 10 minutes makes 144 a day, most of them empty. A run with nothing in it shows
+  nowhere. A run with something in it has two homes: Show → Scheduled Tasks in the chat list, and
+  its task's recent runs (§4), newest first. Everything else that lists or counts
+  chats leaves runs out ([inbox.md](inbox.md) §5).
+- **Past runs** (`routineRuns`), a row under the routines: every routine's runs that said
+  something, newest first, merged from each routine's `GET /api/cron/jobs/{id}/runs` (at most
+  100 each). A row shows the routine, when it ran, how long it took, and what it said or its error,
+  with "Tap a run to read all of it. Results post in the Bot Chat when the routine sends them
+  there." under them. Hermes's row previews the prompt, so each row reads its run's reply from the
+  run's chat as it shows (`ScheduledRuns.reply`), with a placeholder meanwhile.
+- **A Bot's runs read in place; they don't open as chats.** Hermes runs a Bot's routine in the
+  Bot's own profile and keeps the run's chat there (each row says `profile`). The app opens chats
+  only through the gateway's profile, which can't open another profile's, so a run that would open
+  would land on a chat that isn't there. Tapping one expands its whole reply in place, Copy is in
+  its context menu, and it has no chevron. A run the gateway's own profile keeps (an older Hermes
+  runs every Bot's routines there) opens as a chat, like a task's run (`CronRun.opensAsChat`).
 
 ## 6. Setup
 

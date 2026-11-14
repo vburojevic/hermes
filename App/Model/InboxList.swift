@@ -42,9 +42,10 @@ extension BotWorkspace {
     /// (`docs/inbox.md` §2). Show picks where they come from, this app's by default
     /// (`docs/inbox.md` §5). In the whole list (This App or All Chats, no Only), chats in a project
     /// stay in the project (pinned ones show here too); a narrower list covers every chat it holds.
+    /// Scheduled runs are in it only under Scheduled Tasks (`ScheduledRuns`).
     var inboxSessions: [HermesSession] {
         let projects = projects!
-        let held = sessions.filter(shows)
+        let held = allSessions.filter(shows)
         let shown = showsProjects
             ? held.filter { $0.pinned || !projects.isScoped($0) }
             : held.filter { matches(inboxFilter, key: $0.stableID) }
@@ -74,7 +75,7 @@ extension BotWorkspace {
 
     /// Whether Show holds a chat (`docs/inbox.md` §5).
     func shows(_ session: HermesSession) -> Bool {
-        inboxShow.shows(session.origin, pinned: session.pinned)
+        inboxShow.shows(session)
     }
 
     /// The list is whole: this app's chats or all of them, nothing narrowed to a state. Only then
@@ -86,7 +87,7 @@ extension BotWorkspace {
     /// Show holds no chat at all, projects' and new ones' included, while the gateway has some: the
     /// Show empty state (`caughtUpThisApp`…). With no chats at all, "No chats yet" says so instead.
     var showHoldsNothing: Bool {
-        !sessions.isEmpty && !hasMoreSessions && !sessions.contains(where: shows)
+        !allSessions.isEmpty && !hasMoreSessions && !allSessions.contains(where: shows)
             && (waitingChats.isEmpty || !inboxShow.includes(.thisApp))
     }
 
@@ -101,12 +102,12 @@ extension BotWorkspace {
 
     /// How many of the chats Show holds a filter would show.
     func count(for filter: InboxFilter) -> Int {
-        sessions.reduce(0) { shows($1) && matches(filter, key: $1.stableID) ? $0 + 1 : $0 }
+        allSessions.reduce(0) { shows($1) && matches(filter, key: $1.stableID) ? $0 + 1 : $0 }
     }
 
     /// The unread chats Show holds, for Mark All as Read.
     var unreadChatKeys: [String] {
-        sessions.filter(shows).map(\.stableID).filter { unread.badge(for: $0).isUnread }
+        allSessions.filter(shows).map(\.stableID).filter { unread.badge(for: $0).isUnread }
     }
 
     /// ⌥⌘↓ / ⌥⌘↑: the next or previous unread chat (or Bot) along the list.

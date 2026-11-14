@@ -274,6 +274,8 @@ private struct TaskDetailView: View {
     let model: TasksModel
     let workspace: BotWorkspace
     @Environment(\.dismiss) private var dismiss
+    @State private var runs: [CronRun]?
+    @State private var runsFailed = false
 
     private var current: CronJob {
         model.job(id: job.id) ?? job
@@ -319,8 +321,21 @@ private struct TaskDetailView: View {
                 }
             }
             .disabled(model.isAdding(current))
+            TaskRunsSection(runs: runs, failed: runsFailed, isConnected: workspace.roster?.isConnected == true,
+                            total: current.repeatCompleted) { run in
+                // The run opens in Chats, behind this sheet.
+                dismiss()
+                TaskRuns.open(run, of: current, in: workspace)
+            }
         }
         .formStyle(.grouped)
+        .task(id: job.id) {
+            if let loaded = await TaskRuns.load(job, model: model, workspace: workspace) {
+                runs = loaded
+            } else {
+                runsFailed = true
+            }
+        }
         .navigationTitle(current.name)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

@@ -473,6 +473,12 @@ steps above with it. `--many-chats N` on either mock adds N ordinary chats (ever
 unread replies), for a list as long as a well-used gateway's. With `--sparse-chats` they come
 mostly from Telegram and Discord: each page of 50 holds one or two of this app's chats and one
 scheduled run, for the end of a list that loads under This App or Scheduled Tasks.
+`--routine-runs` (on `server.py`, or on `backend.py` with `--gateway-port`) adds two routines that
+ran every 10 minutes over the last day, as Hermes's scheduler leaves them: 288 untitled chats with
+source `cron` and ids `cron_<job>_<YYYYmmdd_HHMMSS>`, most of them empty. "Watch the inbox" said
+something every sixth run, "Watch the website" every 47th. All Chats shows none of them, Show →
+Scheduled Tasks only the ones with something in them, and the tasks' recent runs the same
+([inbox.md](inbox.md) §5, [tasks.md](tasks.md) §5).
 With `-HERMES_SEARCH` and `-HERMES_SEARCH_OPEN YES`, `-HERMES_SEARCH_AFTER <s>` waits that long
 after launch before typing, and the load log marks `search result opened` for the chat it opens. `-HERMES_RESTORE bot:ops` (or `session:<key>`) opens as if the
 window had been showing that chat; with `-HERMES_OPEN bot:ops` (or `-HERMES_OPEN_SESSION <key>`)

@@ -839,7 +839,13 @@ private struct BotSheets: ViewModifier {
                     #endif
                 }
                 .sheet(item: Binding(get: { roster.routinesBot.map(BotSheetTarget.init) }, set: { roster.routinesBot = $0?.name })) { target in
-                    RoutinesView(roster: roster, botName: target.name, focus: roster.routinesFocus) {
+                    RoutinesView(roster: roster, botName: target.name, focus: roster.routinesFocus,
+                                 gatewayProfile: workspace.bot.profileName, openRun: { run, routine in
+                        // A run the gateway's profile keeps opens in Chats, like a task's run.
+                        roster.routinesBot = nil
+                        roster.routinesFocus = nil
+                        TaskRuns.open(run, titled: routine, in: workspace)
+                    }) {
                         roster.routinesBot = nil
                         roster.routinesFocus = nil
                     }

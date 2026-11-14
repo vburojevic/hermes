@@ -154,6 +154,10 @@ public struct CronRun: Identifiable, Hashable, Sendable {
     public var summary: String?
     public var failed: Bool
     public var error: String?
+    /// How many messages its chat has, when Hermes says (`message_count`).
+    public var messageCount: Int?
+    /// The profile whose store holds the run's chat (`profile`), when Hermes says.
+    public var profile: String?
 
     public var id: String { sessionID ?? "\(startedAt?.timeIntervalSince1970 ?? 0)" }
 
@@ -163,13 +167,26 @@ public struct CronRun: Identifiable, Hashable, Sendable {
         return endedAt.timeIntervalSince(startedAt)
     }
 
-    public init(sessionID: String?, startedAt: Date?, endedAt: Date? = nil, summary: String? = nil, failed: Bool = false, error: String? = nil) {
+    public init(sessionID: String?, startedAt: Date?, endedAt: Date? = nil, summary: String? = nil, failed: Bool = false, error: String? = nil,
+                messageCount: Int? = nil, profile: String? = nil) {
         self.sessionID = sessionID
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.summary = summary
         self.failed = failed
         self.error = error
+        self.messageCount = messageCount
+        self.profile = profile
+    }
+
+    /// The run's chat opens in Chats only when the gateway's own profile holds it: the app reads
+    /// chats through the gateway, which can't open another profile's. A run of a Bot's routine is
+    /// kept in the Bot's profile (`docs/tasks.md` §5). A run that names no profile is the
+    /// gateway's own, as on a Hermes that doesn't say.
+    public func opensAsChat(gatewayProfile: String?) -> Bool {
+        guard sessionID != nil else { return false }
+        guard let profile, !profile.isEmpty else { return true }
+        return profile == (gatewayProfile ?? "default")
     }
 
     init(json: JSONValue) {
@@ -188,7 +205,9 @@ public struct CronRun: Identifiable, Hashable, Sendable {
             summary: (json["summary"]?.stringValue ?? json["preview"]?.stringValue ?? json["output"]?.stringValue)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 },
             failed: ["error", "failed", "failure"].contains(status) || reason.contains("error") || reason.contains("fail") || (error?.isEmpty == false),
-            error: error.flatMap { $0.isEmpty ? nil : $0 }
+            error: error.flatMap { $0.isEmpty ? nil : $0 },
+            messageCount: json["message_count"]?.truncatedIntValue,
+            profile: json["profile"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 }

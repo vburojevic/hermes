@@ -7,6 +7,10 @@ struct RoutinesView: View {
     let botName: String
     /// A routine to show first, by its title: a chat's delivery opened here (`docs/chat.md` §2a).
     var focus: String?
+    /// The gateway's own profile (nil for the main one): Past runs opens only its runs as chats.
+    var gatewayProfile: String?
+    /// Opens a past run as a chat, titled after its routine (`docs/tasks.md` §5).
+    var openRun: ((CronRun, String) -> Void)?
     let onDone: () -> Void
 
     @State private var model: RoutinesModel
@@ -16,10 +20,13 @@ struct RoutinesView: View {
     @State private var removing: BotRoutine?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(roster: BotRoster, botName: String, focus: String? = nil, onDone: @escaping () -> Void) {
+    init(roster: BotRoster, botName: String, focus: String? = nil, gatewayProfile: String? = nil,
+         openRun: ((CronRun, String) -> Void)? = nil, onDone: @escaping () -> Void) {
         self.roster = roster
         self.botName = botName
         self.focus = focus
+        self.gatewayProfile = gatewayProfile
+        self.openRun = openRun
         self.onDone = onDone
         _model = State(initialValue: RoutinesModel(roster: roster, botName: botName))
     }
@@ -175,6 +182,14 @@ struct RoutinesView: View {
                                     .tint(Theme.success)
                                 }
                             }
+                        }
+                    }
+                    Section {
+                        NavigationLink {
+                            RoutineRunsView(roster: roster, botName: botName, routines: routines.filter { !model.isAdding($0) },
+                                            gatewayProfile: gatewayProfile, open: openRun)
+                        } label: {
+                            Label("Past runs", systemImage: "clock.arrow.circlepath")
                         }
                     }
                 }

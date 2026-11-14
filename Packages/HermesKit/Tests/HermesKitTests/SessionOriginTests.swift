@@ -33,23 +33,24 @@ struct SessionOriginTests {
         #expect(HermesSession(id: "c", source: "telegram").origin == .otherPlatform)
     }
 
-    /// Show picks one origin, or every one with All Chats.
+    /// Show picks one origin, or every chat with All Chats: a scheduled run isn't a chat.
     @Test func showIncludesItsOwnOrigin() {
         let origins: [SessionOrigin] = [.thisApp, .otherPlatform, .scheduled]
         #expect(origins.filter(InboxShow.thisApp.includes) == [.thisApp])
-        #expect(origins.filter(InboxShow.all.includes) == origins)
+        #expect(origins.filter(InboxShow.all.includes) == [.thisApp, .otherPlatform])
         #expect(origins.filter(InboxShow.otherPlatforms.includes) == [.otherPlatform])
         #expect(origins.filter(InboxShow.scheduled.includes) == [.scheduled])
     }
 
-    /// A pinned chat stays in the default list wherever it came from; the narrowed choices
-    /// still show only their own origin.
+    /// A pinned chat stays in the default list wherever it came from, a scheduled run excepted;
+    /// the narrowed choices still show only their own origin.
     @Test func pinnedChatsStayInTheDefaultList() {
         #expect(InboxShow.thisApp.shows(.otherPlatform, pinned: true))
-        #expect(InboxShow.thisApp.shows(.scheduled, pinned: true))
+        #expect(!InboxShow.thisApp.shows(.scheduled, pinned: true))
         #expect(!InboxShow.thisApp.shows(.otherPlatform, pinned: false))
         #expect(!InboxShow.scheduled.shows(.otherPlatform, pinned: true))
         #expect(!InboxShow.otherPlatforms.shows(.thisApp, pinned: true))
-        #expect(InboxShow.all.shows(.scheduled, pinned: false))
+        #expect(!InboxShow.all.shows(.scheduled, pinned: false))
+        #expect(InboxShow.scheduled.shows(.scheduled, pinned: true))
     }
 }

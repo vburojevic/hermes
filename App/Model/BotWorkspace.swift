@@ -56,13 +56,21 @@ final class BotWorkspace: Identifiable {
     /// took longer is the busy Mac itself.
     private static let quickAnswer: Duration = .seconds(5)
     @ObservationIgnored private var busyRetry: Task<Void, Never>?
-    private(set) var sessions: [HermesSession] = [] {
+    /// Every session the list keeps: the chats and the scheduled runs with output, which only
+    /// Show → Scheduled Tasks lists (`ScheduledRuns`, `docs/inbox.md` §5). Empty runs never come in.
+    private(set) var allSessions: [HermesSession] = [] {
         didSet {
-            sessionsByKey = Dictionary(sessions.map { ($0.stableID, $0) }, uniquingKeysWith: { first, _ in first })
+            // Unchanged chats redraw nothing that reads only them (a run's row changing, say).
+            let chats = ScheduledRuns.chats(allSessions)
+            if chats != sessions { sessions = chats }
+            sessionsByKey = Dictionary(allSessions.map { ($0.stableID, $0) }, uniquingKeysWith: { first, _ in first })
             unread.update()
             keepSessions()
         }
     }
+    /// The chats: everything that lists or counts chats reads these (the list's counts, unread
+    /// badges, Quick Open, search by title, the push plugin's lists), never a scheduled run.
+    private(set) var sessions: [HermesSession] = []
     @ObservationIgnored private var sessionsSave: Task<Void, Never>?
 
     /// The list as it stands goes on the device a moment after it changes (a deleted, archived or
@@ -73,14 +81,14 @@ final class BotWorkspace: Identifiable {
         sessionsSave = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             guard let self, !Task.isCancelled else { return }
-            if self.sessions.isEmpty {
+            if self.allSessions.isEmpty {
                 SessionsCache.remove(self.id)
             } else {
-                SessionsCache.save(self.id, sessions: self.sessions)
+                SessionsCache.save(self.id, sessions: self.allSessions)
             }
         }
     }
-    /// `sessions` by stable key: rows ask for theirs as they draw, and a walk through a few
+    /// `allSessions` by stable key: rows ask for theirs as they draw, and a walk through a few
     /// hundred chats per row added up.
     @ObservationIgnored private var sessionsByKey: [String: HermesSession] = [:]
     /// What's new in this gateway's chats and Bots (`docs/inbox.md` §1).
@@ -104,7 +112,7 @@ final class BotWorkspace: Identifiable {
     private(set) var isLoadingSessions = false
     private(set) var hasMoreSessions = false
     /// Server-side paging position. Pinned rows are back-filled outside the page, so
-    /// `sessions.count` can't be used as the next offset. Observed: the loading rows at the end of
+    /// `allSessions.count` can't be used as the next offset. Observed: the loading rows at the end of
     /// the list load again each time it moves (`docs/inbox.md` §5).
     private(set) var nextSessionOffset = 0
     /// The gateway's chat list arrived this launch: the device's copy never goes over it.
@@ -523,7 +531,7 @@ final class BotWorkspace: Identifiable {
     /// sliding in after it as one animated insert.
     private func restoreCachedSessions() {
         guard let cached = SessionsCache.load(id) else { return }
-        sessions = cached
+        allSessions = ScheduledRuns.kept(cached)
         nextSessionOffset = cached.count
         LaunchTrace.mark("cached chats shown (\(cached.count))", id: "cached chats")
     }
@@ -541,7 +549,7 @@ final class BotWorkspace: Identifiable {
         closeSelection()
         draft = ConversationModel(workspace: self)
         hasFetchedSessions = false
-        sessions = []
+        allSessions = []
         SessionsCache.remove(id)
         ModelOptionsCache.remove(id)
         LastLinesCache.remove(id)
@@ -614,7 +622,7 @@ final class BotWorkspace: Identifiable {
         if let existing = conversations[key] { return existing }
         // A waiting chat that's gone (sent, or deleted) has no chat to load under its key.
         if WaitingChat.isKey(key) { return draft }
-        let session = sessions.first { $0.stableID == key } ?? HermesSession(id: key)
+        let session = allSessions.first { $0.stableID == key } ?? HermesSession(id: key)
         let conversation = ConversationModel(workspace: self, session: session)
         conversations[key] = conversation
         return conversation
@@ -651,7 +659,7 @@ final class BotWorkspace: Identifiable {
         for _ in 0..<10 where roster?.profiles.isEmpty == true {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        let listed = !sessions.isEmpty
+        let listed = !allSessions.isEmpty
         if !listed { await refreshSessions() }
         var seen: Set<ObjectIdentifier> = []
         let models = chats.compactMap(conversationToKeepCurrent).filter { seen.insert(ObjectIdentifier($0)).inserted }
@@ -669,12 +677,12 @@ final class BotWorkspace: Identifiable {
     private func conversationToKeepCurrent(_ chat: String) -> ConversationModel? {
         if let roster, let bot = roster.botChats[chat] { return roster.conversation(for: bot) }
         if let open = conversations.values.first(where: { $0.sessionID == chat }) { return open }
-        guard let session = sessions.first(where: { $0.id == chat || $0.stableID == chat }) else { return nil }
+        guard let session = allSessions.first(where: { $0.id == chat || $0.stableID == chat }) else { return nil }
         return conversation(forKey: session.stableID)
     }
 
     func session(forKey key: String) -> HermesSession? {
-        _ = sessions // whoever asks follows the list, as before
+        _ = allSessions // whoever asks follows the list, as before
         return sessionsByKey[key] ?? waitingChats.first { $0.rowKey == key }?.row
     }
 
@@ -697,7 +705,7 @@ final class BotWorkspace: Identifiable {
         if let roster, let bot = roster.profiles.first(where: { $0.canonicalSession?.id == id || $0.canonicalSession?.resolvedID == id }) {
             return UnreadStore.botKey(bot.name)
         }
-        return sessions.first { $0.id == id || $0.stableID == id }?.stableID ?? id
+        return allSessions.first { $0.id == id || $0.stableID == id }?.stableID ?? id
     }
 
     /// The sidebar's rows in order: the group chats and Bots in Bots mode, else the chats.
@@ -787,9 +795,9 @@ final class BotWorkspace: Identifiable {
 
     /// Puts a chat opened from elsewhere in the list, in its place by time, unless it's there.
     private func list(_ session: HermesSession) {
-        guard !sessions.contains(where: { $0.stableID == session.stableID }) else { return }
-        let index = sessions.firstIndex { ($0.lastActive ?? .distantPast) < (session.lastActive ?? .distantPast) && !$0.pinned }
-        sessions.insert(session, at: index ?? sessions.endIndex)
+        guard !allSessions.contains(where: { $0.stableID == session.stableID }) else { return }
+        let index = allSessions.firstIndex { ($0.lastActive ?? .distantPast) < (session.lastActive ?? .distantPast) && !$0.pinned }
+        allSessions.insert(session, at: index ?? allSessions.endIndex)
     }
 
     /// Opens a search result at the message that matched (`docs/search.md`). A Bot's result opens
@@ -806,7 +814,7 @@ final class BotWorkspace: Identifiable {
             return
         }
         sidebarMode = .chats
-        let known = sessions.first { $0.id == result.sessionID || (result.lineageRoot != nil && $0.stableID == result.lineageRoot) }
+        let known = allSessions.first { $0.id == result.sessionID || (result.lineageRoot != nil && $0.stableID == result.lineageRoot) }
         var session = known ?? HermesSession(id: result.sessionID)
         if known == nil {
             session.title = result.title
@@ -849,10 +857,10 @@ final class BotWorkspace: Identifiable {
         conversations[session.stableID] = conversation
         // Filed under its session now: the background list no longer needs to hold it.
         backgroundChats.removeAll { $0 === conversation }
-        if !sessions.contains(where: { $0.stableID == session.stableID }) {
+        if !allSessions.contains(where: { $0.stableID == session.stableID }) {
             var row = session
             row.lastActive = .now
-            sessions.insert(row, at: 0)
+            allSessions.insert(row, at: 0)
         }
         if conversation === draft {
             draft = ConversationModel(workspace: self)
@@ -966,21 +974,21 @@ final class BotWorkspace: Identifiable {
         if selection == .session(chat.rowKey) { closeSelection() }
         if let sessionID = chat.sessionID, let client {
             try? await client.deleteSession(id: sessionID)
-            sessions.removeAll { $0.stableID == sessionID }
+            allSessions.removeAll { $0.stableID == sessionID }
         }
     }
 
     func turnFinished(in conversation: ConversationModel) {
         guard let key = conversation.stableKey else { return }
-        if let index = sessions.firstIndex(where: { $0.stableID == key }) {
-            sessions[index].lastActive = .now
-            if let id = conversation.sessionID, id != sessions[index].id {
+        if let index = allSessions.firstIndex(where: { $0.stableID == key }) {
+            allSessions[index].lastActive = .now
+            if let id = conversation.sessionID, id != allSessions[index].id {
                 // Compression moved the conversation to a new session id; keep the row's identity.
-                if sessions[index].lineageRootID == nil { sessions[index].lineageRootID = key }
-                sessions[index].id = id
+                if allSessions[index].lineageRootID == nil { allSessions[index].lineageRootID = key }
+                allSessions[index].id = id
             }
-            let session = sessions.remove(at: index)
-            sessions.insert(session, at: sessions.firstIndex { !$0.pinned || session.pinned } ?? 0)
+            let session = allSessions.remove(at: index)
+            allSessions.insert(session, at: allSessions.firstIndex { !$0.pinned || session.pinned } ?? 0)
         }
         scheduleTitleRefresh(forKey: key)
     }
@@ -1007,8 +1015,8 @@ final class BotWorkspace: Identifiable {
     private func refreshSession(forKey key: String) async {
         guard let client, let current = session(forKey: key) else { return }
         guard let fresh = try? await client.session(id: current.id) else { return }
-        guard let index = sessions.firstIndex(where: { $0.stableID == key }) else { return }
-        var merged = sessions[index]
+        guard let index = allSessions.firstIndex(where: { $0.stableID == key }) else { return }
+        var merged = allSessions[index]
         merged.title = fresh.title
         merged.model = fresh.model
         merged.messageCount = fresh.messageCount
@@ -1017,7 +1025,7 @@ final class BotWorkspace: Identifiable {
         if merged.preview?.isEmpty ?? true, let text = conversations[key]?.items.firstUserText {
             merged.preview = String(text.prefix(60))
         }
-        sessions[index] = merged
+        allSessions[index] = merged
     }
 
     func rememberModelChoice(_ model: ModelSelection?, effort: ReasoningEffort?) {
@@ -1124,13 +1132,13 @@ final class BotWorkspace: Identifiable {
         do {
             let limit = min(200, max(50, nextSessionOffset))
             let page = try await watchingForBusy { try await client.sessions(limit: limit) }
-            let localOnly = sessions.filter { local in
+            let localOnly = allSessions.filter { local in
                 // Keep rows this device just created if the list hasn't caught up yet.
                 conversations[local.stableID]?.isWorking == true && !page.sessions.contains { $0.stableID == local.stableID }
             }
             // Most refreshes bring nothing new: an unchanged list redraws nothing and recounts
             // nothing (the sidebar, the open chat's title and the unread counts all read it).
-            let fresh = localOnly + page.sessions.filter { !$0.isInternalChild }
+            let fresh = localOnly + ScheduledRuns.kept(page.sessions.filter { !$0.isInternalChild })
             // A waiting chat Hermes lists now got its message (Hermes stores a chat with its first).
             let stillWaiting = WaitingChat.remaining(waitingChats, gatewayListed: Set(page.sessions.map(\.stableID)))
             if stillWaiting != waitingChats {
@@ -1142,10 +1150,10 @@ final class BotWorkspace: Identifiable {
             }
             if !hasFetchedSessions {
                 hasFetchedSessions = true
-                if fresh == sessions { keepSessions() }
+                if fresh == allSessions { keepSessions() }
             }
-            if fresh != sessions {
-                sessions = fresh
+            if fresh != allSessions {
+                allSessions = fresh
                 widgets.markKnownChats()
             }
             LaunchTrace.mark("chat list fetched (\(fresh.count))", id: "chat list fetched")
@@ -1155,7 +1163,7 @@ final class BotWorkspace: Identifiable {
             #endif
             hasMoreSessions = page.hasMore
             nextSessionOffset = limit
-            for session in sessions {
+            for session in allSessions {
                 conversations[session.stableID]?.adoptSessionID(session.id)
                 // A model picked on another device follows into the open chat (`docs/sessions-and-models.md` §4).
                 conversations[session.stableID]?.sessionRowReported(model: session.model)
@@ -1265,8 +1273,8 @@ final class BotWorkspace: Identifiable {
         isLoadingSessions = true
         defer { isLoadingSessions = false }
         if let page = try? await client.sessions(limit: 50, offset: nextSessionOffset) {
-            let known = Set(sessions.map(\.stableID))
-            sessions += page.sessions.filter { !known.contains($0.stableID) && !$0.isInternalChild }
+            let known = Set(allSessions.map(\.stableID))
+            allSessions += ScheduledRuns.kept(page.sessions.filter { !known.contains($0.stableID) && !$0.isInternalChild })
             hasMoreSessions = page.hasMore
             nextSessionOffset += 50
         }
@@ -1318,15 +1326,15 @@ final class BotWorkspace: Identifiable {
 
     func setPinned(_ session: HermesSession, _ pinned: Bool) async throws {
         guard let client else { return }
-        if let index = sessions.firstIndex(where: { $0.stableID == session.stableID }) {
-            sessions[index].pinned = pinned
+        if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
+            allSessions[index].pinned = pinned
         }
         do {
             let updated = try await client.setSessionFlags(id: session.id, pinned: pinned)
             replace(session, with: updated)
         } catch {
-            if let index = sessions.firstIndex(where: { $0.stableID == session.stableID }) {
-                sessions[index].pinned = !pinned
+            if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
+                allSessions[index].pinned = !pinned
             }
             throw error
         }
@@ -1335,8 +1343,8 @@ final class BotWorkspace: Identifiable {
     /// Archive (`docs/inbox.md` §5): Hermes keeps the chat and leaves it out of the list.
     func archive(_ session: HermesSession) async throws {
         guard let client else { return }
-        let index = sessions.firstIndex { $0.stableID == session.stableID }
-        sessions.removeAll { $0.stableID == session.stableID }
+        let index = allSessions.firstIndex { $0.stableID == session.stableID }
+        allSessions.removeAll { $0.stableID == session.stableID }
         if selection == .session(session.stableID) { closeSelection() }
         // Undo is offered at once, not once a busy Mac has answered.
         recentlyArchived = session
@@ -1347,10 +1355,10 @@ final class BotWorkspace: Identifiable {
             try await call.value
         } catch {
             // Undone meanwhile: the row is back and the chat was never archived; nothing to say.
-            let undone = recentlyArchived?.stableID != session.stableID && sessions.contains { $0.stableID == session.stableID }
+            let undone = recentlyArchived?.stableID != session.stableID && allSessions.contains { $0.stableID == session.stableID }
             if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
-            if !sessions.contains(where: { $0.stableID == session.stableID }) {
-                sessions.insert(session, at: min(index ?? 0, sessions.count))
+            if !allSessions.contains(where: { $0.stableID == session.stableID }) {
+                allSessions.insert(session, at: min(index ?? 0, allSessions.count))
             }
             if !undone { throw error }
         }
@@ -1360,8 +1368,8 @@ final class BotWorkspace: Identifiable {
         guard let client else { return }
         if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
         // Back in the list at once; the gateway's row replaces it when it answers.
-        if !sessions.contains(where: { $0.stableID == session.stableID }) {
-            sessions.append(session)
+        if !allSessions.contains(where: { $0.stableID == session.stableID }) {
+            allSessions.append(session)
         }
         // After the archive still on its way: two calls in flight could land in either order.
         if case .failure? = await archiving[session.stableID]?.result {
@@ -1370,13 +1378,13 @@ final class BotWorkspace: Identifiable {
         do {
             let updated = try await client.setSessionFlags(id: session.id, archived: false)
             // A list read between Undo and here (the gateway still had it archived) took the row.
-            if let index = sessions.firstIndex(where: { $0.stableID == session.stableID }) {
-                sessions[index] = updated
+            if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
+                allSessions[index] = updated
             } else {
-                sessions.append(updated)
+                allSessions.append(updated)
             }
         } catch {
-            sessions.removeAll { $0.stableID == session.stableID }
+            allSessions.removeAll { $0.stableID == session.stableID }
             throw error
         }
     }
@@ -1388,7 +1396,7 @@ final class BotWorkspace: Identifiable {
         }
         guard let client else { return }
         try await client.deleteSession(id: session.id)
-        sessions.removeAll { $0.stableID == session.stableID }
+        allSessions.removeAll { $0.stableID == session.stableID }
         // Its widgets' sort, filter and step go with the chat (`docs/widgets.md` §4).
         if let shown = conversations[session.stableID]?.widgetFacts.shown { widgets.forgetViews(shown) }
         conversations[session.stableID]?.cancelAll()
@@ -1412,8 +1420,8 @@ final class BotWorkspace: Identifiable {
         row.title = title
         row.source = parent?.source ?? PreviewBridge.sessionSource
         row.preview = parent?.preview
-        if !sessions.contains(where: { $0.stableID == row.stableID }) {
-            sessions.insert(row, at: 0)
+        if !allSessions.contains(where: { $0.stableID == row.stableID }) {
+            allSessions.insert(row, at: 0)
         }
         let branch = conversation(forKey: row.stableID)
         if let text { branch.sendWhenLoaded(text) }
@@ -1428,20 +1436,20 @@ final class BotWorkspace: Identifiable {
         // Hermes' answer has the copied messages' activity; the row's time is theirs (`RowTime`).
         row.lastActive = row.lastActive ?? session.lastActive
         row.preview = row.preview ?? session.preview
-        sessions.insert(row, at: 0)
-        if let index = sessions.firstIndex(where: { $0.stableID == session.stableID }) {
-            sessions[index].endReason = "branched"
+        allSessions.insert(row, at: 0)
+        if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
+            allSessions[index].endReason = "branched"
         }
         selection = .session(branch.stableID)
     }
 
     private func replace(_ session: HermesSession, with updated: HermesSession) {
-        guard let index = sessions.firstIndex(where: { $0.stableID == session.stableID }) else { return }
+        guard let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) else { return }
         var merged = updated
-        merged.lastActive = sessions[index].lastActive
-        merged.preview = sessions[index].preview
-        merged.lineageRootID = sessions[index].lineageRootID
-        sessions[index] = merged
+        merged.lastActive = allSessions[index].lastActive
+        merged.preview = allSessions[index].preview
+        merged.lineageRootID = allSessions[index].lineageRootID
+        allSessions[index] = merged
     }
 
     // MARK: - Staying connected

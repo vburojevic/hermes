@@ -58,6 +58,7 @@
 		2D17C956E128D49C1EB89CCD /* HermesMarkPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58216F3283638D4CA643E82E /* HermesMarkPath.swift */; };
 		2DC3776495C4F68E39D3297D /* ConnectionsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A985699450F23889560E3E /* ConnectionsComponents.swift */; };
 		2E56D21615803B8B726D385C /* FollowUpTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F5504ABF1AFEDBCC0CA7B /* FollowUpTranscript.swift */; };
+		2EF1608288D92A95F6B36798 /* RoutineRunsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95903E53FFB93FF78A51B5C3 /* RoutineRunsView.swift */; };
 		2EF1C70E5D0E3B06DA39D1A0 /* InAppBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051BBAB74DF737552E1D84A6 /* InAppBrowser.swift */; };
 		2F59B36716D07F568EC101EF /* BotRosterSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF2AD4B883A16048295A1357 /* BotRosterSections.swift */; };
 		2FC461A61E458E3ED9FFB15B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 25C62148CB914F130DA29402 /* PrivacyInfo.xcprivacy */; };
@@ -551,6 +552,7 @@
 		933DF3C59199DA5AA7CD64D7 /* ScreenLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLock.swift; sourceTree = "<group>"; };
 		94B7E50C21B675B09477FE25 /* LearnedParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedParts.swift; sourceTree = "<group>"; };
 		94DBB56C2C71245B82CDFDD2 /* TasksModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksModel.swift; sourceTree = "<group>"; };
+		95903E53FFB93FF78A51B5C3 /* RoutineRunsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineRunsView.swift; sourceTree = "<group>"; };
 		9665019EA8646C1D03F2432B /* PushCenter+Conversations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PushCenter+Conversations.swift"; sourceTree = "<group>"; };
 		967F497D71C16BA410851985 /* ApprovalCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCard.swift; sourceTree = "<group>"; };
 		97253A097FB095217EC3E459 /* ProjectChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectChip.swift; sourceTree = "<group>"; };
@@ -850,6 +852,7 @@
 				194CF757A863916B13EA8DC4 /* BotChatViews.swift */,
 				FF2AD4B883A16048295A1357 /* BotRosterSections.swift */,
 				1B1E4D3BD50D20E271564D85 /* BotSheet.swift */,
+				95903E53FFB93FF78A51B5C3 /* RoutineRunsView.swift */,
 				1526571A993B3EEBD5C03F78 /* RoutinesView.swift */,
 			);
 			path = Bots;
@@ -1907,6 +1910,7 @@
 				E6F685CDCB30D7E5DAFBA413 /* RequestParts.swift in Sources */,
 				E1FB61F088B0D428B68DA446 /* RootView.swift in Sources */,
 				754CE3123B70512394D85830 /* RouteWatcher.swift in Sources */,
+				2EF1608288D92A95F6B36798 /* RoutineRunsView.swift in Sources */,
 				965C2708E588D051FC6EB350 /* RoutinesModel.swift in Sources */,
 				E68F2F493BCBC14B3BCE29BF /* RoutinesView.swift in Sources */,
 				D4BCCDD0BBD1A880DA1F9418 /* ScreenController.swift in Sources */,

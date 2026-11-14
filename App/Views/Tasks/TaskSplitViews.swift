@@ -227,21 +227,46 @@ struct TaskDetailPane: View {
         #endif
     }
 
-    @ViewBuilder
     private var runsSection: some View {
+        TaskRunsSection(runs: runs, failed: runsFailed, isConnected: workspace.roster?.isConnected == true,
+                        total: current.repeatCompleted) { run in
+            TaskRuns.open(run, of: current, in: workspace)
+        }
+    }
+
+    private func loadRuns() async {
+        if let loaded = await TaskRuns.load(job, model: model, workspace: workspace) {
+            runs = loaded
+        } else {
+            runsFailed = true
+        }
+    }
+}
+
+/// A task's recent runs, each a chat (`runHistory`), in the task's detail on every device.
+struct TaskRunsSection: View {
+    /// Nil until they're read.
+    let runs: [CronRun]?
+    let failed: Bool
+    let isConnected: Bool
+    /// How many times the task has run, when Hermes counts (`repeat.completed`).
+    let total: Int?
+    let open: (CronRun) -> Void
+
+    var body: some View {
         if let runs, !runs.isEmpty {
             Section {
                 ForEach(runs) { run in
                     Button {
                         open(run)
                     } label: {
-                        RunRow(run: run)
+                        RunRow(run: run, opens: run.sessionID != nil)
                     }
                     .buttonStyle(.plain)
                     .disabled(run.sessionID == nil)
                 }
             } header: {
-                Text("Recent runs · \(current.repeatCompleted ?? runs.count)")
+                Text("Recent runs · \(total ?? runs.count)")
             } footer: {
                 #if os(macOS)
                 Text("Each run is a chat; click one to read it or continue it.")
@@ -249,48 +274,62 @@ struct TaskDetailPane: View {
                 Text("Each run is a chat; tap one to read it or continue it.")
                 #endif
             }
-        } else if runs == nil, !runsFailed, workspace.roster?.isConnected == true {
+        } else if runs == nil, !failed, isConnected {
             Section("Recent runs") {
                 SkeletonRows(count: 2)
             }
         }
     }
+}
 
-    /// The run history lives on the Bot Mode dashboard.
-    private func loadRuns() async {
+enum TaskRuns {
+    /// The run history lives on the Bot Mode dashboard. Most runs of a frequent task say nothing,
+    /// so it asks for Hermes's most and keeps the ones with something in them (`docs/tasks.md` §5).
+    /// Nil when they can't be read.
+    static func load(_ job: CronJob, model: TasksModel, workspace: BotWorkspace) async -> [CronRun]? {
         // A new task has no runs, and no id on the gateway yet.
-        if model.isAdding(job) {
-            runs = []
-            return
-        }
-        guard let roster = workspace.roster, roster.isConnected else {
-            runsFailed = true
-            return
-        }
-        do {
-            runs = try await roster.cronRuns(jobID: job.id, profile: workspace.bot.profileName)
-        } catch {
-            runsFailed = true
-        }
+        if model.isAdding(job) { return [] }
+        guard let roster = workspace.roster, roster.isConnected else { return nil }
+        guard let all = try? await roster.cronRuns(jobID: job.id, profile: workspace.bot.profileName, limit: 100) else { return nil }
+        return ScheduledRuns.shown(all)
     }
 
-    private func open(_ run: CronRun) {
+    /// Opens a run in Chats, like any chat; it isn't listed there (`docs/tasks.md` §1).
+    static func open(_ run: CronRun, of job: CronJob, in workspace: BotWorkspace) {
+        open(run, titled: job.name, in: workspace)
+    }
+
+    /// Opens a run titled after its task or routine.
+    static func open(_ run: CronRun, titled title: String, in workspace: BotWorkspace) {
         guard let id = run.sessionID else { return }
         var session = HermesSession.opened(id: id)
-        session.title = current.name
+        session.title = title
         session.source = SessionSearch.taskSource
         session.startedAt = run.startedAt
+        // An opened run with no count would be taken for an empty one.
+        session.messageCount = run.messageCount
         workspace.sidebarMode = .chats
         workspace.open(session)
     }
 }
 
-/// One run (`runRow`, `runRowFailed`): how it went, when and how long, what it said.
-private struct RunRow: View {
+/// One run (`runRow`, `runRowFailed`): how it went, when and how long, what it said. A run that
+/// opens as a chat ends in a chevron; one read in place (`runRowReadOnly`) expands to its whole
+/// reply (`runRowExpanded`, `docs/tasks.md` §5).
+struct RunRow: View {
     let run: CronRun
+    /// The routine it belongs to, on a list of every routine's runs.
+    var routine: String?
+    var opens: Bool
+    /// What it said, read from the run's chat: Hermes's row carries only a preview of the prompt.
+    var reply: String?
+    /// Reading `reply`: the line is a placeholder until it comes.
+    var isReading = false
+    /// All of it, not one line.
+    var isExpanded = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: isExpanded ? .top : .center, spacing: 12) {
             Image(systemName: run.failed ? "xmark.circle.fill" : "checkmark.circle.fill")
                 .font(.system(size: 17))
                 .foregroundStyle(run.failed ? Theme.danger : Theme.success)
@@ -299,15 +338,16 @@ private struct RunRow: View {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Theme.primaryText)
-                if let line = run.failed ? (run.error ?? run.summary) : run.summary {
+                if let line {
                     Text(line)
                         .font(.footnote)
-                        .foregroundStyle(run.failed ? Theme.danger : Theme.secondaryText)
-                        .lineLimit(1)
+                        .foregroundStyle(run.failed ? Theme.danger : isExpanded ? Theme.primaryText : Theme.secondaryText)
+                        .lineLimit(isExpanded ? nil : 1)
+                        .redacted(reason: isReading ? .placeholder : [])
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if run.sessionID != nil {
+            if opens {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Theme.tertiaryText)
@@ -319,9 +359,13 @@ private struct RunRow: View {
         .accessibilityLabel(Text("\(run.failed ? String(localized: "Failed") : String(localized: "Finished")), \(title)"))
     }
 
-    /// "Today 07:30 · 41 s".
+    /// What it said, or what went wrong.
+    var line: String? { run.failed ? (run.error ?? reply ?? run.summary) : (reply ?? run.summary) }
+
+    /// "Today 07:30 · 41 s", after the routine's name when there is one.
     private var title: String {
         var parts: [String] = []
+        if let routine { parts.append(routine) }
         if let start = run.startedAt { parts.append(TaskTimes.label(start)) }
         if let duration = run.duration { parts.append(Duration.seconds(duration).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))) }
         return parts.joined(separator: " · ")

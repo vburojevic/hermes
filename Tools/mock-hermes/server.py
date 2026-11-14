@@ -187,6 +187,53 @@ def seed_many_chats(count, sparse=False):
         SESSIONS[sid]["_last_read_at"] = started + 30 if i % 5 == 0 else started + 600
 
 
+# `--routine-runs`: two routines every ten minutes over the last day, as Hermes's scheduler leaves
+# them: a session per run (`cron_<job>_<YYYYmmdd_HHMMSS>`, source `cron`, no title), most of them
+# empty because the run had nothing to say. Runs with output show only under Show → Scheduled Tasks
+# and with their task; empty ones nowhere (docs/inbox.md §5, docs/tasks.md §5). Their rows for
+# `GET /api/cron/jobs/{id}/runs` (search.py serves them) are kept here, newest first.
+JOB_RUNS = {}
+
+ROUTINES = [
+    ("job_inbox", "Watch the inbox", "Check my inbox for anything urgent. Say nothing if there's nothing new.", 0, 6,
+     "{n} new emails, one from the landlord about the boiler visit on Thursday."),
+    ("job_site", "Watch the website", "Check the shop's website is up and the checkout works. Say nothing if it does.", 300, 47,
+     "The checkout answered 502 twice, then recovered after {n} seconds."),
+]
+
+
+def seed_routine_runs():
+    tick = int(NOW // 600) * 600
+    for job_id, name, prompt, offset, every, said in ROUTINES:
+        runs = []
+        for k in range(144):
+            start = tick - k * 600 + offset + 3
+            if start > NOW:
+                continue
+            sid = f"cron_{job_id}_{time.strftime('%Y%m%d_%H%M%S', time.localtime(start))}"
+            answer = said.format(n=k % 5 + 2) if k % every == 0 else None
+            session_row(sid, None, "cron", start, start + 9, prompt[:60] if answer else "")
+            SESSIONS[sid]["ended_at"] = start + 9
+            SESSIONS[sid]["end_reason"] = "cron_complete"
+            if answer:
+                add_message(sid, "user", prompt, timestamp=start)
+                add_message(sid, "assistant", answer, timestamp=start + 9)
+            runs.append({"id": sid, "source": "cron", "title": None, "started_at": start, "ended_at": start + 9,
+                         "last_active": start + 9, "message_count": SESSIONS[sid]["message_count"],
+                         "preview": prompt[:60] if answer else None, "end_reason": "cron_complete",
+                         "cron_job_id": job_id, "is_active": False, "scheduler_owned": True, "profile": "default"})
+        JOB_RUNS[job_id] = runs
+        JOBS[job_id] = {
+            "id": job_id, "name": name, "prompt": prompt, "skills": [],
+            "schedule": {"kind": "interval", "minutes": 10, "display": "every 10m"}, "schedule_display": "every 10m",
+            "repeat": {"times": None, "completed": 1440}, "enabled": True, "state": "scheduled",
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(NOW - 10 * DAY)),
+            "next_run_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(tick + 600 + offset)),
+            "last_run_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(runs[0]["started_at"])),
+            "last_status": "ok", "last_error": None, "deliver": "local",
+        }
+
+
 def add_message(sid, role, content, **extra):
     with LOCK:
         rows = MESSAGES.setdefault(sid, [])
@@ -1374,6 +1421,8 @@ def main():
                         help="seed N more ordinary chats (seed_many_chats), to measure a long chat list")
     parser.add_argument("--sparse-chats", action="store_true",
                         help="with --many-chats: mostly Telegram and Discord, a few of this app's chats and scheduled runs per page")
+    parser.add_argument("--routine-runs", action="store_true",
+                        help="two routines every ten minutes over the last day, most runs empty (seed_routine_runs)")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
@@ -1383,6 +1432,8 @@ def main():
     seed()
     if args.many_chats:
         seed_many_chats(args.many_chats, sparse=args.sparse_chats)
+    if args.routine_runs:
+        seed_routine_runs()
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True

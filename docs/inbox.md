@@ -341,16 +341,28 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   - **This App**, the default: chats started here, in Hermes Desktop or another API client (no
     source, `api_server`, `desktop`, `hermes_app`), plus any chat the person pinned, wherever it
     came from. Each launch starts here.
-  - **All Chats**: every chat, as the list was before.
+  - **All Chats**: every chat, scheduled runs left out (below).
   - **Other Platforms**: the terminal, messaging platforms, editors and the Board's workers
     (`cli`, `tui`, `telegram`, `discord`, `acp`, `kanban`…).
-  - **Scheduled Tasks**: the runs of scheduled tasks (`cron`).
+  - **Scheduled Tasks**: the runs of scheduled tasks (`cron`) that have something in them.
+
+  **Scheduled runs aren't chats** (`ScheduledRuns`). Hermes's scheduler runs each task in a
+  session of its own (`source` `cron`, an id like `cron_<job>_<YYYYmmdd_HHMMSS>`, often no
+  title), also when the run has nothing to say: a task every ten minutes leaves well over a
+  hundred sessions a day, most of them empty, and they used to fill the list as "New chat". A run
+  is known by its source alone, since the newer runtime's ids (`local-…`) look like any other.
+  Runs with output have two homes: Show → Scheduled Tasks, and their task's runs in Tasks
+  ([tasks.md](tasks.md) §5). A run Hermes lists with no messages shows nowhere: the app drops it
+  as each page comes in (a row without a count isn't taken for empty). Nothing else that lists or
+  counts chats sees a run, even pinned: This App, All Chats, Other Platforms, the Only counts,
+  unread badges, the back button, the app icon, Quick Open and search.
 
   The Only filters narrow what Show holds, and their counts count it. Projects show only under
   This App or All Chats with no Only; the rest is one flat list. Older pages load while the end
   of the list is on screen, under every Show: a page that brings too few chats the list shows to
   fill the screen loads the next one, until the end is off screen or the gateway has no more.
-  Search still finds every chat, whatever Show holds.
+  Search finds every chat, whatever Show holds, and scheduled runs only under its Tasks filter
+  ([search.md](search.md) §1).
 - **Empty lists** (`CaughtUpState`): an Only with nothing in it shows "You're all caught up". A
   Show that holds nothing, once every page is in, says so, with or without an Only: "No chats
   from this app" (This App), "No chats from other platforms", "No scheduled runs", each with

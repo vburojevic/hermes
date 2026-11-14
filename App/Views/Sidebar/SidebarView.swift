@@ -436,7 +436,8 @@ struct SidebarView: View {
             if workspace.inboxSessions.isEmpty {
                 CaughtUpState(filter: workspace.inboxFilter)
             }
-        } else if workspace.sessions.isEmpty, !workspace.isLoadingSessions {
+        } else if workspace.allSessions.isEmpty, !workspace.isLoadingSessions {
+            // Nothing at all, runs included: on a gateway with only runs, Scheduled Tasks lists them.
             switch workspace.connection {
             case .online:
                 SidebarState(

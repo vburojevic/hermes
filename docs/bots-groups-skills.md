@@ -155,6 +155,7 @@ Every change shows at once and settles when the gateway answers (`PendingChanges
 | Pause, resume | `cron.manage {action: "pause" \| "resume", profile, name: <job id>}` | The switch flips at once; the `job` in the answer settles the row. |
 | Delete | `cron.manage {action: "remove", profile, name: <job id>}` | Asks first; past results stay in the chat. The row goes once confirmed. |
 | Run now | `POST /api/cron/jobs/<id>/trigger?profile=` | REST only; there is no RPC for it. The row says "Starting…" until it's answered. |
+| Past runs | `GET /api/cron/jobs/<id>/runs?profile=&limit=100`, per routine | `RoutineRunsView`: the runs that said something, newest first. They read in place and don't open as chats, because the Bot's profile keeps them ([tasks.md](tasks.md) §5). |
 
 `success: false` with an `error` is shown as the gateway's words. Opened from a delivery's name in a
 chat, Routines scrolls to that routine and picks it out (matched by title, `RoutinesView(focus:)`).

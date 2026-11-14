@@ -176,16 +176,16 @@ final class ChatSearch {
         announce()
     }
 
-    /// Chats whose title matches, from the list the app has.
+    /// Chats whose title matches, from the list the app has. Scheduled runs are found only under
+    /// Tasks: they aren't chats, and the list keeps them apart (`docs/inbox.md` §5).
     private static func titleHits(_ text: String, filter: Filter, in workspace: BotWorkspace) -> [Hit] {
-        SessionSearch.titleMatches(text, in: workspace.sessions)
+        let listed = filter == .tasks ? workspace.allSessions.filter(\.isScheduledRun) : workspace.sessions
+        return SessionSearch.titleMatches(text, in: listed)
             .filter { session in
                 switch filter {
-                case .tasks: session.source == SessionSearch.taskSource
-                case .chats: session.source != SessionSearch.taskSource
                 case .projects: workspace.projects.projectID(forSession: session) != nil
                 case .bots: false
-                case .all: true
+                case .tasks, .chats, .all: true
                 }
             }
             .map { Hit(result: SessionSearchResult(sessionID: $0.id, lineageRoot: $0.lineageRootID, title: $0.title, preview: $0.preview,
@@ -193,7 +193,8 @@ final class ChatSearch {
                                                    sessionStarted: $0.startedAt, lastActive: $0.lastActive)) }
     }
 
-    /// The gateway's search: the default profile, and each Bot's for All and Bots.
+    /// The gateway's search: the default profile, and each Bot's for All and Bots. Only Tasks
+    /// finds scheduled runs; every other filter leaves them out.
     private func fullText(_ text: String, filter: Filter, roster: BotRoster, workspace: BotWorkspace) async throws -> [Hit] {
         let profile = workspace.bot.profileName
         var found: [Hit] = []
@@ -202,7 +203,7 @@ final class ChatSearch {
             found = try await roster.searchSessions(text, limit: 40, profile: profile, sources: [], excludeSources: [SessionSearch.taskSource])
                 .map { Hit(result: $0) }
         case .tasks:
-            found = try await roster.searchSessions(text, limit: 40, profile: profile, sources: [SessionSearch.taskSource], excludeSources: [])
+            found = ScheduledRuns.shown(try await roster.searchSessions(text, limit: 40, profile: profile, sources: [SessionSearch.taskSource], excludeSources: []))
                 .map { Hit(result: $0) }
         case .projects:
             found = try await roster.searchSessions(text, limit: 60, profile: profile, sources: [], excludeSources: [SessionSearch.taskSource])
@@ -210,7 +211,7 @@ final class ChatSearch {
                 .map { Hit(result: $0) }
         case .bots, .all:
             if filter == .all {
-                found = try await roster.searchSessions(text, limit: 40, profile: profile, sources: [], excludeSources: [])
+                found = try await roster.searchSessions(text, limit: 40, profile: profile, sources: [], excludeSources: [SessionSearch.taskSource])
                     .map { Hit(result: $0) }
             }
             // One search per Bot (its profile), in parallel.
@@ -218,7 +219,8 @@ final class ChatSearch {
             let perBot = try await withThrowingTaskGroup(of: [Hit].self) { group in
                 for name in bots {
                     group.addTask {
-                        let results = (try? await roster.searchSessions(text, limit: 10, profile: name, sources: [], excludeSources: [])) ?? []
+                        let results = (try? await roster.searchSessions(text, limit: 10, profile: name, sources: [],
+                                                                         excludeSources: [SessionSearch.taskSource])) ?? []
                         return results.map { Hit(result: $0, botName: name) }
                     }
                 }

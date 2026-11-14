@@ -28,6 +28,7 @@ def install(backend_globals, gateway_module):
     B["HTTP_ROUTES"][("GET", "/api/sessions/search")] = search
     seed()
     seed_runs()
+    seed_bot_runs()
 
 
 def seed():
@@ -59,6 +60,11 @@ def seed_runs():
     day = 86400
     midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
     for job_id, job in list(G.JOBS.items()):
+        if job_id in G.JOB_RUNS:
+            # The routines' own runs (server.py seed_routine_runs), at most `limit` (20, at most 100).
+            B["HTTP_ROUTES"][("GET", f"/api/cron/jobs/{job_id}/runs")] = lambda q, body, runs=G.JOB_RUNS[job_id]: (
+                200, {"runs": runs[:run_limit(q)], "limit": run_limit(q)})
+            continue
         runs = []
         for i, (ago, seconds, answer, error) in enumerate([
             (0, 41, "3 events, 2 PRs waiting, backup finished at 04:12.", None),
@@ -74,8 +80,77 @@ def seed_runs():
                 G.add_message(sid, "assistant", answer, timestamp=start + seconds)
             runs.append({"id": sid, "source": "cron", "title": job["name"], "started_at": start, "ended_at": start + seconds,
                          "last_active": start + seconds, "message_count": 2 if answer else 1, "preview": answer or None,
-                         "end_reason": "error" if error else "completed", "error": error})
+                         "end_reason": "error" if error else "completed", "error": error, "profile": "default"})
         B["HTTP_ROUTES"][("GET", f"/api/cron/jobs/{job_id}/runs")] = lambda q, body, runs=runs: (200, {"runs": runs, "limit": 20})
+
+
+# A Bot's routines run in the Bot's own profile and keep their chats there (docs/tasks.md §5):
+# (job id, days ago, seconds, reply, error). None for days ago means the job's last run, so the
+# run agrees with its delivery in the Bot Chat; "friday" means the last Friday. Hermes's row
+# previews the prompt, never the reply.
+BOT_RUNS = [
+    ("job_digest", None, 41, "Three new papers on speculative decoding and one on KV cache reuse. The KV cache paper "
+     "is the one to read: it reuses prefixes across requests and cuts time to first token by 38% on long prompts. "
+     "The decoding papers agree that a draft model a tenth the size is enough, and two of them share code you can "
+     "run on a laptop. Want summaries of each?", None),
+    ("job_digest", 1, 37, "Two new papers on long-context evaluation.", None),
+    ("job_digest", 2, 6, None, None),
+    ("job_watch", 0, 18, "MLX 0.31 is out: faster quantized matmul on M4.", None),
+    ("job_reading", "friday", 9, None, "The reading list folder was moved. Nothing was sent."),
+    ("job_disks", None, 12, "tank 71% · backup 41%. The last scrub repaired 0B.", None),
+]
+
+
+def seed_bot_runs():
+    """Run chats of the Bots' routines, stored in each Bot's profile, and their runs routes, shaped
+    like `_list_cron_job_runs_sync`: newest first, at most `limit`, each row stamped with the
+    profile that holds it."""
+    import datetime
+    day = 86400
+    now = time.time()
+    midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+    rows = {}
+    for job_id, ago, seconds, answer, error in BOT_RUNS:
+        profile, job = next(((p, jobs[job_id]) for p, jobs in B["CRON"].items() if job_id in jobs), (None, None))
+        if job is None:
+            continue
+        if ago is None:
+            start = datetime.datetime.fromisoformat(job["last_run_at"]).timestamp() - 3
+        else:
+            if ago == "friday":
+                ago = (time.localtime().tm_wday - 4) % 7
+            start = midnight - ago * day + {"job_watch": 6, "job_reading": 17}.get(job_id, 8) * 3600
+            if job_id == "job_digest":
+                # The same time of day as its last run: the digest runs daily.
+                start = datetime.datetime.fromisoformat(job["last_run_at"]).timestamp() - 3 - ago * day
+            while start + seconds > now:
+                start -= day
+        sid = f"cron_{job_id}_{time.strftime('%Y%m%d_%H%M%S', time.localtime(start))}"
+        name = job["name"].split("] ", 1)[-1]
+        B["add_session"](profile, name, source="cron", started=start, sid=sid)
+        if answer or error:
+            B["add_message"](sid, "user", job["prompt"], start)
+        if answer:
+            B["add_message"](sid, "assistant", answer, start + seconds)
+        count = len(B["STORED"][sid]["messages"])
+        rows.setdefault(job_id, []).append({
+            "id": sid, "source": "cron", "title": name if count else None, "started_at": start, "ended_at": start + seconds,
+            "last_active": start + seconds, "message_count": count, "preview": job["prompt"][:60] if count else "",
+            "end_reason": "error" if error else "cron_complete", "error": error, "cron_job_id": job_id,
+            "is_active": False, "scheduler_owned": True, "profile": profile})
+    for job_id in (job_id for jobs in B["CRON"].values() for job_id in jobs):
+        runs = rows.setdefault(job_id, [])
+        runs.sort(key=lambda r: r["started_at"], reverse=True)
+        B["HTTP_ROUTES"][("GET", f"/api/cron/jobs/{job_id}/runs")] = lambda q, body, runs=runs: (
+            200, {"runs": runs[:run_limit(q)], "limit": run_limit(q)})
+
+
+def run_limit(query):
+    """`limit` as Hermes clamps it (`_list_cron_job_runs_sync`): 1 to 100, else 20."""
+    try:
+        return max(1, min(int((query.get("limit") or ["20"])[0]), 100))
+    except ValueError:
+        return 20
 
 
 def words_of(q):
