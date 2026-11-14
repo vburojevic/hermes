@@ -110,6 +110,58 @@ public struct RoomEvent: Hashable, Sendable {
     }
 }
 
+/// One page of a room's log (`groups.log`, Hermes' `read_events`): the events after `since_seq`,
+/// oldest first, at most `limit` of them and 2 MiB, with where the next page starts.
+public struct RoomLogPage: Sendable {
+    public var events: [RoomEvent]
+    /// The last event's seq, or `since_seq` when the page is empty.
+    public var cursor: Int
+    public var hasMore: Bool
+
+    public init(events: [RoomEvent], cursor: Int, hasMore: Bool) {
+        self.events = events
+        self.cursor = cursor
+        self.hasMore = hasMore
+    }
+
+    public static func parse(_ json: JSONValue) -> RoomLogPage? {
+        guard case .array(let rows)? = json["events"] else { return nil }
+        let events = rows.compactMap(RoomEvent.parse)
+        return RoomLogPage(events: events,
+                           cursor: json["cursor"]?.truncatedIntValue ?? events.last?.seq ?? 0,
+                           hasMore: json["has_more"]?.boolValue ?? false)
+    }
+}
+
+extension RoomTranscript {
+    /// Hermes' largest `groups.log` page (`MAX_LOG_LIMIT`).
+    public static let logPageLimit = 500
+    /// How far before the read point a count starts, so a reply quoting what the person wrote
+    /// there still counts as a mention.
+    public static let quoteLookback = 200
+    /// Pages a count reads at most: a room left unread for this long shows what they hold.
+    static let maxCountPages = 40
+
+    /// A room's members' messages after `seen`, read page by page up to `latest`
+    /// (`docs/inbox.md` §1). `read` asks for the page after a seq; Hermes refuses a seq ahead of
+    /// its log, so the count never starts past `latest`. It runs on the caller's actor, so `read`
+    /// can ask the caller's own client.
+    nonisolated(nonsending)
+    public static func countUnread(after seen: Int, latest: Int, names: [String] = [],
+                                   read: nonisolated(nonsending) (_ sinceSeq: Int, _ limit: Int) async throws -> RoomLogPage) async throws -> (count: Int, mention: (memberID: String, seq: Int)?) {
+        var since = min(max(0, seen - quoteLookback), latest)
+        var events: [RoomEvent] = []
+        for _ in 0..<maxCountPages where since < latest {
+            let page = try await read(since, logPageLimit)
+            events += page.events
+            // A page that doesn't move on (a 2 MiB event, a log cut short) ends the count.
+            guard page.cursor > since, page.hasMore else { break }
+            since = page.cursor
+        }
+        return unread(events, after: seen, names: names)
+    }
+}
+
 /// What a room shows (`screens/*/group-chat.elyx`).
 public enum RoomItem: Identifiable, Hashable, Sendable {
     case user(id: String, text: String, date: Date?)

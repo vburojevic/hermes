@@ -163,7 +163,7 @@ final class UnreadStore {
 
     /// Unread Bots and group chats (the Bots segment), or chats (the Chats segment).
     func unreadCount(inBots: Bool) -> Int {
-        unreadChats(in: badges.keys.filter { ($0.hasPrefix("bot:") || $0.hasPrefix("group:")) == inBots })
+        unreadChats(in: badges.keys.filter { BadgeScope.isBotsRow($0) == inBots })
     }
 
     // MARK: Updating

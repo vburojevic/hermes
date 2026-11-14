@@ -11,6 +11,12 @@ public enum BadgeScope {
         isUnread && key != open && !isMuted && !isHiddenBot(key, hiddenBots)
     }
 
+    /// A row of the Bots list (a Bot or a group chat), which the Bots segment counts; every other
+    /// row is the Chats segment's.
+    public static func isBotsRow(_ key: String) -> Bool {
+        key.hasPrefix("bot:") || key.hasPrefix("group:")
+    }
+
     public static func isHiddenBot(_ key: String, _ hiddenBots: Set<String>) -> Bool {
         key.hasPrefix("bot:") && hiddenBots.contains(String(key.dropFirst(4)))
     }

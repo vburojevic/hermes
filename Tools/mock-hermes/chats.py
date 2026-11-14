@@ -689,6 +689,33 @@ def seed_rooms():
             "updated_at": now - 1800, "events": [], "working": False, "pending": [], "stop": False}
     ROOMS[room["room_id"]] = room
     run_discussion(room, "We ship Hermes 1.3 on Friday. What do we still need?", wait=False)
+    if B["CONFIG"].get("group_counts"):
+        seed_count_rooms(now)
+
+
+def seed_count_rooms(now):
+    """Mock-only (`--group-counts`): rooms for every number the sidebar shows for a group chat.
+
+    Ada and Ops sit in three rooms. "Design review" holds the hidden Scout and a member whose Bot
+    was deleted (Hermes keeps a room's members as created). "Release log" has run long: 199
+    events, so the next discussion in it (`/api/mock/room-say`) lands past seq 200."""
+    ada, ops = room_member("writer", "writer", "Ada"), room_member("ops", "ops", "Ops")
+    design = {"room_id": "design-review", "name": "Design review",
+              "members": [ada, ops, room_member("scout", "scout", "Scout"), room_member("intern", "intern", "Intern")],
+              "revision": 1, "created_at": now - 7200, "updated_at": now - 5400, "events": [], "working": False,
+              "pending": [], "stop": False}
+    ROOMS[design["room_id"]] = design
+    run_discussion(design, "Which screens still need a dark mode pass?", wait=False)
+    log = {"room_id": "release-log", "name": "Release log",
+           "members": [room_member("default", "hermes", "Hermes"), ada, ops], "revision": 1,
+           "created_at": now - 30 * 86400, "updated_at": now - 7200, "events": [], "working": False,
+           "pending": [], "stop": False}
+    ROOMS[log["room_id"]] = log
+    while len(log["events"]) < 188:
+        run_discussion(log, "What changed since the last build?", wait=False)
+    while len(log["events"]) < 199:
+        room_event(log, "room.activity", {"kind": "gateway", "id": "mock"},
+                   {"status": "settled", "reason_code": "silent_round", "thread_id": "main", "discussion_event_id": "d1"})
 
 
 def run_discussion(room, text, wait=True, approve=False, client_id=None):
@@ -802,9 +829,14 @@ def groups_send(params):
 def groups_log(params):
     room = group_room(params)
     since = int(params.get("since_seq") or 0)
-    limit = int(params.get("limit") or 100)
-    events = [e for e in room["events"] if e["seq"] > since][:limit]
+    limit = int(params.get("limit", 100))
     latest = len(room["events"])
+    # Hermes' read_events: at most 500 events a page, and no seq ahead of the log (error 4112).
+    if not 1 <= limit <= 500:
+        raise B["RPCError"](4112, "limit must be between 1 and 500")
+    if since > latest:
+        raise B["RPCError"](4112, "since_seq is ahead of the hosted room log")
+    events = [e for e in room["events"] if e["seq"] > since][:limit]
     cursor = events[-1]["seq"] if events else since
     return {"events": events, "cursor": cursor, "latest_seq": latest, "has_more": cursor < latest,
             "authority": {"gateway_id": "mock", "epoch": 1}}
