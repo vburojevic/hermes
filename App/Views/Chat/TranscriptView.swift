@@ -134,6 +134,8 @@ struct TranscriptView: View {
     @State private var pageDue = false
     /// Calls whose turns are open under their card (Transcript).
     @State private var openCalls: Set<UUID> = []
+    /// The room between two rows, and between a call's last row and its card.
+    private static let rowSpacing: CGFloat = 30
 
     var body: some View {
         // The running reply is listed by its outline: its words would redraw the whole list.
@@ -153,7 +155,7 @@ struct TranscriptView: View {
         // A reply to a routine's or a script's delivery, or to another Bot, says so (`docs/chat.md` §2a).
         let deliveryReplies = Delivery.answering(in: all)
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: Self.rowSpacing) {
                 if showsLoadingRow(first: first) {
                     // Earlier messages come in as the reader nears the top, a page at a time. A
                     // still skeleton of their lines, not a spinner (`docs/chat.md` §4a).
@@ -161,7 +163,7 @@ struct TranscriptView: View {
                         .frame(height: Self.loadingRowHeight)
                 }
                 ForEach(rows, id: \.key) { shown in
-                    RowEdges {
+                    RowEdges(spacing: Self.rowSpacing) {
                         callFolded(shown.item, folds: folds, calls: calls) {
                             rowView(shown.item, date: separators[shown.item.id], extraTeams: shown.item.id == unclaimed.turnID ? unclaimed.teams : [],
                                     spokenReplies: spokenReplies, latestReply: latestReply, answers: deliveryReplies[shown.item.id])
@@ -1439,7 +1441,7 @@ struct TranscriptView: View {
     /// with the card after the call's last row.
     @ViewBuilder
     private func callFolded(_ item: TranscriptItem, folds: CallFolding.Folds, calls: [CallRecord], @ViewBuilder row: () -> some View) -> some View {
-        // A group, not a stack: a hidden row leaves no gap behind.
+        // A group, not a stack: a hidden row is no view at all, and `RowEdges` takes back its gap.
         Group {
             if folds.rows[item.id].map(openCalls.contains) ?? true {
                 row()
@@ -2184,13 +2186,41 @@ extension AnyTransition {
 /// stacks all the way down, measuring their text, on every layout pass. Rows that grew in had
 /// `HeightFraction` to stop that, but the reply being written fades in instead, so each redraw of
 /// it had the stack measure the whole reply again.
+///
+/// A row can be more than one view: the last row of a call whose Transcript is open is followed
+/// by the call's card. They stack top to bottom, `spacing` apart, as the transcript's rows do.
+/// Only the first was placed before, so the card was drawn over the middle of the reply.
+///
+/// A row with no views (one of a call's turns, folded into its card) claims minus one gap. The
+/// stack still puts its gap beside an empty row, so each folded turn left a blank 30 points
+/// above the card; this takes that back wherever the row sits.
 private nonisolated struct RowEdges: Layout {
+    var spacing: CGFloat
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        subviews.first?.sizeThatFits(proposal) ?? .zero
+        guard let first = subviews.first else { return CGSize(width: 0, height: -spacing) }
+        guard subviews.count > 1 else { return first.sizeThatFits(proposal) }
+        let sizes = subviews.map { $0.sizeThatFits(Self.stacked(proposal)) }
+        let height = sizes.reduce(0) { $0 + $1.height } + spacing * CGFloat(sizes.count - 1)
+        return CGSize(width: sizes.map(\.width).max() ?? 0, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+        guard subviews.count > 1 else {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+            return
+        }
+        let stacked = Self.stacked(proposal)
+        var top = bounds.minY
+        for subview in subviews {
+            subview.place(at: CGPoint(x: bounds.minX, y: top), anchor: .topLeading, proposal: stacked)
+            top += subview.sizeThatFits(stacked).height + spacing
+        }
+    }
+
+    /// Each of several views gets the row's width and as much height as it needs.
+    private static func stacked(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: proposal.width, height: nil)
     }
 
     func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
