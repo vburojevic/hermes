@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import HermesKit
 import Testing
 @testable import HermesPush
 
@@ -225,5 +226,96 @@ struct FaceTests {
         #expect(FaceColor.hue(60).contrast(with: .white) < 3 && FaceColor.hue(240).contrast(with: darkWindow) < 3)
         #expect(FacePainter.contrastOutline(for: .hue(30), on: .white, separator: .gray) != nil) // orange is 2.3:1 too
         #expect(FacePainter.contrastOutline(for: .hue(240), on: .white, separator: .gray) == nil)
+    }
+}
+
+/// A Bot's photo is fetched once per revision, and once more after memory pressure drops it
+/// (`FacePhotoBook`, docs/bots-groups-skills.md §1).
+@Suite("Bot photos")
+struct FacePhotoBookTests {
+    @Test func aPhotoIsFetchedOncePerRevision() {
+        var book = FacePhotoBook()
+        #expect(book.needsFetch("ops", revision: 3))
+        let ticket = book.begin("ops", revision: 3)
+        // Refreshes while it runs, even of a newer revision, start nothing.
+        #expect(!book.needsFetch("ops", revision: 3))
+        #expect(!book.needsFetch("ops", revision: 4))
+        let finished = book.finish("ops", ticket: ticket, outcome: .photo)
+        #expect(finished)
+        #expect(book.state(of: "ops") == .shown(revision: 3))
+        #expect(!book.needsFetch("ops", revision: 3))
+        #expect(book.needsFetch("ops", revision: 4))
+    }
+
+    @Test func aDroppedPhotoIsFetchedAgainOnceWhateverAsks() {
+        var book = FacePhotoBook()
+        let first = book.begin("ops", revision: 3)
+        book.finish("ops", ticket: first, outcome: .photo)
+        // Every face that redraws after the drop asks; only the first ask fetches.
+        let firstAskFetches = book.missed("ops", revision: 3)
+        #expect(firstAskFetches)
+        let secondAskFetches = book.missed("ops", revision: 3)
+        #expect(!secondAskFetches)
+        #expect(book.needsFetch("ops", revision: 3))
+        let again = book.begin("ops", revision: 3)
+        let askWhileFetchingFetches = book.missed("ops", revision: 3)
+        #expect(!askWhileFetchingFetches)
+        #expect(!book.needsFetch("ops", revision: 3))
+        book.finish("ops", ticket: again, outcome: .photo)
+        #expect(!book.needsFetch("ops", revision: 3))
+        // A later drop is a new one, fetched again.
+        let laterDropFetches = book.missed("ops", revision: 3)
+        #expect(laterDropFetches)
+    }
+
+    @Test func anAskForAnOlderRevisionOrAMissingPhotoFetchesNothing() {
+        var book = FacePhotoBook()
+        let ticket = book.begin("ops", revision: 4)
+        book.finish("ops", ticket: ticket, outcome: .photo)
+        let olderRevisionFetches = book.missed("ops", revision: 3)
+        #expect(!olderRevisionFetches)
+        let unknownBotFetches = book.missed("ada", revision: 1)
+        #expect(!unknownBotFetches)
+
+        let none = book.begin("ada", revision: 2)
+        book.finish("ada", ticket: none, outcome: .absent)
+        let missingPhotoFetches = book.missed("ada", revision: 2)
+        #expect(!missingPhotoFetches)
+        #expect(!book.needsFetch("ada", revision: 2))
+    }
+
+    @Test func aFailedFetchIsAskedAgainAtTheNextRefreshOnly() {
+        var book = FacePhotoBook()
+        let ticket = book.begin("ops", revision: 3)
+        book.finish("ops", ticket: ticket, outcome: .failed)
+        #expect(book.state(of: "ops") == nil)
+        let failedFetchRefetches = book.missed("ops", revision: 3)
+        #expect(!failedFetchRefetches)
+        #expect(book.needsFetch("ops", revision: 3))
+    }
+
+    @Test func aFetchFromBeforeAResetChangesNothing() {
+        var book = FacePhotoBook()
+        let stale = book.begin("ops", revision: 3)
+        book.reset()
+        let fresh = book.begin("ops", revision: 3)
+        let staleFinished = book.finish("ops", ticket: stale, outcome: .failed)
+        #expect(!staleFinished)
+        #expect(book.state(of: "ops") == .fetching(revision: 3, ticket: fresh))
+        let freshFinished = book.finish("ops", ticket: fresh, outcome: .photo)
+        #expect(freshFinished)
+        #expect(book.state(of: "ops") == .shown(revision: 3))
+    }
+
+    @Test func keysKeepGatewaysApartAndReadBack() {
+        let a = FacePhotoBook.key(scope: "A", name: "ops", revision: 3)
+        let b = FacePhotoBook.key(scope: "B", name: "ops", revision: 3)
+        #expect(a != b)
+        let parsed = FacePhotoBook.parse(a, scope: "A")
+        #expect(parsed?.name == "ops" && parsed?.revision == 3)
+        #expect(FacePhotoBook.parse(a, scope: "B") == nil)
+        #expect(FacePhotoBook.parse("face://A/#3", scope: "A") == nil)
+        #expect(FacePhotoBook.parse("face://A/ops", scope: "A") == nil)
+        #expect(FacePhotoBook.parse("data:image/png;base64,AAAA", scope: "A") == nil)
     }
 }
