@@ -87,6 +87,11 @@ final class PillTextController {
     func typeForTesting(_ text: String) {
         coordinator?.typeForTesting(text)
     }
+
+    /// Composes words as an input method would (`-HERMES_IME`), redrawing between the steps.
+    func composeForTesting(_ script: String, redraw: () async -> Void) async -> [String] {
+        await coordinator?.composeForTesting(script, redraw: redraw) ?? []
+    }
     #endif
 
     // MARK: Dictation (`docs/voice.md` §5)
@@ -202,8 +207,20 @@ final class PillUITextView: UITextView {
     var pasteFiles: (([URL]) async -> Void)?
     var spokenText: (() -> String)?
     var onLayout: (() -> Void)?
+    /// An input method's word was chosen or cancelled (`docs/composer.md` §5).
+    var onCompositionEnd: (() -> Void)?
     let capsule = UIView()
     let emptyTextLabel = UILabel()
+
+    override func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
+        super.setMarkedText(markedText, selectedRange: selectedRange)
+        if markedTextRange == nil { onCompositionEnd?() }
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onCompositionEnd?()
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -371,6 +388,8 @@ final class PillNSTextView: NSTextView {
     var spokenText: (() -> String)?
     var onFocusChange: ((Bool) -> Void)?
     var onLayout: (() -> Void)?
+    /// An input method's word was chosen or cancelled (`docs/composer.md` §5).
+    var onCompositionEnd: (() -> Void)?
     let capsule = NSView()
     let emptyTextLabel = NSTextField(labelWithString: "")
 
@@ -421,6 +440,18 @@ final class PillNSTextView: NSTextView {
     override func layout() {
         super.layout()
         onLayout?()
+    }
+
+    // The text view reports a change only once a word is chosen; a cancelled one (Escape, or
+    // the input source switched) ends here without one.
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        if !hasMarkedText() { onCompositionEnd?() }
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onCompositionEnd?()
     }
 
     /// ⌘Return while a turn runs redirects it (docs/follow-ups.md §1).
@@ -496,6 +527,13 @@ struct PillTextView {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
+    /// The draft as the field shows it or the model holds it, compared by `ComposerFieldSync`.
+    struct Draft: Equatable {
+        var text: String
+        var references: [MessageReference]
+        var command: String?
+    }
+
     @MainActor
     final class Coordinator: NSObject {
         var parent: PillTextView
@@ -507,6 +545,10 @@ struct PillTextView {
         #endif
         /// Set while the field is changed from code, so the change isn't echoed back.
         private var isApplying = false
+        /// What the field and the model's draft last agreed on, and whether a draft from
+        /// elsewhere waits for the word being composed (`ComposerFieldSync`).
+        private var synced: Draft?
+        private var draftWaiting = false
         private var hoverTask: Task<Void, Never>?
 
         init(parent: PillTextView) {
@@ -546,6 +588,15 @@ struct PillTextView {
                 textView?.setSelectedRange(newValue)
                 #endif
             }
+        }
+
+        /// An input method is composing a word: its letters sit in the field as marked text.
+        var isComposing: Bool {
+            #if os(iOS)
+            textView?.markedTextRange != nil
+            #else
+            textView?.hasMarkedText() == true
+            #endif
         }
 
         // MARK: Pills
@@ -657,14 +708,30 @@ struct PillTextView {
         // MARK: Model ↔ field
 
         /// Puts the model's draft in the field when it changed from elsewhere (sent, dictated,
-        /// Edit and Resend).
+        /// Edit and Resend), never over a word an input method is composing.
         func apply(text: String, references: [MessageReference], command: String?) {
             guard let storage else { return }
-            let current = decode(storage)
-            guard current.text != text || current.references != references || current.command != command else { return }
+            let draft = Draft(text: text, references: references, command: command)
+            let field = Draft(decode(storage))
+            // A field that starts out matching its draft has agreed with it, so the first word
+            // composed in it isn't mistaken for a draft that changed meanwhile.
+            if field == draft { synced = draft }
+            switch ComposerFieldSync.redraw(draft: draft, field: field, synced: synced, composing: isComposing) {
+            case .applyDraft: write(draft)
+            case .waitForWord: draftWaiting = true
+            case .nothing, .takeField: break
+            }
+        }
+
+        private func write(_ draft: Draft) {
+            guard let storage else { return }
+            #if DEBUG
+            draftWrites += 1
+            #endif
+            draftWaiting = false
             isApplying = true
             let caretAtEnd = selection.location >= storage.length
-            storage.setAttributedString(attributedString(text: text, references: references, command: command))
+            storage.setAttributedString(attributedString(text: draft.text, references: draft.references, command: draft.command))
             if caretAtEnd || selection.location > storage.length {
                 selection = NSRange(location: storage.length, length: 0)
             }
@@ -688,18 +755,13 @@ struct PillTextView {
             // Typing isn't hovering: a pill that lands under the pointer doesn't preview.
             hoverTask?.cancel()
             var decoded = decode(storage)
-            if fromUser, decoded.command == nil, decoded.references.isEmpty, storage.length == (storage.string as NSString).length,
-               let command = typedCommand(decoded.text) {
-                isApplying = true
-                storage.setAttributedString(attributedString(text: "", references: [], command: command))
-                selection = NSRange(location: storage.length, length: 0)
-                resetTypingAttributes()
-                isApplying = false
-                decoded = (text: "", references: [], command: command)
+            let draft = Draft(text: parent.text, references: parent.references, command: parent.command)
+            let sync = ComposerFieldSync.fieldChanged(draft: draft, field: Draft(decoded), synced: synced, composing: isComposing, draftWaiting: draftWaiting)
+            if sync == .applyDraft { return write(draft) }
+            if sync != .waitForWord {
+                draftWaiting = false
+                pushToDraft(&decoded, fromUser: fromUser)
             }
-            if parent.references != decoded.references { parent.references = decoded.references }
-            if parent.text != decoded.text { parent.text = decoded.text }
-            if parent.command != decoded.command { parent.command = decoded.command }
             updatePlaceholder()
             updateQuery()
             invalidateSize()
@@ -712,6 +774,23 @@ struct PillTextView {
             fitTextViewHeight()
             layoutPills()
             #endif
+        }
+
+        private func pushToDraft(_ decoded: inout (text: String, references: [MessageReference], command: String?), fromUser: Bool) {
+            guard let storage else { return }
+            if fromUser, !isComposing, decoded.command == nil, decoded.references.isEmpty, storage.length == (storage.string as NSString).length,
+               let command = typedCommand(decoded.text) {
+                isApplying = true
+                storage.setAttributedString(attributedString(text: "", references: [], command: command))
+                selection = NSRange(location: storage.length, length: 0)
+                resetTypingAttributes()
+                isApplying = false
+                decoded = (text: "", references: [], command: command)
+            }
+            if parent.references != decoded.references { parent.references = decoded.references }
+            if parent.text != decoded.text { parent.text = decoded.text }
+            if parent.command != decoded.command { parent.command = decoded.command }
+            synced = Draft(decoded)
         }
 
         /// "/goal " typed by hand: the same command mode as picking it from the menu.
@@ -1153,6 +1232,57 @@ struct PillTextView {
             if let textView { textView.insertText(text, replacementRange: textView.selectedRange()) }
             #endif
         }
+
+        /// Times a redraw put the draft back in the field, for the drive's log.
+        private var draftWrites = 0
+
+        /// `-HERMES_IME`: composes words as an input method does, through the text input calls
+        /// themselves. `nihao>你好` marks n, ni, nih… one letter at a time, redrawing the composer
+        /// after each, then chooses 你好; `dajia>` leaves its letters marked; `|2` puts the caret at
+        /// 2. Logs the field after each step.
+        func composeForTesting(_ script: String, redraw: () async -> Void) async -> [String] {
+            focus()
+            var log: [String] = []
+            func record(_ step: String) {
+                let field = storage?.string ?? ""
+                log.append("IMELOG \(step) | text=\(field) caret=\(selection.location) marked=\(isComposing) draft=\(parent.text) draftWrites=\(draftWrites)")
+            }
+            record("start")
+            for token in script.split(separator: " ") {
+                if token.hasPrefix("|"), let caret = Int(token.dropFirst()) {
+                    selection = NSRange(location: caret, length: 0)
+                    await redraw()
+                    record("caret \(caret)")
+                    continue
+                }
+                let parts = token.split(separator: ">", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+                guard parts.count == 2, let textView else { continue }
+                var letters = ""
+                for letter in parts[0] {
+                    letters.append(letter)
+                    let caret = NSRange(location: (letters as NSString).length, length: 0)
+                    #if os(iOS)
+                    textView.setMarkedText(letters, selectedRange: caret)
+                    #else
+                    textView.setMarkedText(letters, selectedRange: caret, replacementRange: NSRange(location: NSNotFound, length: 0))
+                    #endif
+                    await redraw()
+                    record("marked \(letters)")
+                }
+                if parts[1].isEmpty { continue }
+                // Chosen as each platform's input methods choose: the Mac's replace the marked
+                // letters with the word, iOS's mark the word and unmark it.
+                #if os(iOS)
+                textView.setMarkedText(parts[1], selectedRange: NSRange(location: (parts[1] as NSString).length, length: 0))
+                textView.unmarkText()
+                #else
+                textView.insertText(parts[1], replacementRange: NSRange(location: NSNotFound, length: 0))
+                #endif
+                await redraw()
+                record("chose \(parts[1])")
+            }
+            return log
+        }
         #endif
     }
 }
@@ -1197,6 +1327,7 @@ extension PillTextView: UIViewRepresentable {
         view.pasteImages = { [weak coordinator] in coordinator?.parent.onPasteImages($0) }
         view.pasteFiles = { [weak coordinator] in await coordinator?.parent.onPasteFiles($0) }
         view.spokenText = { [weak coordinator] in coordinator?.spokenText() ?? "" }
+        view.onCompositionEnd = { [weak coordinator] in coordinator?.textChanged(fromUser: true) }
         view.onLayout = { [weak coordinator] in
             coordinator?.updatePlaceholder()
             coordinator?.updateCapsule()
@@ -1329,6 +1460,7 @@ extension PillTextView: NSViewRepresentable {
         textView.pasteFiles = { [weak coordinator] in await coordinator?.parent.onPasteFiles($0) }
         textView.spokenText = { [weak coordinator] in coordinator?.spokenText() ?? "" }
         textView.onLayout = { [weak coordinator] in coordinator?.layoutPills() }
+        textView.onCompositionEnd = { [weak coordinator] in coordinator?.textChanged(fromUser: true) }
         textView.onFocusChange = { [weak coordinator] focused in
             guard let coordinator, coordinator.parent.isFocused != focused else { return }
             DispatchQueue.main.async { coordinator.parent.isFocused = focused }
@@ -1410,3 +1542,9 @@ extension PillTextView.Coordinator: NSTextViewDelegate {
     }
 }
 #endif
+
+extension PillTextView.Draft {
+    init(_ decoded: (text: String, references: [MessageReference], command: String?)) {
+        self.init(text: decoded.text, references: decoded.references, command: decoded.command)
+    }
+}

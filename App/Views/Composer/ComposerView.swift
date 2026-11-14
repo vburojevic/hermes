@@ -48,6 +48,10 @@ struct ComposerView: View {
     @State private var field = PillTextController()
     @State private var peek: PillPeek?
     @State private var skillPeek: String?
+    #if DEBUG
+    /// Bumped by the `-HERMES_IME` drive to redraw the composer while a word is composed.
+    @State private var imeRedraws = 0
+    #endif
 
     private var roster: BotRoster? {
         conversation.isBotChat ? workspace.roster : nil
@@ -235,6 +239,25 @@ struct ComposerView: View {
             try? await Task.sleep(for: .milliseconds(300))
             field.typeForTesting(text)
         }
+        // `-HERMES_IME <script>` composes words as an input method does, `-HERMES_IME_AFTER
+        // <seconds>` after the composer appears (8), redrawing it after every letter, and writes
+        // the field after each step to `-HERMES_IME_LOG <path>` (docs/development.md).
+        .task {
+            guard let script = UserDefaults.standard.string(forKey: "HERMES_IME"), !script.isEmpty else { return }
+            UserDefaults.standard.removeObject(forKey: "HERMES_IME")
+            let delay = UserDefaults.standard.string(forKey: "HERMES_IME_AFTER").flatMap(Double.init) ?? 8
+            try? await Task.sleep(for: .seconds(delay))
+            focused.wrappedValue = true
+            try? await Task.sleep(for: .milliseconds(300))
+            let log = await field.composeForTesting(script) {
+                imeRedraws += 1
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            log.forEach { print($0) }
+            if let path = UserDefaults.standard.string(forKey: "HERMES_IME_LOG") {
+                try? (log.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+            }
+        }
         #endif
         .task(id: pathToken) {
             guard let token = pathToken else {
@@ -288,7 +311,10 @@ struct ComposerView: View {
 
 
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        #if DEBUG
+        let _ = imeRedraws
+        #endif
+        return VStack(alignment: .leading, spacing: 0) {
             if !conversation.queue.isEmpty || !conversation.gatewayQueued.isEmpty {
                 QueueTray(conversation: conversation)
                     .padding(.horizontal, 10)

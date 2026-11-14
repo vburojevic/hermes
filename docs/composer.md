@@ -180,6 +180,13 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
   chat on screen: the field outlives a switch to another chat.
 - **Drag and drop:** images dropped on the chat attach on every platform, where the chat can send
   pictures (elsewhere the drop is refused). Not built yet: dropping other files.
+- **Input methods** (Pinyin, Kana, Korean, the accent popup): the word being composed sits in
+  the field as marked text until it's chosen. The composer never writes the draft over it, so a
+  reply streaming in or a chat list update leaves the word and the caret where they are. The
+  Mac reports the field changed only when the word is chosen, so the draft catches up then (or
+  when it's cancelled); the iPhone and iPad report each letter. A draft changed from elsewhere
+  while a word is composed (sent, cleared, a reference inserted) goes into the field once the
+  word is chosen or cancelled, unless the field already shows it. `ComposerFieldSync` decides.
 
 ## 6. Acceptance checks
 
@@ -189,6 +196,9 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
 - Talk turns appear in the transcript like typed ones, marked Spoken.
 - Denied microphone permission never leaves the person stuck: Type Instead and End both work.
 - Nothing typed or attached is lost when a send fails: it is back in the field.
+- With Pinyin, while a reply streams: type 你好世界, put the caret after 你好 and compose "dajia".
+  The letters stay marked and the caret stays put; choosing 大家 gives 你好大家世界 with the caret
+  after 大家, on the Mac, iPhone and iPad (`-HERMES_IME`, [development.md](development.md)).
 - A PDF and another file attach from Files and send; Hermes receives both, and a file it refuses
   comes back with the reason in plain words (the mock's "refuseupload" and "toolarge" names).
 - After `POST /api/mock/close-sessions`, a PDF and another file still send; on a mock started with
