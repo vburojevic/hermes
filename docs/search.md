@@ -31,7 +31,7 @@ source: `hermes_cli/web_routers/sessions.py`.
 | `q` | The typed text, trimmed. Never sent empty. Each word is prefix-matched ("reconn" finds "reconnect"); quoted phrases match exactly |
 | `limit` | Hermes defaults to 20 and allows at most 100. The app asks for 40 (All, Chats, Tasks), 60 (Projects, filtered afterwards) and 10 per Bot |
 | `profile` | Whose chats: the gateway's own profile (from a `/p/<profile>` address) or none for the active one; a Bot's name for that Bot's chats |
-| `sources` / `exclude_sources` | Comma-separated sources (`cron`, `telegram`, `cli`…). Tasks uses `sources=cron`, Chats and Projects `exclude_sources=cron`. Hermes stores scheduled task runs with source `cron` (`SessionSearch.taskSource`) |
+| `sources` / `exclude_sources` | Comma-separated sources (`cron`, `telegram`, `cli`…). Tasks uses `sources=cron`; All, Chats, Projects and each Bot's search use `exclude_sources=cron`. Hermes stores scheduled task runs with source `cron` (`SessionSearch.taskSource`), and they show only under Tasks ([inbox.md](inbox.md) §5) |
 
 Hermes finds ID matches first (a pasted chat id finds that chat), then message content, then
 titles to fill the remaining places. Results are folded by compression lineage, so a compressed chat
@@ -63,11 +63,11 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
 
   | Chip | Search |
   |---|---|
-  | All | The gateway's profile, plus one search per Bot (in parallel), newest first by the time each row shows. Matching projects first |
+  | All | The gateway's profile, plus one search per Bot (in parallel), newest first by the time each row shows, without task runs. Matching projects first |
   | Chats | The gateway's profile, without task runs |
   | Projects | Project names that contain every typed word (local, from `projects.list`), then chats that belong to a project |
-  | Bots | One search per Bot; each row shows the Bot's face |
-  | Tasks | Task runs only (`sources=cron`) |
+  | Bots | One search per Bot, without task runs; each row shows the Bot's face |
+  | Tasks | Task runs only (`sources=cron`), without the empty ones: Hermes titles each run after its task, so a task's name finds runs with nothing in them (`ScheduledRuns.shown`). Titles that match while it searches come from the runs the list keeps, never from the chats |
 
 - **Count line:** "4 chats mention “reconnect”". A failed search shows the error there instead.
 - **Row** (`searchResultRow`): title (else the preview, else "Untitled chat") and time, the

@@ -35,19 +35,28 @@ public enum InboxShow: String, CaseIterable, Sendable {
     case otherPlatforms
     case scheduled
 
+    /// All Chats is every chat, and a scheduled run isn't one: runs show only under Scheduled
+    /// Tasks (`ScheduledRuns`).
     public func includes(_ origin: SessionOrigin) -> Bool {
         switch self {
         case .thisApp: origin == .thisApp
-        case .all: true
+        case .all: origin != .scheduled
         case .otherPlatforms: origin == .otherPlatform
         case .scheduled: origin == .scheduled
         }
     }
 
     /// Whether a chat is in the list under this choice. A chat the person pinned stays in the
-    /// default list wherever it came from: pinning is how they keep a chat in sight.
+    /// default list wherever it came from (pinning is how they keep a chat in sight), except a
+    /// scheduled run, which stays under Scheduled Tasks.
     public func shows(_ origin: SessionOrigin, pinned: Bool) -> Bool {
-        includes(origin) || (self == .thisApp && pinned)
+        includes(origin) || (self == .thisApp && pinned && origin != .scheduled)
+    }
+
+    /// Whether the list holds this session under this choice: by its origin, and never an empty
+    /// scheduled run.
+    public func shows(_ session: HermesSession) -> Bool {
+        !session.isEmptyScheduledRun && shows(session.origin, pinned: session.pinned)
     }
 }
 
