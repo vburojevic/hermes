@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import HermesKit
 
@@ -317,11 +318,21 @@ struct BoardTests {
         #expect(!answered)
     }
 
+    /// The answer is held until the timeout has ended the wait, then sent from another thread, so
+    /// the order is fixed. Racing two clocks failed when a busy test run held the timeout back.
     @Test func pingAnsweredLateFromAnotherThreadAfterTheTimeoutIsIgnored() async {
+        let held = Mutex<(@Sendable (Bool) -> Void)?>(nil)
         let answered = await awaitPingAnswer(within: .milliseconds(50)) { done in
-            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(300)) { done(true) }
+            held.withLock { $0 = done }
         }
         #expect(!answered)
-        try? await Task.sleep(for: .milliseconds(500))
+        let done = held.withLock { $0 }
+        #expect(done != nil)
+        await withCheckedContinuation { (sent: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                done?(true)
+                sent.resume()
+            }
+        }
     }
 }
