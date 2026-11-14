@@ -3086,6 +3086,9 @@ def main():
     parser.add_argument("--setup", metavar="STATES",
                         help="start with features not set up (setup.py): board-off, tidying-off, turn-isolation, no-driver, "
                              "gateway-stopped, update, docker, memory-provider, search-index…, comma-separated")
+    parser.add_argument("--group-counts", action="store_true",
+                        help="more group chats for the sidebar's numbers: shared Bots, a hidden and a deleted member, "
+                             "a 199-event room (chats.py)")
     parser.add_argument("--no-widgets", action="store_true",
                         help="a gateway without the hermes-app-widgets plugin (widgets.py)")
     args = parser.parse_args()
@@ -3102,6 +3105,7 @@ def main():
     CONFIG["plain_edits"] = args.plain_edits
     CONFIG["long_bot_chats"] = args.long_bot_chats
     CONFIG["seed_bot_chat"] = args.seed_bot_chat
+    CONFIG["group_counts"] = args.group_counts
     if args.token:
         CONFIG["token"] = args.token
     seed()

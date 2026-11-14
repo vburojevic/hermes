@@ -511,6 +511,18 @@ the next one (the dock, `docs/quick-actions.md` §1).
 pick; `-HERMES_CLARIFY_STEP 2` opens such a card at its second question with the first answered
 by its first pick, so its one-line summary shows without a click (the Mac).
 
+Bot Mode's numbers ([inbox.md](inbox.md) §5, [bots-groups-skills.md](bots-groups-skills.md) §2):
+`backend.py --group-counts` adds two group chats to Launch crew. Ada and Ops are in all three.
+"Design review" has four members: Ada, Ops, Scout (hidden in the mock's roster) and Intern, a
+member whose Bot no longer exists (Hermes keeps a room's members as created). "Release log" has
+199 events, so the next discussion in it lands past seq 200: `POST /api/mock/room-say
+{"room": "release-log", "text": "…"}` (with `X-Hermes-Session-Token`, printed at start) should
+show a count of 4 on its row, one for each member's message. The same post to `launch-crew` is the
+short room to compare it with. `POST /api/mock/routine-elsewhere {"profile": "writer"}` gives Ada
+unread routine news that leaves the rooms alone, and `POST /api/mock/drop-sockets {}` reconnects
+without moving any count. Mute a Bot or a group from its row's menu, and turn Bot Mode off and on
+in Settings, to check that a muted row keeps its grey count and every badge returns as it was.
+
 Widgets (`Tools/mock-hermes/widgets.py`, [widgets.md](widgets.md) §13) play the
 hermes-app-widgets plugin over both servers: "widgets" pages through every example (three per
 reply, "widgets 2"…), "widget <type>" shows one type's examples, "widget publish" an approval
