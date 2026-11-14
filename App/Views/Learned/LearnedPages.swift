@@ -16,7 +16,9 @@ struct LearnedPage: View {
     /// Set when the page sits inside another screen (Skills on the Mac): no title of its own.
     var embedded = false
 
-    /// A page pushed from code (Open Skill under the map).
+    /// The page pushed from here. Pushes are by item, never by value: Skills and Memory open this
+    /// page with `navigationDestination(isPresented:)`, and SwiftUI keeps such a page above every
+    /// page pushed by value, so a skill opened by value went under it and the page showed again.
     @State private var pushed: LearnedRoute?
     @State private var openedMemory: LearningNode?
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -76,9 +78,6 @@ struct LearnedPage: View {
         }
         .onChange(of: model.workspace.pendingLearnedRoute) { openPendingRoute() }
         .refreshable { await model.load() }
-        .navigationDestination(for: LearnedRoute.self) { route in
-            Self.page(for: route, model: model)
-        }
         .navigationDestination(item: $pushed) { route in
             Self.page(for: route, model: model)
         }
@@ -129,14 +128,14 @@ struct LearnedPage: View {
                     LearnedSectionTitle(title: String(localized: "New This Week"))
                     LearnedCard {
                         ForEach(model.newThisWeek) { skill in
-                            NavigationLink(value: LearnedRoute.skill(skill.id)) {
+                            Button { pushed = .skill(skill.id) } label: {
                                 LearnedSkillRow(skill: skill, subtitle: newSubtitle(skill), badge: .new)
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
-                NavigationLink(value: LearnedRoute.map) {
+                Button { pushed = .map } label: {
                     VStack(spacing: 8) {
                         LearningMapView(model: model, isPreview: true)
                             .frame(height: 250)
@@ -167,7 +166,7 @@ struct LearnedPage: View {
                     LearnedSectionTitle(title: String(localized: "Most Used"))
                     LearnedCard {
                         ForEach(model.mostUsed.prefix(3)) { skill in
-                            NavigationLink(value: LearnedRoute.skill(skill.id)) {
+                            Button { pushed = .skill(skill.id) } label: {
                                 LearnedSkillRow(skill: skill, subtitle: model.summary(of: skill), badge: skill.state == .stale ? .stale : .none)
                             }
                             .buttonStyle(.plain)
@@ -175,7 +174,7 @@ struct LearnedPage: View {
                     }
                 }
                 LearnedCard {
-                    NavigationLink(value: LearnedRoute.tidying) {
+                    Button { pushed = .tidying } label: {
                         HStack(spacing: 12) {
                             LearnedGlyph(symbol: "wand.and.sparkles")
                             VStack(alignment: .leading, spacing: 2) {
@@ -250,20 +249,20 @@ struct LearnedPage: View {
                             LearnedSectionTitle(title: String(localized: "New This Week"))
                             LearnedCard {
                                 ForEach(model.newThisWeek) { skill in
-                                    NavigationLink(value: LearnedRoute.skill(skill.id)) {
+                                    Button { pushed = .skill(skill.id) } label: {
                                         LearnedSkillRow(skill: skill, subtitle: newSubtitle(skill), badge: .new)
                                     }
                                     .buttonStyle(.plain)
                                 }
                                 ForEach(model.staleSkills.prefix(2)) { skill in
-                                    NavigationLink(value: LearnedRoute.skill(skill.id)) {
+                                    Button { pushed = .skill(skill.id) } label: {
                                         LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
                                     }
                                     .buttonStyle(.plain)
                                 }
                             }
                         }
-                        NavigationLink(value: LearnedRoute.tidying) {
+                        Button { pushed = .tidying } label: {
                             CuratorCard(model: model, showsCounts: false)
                         }
                         .buttonStyle(.plain)

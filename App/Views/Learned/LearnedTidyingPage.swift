@@ -6,6 +6,9 @@ import SwiftUI
 struct LearnedTidyingPage: View {
     let model: LearnedModel
 
+    /// A stale skill opened from here, pushed by item like every Learned page (`LearnedPage`).
+    @State private var pushed: LearnedRoute?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -32,6 +35,9 @@ struct LearnedTidyingPage: View {
         .refreshable {
             await model.load()
             await model.loadArchived()
+        }
+        .navigationDestination(item: $pushed) { route in
+            LearnedPage.page(for: route, model: model)
         }
         .modifier(LearnedMessages(model: model))
     }
@@ -69,7 +75,7 @@ struct LearnedTidyingPage: View {
                     }
                 }
                 ForEach(model.staleSkills) { skill in
-                    NavigationLink(value: LearnedRoute.skill(skill.id)) {
+                    Button { pushed = .skill(skill.id) } label: {
                         LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
                     }
                     .buttonStyle(.plain)
@@ -79,7 +85,7 @@ struct LearnedTidyingPage: View {
             LearnedSectionTitle(title: String(localized: "Stale"))
             LearnedCard {
                 ForEach(model.staleSkills) { skill in
-                    NavigationLink(value: LearnedRoute.skill(skill.id)) {
+                    Button { pushed = .skill(skill.id) } label: {
                         LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
                     }
                     .buttonStyle(.plain)
