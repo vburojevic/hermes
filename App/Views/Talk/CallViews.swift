@@ -92,6 +92,7 @@ struct CallSummaryCard: View {
     let record: CallRecord
     @Binding var showsTurns: Bool
     let onTalkAgain: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -112,7 +113,7 @@ struct CallSummaryCard: View {
                 }
                 Spacer(minLength: 0)
                 Button {
-                    withAnimation(Theme.snappy) { showsTurns.toggle() }
+                    withAnimation(reduceMotion ? nil : Theme.snappy) { showsTurns.toggle() }
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .semibold))
@@ -147,7 +148,7 @@ struct CallSummaryCard: View {
             }
             HStack(spacing: 8) {
                 Button {
-                    withAnimation(Theme.snappy) { showsTurns.toggle() }
+                    withAnimation(reduceMotion ? nil : Theme.snappy) { showsTurns.toggle() }
                 } label: {
                     Text("Transcript")
                         .font(.subheadline.weight(.semibold))
