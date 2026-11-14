@@ -469,6 +469,64 @@ struct MemoryProviderFormTests {
         #expect(form.changes(["api_key": ""]).isEmpty)
         #expect(form.changes(["mode": "local", "host": "http://nas:8000"]) == ["mode": .string("local"), "host": .string("http://nas:8000")])
     }
+
+    /// Shaped like Hermes's answer for Hindsight, which declares `api_url` and `api_key` once per
+    /// mode; Hermes also drops a field whose key is empty once trimmed.
+    private let repeated = MemoryProviderForm(json: JSONValue.parse(Data(#"""
+    {"name": "hindsight", "label": "Hindsight", "fields": [
+      {"key": "mode", "label": "Mode", "kind": "select", "description": "Connection mode", "placeholder": "", "required": false, "value": "cloud", "is_set": true,
+       "options": [{"value": "cloud", "label": "cloud"}, {"value": "local_embedded", "label": "local_embedded"}, {"value": "local_external", "label": "local_external"}], "url": "", "when": null},
+      {"key": "api_url", "label": "Api Url", "kind": "text", "description": "Hindsight Cloud URL", "placeholder": "", "required": false, "value": "https://api.hindsight.vectorize.io", "is_set": true, "options": [], "url": "", "when": {"mode": "cloud"}},
+      {"key": "api_key", "label": "Api Key", "kind": "secret", "description": "Hindsight Cloud key", "placeholder": "", "required": true, "value": "", "is_set": false, "options": [], "url": "", "when": {"mode": "cloud"}},
+      {"key": "api_url", "label": "Api Url", "kind": "text", "description": "Your Hindsight server", "placeholder": "", "required": false, "value": "http://localhost:8888", "is_set": true, "options": [], "url": "", "when": {"mode": "local_external"}},
+      {"key": "api_key", "label": "Api Key", "kind": "secret", "description": "Your server's key", "placeholder": "", "required": false, "value": "", "is_set": false, "options": [], "url": "", "when": {"mode": "local_external"}},
+      {"key": "", "label": "Nameless", "kind": "text", "value": "", "is_set": false, "options": []},
+      {"key": "   ", "label": "Blank", "kind": "text", "value": "", "is_set": false, "options": []},
+      {"key": " bank_id ", "label": "Bank Id", "kind": "text", "required": false, "value": "hermes", "is_set": true, "options": [], "when": null}
+    ]}
+    """#.utf8))!)
+
+    @Test func repeatedKeysAreKeptAndEmptyKeysDropped() {
+        #expect(repeated.fields.map(\.key) == ["mode", "api_url", "api_key", "api_url", "api_key", "bank_id"])
+    }
+
+    @Test func aRepeatedKeyShowsTheFieldForItsMode() {
+        let cloud = repeated.visibleFields(edits: [:])
+        #expect(cloud.map(\.key) == ["mode", "api_url", "api_key", "bank_id"])
+        #expect(cloud.first { $0.key == "api_url" }?.value == "https://api.hindsight.vectorize.io")
+        #expect(cloud.first { $0.key == "api_key" }?.required == true)
+
+        let local = repeated.visibleFields(edits: ["mode": "local_external"])
+        #expect(local.map(\.key) == ["mode", "api_url", "api_key", "bank_id"])
+        #expect(local.first { $0.key == "api_url" }?.value == "http://localhost:8888")
+        #expect(local.first { $0.key == "api_key" }?.required == false)
+
+        #expect(repeated.visibleFields(edits: ["mode": "local_embedded"]).map(\.key) == ["mode", "bank_id"])
+    }
+
+    @Test func twoShownFieldsWithOneKeyShowOneRowTheLast() throws {
+        let form = MemoryProviderForm(json: try #require(JSONValue.parse(Data(#"""
+        {"name": "p", "fields": [
+          {"key": "host", "label": "First", "kind": "text", "value": "a"},
+          {"key": "port", "label": "Port", "kind": "number", "value": "1", "when": {"host": "b"}},
+          {"key": "host", "label": "Second", "kind": "text", "value": "b"}
+        ]}
+        """#.utf8))))
+        let fields = form.visibleFields(edits: [:])
+        #expect(fields.map(\.label) == ["Port", "Second"])
+        #expect(Set(fields.map(\.id)).count == fields.count)
+        #expect(form.changes(["host": "c"]) == ["host": .string("c")])
+    }
+
+    @Test func aRepeatedKeySavesWhatItsModeShows() {
+        #expect(!repeated.isComplete(edits: [:]))
+        #expect(repeated.isComplete(edits: ["api_key": "hs-key"]))
+        #expect(repeated.isComplete(edits: ["mode": "local_external"]))
+        #expect(repeated.changes(["api_key": "hs-key"]) == ["api_key": .string("hs-key")])
+        #expect(repeated.changes(["mode": "local_external", "api_url": "http://localhost:8888"]) == ["mode": .string("local_external")])
+        #expect(repeated.changes(["mode": "local_external", "api_url": "http://nas:8888"])
+            == ["mode": .string("local_external"), "api_url": .string("http://nas:8888")])
+    }
 }
 
 @Suite("Gateway priority")
