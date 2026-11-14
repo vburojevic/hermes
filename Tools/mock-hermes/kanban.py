@@ -844,6 +844,9 @@ def events_socket(handler, query):
     with LOCK:
         events = EVENTS.get(slug, [])
         cursor = int(since) if since not in (None, "") else (events[-1]["id"] if events else 0)
+        latest = events[-1]["id"] if events else 0
+    # The upgrade bypasses the request log, so say when a client (re)connects and from where.
+    print(f"[kanban] events socket open: board {slug}, since {cursor}, latest {latest}", flush=True)
 
     def reader():
         while peer.alive:

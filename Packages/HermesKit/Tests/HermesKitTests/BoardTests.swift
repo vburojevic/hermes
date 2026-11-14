@@ -279,4 +279,49 @@ struct BoardTests {
         let log = BoardWorkerLog(exists: true, content: "one\n\ntwo\nthree\n  \nfour\n", truncated: false)
         #expect(log.lastLines(3) == ["two", "three", "four"])
     }
+
+    // The live board's keepalive ping (docs/board.md §1.2). URLSession's ping callback can run
+    // twice, which trapped the app, or not until the socket closes, which on a half-open
+    // connection is never: the wait must end once either way.
+
+    @Test func pingAnsweredOnce() async {
+        let answered = await awaitPingAnswer(within: .seconds(5)) { done in done(true) }
+        #expect(answered)
+    }
+
+    @Test func pingAnswerArrivingTwiceIsReadOnce() async {
+        let answered = await awaitPingAnswer(within: .seconds(5)) { done in
+            done(true)
+            done(false)
+        }
+        #expect(answered)
+    }
+
+    @Test func pingAnswersRacingOnManyThreadsResumeOnce() async {
+        let answered = await awaitPingAnswer(within: .seconds(5)) { done in
+            DispatchQueue.concurrentPerform(iterations: 16) { _ in done(true) }
+        }
+        #expect(answered)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func pingNeverAnsweredTimesOut() async {
+        let clock = ContinuousClock()
+        let start = clock.now
+        let answered = await awaitPingAnswer(within: .milliseconds(200)) { _ in }
+        #expect(!answered)
+        #expect(clock.now - start < .seconds(5))
+    }
+
+    @Test func pingFailureReadsAsUnanswered() async {
+        let answered = await awaitPingAnswer(within: .seconds(5)) { done in done(false) }
+        #expect(!answered)
+    }
+
+    @Test func pingAnsweredLateFromAnotherThreadAfterTheTimeoutIsIgnored() async {
+        let answered = await awaitPingAnswer(within: .milliseconds(50)) { done in
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(300)) { done(true) }
+        }
+        #expect(!answered)
+        try? await Task.sleep(for: .milliseconds(500))
+    }
 }

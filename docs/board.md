@@ -91,10 +91,11 @@ After creating one it writes `board_slug` back with `projects.update`.
 ### 1.2 Live updates
 
 The event socket sends `{events, cursor}` whenever cards change, and nothing while the board is
-quiet, so the app pings every 25 s to notice a dead connection. It authenticates like `/api/ws`:
-`?token=` for a session token, or a one-time `?ticket=` from `POST /api/auth/ws-ticket` for cookie
-sign-ins. Each batch refetches the touched cards' details and patches them into the board in
-place; heartbeats only move a card's "last heard" time. When the socket can't connect (a proxy
+quiet, so the app pings every 25 s to notice a dead connection. A ping that fails or isn't answered
+within 10 s closes the socket, and the board polls and reconnects as below. It authenticates like
+`/api/ws`: `?token=` for a session token, or a one-time `?ticket=` from `POST /api/auth/ws-ticket`
+for cookie sign-ins. Each batch refetches the touched cards' details and patches them into the board
+in place; heartbeats only move a card's "last heard" time. When the socket can't connect (a proxy
 that drops it, an older gateway), the board polls `GET /board` every 5 s for half a minute, then
 tries the socket again. The socket stays open while any board or card view is on screen, and closes
 2 s after the last one goes.
