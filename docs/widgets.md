@@ -45,6 +45,7 @@ Without the `hermes-app-widgets` plugin there are no widgets: replies are Markdo
 `::widget{id="w_…" alt="…"}` on its own line, outside code fences (`WidgetDirective`,
 `ReplySplitter`). Leading and trailing spaces are ignored; `id` is required, `alt` is optional and
 cut at 140 characters; unknown attributes are ignored; only double quotes, with `\"` for a quote.
+Attributes are separated by spaces or by a comma, as models often write them; the plugin reads both.
 
 - The reply's text is split at directive lines before Markdown parsing; the text between them is
   Markdown as before. A reply without `::widget{` takes the old path untouched.
@@ -52,6 +53,11 @@ cut at 140 characters; unknown attributes are ignored; only double quotes, with 
   directive shows its `alt` as text.
 - While a reply streams, a last line that could still become a directive (`::wid`) is held back,
   so `::widget{…}` never shows raw.
+- A directive whose widget was never stored (its create was refused, or the model made the id up)
+  keeps its place: "Couldn't load this widget" with its `alt` (`WidgetMissingCard`). The rest of
+  the reply always shows.
+- Words written in the same message as only widget calls are the reply, not narration: a refused
+  call is not a step, so the words read as the answer, in full, also when the chat is opened again.
 
 ### The payload
 
@@ -73,6 +79,24 @@ a ` ```widget ` block holding the payload, after rewriting any other ` ```widget
 text to ` ```json `. The app draws inline blocks only in routine deliveries on a gateway with the
 plugin. Anywhere else a ` ```widget ` fence is code, except in Debug builds or with Settings →
 Developer → Render Inline Widgets (§11).
+
+A task's agent sometimes types a payload into its report instead of calling the tool. Plugin 1.4.0
+makes such a ` ```widget ` fence, or a ` ```json ` fence holding a payload, the way the tool would:
+its own id and revision, the same checks, then an inline block. One that can be answered, needs a
+signature, fails the checks or comes after the third becomes its plain text, so only the tool makes
+a card a person acts on. With an older plugin, or none, a routine delivery reads such a fence as its
+`fallback_text` (or title) with "Shown as text", never as code and never as a card
+(`ReplySplitter` `typedAsText`, `Parts.fallbackText`). JSON that isn't a widget (no `type`, or none
+of `v`, `fallback_text` or a widget id) stays code, and outside routine deliveries every fence
+stays code.
+
+A smaller model can stop halfway through a payload or leave its words out. Where inline blocks
+draw, or in a routine delivery, a payload that can't be read keeps its place as "Couldn't show this
+card." with "Shown as text", and the reply's words around it stay (`ReplySegment.unreadable`). That
+is a ` ```widget ` block that isn't a JSON object, a ` ```json ` block that names a `type` and a `v`
+or `fallback_text` but doesn't parse or has no words, and either one left open when the reply ends.
+It is never raw JSON and never a blank reply; Copy and Listen skip it. While a reply streams, an
+open block waits.
 
 ## 3. Reading a payload
 
@@ -400,6 +424,8 @@ widgets.
   and reads as a widget; all 117 invalid fixtures fail the strict checks, and the client draws
   only the four the fail-closed table forgives; the table itself, one rule at a time.
 - `WidgetDirectiveTests`: directives, fences, streaming, inline blocks and tool results.
+- `WidgetMisfireTests`: a directive written with commas, a payload typed into a routine's delivery,
+  and a reply in the same message as its widget call (§2).
 - `WidgetAnswerTests`: the answer message, defusing, the round trip and batches.
 - `WidgetPrivacyTests`: when a signature is needed, the signing input against the plugin's,
   previews, what the transcript cache keeps, and the `/app-widgets` client.
@@ -412,11 +438,17 @@ messages, signatures checked for real. Its words are in its docstring and
 "widget silent" (Try Again), "widget private", "widget gateway image", "widget private
 image" (pictures kept on the gateway, §9) and "widget missing image" (one that isn't there),
 "widget fence", "widget unknown", "widget invalid", "widget suggestions", "widget wide" and
-"widget wide table" (one of everything long, §9), "Weather today?" (a lookup, `widget_examples`,
+"widget wide table" (one of everything long, §9), "widget refused" (a refused create whose reply
+names the widget anyway, the directive's attributes split by a comma) and "widget refused inline"
+(the same reply in one message with the call), "Weather today?" (a lookup, `widget_examples`,
 then the weather card, as an agent with plugin 1.3.0's rules answers), and in a marked room the
-same words. Over the socket
-a chat the app didn't mark gets each widget's `fallback_text`, as the plugin's
-`transform_llm_output` gives it. `POST
+same words. In a Bot Chat, "widget routine" runs the Bot's Daily plan routine now and delivers its
+report a moment later with the widget as an inline block; "widget routine json" is a report whose
+agent typed the payload as a ` ```json ` block, delivered as 1.4.0 makes it; "widget routine json
+old" is the same as 1.3.0 left it; "widget routine broken" is a report whose payload stops
+halfway; "widget routine directive" repeats the stored widget's directive in the Bot's reply, and
+"widget routine missing" names one that was never stored (§2). Over the socket a chat the app
+didn't mark gets each widget's `fallback_text`, as the plugin's `transform_llm_output` gives it. `POST
 /api/mock/widget-answer {id, action}` answers from another device. `--no-widgets` leaves the
 plugin out. Every payload, update and resolution the mock makes passes the plugin's own validator.
 
@@ -440,6 +472,11 @@ light, dark and Increase Contrast:
 - "widget checklist": ticks show at once with "not confirmed yet", go as one message 5 s later.
 - "widget fence" stays code; "widget unknown" and "widget invalid" read as text with "Shown as
   text" (the widget menu says why).
+- In a Bot Chat, "widget routine" and "widget routine json": the report's card; "widget routine
+  json old": the report's words with "Shown as text", no code; "widget routine broken": the
+  report's words with "Couldn't show this card." between them, no code; "widget routine missing" and
+  "widget refused": "Couldn't load this widget" with the alt, the words around it shown; "widget
+  refused inline": the reply as the answer, also after the chat is opened again.
 - "widget private": the lock on the card, nothing of it in the chat list, the card blurred in the
   app switcher; the transcript cache (`Caches/Transcripts`) has no payload for it.
 - "widget gateway image": the media, guide step and flashcard pictures show, and so does the

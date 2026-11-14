@@ -75,7 +75,8 @@ extension AppPlugin {
         words: pushWords
     )
 
-    /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.3.0 keeps a
+    /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.4.0 makes a
+    /// widget a routine typed into its report the way the tool does, with the same access. 1.3.0 keeps a
     /// chat Hermes compacted into a new session the app's, says that a short question ("Weather
     /// today?") gets its widget and tells marked chats so again, with the same access, so the app
     /// moves every profile to it quietly. 1.2.2 is 1.2.1
@@ -91,7 +92,7 @@ extension AppPlugin {
         capabilities: ["1.0.0": widgetsAccess(since111: false), "1.1.0": widgetsAccess(since111: false),
                        "1.1.1": widgetsAccess(since111: true), "1.2.0": widgetsAccess(since111: true),
                        "1.2.1": widgetsAccess(since111: true), "1.2.2": widgetsAccess(since111: true),
-                       "1.3.0": widgetsAccess(since111: true)],
+                       "1.3.0": widgetsAccess(since111: true), "1.4.0": widgetsAccess(since111: true)],
         moments: [.ask, .whatsNew, .checklist],
         words: widgetsWords
     )

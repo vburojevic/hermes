@@ -530,7 +530,14 @@ flashcard with one, then the reply's own Markdown image of the first file at a h
 backend's `/api/fs/download` serves them as PNGs drawn in `inspector.py`, answers 404 "File not
 found" for a missing file and 403 "Path is outside the managed read boundary" outside the
 project), "widget private image" (the same, private), "widget missing image" (a media card whose
-file isn't there), "widget fence" (an agent-typed block, shown as code), "widget unknown",
+file isn't there), "widget fence" (an agent-typed block, shown as code), "widget refused" (a
+refused create whose reply names the widget anyway, with a comma between the directive's
+attributes) and "widget refused inline" (that reply in one message with the call), "widget
+routine" in a Bot Chat (the Bot's Daily plan routine runs now and its report arrives with the
+widget; "widget routine json" when its agent typed the payload as a json block, as plugin 1.4.0
+delivers it, "widget routine json old" as 1.3.0 left it, "widget routine broken" when the payload
+stops halfway, "widget routine directive" and "widget routine missing" when the Bot's reply names a
+stored widget or one never stored), "widget unknown",
 "widget invalid", "widget suggestions" and "widget wide" (everything long in one reply: a long
 inline code path and name, a wide code block, a details card with long labels, values and a long
 state tag, a snippet and an output with lines of over 200 characters; nothing in it may widen the

@@ -346,7 +346,9 @@ and remove it like `hermes-app-push` (§2–§4), in the root and every profile:
 at once, and the tools and prompt section from each chat's next start. The app installs and updates
 it like the push plugin (§2.1), pinned in `AppPlugin.widgets` (1.2.0: the everyday cards' fields; since
 1.1.1 Bot group chats use its `room` command, and the app marks every chat it knows with one
-`session` call).
+`session` call). 1.4.0 makes a widget a routine typed into its report the way the tool makes it,
+with the same access; until the pin moves to it, the app reads such a payload as its words (§6.1,
+[widgets.md](widgets.md) §2).
 
 ### 6.1 What it uses in Hermes
 
@@ -356,7 +358,7 @@ it like the push plugin (§2.1), pinned in `AppPlugin.widgets` (1.2.0: the every
 | Prompt section | `hermes-app-widgets`, ≤ 4,000 characters | The rules and one line per type, only in the app's sessions. Widgets are the default: Bots use the matching one unprompted |
 | Skill | `hermes-app-widgets:widgets` | The full guide (`agent-usage.md`) |
 | Hooks | `pre_llm_call` | Once per app chat whose system prompt predates its widgets (a long-lived Bot Chat), the same rule as turn context |
-| | `transform_llm_output` | Before a reply is stored: widget fences become `json`; each widget line stays (the app), becomes an inline block (a scheduled task delivering to the app) or becomes the widget's plain text (everyone else) |
+| | `transform_llm_output` | Before a reply is stored: widget fences become `json`; each widget line stays (the app), becomes an inline block (a scheduled task delivering to the app) or becomes the widget's plain text (everyone else). Since 1.4.0, in a scheduled task delivering to the app, a payload the agent typed (a `widget` fence, or a `json` fence holding one) is made by the tool and becomes an inline block, or its plain text when it can be answered, needs a signature or fails the checks |
 | | `pre_gateway_dispatch` | On messaging platforms, a plain answer to the one open widget ("check tomatoes") becomes its action |
 | | `subagent_start` | Helpers and sub-agents get no widgets |
 | Command | `/app-widgets <command> <json>` | The app marks its chats (`session`) and Bot group chats (`room`), refreshes payloads (`get`) and registers signing keys (`keys.register`); `status` |

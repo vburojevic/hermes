@@ -28,6 +28,18 @@ Words in a message:
   widget missing image         a media widget whose gateway picture isn't there (404)
   widget links                 a metric whose note has an https address (a link, asks first) and an http one (text)
   widget fence                 an agent-typed ```widget fence in a normal reply (it must stay code)
+  widget routine               in a Bot Chat: the Bot runs its Daily plan routine now, and its report arrives a
+                               moment later with the widget as an inline block (a private stack with a recipe)
+  widget routine json          the routine's agent typed the payload as a ```json block, which plugin 1.4.0
+                               makes into a widget: the same delivery
+  widget routine json old      the same, as plugin 1.3.0 left it: a ```json block, which the app shows as its words
+  widget routine broken        the agent stopped halfway through the payload: a cut-off ```json block between
+                               the report's words, which no plugin can make into a widget
+  widget routine directive     the stored widget's directive repeated in the Bot's own reply
+  widget routine missing       the routine's create was refused; the Bot's reply names a widget never stored
+  widget refused               the widget call refused, and the reply naming it anyway with a comma between
+                               the directive's attributes: its alt shows in its place
+  widget refused inline        the same reply written in one message with the call, and the turn ending there
   widget unknown               a widget of a type this app doesn't know (a newer plugin)
   widget invalid               a payload missing a required field (shown as text, with why)
   widget suggestions           a reply ending in suggested follow-ups
@@ -705,6 +717,21 @@ def script(text, session="", producer=None):
         _, raw = examples("metric")[0]
         block = json.dumps({**raw, "id": "w_fence00001", "rev": 1}, indent=2, ensure_ascii=False)
         return [("text", f"Here's the payload I'd send, as JSON:\n\n```widget\n{block}\n```")]
+    if re.search(r"\bwidget refused\b", lower):
+        # The widget call refused (a field the type doesn't have), and the reply naming a widget anyway,
+        # its attributes split by a comma: the id was never stored (docs/widgets.md §2).
+        raw = {"type": "checklist", "v": 1, "title": "Today", "fallback_text": "Today: stretch, then water the plants.",
+               "items": [{"id": "stretch", "label": "Stretch", "done": False}]}
+        steps.append(("tool", {"op": "create", "payload": raw},
+                      dump({"error": 'unknown field "items[0].done"', "stored": False})))
+        reply = ("Here's today's list.\n\n"
+                 '::widget{id="w_today01", alt="Today: stretch, then water the plants."}\n\n'
+                 "Tick them off as you go.")
+        if re.search(r"\bwidget refused inline\b", lower):
+            # The reply written in the same message as the call, and nothing after it: the turn ends
+            # on the refusal.
+            return [("said", reply, {"op": "create", "payload": raw}, steps[-1][2]), ("text", "")]
+        return steps + [("text", reply)]
     if "unknown" in lower:
         _, raw = examples("metric")[0]
         payload = stored({**raw, "type": "hologram", "fallback_text": "Revenue today: €1,240, up 12% on last Monday."})
@@ -1105,16 +1132,126 @@ def play_bot_chat(sid, text):
             args, outcome, *named = rest
             B["tool"](sid, stored, named[0] if named else "widget", args, outcome, 0.3,
                       args.get("op") or args.get("type") or args.get("query"))
+        elif kind == "said":
+            said_with_call(sid, stored, *rest)
         else:
             answer = rest[0] if marked(sid, stored) else as_text(rest[0])
+            if not answer:
+                continue
             if B["stream"](sid, answer) is False:
                 return B["finish"](sid, stored, answer, status="interrupted")
     return B["finish"](sid, stored, answer)
 
 
+def said_with_call(sid, stored, text, args, outcome):
+    """Text and a widget call in one assistant message, as a model writes them when it says the
+    reply first and calls the tool after it."""
+    B["stream"](sid, text)
+    call = f"call_{secrets.token_hex(4)}"
+    B["add_message"](stored, "assistant", text, finish_reason="tool_calls",
+                     tool_calls=[{"id": call, "type": "function", "function": {"name": "widget", "arguments": json.dumps(args)}}])
+    B["emit"](sid, "tool.start", {"tool_id": call, "name": "widget", "context": args.get("op"), "args": args})
+    time.sleep(0.3)
+    B["add_message"](stored, "tool", outcome, tool_call_id=call, tool_name="widget")
+    B["emit"](sid, "tool.complete", {"tool_id": call, "name": "widget", "args": args, "duration_s": 0.3,
+                                     **B["tool_complete_fields"]("widget", outcome, 0.3)})
+
+
 def inline_block(payload):
     """A widget as the plugin writes it into a reply for a marked room: an inline block."""
     return "```widget\n" + dump(payload) + "\n```"
+
+
+# ---------------------------------------------------------------- a Bot's daily routine
+
+ROUTINE = re.compile(r"\bwidget routine(?: (json old|json|directive|missing|broken))?\b")
+
+
+def routine_plan(producer):
+    """The routine's widget as the agent sends it: a private stack whose second part is a recipe
+    (a guide with what it needs and how much), today's date in its subtitle."""
+    moment = now()
+    _, guide = examples("guide")[0]
+    guide.pop("__producer", None)
+    guide.pop("source", None)
+    guide = {**guide, "ref": "lunch", "title": "Lunch: " + guide["title"].lower(), "sensitivity": "private",
+             "as_of": rfc3339(moment)}
+    return {
+        "type": "stack", "v": 1, "title": "Daily plan", "subtitle": "Daily at 7 AM · " + moment.strftime("%A"),
+        "icon": "fork.knife", "as_of": rfc3339(moment), "sensitivity": "private",
+        "schedule": {"label": "Daily at 7 AM", "task": "daily-plan"}, "tag": "Scheduled",
+        "children": [
+            {"ref": "today", "type": "summary", "v": 1, "title": "Today", "icon": "sun.horizon.fill",
+             "as_of": rfc3339(moment), "sensitivity": "private", "kind": "brief",
+             "tldr": "A light day: lunch at home, a walk after 5 and nothing to buy.",
+             "points": [{"text": "Lunch is the satay bowl, 25 minutes", "emphasis": "satay bowl"},
+                        {"text": "Everything for it is in the kitchen", "state": "ok"}],
+             "fallback_text": "Today: lunch at home, a walk after 5 and nothing to buy."},
+            guide,
+        ],
+        "fallback_text": "Daily plan. Today: lunch at home, a walk after 5 and nothing to buy. Lunch: chicken satay bowl, 25 minutes.",
+        "__producer": producer,
+    }
+
+
+def typed_payload(raw):
+    """The payload as an agent types it out when it writes the widget instead of calling the tool:
+    ids of its own making (with underscores, which the tool never uses), rev and producer copied
+    from blocks it has seen, and its parts without a producer."""
+    payload = copy.deepcopy(raw)
+    producer = payload.pop("__producer")
+    payload = {**payload, "id": "w_dp_" + now().strftime("%a%H%M").lower(), "rev": 1, "producer": producer}
+    for child in payload["children"]:
+        child["id"] = payload["id"] + "_" + child.pop("ref")[0]
+    return order(payload)
+
+
+def routine_turn(sid, text):
+    """"widget routine …" in a Bot Chat: the Bot runs its Daily plan routine now and the routine's
+    output arrives the way the plugin delivers it (cron to the app). ``json`` is a routine whose
+    agent typed the payload as a json block, which plugin 1.4.0 stores and delivers as a widget
+    (``json old``: 1.3.0 left it as code; ``broken``: cut off halfway, so no plugin can read it);
+    ``directive`` and ``missing`` have the Bot repeat the
+    widget's directive in its own reply, for a stored widget and for one whose create was refused."""
+    runtime = B["RUNTIME"][sid]
+    stored = B["ensure_row"](sid)
+    profile = runtime["profile"]
+    B["begin_turn"](sid, stored, text, B["add_message"])
+    variant = ROUTINE.search(text.lower()).group(1) or "block"
+    producer = {"name": B["bot_title"](profile)[:40], "bot": "hermes" if B["PROFILES"][profile]["is_default"] else profile}
+    raw = routine_plan(producer)
+    title = "Daily plan"
+    reply = "Your **daily plan** is in: a light day, and lunch is the satay bowl."
+    if variant == "json old":
+        output = "Here's your plan for today.\n\n```json\n" + json.dumps(typed_payload(raw), indent=2, ensure_ascii=False) + "\n```"
+    elif variant == "broken":
+        # A smaller model stops halfway through the payload: the block holds half of it, so
+        # neither plugin nor app can read it, and the words after it still arrive.
+        typed = json.dumps(typed_payload(raw), indent=2, ensure_ascii=False)
+        output = ("Here's your plan for today.\n\n```json\n" + typed[:len(typed) // 2] + "\n```"
+                  + "\n\nLunch is the satay bowl, and the rest of the day is clear.")
+    elif variant == "missing":
+        # The routine's create was refused ("stored": false), so the plugin wrote the directive's alt
+        # in its place; the Bot's reply repeats the directive, which no widget answers.
+        typed = typed_payload(raw)
+        output = "Here's your plan for today.\n\nDaily plan: lunch is the satay bowl"
+        reply = ("Your **daily plan** is in.\n\n" + f'::widget{{id="w_{typed["id"][5:]}Lost" alt="Daily plan: lunch is the satay bowl"}}'
+                 + "\n\nLunch is the satay bowl, and the rest of the day is clear.")
+    else:
+        # For ``json``, plugin 1.4.0 creates what the agent typed (its ids, rev and producer set by the
+        # tool), so the delivery is the same block the tool's widget would have made.
+        payload, refs = prepare(raw)
+        with LOCK:
+            payload["id"], payload["rev"] = unused_id(), 1
+            payload = order(payload)
+            WIDGETS[payload["id"]] = {"revisions": [payload], "claims": {}, "answered": {}, "children": refs, "session": ""}
+        output = "Here's your plan for today.\n\n" + inline_block(payload)
+        if variant == "directive":
+            reply = "Your **daily plan** is in.\n\n" + directive(payload) + "\n\nLunch is the satay bowl, and the rest of the day is clear."
+    answer = "Running Daily plan now."
+    B["stream"](sid, answer)
+    threading.Timer(1.5, B["deliver_routine"], args=(profile, title, output, reply)).start()
+    return B["finish"](sid, stored, answer)
 
 
 def room_turn(room, text):
@@ -1235,6 +1372,8 @@ def install_backend(backend_globals, chats, push=None):
     original_bot_turn = backend_globals["run_turn"]
 
     def run_turn(sid, text):
+        if matches(text) and ROUTINE.search(text.lower()):
+            return routine_turn(sid, text)
         if matches(text):
             return play_bot_chat(sid, text)
         return original_bot_turn(sid, text)
