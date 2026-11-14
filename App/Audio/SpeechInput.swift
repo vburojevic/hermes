@@ -46,13 +46,23 @@ actor SpeechInput {
         case unavailable(String)
     }
 
-    /// The transcriber with its model installed, and the audio format it wants.
+    /// The transcriber's model installed, and the audio format it wants. It carries what makes
+    /// the transcriber, not the transcriber itself: a module belongs to the first analyzer it
+    /// joins, and handing it to another one traps in Speech (`SpeechAnalyzer.setModules(_:)`:
+    /// "Modules cannot be reused from a different analyzer"), even after the first has finished.
     struct Prepared: @unchecked Sendable {
-        var modules: [any SpeechModule]
+        var model: Model
+        var locale: Locale
         var format: AVAudioFormat
         /// Debug: the simulated microphone's clips have their words written beside them, for
         /// simulators, which can't run the speech model.
         var scripted = false
+
+        /// A new transcriber for one analyzer. Cheap: the analyzer's model retention keeps the
+        /// model loaded between analyzers.
+        nonisolated func makeModules() -> [any SpeechModule] {
+            scripted ? [] : [SpeechInput.transcriber(model, locale: locale)]
+        }
     }
 
     enum Failure: LocalizedError {
@@ -113,10 +123,10 @@ actor SpeechInput {
     /// the session switches to recording (the format can't be worked out against a route with
     /// no input). `progress` reports a download (0…1) when one is needed.
     nonisolated static func prepare(_ configuration: Configuration, progress: @escaping @Sendable (Double) -> Void) async throws -> Prepared {
-        let modules = try await modules(for: configuration, progress: progress)
+        let (modules, locale) = try await modules(for: configuration, progress: progress)
         for attempt in 0..<4 {
             if let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) {
-                return Prepared(modules: modules, format: format)
+                return Prepared(model: configuration.model, locale: locale, format: format)
             }
             // Spoken clips bring their own words: no need to wait for a model that isn't coming.
             if AudioGraph.isSimulated { break }
@@ -126,7 +136,9 @@ actor SpeechInput {
         #if DEBUG
         if !AudioGraph.simulatedInput.isEmpty {
             logger.info("no analyzer format here: the simulated microphone's clips bring their words")
-            return Prepared(modules: [], format: AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!, scripted: true)
+            return Prepared(model: configuration.model, locale: locale,
+                            format: AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!,
+                            scripted: true)
         }
         #endif
         let status = await AssetInventory.status(forModules: modules)
@@ -145,14 +157,28 @@ actor SpeechInput {
 
     /// Like `prepare`, but only when the model is already on the device: nothing is downloaded.
     nonisolated static func prepareIfInstalled(_ configuration: Configuration) async -> Prepared? {
-        guard let modules = try? await modules(for: configuration, install: false, progress: { _ in }),
+        guard let (modules, locale) = try? await modules(for: configuration, install: false, progress: { _ in }),
               let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) else { return nil }
-        return Prepared(modules: modules, format: format)
+        return Prepared(model: configuration.model, locale: locale, format: format)
     }
 
-    nonisolated private static func modules(for configuration: Configuration, install: Bool = true, progress: @escaping @Sendable (Double) -> Void) async throws -> [any SpeechModule] {
+    /// New modules for `configuration` with their model installed, and the locale they were made
+    /// for. They belong to whichever analyzer they join first.
+    nonisolated private static func modules(for configuration: Configuration, install: Bool = true,
+                                            progress: @escaping @Sendable (Double) -> Void) async throws -> (modules: [any SpeechModule], locale: Locale) {
         let locale = await DictationTranscriber.supportedLocale(equivalentTo: configuration.locale) ?? Locale(identifier: "en-US")
-        let transcriber: DictationTranscriber = switch configuration.model {
+        let modules: [any SpeechModule] = [transcriber(configuration.model, locale: locale)]
+        if let request = try await AssetInventory.assetInstallationRequest(supporting: modules) {
+            guard install else { throw Failure.modelUnavailable }
+            let watcher = ProgressWatcher(request.progress, report: progress)
+            defer { watcher.stop() }
+            try await request.downloadAndInstall()
+        }
+        return (modules, locale)
+    }
+
+    nonisolated private static func transcriber(_ model: Model, locale: Locale) -> DictationTranscriber {
+        switch model {
         case .conversation:
             // Talk: settled often, so a word said over the Bot comes back in about 0.35 s (the
             // general `SpeechTranscriber` reports every second, untimed), with each settled
@@ -164,20 +190,12 @@ actor SpeechInput {
             DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [.punctuation, .emoji],
                                  reportingOptions: [.volatileResults], attributeOptions: [])
         }
-        let modules: [any SpeechModule] = [transcriber]
-        if let request = try await AssetInventory.assetInstallationRequest(supporting: modules) {
-            guard install else { throw Failure.modelUnavailable }
-            let watcher = ProgressWatcher(request.progress, report: progress)
-            defer { watcher.stop() }
-            try await request.downloadAndInstall()
-        }
-        return modules
     }
 
     /// The words of a whole recording, on the device: for a voice message whose transcriber
     /// joined after it had started (the model was still getting ready).
     nonisolated static func transcribe(file url: URL, configuration: Configuration) async throws -> String {
-        let modules = try await modules(for: configuration, install: false, progress: { _ in })
+        let modules = try await modules(for: configuration, install: false, progress: { _ in }).modules
         let file = try AVAudioFile(forReading: url)
         let analyzer = SpeechAnalyzer(modules: modules)
         if !configuration.contextualStrings.isEmpty {
@@ -205,7 +223,8 @@ actor SpeechInput {
         #if DEBUG
         if prepared.scripted { return try await startScripted(on: graph, format: prepared.format) }
         #endif
-        let modules = prepared.modules
+        // New modules for this analyzer: ones from an earlier recording would trap here.
+        let modules = prepared.makeModules()
         let format = prepared.format
         let context = AnalysisContext()
         if !configuration.contextualStrings.isEmpty {
