@@ -80,7 +80,7 @@ public struct WidgetChatFacts: Hashable, Sendable {
                     switch segment {
                     case .widget(let directive): directive.id
                     case .inline(let json): json["id"]?.stringValue
-                    case .markdown: nil
+                    case .markdown, .typed, .unreadable: nil
                     }
                 }
                 for id in ids where seen.insert(id).inserted { facts.shown.append(id) }

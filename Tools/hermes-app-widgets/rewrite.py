@@ -91,6 +91,40 @@ def replace_directives(text: str, render: Callable[[Directive], str | None]) -> 
     return "\n".join(lines)
 
 
+_TYPED_INFO = re.compile(r"^\s*(widget|json)\s*$", re.IGNORECASE)
+
+
+@dataclass
+class Fenced:
+    first: int
+    last: int
+    info: str
+    body: str
+
+
+def typed_blocks(text: str) -> list[Fenced]:
+    """Closed ```widget and ```json fences outside quotes and other fences: where a model types a
+    widget's payload instead of calling the tool. Read in NFKC form, as neutralise_fences reads."""
+    found: list[Fenced] = []
+    lines = text.split("\n")
+    fence: str | None = None
+    opened: tuple[int, str] | None = None
+    for n, line in enumerate(lines):
+        match = _FENCE.match(unicodedata.normalize("NFKC", line))
+        if not match or match.group("lead").strip(" >"):
+            continue
+        marker, info = match.group("fence"), match.group("info")
+        if fence is None:
+            fence = marker
+            typed = _TYPED_INFO.match(info)
+            opened = (n, typed.group(1).lower()) if typed and ">" not in match.group("lead") else None
+        elif marker[0] == fence[0] and len(marker) >= len(fence) and not info.strip():
+            if opened is not None:
+                found.append(Fenced(opened[0], n, opened[1], "\n".join(lines[opened[0] + 1:n])))
+            fence, opened = None, None
+    return found
+
+
 def inline_block(payload: dict) -> str:
     """The stored payload as an inline block, for a scheduled delivery into the app."""
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))

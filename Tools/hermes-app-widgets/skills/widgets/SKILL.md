@@ -291,6 +291,10 @@ The tool adds `id`. Then:
 ## 7. Scheduled reports
 
 - **One sentence, then one `stack`.**
+- **Call the tool.** Never type a payload or a ```` ```widget ```` block into
+  the report. The plugin makes a typed payload that it can check into a
+  card, and turns one that asks for an answer, or fails its checks, into its
+  plain text.
 - **Order:** what needs doing first (a `summary` with "do first", problems,
   overdue items), then today, then numbers.
 - **Problems first** in every list.

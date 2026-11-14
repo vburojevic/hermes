@@ -178,6 +178,83 @@ def test_an_unknown_directives_alt_cant_open_a_widget_block(live, cron_job):
     assert "```widget" not in out and "```json" in out
 
 
+def typed(name: str, **changes) -> dict:
+    """An example as a model types it into its reply: ids, rev and producer included."""
+    raw = json.loads((SPEC / "examples" / f"{name}.json").read_text())
+    return {**raw, "id": "w_dp_1113_0700", "rev": 1, **changes}
+
+
+def fenced(payload: dict, info: str) -> str:
+    return f"```{info}\n{json.dumps(payload, indent=2)}\n```"
+
+
+def deliver(live, cron_job, text: str, stamp: str) -> str:
+    run, done = cron_job
+    job, token = run("bot-chat")
+    try:
+        sid = f"cron_{job['id']}_20261113_{stamp}"
+        with session(session_id=sid, cron_session="1"):
+            return transform(text, "cron", sid)
+    finally:
+        done(token)
+
+
+def blocks(out: str) -> list[dict]:
+    return [json.loads(part.split("\n```", 1)[0]) for part in out.split("```widget\n")[1:]]
+
+
+@pytest.mark.parametrize("info", ["widget", "json"])
+def test_a_task_that_types_a_widget_gets_it_stored_and_drawn(live, cron_job, info):
+    """A routine's model typed the payload instead of calling the tool: the plugin makes it, as the
+    tool would, so the delivery shows the card and never the code (docs/widgets.md §2)."""
+    guide = typed("guide-1", sensitivity="private")
+    guide["producer"] = {"name": "Someone else"}
+    plan = {"type": "stack", "v": 1, "id": "w_dp_plan_1", "title": "Today", "as_of": guide["as_of"],
+            "fallback_text": "Today's plan: one recipe.", "children": [typed("summary-1"), guide]}
+    out = deliver(live, cron_job, f"Here's your plan for today.\n\n{fenced(plan, info)}\n\nEnjoy.", f"07{len(info)}0")
+    assert out.startswith("Here's your plan for today.") and out.endswith("Enjoy.")
+    [block] = blocks(out)
+    stored = live.store.latest(block["id"])
+    assert stored == block and block["id"] != "w_dp_plan_1" and block["rev"] == 1
+    child = block["children"][1]
+    assert child["id"] != "w_dp_1113_0700" and child["producer"] == block["producer"]
+    assert child["producer"]["name"] != "Someone else" and block["sensitivity"] == "private"
+    assert child["needs_kind"] == guide["needs_kind"] and child["needs"] == guide["needs"]
+    assert "w_dp_" not in out
+
+
+def test_a_typed_widget_that_asks_for_an_answer_becomes_its_text(live, cron_job):
+    """Only the tool makes a widget a person can answer: a typed one with actions isn't made."""
+    approval = typed("approval-1")
+    out = deliver(live, cron_job, f"Lunch.\n\n{fenced(approval, 'json')}", "0710")
+    assert "```" not in out and '"type"' not in out
+    assert out == "Lunch.\n\n" + approval["fallback_text"]
+    assert live.store.latest("w_dp_1113_0700") is None
+
+
+def test_a_typed_widget_the_checks_refuse_becomes_its_text(live, cron_job, caplog):
+    broken = typed("summary-1", unknown_field=True)
+    with caplog.at_level(logging.WARNING):
+        out = deliver(live, cron_job, f"Revenue.\n{fenced(broken, 'widget')}", "0720")
+    assert out == "Revenue.\n" + broken["fallback_text"]
+    assert any("unknown_field" in record.getMessage() for record in caplog.records)
+
+
+def test_the_prompt_says_only_the_tool_makes_a_widget(live):
+    """The rule fits with the examples still in: Hermes skips an oversized section whole."""
+    prompt = plugin_module("prompt")
+    section = prompt.render(live.spec.catalog)
+    assert "Never type a payload or a ```widget block" in section
+    assert "Examples:" in section and len(section) <= prompt.MAX_CHARS
+
+
+def test_json_that_isnt_a_widget_stays_code(live, cron_job):
+    code = '```json\n{"type": "commit", "sha": "abc123"}\n```'
+    nested = "> ```widget\n> " + json.dumps(typed("metric-1")) + "\n> ```"
+    out = deliver(live, cron_job, f"Raw data:\n\n{code}\n\n{nested}", "0730")
+    assert code in out and "> ```json" in out and "```widget" not in out
+
+
 def test_a_task_delivering_elsewhere_gets_text(live, cron_job):
     run, done = cron_job
     job, token = run("telegram:12345")

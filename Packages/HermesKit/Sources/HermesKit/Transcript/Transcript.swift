@@ -564,8 +564,12 @@ public enum TranscriptBuilder {
                 if !text.isEmpty {
                     pendingText.append(text)
                 }
+                // Words beside only widget calls are the reply, not narration: a widget call is a
+                // card, never a step, and a reply written in the same message as its widget would
+                // otherwise be dimmed narration, its directive raw text (`docs/widgets.md` §2).
+                let onlyCards = message.toolCalls.allSatisfy { WidgetToolResult.toolNames.contains($0.name) }
                 if !message.toolCalls.isEmpty {
-                    flushText(asAnswer: false)
+                    if !onlyCards { flushText(asAnswer: false) }
                     for (callIndex, call) in message.toolCalls.enumerated() {
                         let arguments = call.parsedArguments
                         if ToolDescriptor.isPlanTool(call.name) {

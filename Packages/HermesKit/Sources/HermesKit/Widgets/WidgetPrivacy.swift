@@ -107,6 +107,12 @@ public enum WidgetPrivacy {
                 } else {
                     "```widget\n" + WidgetAnswer.canonical(json) + "\n```"
                 }
+            case .typed(let json):
+                // Not split with `typedAsText` here; kept as the json it came as.
+                "```json\n" + WidgetAnswer.canonical(json) + "\n```"
+            case .unreadable:
+                // Nothing in it could be read: an empty block keeps its place and none of it.
+                "```widget\n```"
             }
         }.joined(separator: "\n\n")
     }

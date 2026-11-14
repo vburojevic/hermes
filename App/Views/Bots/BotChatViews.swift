@@ -341,7 +341,7 @@ struct RoutineDeliveryRow: View {
         WidgetSettings.rendersDeliveryBlocks(pluginPresent: widgetHost?.store.isAvailable == true)
     }
 
-    private var hasWidgets: Bool { ReplyBody.hasWidgets(entry.text, inlineWidgets: deliveryWidgets) }
+    private var hasWidgets: Bool { ReplyBody.hasWidgets(entry.text, inlineWidgets: deliveryWidgets, typedAsText: true) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -398,7 +398,7 @@ struct RoutineDeliveryRow: View {
             .frame(minHeight: 20)
             if !entry.text.isEmpty {
                 // Blocks the widgets plugin wrote into a delivery draw as widgets (`docs/widgets.md` §2).
-                ReplyBody(text: entry.text, inlineWidgets: deliveryWidgets)
+                ReplyBody(text: entry.text, inlineWidgets: deliveryWidgets, typedAsText: true)
                     .environment(\.markdownBodyFont, Theme.Typography.compactMessage)
             }
         }
@@ -406,7 +406,7 @@ struct RoutineDeliveryRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .contextMenu {
-            Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(ReplySplitter.readableText(entry.text)) }
+            Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(ReplySplitter.readableText(entry.text, typedAsText: true)) }
             if let reading {
                 if listen.isReading(reading.id) {
                     Button("Stop Listening", systemImage: "stop.circle") { listen.stop() }
@@ -416,14 +416,14 @@ struct RoutineDeliveryRow: View {
             }
         }
         .accessibilityElement(children: hasWidgets || openSource != nil ? .contain : .ignore)
-        .accessibilityLabel(Text("\([tag.title, source.name].compactMap(\.self).joined(separator: " ")): \(BotMentions.stripMarkdown(ReplySplitter.readableText(entry.text)))"))
+        .accessibilityLabel(Text("\([tag.title, source.name].compactMap(\.self).joined(separator: " ")): \(BotMentions.stripMarkdown(ReplySplitter.readableText(entry.text, typedAsText: true)))"))
     }
 
     /// The delivery to read aloud: its words, each widget as its own, a stack as a brief.
     private var reading: ListenPlayer.Reading? {
         guard var context = listenContext, !entry.text.isEmpty else { return nil }
         let store = widgetHost?.store
-        let words = SpokenWidgets.words(of: entry.text, inlineWidgets: deliveryWidgets) { store?.payload($0) }
+        let words = SpokenWidgets.words(of: entry.text, inlineWidgets: deliveryWidgets, typedAsText: true) { store?.payload($0) }
         guard !words.text.isEmpty else { return nil }
         context.title = name
         return ListenPlayer.Reading(id: entry.id, text: words.text, context: context, isPrivate: words.isPrivate)
