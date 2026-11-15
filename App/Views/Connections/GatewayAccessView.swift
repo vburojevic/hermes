@@ -2,7 +2,7 @@ import HermesKit
 import SwiftUI
 
 // A gateway's Access settings (`docs/connecting-and-voice.md` §11): how the app gets past an access
-// gateway in front of Hermes. iPhone and iPad open them as their own page from Edit Gateway's
+// gateway or a proxy that asks for a client certificate in front of Hermes. iPhone and iPad open them as their own page from Edit Gateway's
 // Access row (`gatewayAccess`); the Mac shows the same sections inline in the sheet (`macAccess`).
 
 /// What the last check of the Access settings found (`accessStatus` and its variants).
@@ -38,7 +38,7 @@ struct GatewayAccessRow: View {
         } header: {
             Text("Access")
         } footer: {
-            Text("For a gateway behind an access gateway.")
+            Text("For a gateway behind an access gateway or a proxy that asks for a certificate.")
         }
     }
 }
@@ -50,15 +50,20 @@ struct GatewayAccessPage: View {
     let check: AccessCheck?
     let host: String
     let checkAgain: () async -> Void
+    @State private var importsCertificate = false
 
     var body: some View {
         Form {
             if let check {
-                AccessStatusSection(check: check, host: host, checkAgain: checkAgain)
+                AccessStatusSection(
+                    check: check, host: host, checkAgain: checkAgain, settings: draft,
+                    importCertificate: { importsCertificate = true }
+                )
             }
-            GatewayAccessSections(draft: $draft)
+            GatewayAccessSections(draft: $draft) { importsCertificate = true }
         }
         .formStyle(.grouped)
+        .certificateImport(isPresented: $importsCertificate, draft: $draft)
         .navigationTitle("Access")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -66,10 +71,12 @@ struct GatewayAccessPage: View {
     }
 }
 
-/// The fields: how the app passes the access gateway, and the service token's ID, secret and
-/// header names.
+/// The fields: how the app passes the access gateway, the service token's ID, secret and header
+/// names, and the client certificate. The view that holds them presents the import
+/// (`certificateImport`), so the status card's Replace… opens the same one.
 struct GatewayAccessSections: View {
     @Binding var draft: GatewayAccessDraft
+    let importCertificate: () -> Void
     @State private var revealsSecret = false
 
     var body: some View {
@@ -142,6 +149,8 @@ struct GatewayAccessSections: View {
                 Text("Cloudflare Access's names. Change them if your access gateway uses others.")
             }
         }
+
+        ClientCertificateSection(draft: $draft, importCertificate: importCertificate)
     }
 
     /// A saved secret shows as unchanged: it's never read back into the field.
@@ -151,11 +160,15 @@ struct GatewayAccessSections: View {
 }
 
 /// The status card that leads the Access page (`accessStatus`, `accessTokenRejected`,
-/// `accessReady`): what happened, who said so, and Check Again.
+/// `accessReady`, `accessCertNeeded`, `accessCertRejected`, `accessCertExpired`): what happened,
+/// who said so, and Check Again, with Import Certificate… or Replace… when it's the certificate.
 struct AccessStatusSection: View {
     let check: AccessCheck
     let host: String
     let checkAgain: () async -> Void
+    /// The settings checked, for what the Ready card says got through.
+    var settings: GatewayAccessDraft?
+    var importCertificate: (() -> Void)?
 
     var body: some View {
         Section {
@@ -176,8 +189,15 @@ struct AccessStatusSection: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
-                if refusal != nil {
-                    AccessCheckButton(checkAgain: checkAgain)
+                if let refusal {
+                    HStack(spacing: 8) {
+                        if refusal.isCertificate, let importCertificate {
+                            Button(refusal == .certificateNeeded ? ClientCertificateSection.importTitle : String(localized: "Replace…"),
+                                   action: importCertificate)
+                                .cardButton()
+                        }
+                        AccessCheckButton(checkAgain: checkAgain)
+                    }
                 }
             }
             .padding(.vertical, 6)
@@ -190,11 +210,19 @@ struct AccessStatusSection: View {
     }
 
     private var title: String {
-        refusal?.title ?? String(localized: "Reaching Hermes through the access gateway")
+        if let refusal { return refusal.title }
+        return settings?.method == GatewayAccess.Method.none
+            ? String(localized: "Reaching Hermes through the proxy")
+            : String(localized: "Reaching Hermes through the access gateway")
     }
 
     private var detail: String {
-        refusal?.detail ?? String(localized: "Service token accepted. Hermes answered with its key.")
+        if let refusal { return refusal.detail }
+        switch (settings?.method == .serviceToken || settings == nil, settings?.usesClientCertificate == true) {
+        case (true, true): return String(localized: "Service token and certificate accepted. Hermes answered with its key.")
+        case (false, true): return String(localized: "Certificate accepted. Hermes answered with its key.")
+        default: return String(localized: "Service token accepted. Hermes answered with its key.")
+        }
     }
 }
 

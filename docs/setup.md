@@ -626,13 +626,17 @@ for a gateway with Access settings or one an access gateway or proxy turned away
 
 | State | Told by | The app shows |
 |---|---|---|
-| Ready | Access settings saved, the gateway answers | The method ("Service token"), Edit Access… |
+| Ready | Access settings saved, the gateway answers | What's set ("Service token", "Certificate", "Service token, certificate"), Edit Access… |
 | Not set up | An access gateway turned the app away (`signInNeeded`) | Its line, Edit Access…, and the steps: create a service token in the access gateway's dashboard, then enter it in Edit Gateway → Access |
 | Not set up | It refused the token sent (`tokenRejected`) | Its line, Edit Access…, and the steps: check the token hasn't expired and a policy allows it, then enter it again |
-| Not set up | A proxy wants a client certificate | Its line; no fix, as the app can't send one yet |
+| Not set up | A proxy wants a client certificate and none is set (`certificateNeeded`) | Its line, Edit Access…, and the steps: get a .p12 or .pfx for this device, then import it under Client certificate |
+| Not set up | The proxy refused the certificate (`certificateRejected`) | Its line, Edit Access…, and the steps: ask for one the proxy accepts, then replace it |
+| Not set up | The proxy refused a certificate that ran out (`certificateExpired`) | "The certificate expired", Edit Access…, and the steps: ask for a current one, then replace it |
 | Unknown | The gateway is offline | "Service token. Can't check until … answers." |
 
-Access is checked before Hermes's key, so a sign-in page never reads as a wrong key.
+Access is checked before Hermes's key, so a sign-in page never reads as a wrong key. A certificate
+refusal is told apart from a dropped connection as
+[connecting-and-voice.md](connecting-and-voice.md) §11.2 says.
 
 ## 5. Mocks and launch flags
 

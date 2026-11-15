@@ -65,6 +65,7 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             case .tokenRejected: "The access gateway at \(host) refused the service token."
             case .certificateNeeded: "The proxy at \(host) asks for a client certificate."
             case .certificateRejected: "The proxy at \(host) refused the client certificate."
+            case .certificateExpired: "The proxy at \(host) refused the client certificate, which has expired."
             }
         }
     }
@@ -123,8 +124,10 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             "Set up a service token for this gateway in Edit Gateway → Access."
         case .accessRefused(_, .tokenRejected):
             "Check the client ID and secret, and that the token is allowed for this gateway and hasn't expired."
-        case .accessRefused(_, .certificateNeeded), .accessRefused(_, .certificateRejected):
-            "This version of the app can't send a client certificate yet."
+        case .accessRefused(_, .certificateNeeded):
+            "Import the client certificate in Edit Gateway → Access."
+        case .accessRefused(_, .certificateRejected), .accessRefused(_, .certificateExpired):
+            "Replace the client certificate in Edit Gateway → Access."
         default:
             nil
         }
@@ -170,8 +173,25 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
         }
     }
 
-    public static func from(urlError: URLError, host: String) -> HermesError {
-        if let refusal = AccessRefusal.classify(urlError) { return .accessRefused(host: host, refusal) }
+    /// Whether a connection kept in the background should keep trying after this. Besides the
+    /// transient failures, a proxy's certificate refusal: the app reads it from a TLS failure, and
+    /// on TLS 1.3 that can't be told for sure from a connection that dropped just then, so the
+    /// certificate state shows while the checks go on (`docs/connecting-and-voice.md` §11.9).
+    public var keepsChecking: Bool {
+        switch self {
+        case .accessRefused(_, .certificateNeeded), .accessRefused(_, .certificateRejected),
+             .accessRefused(_, .certificateExpired):
+            true
+        default:
+            isTransient
+        }
+    }
+
+    /// `afterAnswer` says the request already had its answer when it failed (a stream that
+    /// dropped): its handshake went through, so the failure is never a proxy's refusal, however
+    /// recently that origin asked for a certificate.
+    public static func from(urlError: URLError, host: String, afterAnswer: Bool = false) -> HermesError {
+        if !afterAnswer, let refusal = AccessRefusal.classify(urlError) { return .accessRefused(host: host, refusal) }
         let reason: Reason = switch urlError.code {
         case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff: .offline
         case .timedOut: .timedOut

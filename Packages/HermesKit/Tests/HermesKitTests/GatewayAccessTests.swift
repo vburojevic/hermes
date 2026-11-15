@@ -61,10 +61,14 @@ struct GatewayAccessTests {
     }
 
     @Test func certificateFailuresAreTheProxysAndOtherTLSFailuresAreNot() {
-        #expect(AccessRefusal.classify(URLError(.clientCertificateRequired)) == .certificateNeeded)
-        #expect(AccessRefusal.classify(URLError(.clientCertificateRejected)) == .certificateRejected)
-        #expect(AccessRefusal.classify(URLError(.serverCertificateUntrusted)) == nil)
-        #expect(AccessRefusal.classify(URLError(.timedOut)) == nil)
+        let registry = GatewayAccessRegistry()
+        #expect(AccessRefusal.classify(URLError(.clientCertificateRequired), registry: registry) == .certificateNeeded)
+        #expect(AccessRefusal.classify(URLError(.clientCertificateRejected), registry: registry) == .certificateRejected)
+        #expect(AccessRefusal.classify(URLError(.serverCertificateUntrusted), registry: registry) == nil)
+        #expect(AccessRefusal.classify(URLError(.timedOut), registry: registry) == nil)
+        // A lost connection or a failed handshake with no challenge before it is just that.
+        #expect(AccessRefusal.classify(URLError(.networkConnectionLost), registry: registry) == nil)
+        #expect(AccessRefusal.classify(URLError(.secureConnectionFailed), registry: registry) == nil)
         #expect(HermesError.from(urlError: URLError(.clientCertificateRequired), host: "h.example.com")
             == .accessRefused(host: "h.example.com", .certificateNeeded))
         #expect(HermesError.from(urlError: URLError(.serverCertificateUntrusted), host: "h.example.com")
@@ -300,8 +304,9 @@ struct GatewayAccessTests {
         #expect(draft.credentials(savedSecret: "saved") == nil)
         #expect(draft.summary == "None")
         #expect(GatewayAccessDraft().summary == "None")
-        #expect(GatewayAccessDraft(GatewayAccess(method: .none, usesClientCertificate: true)).summary == "Certificate")
-        #expect(GatewayAccessDraft(GatewayAccess(method: .serviceToken, usesClientCertificate: true)).summary == "Service token, certificate")
+        let certificate = ClientCertificate(fingerprint: "ab", fileName: "a.p12", subject: "s", issuer: "i", notAfter: .distantFuture)
+        #expect(GatewayAccessDraft(GatewayAccess(method: .none, clientCertificate: certificate)).summary == "Certificate")
+        #expect(GatewayAccessDraft(GatewayAccess(method: .serviceToken, clientCertificate: certificate)).summary == "Service token, certificate")
     }
 
     @Test func setupShowsAccessOnlyWhereItMatters() throws {
@@ -322,7 +327,8 @@ struct GatewayAccessTests {
         facts.accessRefusal = .certificateNeeded
         let certificate = try #require(GatewaySetup.access(facts))
         #expect(certificate.state == .notSetUp)
-        #expect(certificate.fix == nil)
+        #expect(certificate.fix?.action == .editAccess)
+        #expect(!certificate.steps.isEmpty)
     }
 
     // MARK: Keychain

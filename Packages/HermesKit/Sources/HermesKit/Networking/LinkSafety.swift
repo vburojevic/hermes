@@ -111,22 +111,48 @@ public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendab
         return GatewayAccessRegistry.shared.redirected(request, from: task.originalRequest)
     }
 
-    /// A proxy in front of the gateway asks for a client certificate: the one saved for that
-    /// gateway's origin, or none (the handshake then fails, `AccessRefusal.certificateNeeded`).
-    /// Every other challenge, the server's own trust included, gets the system's handling.
+    /// A proxy in front of the gateway asks for a client certificate (`docs/connecting-and-voice.md`
+    /// §11.9): the one being tried for this task, or the one saved for that gateway's origin, or
+    /// none (the handshake then fails, `AccessRefusal.certificateNeeded`). Every other challenge,
+    /// the server's own trust included, gets the system's handling.
     public func urlSession(
         _ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        let (disposition, credential) = Self.answer(challenge, for: task)
+        completionHandler(disposition, credential)
+    }
+
+    /// What a challenge for `task` gets; nil `task` for a challenge that names none (a web view's).
+    public static func answer(
+        _ challenge: URLAuthenticationChallenge, for task: URLSessionTask?, registry: GatewayAccessRegistry = .shared
+    ) -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         let space = challenge.protectionSpace
-        guard space.authenticationMethod == NSURLAuthenticationMethodClientCertificate,
-              let credential = GatewayAccessRegistry.shared.clientCertificate(
-                host: space.host, port: space.port, isSecure: space.receivesCredentialSecurely)
-        else {
-            completionHandler(.performDefaultHandling, nil)
-            return
+        #if DEBUG
+        if space.authenticationMethod == NSURLAuthenticationMethodServerTrust, let trust = space.serverTrust,
+           DebugTrust.accepts(trust) {
+            return (.useCredential, URLCredential(trust: trust))
         }
-        completionHandler(.useCredential, credential)
+        #endif
+        guard space.authenticationMethod == NSURLAuthenticationMethodClientCertificate else {
+            return (.performDefaultHandling, nil)
+        }
+        let credential = registry.answerChallenge(
+            for: task, host: space.host, port: space.port, isSecure: space.receivesCredentialSecurely
+        )
+        return credential.map { (.useCredential, $0) } ?? (.performDefaultHandling, nil)
+    }
+
+    /// A task that got an answer over TLS means its handshake went through, so the challenge
+    /// noted for its origin no longer explains a failure there (`AccessRefusal.classify`).
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        Self.noteAnswers(metrics)
+    }
+
+    static func noteAnswers(_ metrics: URLSessionTaskMetrics, registry: GatewayAccessRegistry = .shared) {
+        for transaction in metrics.transactionMetrics where transaction.response != nil {
+            if let url = transaction.request.url { registry.noteAnswered(url) }
+        }
     }
 
     /// Same host; same scheme and port, or http upgraded to https. A WebSocket's ws counts as

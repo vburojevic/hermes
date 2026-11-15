@@ -233,6 +233,7 @@
 		ABC6AFBD154AECABB093EBA8 /* SpeechInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D1BC7835D441B9122BE0CF /* SpeechInput.swift */; };
 		AC178049990D093B97A545F0 /* TranscriptCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16471D90FF6989063389860C /* TranscriptCache.swift */; };
 		AC46B817408B5D653DA9A91F /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BD603ACFDF0F74E3E93DBA /* NotificationService.swift */; };
+		AC7799313E43F3A91FE5C7D2 /* ClientCertificateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490FC2621DE71CCA5B62400E /* ClientCertificateViews.swift */; };
 		AD1EEA731C417B666F9825F8 /* ScreenKeyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87493507D634BECE0B953C8C /* ScreenKeyInput.swift */; };
 		ADCDC10F787E0D0712FEAF8A /* InspectorTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = D653945E90FC55FB10625D6D /* InspectorTabs.swift */; };
 		AED5D9C35EB9BC2572A2BD1B /* HermesPush in Frameworks */ = {isa = PBXBuildFile; productRef = AF4894E19F1F83586D3DDFE6 /* HermesPush */; };
@@ -462,6 +463,7 @@
 		47DA1B46CB416DB576111EB8 /* BrowserTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTabView.swift; sourceTree = "<group>"; };
 		482C95B9926E755A073D07C3 /* TalkPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkPreferences.swift; sourceTree = "<group>"; };
 		48A9032046947526C76D5936 /* RoutinesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutinesModel.swift; sourceTree = "<group>"; };
+		490FC2621DE71CCA5B62400E /* ClientCertificateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientCertificateViews.swift; sourceTree = "<group>"; };
 		49754DAF3A39AF8263328677 /* InspectorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorPanel.swift; sourceTree = "<group>"; };
 		49A26C4633CBC4FA0472A87C /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = SDKROOT; };
 		49D00A93727ACE5AB8AE4B10 /* ReferenceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceContext.swift; sourceTree = "<group>"; };
@@ -831,6 +833,7 @@
 				7C637D1686700732A0D64D2E /* AppsAndToolsView.swift */,
 				4592DD87397620D7427C349D /* AppsViews.swift */,
 				839FF3E221883A5EDD627181 /* BuiltInViews.swift */,
+				490FC2621DE71CCA5B62400E /* ClientCertificateViews.swift */,
 				F6A985699450F23889560E3E /* ConnectionsComponents.swift */,
 				BDE879C0F30313EED6BB8C63 /* GatewayAccessView.swift */,
 				FF62818A2A39AC83CBED2C28 /* MacAppsAndToolsPane.swift */,
@@ -1762,6 +1765,7 @@
 				CCD321BE251D78E5B059A8C4 /* CheckpointParts.swift in Sources */,
 				0AA5AB1E818B9E85E9BF275F /* CheckpointSheets.swift in Sources */,
 				91085A56DD3EFCAFD635893D /* CheckpointsModel.swift in Sources */,
+				AC7799313E43F3A91FE5C7D2 /* ClientCertificateViews.swift in Sources */,
 				D8C6962FD039AB25D4E10AA6 /* ClipPlayer.swift in Sources */,
 				50B4719C864A56E8D6BE79B1 /* CodeBlockView.swift in Sources */,
 				02479417E466AEA3D884A0ED /* CodeTextView.swift in Sources */,

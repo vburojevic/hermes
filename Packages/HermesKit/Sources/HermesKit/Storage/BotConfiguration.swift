@@ -196,22 +196,27 @@ public struct BackendLink: Hashable, Codable, Sendable {
 public struct BotStore: Sendable {
     public let fileURL: URL
     public let keychain: KeychainStore
+    /// The client certificates proxies ask for, found by the fingerprint each Bot's access names.
+    public let identities: ClientIdentityStore
     /// The addresses each Bot was last confirmed for, against its pin read or written then. Shared
     /// by every copy of this store.
     private let verified = Verified()
 
-    public init(fileURL: URL, keychain: KeychainStore) {
+    public init(fileURL: URL, keychain: KeychainStore, identities: ClientIdentityStore = .keychain) {
         self.fileURL = fileURL
         self.keychain = keychain
+        self.identities = identities
     }
 
-    /// The store in the app's Application Support directory.
-    public static func standard() -> BotStore {
+    /// The store in the app's Application Support directory. `identities` is the Keychain's, but
+    /// for a Debug run on the Mac that keeps certificates in memory (`-HERMES_MEMORY_CERTIFICATES`).
+    public static func standard(identities: ClientIdentityStore = .keychain) -> BotStore {
         let directory = HermesStorage.applicationSupport
         return BotStore(
             fileURL: directory.appending(path: "bots.json"),
             // Per bundle id, so the Debug app ("Hermes Dev") never sees the real app's keys.
-            keychain: KeychainStore(service: "\(Bundle.main.bundleIdentifier ?? "co.caffeinatedcode.hermes").api-key")
+            keychain: KeychainStore(service: "\(Bundle.main.bundleIdentifier ?? "co.caffeinatedcode.hermes").api-key"),
+            identities: identities
         )
     }
 
@@ -407,10 +412,23 @@ public struct BotStore: Sendable {
     /// What `bot`'s requests carry past its access gateway, or nil when none is set up or its
     /// secret can't be read.
     public func accessCredentials(for bot: BotConfiguration) -> GatewayAccessRegistry.Credentials? {
-        guard let access = bot.access, access.method == .serviceToken, !access.clientID.isEmpty,
-              let secret = try? accessSecret(for: bot), !secret.isEmpty
-        else { return nil }
-        return .serviceToken(access, secret: secret)
+        guard let access = bot.access else { return nil }
+        var token: GatewayAccessRegistry.Credentials?
+        if access.method == .serviceToken, !access.clientID.isEmpty,
+           let secret = try? accessSecret(for: bot), !secret.isEmpty {
+            token = .serviceToken(access, secret: secret)
+        }
+        guard let certificate = access.clientCertificate, let identity = try? clientIdentity(for: bot) else { return token }
+        return (token ?? .init(method: access.method)).presenting(identity, as: certificate)
+    }
+
+    /// The client certificate's identity for the proxy in front of `bot`, read only for the
+    /// addresses it was saved for (`check`), like the key: `bots.json` names it by fingerprint,
+    /// and a rewritten address must not take it to another server.
+    public func clientIdentity(for bot: BotConfiguration) throws -> ClientIdentity? {
+        guard let fingerprint = bot.access?.clientCertificate?.fingerprint else { return nil }
+        try check(bot)
+        return try identities.identity(fingerprint: fingerprint)
     }
 
     /// The Bot Mode sign-in (session token or cookies), next to the API key, read only for the

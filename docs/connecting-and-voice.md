@@ -267,7 +267,8 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   after it, instead of starting again; on a busy Mac that first fetch had been running for
   seconds.
 - Offline, it tries again after 2, 4, 8 and 16 s, then every 30 s. A missing or rejected key, or
-  a gateway that's too old, waits for the person instead.
+  a gateway that's too old, waits for the person instead. A proxy's certificate refusal keeps
+  being checked, since it can look like a drop (§11.9).
 - When the gateway is back, turns whose stream dropped re-attach to their runs (`last_seq`).
 
 **Bot Mode socket** (`BotRoster`, `GatewaySocket`).
@@ -382,9 +383,10 @@ Again. The methods:
 - **Service token**: a client ID and secret from the access gateway's dashboard, sent as two
   headers. The names default to Cloudflare Access's (`CF-Access-Client-Id`,
   `CF-Access-Client-Secret`) and can be changed under Headers.
-- Browser sign-in and a client certificate are in the model (a certificate goes with either of the
-  others) but not in the app yet. A gateway saved with them by a newer build keeps them, and the
-  picker shows Browser sign-in without offering it.
+- **Client certificate**, its own section under the method: a .p12 or .pfx file for a proxy that
+  asks for one, with either method or alone (§11.9).
+- Browser sign-in is in the model but not in the app yet. A gateway saved with it by a newer build
+  keeps it, and the picker shows Browser sign-in without offering it.
 
 The secret lives in the Keychain like the key (§7), account `<gateway id>.access`, read only for
 the addresses saved with the gateway. The field stays empty for a saved secret and keeps it unless
@@ -408,7 +410,16 @@ never taken for a wrong key:
 | 401 or 403 with JSON, or an empty body (the API server's bare 403 for a browser origin) | Hermes's own refusal, as before |
 | A socket's upgrade refused (no body to read) with an HTML page | the same, by the token its upgrade carried |
 | A socket's upgrade refused with any other type (the bare 403 is `text/plain`) | Hermes's own refusal |
-| `URLError.clientCertificateRequired` / `.clientCertificateRejected` | `certificateNeeded` / `certificateRejected` |
+| `URLError.clientCertificateRequired` | `certificateNeeded` |
+| `.clientCertificateRejected`, or a lost connection or failed handshake just after a certificate challenge (below) | `certificateNeeded` if none was given, `certificateExpired` if it ran out, else `certificateRejected` |
+| The server's own certificate isn't trusted (`serverCertificateUntrusted` and the like) | not a refusal: the system's error, as before |
+
+The system rarely names a certificate refusal. A TLS 1.3 proxy turns the device away after the
+handshake, which reads as `networkConnectionLost`, and TLS 1.2 gives `secureConnectionFailed`, for
+no certificate, one from another authority and an expired one alike. So the registry notes each
+client-certificate challenge by origin, with whether it was answered and with which certificate,
+and a failure there within 30 seconds is read as the proxy's answer. A request that gets an answer over
+TLS clears the note, so a later dropped connection isn't blamed on the certificate.
 
 They arrive as `HermesError.accessRefused(host:_:)`, checked before Hermes's key, with their own
 title, line and "From the access gateway at …" (or "From the proxy at …").
@@ -416,14 +427,13 @@ title, line and "From the access gateway at …" (or "From the proxy at …").
 ### 11.3 Where it's set up
 
 [setup.md](setup.md) §4.24 lists Access in Settings → Setup for a gateway with Access settings or
-one an access gateway turned away, with Check Again and Edit Access…. A certificate refusal has no
-fix in the app yet: it says the app can't send one.
+one an access gateway or a proxy turned away, with Check Again and Edit Access…. Each certificate
+refusal says what to get from whoever runs the proxy and where to import it.
 
 ### 11.4 What isn't built
 
-Browser sign-in (the access gateway's page in a web view, its cookie kept in the Keychain) and
-client certificates have their places in the seam (§11.6: cookies, and the certificate answering a
-proxy's challenge) and in `AccessRefusal`, but no settings in the app.
+Browser sign-in (the access gateway's page in a web view, its cookie kept in the Keychain) has its
+place in the seam (§11.6: cookies) and in `AccessRefusal`, but no settings in the app.
 
 ### 11.5 Where a refusal shows
 
@@ -458,6 +468,10 @@ and the Preview's web view. Reconnects build their requests again, so they get i
 - A page's own images, scripts and frames go out without the headers. They pass by the access
   gateway's session cookie (`CF_Authorization`), which it sets in the web view on the page's
   first load.
+- A proxy's client-certificate challenge gets the gateway's certificate only for the gateway's own
+  origins, the same test as the headers (§11.9). URLSession asks `SameOriginRedirects`, the
+  Preview's web view asks `PreviewController`, and both answer through the registry. Every other
+  challenge, the server's own trust included, gets the system's handling.
 
 ### 11.7 Mock
 
@@ -466,6 +480,14 @@ and the Preview's web view. Reconnects build their requests again, so they get i
 with the mock's client ID and secret. A token pass sets a `CF_Authorization` cookie that later
 requests can pass by. `/__mock/leave` redirects a page to the sign-in origin, whose log says
 whether the token came along; "preview <address>" in a chat opens it in the Preview.
+
+`Tools/mock-hermes/mtls_proxy.py` is a TLS proxy that asks for a client certificate, for §11.9. It
+makes a throwaway certificate authority and certificates when it starts, so no key is in the
+repository, and logs every certificate it verified or turned away. The device certificates are
+signed by an issuing authority under the root and the proxy trusts the root alone, so a
+certificate only passes with its chain. How to run it, trust its
+authority and add its certificate is in [development.md](development.md). The two stack: put the
+access gateway behind the proxy and set both a service token and the certificate.
 
 ### 11.8 Checks
 
@@ -476,3 +498,62 @@ whether the token came along; "preview <address>" in a chat opens it in the Prev
 - The mock's log shows the token on every kind of request, and the gateway's key never reaches
   another server.
 - "preview http://127.0.0.1:20642/__mock/leave" in a chat: the sign-in origin logs `token=none`.
+- Pairing through the mock mTLS proxy without a certificate shows "The proxy asks for a
+  certificate", on TLS 1.3 and 1.2 alike. Its expired certificate shows "The certificate expired",
+  and the one from the other authority "The proxy refused this certificate".
+- With its certificate, everything in the token check above works, and the proxy's log names the
+  certificate on every connection. Through the proxy and the access gateway together, with a token
+  and a certificate, it works the same.
+- Remove the certificate and Save: the Keychain no longer has it, unless another gateway uses it.
+
+### 11.9 Client certificates
+
+A proxy in front of Hermes (nginx, Caddy, Traefik, a company's gateway) can ask every device for a
+certificate during the TLS handshake. The Access settings take one per gateway, as a PKCS #12 file
+(`.p12` or `.pfx`) holding the certificate and its private key.
+
+- **Importing** (`accessCertificate`): Import Certificate… (Import… on the Mac) picks the file from
+  Files, then asks for its password. A wrong password asks again; a file without a private key, or
+  not a certificate file at all, says so. The card shows the file's name, who it was issued to and
+  by, and when it expires (in red once it has), with Replace… and Remove.
+- **Where it's kept**: the identity, the certificate with its key, goes into the Keychain when the
+  gateway is saved, device-only, found again by the certificate's SHA-256 fingerprint. The
+  password is never kept. `bots.json` keeps the file's name, subject, issuer, expiry and
+  fingerprint, so another device sees which certificate the gateway uses and says it isn't on this
+  device until it's imported there. The intermediate certificates the file carries are kept
+  beside it and sent with it, for a proxy that trusts only the root. On the Mac only the
+  data-protection keychain is used, never the login keychain, so using the certificate never asks
+  for the Mac's password.
+- **Sharing and removing**: gateways behind one proxy can use one identity. It leaves the Keychain
+  when no saved gateway names it any more: removed, replaced, or its gateway removed.
+- **What it answers**: every transport in §11.6, reconnects included, answers the proxy's
+  challenge with the identity when the request goes to the gateway's own origin. Check Again and
+  pairing try a certificate before it's saved for their own requests alone: `prepare` marks each
+  one, since the challenge arrives outside the task, and they go on a connection of their own, so
+  the proxy asks again even while the live connection is up. The server's own certificate is checked by
+  the system as for any other https address; the app never trusts one the system doesn't.
+- **Making one** for a proxy you run, with OpenSSL: a certificate authority the proxy trusts, and a
+  certificate it signs for the device, exported with its key.
+
+  ```sh
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Home CA" -keyout ca.key -out ca.pem
+  openssl req -newkey rsa:2048 -nodes -subj "/CN=My iPhone" -keyout device.key -out device.csr
+  openssl x509 -req -in device.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 365 -out device.pem
+  openssl pkcs12 -export -inkey device.key -in device.pem -name "My iPhone" -out device.p12
+  ```
+
+  Send `device.p12` to the device (AirDrop, Files), import it in Edit Gateway → Access, and keep
+  `ca.key` off the devices. nginx checks it with `ssl_client_certificate ca.pem;
+  ssl_verify_client on;`.
+- **What the proxy checks**: that the certificate chains to its authority, that it hasn't expired,
+  and, if it keeps one, that it isn't on its revocation list. Hermes behind it never sees the
+  certificate; its key and Bot Mode sign-in still go on every request.
+- **Telling a refusal from a drop**: on TLS 1.3 a proxy refuses a certificate after the handshake
+  looks done, so URLSession reports a lost connection, the same as a network drop. A request that
+  ends that way before any answer, right after a certificate challenge (or with none sent when one
+  was asked for), reads as the refusal. One that had already been answered, a run stream or a
+  socket that dropped later, is a lost connection and reconnects. Since a drop at the wrong moment
+  can still read as a refusal, a certificate refusal doesn't stop the connection being kept (§8): the
+  certificate state shows while the app keeps checking at its offline backoff, up to every 30 s,
+  and a route change checks at once. A refusal answered over HTTP (a token, a sign-in) waits for
+  the person.

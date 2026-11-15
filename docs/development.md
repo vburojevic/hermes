@@ -724,6 +724,33 @@ Service token with `mock-client.access` and `mock-secret-0123456789abcdef` (`--c
 that token set. Its tests: `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p
 test_access_gateway.py`.
 
+A proxy that asks for a client certificate (`Tools/mock-hermes/mtls_proxy.py`,
+[connecting-and-voice.md](connecting-and-voice.md) §11.9): a stdlib TLS proxy, one port per mock
+behind it, that turns away a device without a certificate its own CA signed. It makes a throwaway
+CA and certificates with `openssl` at start (`ca.pem`, `issuing-ca.pem`, `client.p12`,
+`expired.p12`, `other.p12`, password `hermes-mock`), keeps them in `--certs` only, and logs each
+certificate it verified or why it refused one. The device certificates come from the issuing CA
+and the proxy trusts `ca.pem` alone, so the `.p12` files carry the issuing CA with them. Each
+request gets a connection of its own; `--keep-alive` keeps connections open and asks for the
+certificate once per connection, as a real proxy does, which shows whether a check of another
+certificate goes on a connection of its own. `--tls-max 1.2` checks the older handshake:
+
+```bash
+python3 -I Tools/mock-hermes/backend.py --port 27119 --gateway-port 27642
+python3 -I Tools/mock-hermes/mtls_proxy.py --route 25642=27642 --route 25119=27119 \
+    --certs "$TMPDIR/mtls" --log "$TMPDIR/mtls.log"
+```
+
+Pair with `https://127.0.0.1:25642` (Bot Mode at `https://127.0.0.1:25119`). A simulator trusts
+the CA with `xcrun simctl keychain <UDID> add-root-cert "$TMPDIR/mtls/ca.pem"`. Never add it to a
+keychain on the Mac: a Debug build there trusts it with `-HERMES_TRUST_CA <path to ca.pem>`, for
+that process alone, and `-HERMES_MEMORY_CERTIFICATES YES` keeps imported certificates in memory
+instead of the Keychain. `-HERMES_BOOTSTRAP_CERTIFICATE <path to client.p12>
+-HERMES_BOOTSTRAP_CERTIFICATE_PASSWORD hermes-mock` next to the other `-HERMES_BOOTSTRAP_*` flags
+starts with the certificate set. Put `access_gateway.py` behind the proxy to need a token and a
+certificate both. Its tests: `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p
+test_mtls_proxy.py`.
+
 Features that aren't set up (`Tools/mock-hermes/setup.py`, [setup.md](setup.md) §5): `--setup
 board-off,tidying-off,turn-isolation,…` starts the backend with them, and `POST /api/mock/setup
 {"states": [...]}` changes them while it runs (`["ready"]` clears them; it needs the

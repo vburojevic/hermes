@@ -13,7 +13,21 @@ public struct HermesClient: Sendable {
     }
 
     public static let defaultSession: URLSession = {
-        let configuration = URLSessionConfiguration.default
+        let configuration = configured(.default)
+        configuration.httpMaximumConnectionsPerHost = 6
+        // The key only ever goes to the gateway: redirects elsewhere aren't followed.
+        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
+    }()
+
+    /// A session for one check, nothing pooled or cached, which the caller invalidates once it's
+    /// over: a health check, or settings tried before they're saved. On the live session's pooled
+    /// connection the handshake is long done, so a proxy would never ask for the certificate
+    /// being tried (`docs/connecting-and-voice.md` §11.9).
+    public static func checkingSession() -> URLSession {
+        URLSession(configuration: configured(.ephemeral), delegate: SameOriginRedirects.shared, delegateQueue: nil)
+    }
+
+    private static func configured(_ configuration: URLSessionConfiguration) -> URLSessionConfiguration {
         // A gateway on a busy Mac can take minutes over a chat list while its health check
         // answers at once: requests wait it out, and `health()` alone decides "offline".
         configuration.timeoutIntervalForRequest = 120
@@ -21,10 +35,8 @@ public struct HermesClient: Sendable {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.waitsForConnectivity = false
-        configuration.httpMaximumConnectionsPerHost = 6
-        // The key only ever goes to the gateway: redirects elsewhere aren't followed.
-        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
-    }()
+        return configuration
+    }
 
     /// Back from the background (or a sleeping Mac): the pool's idle connections may be gone,
     /// closed by the system while the app was suspended. The next requests open new ones instead
@@ -79,7 +91,7 @@ public struct HermesClient: Sendable {
         var request = makeRequest("GET", ["health"], authenticated: false)
         request.timeoutInterval = timeout
         let witness = ConnectionWitness()
-        let session = Self.probeSession()
+        let session = Self.checkingSession()
         defer { session.finishTasksAndInvalidate() }
         do {
             let (data, response) = try await session.data(for: request, delegate: witness)
@@ -95,16 +107,6 @@ public struct HermesClient: Sendable {
             if Task.isCancelled { throw CancellationError() }
             return .unreachable(.invalidResponse(error.localizedDescription))
         }
-    }
-
-    /// One health check's session: nothing pooled, nothing cached. A check carries no key, but
-    /// stays on its server all the same.
-    static func probeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
     }
 
     /// `GET /health/detailed`, with the key: the gateway's process id, which a restart changes
@@ -464,8 +466,10 @@ public struct HermesClient: Sendable {
         let host = host
         return AsyncThrowingStream { continuation in
             let task = Task {
+                var answered = false
                 do {
                     let (bytes, response) = try await Self.bytes(for: request, in: session)
+                    answered = true
                     guard let http = response as? HTTPURLResponse else {
                         throw HermesError.invalidResponse("not HTTP")
                     }
@@ -488,7 +492,7 @@ public struct HermesClient: Sendable {
                 } catch let error as URLError where error.code == .cancelled {
                     continuation.finish(throwing: CancellationError())
                 } catch let error as URLError {
-                    continuation.finish(throwing: HermesError.from(urlError: error, host: host))
+                    continuation.finish(throwing: HermesError.from(urlError: error, host: host, afterAnswer: answered))
                 } catch {
                     continuation.finish(throwing: error)
                 }

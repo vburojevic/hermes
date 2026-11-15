@@ -20,8 +20,9 @@ public struct GatewayAccess: Hashable, Codable, Sendable {
     public var clientID: String
     public var idHeader: String
     public var secretHeader: String
-    /// A proxy in front of Hermes asks for a client certificate. Combines with any `method`.
-    public var usesClientCertificate: Bool
+    /// The certificate a proxy in front of Hermes asks for, its identity in the Keychain
+    /// (`ClientIdentityStore`). Combines with any `method`.
+    public var clientCertificate: ClientCertificate?
 
     /// Cloudflare Access's names for a service token's headers.
     public static let defaultIDHeader = "CF-Access-Client-Id"
@@ -31,13 +32,13 @@ public struct GatewayAccess: Hashable, Codable, Sendable {
 
     public init(
         method: Method, clientID: String = "", idHeader: String = defaultIDHeader,
-        secretHeader: String = defaultSecretHeader, usesClientCertificate: Bool = false
+        secretHeader: String = defaultSecretHeader, clientCertificate: ClientCertificate? = nil
     ) {
         self.method = method
         self.clientID = clientID
         self.idHeader = idHeader
         self.secretHeader = secretHeader
-        self.usesClientCertificate = usesClientCertificate
+        self.clientCertificate = clientCertificate
     }
 
     public init(from decoder: any Decoder) throws {
@@ -47,8 +48,12 @@ public struct GatewayAccess: Hashable, Codable, Sendable {
         clientID = try container.decodeIfPresent(String.self, forKey: .clientID) ?? ""
         idHeader = try container.decodeIfPresent(String.self, forKey: .idHeader) ?? Self.defaultIDHeader
         secretHeader = try container.decodeIfPresent(String.self, forKey: .secretHeader) ?? Self.defaultSecretHeader
-        usesClientCertificate = try container.decodeIfPresent(Bool.self, forKey: .usesClientCertificate) ?? false
+        // A certificate saved by a newer build in a shape this one can't read is dropped, not the gateway.
+        clientCertificate = (try? container.decodeIfPresent(ClientCertificate.self, forKey: .clientCertificate)) ?? nil
     }
+
+    /// A proxy in front of Hermes asks for a client certificate.
+    public var usesClientCertificate: Bool { clientCertificate != nil }
 
     /// Whether anything here changes what the app sends.
     public var isEnabled: Bool { method != .none || usesClientCertificate }
@@ -109,16 +114,30 @@ public final class GatewayAccessRegistry: Sendable {
         public var cookies: [String: String]
         /// The certificate a proxy's challenge is answered with.
         public var clientCertificate: URLCredential?
+        /// What that certificate is, so a refusal can say it expired.
+        public var certificate: ClientCertificate?
 
         public init(
             method: GatewayAccess.Method, headers: [String: String] = [:], cookies: [String: String] = [:],
-            clientCertificate: URLCredential? = nil
+            clientCertificate: URLCredential? = nil, certificate: ClientCertificate? = nil
         ) {
             self.method = method
             self.headers = headers
             self.cookies = cookies
             self.clientCertificate = clientCertificate
+            self.certificate = certificate
         }
+
+        /// These credentials with `identity` answering a proxy's challenge as well.
+        public func presenting(_ identity: ClientIdentity?, as certificate: ClientCertificate?) -> Credentials {
+            var credentials = self
+            credentials.clientCertificate = identity?.credential
+            credentials.certificate = identity == nil ? nil : certificate
+            return credentials
+        }
+
+        /// Whether a request or a handshake gets anything from these.
+        var isEmpty: Bool { headers.isEmpty && cookies.isEmpty && clientCertificate == nil }
 
         /// A service token's two headers, under the names the access gateway expects. Nil when
         /// they aren't fit to send (`GatewayAccess.problem`): `bots.json` is a plain file, so a
@@ -150,6 +169,13 @@ public final class GatewayAccessRegistry: Sendable {
             self.host = host
             port = url.port ?? (scheme == "https" ? 443 : 80)
         }
+
+        /// A TLS challenge's protection space: the host and port the handshake is with.
+        init(host: String, port: Int, isSecure: Bool) {
+            scheme = isSecure ? "https" : "http"
+            self.host = host.lowercased()
+            self.port = port > 0 ? port : (isSecure ? 443 : 80)
+        }
     }
 
     private struct Entry: Sendable {
@@ -158,17 +184,43 @@ public final class GatewayAccessRegistry: Sendable {
     }
 
     private let entries = Mutex<[UUID: Entry]>([:])
-    /// The header names of settings being tried (`trying`), so a redirect can take them off too.
-    /// Names only: the credentials themselves live in the trying task alone.
-    private let trialHeaderNames = Mutex<[UUID: Set<String>]>([:])
+    /// What the delegate needs of settings being tried (`trying`): their header names, so a
+    /// redirect can take them off too, and the certificate, for the challenge of a request the
+    /// trying task made. The headers themselves live in the trying task alone.
+    private let trials = Mutex<[UUID: TrialRecord]>([:])
+
+    private struct TrialRecord: Sendable {
+        var origins: Set<Origin>
+        var headerNames: Set<String>
+        var clientCertificate: URLCredential?
+        var certificate: ClientCertificate?
+    }
 
     /// Settings being tried before they are saved, for the task that tries them and its children
     /// alone: the live connection to the same gateway keeps sending the saved ones meanwhile.
     private struct Trial: Sendable {
+        var id: UUID
         var registry: ObjectIdentifier
         var origins: Set<Origin>
         var credentials: Credentials?
     }
+
+    /// The last client-certificate challenge from each origin: whether a certificate answered it
+    /// and which, so a handshake that then fails can be told apart from a lost connection
+    /// (`AccessRefusal.classify(_:registry:)`). Cleared once that origin answers.
+    private let challenges = Mutex<[Origin: Challenge]>([:])
+
+    struct Challenge: Sendable, Equatable {
+        var offered: Bool
+        var certificate: ClientCertificate?
+        var at: Date
+    }
+
+    /// How long after a challenge a failed handshake is still taken as the proxy's answer to it.
+    static let challengeWindow: TimeInterval = 30
+
+    /// The request property that ties a request to the settings being tried when it was made.
+    static let trialProperty = "co.caffeinatedcode.hermes.access-trial"
 
     @TaskLocal private static var trial: Trial?
 
@@ -176,17 +228,22 @@ public final class GatewayAccessRegistry: Sendable {
 
     /// Runs `body` with `credentials` standing in for whatever is saved at `addresses`: an editor
     /// or pairing checks the settings on screen before they are saved. Nil tries without access.
-    /// Only requests `body` makes see them (`docs/connecting-and-voice.md` §11.5): a certificate
-    /// being tried isn't offered to a challenge, which arrives outside the task.
+    /// Only requests `body` makes see them (`docs/connecting-and-voice.md` §11.5). A certificate
+    /// being tried answers the challenges of those requests alone: `prepare` marks each one, since
+    /// the challenge arrives outside the task.
     public nonisolated(nonsending) func trying<T>(
         _ credentials: Credentials?, at addresses: [URL], _ body: nonisolated(nonsending) () async throws -> T
     ) async rethrows -> T {
         let id = UUID()
-        let trial = Trial(
-            registry: ObjectIdentifier(self), origins: Set(addresses.compactMap(Origin.init)), credentials: credentials
-        )
-        trialHeaderNames.withLock { $0[id] = Set(credentials?.headers.keys.map { $0.lowercased() } ?? []) }
-        defer { _ = trialHeaderNames.withLock { $0.removeValue(forKey: id) } }
+        let origins = Set(addresses.compactMap(Origin.init))
+        let trial = Trial(id: id, registry: ObjectIdentifier(self), origins: origins, credentials: credentials)
+        trials.withLock {
+            $0[id] = TrialRecord(
+                origins: origins, headerNames: Set(credentials?.headers.keys.map { $0.lowercased() } ?? []),
+                clientCertificate: credentials?.clientCertificate, certificate: credentials?.certificate
+            )
+        }
+        defer { _ = trials.withLock { $0.removeValue(forKey: id) } }
         return try await Self.$trial.withValue(trial, operation: body)
     }
 
@@ -195,9 +252,7 @@ public final class GatewayAccessRegistry: Sendable {
     public func set(_ credentials: Credentials?, for gateway: UUID, at addresses: [URL]) {
         let origins = Set(addresses.compactMap(Origin.init))
         entries.withLock { entries in
-            guard let credentials, !origins.isEmpty,
-                  !credentials.headers.isEmpty || !credentials.cookies.isEmpty || credentials.clientCertificate != nil
-            else {
+            guard let credentials, !origins.isEmpty, !credentials.isEmpty else {
                 entries[gateway] = nil
                 return
             }
@@ -222,8 +277,13 @@ public final class GatewayAccessRegistry: Sendable {
         }
     }
 
-    /// Adds `url`'s access headers and cookies to a request about to go there.
+    /// Adds `url`'s access headers and cookies to a request about to go there, and marks a request
+    /// made while settings are being tried, so its challenge gets their certificate.
     public func prepare(_ request: inout URLRequest) {
+        if let url = request.url, let origin = Origin(url), let trial = Self.trial,
+           trial.registry == ObjectIdentifier(self), trial.origins.contains(origin) {
+            Self.mark(&request, trial: trial.id)
+        }
         guard let url = request.url, let credentials = credentials(for: url) else { return }
         for (name, value) in credentials.headers { request.setValue(value, forHTTPHeaderField: name) }
         guard !credentials.cookies.isEmpty else { return }
@@ -248,7 +308,7 @@ public final class GatewayAccessRegistry: Sendable {
     /// Every name an access header goes by: saved, being tried, and the usual pair.
     private var accessHeaderNames: Set<String> {
         let saved = entries.withLock { entries in entries.values.flatMap { $0.credentials.headers.keys } }
-        let tried = trialHeaderNames.withLock { $0.values.flatMap { $0 } }
+        let tried = trials.withLock { $0.values.flatMap(\.headerNames) }
         let usual = [GatewayAccess.defaultIDHeader, GatewayAccess.defaultSecretHeader]
         return Set((saved + usual).map { $0.lowercased() } + tried)
     }
@@ -302,14 +362,48 @@ public final class GatewayAccessRegistry: Sendable {
         return request
     }
 
-    /// The certificate to answer a proxy's client-certificate challenge from `host` and `port`.
-    func clientCertificate(host: String, port: Int, isSecure: Bool) -> URLCredential? {
-        var components = URLComponents()
-        components.scheme = isSecure ? "https" : "http"
-        components.host = host
-        components.port = port
-        guard let url = components.url else { return nil }
-        return credentials(for: url)?.clientCertificate
+    /// The certificate that answers a proxy's client-certificate challenge for `task` from `host`
+    /// and `port`: the one being tried when the task's request was made while trying, otherwise
+    /// the one saved for that origin, or nil. Notes the challenge either way.
+    func answerChallenge(for task: URLSessionTask?, host: String, port: Int, isSecure: Bool, at now: Date = .now) -> URLCredential? {
+        let origin = Origin(host: host, port: port, isSecure: isSecure)
+        let request = task?.originalRequest ?? task?.currentRequest
+        let tried = request.flatMap(Self.trialID).flatMap { id in
+            trials.withLock { $0[id] }.flatMap { $0.origins.contains(origin) ? $0 : nil }
+        }
+        let answer: (URLCredential?, ClientCertificate?)
+        if let tried {
+            answer = (tried.clientCertificate, tried.certificate)
+        } else {
+            let saved = entries.withLock { entries in
+                entries.filter { $0.value.origins.contains(origin) }.min { $0.key.uuidString < $1.key.uuidString }?.value.credentials
+            }
+            answer = (saved?.clientCertificate, saved?.certificate)
+        }
+        challenges.withLock { $0[origin] = Challenge(offered: answer.0 != nil, certificate: answer.1, at: now) }
+        return answer.0
+    }
+
+    /// The challenge `url`'s origin sent last, while a failure can still be its answer.
+    func recentChallenge(at url: URL, now: Date = .now) -> Challenge? {
+        guard let origin = Origin(url) else { return nil }
+        return challenges.withLock { $0[origin] }.flatMap { now.timeIntervalSince($0.at) <= Self.challengeWindow ? $0 : nil }
+    }
+
+    /// `url`'s origin answered over TLS, so whatever fails there next isn't the handshake.
+    func noteAnswered(_ url: URL) {
+        guard let origin = Origin(url) else { return }
+        _ = challenges.withLock { $0.removeValue(forKey: origin) }
+    }
+
+    private static func mark(_ request: inout URLRequest, trial: UUID) {
+        guard let mutable = (request as NSURLRequest).mutableCopy() as? NSMutableURLRequest else { return }
+        URLProtocol.setProperty(trial.uuidString, forKey: trialProperty, in: mutable)
+        request = mutable as URLRequest
+    }
+
+    static func trialID(_ request: URLRequest) -> UUID? {
+        (URLProtocol.property(forKey: trialProperty, in: request) as? String).flatMap(UUID.init(uuidString:))
     }
 }
 
@@ -324,6 +418,8 @@ public enum AccessRefusal: Sendable, Equatable {
     case certificateNeeded
     /// A proxy refused the client certificate.
     case certificateRejected
+    /// A proxy refused the client certificate, which ran out on this date.
+    case certificateExpired(Date)
 
     /// An answer that came from an access gateway rather than Hermes, or nil: a redirect to
     /// another server (`SameOriginRedirects` doesn't follow it, so it comes back as the answer),
@@ -357,11 +453,16 @@ public enum AccessRefusal: Sendable, Equatable {
     }
 
     /// Why a socket's upgrade failed, when an access gateway or a proxy refused it: the answer to
-    /// the upgrade (its body never reaches the app), or the TLS failure.
+    /// the upgrade (its body never reaches the app), or the TLS failure. A socket that got an
+    /// answer got through the handshake, so when it drops later that's never a refusal.
     public static func refused(_ task: URLSessionTask, error: any Error) -> HermesError? {
         let host = task.originalRequest?.url?.host() ?? ""
-        if let urlError = error as? URLError, let refusal = classify(urlError) {
-            return .accessRefused(host: host, refusal)
+        if task.response == nil, var urlError = error as? URLError {
+            // A socket's error may not say where it failed; the challenge is looked up there.
+            if urlError.failingURL == nil, let url = task.originalRequest?.url {
+                urlError = URLError(urlError.code, userInfo: [NSURLErrorFailingURLErrorKey: url])
+            }
+            if let refusal = classify(urlError) { return .accessRefused(host: host, refusal) }
         }
         // The upgrade's own headers say whether a token went: the delegate runs outside any
         // task that was trying settings, so the registry can't be asked.
@@ -372,13 +473,34 @@ public enum AccessRefusal: Sendable, Equatable {
         return .accessRefused(host: host, refusal)
     }
 
-    /// The TLS failures that mean a proxy wanted a client certificate.
-    public static func classify(_ error: URLError) -> AccessRefusal? {
+    /// The TLS failures that mean a proxy wanted a client certificate, or nil. The system names
+    /// them only now and then: a TLS 1.3 proxy that refuses one ends the connection after the
+    /// handshake, which reads as a lost connection (`networkConnectionLost`), and TLS 1.2 gives
+    /// a generic handshake failure. So a failure at an origin that sent a client-certificate
+    /// challenge moments ago is taken as the answer to it: none given means one is needed, one
+    /// given was refused, or expired when it has run out.
+    public static func classify(
+        _ error: URLError, registry: GatewayAccessRegistry = .shared, now: Date = .now
+    ) -> AccessRefusal? {
+        let challenge = error.failingURL.flatMap { registry.recentChallenge(at: $0, now: now) }
         switch error.code {
-        case .clientCertificateRequired: .certificateNeeded
-        case .clientCertificateRejected: .certificateRejected
-        default: nil
+        case .clientCertificateRequired:
+            return .certificateNeeded
+        case .clientCertificateRejected:
+            return challenge.map { refusal(answering: $0, now: now) } ?? .certificateRejected
+        case .networkConnectionLost, .secureConnectionFailed:
+            return challenge.map { refusal(answering: $0, now: now) }
+        default:
+            return nil
         }
+    }
+
+    private static func refusal(answering challenge: GatewayAccessRegistry.Challenge, now: Date) -> AccessRefusal {
+        guard challenge.offered else { return .certificateNeeded }
+        if let certificate = challenge.certificate, certificate.isExpired(at: now) {
+            return .certificateExpired(certificate.notAfter)
+        }
+        return .certificateRejected
     }
 }
 
@@ -390,6 +512,7 @@ extension AccessRefusal {
         case .tokenRejected: String(localized: "The access gateway refused the service token")
         case .certificateNeeded: String(localized: "The proxy asks for a certificate")
         case .certificateRejected: String(localized: "The proxy refused this certificate")
+        case .certificateExpired: String(localized: "The certificate expired")
         }
     }
 
@@ -400,8 +523,12 @@ extension AccessRefusal {
             String(localized: "An access gateway stands in front of Hermes and turns the app away. Set up a service token for it.")
         case .tokenRejected:
             String(localized: "Check the client ID and secret, and that the token is allowed for this gateway and hasn't expired.")
-        case .certificateNeeded, .certificateRejected:
-            String(localized: "A proxy in front of Hermes lets in only devices with a client certificate. This version of the app can't send one yet.")
+        case .certificateNeeded:
+            String(localized: "A proxy in front of Hermes lets in only devices with a client certificate. Import the one you were given.")
+        case .certificateRejected:
+            String(localized: "It may be for another server, or revoked. Import the certificate this proxy expects.")
+        case .certificateExpired(let date):
+            String(localized: "It ran out on \(date.formatted(date: .abbreviated, time: .omitted)), so the proxy turns the app away. Import a current one.")
         }
     }
 
@@ -409,7 +536,7 @@ extension AccessRefusal {
     public func source(host: String) -> String {
         switch self {
         case .signInNeeded, .tokenRejected: String(localized: "From the access gateway at \(host)")
-        case .certificateNeeded, .certificateRejected: String(localized: "From the proxy at \(host)")
+        case .certificateNeeded, .certificateRejected, .certificateExpired: String(localized: "From the proxy at \(host)")
         }
     }
 
@@ -418,7 +545,9 @@ extension AccessRefusal {
         switch self {
         case .signInNeeded: String(localized: "An access gateway turned the app away")
         case .tokenRejected: String(localized: "The access gateway refused the token")
-        case .certificateNeeded, .certificateRejected: String(localized: "The proxy turned the app away")
+        case .certificateNeeded: String(localized: "The proxy asks for a certificate")
+        case .certificateRejected: String(localized: "The proxy refused this certificate")
+        case .certificateExpired: String(localized: "The certificate expired")
         }
     }
 
@@ -426,13 +555,18 @@ extension AccessRefusal {
         switch self {
         case .signInNeeded: String(localized: "Set up a service token for \(name) in Access.")
         case .tokenRejected: String(localized: "Check the service token for \(name) in Access.")
-        case .certificateNeeded, .certificateRejected: String(localized: "\(name)'s proxy asks for a client certificate.")
+        case .certificateNeeded: String(localized: "\(name)'s proxy asks for a certificate. Import one in Access.")
+        case .certificateRejected: String(localized: "\(name)'s proxy turned the app away. Replace the certificate in Access.")
+        case .certificateExpired: String(localized: "\(name)'s certificate ran out. Replace it in Access.")
         }
     }
 
-    /// A proxy's certificate check, which this version of the app can't answer.
+    /// A proxy's certificate check, answered in Access with a certificate.
     public var isCertificate: Bool {
-        self == .certificateNeeded || self == .certificateRejected
+        switch self {
+        case .certificateNeeded, .certificateRejected, .certificateExpired: true
+        case .signInNeeded, .tokenRejected: false
+        }
     }
 }
 
@@ -448,10 +582,15 @@ public struct GatewayAccessDraft: Equatable, Sendable {
     public var secretHeader: String
     /// A secret is in the Keychain for this gateway already.
     public var hasSavedSecret: Bool
-    /// Carried over from the saved settings: the app has no certificate settings yet.
-    public var usesClientCertificate: Bool
+    /// The client certificate the proxy gets (`docs/connecting-and-voice.md` §11.9), or nil.
+    public var certificate: ClientCertificate?
+    /// Its identity: loaded from the Keychain for a saved certificate, or just imported. Nil
+    /// with a certificate when the Keychain no longer has it.
+    public var identity: ClientIdentity?
 
-    public init(_ access: GatewayAccess? = nil, hasSavedSecret: Bool = false) {
+    public var usesClientCertificate: Bool { certificate != nil }
+
+    public init(_ access: GatewayAccess? = nil, hasSavedSecret: Bool = false, identity: ClientIdentity? = nil) {
         let access = access ?? .none
         method = access.method
         clientID = access.clientID
@@ -459,7 +598,19 @@ public struct GatewayAccessDraft: Equatable, Sendable {
         idHeader = access.idHeader
         secretHeader = access.secretHeader
         self.hasSavedSecret = hasSavedSecret && access.method == .serviceToken
-        usesClientCertificate = access.usesClientCertificate
+        certificate = access.clientCertificate
+        self.identity = access.clientCertificate == nil ? nil : identity
+    }
+
+    /// Takes a certificate just imported, in place of any other.
+    public mutating func useCertificate(_ certificate: ClientCertificate, identity: ClientIdentity) {
+        self.certificate = certificate
+        self.identity = identity
+    }
+
+    public mutating func removeCertificate() {
+        certificate = nil
+        identity = nil
     }
 
     /// What gets saved with the gateway, or nil when nothing stands in front of it.
@@ -467,7 +618,7 @@ public struct GatewayAccessDraft: Equatable, Sendable {
         let access = GatewayAccess(
             method: method, clientID: method == .serviceToken ? clientID.trimmingCharacters(in: .whitespacesAndNewlines) : "",
             idHeader: idHeader.trimmingCharacters(in: .whitespaces), secretHeader: secretHeader.trimmingCharacters(in: .whitespaces),
-            usesClientCertificate: usesClientCertificate
+            clientCertificate: certificate
         )
         return access.isEnabled ? access : nil
     }
@@ -499,9 +650,13 @@ public struct GatewayAccessDraft: Equatable, Sendable {
         )
     }
 
-    /// What a check of these settings sends, before they are saved (`GatewayAccessRegistry.trying`).
+    /// What a check of these settings sends, before they are saved (`GatewayAccessRegistry.trying`):
+    /// the service token's headers and the certificate, or nil when there's neither.
     public func credentials(savedSecret: String?) -> GatewayAccessRegistry.Credentials? {
-        guard method == .serviceToken, let access else { return nil }
-        return .serviceToken(access, secret: typedSecret ?? savedSecret ?? "")
+        guard let access else { return nil }
+        let token: GatewayAccessRegistry.Credentials? = method == .serviceToken
+            ? .serviceToken(access, secret: typedSecret ?? savedSecret ?? "") : nil
+        guard let identity, certificate != nil else { return token }
+        return (token ?? .init(method: method)).presenting(identity, as: certificate)
     }
 }

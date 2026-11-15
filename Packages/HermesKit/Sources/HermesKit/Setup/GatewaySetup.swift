@@ -169,12 +169,27 @@ public enum GatewaySetup {
                     SetupStep(String(localized: "In the access gateway's dashboard, check that the service token hasn't expired and that a policy allows it for \(facts.gatewayName)'s address.")),
                     SetupStep(String(localized: "In Edit Gateway → Access, enter the client ID and secret again.")),
                 ]
-            case .certificateNeeded, .certificateRejected:
-                []
+            case .certificateNeeded:
+                [
+                    SetupStep(String(localized: "Get a client certificate for this device from whoever runs the proxy, as a .p12 or .pfx file with its password.")),
+                    SetupStep(String(localized: "In Edit Gateway → Access, import it under Client certificate.")),
+                ]
+            case .certificateRejected:
+                [
+                    SetupStep(String(localized: "Ask whoever runs the proxy for a certificate it accepts: it may be for another server, or revoked.")),
+                    SetupStep(String(localized: "In Edit Gateway → Access, replace the certificate.")),
+                ]
+            case .certificateExpired:
+                [
+                    SetupStep(String(localized: "Ask whoever runs the proxy for a current certificate.")),
+                    SetupStep(String(localized: "In Edit Gateway → Access, replace the certificate.")),
+                ]
             }
             return SetupStatus(
-                id: ID.access, state: .notSetUp, title: title, detail: refusal.detail,
-                fix: refusal.isCertificate ? nil : fix, steps: steps
+                id: ID.access, state: .notSetUp, title: title,
+                // The certificate details read on from their title ("The certificate expired").
+                detail: refusal.isCertificate ? "\(refusal.title). \(refusal.detail)" : refusal.detail,
+                fix: fix, steps: steps
             )
         }
         guard let access = facts.access else { return nil }
