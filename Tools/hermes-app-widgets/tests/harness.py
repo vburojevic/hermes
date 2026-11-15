@@ -1,7 +1,8 @@
 """Shared fixtures: the plugin installed in a throwaway HERMES_HOME and loaded through Hermes's own
-plugin manager. Nothing touches ~/.hermes.
+plugin manager. Nothing touches ~/.hermes. Without HERMES_SOURCE the tests that load Hermes are
+skipped: they never fall back to an installed Hermes.
 
-    HERMES_SOURCE=~/.hermes/hermes-agent ~/.hermes/hermes-agent/.venv/bin/python -m pytest \
+    HERMES_SOURCE=<hermes-agent checkout> <its venv>/bin/python -m pytest \
         Tools/hermes-app-widgets/tests --import-mode=importlib
 """
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pathlib import Path
 import pytest
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("HERMES_SOURCE", Path.home() / ".hermes" / "hermes-agent")).expanduser()
+SOURCE = Path(os.environ["HERMES_SOURCE"]).expanduser() if os.environ.get("HERMES_SOURCE") else None
 HOME = Path(tempfile.mkdtemp(prefix="hermes-app-widgets-test-"))
 WORKSPACE = HOME / "workspace"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -32,13 +33,16 @@ def _snapshot(folder: Path) -> dict[str, float]:
 REAL_BEFORE = _snapshot(REAL_WIDGETS)
 os.environ["HERMES_HOME"] = str(HOME)
 os.environ.pop("TERMINAL_CWD", None)
-sys.path.insert(0, str(SOURCE))
+if SOURCE:
+    sys.path.insert(0, str(SOURCE))
 
 
 @pytest.fixture(scope="session")
 def hermes():
     """Install into the throwaway home and load through the plugin manager; returns (plugins module, the
     plugin's package)."""
+    if SOURCE is None:
+        pytest.skip("set HERMES_SOURCE to a Hermes Agent checkout")
     target = HOME / "plugins" / "hermes-app-widgets"
     shutil.copytree(PLUGIN_DIR, target, ignore=shutil.ignore_patterns("tests", "__pycache__", "sync-spec.py"))
     # No lazy installs: a test must never reach the network.

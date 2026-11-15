@@ -4,9 +4,9 @@ Needs a running relay and the fake APNs (see Relay/README.md), then:
 
     HERMES_PUSH_RELAY_URL=http://127.0.0.1:3211 FAKE_APNS_LOG=/tmp/fake-apns.jsonl \
     APNS_TEST_PUBLIC_KEY=/tmp/test-apns.pub \
-    ~/.hermes/hermes-agent/.venv/bin/python -m pytest Tools/hermes-app-push/tests/test_relay_e2e.py --import-mode=importlib
+    HERMES_SOURCE=<hermes-agent checkout> <its venv>/bin/python -m pytest Tools/hermes-app-push/tests/test_relay_e2e.py --import-mode=importlib
 
-Skipped unless those variables are set.
+Skipped unless all four variables are set.
 """
 from __future__ import annotations
 
@@ -26,14 +26,14 @@ import pytest
 RELAY = os.environ.get("HERMES_PUSH_RELAY_URL")
 LOG = os.environ.get("FAKE_APNS_LOG")
 PUBLIC_KEY = os.environ.get("APNS_TEST_PUBLIC_KEY")
-pytestmark = pytest.mark.skipif(not (RELAY and LOG and PUBLIC_KEY), reason="needs a local relay and fake APNs")
+SOURCE = os.environ.get("HERMES_SOURCE")
+pytestmark = pytest.mark.skipif(not (RELAY and LOG and PUBLIC_KEY and SOURCE), reason="needs a local relay, fake APNs and HERMES_SOURCE")
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("HERMES_SOURCE", Path.home() / ".hermes" / "hermes-agent")).expanduser()
 HOME = Path(tempfile.mkdtemp(prefix="hermes-app-push-e2e-"))
-if RELAY and LOG and PUBLIC_KEY:  # only when this module runs: the unit tests set their own home
+if RELAY and LOG and PUBLIC_KEY and SOURCE:  # only when this module runs: the unit tests set their own home
     os.environ["HERMES_HOME"] = str(HOME)
-    sys.path.insert(0, str(SOURCE))
+    sys.path.insert(0, str(Path(SOURCE).expanduser()))
 
 
 def crypto_module():

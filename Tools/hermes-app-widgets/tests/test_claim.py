@@ -118,7 +118,7 @@ def test_signed_approvals(widgets):
     assert claim(widgets, id=wid, rev=1, action="reject", mid="m-5", values={})["result"] == "already_answered"
 
 
-def test_signing_input_is_stable():
+def test_signing_input_is_stable(hermes):
     signing = plugin_module("signing")
     message = signing.signing_input("w_lunch1011", 1, "edit", {"text": "No onions / extra lime", "b": 2, "a": "é"}, "0b7f")
     canonical = '{"a":"é","b":2,"text":"No onions / extra lime"}'
@@ -126,7 +126,7 @@ def test_signing_input_is_stable():
     assert message == f"hermes-widgets-v1|w_lunch1011|1|edit|{hashlib.sha256(canonical.encode()).hexdigest()}|0b7f".encode()
 
 
-def test_raw_signatures_and_der_keys_verify():
+def test_raw_signatures_and_der_keys_verify(hermes):
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
