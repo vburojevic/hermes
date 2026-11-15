@@ -962,7 +962,8 @@ def test_an_unchanged_state_is_never_rewritten(copies, tmp_path, monkeypatch):
 def test_windows_permission_error_retry_and_exhaustion_cleanup(copies, tmp_path, monkeypatch):
     core = copies("app_push_win_replace")
     store_module = sys.modules["app_push_win_replace.store"]
-    store = core.Store(tmp_path, lock_timeout=0.05)
+    # Seconds for the retry half, so a busy machine still fits two denied replaces in the sharing window.
+    store = core.Store(tmp_path, lock_timeout=5.0)
     store.update(lambda s: s.__setitem__("card_cursors", {"default": 1}))
 
     real_replace = os.replace
@@ -981,6 +982,9 @@ def test_windows_permission_error_retry_and_exhaustion_cleanup(copies, tmp_path,
     assert store.read()["card_cursors"] == {"default": 2}
 
     # Persistent PermissionError past lock_timeout raises, preserves state, and cleans up .state-* tmp file.
+    # A short lock_timeout keeps this half fast.
+    store.lock_timeout = 0.05
+
     def always_denied(src, dst):
         raise PermissionError(13, "WinError 5: Access is denied", str(src), 5, str(dst))
 
