@@ -237,6 +237,14 @@ Pasting on a simulator, whose clipboard only takes text from the command line:
 adds the picture's address as text, as Safari's Copy Image does; `file:` copies it as the Files
 app does), and ⌘V in the composer (`axe key-combo --modifiers 227 --key 25`) pastes it.
 
+Attaching without the clipboard, on a simulator or the Mac: `-HERMES_ATTACH <path>|<path>`
+attaches those files to the new chat once it's connected, through the composer's own attach
+path (the one the file picker, a drop and a paste use), so pictures, PDFs and other files land
+where a person's would and a file the chat can't take shows the same Can't Attach alert. It never
+touches the clipboard. Add `-HERMES_DRAFT <text>` to see the files in the composer before
+sending, or `-HERMES_SEND <text>` to send them with the message (a name with `refuseupload` is
+refused by the mock's `file.attach`, as a full disk would).
+
 Ending a Mac run: `-HERMES_QUIT_AFTER <s>` quits Hermes Dev that many seconds after launch.
 Every Debug build shares one bundle id, so a run never quits it by bundle id or name, and stops
 only the process it launched itself.
