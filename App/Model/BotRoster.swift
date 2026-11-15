@@ -670,6 +670,12 @@ final class BotRoster {
             state = .signInRequired(reason)
             return
         }
+        // The access gateway in front wants a sign-in or a token: retrying can't get through.
+        // Signing in again reconnects (`BotWorkspace.update`, `reconnectNow`).
+        if let refusal = error as? HermesError, refusal.waitsForAccess {
+            waitForAccess(refusal)
+            return
+        }
         // Slow, not gone: a proxy's 502 or a timeout while the gateway on the same machine still
         // answers. The Bots stay listed and the status says the Mac is busy; only after
         // `busyGiveUp` without one answer does it call them offline.
@@ -697,6 +703,15 @@ final class BotRoster {
             state = .failed(Self.describe(error))
         }
         scheduleReconnect()
+    }
+
+    /// The access gateway wants a sign-in: no retry until it's done, and no Bot chat says it's
+    /// reconnecting meanwhile (`docs/connecting-and-voice.md` §11.10).
+    private func waitForAccess(_ refusal: HermesError) {
+        state = .failed(Self.describe(refusal))
+        for conversation in allConversations {
+            conversation.botChatWaitsForSignIn()
+        }
     }
 
     static let reconnectGrace: TimeInterval = 20
@@ -730,8 +745,10 @@ final class BotRoster {
         if isBusy { isBusy = false }
     }
 
-    /// A refusal no retry fixes: a sign-in, a missing token, not a Hermes backend.
+    /// A refusal no retry fixes: a sign-in, a missing token, not a Hermes backend, an access
+    /// gateway's sign-in.
     private static func needsThePerson(_ error: any Error, link: BackendLink) -> Bool {
+        if let error = error as? HermesError { return error.waitsForAccess }
         if let failure = error as? BackendClient.Failure {
             switch failure {
             case .signInRequired, .invalidCredentials: return link.signIn != .automatic
@@ -1327,6 +1344,10 @@ final class BotRoster {
         if case GatewaySocket.Failure.closed(let reason)? = error as? GatewaySocket.Failure,
            reason.contains("sign-in"), link.signIn != .automatic {
             state = .signInRequired(reason)
+            return
+        }
+        if let refusal = error as? HermesError, refusal.waitsForAccess {
+            waitForAccess(refusal)
             return
         }
         state = .connecting

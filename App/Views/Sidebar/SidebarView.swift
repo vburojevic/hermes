@@ -479,13 +479,20 @@ struct SidebarView: View {
         case .failed(let reason) where !roster.hasLoaded:
             // With Bots already listed the footer says "offline" and the chat a banner; drawing
             // this over the rows only hid them. The roster's reason first (`docs/setup.md` §4.1).
+            // An access gateway's refusal needs its fix in Edit Gateway, which a retry can't
+            // get past (`docs/connecting-and-voice.md` §11.10).
+            let refusal = workspace.accessRefusal
             SidebarState(
                 symbol: "wifi.slash",
                 title: String(localized: "Bots are offline"),
                 message: reason.isEmpty ? String(localized: "Check that hermes serve is running on \(workspace.bot.name), then try again.") : reason,
-                actionTitle: String(localized: "Retry")
+                actionTitle: refusal == nil ? String(localized: "Retry") : refusal?.isSignIn == true ? String(localized: "Sign In…") : String(localized: "Access")
             ) {
-                Task { await roster.reconnectNow() }
+                if refusal == nil {
+                    Task { await roster.reconnectNow() }
+                } else {
+                    router?.sheet = .editGateway(workspace.bot)
+                }
             }
         case .failed:
             EmptyView()

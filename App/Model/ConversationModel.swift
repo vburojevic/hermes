@@ -3933,6 +3933,25 @@ final class ConversationModel: Identifiable {
                 // the stored chat says how the turn ended (`TurnRecovery`, `docs/chat.md` §2).
                 live?.settleUnheard()
                 return
+            case .waitForSignIn:
+                // The access gateway wants the person to sign in again. The chat's banner says so
+                // and offers the sign-in, so this asks nothing more until it's done
+                // (`resumeIfNeeded` ends the wait); the run goes on on the gateway meanwhile
+                // (`docs/connecting-and-voice.md` §11.10).
+                connectionNote = nil
+                workspace?.checkConnectionNow()
+                skipBackoff = false
+                let pause = Task { try await Task.sleep(for: .seconds(3600)) }
+                self.backoff = pause
+                try? await withTaskCancellationHandler {
+                    try await pause.value
+                } onCancel: {
+                    pause.cancel()
+                }
+                self.backoff = nil
+                skipBackoff = false
+                failures = 0
+                continue
             case .listen, .watchStatus:
                 if case .success(let running) = status {
                     if let approval = running.approval, live?.approval == nil, !runApprovals.isSettled(approval.id) {
@@ -6750,8 +6769,16 @@ extension ConversationModel {
 
     /// The roster's socket dropped.
     func botChatConnectionLost() {
-        // A message not taken yet says it's waiting, on its bubble.
-        if isWorking, delivery == nil { connectionNote = String(localized: "Reconnecting…") }
+        // A message not taken yet says it's waiting, on its bubble. Not while the access gateway
+        // wants a sign-in: the chat's banner says that, and no reconnect is coming until it's done
+        // (`docs/connecting-and-voice.md` §11.10).
+        if isWorking, delivery == nil, workspace?.accessRefusal == nil { connectionNote = String(localized: "Reconnecting…") }
+    }
+
+    /// The access gateway refused the roster's socket: it waits for the sign-in and says nothing
+    /// of reconnecting meanwhile (`docs/connecting-and-voice.md` §11.10).
+    func botChatWaitsForSignIn() {
+        connectionNote = nil
     }
 
     /// The roster's socket is back: re-attach and catch up on what was missed.

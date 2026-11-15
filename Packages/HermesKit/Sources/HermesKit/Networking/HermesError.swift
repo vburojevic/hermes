@@ -62,6 +62,7 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
         case .accessRefused(let host, let refusal):
             switch refusal {
             case .signInNeeded: "An access gateway at \(host) answered, not Hermes."
+            case .signInExpired: "Your sign-in to the access gateway at \(host) expired."
             case .tokenRejected: "The access gateway at \(host) refused the service token."
             case .certificateNeeded: "The proxy at \(host) asks for a client certificate."
             case .certificateRejected: "The proxy at \(host) refused the client certificate."
@@ -122,6 +123,8 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             "Add the key in Settings → Hermes Gateways."
         case .accessRefused(_, .signInNeeded):
             "Set up a service token for this gateway in Edit Gateway → Access."
+        case .accessRefused(_, .signInExpired):
+            "Sign in again in Edit Gateway → Access."
         case .accessRefused(_, .tokenRejected):
             "Check the client ID and secret, and that the token is allowed for this gateway and hasn't expired."
         case .accessRefused(_, .certificateNeeded):
@@ -185,6 +188,13 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
         default:
             isTransient
         }
+    }
+
+    /// An access gateway answered and turned the app away for a sign-in or a token: no retry gets
+    /// through until the person signs in or fixes Access, so reconnect loops stop and wait for
+    /// that (`docs/connecting-and-voice.md` §11.10).
+    public var waitsForAccess: Bool {
+        accessRefusal != nil && !keepsChecking
     }
 
     /// `afterAnswer` says the request already had its answer when it failed (a stream that

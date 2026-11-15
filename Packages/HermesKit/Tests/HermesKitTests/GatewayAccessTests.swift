@@ -25,39 +25,39 @@ struct GatewayAccessTests {
     @Test(arguments: [301, 302, 303, 307, 308])
     func aRedirectToSignInIsTheAccessGateways(status: Int) {
         let redirect = Self.response(status, type: "text/html", location: "https://team.example.com/cdn-cgi/access/login")
-        #expect(AccessRefusal.classify(redirect, body: Data(), sentToken: false) == .signInNeeded)
-        #expect(AccessRefusal.classify(redirect, body: Data(), sentToken: true) == .tokenRejected)
+        #expect(AccessRefusal.classify(redirect, body: Data(), sent: .nothing) == .signInNeeded)
+        #expect(AccessRefusal.classify(redirect, body: Data(), sent: .serviceToken) == .tokenRejected)
     }
 
     @Test(arguments: [401, 403])
     func anHTMLPageIsTheAccessGatewaysAndJSONIsHermess(status: Int) {
         let page = Data("<html><title>Forbidden | Access</title></html>".utf8)
-        #expect(AccessRefusal.classify(Self.response(status, type: "text/html; charset=utf-8"), body: page, sentToken: false) == .signInNeeded)
-        #expect(AccessRefusal.classify(Self.response(status, type: "text/html"), body: page, sentToken: true) == .tokenRejected)
-        #expect(AccessRefusal.classify(Self.response(status, type: "text/plain"), body: Data("Forbidden".utf8), sentToken: false) == .signInNeeded)
+        #expect(AccessRefusal.classify(Self.response(status, type: "text/html; charset=utf-8"), body: page, sent: .nothing) == .signInNeeded)
+        #expect(AccessRefusal.classify(Self.response(status, type: "text/html"), body: page, sent: .serviceToken) == .tokenRejected)
+        #expect(AccessRefusal.classify(Self.response(status, type: "text/plain"), body: Data("Forbidden".utf8), sent: .nothing) == .signInNeeded)
 
         // Hermes's own refusals are JSON, and its bare 403 for a browser origin is empty.
         let hermes = Data(#"{"error":{"message":"Invalid API key","code":"invalid_api_key"}}"#.utf8)
-        #expect(AccessRefusal.classify(Self.response(status, type: "application/json"), body: hermes, sentToken: true) == nil)
-        #expect(AccessRefusal.classify(Self.response(status), body: Data(), sentToken: false) == nil)
+        #expect(AccessRefusal.classify(Self.response(status, type: "application/json"), body: hermes, sent: .serviceToken) == nil)
+        #expect(AccessRefusal.classify(Self.response(status), body: Data(), sent: .nothing) == nil)
     }
 
     @Test func otherAnswersAreNotRefusals() {
         let page = Data("<html>Oops</html>".utf8)
-        #expect(AccessRefusal.classify(Self.response(304), body: Data(), sentToken: false) == nil)
-        #expect(AccessRefusal.classify(Self.response(500, type: "text/html"), body: page, sentToken: false) == nil)
-        #expect(AccessRefusal.classify(Self.response(404, type: "text/html"), body: page, sentToken: false) == nil)
-        #expect(AccessRefusal.classify(Self.response(200, type: "text/html"), body: page, sentToken: false) == nil)
+        #expect(AccessRefusal.classify(Self.response(304), body: Data(), sent: .nothing) == nil)
+        #expect(AccessRefusal.classify(Self.response(500, type: "text/html"), body: page, sent: .nothing) == nil)
+        #expect(AccessRefusal.classify(Self.response(404, type: "text/html"), body: page, sent: .nothing) == nil)
+        #expect(AccessRefusal.classify(Self.response(200, type: "text/html"), body: page, sent: .nothing) == nil)
     }
 
     /// A socket's upgrade answer has no body to read: only an HTML page counts, since Hermes's
     /// own bare 403 for a browser origin it doesn't allow is `text/plain`.
     @Test func aSocketsRefusalIsReadFromItsContentType() {
-        #expect(AccessRefusal.classify(Self.response(403, type: "text/html"), body: nil, sentToken: false) == .signInNeeded)
-        #expect(AccessRefusal.classify(Self.response(403, type: "application/json"), body: nil, sentToken: false) == nil)
-        #expect(AccessRefusal.classify(Self.response(403, type: "text/plain; charset=utf-8"), body: nil, sentToken: false) == nil)
-        #expect(AccessRefusal.classify(Self.response(403, type: "text/plain"), body: Data(), sentToken: false) == nil)
-        #expect(AccessRefusal.classify(Self.response(403), body: nil, sentToken: false) == nil)
+        #expect(AccessRefusal.classify(Self.response(403, type: "text/html"), body: nil, sent: .nothing) == .signInNeeded)
+        #expect(AccessRefusal.classify(Self.response(403, type: "application/json"), body: nil, sent: .nothing) == nil)
+        #expect(AccessRefusal.classify(Self.response(403, type: "text/plain; charset=utf-8"), body: nil, sent: .nothing) == nil)
+        #expect(AccessRefusal.classify(Self.response(403, type: "text/plain"), body: Data(), sent: .nothing) == nil)
+        #expect(AccessRefusal.classify(Self.response(403), body: nil, sent: .nothing) == nil)
     }
 
     @Test func certificateFailuresAreTheProxysAndOtherTLSFailuresAreNot() {

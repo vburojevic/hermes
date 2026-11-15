@@ -20,6 +20,10 @@ public enum RunFollow {
         /// The events are gone and the run goes on: follow its status alone until it ends, saying
         /// so in the turn's live line (`line`), and the stored reply shows when it does.
         case watchStatus
+        /// The access gateway in front of Hermes wants the person to sign in again
+        /// (`docs/connecting-and-voice.md` §11.10). Nothing gets through until they do, so the
+        /// app asks nothing more and waits for the sign-in; the run goes on meanwhile.
+        case waitForSignIn
     }
 
     /// The run's events answered 404 (`run_not_found`) while its status may still be there: the
@@ -27,6 +31,11 @@ public enum RunFollow {
     public static func eventsGone(after error: (any Error)?) -> Bool {
         if case .notFound? = error as? HermesError { return true }
         return false
+    }
+
+    /// The access gateway turned the request away until the person signs in again.
+    public static func waitsForSignIn(after error: (any Error)?) -> Bool {
+        (error as? HermesError)?.accessRefusal?.isSignIn == true
     }
 
     /// - Parameters:
@@ -39,6 +48,7 @@ public enum RunFollow {
             return eventsGone ? .watchStatus : .listen
         case .failure(let error):
             if case .notFound? = error as? HermesError { return .recover }
+            if waitsForSignIn(after: error) { return .waitForSignIn }
             // Couldn't ask (offline, a timeout): try again as before.
             return eventsGone ? .watchStatus : .listen
         }

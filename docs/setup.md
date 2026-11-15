@@ -620,14 +620,16 @@ With `-HERMES_SETTINGS_SETUP device.hiddenSuggestions` the row's page opens stra
 
 ### 4.24 Access
 
-`GatewaySetup.access` (HermesKit, tested in `GatewayAccessTests.swift`), shown by `GatewaySetup`
-for a gateway with Access settings or one an access gateway or proxy turned away
-([connecting-and-voice.md](connecting-and-voice.md) §11). Hidden for every other gateway.
+`GatewaySetup.access` (HermesKit, tested in `GatewayAccessTests.swift` and
+`AccessSignInTests.swift`), shown by `GatewaySetup` for a gateway with Access settings or one an
+access gateway or proxy turned away ([connecting-and-voice.md](connecting-and-voice.md) §11).
+Hidden for every other gateway.
 
 | State | Told by | The app shows |
 |---|---|---|
-| Ready | Access settings saved, the gateway answers | What's set ("Service token", "Certificate", "Service token, certificate"), Edit Access… |
-| Not set up | An access gateway turned the app away (`signInNeeded`) | Its line, Edit Access…, and the steps: create a service token in the access gateway's dashboard, then enter it in Edit Gateway → Access |
+| Ready | Access settings saved, the gateway answers | What's set ("Service token", "Browser sign-in", "Certificate", "Service token, certificate"), Edit Access… |
+| Not set up | An access gateway turned the app away (`signInNeeded`) | Its line, Edit Access…, and the steps: choose Browser sign-in and sign in on its page, or create a service token in the access gateway's dashboard and enter it in Edit Gateway → Access |
+| Not set up | Browser sign-in is chosen and nobody signed in (`signInNeeded`), or the sign-in ran out (`signInExpired`) | Its line ("Sign in again to reach …"), Sign In…, and the step: choose Sign In… in Edit Gateway → Access and sign in on the access gateway's page |
 | Not set up | It refused the token sent (`tokenRejected`) | Its line, Edit Access…, and the steps: check the token hasn't expired and a policy allows it, then enter it again |
 | Not set up | A proxy wants a client certificate and none is set (`certificateNeeded`) | Its line, Edit Access…, and the steps: get a .p12 or .pfx for this device, then import it under Client certificate |
 | Not set up | The proxy refused the certificate (`certificateRejected`) | Its line, Edit Access…, and the steps: ask for one the proxy accepts, then replace it |

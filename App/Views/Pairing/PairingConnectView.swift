@@ -314,7 +314,8 @@ struct PairingConnectView: View {
         NavigationStack {
             GatewayAccessPage(
                 draft: Binding { access ?? GatewayAccessDraft() } set: { access = $0 },
-                check: accessCheck, host: link.gateway.host() ?? address, checkAgain: checkAccess
+                check: accessCheck, host: link.gateway.host() ?? address, gateway: link.gateway, name: link.name,
+                checkAgain: checkAccess
             )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

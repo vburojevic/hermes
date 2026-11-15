@@ -110,7 +110,9 @@ struct ChatScreen: View {
         }
         .safeAreaBar(edge: .top) {
             VStack(spacing: 8) {
-                if let roster {
+                // The access gateway turns Bot Mode away too, and Retry can't get past it: a Bot
+                // chat offers the sign-in like any chat (`chatAccessExpired`, §11.10).
+                if let roster, workspace.accessRefusal == nil {
                     BotModeBanner(roster: roster)
                 } else {
                     ConnectionBanner(workspace: workspace)
@@ -763,6 +765,7 @@ struct ConnectionBanner: View {
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     #endif
+    @State private var signsIn = false
 
     var body: some View {
         if case .failed(let error) = workspace.connection, let refusal = error.accessRefusal {
@@ -810,11 +813,12 @@ struct ConnectionBanner: View {
     }
 
     /// An access gateway or proxy turned the app away before Hermes saw it (`accessTokenBanner`,
-    /// `docs/connecting-and-voice.md` §11.5): what it said, and Access to fix it.
+    /// `docs/connecting-and-voice.md` §11.5): what it said, and Access to fix it. A gateway that
+    /// signs in in the browser signs in again right here (`chatAccessExpired`, §11.10).
     private func accessBanner(_ refusal: AccessRefusal) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: refusal == .signInNeeded ? "lock.shield.fill" : "xmark.shield")
-                .foregroundStyle(refusal == .signInNeeded ? Theme.secondaryText : Theme.danger)
+            Image(systemName: refusal.isSignIn ? "lock.shield.fill" : "xmark.shield")
+                .foregroundStyle(refusal.isSignIn ? Theme.secondaryText : Theme.danger)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(refusal.bannerTitle)
@@ -827,17 +831,36 @@ struct ConnectionBanner: View {
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
             Spacer(minLength: 8)
-            Button("Access") {
-                router?.sheet = .editGateway(workspace.bot)
+            if refusal.isSignIn, workspace.bot.access?.method == .browserSignIn {
+                Button("Sign In…") { signsIn = true }
+                    .inkFilledButton()
+                    .controlSize(.small)
+            } else {
+                Button("Access") {
+                    router?.sheet = .editGateway(workspace.bot)
+                }
+                .inkFilledButton()
+                .controlSize(.small)
             }
-            .inkFilledButton()
-            .controlSize(.small)
         }
         .padding(12)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .frame(maxWidth: Theme.readableWidth + 40)
+        .accessSignIn(isPresented: $signsIn, gateway: workspace.bot.baseURL, identity: app.clientIdentity(for: workspace.bot)) { session in
+            let bot = workspace.bot
+            guard let session else {
+                // The page closed without a sign-in: look again, so the banner says what's true.
+                Task { await workspace.connect() }
+                return
+            }
+            do {
+                try app.saveAccessSession(session, for: bot.id)
+            } catch {
+                ConnectionLog.logger.error("access: couldn't keep the sign-in: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
+            }
+        }
     }
 
     /// Local Network, Wi-Fi or Mobile Data turned off for Hermes.
