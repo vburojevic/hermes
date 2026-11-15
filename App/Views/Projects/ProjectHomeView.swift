@@ -17,6 +17,8 @@ struct ProjectHomeView: View {
     @State private var headerScrolledAway = false
     @State private var width: CGFloat = 0
     @State private var actionError: HermesError?
+    /// The lane row whose swipe actions show; a tap or a scroll shuts it.
+    @State private var swipedRow: String?
 
     private var projects: ProjectsModel { workspace.projects }
     private var node: ProjectNode? { projects.node(projectID) }
@@ -159,6 +161,10 @@ struct ProjectHomeView: View {
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > 140 } action: { _, away in
                 if away != headerScrolledAway { withAnimation(.easeOut(duration: 0.2)) { headerScrolledAway = away } }
             }
+            // A scroll shuts a row's swipe actions, as in the chat list.
+            .onScrollPhaseChange { _, phase in
+                if phase != .idle, swipedRow != nil { swipedRow = nil }
+            }
             .onChange(of: projects.focusLane, initial: true) { _, lane in
                 guard let lane else { return }
                 Task {
@@ -291,9 +297,11 @@ struct ProjectHomeView: View {
             ForEach(rows) { row in
                 LaneChatRow(row: row, time: times[row.id],
                             isWorking: projects.isRunning(sessionID: row.id) || projects.isRunning(sessionID: row.stableID)) {
-                    open(row)
+                    // A tap while a row shows its swipe actions shuts them, as in the chat list.
+                    if swipedRow != nil { swipedRow = nil } else { open(row) }
                 }
                 .contextMenu { chatMenu(row) }
+                .modifier(rowActions(row))
                 .onAppear { workspace.unread.needsLastLine(row.session) }
             }
             if sorted.count > 3 {
@@ -341,9 +349,28 @@ struct ProjectHomeView: View {
         Button("Copy Session ID", systemImage: "number") {
             Pasteboard.copy(row.id)
         }
+        #if os(macOS)
+        // No swipe without a trackpad: Archive is here too, as in the chat list.
         Button("Archive", systemImage: "archivebox") {
             archive(session)
         }
+        #endif
+    }
+
+    /// The chat list's trailing swipe, Mute then Archive (`docs/inbox.md` §5), on iPhone and iPad,
+    /// and its two actions for VoiceOver on every platform: a swipe outside a `List` isn't one the
+    /// system offers as the row's actions.
+    private func rowActions(_ row: ProjectSessionRow) -> LaneRowActions {
+        let session = workspace.session(forKey: row.stableID) ?? row.session
+        let key = session.stableID
+        let muted = workspace.unread.isMuted(key)
+        return LaneRowActions(
+            id: row.stableID,
+            muted: muted,
+            openRow: $swipedRow,
+            toggleMute: { toggleMute(key, muted: muted) },
+            archive: { archive(session) }
+        )
     }
 
     private func toggleRead(_ key: String, isUnread: Bool) {
@@ -352,6 +379,11 @@ struct ProjectHomeView: View {
 
     private func togglePin(_ session: HermesSession) {
         Task { await run { try await workspace.setPinned(session, !session.pinned) } }
+    }
+
+    /// Swiped: until turned back on (a swipe undoes it); the menu offers the shorter ones.
+    private func toggleMute(_ key: String, muted: Bool) {
+        if muted { workspace.unread.unmute(key) } else { workspace.unread.mute(key, for: .untilTurnedOff) }
     }
 
     private func archive(_ session: HermesSession) {
@@ -465,6 +497,28 @@ struct LaneHeader: View {
         .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A lane row's Mute and Archive: swiped from the trailing edge on iPhone and iPad, and named
+/// actions for VoiceOver everywhere (`docs/projects.md` §2).
+struct LaneRowActions: ViewModifier {
+    let id: String
+    let muted: Bool
+    @Binding var openRow: String?
+    let toggleMute: () -> Void
+    let archive: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            #if os(iOS)
+            .modifier(TrailingSwipeActions(id: id, actions: [
+                RowSwipeAction(title: muted ? String(localized: "Unmute") : String(localized: "Mute"), symbol: muted ? "bell" : "bell.slash", tint: Theme.swipeActionQuiet, perform: toggleMute),
+                RowSwipeAction(title: String(localized: "Archive"), symbol: "archivebox", tint: Theme.swipeActionQuiet, perform: archive),
+            ], openRow: $openRow))
+            #endif
+            .accessibilityAction(named: muted ? Text("Unmute") : Text("Mute"), toggleMute)
+            .accessibilityAction(named: Text("Archive"), archive)
     }
 }
 
