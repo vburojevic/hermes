@@ -376,7 +376,13 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   Mute and Archive. Every list is a `List` and uses the system's swipe actions, on iPhone as on
   iPad and the Mac. The system draws their symbols white on the tint in both modes, so the main
   action is ink in Light Mode and a raised grey in Dark Mode (`Theme.swipeAction`; white ink hid
-  its envelope), the others a quieter grey (`Theme.swipeActionQuiet`).
+  its envelope), the others a quieter grey (`Theme.swipeActionQuiet`). A project's lanes aren't a
+  `List`, so their chats get the trailing edge's swipe from `TrailingSwipeActions`, on iPhone and
+  iPad only, with the system's numbers measured on iOS 27 (`RowSwipe`, `docs/projects.md` §2):
+  buttons 60 points wide with 10 around them, the row following the finger from where it touched
+  down (a pan's own translation leaves out the move that began it, and a short swipe shut), a
+  let-go past half of the buttons opening the row, and a full swipe at the larger of 52% of the
+  row and one button past them.
 - **Archive:** `PATCH /api/sessions/{id} {archived: true}` (the same as `session.archive`), with
   Undo for 5 s. Archived chats leave the list (Hermes' lists leave them out). The row goes and
   Undo shows at once; Undo brings the row back at once and sends its call after the archive's,
@@ -467,8 +473,8 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
   compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),
   `SidebarCountsTests` (a group chat's count read page by page, the segments' rows),
-  `SidewaysSwipeTests` (which drags a row's swipe takes), `SidewaysScrollTests` (which Mac scrolls
-  reply).
+  `SidewaysSwipeTests` (which drags a row's swipe takes, and `RowSwipe`'s geometry),
+  `SidewaysScrollTests` (which Mac scrolls reply).
 
 ## 8. Setup
 
