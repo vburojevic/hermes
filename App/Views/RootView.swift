@@ -56,7 +56,7 @@ struct RootView: View {
                             let id = String(page.dropFirst(6))
                             workspace.selection = .group(id)
                             // `-HERMES_GROUP_SEND <text>` posts in it once it loads.
-                            if let text = UserDefaults.standard.string(forKey: "HERMES_GROUP_SEND") {
+                            if let text = LaunchFlags.take("HERMES_GROUP_SEND") {
                                 for _ in 0..<40 where workspace.roster?.groupRooms.chat(for: id) == nil {
                                     try? await Task.sleep(for: .milliseconds(250))
                                 }
@@ -107,7 +107,8 @@ struct RootView: View {
                         await sendDebugMessage(in: workspace)
                         await openDebugHelpers(in: workspace)
                         // `-HERMES_SEARCH <text>` types it in the chats search (screenshots).
-                        if let text = UserDefaults.standard.string(forKey: "HERMES_SEARCH"), !text.isEmpty {
+                        // Once per launch (`LaunchFlags`), as this runs again for each window.
+                        if let text = LaunchFlags.take("HERMES_SEARCH") {
                             for _ in 0..<40 where workspace.roster?.isConnected != true {
                                 try? await Task.sleep(for: .milliseconds(250))
                             }
@@ -193,8 +194,12 @@ struct RootView: View {
             try? await Task.sleep(for: .seconds(2))
             openSettings()
         }
-        // `-HERMES_MAC_DRIVE "…"`: presses and keys from inside, for checks off-Space.
-        .task { await MacDebugDriver.runIfAsked() }
+        // `-HERMES_MAC_DRIVE "…"`: presses and keys from inside, for checks off-Space. Once per
+        // launch (`LaunchFlags`): a new window doesn't run the steps again.
+        .task {
+            guard LaunchFlags.take("HERMES_MAC_DRIVE") != nil else { return }
+            await MacDebugDriver.runIfAsked()
+        }
         #endif
         #endif
         .focusedSceneValue(\.windowRouter, router)
@@ -329,11 +334,22 @@ struct RootView: View {
 
     /// `-HERMES_SEND <text>` sends a message in a new chat once connected (turn screenshots and
     /// flow tests without driving the keyboard). Waits for Bot Mode so it runs over the socket.
+    /// The flags here act once per launch (`LaunchFlags`): this runs again for each window and
+    /// each gateway switched to. They're all taken first, so a later run doesn't fall through
+    /// from one that returned early to the next.
     private func sendDebugMessage(in workspace: BotWorkspace) async {
+        let stuckAfter = LaunchFlags.takeSeconds("HERMES_STUCK_TURN")
+        #if os(iOS)
+        let cycle = LaunchFlags.take("HERMES_OPEN_CYCLE")
+        let refreshAfter = LaunchFlags.takeSeconds("HERMES_REFRESH_AFTER")
+        let showChanges = LaunchFlags.takeSeconds("HERMES_SHOW_CHANGES")
+        #endif
+        let sendHere = LaunchFlags.take("HERMES_SEND_HERE")
+        let draftText = LaunchFlags.take("HERMES_DRAFT")
+        let sendText = LaunchFlags.take("HERMES_SEND")
         // `-HERMES_STUCK_TURN <s>`: that long after launch, the open chat holds as if it never heard
         // a turn end (`docs/chat.md` §4b): Send queues, and the chat settles from the gateway.
-        let stuckAfter = UserDefaults.standard.double(forKey: "HERMES_STUCK_TURN")
-        if stuckAfter > 0 {
+        if let stuckAfter {
             Task {
                 try? await Task.sleep(for: .seconds(stuckAfter))
                 workspace.currentConversation.holdAsIfATurnEndWasMissed()
@@ -343,7 +359,7 @@ struct RootView: View {
         // `-HERMES_OPEN_CYCLE bot:ops,chat:<id>,…` opens each in turn (`-HERMES_OPEN_CYCLE_ROUNDS`
         // times, 3 by default), marking the frame log (`-HERMES_FRAME_LOG`) as each opens and 4 s
         // later: the main thread's work per open, without taps or accessibility queries.
-        if let cycle = UserDefaults.standard.string(forKey: "HERMES_OPEN_CYCLE"), !cycle.isEmpty {
+        if let cycle {
             let rounds = UserDefaults.standard.integer(forKey: "HERMES_OPEN_CYCLE_ROUNDS")
             try? await Task.sleep(for: .seconds(8))
             for _ in 0..<(rounds > 0 ? rounds : 3) {
@@ -366,16 +382,14 @@ struct RootView: View {
         }
         // `-HERMES_REFRESH_AFTER <s>` runs the background refresh (`AppModel.refreshInBackground`,
         // what a `sync` push does too) that long after launch, without waiting for iOS to.
-        let refreshAfter = UserDefaults.standard.double(forKey: "HERMES_REFRESH_AFTER")
-        if refreshAfter > 0 {
+        if let refreshAfter {
             try? await Task.sleep(for: .seconds(refreshAfter))
             await app.refreshInBackground()
             return
         }
         // `-HERMES_SHOW_CHANGES <s>`: that long after launch, the open chat's latest turn's changes
         // open as its Changes row opens them (the Inspector's tab, or the sheet; `docs/chat.md` §2).
-        let showChanges = UserDefaults.standard.double(forKey: "HERMES_SHOW_CHANGES")
-        if showChanges > 0 {
+        if let showChanges {
             Task {
                 try? await Task.sleep(for: .seconds(showChanges))
                 let conversation = workspace.currentConversation
@@ -387,7 +401,7 @@ struct RootView: View {
         // after launch (default 6), three times 20 s apart (send-animation checks), or
         // `-HERMES_SEND_HERE_ROUNDS <n>` times (1: once, as typed). `-HERMES_SEND_HERE_CHAT <id>`
         // sends into that chat instead, open or not (a reply landing below the row VoiceOver reads).
-        if let text = UserDefaults.standard.string(forKey: "HERMES_SEND_HERE"), !text.isEmpty {
+        if let text = sendHere {
             let after = UserDefaults.standard.double(forKey: "HERMES_SEND_HERE_AFTER")
             let rounds = UserDefaults.standard.integer(forKey: "HERMES_SEND_HERE_ROUNDS")
             let chat = UserDefaults.standard.string(forKey: "HERMES_SEND_HERE_CHAT").flatMap { $0.isEmpty ? nil : $0 }
@@ -408,7 +422,7 @@ struct RootView: View {
         }
         #endif
         // `-HERMES_DRAFT <text>` opens a new chat with the text typed but not sent.
-        if let typed = UserDefaults.standard.string(forKey: "HERMES_DRAFT"), !typed.isEmpty {
+        if let typed = draftText {
             for _ in 0..<40 where workspace.roster != nil && workspace.roster?.isConnected != true {
                 try? await Task.sleep(for: .milliseconds(250))
             }
@@ -435,8 +449,7 @@ struct RootView: View {
             }
             return
         }
-        guard let text = UserDefaults.standard.string(forKey: "HERMES_SEND"), !text.isEmpty else { return }
-        UserDefaults.standard.removeObject(forKey: "HERMES_SEND")
+        guard let text = sendText else { return }
         for _ in 0..<40 where workspace.roster != nil && workspace.roster?.isConnected != true {
             try? await Task.sleep(for: .milliseconds(250))
         }
@@ -470,7 +483,7 @@ struct RootView: View {
     /// n, a steer to it, or stops it, `-HERMES_HELPERS_AFTER <seconds>` after launch (helper screenshots).
     /// `-HERMES_CHECKPOINTS review|undo|timeline|detail[:n]|off|restore-all[:n]` (screenshots).
     private func openDebugCheckpoints(in workspace: BotWorkspace) async {
-        guard let action = UserDefaults.standard.string(forKey: "HERMES_CHECKPOINTS"), !action.isEmpty else { return }
+        guard let action = LaunchFlags.take("HERMES_CHECKPOINTS") else { return }
         let conversation = workspace.currentConversation
         let checkpoints = conversation.checkpoints
         for _ in 0..<60 where checkpoints.list == nil {
@@ -500,7 +513,7 @@ struct RootView: View {
     }
 
     private func openDebugHelpers(in workspace: BotWorkspace) async {
-        guard let action = UserDefaults.standard.string(forKey: "HERMES_HELPERS"), !action.isEmpty else { return }
+        guard let action = LaunchFlags.take("HERMES_HELPERS") else { return }
         let delay = UserDefaults.standard.string(forKey: "HERMES_HELPERS_AFTER").flatMap(Double.init) ?? 6
         try? await Task.sleep(for: .seconds(delay))
         let conversation = workspace.currentConversation

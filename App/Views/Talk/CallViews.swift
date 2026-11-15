@@ -335,9 +335,10 @@ struct TalkEntry: ViewModifier {
                 if phase == .active { TalkCenter.shared.factsChanged() }
             }
             #if DEBUG
-            // `-HERMES_TALK_TO <profile>|hermes` calls as a Shortcut would (screenshots, UI tests).
+            // `-HERMES_TALK_TO <profile>|hermes` calls as a Shortcut would (screenshots, UI tests),
+            // once per launch (`LaunchFlags`): a new window doesn't call again.
             .task {
-                guard let name = UserDefaults.standard.string(forKey: "HERMES_TALK_TO") else { return }
+                guard let name = LaunchFlags.take("HERMES_TALK_TO") else { return }
                 TalkCenter.logger.info("debug: calling \(name, privacy: .public) as a Shortcut would")
                 TalkCenter.shared.request(botName: name == "hermes" ? nil : name)
             }

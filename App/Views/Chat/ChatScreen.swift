@@ -216,12 +216,15 @@ struct ChatScreen: View {
             return true
         }
         #if DEBUG
-        // `-HERMES_OPEN_VOICE YES` starts Talk in the first chat that opens.
+        // `-HERMES_OPEN_VOICE YES` starts Talk in the first chat that opens, once per launch
+        // (`LaunchFlags`): opening another chat after the call doesn't start one again.
         .task {
-            if UserDefaults.standard.bool(forKey: "HERMES_OPEN_VOICE"), !TalkCenter.shared.isActive {
-                try? await Task.sleep(for: .seconds(1))
-                startTalk()
+            guard UserDefaults.standard.bool(forKey: "HERMES_OPEN_VOICE"), !TalkCenter.shared.isActive else {
+                return
             }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, LaunchFlags.takeSwitch("HERMES_OPEN_VOICE") else { return }
+            startTalk()
         }
         #endif
         // ⌥⌘V (Chat → Talk): start a call here; the menu ends one.
