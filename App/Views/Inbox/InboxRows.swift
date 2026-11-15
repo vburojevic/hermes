@@ -205,11 +205,6 @@ struct InboxRowLayout<Line: View>: View {
     @ViewBuilder let line: Line
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    #if os(macOS)
-    private let markSize: CGFloat = InboxMetrics.glyphSize * 0.9
-    #else
-    @ScaledMetric(relativeTo: .footnote) private var markSize: CGFloat = InboxMetrics.glyphSize * 0.9
-    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: InboxMetrics.lineSpacing) {
@@ -261,17 +256,33 @@ struct InboxRowLayout<Line: View>: View {
 
     @ViewBuilder
     private var meta: some View {
-        if routine { mark("clock") }
-        if muted { mark("bell.slash.fill") }
-        if pinned { mark("pin.fill") }
+        if routine { RowMark("clock") }
+        if muted { RowMark("bell.slash.fill") }
+        if pinned { RowMark("pin.fill") }
         if let date {
             InboxTimeText(date: date, emphasized: emphasizeTime ?? strong)
         }
     }
+}
 
-    private func mark(_ symbol: String) -> some View {
+/// A row's small mark before its time (muted, pinned, routine), in tertiary ink and growing with
+/// the time beside it. The chat list's rows and a project's lane rows share it.
+struct RowMark: View {
+    let symbol: String
+
+    #if os(macOS)
+    private let size: CGFloat = InboxMetrics.glyphSize * 0.9
+    #else
+    @ScaledMetric(relativeTo: .footnote) private var size: CGFloat = InboxMetrics.glyphSize * 0.9
+    #endif
+
+    init(_ symbol: String) {
+        self.symbol = symbol
+    }
+
+    var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: markSize))
+            .font(.system(size: size))
             .foregroundStyle(Theme.tertiaryText)
             .accessibilityHidden(true)
     }

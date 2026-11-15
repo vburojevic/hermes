@@ -295,7 +295,7 @@ struct ProjectHomeView: View {
         return VStack(alignment: .leading, spacing: 8) {
             LaneHeader(lane: lane, count: lane.sessions.count)
             ForEach(rows) { row in
-                LaneChatRow(row: row, time: times[row.id],
+                LaneChatRow(row: row, time: times[row.id], muted: isMuted(row),
                             isWorking: projects.isRunning(sessionID: row.id) || projects.isRunning(sessionID: row.stableID)) {
                     // A tap while a row shows its swipe actions shuts them, as in the chat list.
                     if swipedRow != nil { swipedRow = nil } else { open(row) }
@@ -363,7 +363,7 @@ struct ProjectHomeView: View {
     private func rowActions(_ row: ProjectSessionRow) -> LaneRowActions {
         let session = workspace.session(forKey: row.stableID) ?? row.session
         let key = session.stableID
-        let muted = workspace.unread.isMuted(key)
+        let muted = isMuted(row)
         return LaneRowActions(
             id: row.stableID,
             muted: muted,
@@ -371,6 +371,11 @@ struct ProjectHomeView: View {
             toggleMute: { toggleMute(key, muted: muted) },
             archive: { archive(session) }
         )
+    }
+
+    /// Muted as the chat list reads it: by the chat's stable key, whichever of its ids the lane has.
+    private func isMuted(_ row: ProjectSessionRow) -> Bool {
+        workspace.unread.isMuted((workspace.session(forKey: row.stableID) ?? row.session).stableID)
     }
 
     private func toggleRead(_ key: String, isUnread: Bool) {
@@ -527,6 +532,8 @@ struct LaneChatRow: View {
     let row: ProjectSessionRow
     /// The row's time (`RowTime`): its last message's, as in the chat list.
     let time: Date?
+    /// The chat list's slashed bell before the time (`docs/inbox.md` §5).
+    let muted: Bool
     let isWorking: Bool
     let action: () -> Void
 
@@ -549,6 +556,9 @@ struct LaneChatRow: View {
                 if isWorking {
                     StatusDot(color: Theme.warning)
                 }
+                if muted {
+                    RowMark("bell.slash.fill")
+                }
                 if let date = time {
                     Text(Self.time(date))
                         .font(.footnote)
@@ -569,6 +579,7 @@ struct LaneChatRow: View {
 
     private var accessibilityText: String {
         var parts = [row.displayTitle]
+        if muted { parts.append(String(localized: "muted")) }
         if isWorking { parts.append(String(localized: "working")) }
         if let date = time { parts.append(Formatting.relativePhrase(date)) }
         return parts.joined(separator: ", ")
