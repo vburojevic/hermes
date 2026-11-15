@@ -99,7 +99,10 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
   - Lanes, in the gateway's order: main checkout first, then worktrees by recency, then "Card
     worktrees". Each lane (`laneHeader*`) shows its chats newest first (`laneChatRow`: title, first
     line, time, working dot), three at a time with "Show All N" / "Show Less". A chat's context
-    menu has Move to Project…, Checkpoints… and Copy Session ID.
+    menu has Mark as Read / Mark as Unread, Pin, Move to Project…, Checkpoints…, Copy Session ID
+    and Archive: a lane is a scroll view of plain rows rather than a `List`, so the actions the
+    sidebar's rows offer by swipe live here instead. Pin is also what brings a project's chat into
+    the flat chat list, which otherwise keeps project chats in the project.
   - A project with no chats says "No chats yet" and where its chats will run.
   - `factsCard` ("What Hermes knows about this project": Built with, Checks Hermes runs before
     saying it's done, Reads first): at the end of the list on iPhone and narrow iPad layouts; in a
