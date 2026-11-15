@@ -104,6 +104,9 @@ struct TranscriptView: View {
     #else
     private var isReadingWindow: Bool { true }
     #endif
+    /// Only the open chat reads (`docs/inbox.md` §4): backed out of on iPhone, this transcript stays
+    /// alive under the list, and what comes in then waits on its row.
+    private var isOpen: Bool { BadgeScope.readsAsShown(conversation.inboxKey, open: workspace.unread.openKey) }
     /// Choosing words to quote (`ChooseQuoteSheet`).
     @State private var choosingQuote: QuoteChoice?
     /// A reply open in Select Text.
@@ -1592,10 +1595,10 @@ extension TranscriptView {
                 if shown { sawRows(edge.visibleKeys) }
             }
             // Read on the gateway once the newest message has been on screen for a second.
-            .task(id: ReadTrigger(atEnd: isFollowing && settled, rows: rowCount, active: scenePhase == .active && isReadingWindow,
+            .task(id: ReadTrigger(atEnd: isFollowing && settled, rows: rowCount, active: scenePhase == .active && isReadingWindow && isOpen,
                                   lastActive: conversation.stableKey.flatMap { workspace.session(forKey: $0)?.lastActive }
                                     ?? conversation.botName.flatMap { workspace.roster?.bot(named: $0)?.lastActive })) {
-                guard isFollowing, settled, scenePhase == .active, isReadingWindow else { return }
+                guard isFollowing, settled, scenePhase == .active, isReadingWindow, isOpen else { return }
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, isFollowing else { return }
                 markRead()
@@ -1806,7 +1809,7 @@ extension TranscriptView {
         let rows = conversation.rows
         let shown = Set(keys)
         guard let lastIndex = rows.lastIndex(where: { shown.contains(conversation.displayID(for: $0)) }) else { return }
-        if let chat = conversation.inboxKey {
+        if let chat = conversation.inboxKey, isOpen {
             let previous = workspace.unread.seenThrough(chat).flatMap { id in rows.lastIndex { $0.id == id } } ?? -1
             if lastIndex > previous { workspace.unread.setSeenThrough(chat, rowID: rows[lastIndex].id) }
         }
@@ -1815,9 +1818,10 @@ extension TranscriptView {
 
     /// Read on the gateway: the newest message has been on screen for a second in the window in
     /// front, or the reader jumped to it; a Bot Chat too, also while the Bot works (`docs/inbox.md`
-    /// §4). Opening a chat partway up, a window behind another or a locked Mac reads nothing.
+    /// §4). Opening a chat partway up, a window behind another, a locked Mac or a chat backed out
+    /// of reads nothing.
     fileprivate func markRead() {
-        guard let key = conversation.inboxKey, BotRoster.isInFront, isReadingWindow else { return }
+        guard let key = conversation.inboxKey, BotRoster.isInFront, isReadingWindow, isOpen else { return }
         if let last = conversation.rows.last { workspace.unread.setSeenThrough(key, rowID: last.id) }
         workspace.unread.markRead(key)
     }

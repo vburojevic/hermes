@@ -11,6 +11,18 @@ public enum BadgeScope {
         isUnread && key != open && !isMuted && !isHiddenBot(key, hiddenBots)
     }
 
+    /// What a row shows (`docs/inbox.md` §2): its badge, unless its chat is open. A chat backed out
+    /// of on iPhone stays selected under the list but isn't open, so its news shows on its row.
+    public static func rowBadge(_ badge: UnreadBadge, key: String, open: String?) -> UnreadBadge {
+        key == open ? .none : badge
+    }
+
+    /// Whether a transcript reads what comes in (`docs/inbox.md` §4): only while its chat is the
+    /// open one. Backed out of on iPhone it stays alive under the list, but nothing in it is seen.
+    public static func readsAsShown(_ key: String?, open: String?) -> Bool {
+        key != nil && key == open
+    }
+
     /// A row of the Bots list (a Bot or a group chat), which the Bots segment counts; every other
     /// row is the Chats segment's.
     public static func isBotsRow(_ key: String) -> Bool {

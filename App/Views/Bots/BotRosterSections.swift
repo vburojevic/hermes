@@ -62,7 +62,7 @@ struct BotRosterSections: View {
         return SidebarRow(isSelected: isSelected, height: InboxMetrics.botRowHeight) {
             workspace.pick(item)
         } label: {
-            BotInboxRow(roster: roster, bot: bot, workspace: workspace, isSelected: isSelected)
+            BotInboxRow(roster: roster, bot: bot, workspace: workspace)
         }
         .contextMenu { BotActions(roster: roster, bot: bot, onError: { actionError = $0 }) }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -107,7 +107,7 @@ struct BotRosterSections: View {
         return SidebarRow(isSelected: isSelected, height: InboxMetrics.botRowHeight) {
             workspace.pick(item)
         } label: {
-            GroupInboxRow(room: room, roster: roster, workspace: workspace, isSelected: isSelected)
+            GroupInboxRow(room: room, roster: roster, workspace: workspace)
         }
         .contextMenu {
             if workspace.unread.badge(for: key).isUnread {

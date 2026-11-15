@@ -26,6 +26,36 @@ struct BadgeScopeTests {
         #expect(BadgeScope.counts("scout", isUnread: true, open: nil, isMuted: false, hiddenBots: ["scout"]))
     }
 
+    /// What the person saw: on iPhone, a group chat they had opened and backed out of showed no
+    /// count while its Bots talked on. Backed out of, it stays selected under the list but isn't
+    /// open (no open key), so its row shows its news like every other row.
+    @Test func aChatBackedOutOfShowsItsCount() {
+        #expect(BadgeScope.rowBadge(.count(4), key: "group:crew", open: nil) == .count(4))
+        #expect(BadgeScope.rowBadge(.count(2), key: "bot:ops", open: nil) == .count(2))
+        #expect(BadgeScope.rowBadge(.dot, key: "chat_a", open: nil) == .dot)
+        // Another chat open on iPad or the Mac leaves it alone too.
+        #expect(BadgeScope.rowBadge(.count(4), key: "group:crew", open: "chat_a") == .count(4))
+    }
+
+    /// The open chat is read as it's shown, so its row never says it's new.
+    @Test func theOpenChatsRowShowsNoBadge() {
+        #expect(BadgeScope.rowBadge(.count(4), key: "group:crew", open: "group:crew") == .none)
+        #expect(BadgeScope.rowBadge(.dot, key: "chat_a", open: "chat_a") == .none)
+    }
+
+    /// What the person saw: on iPhone, a reply that came after they went back to the list was read
+    /// on arrival, so its chat's row never showed it. The transcript stays alive under the list;
+    /// only the open chat's transcript reads.
+    @Test func onlyTheOpenChatReadsWhatComesIn() {
+        #expect(!BadgeScope.readsAsShown("chat_a", open: nil))
+        #expect(!BadgeScope.readsAsShown("bot:ops", open: nil))
+        #expect(!BadgeScope.readsAsShown("chat_a", open: "chat_b"))
+        #expect(BadgeScope.readsAsShown("chat_a", open: "chat_a"))
+        #expect(BadgeScope.readsAsShown("bot:ops", open: "bot:ops"))
+        // The new-chat draft has no key and nothing to read.
+        #expect(!BadgeScope.readsAsShown(nil, open: nil))
+    }
+
     /// The extension and the plugin's away count never take a hidden Bot's chat: its replies are
     /// delivered as before, and count nowhere.
     @Test func aHiddenBotsChatIsntCountable() {

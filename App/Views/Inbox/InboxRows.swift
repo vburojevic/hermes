@@ -7,20 +7,20 @@ import SwiftUI
 struct ChatInboxRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
-    var isSelected = false
 
     var body: some View {
         let key = session.stableID
         let unread = workspace.unread
+        let open = unread.openKey
         // A new chat whose first message waits says so, in still words: Hermes isn't working on it.
         let waiting = workspace.waitingNote(forKey: key)
         let line = waiting == nil ? workspace.activity.line(for: key) : nil
         // The open chat is read as it's shown; a running turn shows no count until it ends.
         let running = line.map { $0.isLive && !$0.needsYou } ?? false
-        let badge: UnreadBadge = isSelected || running ? .none : unread.badge(for: key)
+        let badge: UnreadBadge = running ? .none : BadgeScope.rowBadge(unread.badge(for: key), key: key, open: open)
         let muted = unread.isMuted(key)
         // The open chat's draft is in its composer; the others' show on their row.
-        let draft = isSelected ? nil : workspace.loadedConversation(forKey: key).flatMap { $0.hasDraftText ? $0.draft : nil }
+        let draft = key == open ? nil : workspace.loadedConversation(forKey: key).flatMap { $0.hasDraftText ? $0.draft : nil }
         let lastLine = unread.lastLines[key]
         let strong = badge.isUnread || (line?.isLive ?? false)
         let date = workspace.rowTime(session)
@@ -78,12 +78,12 @@ struct BotInboxRow: View {
     let roster: BotRoster
     let bot: BotProfile
     let workspace: BotWorkspace
-    var isSelected = false
 
     var body: some View {
         let key = UnreadStore.botKey(bot.name)
         let unread = workspace.unread
-        let badge: UnreadBadge = isSelected ? .none : unread.badge(for: key)
+        // A Bot backed out of on iPhone stays selected but isn't open: its news shows.
+        let badge = BadgeScope.rowBadge(unread.badge(for: key), key: key, open: unread.openKey)
         let muted = unread.isMuted(key)
         let line = workspace.activity.line(for: key)
         let lastLine = unread.lastLines[key]
@@ -126,15 +126,16 @@ struct GroupInboxRow: View {
     let room: GroupRoom
     let roster: BotRoster
     let workspace: BotWorkspace
-    var isSelected = false
 
     var body: some View {
         let key = UnreadStore.groupKey(room.id)
         let unread = workspace.unread
-        let badge: UnreadBadge = isSelected ? .none : unread.badge(for: key)
+        let open = unread.openKey
+        // A group chat backed out of on iPhone stays selected but isn't open: its news shows.
+        let badge = BadgeScope.rowBadge(unread.badge(for: key), key: key, open: open)
         let muted = unread.isMuted(key)
         let summary = roster.groupRooms.summary(for: room.id)
-        let mentioned = !isSelected && roster.groupRooms.mentions[room.id] != nil
+        let mentioned = key != open && roster.groupRooms.mentions[room.id] != nil
         let working = roster.groupRooms.workingMembers(room.id)
         let faces = Self.faces(room: room, working: working, roster: roster)
         // The room's `updated_at` moves with every event in its log (a turn starting, a member's

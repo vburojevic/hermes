@@ -188,11 +188,13 @@ approval waits, every 5 s otherwise, and every 15 s while the app isn't in front
 | Delete Group | `groups.disband {room_id, cancel_id}` | Permanent for every member; confirmed with an alert. |
 
 A room's row counts its members' messages since this device last read it ([inbox.md](inbox.md)
-§1). Rooms keep no read mark, so the app reads `groups.log` from 200 events before that point,
-page by page while `has_more` (500 a page, Hermes' most), and never from a `since_seq` past
-`latest_seq`, which Hermes refuses. Under the room's name, "N Bots" is its members as created,
-which can include a hidden Bot and one since deleted (Hermes keeps both; a deleted one's turn ends
-in `member.unavailable`), as Group Settings' "Members · N" lists them.
+§1), and shows the count unless the room is open, also when it's still selected after going back
+to the list on iPhone ([inbox.md](inbox.md) §2). Rooms keep no read mark, so the app reads
+`groups.log` from 200 events before that point, page by page while `has_more` (500 a page,
+Hermes' most), and never from a `since_seq` past `latest_seq`, which Hermes refuses. Under the
+room's name, "N Bots" is its members as created, which can include a hidden Bot and one since
+deleted (Hermes keeps both; a deleted one's turn ends in `member.unavailable`), as Group
+Settings' "Members · N" lists them.
 
 The sidebar row shows a room's latest line and "Needs you" only for rooms opened since the app
 started (their chat model holds the log). Notifications for room messages, all or only those that
