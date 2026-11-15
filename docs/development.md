@@ -547,7 +547,8 @@ in Settings, to check that a muted row keeps its grey count and every badge retu
 
 Widgets (`Tools/mock-hermes/widgets.py`, [widgets.md](widgets.md) §13) play the
 hermes-app-widgets plugin over both servers: "widgets" pages through every example (three per
-reply, "widgets 2"…), "widget <type>" shows one type's examples, "widget publish" an approval
+reply, "widgets 2"…), "widget <type>" shows one type's examples, "widget <name> <name>…" those
+examples by name in that order ("widget route-4 route-1 weather-1"), "widget publish" an approval
 without Face ID, "widget lunch" one with it, "widget expiring" one that expires in 60 s, "widget
 silent" one whose first answer gets no update (Try Again), "widget private", "widget gateway
 image" (pictures the Bot keeps on its gateway, `hermes-file:`: a media card, a guide step and a

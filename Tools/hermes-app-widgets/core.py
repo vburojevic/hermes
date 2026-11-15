@@ -24,7 +24,7 @@ from .validate import MAX_PAYLOAD, Checks, Spec, WidgetError, schema_issues
 
 logger = logging.getLogger("hermes_app_widgets")
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 # Bumped when the one-time reminder (prompt.REMINDER) changes enough to send again.
 REMINDER_VERSION = 2
 OPS = ("create", "update", "resolve", "claim", "get")

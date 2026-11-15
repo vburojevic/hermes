@@ -567,7 +567,9 @@ struct WidgetFooter: View {
         if source != nil || payload.envelope.refresh?.mode == .agent {
             HStack(spacing: 5) {
                 if let source {
-                    Image(systemName: "link")
+                    // The source's own glyph (airplane, heart.fill…) when it names one the app
+                    // knows, else the link glyph (`docs/widgets.md` §9).
+                    Image(systemName: WidgetSymbols.resolve(source.symbol) ?? "link")
                         .font(.system(size: 9, weight: .semibold))
                         .accessibilityHidden(true)
                     // Where in the source when the producer says ("invoices/0042.pdf", "listed 9 days

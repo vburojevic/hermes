@@ -85,13 +85,15 @@ public struct WidgetCell: Decodable, Hashable, Sendable {
 extension WidgetQuantity {
     /// A quantity the app builds itself (a chart's scrubbed value, what's left of a budget).
     public init(value: WidgetValue?, format: Format = .number, unit: String? = nil, currency: String? = nil,
-                precision: Int? = nil, display: String? = nil) {
+                precision: Int? = nil, display: String? = nil, unitOne: String? = nil, fromNow: Bool = false) {
         self.value = value
         self.format = format
         self.unit = unit
         self.currency = currency
         self.precision = precision
         self.display = display
+        self.unitOne = unitOne
+        self.fromNow = fromNow
     }
 }
 

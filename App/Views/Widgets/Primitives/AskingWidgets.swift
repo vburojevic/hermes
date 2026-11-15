@@ -1180,7 +1180,7 @@ struct ControlBody: View {
                     dragging[control.id] = nil
                     set(control, .number(moving))
                 }
-            }), range: range, step: control.step(default: 1))
+            }), range: range, step: control.step(default: 1), symbol: WidgetSymbols.resolve(control.symbol))
             .opacity(isPending(control) ? 0.5 : 1)
             .accessibilityLabel(control.label)
             .accessibilityValue(display(control, shown(control)))
@@ -1285,6 +1285,9 @@ struct WidgetBarSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
+    /// The glyph at the start of the track (a sun on brightness), on the ink the fill always
+    /// keeps there. Without one the track starts plain.
+    var symbol: String?
 
     var body: some View {
         GeometryReader { proxy in
@@ -1293,6 +1296,14 @@ struct WidgetBarSlider: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.controlFill)
                 Capsule().fill(Theme.ink).frame(width: max(28, proxy.size.width * fraction))
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.inkForeground)
+                        .frame(width: 13, height: 13)
+                        .padding(.leading, 10)
+                        .accessibilityHidden(true)
+                }
             }
             .environment(\.layoutDirection, .leftToRight)
             .contentShape(Capsule())

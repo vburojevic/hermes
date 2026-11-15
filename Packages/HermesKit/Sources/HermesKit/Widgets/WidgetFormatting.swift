@@ -40,11 +40,11 @@ public struct WidgetFormatter: Sendable {
              (.time, .number(let number)), (.datetime, .number(let number)), (.relative, .number(let number)):
             text = Self.number(number, digits: quantity.precision, locale: locale)
         case (.date, .string(let raw)):
-            text = date(raw) ?? raw
+            text = withDaysFromNow(date(raw), raw: raw, quantity.fromNow)
         case (.time, .string(let raw)):
             text = time(raw) ?? raw
         case (.datetime, .string(let raw)):
-            text = dateTime(raw) ?? raw
+            text = withDaysFromNow(dateTime(raw), raw: raw, quantity.fromNow)
         case (.relative, .string(let raw)), (.countdown, .string(let raw)):
             text = relative(raw) ?? raw
         case (_, .string(let raw)):
@@ -52,8 +52,18 @@ public struct WidgetFormatter: Sendable {
         case (_, .null):
             return Self.unknown
         }
-        guard let unit = quantity.unit, !unit.isEmpty, quantity.format != .currency, quantity.format != .percent else { return text }
+        guard var unit = quantity.unit, !unit.isEmpty, quantity.format != .currency, quantity.format != .percent else { return text }
+        // unit is the plural; unit_one, when given, is what 1 reads with ("1 vote", "2 votes").
+        if let one = quantity.unitOne, !one.isEmpty, Self.number(quantity) == 1 { unit = one }
         return Self.isTight(unit) ? text + unit : "\(text) \(unit)"
+    }
+
+    /// A day with how far it is from now after it, when the payload asks (from_now): "Tue 20 Oct,
+    /// in 4 days". A value the client can't read stays as it came.
+    private func withDaysFromNow(_ day: String?, raw: String, _ fromNow: Bool) -> String {
+        guard let day else { return raw }
+        guard fromNow, let away = daysFromNow(raw) else { return day }
+        return String(localized: "\(day), \(away)")
     }
 
     /// The raw number, when the quantity has one.
@@ -103,6 +113,33 @@ public struct WidgetFormatter: Sendable {
     }
 
     // MARK: - Times
+
+    /// How many calendar days a date or time is from today, in words: "in 4 days", "tomorrow",
+    /// "3 days ago". The day is the one the value names (its own offset's day, as `date` shows it),
+    /// counted against the reader's today, so a due date reads the same all day.
+    public func daysFromNow(_ raw: String) -> String? {
+        let components: DateComponents
+        if let date = JSONSchemaValidator.parseDate(raw) {
+            components = date
+        } else if let (date, zone) = Self.parse(raw) {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            components = calendar.dateComponents([.year, .month, .day], from: date)
+        } else {
+            return nil
+        }
+        let today = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        guard let target = utc.date(from: DateComponents(year: components.year, month: components.month, day: components.day)),
+              let start = utc.date(from: DateComponents(year: today.year, month: today.month, day: today.day)),
+              let days = utc.dateComponents([.day], from: start, to: target).day else { return nil }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.unitsStyle = .full
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(from: DateComponents(day: days))
+    }
 
     /// An RFC 3339 time in its own offset's zone: a flight at 10:55 in Lisbon reads 10:55
     /// wherever it's read.

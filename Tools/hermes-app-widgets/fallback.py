@@ -143,6 +143,8 @@ def quantity(q: Any) -> str:
         text = _group(round(value), 0)
     else:
         text = _group(value, _decimals(value, precision, 2), trim=precision is None)
+    if unit and q.get("unit_one") and value == 1 and not isinstance(value, bool):
+        unit = q["unit_one"]  # unit is the plural: "1 vote", "2 votes"
     if unit and fmt not in ("currency", "percent"):
         text += unit if unit in ("%", "°", "°C", "°F", "′", "″") else f" {unit}"
     return text.replace("-", "−", 1) if text.startswith("-") else text

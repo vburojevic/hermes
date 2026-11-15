@@ -38,6 +38,10 @@ public struct WidgetQuantity: Decodable, Hashable, Sendable {
     public var precision: Int?
     /// A pre-formatted string the client shows instead of formatting value itself. Use only when value can’t express it.
     public var display: String?
+    /// The unit when the value is exactly 1: vote, step, night. unit is then the plural (votes), so 1 reads “1 vote” and 2 “2 votes”. Needs unit.
+    public var unitOne: String?
+    /// format date or datetime: adds how far the day is from the reader’s now after it, “Tue 20 Oct, in 4 days”, “Mon 12 Oct, 4 days ago”, kept current by the client. For a due date read as plain text.
+    public var fromNow: Bool
 
     enum CodingKeys: String, CodingKey {
         case value
@@ -46,6 +50,8 @@ public struct WidgetQuantity: Decodable, Hashable, Sendable {
         case currency
         case precision
         case display
+        case unitOne = "unit_one"
+        case fromNow = "from_now"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -56,6 +62,8 @@ public struct WidgetQuantity: Decodable, Hashable, Sendable {
         currency = try container.decodeIfPresent(String.self, forKey: .currency)
         precision = try container.decodeIfPresent(Int.self, forKey: .precision)
         display = try container.decodeIfPresent(String.self, forKey: .display)
+        unitOne = try container.decodeIfPresent(String.self, forKey: .unitOne)
+        fromNow = try container.decodeIfPresent(Bool.self, forKey: .fromNow) ?? false
     }
 
     public enum Format: String, Decodable, Hashable, Sendable, CaseIterable {
@@ -368,12 +376,15 @@ public struct WidgetSource: Decodable, Hashable, Sendable {
     public var kind: Kind?
     public var url: String?
     public var detail: String?
+    /// The footer glyph for this source, from the allowlist (payload-contract.md §7): airplane for flight data, tram.fill for a transit feed, heart.fill for Apple Health, cloud.sun.fill for Apple Weather, doc.fill for a folder of documents. Without one, or with a name the client doesn’t know or a bot: face, the footer draws the link glyph.
+    public var symbol: String?
 
     enum CodingKeys: String, CodingKey {
         case name
         case kind
         case url
         case detail
+        case symbol
     }
 
     public init(from decoder: any Decoder) throws {
@@ -382,6 +393,7 @@ public struct WidgetSource: Decodable, Hashable, Sendable {
         kind = try container.decodeIfPresent(Kind.self, forKey: .kind)
         url = try container.decodeIfPresent(String.self, forKey: .url)
         detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
     }
 
     public enum Kind: String, Decodable, Hashable, Sendable, CaseIterable {
@@ -5272,6 +5284,8 @@ public struct ControlWidget: Decodable, Hashable, Sendable {
         public var reading: WidgetQuantity?
         /// Required for scenes (2–8, with glyphs) and segmented (2–4); not allowed on the other kinds.
         public var options: [Option]?
+        /// slider only: the glyph at the start of the track, sun.max.fill for brightness, speaker.wave.2.fill for volume. Without one the track starts plain.
+        public var symbol: String?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -5284,6 +5298,7 @@ public struct ControlWidget: Decodable, Hashable, Sendable {
             case unit
             case reading
             case options
+            case symbol
         }
 
         public init(from decoder: any Decoder) throws {
@@ -5298,6 +5313,7 @@ public struct ControlWidget: Decodable, Hashable, Sendable {
             unit = try container.decodeIfPresent(String.self, forKey: .unit)
             reading = try container.decodeIfPresent(WidgetQuantity.self, forKey: .reading)
             options = try container.decodeIfPresent([Option].self, forKey: .options)
+            symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
         }
 
         public enum Kind: String, Decodable, Hashable, Sendable, CaseIterable {
@@ -6231,38 +6247,5 @@ public enum WidgetContent: Hashable, Sendable {
         case .flashcard: .flashcard(try FlashcardWidget(from: decoder))
         case .stack: .stack(try StackWidget(from: decoder))
         }
-    }
-}
-
-/// A widget's `hermes-file:` address (`$defs/Url`): a file in the Bot's workspace on the gateway.
-/// Open shows it in the Inspector and a picture loads from it, so both name the same file
-/// (docs/widgets.md §9).
-public enum WidgetFile {
-    static let prefix = "hermes-file:"
-
-    /// The path an address names, as Open reads it: without `hermes-file:` and a `#L42` fragment,
-    /// percent-decoded. Nil for another scheme, an empty path, or one with a `..` step: the
-    /// contract allows none, and a picture never reads above the folder it names.
-    public static func path(_ address: String) -> String? {
-        guard address.count > prefix.count, address.prefix(prefix.count).lowercased() == prefix else { return nil }
-        var rest = address.dropFirst(prefix.count)
-        // The fragment goes before decoding, so a name with an encoded # (%23) keeps it.
-        if let hash = rest.firstIndex(of: "#") { rest = rest[..<hash] }
-        let decoded = String(rest).removingPercentEncoding ?? String(rest)
-        guard !decoded.isEmpty, !decoded.split(separator: "/", omittingEmptySubsequences: false).contains("..") else { return nil }
-        return decoded
-    }
-
-    /// The path the gateway reads: an absolute or home path as it is, as Open keeps it, and a
-    /// relative one joined onto `folder` (the chat's working folder). Nil for a relative path with
-    /// no folder: the gateway would read it from wherever it was started.
-    public static func resolve(_ address: String, in folder: String?) -> String? {
-        guard let path = path(address) else { return nil }
-        if path.hasPrefix("/") || path.hasPrefix("~") { return path }
-        guard let folder, !folder.isEmpty else { return nil }
-        var relative = Substring(path)
-        while relative.hasPrefix("./") { relative = relative.dropFirst(2) }
-        guard !relative.isEmpty else { return nil }
-        return (folder.hasSuffix("/") ? String(folder.dropLast()) : folder) + "/" + relative
     }
 }

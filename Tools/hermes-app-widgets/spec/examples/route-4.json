@@ -46,7 +46,8 @@
   },
   "source": {
     "name": "Flight data",
-    "kind": "api"
+    "kind": "api",
+    "symbol": "airplane"
   },
   "fallback_text": "UA 1187 Newark → San Francisco, Tue, Oct 20: in the air, left gate C112 at 11:02 AM. Landing at Terminal 3 at 2:16 PM San Francisco time, 4 minutes early; baggage belt 7."
 }

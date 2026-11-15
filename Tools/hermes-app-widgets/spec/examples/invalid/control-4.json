@@ -1,0 +1,23 @@
+{
+  "$comment": "Must fail validation: controls/0: False schema does not allow 'lightbulb.fill'",
+  "payload": {
+    "type": "control",
+    "v": 1,
+    "id": "w_bad07c004",
+    "title": "Desk lamp",
+    "as_of": "2026-10-16T19:42:00-04:00",
+    "fallback_text": "Desk lamp is on.",
+    "device": {
+      "name": "Desk lamp"
+    },
+    "controls": [
+      {
+        "id": "power",
+        "kind": "switch",
+        "label": "Power",
+        "value": true,
+        "symbol": "lightbulb.fill"
+      }
+    ]
+  }
+}

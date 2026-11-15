@@ -41,7 +41,8 @@
   "note": "Slept 7 h 12, HRV above your usual, resting HR normal.",
   "source": {
     "name": "Apple Health",
-    "kind": "device"
+    "kind": "device",
+    "symbol": "heart.fill"
   },
   "fallback_text": "Readiness 82 of 100 (Good): ready for intervals. Slept 7 h 12, HRV above your usual, resting heart rate normal."
 }

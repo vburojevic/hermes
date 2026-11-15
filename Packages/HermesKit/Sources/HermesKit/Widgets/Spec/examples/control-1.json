@@ -35,7 +35,8 @@
       "min": 1,
       "max": 100,
       "step": 1,
-      "unit": "%"
+      "unit": "%",
+      "symbol": "sun.max.fill"
     },
     {
       "id": "scene",

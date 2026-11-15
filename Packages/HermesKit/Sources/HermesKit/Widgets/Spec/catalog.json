@@ -1344,7 +1344,7 @@
       "skeleton": "Parts.skeletonValue",
       "limits": [
         "One device or group per widget; 1–4 controls; scenes 2–8 options, segmented 2–4.",
-        "Per kind (checked by the schema): switch takes a boolean and nothing else; slider and stepper need `min` and `max` and take a number; scenes and segmented need `options` and take an option id. Every value may be null (unknown).",
+        "Per kind (checked by the schema): switch takes a boolean and nothing else; slider and stepper need `min` and `max` and take a number, and only a slider takes `symbol`; scenes and segmented need `options` and take an option id. Every value may be null (unknown).",
         "Labels ≤ 40 characters; device status ≤ 60.",
         "No `lock` or `alarm` kinds exist: security devices are always an `approval`."
       ],

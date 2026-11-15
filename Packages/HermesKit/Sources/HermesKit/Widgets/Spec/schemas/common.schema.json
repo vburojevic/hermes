@@ -129,13 +129,51 @@
           "type": "string",
           "maxLength": 32,
           "description": "A pre-formatted string the client shows instead of formatting value itself. Use only when value can’t express it."
+        },
+        "unit_one": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "The unit when the value is exactly 1: vote, step, night. unit is then the plural (votes), so 1 reads “1 vote” and 2 “2 votes”. Needs unit."
+        },
+        "from_now": {
+          "type": "boolean",
+          "description": "format date or datetime: adds how far the day is from the reader’s now after it, “Tue 20 Oct, in 4 days”, “Mon 12 Oct, 4 days ago”, kept current by the client. For a due date read as plain text.",
+          "default": false
         }
       },
       "additionalProperties": false,
       "required": [
         "value"
       ],
-      "description": "A value with how to show it. The client formats it; fallback_text carries a formatted copy."
+      "description": "A value with how to show it. The client formats it; fallback_text carries a formatted copy.",
+      "dependentRequired": {
+        "unit_one": [
+          "unit"
+        ]
+      },
+      "if": {
+        "properties": {
+          "from_now": {
+            "const": true
+          }
+        },
+        "required": [
+          "from_now"
+        ]
+      },
+      "then": {
+        "required": [
+          "format"
+        ],
+        "properties": {
+          "format": {
+            "enum": [
+              "date",
+              "datetime"
+            ]
+          }
+        }
+      }
     },
     "Delta": {
       "type": "object",
@@ -458,6 +496,14 @@
         "detail": {
           "type": "string",
           "maxLength": 120
+        },
+        "symbol": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Symbol"
+            }
+          ],
+          "description": "The footer glyph for this source, from the allowlist (payload-contract.md §7): airplane for flight data, tram.fill for a transit feed, heart.fill for Apple Health, cloud.sun.fill for Apple Weather, doc.fill for a folder of documents. Without one, or with a name the client doesn’t know or a bot: face, the footer draws the link glyph."
         }
       },
       "additionalProperties": false,
