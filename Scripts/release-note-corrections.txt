@@ -10,3 +10,33 @@
 3d203b1 Sidebar: a cold launch opens on your chats instead of filling them in a moment later
 3d203b1 Search: a result opens its chat on the match about 0.6 s sooner
 2af478a Chat: scrolling back through a long chat holds fewer rows, so it scrolls smoother and uses less memory
+a5cac7f Navigation: on iPhone the chat list is the first screen and a chat opens on top of it; iPad and Mac use the system sidebar
+a5cac7f Navigation: on iPad the sidebar keeps its header, footer and the open chat's highlight
+a5cac7f Accessibility: VoiceOver offers each chat row's actions once on iPhone and iPad
+a5cac7f Navigation: on iPhone, deleting or archiving the open chat goes back to the chat list
+a5cac7f Navigation: iPhone opens on the chat list when you left it there
+a8fc240 Chats: the end of a filtered list keeps loading older chats while it stays on screen
+a8fc240 Chats: VoiceOver stays on the row you were reading when a reply arrives
+a8fc240 Chats: the list starts with this app's recent chats; other platforms and scheduled runs are a filter away
+169648e Bots: a group chat's badge counts every new message, however long the chat has run
+675dfe3 Widgets: a routine that types a widget into its report shows the card instead of code
+675dfe3 Widgets: a widget that can't show keeps its place and the reply around it stays
+675dfe3 Widgets: a widget that stops halfway shows "Couldn't show this card" in its place, never raw JSON
+ff56227 Plugins: the app installs the widgets plugin that draws a routine's widget
+573354e Board: live updates no longer crash when the connection check answers twice
+58ed111 Talk: the call summary collapses when you tap it
+c351f63 Chat: a reply that finished while you were away shows instead of an endless thinking timer
+c351f63 Chat: a turn started elsewhere or a send whose answer never came ends from the stored chat when the socket goes quiet
+a13c544 Connections: reach a gateway behind an access gateway with a service token, and Hermes's key still on
+a13c544 Connections: a preview leaves the access token behind when it leaves the gateway
+043abc4 Connections: reach a gateway behind a proxy that asks for a client certificate
+043abc4 Connections: a certificate from an issuing CA is sent with its chain, and checking another certificate asks the proxy again
+043abc4 Connections: a certificate refusal keeps the connection checking, so a drop that looked like one reconnects
+bbf8c45 Chat: a long approval card you scrolled stays where you left it when the keyboard or composer changes its room
+bbf8c45 Chat: an approval card no longer leaves the composer's bar blank on iOS 26
+bbf8c45 Chat: a long approval card scrolls under the top bar so the composer stays on screen when the phone is turned
+8ef4439 Connections: sign in to a gateway's access gateway in the app, and a chat picks up where it left off after signing in again
+8ef4439 Connections: signing in again from Edit Gateway picks up a waiting chat, and Bot Mode waits for the sign-in instead of retrying
+8ef4439 Connections: a Bot chat and the Bots list offer Sign In when the access sign-in runs out
+8ef4439 Connections: Edit Gateway keeps a sign-in made on the Access page on iPhone and iPad
+8ef4439 Connections: a Bot chat no longer says Reconnecting while it waits for the access sign-in
