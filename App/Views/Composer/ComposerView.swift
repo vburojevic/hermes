@@ -14,6 +14,11 @@ struct ComposerView: View {
     var focused: Binding<Bool>
     /// Starts Talk (`docs/voice.md` §4); `nil` where it isn't available.
     var onVoiceMode: (() -> Void)?
+    #if DEBUG
+    /// `-HERMES_ATTACH` attaches once per launch: removing a launch argument from UserDefaults
+    /// doesn't clear it, so a later draft's composer would attach the files again.
+    private static var attachedFromLaunch = false
+    #endif
 
     @AppStorage(PreferenceKey.sendWithReturn) private var sendWithReturn = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -261,6 +266,19 @@ struct ComposerView: View {
             if let path = UserDefaults.standard.string(forKey: "HERMES_IME_LOG") {
                 try? (log.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
             }
+        }
+        // `-HERMES_ATTACH <path>|<path>` attaches those files to the new chat once it's connected,
+        // through the picker's own path, never the clipboard (docs/development.md).
+        .task(id: conversation.id) {
+            guard !Self.attachedFromLaunch, conversation === workspace.draft,
+                  let paths = UserDefaults.standard.string(forKey: "HERMES_ATTACH"), !paths.isEmpty else { return }
+            // Connected first, as a person would be: until then a chat can only take text files.
+            for _ in 0..<40 where workspace.roster?.isConnected == false {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard !Task.isCancelled, !Self.attachedFromLaunch else { return }
+            Self.attachedFromLaunch = true
+            await attachFiles(paths.split(separator: "|").map { URL(filePath: String($0)) })
         }
         #endif
         .task(id: pathToken) {
