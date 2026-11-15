@@ -151,4 +151,18 @@ struct RunFollowTests {
         #expect(RunFollow.next(eventsGone: true, status: .failure(HermesError.notFound(message: nil))) == .recover)
         #expect(RunFollow.next(eventsGone: false, status: .failure(HermesError.notFound(message: nil))) == .recover)
     }
+
+    @Test("The access gateway wants a sign-in again: the follow waits for it instead of reconnecting")
+    func waitsForSignIn() {
+        let expired = HermesError.accessRefused(host: "hermes.example.com", .signInExpired)
+        let needed = HermesError.accessRefused(host: "hermes.example.com", .signInNeeded)
+        #expect(RunFollow.next(eventsGone: false, status: .failure(expired)) == .waitForSignIn)
+        #expect(RunFollow.next(eventsGone: true, status: .failure(needed)) == .waitForSignIn)
+        #expect(RunFollow.waitsForSignIn(after: expired))
+        // A rejected token or certificate isn't a sign-in: it backs off as before.
+        let token = HermesError.accessRefused(host: "hermes.example.com", .tokenRejected)
+        #expect(!RunFollow.waitsForSignIn(after: token))
+        #expect(RunFollow.next(eventsGone: false, status: .failure(token)) == .listen)
+        #expect(!RunFollow.waitsForSignIn(after: URLError(.timedOut)))
+    }
 }

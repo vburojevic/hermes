@@ -156,13 +156,18 @@ public enum GatewaySetup {
     /// before Hermes's key, so a sign-in page is never read as a wrong key.
     public static func access(_ facts: GatewaySetupFacts) -> SetupStatus? {
         let title = String(localized: "Access")
-        let fix = SetupFix(title: String(localized: "Edit Access…"), action: .editAccess)
+        var fix = SetupFix(title: String(localized: "Edit Access…"), action: .editAccess)
         if let refusal = facts.accessRefusal {
+            if refusal.isSignIn, refusal == .signInExpired || facts.access?.method == .browserSignIn {
+                fix = SetupFix(title: String(localized: "Sign In…"), action: .editAccess)
+            }
             let steps: [SetupStep] = switch refusal {
+            case .signInNeeded where facts.access?.method == .browserSignIn, .signInExpired:
+                [SetupStep(String(localized: "In Edit Gateway → Access, choose Sign In… and sign in on the access gateway's page."))]
             case .signInNeeded:
                 [
-                    SetupStep(String(localized: "In the access gateway's dashboard, create a service token and allow it for \(facts.gatewayName)'s address.")),
-                    SetupStep(String(localized: "In Edit Gateway → Access, choose Service token, then enter its client ID and secret.")),
+                    SetupStep(String(localized: "In Edit Gateway → Access, choose Browser sign-in, then Sign In… and sign in on the access gateway's page.")),
+                    SetupStep(String(localized: "Or, for a gateway nobody signs in to: in the access gateway's dashboard, create a service token and allow it for \(facts.gatewayName)'s address, then choose Service token and enter its client ID and secret.")),
                 ]
             case .tokenRejected:
                 [

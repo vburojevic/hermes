@@ -33,8 +33,16 @@ struct BotEditorView: View {
     @State private var access = GatewayAccessDraft()
     @State private var importsCertificate = false
     @State private var accessCheck: AccessCheck?
+    /// The access gateway's sign-in page is open (`docs/connecting-and-voice.md` §11.10).
+    @State private var signsIn = false
+    /// The address the browser sign-in on screen belongs to. Its cookies never go anywhere else,
+    /// so a new address drops it.
+    @State private var sessionAddress: URL?
     /// The connection check in flight; Cancel stops it before anything is saved.
     @State private var submitTask: Task<Void, Never>?
+    /// The fields hold the saved gateway already. Coming back from the Access page appears the
+    /// form again, and filling it again would drop what was changed there, a new sign-in included.
+    @State private var populated = false
     @FocusState private var focusedField: Field?
 
     enum Field { case name, address, key, backend, backendSecret }
@@ -84,14 +92,20 @@ struct BotEditorView: View {
         normalizedURL?.host() ?? ""
     }
 
+    /// The gateway's name, as the status card says it.
+    private var accessName: String {
+        let typed = name.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty ? editingBot?.name ?? "Hermes" : typed
+    }
+
     var body: some View {
         Form {
             #if os(macOS)
             // The Mac shows Access inline, its status leading the sheet (`macAccess`).
             if let accessCheck {
                 AccessStatusSection(
-                    check: accessCheck, host: accessHost, checkAgain: checkAccess, settings: access,
-                    importCertificate: { importsCertificate = true }
+                    check: accessCheck, host: accessHost, name: accessName, checkAgain: checkAccess, settings: access,
+                    importCertificate: { importsCertificate = true }, signIn: { signsIn = true }
                 )
             }
             #endif
@@ -173,9 +187,12 @@ struct BotEditorView: View {
             }
 
             #if os(macOS)
-            GatewayAccessSections(draft: $access) { importsCertificate = true }
+            GatewayAccessSections(draft: $access, signIn: { signsIn = true }) { importsCertificate = true }
             #else
-            GatewayAccessRow(draft: $access, check: accessCheck, host: accessHost, checkAgain: checkAccess)
+            GatewayAccessRow(
+                draft: $access, check: accessCheck, host: accessHost, gateway: normalizedURL, name: accessName,
+                checkAgain: checkAccess
+            )
             #endif
 
             botModeSection
@@ -231,6 +248,14 @@ struct BotEditorView: View {
         }
         .formStyle(.grouped)
         .certificateImport(isPresented: $importsCertificate, draft: $access)
+        .accessSignIn(isPresented: $signsIn, gateway: normalizedURL, draft: $access, checkAgain: checkAccess)
+        .onChange(of: access.session) { _, session in
+            if session != nil, sessionAddress != normalizedURL { sessionAddress = normalizedURL }
+        }
+        .onChange(of: normalizedURL) { _, url in
+            // The sign-in belongs to the address it was made for: a new one signs in again.
+            if access.session != nil, url != sessionAddress { access.session = nil }
+        }
         .navigationTitle(editingBot == nil ? "Add Gateway" : "Edit Gateway")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -363,8 +388,8 @@ struct BotEditorView: View {
             #if os(iOS)
             if let accessCheck {
                 AccessStatusSection(
-                    check: accessCheck, host: accessHost, checkAgain: checkAccess, settings: access,
-                    importCertificate: { importsCertificate = true }
+                    check: accessCheck, host: accessHost, name: accessName, checkAgain: checkAccess, settings: access,
+                    importCertificate: { importsCertificate = true }, signIn: { signsIn = true }
                 )
             }
             #endif
@@ -390,6 +415,8 @@ struct BotEditorView: View {
     }
 
     private func populate() {
+        guard !populated else { return }
+        populated = true
         guard let bot = editingBot else {
             focusedField = .address
             return
@@ -404,8 +431,10 @@ struct BotEditorView: View {
             backendUsername = link.username ?? ""
         }
         access = GatewayAccessDraft(
-            bot.access, hasSavedSecret: app.accessSecret(for: bot) != nil, identity: app.clientIdentity(for: bot)
+            bot.access, hasSavedSecret: app.accessSecret(for: bot) != nil, identity: app.clientIdentity(for: bot),
+            session: app.accessSession(for: bot)
         )
+        sessionAddress = bot.baseURL
     }
 
     /// What a check sends past the access gateway: the settings on screen, with the saved secret
@@ -509,12 +538,14 @@ struct BotEditorView: View {
                     bot.access = access.access
                     try app.updateBot(
                         bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential,
-                        accessSecret: access.typedSecret, certificate: access.identity, editing: editingBot
+                        accessSecret: access.typedSecret, certificate: access.identity,
+                        accessSession: .set(access.savedSession), editing: editingBot
                     )
                 } else {
                     added = try app.addBot(
                         name: finalName, baseURL: url, apiKey: key, accent: accent, backend: link, backendCredential: credential,
-                        access: access.access, accessSecret: access.typedSecret, certificate: access.identity
+                        access: access.access, accessSecret: access.typedSecret, certificate: access.identity,
+                        accessSession: access.savedSession
                     )
                 }
                 try? await Task.sleep(for: .milliseconds(450))

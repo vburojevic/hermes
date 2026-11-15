@@ -76,6 +76,7 @@
 		3A09312DE3665AEFB91B9046 /* FileTabViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 884108F1CD8A0CE7EB026AD8 /* FileTabViews.swift */; };
 		3A4709097976927BCDCCB27E /* NowPlayingPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCD80E543E6E1E4F17479 /* NowPlayingPublisher.swift */; };
 		3A866AF752E63CD3401AE7DF /* LocalLaunchJobs.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4160B308F62A2D92BE857D /* LocalLaunchJobs.swift */; };
+		3AB9E4CB87F978FBCAEB8D12 /* AccessSignInSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5CAE488859F4307F8722CDA /* AccessSignInSheet.swift */; };
 		3B7910B2BF25FBA4834D9CB4 /* PreviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D7D45DC5FC544417C99C86 /* PreviewEngine.swift */; };
 		3C04DD66FC877F5AC8B10430 /* HelperStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63C8D13F7821764FD3D29E4 /* HelperStore.swift */; };
 		3CCCBA16B93E485914FD45B3 /* HeyHermes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323D6625E6C8E75666E70022 /* HeyHermes.swift */; };
@@ -635,6 +636,7 @@
 		CF8F5504ABF1AFEDBCC0CA7B /* FollowUpTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpTranscript.swift; sourceTree = "<group>"; };
 		CFA318054AF92B0EDE167D76 /* CheckpointSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointSheets.swift; sourceTree = "<group>"; };
 		D58CC44A965477EA8833E3AE /* ThingsWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThingsWidgets.swift; sourceTree = "<group>"; };
+		D5CAE488859F4307F8722CDA /* AccessSignInSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSignInSheet.swift; sourceTree = "<group>"; };
 		D653945E90FC55FB10625D6D /* InspectorTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorTabs.swift; sourceTree = "<group>"; };
 		D65BFE7EA13C33734F91896A /* BoardScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardScreen.swift; sourceTree = "<group>"; };
 		D6DE6C2A91C5C57F9D75681C /* ProjectNewChatHero.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectNewChatHero.swift; sourceTree = "<group>"; };
@@ -832,6 +834,7 @@
 		0C4F031D002CF3250DFC9D0D /* Connections */ = {
 			isa = PBXGroup;
 			children = (
+				D5CAE488859F4307F8722CDA /* AccessSignInSheet.swift */,
 				7C637D1686700732A0D64D2E /* AppsAndToolsView.swift */,
 				4592DD87397620D7427C349D /* AppsViews.swift */,
 				839FF3E221883A5EDD627181 /* BuiltInViews.swift */,
@@ -1722,6 +1725,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3AB9E4CB87F978FBCAEB8D12 /* AccessSignInSheet.swift in Sources */,
 				C14CBECB92946AB62D1841D9 /* AllProjectsView.swift in Sources */,
 				39FE8AD218F2F31163457CB7 /* AnswerFromActivityIntent.swift in Sources */,
 				E5D2600DF0831D8B85562670 /* AppModel.swift in Sources */,

@@ -385,11 +385,12 @@ public struct BotStore: Sendable {
         try keychain.setString(key, for: bot.uuidString)
     }
 
-    /// Forgets the key, the access gateway's secret, and where they could go.
+    /// Forgets the key, the access gateway's secret and session, and where they could go.
     public func removeAPIKey(for bot: BotConfiguration.ID) throws {
         verified.set(nil, for: bot)
         try keychain.removeValue(for: bot.uuidString)
         try? keychain.removeValue(for: "\(bot.uuidString).access")
+        try? keychain.removeValue(for: "\(bot.uuidString).access-session")
         try? keychain.removeValue(for: "\(bot.uuidString).destinations")
     }
 
@@ -409,14 +410,36 @@ public struct BotStore: Sendable {
         try keychain.setString(secret, for: "\(bot.uuidString).access")
     }
 
+    /// The access gateway's session from its sign-in page (`docs/connecting-and-voice.md`
+    /// §11.10), read only for the addresses it was saved for (`check`): its cookies are as good as
+    /// a password until they run out.
+    public func accessSession(for bot: BotConfiguration) throws -> AccessSession? {
+        try check(bot)
+        guard let text = try keychain.string(for: "\(bot.id.uuidString).access-session") else { return nil }
+        return try? JSONDecoder().decode(AccessSession.self, from: Data(text.utf8))
+    }
+
+    /// Saves the session, or removes it when nil.
+    public func setAccessSession(_ session: AccessSession?, for bot: BotConfiguration.ID) throws {
+        guard let session else {
+            try keychain.removeValue(for: "\(bot.uuidString).access-session")
+            return
+        }
+        let data = try JSONEncoder().encode(session)
+        try keychain.setString(String(decoding: data, as: UTF8.self), for: "\(bot.uuidString).access-session")
+    }
+
     /// What `bot`'s requests carry past its access gateway, or nil when none is set up or its
-    /// secret can't be read.
+    /// secret can't be read. A session that ran out is still sent: the access gateway's refusal
+    /// of it is what says to sign in again (`AccessRefusal.signInExpired`).
     public func accessCredentials(for bot: BotConfiguration) -> GatewayAccessRegistry.Credentials? {
         guard let access = bot.access else { return nil }
         var token: GatewayAccessRegistry.Credentials?
         if access.method == .serviceToken, !access.clientID.isEmpty,
            let secret = try? accessSecret(for: bot), !secret.isEmpty {
             token = .serviceToken(access, secret: secret)
+        } else if access.method == .browserSignIn, let session = try? accessSession(for: bot), !session.cookies.isEmpty {
+            token = session.credentials
         }
         guard let certificate = access.clientCertificate, let identity = try? clientIdentity(for: bot) else { return token }
         return (token ?? .init(method: access.method)).presenting(identity, as: certificate)

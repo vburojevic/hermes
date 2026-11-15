@@ -96,6 +96,10 @@ struct ComposerView: View {
     private var hint: String? {
         // The gateway's Mac is overloaded: everything works, slowly. Not "Offline".
         let busy = workspace.isBusy ? String(localized: "Mac is busy…") : nil
+        // The access gateway wants a sign-in again: the banner above offers it (`chatAccessExpired`).
+        if workspace.accessRefusal?.isSignIn == true {
+            return String(localized: "Sign-in needed")
+        }
         if let roster {
             switch roster.state {
             case .online: return busy

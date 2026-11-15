@@ -118,6 +118,27 @@ final class AppModel {
         readSecret(of: bot) { try store.clientIdentity(for: $0) }
     }
 
+    /// The access gateway's session from its sign-in page (`docs/connecting-and-voice.md` §11.10),
+    /// read only for the addresses it was saved for. Kept after it runs out, so Access can say who
+    /// it was and when it ended.
+    func accessSession(for bot: BotConfiguration) -> AccessSession? {
+        readSecret(of: bot) { try store.accessSession(for: $0) }
+    }
+
+    /// Saves what the sign-in page gave for a saved gateway (the chat's and Setup's Sign In…),
+    /// then reconnects: the connection, Bot Mode and every reply that lost its stream when the
+    /// access gateway turned the app away pick up where they stopped.
+    func saveAccessSession(_ session: AccessSession, for botID: UUID) throws {
+        guard let index = bots.firstIndex(where: { $0.id == botID }) else { return }
+        var bot = bots[index]
+        var access = bot.access ?? .none
+        access.method = .browserSignIn
+        access.clientID = ""
+        bot.access = access
+        // A new session changes access, so the workspace reconnects and resumes (`BotWorkspace.update`).
+        try updateBot(bot, apiKey: nil, accessSession: .set(session))
+    }
+
     /// A Bot's Bot Mode sign-in, read only for the addresses it was saved for.
     func backendCredential(for bot: BotConfiguration) -> BackendCredential? {
         readSecret(of: bot) { try store.backendCredential(for: $0) }
@@ -206,7 +227,7 @@ final class AppModel {
         name: String, baseURL: URL, apiKey: String, accent: BotAccent,
         backend: BackendLink? = nil, backendCredential: BackendCredential? = nil,
         access: GatewayAccess? = nil, accessSecret: String? = nil, certificate identity: ClientIdentity? = nil,
-        startsSetup: Bool = true
+        accessSession: AccessSession? = nil, startsSetup: Bool = true
     ) throws -> BotConfiguration {
         let isFirst = bots.isEmpty
         let access = access.flatMap { $0.isEnabled ? $0 : nil }
@@ -214,6 +235,9 @@ final class AppModel {
         try store.setAPIKey(apiKey, for: bot.id)
         if access?.method == .serviceToken {
             try store.setAccessSecret(accessSecret, for: bot.id)
+        }
+        if access?.method == .browserSignIn, let accessSession {
+            try store.setAccessSession(accessSession, for: bot.id)
         }
         if access?.clientCertificate != nil, let identity {
             try store.identities.save(identity)
@@ -239,13 +263,23 @@ final class AppModel {
         return bot
     }
 
+    /// What an edit does to the access gateway's sign-in session.
+    enum SessionChange: Equatable {
+        /// Keeps the saved one, while browser sign-in stays chosen and the address the same.
+        case keep
+        /// Saves this one, or signs out with nil.
+        case set(AccessSession?)
+    }
+
     /// Saves edits. Pass `apiKey` only when the key changed, `backendCredential` only after a
     /// fresh Bot Mode sign-in, `accessSecret` only when the service token's secret changed,
-    /// `certificate`, the identity of the access's client certificate, when one was imported, and
-    /// `original`, the Bot as an editor showed it, when there is one.
+    /// `certificate`, the identity of the access's client certificate, when one was imported,
+    /// `accessSession` when the sign-in changed, and `original`, the Bot as an editor showed it,
+    /// when there is one.
     func updateBot(
         _ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil,
-        accessSecret: String? = nil, certificate identity: ClientIdentity? = nil, editing original: BotConfiguration? = nil
+        accessSecret: String? = nil, certificate identity: ClientIdentity? = nil,
+        accessSession: SessionChange = .keep, editing original: BotConfiguration? = nil
     ) throws {
         guard let index = bots.firstIndex(where: { $0.id == bot.id }) else { return }
         // The edit moves where the Bot's secrets may go, so it starts from addresses they were
@@ -263,7 +297,17 @@ final class AppModel {
         var updated = bots
         updated[index] = bot
         let backendMoved = bot.backend == nil || bot.backend?.url != bots[index].backend?.url
-        let accessChanged = bot.access != bots[index].access || accessSecret != nil
+        // A session goes with browser sign-in, and belongs to the address it was signed in for:
+        // a new address keeps none unless the edit signed in there.
+        let session: AccessSession?? = if bot.access?.method != .browserSignIn {
+            .some(nil)
+        } else if case .set(let session) = accessSession {
+            .some(session)
+        } else {
+            bot.baseURL != bots[index].baseURL ? .some(nil) : nil
+        }
+        let sessionChanged = session.map { $0 != self.accessSession(for: bots[index]) } ?? false
+        let accessChanged = bot.access != bots[index].access || accessSecret != nil || sessionChanged
         try store.save(updated, edited: bot, previous: bots) {
             if let apiKey {
                 try store.setAPIKey(apiKey, for: bot.id)
@@ -277,6 +321,9 @@ final class AppModel {
                 try store.setAccessSecret(nil, for: bot.id)
             } else if let accessSecret {
                 try store.setAccessSecret(accessSecret, for: bot.id)
+            }
+            if let session, sessionChanged {
+                try store.setAccessSession(session, for: bot.id)
             }
             if bot.access?.clientCertificate != nil, let identity {
                 try store.identities.save(identity)
@@ -474,7 +521,7 @@ final class AppModel {
             if let access = pairing.access { bot.access = access.access }
             try updateBot(
                 bot, apiKey: link.apiKey, backendCredential: pairing.credential, accessSecret: pairing.access?.typedSecret,
-                certificate: pairing.access?.identity
+                certificate: pairing.access?.identity, accessSession: pairing.access.map { .set($0.savedSession) } ?? .keep
             )
             select(bot.id)
             return bot
@@ -482,7 +529,8 @@ final class AppModel {
         return try addBot(
             name: link.name, baseURL: link.gateway, apiKey: link.apiKey, accent: .gold,
             backend: pairing.backend, backendCredential: pairing.credential,
-            access: pairing.access?.access, accessSecret: pairing.access?.typedSecret, certificate: pairing.access?.identity
+            access: pairing.access?.access, accessSecret: pairing.access?.typedSecret, certificate: pairing.access?.identity,
+            accessSession: pairing.access?.savedSession
         )
     }
 
@@ -734,6 +782,10 @@ final class AppModel {
         // A service token for the mock access gateway (`docs/connecting-and-voice.md` §11.7).
         let accessID = value("HERMES_BOOTSTRAP_ACCESS_ID")
         var access = accessID.map { GatewayAccess(method: .serviceToken, clientID: $0) }
+        // Or browser sign-in, signed out, so the first thing the chat offers is Sign In… (§11.10).
+        if value("HERMES_BOOTSTRAP_ACCESS") == "browser" {
+            access = GatewayAccess(method: .browserSignIn)
+        }
         // A client certificate for the mock mTLS proxy (`Tools/mock-hermes/mtls_proxy.py`): its
         // .p12 and the fixture's password.
         let certificate = value("HERMES_BOOTSTRAP_CERTIFICATE").flatMap { path in

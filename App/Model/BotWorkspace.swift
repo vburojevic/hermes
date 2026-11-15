@@ -45,6 +45,13 @@ final class BotWorkspace: Identifiable {
             ConnectionLog.logger.notice("gateway \(self.bot.name, privacy: .public): \(self.isBusy ? "busy" : "no longer busy", privacy: .public)")
         }
     }
+    /// What the access gateway in front said when it turned the app away (a sign-in that expired,
+    /// a token it refused), `docs/connecting-and-voice.md` §11.5. It turns Bot Mode away too, so
+    /// chats of every kind offer its fix rather than a retry (`chatAccessExpired`, §11.10).
+    var accessRefusal: AccessRefusal? {
+        if case .failed(let error) = connection { return error.accessRefusal }
+        return nil
+    }
     /// The last sign the Mac was busy. "Busy" clears only after half a minute without one: a starved
     /// Mac answers quickly for the moment it runs, then goes quiet again.
     @ObservationIgnored private var lastSlowAt = Date.distantPast
@@ -548,7 +555,9 @@ final class BotWorkspace: Identifiable {
         self.bot = bot
         updateBackend(bot.backend, signInChanged: backendSignInChanged || accessChanged)
         guard endpointChanged else {
-            if accessChanged { Task { await connect() } }
+            // Same gateway: a sign-in or a token fixed in Edit Gateway wakes the replies that
+            // waited for it, the same as the chat's Sign In… (§11.10).
+            if accessChanged { signedIn() }
             return
         }
         client = (apiKey?.isEmpty ?? true) ? nil : HermesClient(baseURL: bot.baseURL, apiKey: apiKey ?? "")
@@ -1584,6 +1593,13 @@ final class BotWorkspace: Identifiable {
             case .busy:
                 noteSlow()
                 return true
+            case .unreachable(let error) where error.accessRefusal?.isSignIn == true:
+                // The access gateway turned the app away (a sign-in that ran out or was revoked):
+                // nothing gets through until the person signs in again, so the gateway shows it
+                // now and the checks wait for them (`docs/connecting-and-voice.md` §11.10).
+                guard connection.isOnline else { return false }
+                connection = .failed(error)
+                return false
             case .unreachable(let error):
                 guard error.keepsChecking else { return true } // not a connection problem
                 failure = error
@@ -1595,6 +1611,19 @@ final class BotWorkspace: Identifiable {
         guard connection.isOnline, bot.baseURL == endpoint else { return false }
         connection = .failed(explained)
         return false
+    }
+
+    /// The person signed in to the access gateway again: connect, then the replies that lost
+    /// their stream when it turned the app away pick up where they stopped.
+    func signedIn() {
+        keepConnected()
+        Task {
+            await connect()
+            guard connection.isOnline else { return }
+            for conversation in conversations.values {
+                conversation.resumeIfNeeded()
+            }
+        }
     }
 
     // MARK: - Foreground

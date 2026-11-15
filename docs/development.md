@@ -725,6 +725,16 @@ Service token with `mock-client.access` and `mock-secret-0123456789abcdef` (`--c
 that token set. Its tests: `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p
 test_access_gateway.py`.
 
+For Browser sign-in, choose it in Access and Sign In…: the mock's sign-in page is a form on the
+sign-in origin that takes any email (no identity provider). It sends the page back through the
+route's `/cdn-cgi/access/authorized`, which sets `CF_Authorization` (a JWT-shaped token with the
+email and `exp`) for that route's origin and redirects to where the page was going. Sessions last
+a day; `--session-seconds 60` makes one run out a minute after signing in, refuses its cookie
+from then on, and cuts a stream or socket it let in, so "marathon" in a chat (over a minute of
+steps) shows a sign-in running out mid-reply. Sign In… in the chat's banner signs in again and
+the reply carries on. A Debug build launched with `-HERMES_BOOTSTRAP_ACCESS browser` starts set to
+Browser sign-in, signed out.
+
 A proxy that asks for a client certificate (`Tools/mock-hermes/mtls_proxy.py`,
 [connecting-and-voice.md](connecting-and-voice.md) §11.9): a stdlib TLS proxy, one port per mock
 behind it, that turns away a device without a certificate its own CA signed. It makes a throwaway

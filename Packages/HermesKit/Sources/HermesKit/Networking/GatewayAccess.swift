@@ -192,6 +192,7 @@ public final class GatewayAccessRegistry: Sendable {
     private struct TrialRecord: Sendable {
         var origins: Set<Origin>
         var headerNames: Set<String>
+        var cookieNames: Set<String>
         var clientCertificate: URLCredential?
         var certificate: ClientCertificate?
     }
@@ -240,6 +241,7 @@ public final class GatewayAccessRegistry: Sendable {
         trials.withLock {
             $0[id] = TrialRecord(
                 origins: origins, headerNames: Set(credentials?.headers.keys.map { $0.lowercased() } ?? []),
+                cookieNames: Set(credentials?.cookies.keys.map(\.self) ?? []),
                 clientCertificate: credentials?.clientCertificate, certificate: credentials?.certificate
             )
         }
@@ -317,6 +319,18 @@ public final class GatewayAccessRegistry: Sendable {
     public func carriesAccess(_ request: URLRequest) -> Bool {
         let names = accessHeaderNames
         return (request.allHTTPHeaderFields ?? [:]).keys.contains { names.contains($0.lowercased()) }
+    }
+
+    /// Whether a request carries a sign-in's cookie, saved or being tried, whoever added it: a
+    /// socket's upgrade, which the delegate sees outside any trying task.
+    public func carriesSession(_ request: URLRequest) -> Bool {
+        guard let cookie = request.value(forHTTPHeaderField: "Cookie"), !cookie.isEmpty else { return false }
+        let saved = entries.withLock { entries in entries.values.flatMap { $0.credentials.cookies.keys } }
+        let names = Set(saved + trials.withLock { $0.values.flatMap(\.cookieNames) })
+        return cookie.split(separator: ";").contains { part in
+            let name = part.split(separator: "=", maxSplits: 1).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            return names.contains(name)
+        }
     }
 
     /// The request with every access header taken off.
@@ -412,6 +426,8 @@ public final class GatewayAccessRegistry: Sendable {
 public enum AccessRefusal: Sendable, Equatable {
     /// An access gateway wants a sign-in, or a token, and got neither.
     case signInNeeded
+    /// The access gateway turned away the session its sign-in page gave: it ran out or was revoked.
+    case signInExpired
     /// The access gateway refused the service token the app sent.
     case tokenRejected
     /// A proxy asked for a client certificate and the app had none to give.
@@ -427,9 +443,9 @@ public enum AccessRefusal: Sendable, Equatable {
     /// refusals are JSON, apart from the API server's bare, empty 403 for a browser origin it
     /// doesn't allow, so an empty body stays Hermes's. `body` is nil when it can't be read (a
     /// socket's upgrade); then only an HTML page counts, since that bare 403 is `text/plain`.
-    /// `sentToken` says whether the request carried a service token, which decides between asking
-    /// for one and saying the one sent was refused.
-    public static func classify(_ response: HTTPURLResponse, body: Data?, sentToken: Bool) -> AccessRefusal? {
+    /// `sent` says what the request carried, which decides between asking for a sign-in or a token,
+    /// saying the token was refused, and saying the sign-in ran out.
+    public static func classify(_ response: HTTPURLResponse, body: Data?, sent: Sent) -> AccessRefusal? {
         let status = response.statusCode
         let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
         let refused: Bool
@@ -441,15 +457,31 @@ public enum AccessRefusal: Sendable, Equatable {
             refused = false
         }
         guard refused else { return nil }
-        return sentToken ? .tokenRejected : .signInNeeded
+        return switch sent {
+        case .nothing: .signInNeeded
+        case .serviceToken: .tokenRejected
+        case .session: .signInExpired
+        }
+    }
+
+    /// What a refused request carried past the access gateway.
+    public enum Sent: Sendable {
+        case nothing, serviceToken, session
     }
 
     /// `classify` for a request made through `GatewayAccessRegistry`.
     public static func classify(
         _ response: HTTPURLResponse, body: Data?, to url: URL?, registry: GatewayAccessRegistry = .shared
     ) -> AccessRefusal? {
-        let sent = url.flatMap { registry.credentials(for: $0) }.map { !$0.headers.isEmpty } ?? false
-        return classify(response, body: body, sentToken: sent)
+        let credentials = url.flatMap { registry.credentials(for: $0) }
+        let sent: Sent = if !(credentials?.headers.isEmpty ?? true) {
+            .serviceToken
+        } else if !(credentials?.cookies.isEmpty ?? true) {
+            .session
+        } else {
+            .nothing
+        }
+        return classify(response, body: body, sent: sent)
     }
 
     /// Why a socket's upgrade failed, when an access gateway or a proxy refused it: the answer to
@@ -464,11 +496,19 @@ public enum AccessRefusal: Sendable, Equatable {
             }
             if let refusal = classify(urlError) { return .accessRefused(host: host, refusal) }
         }
-        // The upgrade's own headers say whether a token went: the delegate runs outside any
-        // task that was trying settings, so the registry can't be asked.
-        let sent = (task.currentRequest ?? task.originalRequest).map(GatewayAccessRegistry.shared.carriesAccess) ?? false
+        // The upgrade's own headers say whether a token or a session went: the delegate runs
+        // outside any task that was trying settings, so the registry can't be asked.
+        let request = task.currentRequest ?? task.originalRequest
+        let registry = GatewayAccessRegistry.shared
+        let sent: Sent = if request.map(registry.carriesAccess) ?? false {
+            .serviceToken
+        } else if request.map(registry.carriesSession) ?? false {
+            .session
+        } else {
+            .nothing
+        }
         guard let response = task.response as? HTTPURLResponse,
-              let refusal = classify(response, body: nil, sentToken: sent)
+              let refusal = classify(response, body: nil, sent: sent)
         else { return nil }
         return .accessRefused(host: host, refusal)
     }
@@ -509,6 +549,7 @@ extension AccessRefusal {
     public var title: String {
         switch self {
         case .signInNeeded: String(localized: "An access gateway answered, not Hermes")
+        case .signInExpired: String(localized: "Your sign-in to the access gateway expired")
         case .tokenRejected: String(localized: "The access gateway refused the service token")
         case .certificateNeeded: String(localized: "The proxy asks for a certificate")
         case .certificateRejected: String(localized: "The proxy refused this certificate")
@@ -516,11 +557,23 @@ extension AccessRefusal {
         }
     }
 
+    /// The Access status card's title, for the gateway named `name` (`accessStatus`).
+    public func title(gateway name: String) -> String {
+        self == .signInNeeded ? String(localized: "Sign in to reach \(name)") : title
+    }
+
+    /// The Access status card's line, for the gateway named `name` (`accessSignInExpired`).
+    public func detail(gateway name: String) -> String {
+        self == .signInExpired ? String(localized: "Sign in again to reach \(name). Your chats are safe on the gateway.") : detail
+    }
+
     /// What to do about it.
     public var detail: String {
         switch self {
         case .signInNeeded:
-            String(localized: "An access gateway stands in front of Hermes and turns the app away. Set up a service token for it.")
+            String(localized: "An access gateway stands in front of Hermes and wants you to sign in before the app gets through.")
+        case .signInExpired:
+            String(localized: "Sign in again to reach Hermes. Your chats are safe on the gateway.")
         case .tokenRejected:
             String(localized: "Check the client ID and secret, and that the token is allowed for this gateway and hasn't expired.")
         case .certificateNeeded:
@@ -535,7 +588,7 @@ extension AccessRefusal {
     /// Who said so, so it's never taken for Hermes's own key check.
     public func source(host: String) -> String {
         switch self {
-        case .signInNeeded, .tokenRejected: String(localized: "From the access gateway at \(host)")
+        case .signInNeeded, .signInExpired, .tokenRejected: String(localized: "From the access gateway at \(host)")
         case .certificateNeeded, .certificateRejected, .certificateExpired: String(localized: "From the proxy at \(host)")
         }
     }
@@ -544,6 +597,7 @@ extension AccessRefusal {
     public var bannerTitle: String {
         switch self {
         case .signInNeeded: String(localized: "An access gateway turned the app away")
+        case .signInExpired: String(localized: "Your access sign-in expired")
         case .tokenRejected: String(localized: "The access gateway refused the token")
         case .certificateNeeded: String(localized: "The proxy asks for a certificate")
         case .certificateRejected: String(localized: "The proxy refused this certificate")
@@ -553,7 +607,8 @@ extension AccessRefusal {
 
     public func bannerDetail(gateway name: String) -> String {
         switch self {
-        case .signInNeeded: String(localized: "Set up a service token for \(name) in Access.")
+        case .signInNeeded: String(localized: "Sign in for \(name) in Access, or set up a service token.")
+        case .signInExpired: String(localized: "The access gateway in front of \(name) wants you to sign in again.")
         case .tokenRejected: String(localized: "Check the service token for \(name) in Access.")
         case .certificateNeeded: String(localized: "\(name)'s proxy asks for a certificate. Import one in Access.")
         case .certificateRejected: String(localized: "\(name)'s proxy turned the app away. Replace the certificate in Access.")
@@ -565,7 +620,15 @@ extension AccessRefusal {
     public var isCertificate: Bool {
         switch self {
         case .certificateNeeded, .certificateRejected, .certificateExpired: true
-        case .signInNeeded, .tokenRejected: false
+        case .signInNeeded, .signInExpired, .tokenRejected: false
+        }
+    }
+
+    /// An access gateway's sign-in, answered on its own page (`docs/connecting-and-voice.md` §11.10).
+    public var isSignIn: Bool {
+        switch self {
+        case .signInNeeded, .signInExpired: true
+        case .tokenRejected, .certificateNeeded, .certificateRejected, .certificateExpired: false
         }
     }
 }
@@ -587,10 +650,19 @@ public struct GatewayAccessDraft: Equatable, Sendable {
     /// Its identity: loaded from the Keychain for a saved certificate, or just imported. Nil
     /// with a certificate when the Keychain no longer has it.
     public var identity: ClientIdentity?
+    /// The access gateway's session from its sign-in page (`docs/connecting-and-voice.md` §11.10):
+    /// loaded from the Keychain for a saved gateway, or just signed in. Kept even when it expired,
+    /// so the Access screen can say who it was.
+    public var session: AccessSession?
+    /// When the session was last signed out of here, for the Access screen's "Signed out on".
+    public var signedOutAt: Date?
 
     public var usesClientCertificate: Bool { certificate != nil }
 
-    public init(_ access: GatewayAccess? = nil, hasSavedSecret: Bool = false, identity: ClientIdentity? = nil) {
+    public init(
+        _ access: GatewayAccess? = nil, hasSavedSecret: Bool = false, identity: ClientIdentity? = nil,
+        session: AccessSession? = nil
+    ) {
         let access = access ?? .none
         method = access.method
         clientID = access.clientID
@@ -600,6 +672,24 @@ public struct GatewayAccessDraft: Equatable, Sendable {
         self.hasSavedSecret = hasSavedSecret && access.method == .serviceToken
         certificate = access.clientCertificate
         self.identity = access.clientCertificate == nil ? nil : identity
+        self.session = access.method == .browserSignIn ? session : nil
+    }
+
+    /// Takes what a sign-in page just gave, in place of any earlier session.
+    public mutating func signedIn(_ session: AccessSession) {
+        method = .browserSignIn
+        self.session = session
+        signedOutAt = nil
+    }
+
+    public mutating func signOut(at now: Date = .now) {
+        session = nil
+        signedOutAt = now
+    }
+
+    /// The session that gets saved: only with browser sign-in chosen.
+    public var savedSession: AccessSession? {
+        method == .browserSignIn ? session : nil
     }
 
     /// Takes a certificate just imported, in place of any other.
@@ -651,11 +741,15 @@ public struct GatewayAccessDraft: Equatable, Sendable {
     }
 
     /// What a check of these settings sends, before they are saved (`GatewayAccessRegistry.trying`):
-    /// the service token's headers and the certificate, or nil when there's neither.
+    /// the service token's headers or the sign-in's cookies, and the certificate, or nil when
+    /// there's none of them.
     public func credentials(savedSecret: String?) -> GatewayAccessRegistry.Credentials? {
         guard let access else { return nil }
-        let token: GatewayAccessRegistry.Credentials? = method == .serviceToken
-            ? .serviceToken(access, secret: typedSecret ?? savedSecret ?? "") : nil
+        let token: GatewayAccessRegistry.Credentials? = switch method {
+        case .serviceToken: .serviceToken(access, secret: typedSecret ?? savedSecret ?? "")
+        case .browserSignIn: session?.credentials
+        case .none: nil
+        }
         guard let identity, certificate != nil else { return token }
         return (token ?? .init(method: method)).presenting(identity, as: certificate)
     }

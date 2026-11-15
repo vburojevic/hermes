@@ -385,8 +385,9 @@ Again. The methods:
   `CF-Access-Client-Secret`) and can be changed under Headers.
 - **Client certificate**, its own section under the method: a .p12 or .pfx file for a proxy that
   asks for one, with either method or alone (§11.9).
-- Browser sign-in is in the model but not in the app yet. A gateway saved with it by a newer build
-  keeps it, and the picker shows Browser sign-in without offering it.
+- **Browser sign-in**: the access gateway's own sign-in page, in a sheet, for a gateway people sign
+  in to with their account (§11.10). Its card names who signed in and until when, with Sign In…
+  and Sign Out.
 
 The secret lives in the Keychain like the key (§7), account `<gateway id>.access`, read only for
 the addresses saved with the gateway. The field stays empty for a saved secret and keeps it unless
@@ -396,7 +397,7 @@ refused, in the editor and again when it's sent: `bots.json` is a plain file. Ch
 settings on screen before they're saved, for the check's own requests alone (`trying`, a task-local
 value): the live connection to the same gateway keeps sending the saved settings meanwhile.
 Saving new settings reconnects the gateway and keeps its chats. Removing the gateway removes the
-secret.
+secret, and a sign-in's session (§11.10) with it.
 
 ### 11.2 Telling refusals apart
 
@@ -405,7 +406,7 @@ never taken for a wrong key:
 
 | Answer | Read as |
 |---|---|
-| A redirect (the access gateway's sign-in, on another origin; `SameOriginRedirects` doesn't follow it) | `signInNeeded`, or `tokenRejected` when a token was sent |
+| A redirect (the access gateway's sign-in, on another origin; `SameOriginRedirects` doesn't follow it) | `signInNeeded`, `tokenRejected` when a token was sent, or `signInExpired` when a sign-in's cookies were |
 | 401 or 403 with an HTML page, or a body that isn't JSON | the same |
 | 401 or 403 with JSON, or an empty body (the API server's bare 403 for a browser origin) | Hermes's own refusal, as before |
 | A socket's upgrade refused (no body to read) with an HTML page | the same, by the token its upgrade carried |
@@ -432,15 +433,19 @@ refusal says what to get from whoever runs the proxy and where to import it.
 
 ### 11.4 What isn't built
 
-Browser sign-in (the access gateway's page in a web view, its cookie kept in the Keychain) has its
-place in the seam (§11.6: cookies) and in `AccessRefusal`, but no settings in the app.
+The sign-in page is the app's own sheet, not the system browser: a password manager's extension
+and a passkey saved for the identity provider's site may not be offered there (§11.10 says why).
+Mutual TLS, a service token and browser sign-in each stand alone or with a certificate; a token and
+a sign-in together aren't offered, since the access gateway takes either.
 
 ### 11.5 Where a refusal shows
 
 - **Pairing** (`pairingAccess`): instead of "Hermes rejected the API key" the card says an access
   gateway answered, where from, and Set Up Access…, a sheet with the settings above. Pairing then
   checks again with them and saves them with the gateway.
-- **A chat** (`accessTokenBanner`): the banner names the gateway and offers Access.
+- **A chat** (`accessTokenBanner`): the banner names the gateway and offers Access. A sign-in
+  that ran out (`chatAccessExpired`) says "Your access sign-in expired" and offers Sign In… in
+  place, and the composer says "Sign-in needed" (§11.10).
 - **Settings → Setup**: the Access row (§11.3).
 
 ### 11.6 One seam for every request
@@ -477,9 +482,12 @@ and the Preview's web view. Reconnects build their requests again, so they get i
 
 `Tools/mock-hermes/access_gateway.py` stands in front of the mocks
 ([development.md](development.md)): pair with its port, see the refusal, then set Service token
-with the mock's client ID and secret. A token pass sets a `CF_Authorization` cookie that later
-requests can pass by. `/__mock/leave` redirects a page to the sign-in origin, whose log says
-whether the token came along; "preview <address>" in a chat opens it in the Preview.
+with the mock's client ID and secret, or Browser sign-in. A token pass sets a `CF_Authorization`
+cookie that later requests can pass by. Its sign-in page is a form that takes any email (no
+identity provider) and sets the same cookie, with an `exp`, for the route's origin;
+`--session-seconds 60` makes a session run out a minute later, and a stream or socket it let in is
+cut then. `/__mock/leave` redirects a page to the sign-in origin, whose log says whether the token
+came along; "preview <address>" in a chat opens it in the Preview.
 
 `Tools/mock-hermes/mtls_proxy.py` is a TLS proxy that asks for a client certificate, for §11.9. It
 makes a throwaway certificate authority and certificates when it starts, so no key is in the
@@ -505,6 +513,11 @@ access gateway behind the proxy and set both a service token and the certificate
   certificate on every connection. Through the proxy and the access gateway together, with a token
   and a certificate, it works the same.
 - Remove the certificate and Save: the Keychain no longer has it, unless another gateway uses it.
+- Browser sign-in through the mock access gateway: Sign In… opens its form, signing in closes the
+  sheet, Check Again says "Sign-in accepted", and after Save a chat streams. With
+  `--session-seconds 60`, a reply that runs past the minute stops with "Your access sign-in
+  expired", nothing says Reconnecting…, Sign In… in the banner signs in again, and the reply picks
+  up where it stopped. Sign Out and Save: the next request asks for a sign-in.
 
 ### 11.9 Client certificates
 
@@ -557,3 +570,57 @@ certificate during the TLS handshake. The Access settings take one per gateway, 
   certificate state shows while the app keeps checking at its offline backoff, up to every 30 s,
   and a route change checks at once. A refusal answered over HTTP (a token, a sign-in) waits for
   the person.
+
+### 11.10 Browser sign-in
+
+An access gateway that people sign in to (Cloudflare Access with Google, GitHub, a one-time code or
+a company's identity provider) answers a browser with its sign-in page and lets it through with a
+session cookie for the gateway's address (`CF_Authorization` for Cloudflare). Browser sign-in gets
+that cookie for the app.
+
+- **The flow**: Sign In… opens a sheet with a web view on the gateway's `/health`. The access
+  gateway redirects it to its sign-in page, the person signs in there, and it sends the web view
+  back with its cookie. When the gateway itself answers (a 2xx from the gateway's own origin, its
+  body never shown), the sheet closes and keeps the cookies set for that address
+  (`AccessSession.from`: the browser's own domain and path rules, a Secure cookie only over https).
+  Cookies for the identity provider's pages stay in the sheet's store, which is thrown away with
+  it. The app never sees the password.
+- **Why not the system browser**: `ASWebAuthenticationSession` hands back only a callback URL, and
+  the session is an HttpOnly cookie on the gateway's own address, which no callback carries. A
+  person's gateway has no associated domain for the app, and on the Mac the system sheet uses the
+  default browser's cookies. The in-app sheet is the one place the app can read the cookie, so it
+  is built to hold the page at arm's length (below).
+- **The page is untrusted** (`AccessSignInPolicy`): only a link the person taps is held to the
+  origins the sheet has been on (the gateway's, and those the access gateway or the page itself
+  sent it to by redirect, form or script); a tap anywhere else, and any new window, opens in the
+  browser through `WebLink`. Frames inside the page load from any https origin, since identity
+  providers embed their own widgets. Other schemes are refused, and plain http only goes to the
+  gateway itself or a local address. Its store is non-persistent, the page
+  can't write the clipboard, link previews and data detectors are off, nothing is downloaded, and
+  nothing from it is logged or reaches a chat. The gateway's client certificate (§11.9) answers
+  only the gateway's own handshake.
+- **The session**: the cookies, when they run out and the email the token names (shown, not
+  verified) go into the Keychain, device-only, account `<gateway id>.access-session`, read only for
+  the addresses saved with the gateway. Expiry is the earlier of the cookie's and the token's
+  `exp`. They go on every request through the seam (§11.6), to the gateway's origin only. In the
+  editor a sign-in belongs to its draft: Check Again tries it (`trying`) and Save keeps it, and
+  changing the address drops it. Sign Out drops it from the draft; saving then removes it from
+  the Keychain. Sign In… in a chat's banner saves the new session at once; in Settings → Setup it
+  opens Edit Gateway, where it's a draft like any other.
+- **When it runs out**: an expired session is still sent, and the access gateway's refusal of it
+  reads as `signInExpired` (§11.2). The connection stops being kept (§8): no Reconnecting…, the
+  chat's banner says "Your access sign-in expired" with Sign In…, the composer says "Sign-in
+  needed", and a turn that was streaming waits (`RunFollow.Step.waitForSignIn`). Signing in again
+  saves the session, reconnects the gateway and wakes the waiting turns, which re-attach with
+  `last_seq` and carry on; the turn kept running on the gateway meanwhile. Saving Edit Gateway
+  with a new sign-in or token does the same. Bot Mode behind the same access gateway stops
+  reconnecting too, and comes back when the session is saved. A Bot chat shows the same banner
+  with Sign In… instead of Bot Mode's Retry, which the access gateway would only refuse again,
+  and the sidebar's "Bots are offline" offers Sign In… (Edit Gateway) in place of Retry.
+- **How long it lasts** is set on the access gateway, not in the app. Cloudflare Access defaults
+  to 24 hours per application and allows from 15 minutes to a month; the identity provider can end
+  it sooner.
+- **Setting up Cloudflare Access** for it, in general terms: in Zero Trust, add a self-hosted
+  application for the gateway's hostname (and Bot Mode's, if it's served apart), with an Allow
+  policy for the people who may sign in and the login methods they use, and set its session
+  duration. The same application can also allow a service token, for devices nobody signs in on.
