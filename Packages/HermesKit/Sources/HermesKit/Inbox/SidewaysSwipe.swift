@@ -31,8 +31,8 @@ public enum SidewaysSwipe {
     /// How far the finger has moved across since it touched down. A pan's translation starts
     /// again where the pan began, which leaves out the move that began it: 10 to 20 points of a
     /// finger's swipe, and a whole first sample where touches come further apart, so a row
-    /// following it lagged the finger and a short swipe shut. The chat list's rows count from
-    /// touch-down.
+    /// following it lagged the finger and a short swipe shut. The chat list's rows and a chat's
+    /// Reply swipe count from touch-down.
     public static func travel(from touchDown: CGPoint, to location: CGPoint) -> CGFloat {
         location.x - touchDown.x
     }

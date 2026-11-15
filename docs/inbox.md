@@ -306,7 +306,9 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
   - On iPhone and iPad the swipe is a UIKit pan that begins only on a drag to the left
     (`SidewaysSwipe`): a SwiftUI drag on each reply took the chat's vertical drags, and the chat
     stopped scrolling under a finger that started on a reply. A drag to the right from the
-    screen's edge stays the system's back swipe.
+    screen's edge stays the system's back swipe. The message follows the finger from where it
+    touched down (`SidewaysSwipe.travel`), so it replies when let go 64 points to the left of
+    there, and a shorter swipe springs back.
   - On the Mac a mouse drag to the left does it, and so does a sideways scroll: a trackpad's or a
     Magic Mouse's swipe, or a mouse that scrolls sideways (`SidewaysScroll`). SwiftUI has no
     scroll-wheel events, so the message reads them from the window before the chat does. A scroll
@@ -465,7 +467,8 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
 - Reduce Motion: no shimmer or slide. Light, dark and Increase Contrast match the renders.
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
   actions open all scroll the chat and the list; a swipe left on a reply still replies, and one
-  right from the edge goes back to the list on iPhone.
+  right from the edge goes back to the list on iPhone. The message keeps under the finger from
+  touch-down: let go 64 points left of it and it replies, short of that and it springs back.
 - On the Mac, a sideways scroll to the left on a reply (trackpad, Magic Mouse, a mouse that
   scrolls sideways) quotes it in the composer, and a scroll up or down that starts on a reply
   scrolls the chat.

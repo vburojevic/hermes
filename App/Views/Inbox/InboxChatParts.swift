@@ -393,7 +393,7 @@ struct SwipeToReply: ViewModifier {
                     }
                 }
                 #if os(iOS)
-                .gesture(SidewaysSwipePan(direction: .left, changed: follow, ended: { translation, _ in release(translation) }, cancelled: { release(0) }))
+                .gesture(SidewaysSwipePan(direction: .left, countsFromTouchDown: true, changed: follow, ended: { translation, _ in release(translation) }, cancelled: { release(0) }))
                 #else
                 .simultaneousGesture(drag)
                 .background(SidewaysScrollReader(follow: follow, release: release))
