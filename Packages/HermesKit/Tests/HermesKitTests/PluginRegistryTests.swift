@@ -81,6 +81,14 @@ struct PluginRegistryTests {
         #expect(newer == older)
     }
 
+    /// Push 1.4.9 runs on a Windows gateway host with 1.4.8's access, so a later pin moves to it quietly.
+    @Test func push149KeepsTheSameAccess() throws {
+        let push = AppPlugin.push
+        let older = try #require(push.capabilities["1.4.8"]), newer = try #require(push.capabilities["1.4.9"])
+        #expect(!newer.widens(older))
+        #expect(newer == older)
+    }
+
     /// `docs/plugins.md` §12: every hook in a manifest is on the review.
     @Test func everyHookIsOnTheReview() {
         for plugin in AppPlugin.all {

@@ -22,7 +22,7 @@ from .relay import DEAD_TOKEN_REASONS, Delivery, Relay
 from .store import WAITING_KINDS, Store, recent_reads
 
 logger = logging.getLogger("hermes_app_push")
-VERSION = "1.4.8"
+VERSION = "1.4.9"
 
 DEFAULT_PREFERENCES = {
     "approvals": True,          # approvals and questions
