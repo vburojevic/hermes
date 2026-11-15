@@ -40,3 +40,4 @@ bbf8c45 Chat: a long approval card scrolls under the top bar so the composer sta
 8ef4439 Connections: a Bot chat and the Bots list offer Sign In when the access sign-in runs out
 8ef4439 Connections: Edit Gateway keeps a sign-in made on the Access page on iPhone and iPad
 8ef4439 Connections: a Bot chat no longer says Reconnecting while it waits for the access sign-in
+19fa5d5 Chat: a Reply swipe on a message follows your finger from where it touched down
