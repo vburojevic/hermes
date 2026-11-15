@@ -65,7 +65,12 @@ def list_sessions(query, body):
             rows.append(dashboard_row(s, now))
     key = "last_active" if arg("order", "created") == "recent" else "started_at"
     rows.sort(key=lambda r: r.get(key) or 0, reverse=True)
-    return 200, {"sessions": rows[offset:offset + limit], "total": len(rows), "limit": limit, "offset": offset, "storage": {}}
+    page = rows[offset:offset + limit]
+    # list_sessions_rich(include_pinned=True): every pin the page missed follows it, newest first.
+    on_page = {r["id"] for r in page}
+    page += sorted((r for r in rows if r.get("pinned") and r["id"] not in on_page),
+                   key=lambda r: r.get("started_at") or 0, reverse=True)
+    return 200, {"sessions": page, "total": len(rows), "limit": limit, "offset": offset, "storage": {}}
 
 
 def dashboard_row(s, now):

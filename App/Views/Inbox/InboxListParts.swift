@@ -175,14 +175,19 @@ struct MuteMenu: View {
     }
 }
 
-/// "Archived “Release notes”  Undo" at the foot of the list, for a few seconds.
+/// "Archived “Release notes”  Undo" at the foot of the list, for a few seconds. It shows only in
+/// the place the chat was archived from (the chat list or a project home), so a window never
+/// shows two.
 struct ArchivedToast: ViewModifier {
     @Bindable var workspace: BotWorkspace
+    var place = BotWorkspace.ArchivePlace.chatList
+    /// Room left below it: the chat list's bottom bar, or a project home's composer.
+    var bottomPadding: CGFloat = 64
     let onError: (HermesError) -> Void
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
-            if let session = workspace.recentlyArchived {
+            if let session = workspace.recentlyArchived, workspace.recentlyArchivedPlace == place {
                 HStack(spacing: 12) {
                     Text("Archived “\(session.displayTitle)”")
                         .font(.subheadline)
@@ -207,13 +212,20 @@ struct ArchivedToast: ViewModifier {
                 .overlay(Capsule().strokeBorder(Theme.hairline))
                 .shadow(color: Theme.shadow, radius: 12, y: 4)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 64)
+                .padding(.bottom, bottomPadding)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: session.stableID) {
                     AccessibilityNotification.Announcement(String(localized: "Archived \(session.displayTitle)")).post()
                     try? await Task.sleep(for: .seconds(5))
                     if workspace.recentlyArchived?.stableID == session.stableID {
                         withAnimation(Theme.snappy) { workspace.recentlyArchived = nil }
+                    }
+                }
+                // Leaving a project home ends its Undo; it would otherwise wait there with no timer.
+                // The chat list keeps its own, which shows again on return (`docs/inbox.md` §5).
+                .onDisappear {
+                    if place == .project, workspace.recentlyArchived?.stableID == session.stableID, workspace.recentlyArchivedPlace == place {
+                        workspace.recentlyArchived = nil
                     }
                 }
             }

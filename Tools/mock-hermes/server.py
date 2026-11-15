@@ -1002,6 +1002,10 @@ class Handler(BaseHTTPRequestHandler):
                 listed = [s for s in SESSIONS.values() if (s["pinned"] or not s.get("archived")) and not s.get("hidden")]
                 rows = sorted(listed, key=lambda s: s["_last"], reverse=True)
                 page = rows[offset:offset + limit]
+                # include_pinned=True: every pin the page missed follows it, newest first.
+                on_page = {s["id"] for s in page}
+                page += sorted((s for s in rows if s["pinned"] and s["id"] not in on_page),
+                               key=lambda s: s.get("started_at") or 0, reverse=True)
                 return self.send_json(200, {"object": "list", "data": [public_session(s, True) for s in page],
                                             "limit": limit, "offset": offset, "has_more": offset + limit < len(rows)})
         m = re.fullmatch(r"/api/sessions/([^/]+)", path)

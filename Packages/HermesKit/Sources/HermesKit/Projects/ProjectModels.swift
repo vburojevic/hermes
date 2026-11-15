@@ -133,6 +133,21 @@ public struct ProjectTree: Hashable, Sendable {
     public var explicitSessionIDs: Set<String> {
         Set(explicitProjects.flatMap(\.sessionIDs))
     }
+
+    /// The project someone made that each chat is in, by every id it goes by: the tree's chat ids,
+    /// and the lineage roots of compressed chats in its rows and in the loaded lanes (`details`).
+    public func projectIndex(details: [ProjectNode] = []) -> [String: String] {
+        var index: [String: String] = [:]
+        for node in explicitProjects {
+            for id in node.sessionIDs { index[id] = node.id }
+        }
+        for node in explicitProjects + details {
+            for row in node.previewSessions + node.hydratedSessions where row.stableID != row.id {
+                index[row.stableID] = node.id
+            }
+        }
+        return index
+    }
 }
 
 /// One project in the tree.
