@@ -98,7 +98,8 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
   - The Board row (§4.2), on gateways with Bot Mode.
   - Lanes, in the gateway's order: main checkout first, then worktrees by recency, then "Card
     worktrees". Each lane (`laneHeader*`) shows its chats newest first (`laneChatRow`: title, first
-    line, time, working dot), three at a time with "Show All N" / "Show Less". A chat's context
+    line, time, working dot, and a muted chat's slashed bell before the time, the chat list's
+    mark), three at a time with "Show All N" / "Show Less". A chat's context
     menu has the chat list's row actions in its order, on every platform (`docs/inbox.md` §5):
     Mark as Read / Mark as Unread, Pin / Unpin, Mute, then Move to Project…, Checkpoints… (with
     Bot Mode), Copy Session ID, and on the Mac Archive. Pin is also what brings a project's chat
@@ -108,9 +109,10 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
     failed Pin or Archive puts the row back as it was and says why.
   - A lane chat swipes as a chat list row does from its trailing edge (`docs/inbox.md` §5), on
     iPhone and iPad: Mute / Unmute then Archive, both in `Theme.swipeActionQuiet`, and a full
-    swipe mutes. The lanes aren't a `List`, so the swipe is the app's own (`TrailingSwipeActions`
-    on `SidewaysSwipePan`, its numbers in `RowSwipe`): it takes only a drag that starts to the
-    left, so a drag up or down scrolls the project and one from the screen's edge goes back. One
+    swipe mutes, the row showing the slashed bell at once (Unmute takes it away). The lanes aren't
+    a `List`, so the swipe is the app's own (`TrailingSwipeActions` on `SidewaysSwipePan`, its
+    numbers in `RowSwipe`): it takes only a drag that starts to the left, so a drag up or down
+    scrolls the project and one from the screen's edge goes back. One
     row is open at a time; a tap on it, a scroll or another row's swipe shuts it. The Mac has no
     swipe and keeps Archive in the menu. VoiceOver offers Mute / Unmute and Archive as actions
     on the row on every platform.
@@ -243,6 +245,9 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
 - A lane chat's swipe matches the chat list's on iPhone and iPad: the same buttons, tints, order
   and full swipe, the row sliding back, and Undo; a drag up or down mid-lane still scrolls, and
   the back swipe still goes back on iPhone. The Mac's menu has Archive.
+- A muted lane chat shows the chat list's slashed bell before its time, on iPhone, iPad and Mac,
+  at every text size, and VoiceOver reads "muted" after its title. A full swipe shows it at once;
+  Unmute from the swipe or the menu takes it away.
 - A heartbeat or a compaction in a project's chat moves neither the project's time nor its place:
   seeded, dotfiles (a heartbeat 7 minutes ago) stays last, at its message 32 days ago, and Blog
   (compacted 25 minutes ago) stays at its last message, three days ago.
