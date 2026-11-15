@@ -236,12 +236,13 @@ struct ComposerView: View {
         #if DEBUG
         // `-HERMES_TYPE <text>` types into the composer as a person would, `-HERMES_TYPE_AFTER
         // <seconds>` after it appears (8): the "/" and "@" menus with the keyboard up, no taps.
+        // Once per launch (`LaunchFlags`): a composer rebuilt (another chat, rotating to the split
+        // layout) doesn't type it again. It's taken after the wait, by a composer still showing.
         .task {
-            guard let text = UserDefaults.standard.string(forKey: "HERMES_TYPE"), !text.isEmpty else { return }
-            // Once per launch: a composer rebuilt (rotating to the split layout) doesn't type it again.
-            UserDefaults.standard.removeObject(forKey: "HERMES_TYPE")
+            guard UserDefaults.standard.string(forKey: "HERMES_TYPE")?.isEmpty == false else { return }
             let delay = UserDefaults.standard.string(forKey: "HERMES_TYPE_AFTER").flatMap(Double.init) ?? 8
             try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let text = LaunchFlags.take("HERMES_TYPE") else { return }
             // Focused as a tap focuses it: the field's own focus alone was undone by the next
             // update, which put the keyboard straight back down.
             focused.wrappedValue = true
@@ -250,12 +251,13 @@ struct ComposerView: View {
         }
         // `-HERMES_IME <script>` composes words as an input method does, `-HERMES_IME_AFTER
         // <seconds>` after the composer appears (8), redrawing it after every letter, and writes
-        // the field after each step to `-HERMES_IME_LOG <path>` (docs/development.md).
+        // the field after each step to `-HERMES_IME_LOG <path>` (docs/development.md). Once per
+        // launch, as `-HERMES_TYPE`.
         .task {
-            guard let script = UserDefaults.standard.string(forKey: "HERMES_IME"), !script.isEmpty else { return }
-            UserDefaults.standard.removeObject(forKey: "HERMES_IME")
+            guard UserDefaults.standard.string(forKey: "HERMES_IME")?.isEmpty == false else { return }
             let delay = UserDefaults.standard.string(forKey: "HERMES_IME_AFTER").flatMap(Double.init) ?? 8
             try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let script = LaunchFlags.take("HERMES_IME") else { return }
             focused.wrappedValue = true
             try? await Task.sleep(for: .milliseconds(300))
             let log = await field.composeForTesting(script) {
