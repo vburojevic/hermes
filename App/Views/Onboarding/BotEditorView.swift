@@ -29,6 +29,9 @@ struct BotEditorView: View {
     @State private var backendToken = ""
     @State private var backendUsername = ""
     @State private var backendPassword = ""
+    /// Access settings on screen (`docs/connecting-and-voice.md` §11.1), and what checking them found.
+    @State private var access = GatewayAccessDraft()
+    @State private var accessCheck: AccessCheck?
     /// The connection check in flight; Cancel stops it before anything is saved.
     @State private var submitTask: Task<Void, Never>?
     @FocusState private var focusedField: Field?
@@ -63,6 +66,10 @@ struct BotEditorView: View {
     private var canSubmit: Bool {
         guard normalizedURL != nil, phase != .checking else { return false }
         if botMode, backendURL == nil { return false }
+        if access.method == .serviceToken,
+           access.clientID.trimmingCharacters(in: .whitespaces).isEmpty || (access.typedSecret == nil && !access.hasSavedSecret) {
+            return false
+        }
         return editingBot != nil || !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
@@ -71,8 +78,20 @@ struct BotEditorView: View {
         return url.scheme == "http" && !BotConfiguration.looksLocal(url.host() ?? "")
     }
 
+    /// The host an access gateway answers for, named on the status card.
+    private var accessHost: String {
+        normalizedURL?.host() ?? ""
+    }
+
     var body: some View {
         Form {
+            #if os(macOS)
+            // The Mac shows Access inline, its status leading the sheet (`macAccess`).
+            if let accessCheck {
+                AccessStatusSection(check: accessCheck, host: accessHost, checkAgain: checkAccess)
+            }
+            #endif
+
             Section {
                 HStack(spacing: 14) {
                     BotAvatar(bot: BotConfiguration(name: name, baseURL: URL(string: "http://localhost")!, accent: accent.rawValue), size: 52)
@@ -148,6 +167,12 @@ struct BotEditorView: View {
                     }
                 }
             }
+
+            #if os(macOS)
+            GatewayAccessSections(draft: $access)
+            #else
+            GatewayAccessRow(draft: $access, check: accessCheck, host: accessHost, checkAgain: checkAccess)
+            #endif
 
             botModeSection
 
@@ -327,6 +352,14 @@ struct BotEditorView: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
             }
+        case .failed where accessCheck != nil:
+            // The access gateway's refusal shows as its status card: on the Mac at the top of the
+            // sheet, here under the fields with the Access row above it.
+            #if os(iOS)
+            if let accessCheck {
+                AccessStatusSection(check: accessCheck, host: accessHost, checkAgain: checkAccess)
+            }
+            #endif
         case .failed(let message, let suggestion):
             Section {
                 VStack(alignment: .leading, spacing: 6) {
@@ -362,6 +395,48 @@ struct BotEditorView: View {
             signIn = link.signIn
             backendUsername = link.username ?? ""
         }
+        access = GatewayAccessDraft(bot.access, hasSavedSecret: app.accessSecret(for: bot) != nil)
+    }
+
+    /// What a check sends past the access gateway: the settings on screen, with the saved secret
+    /// unless a new one was typed; and the addresses they go to.
+    private func accessTrial(gateway url: URL) -> (credentials: GatewayAccessRegistry.Credentials?, addresses: [URL]) {
+        let addresses = [url] + (botMode ? backendURL.map { [$0] } ?? [] : [])
+        return (access.credentials(savedSecret: savedAccessSecret), addresses)
+    }
+
+    /// The saved service token secret, when no new one was typed.
+    private var savedAccessSecret: String? {
+        access.typedSecret == nil ? editingBot.flatMap { app.accessSecret(for: $0) } : nil
+    }
+
+    /// What a refusal or a pass says about the Access settings.
+    private func noteAccess(_ error: (any Error)?) {
+        if let refusal = (error as? HermesError)?.accessRefusal {
+            accessCheck = .refused(refusal, host: accessHost)
+        } else {
+            accessCheck = error == nil && access.method != .none ? .passed : nil
+        }
+    }
+
+    /// Check Again on the Access status card: checks the settings on screen, saving nothing.
+    private func checkAccess() async {
+        guard let url = normalizedURL else { return }
+        let typedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = typedKey.isEmpty ? (editingBot.flatMap { app.apiKey(for: $0) } ?? "") : typedKey
+        let trial = accessTrial(gateway: url)
+        do {
+            _ = try await GatewayAccessRegistry.shared.trying(trial.credentials, at: trial.addresses) {
+                try await AppModel.probe(baseURL: url, apiKey: key)
+            }
+            noteAccess(nil)
+            if case .failed = phase { phase = .idle }
+        } catch {
+            noteAccess(error)
+            if accessCheck == nil, let error = error as? HermesError {
+                phase = .failed(error.errorDescription ?? "Couldn't connect.", suggestion: error.recoverySuggestion)
+            }
+        }
     }
 
     private func submit() {
@@ -369,10 +444,21 @@ struct BotEditorView: View {
         focusedField = nil // reveal the result, which sits under the fields
         let typedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = typedKey.isEmpty ? (editingBot.flatMap { app.apiKey(for: $0) } ?? "") : typedKey
+        let trial = accessTrial(gateway: url)
+        if access.method == .serviceToken, trial.credentials == nil {
+            let problem = access.problem(savedSecret: savedAccessSecret)
+            phase = .failed(problem ?? String(localized: "Check the service token in Access."), suggestion: nil)
+            return
+        }
         phase = .checking
         submitTask = Task {
             do {
-                let result = try await AppModel.probe(baseURL: url, apiKey: key)
+                // Checked with the Access settings on screen, before anything is saved.
+                let registry = GatewayAccessRegistry.shared
+                let result = try await registry.trying(trial.credentials, at: trial.addresses) {
+                    try await AppModel.probe(baseURL: url, apiKey: key)
+                }
+                noteAccess(nil)
                 let finalName = name.trimmingCharacters(in: .whitespaces).isEmpty
                     ? (result.agentName.map(Self.prettyName) ?? "Hermes")
                     : name.trimmingCharacters(in: .whitespaces)
@@ -384,10 +470,12 @@ struct BotEditorView: View {
                     let candidate = BackendLink(url: backendURL, signIn: signIn, username: signIn == .password ? backendUsername : nil)
                     let existing = keepsBackendCredential ? editingBot.flatMap { app.backendCredential(for: $0) } : nil
                     do {
-                        let probe = try await AppModel.probeBackend(
-                            url: backendURL, signIn: signIn, token: backendToken.trimmingCharacters(in: .whitespacesAndNewlines),
-                            username: backendUsername, password: backendPassword, existing: existing
-                        )
+                        let probe = try await registry.trying(trial.credentials, at: trial.addresses) {
+                            try await AppModel.probeBackend(
+                                url: backendURL, signIn: signIn, token: backendToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                                username: backendUsername, password: backendPassword, existing: existing
+                            )
+                        }
                         link = candidate
                         credential = keepsBackendCredential ? nil : probe.credential
                         detail += probe.botCount == 1 ? " · 1 Bot" : " · \(probe.botCount) Bots"
@@ -408,9 +496,16 @@ struct BotEditorView: View {
                     bot.baseURL = url
                     bot.accent = accent.rawValue
                     bot.backend = link
-                    try app.updateBot(bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential, editing: editingBot)
+                    bot.access = access.access
+                    try app.updateBot(
+                        bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential,
+                        accessSecret: access.typedSecret, editing: editingBot
+                    )
                 } else {
-                    added = try app.addBot(name: finalName, baseURL: url, apiKey: key, accent: accent, backend: link, backendCredential: credential)
+                    added = try app.addBot(
+                        name: finalName, baseURL: url, apiKey: key, accent: accent, backend: link, backendCredential: credential,
+                        access: access.access, accessSecret: access.typedSecret
+                    )
                 }
                 try? await Task.sleep(for: .milliseconds(450))
                 if let added, let onAdded {
@@ -420,9 +515,11 @@ struct BotEditorView: View {
                 }
             } catch let error as HermesError {
                 guard !Task.isCancelled else { return }
+                noteAccess(error)
                 phase = .failed(error.errorDescription ?? "Couldn't connect.", suggestion: error.recoverySuggestion)
             } catch {
                 guard !Task.isCancelled else { return }
+                noteAccess(error)
                 phase = .failed(error.localizedDescription, suggestion: nil)
             }
         }

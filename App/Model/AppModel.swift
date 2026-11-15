@@ -42,6 +42,7 @@ final class AppModel {
         for index in bots.indices {
             let key = apiKey(for: bots[index])
             // Read after the key: a Bot whose addresses were just put back has the saved ones.
+            registerAccess(bots[index])
             workspaces[bots[index].id] = makeWorkspace(bots[index], apiKey: key)
         }
         let saved = UserDefaults.standard.string(forKey: PreferenceKey.selectedBot).flatMap(UUID.init(uuidString:))
@@ -101,9 +102,22 @@ final class AppModel {
         readSecret(of: bot) { try store.apiKey(for: $0) }
     }
 
+    /// The access gateway's service token secret for a gateway, read only for the addresses it
+    /// was saved for.
+    func accessSecret(for bot: BotConfiguration) -> String? {
+        readSecret(of: bot) { try store.accessSecret(for: $0) }
+    }
+
     /// A Bot's Bot Mode sign-in, read only for the addresses it was saved for.
     func backendCredential(for bot: BotConfiguration) -> BackendCredential? {
         readSecret(of: bot) { try store.backendCredential(for: $0) }
+    }
+
+    /// Hands every transport what this gateway's requests carry past its access gateway
+    /// (`docs/connecting-and-voice.md` §11.6), for its own addresses alone. Nothing while its
+    /// addresses can't be confirmed, like the key.
+    private func registerAccess(_ bot: BotConfiguration) {
+        GatewayAccessRegistry.shared.set(store.accessCredentials(for: bot), for: bot.id, at: bot.accessAddresses)
     }
 
     /// Nothing is read for a Bot whose addresses the Keychain can't confirm yet; addresses
@@ -127,6 +141,7 @@ final class AppModel {
         bot.baseURL = saved.baseURL
         bot.backend = saved.backend
         bots[index] = bot
+        registerAccess(bot)
         workspaces[bot.id]?.update(bot: bot, apiKey: apiKey(for: bot), keyChanged: true)
     }
 
@@ -134,6 +149,7 @@ final class AppModel {
     /// (`BotStore.isVerified`): it connects again, and reads them once its addresses check out.
     private func retryUnverifiedBots() {
         for workspace in workspaces.values where !store.isVerified(workspace.bot) {
+            registerAccess(workspace.bot)
             if workspace.id == selectedBotID {
                 Task { await workspace.connect() }
             } else {
@@ -162,11 +178,16 @@ final class AppModel {
     @discardableResult
     func addBot(
         name: String, baseURL: URL, apiKey: String, accent: BotAccent,
-        backend: BackendLink? = nil, backendCredential: BackendCredential? = nil, startsSetup: Bool = true
+        backend: BackendLink? = nil, backendCredential: BackendCredential? = nil,
+        access: GatewayAccess? = nil, accessSecret: String? = nil, startsSetup: Bool = true
     ) throws -> BotConfiguration {
         let isFirst = bots.isEmpty
-        let bot = BotConfiguration(name: name, baseURL: baseURL, accent: accent.rawValue, backend: backend)
+        let access = access.flatMap { $0.isEnabled ? $0 : nil }
+        let bot = BotConfiguration(name: name, baseURL: baseURL, accent: accent.rawValue, backend: backend, access: access)
         try store.setAPIKey(apiKey, for: bot.id)
+        if access?.method == .serviceToken {
+            try store.setAccessSecret(accessSecret, for: bot.id)
+        }
         if let backendCredential {
             try store.setBackendCredential(backendCredential, for: bot.id)
         }
@@ -180,6 +201,7 @@ final class AppModel {
             throw error
         }
         bots = updated
+        registerAccess(bot)
         workspaces[bot.id] = makeWorkspace(bot, apiKey: apiKey)
         select(bot.id)
         if isFirst, startsSetup { setupGatewayID = bot.id }
@@ -187,9 +209,11 @@ final class AppModel {
     }
 
     /// Saves edits. Pass `apiKey` only when the key changed, `backendCredential` only after a
-    /// fresh Bot Mode sign-in, and `original`, the Bot as an editor showed it, when there is one.
+    /// fresh Bot Mode sign-in, `accessSecret` only when the service token's secret changed, and
+    /// `original`, the Bot as an editor showed it, when there is one.
     func updateBot(
-        _ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil, editing original: BotConfiguration? = nil
+        _ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil,
+        accessSecret: String? = nil, editing original: BotConfiguration? = nil
     ) throws {
         guard let index = bots.firstIndex(where: { $0.id == bot.id }) else { return }
         // The edit moves where the Bot's secrets may go, so it starts from addresses they were
@@ -207,6 +231,7 @@ final class AppModel {
         var updated = bots
         updated[index] = bot
         let backendMoved = bot.backend == nil || bot.backend?.url != bots[index].backend?.url
+        let accessChanged = bot.access != bots[index].access || accessSecret != nil
         try store.save(updated, edited: bot, previous: bots) {
             if let apiKey {
                 try store.setAPIKey(apiKey, for: bot.id)
@@ -216,11 +241,17 @@ final class AppModel {
             } else if backendMoved {
                 try? store.setBackendCredential(nil, for: bot.id)
             }
+            if bot.access?.method != .serviceToken {
+                try store.setAccessSecret(nil, for: bot.id)
+            } else if let accessSecret {
+                try store.setAccessSecret(accessSecret, for: bot.id)
+            }
         }
         bots = updated
+        registerAccess(bot)
         workspaces[bot.id]?.update(
             bot: bot, apiKey: apiKey ?? self.apiKey(for: bot), keyChanged: apiKey != nil,
-            backendSignInChanged: backendCredential != nil
+            backendSignInChanged: backendCredential != nil, accessChanged: accessChanged
         )
     }
 
@@ -230,6 +261,7 @@ final class AppModel {
         try store.save(updated)
         try? store.removeAPIKey(for: botID)
         try? store.setBackendCredential(nil, for: botID)
+        GatewayAccessRegistry.shared.forget(botID)
         // Its pages close before anything else touches the gateway's stores.
         workspaces[botID]?.closeWebViews()
         #if HERMES_PUSH
@@ -331,13 +363,32 @@ final class AppModel {
         let link: PairingLink
         let backend: BackendLink?
         let credential: BackendCredential?
+        /// The Access settings the check passed with, when pairing set them
+        /// (`docs/connecting-and-voice.md` §11.5); nil leaves a saved gateway's as they are.
+        var access: GatewayAccessDraft?
     }
 
     /// Checks a paired gateway and signs in to its Bot Mode (unless skipped), without saving
-    /// anything yet. Each check has a deadline, so an unreachable Mac fails in seconds.
+    /// anything yet. Each check has a deadline, so an unreachable Mac fails in seconds. `access`,
+    /// the Access settings pairing shows, stands in for any saved ones while it checks.
     func verifyPairing(
         _ link: PairingLink, password: String = "", includingBotMode: Bool = true,
-        progress: (PairingStep) -> Void = { _ in }
+        access: GatewayAccessDraft? = nil, progress: (PairingStep) -> Void = { _ in }
+    ) async throws -> VerifiedPairing {
+        guard let access else {
+            return try await checkPairing(link, password: password, includingBotMode: includingBotMode, progress: progress)
+        }
+        let savedSecret = existingBot(for: link).flatMap(accessSecret(for:))
+        let addresses = [link.gateway] + (includingBotMode ? [link.backend?.url].compactMap(\.self) : [])
+        var pairing = try await GatewayAccessRegistry.shared.trying(access.credentials(savedSecret: savedSecret), at: addresses) {
+            try await checkPairing(link, password: password, includingBotMode: includingBotMode, progress: progress)
+        }
+        pairing.access = access
+        return pairing
+    }
+
+    private func checkPairing(
+        _ link: PairingLink, password: String, includingBotMode: Bool, progress: (PairingStep) -> Void
     ) async throws -> VerifiedPairing {
         progress(.gateway)
         do {
@@ -381,13 +432,15 @@ final class AppModel {
         let link = pairing.link
         if var bot = existingBot(for: link) {
             if let backend = pairing.backend { bot.backend = backend }
-            try updateBot(bot, apiKey: link.apiKey, backendCredential: pairing.credential)
+            if let access = pairing.access { bot.access = access.access }
+            try updateBot(bot, apiKey: link.apiKey, backendCredential: pairing.credential, accessSecret: pairing.access?.typedSecret)
             select(bot.id)
             return bot
         }
         return try addBot(
             name: link.name, baseURL: link.gateway, apiKey: link.apiKey, accent: .gold,
-            backend: pairing.backend, backendCredential: pairing.credential
+            backend: pairing.backend, backendCredential: pairing.credential,
+            access: pairing.access?.access, accessSecret: pairing.access?.typedSecret
         )
     }
 
@@ -632,7 +685,13 @@ final class AppModel {
               let key = value("HERMES_BOOTSTRAP_KEY")
         else { return }
         let backend = value("HERMES_BOOTSTRAP_BACKEND").flatMap { $0 == "none" ? nil : BackendLink.normalizedURL(from: $0) }.map(link)
-        _ = try? addBot(name: value("HERMES_BOOTSTRAP_NAME") ?? "Hermes", baseURL: url, apiKey: key, accent: .gold, backend: backend, startsSetup: false)
+        // A service token for the mock access gateway (`docs/connecting-and-voice.md` §11.7).
+        let accessID = value("HERMES_BOOTSTRAP_ACCESS_ID")
+        let access = accessID.map { GatewayAccess(method: .serviceToken, clientID: $0) }
+        _ = try? addBot(
+            name: value("HERMES_BOOTSTRAP_NAME") ?? "Hermes", baseURL: url, apiKey: key, accent: .gold, backend: backend,
+            access: access, accessSecret: value("HERMES_BOOTSTRAP_ACCESS_SECRET"), startsSetup: false
+        )
     }
     #endif
 }

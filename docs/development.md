@@ -699,6 +699,31 @@ drops every registration.
 A message with "key expired" fails its turn on Anthropic's key (Add Key… in the chat; the mock's
 `model.save_key` takes it), "signed out" on OpenAI Codex's sign-in.
 
+A gateway behind an access gateway (`Tools/mock-hermes/access_gateway.py`,
+[connecting-and-voice.md](connecting-and-voice.md) §11): a stdlib reverse proxy, one port per mock
+behind it, that passes calls, event streams, socket upgrades, uploads and downloads once they carry
+the service token's two headers, and drops those headers before the mock sees them. Without them a
+request that accepts HTML is redirected to a sign-in page on another origin (`localhost`, at
+`--sign-in-port`), and anything else gets a 403 HTML page, as Cloudflare Access does. It logs one
+line per request with its kind and whether the token, its cookie and Hermes's key came, never
+their values. A token pass sets a `CF_Authorization` cookie that later requests pass by, as a page's
+images do. `GET /__mock/leave`, once let in, redirects to the sign-in origin's `/__mock/left`,
+which logs whether the token followed; "preview <address>" in a chat opens an address in the
+Preview, so "preview http://127.0.0.1:20642/__mock/leave" checks that the Preview leaves it behind:
+
+```bash
+python3 -I Tools/mock-hermes/backend.py --port 21119 --gateway-port 21642
+python3 -I Tools/mock-hermes/access_gateway.py --route 20642=21642 --route 20119=21119 \
+    --sign-in-port 20999 --log "$TMPDIR/access.log"
+```
+
+Pair with `http://127.0.0.1:20642` (Bot Mode at `http://127.0.0.1:20119`), then set Access to
+Service token with `mock-client.access` and `mock-secret-0123456789abcdef` (`--client-id`,
+`--client-secret`). A Debug build launched with `-HERMES_BOOTSTRAP_ACCESS_ID <client id>
+-HERMES_BOOTSTRAP_ACCESS_SECRET <secret>` next to the other `-HERMES_BOOTSTRAP_*` flags starts with
+that token set. Its tests: `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p
+test_access_gateway.py`.
+
 Features that aren't set up (`Tools/mock-hermes/setup.py`, [setup.md](setup.md) §5): `--setup
 board-off,tidying-off,turn-isolation,…` starts the backend with them, and `POST /api/mock/setup
 {"states": [...]}` changes them while it runs (`["ready"]` clears them; it needs the

@@ -536,13 +536,21 @@ final class BotWorkspace: Identifiable {
         LaunchTrace.mark("cached chats shown (\(cached.count))", id: "cached chats")
     }
 
-    /// Applies edited settings; reconnects when the address or key changed.
-    func update(bot: BotConfiguration, apiKey: String?, keyChanged: Bool, backendSignInChanged: Bool = false) {
+    /// Applies edited settings; reconnects when the address or key changed. New access settings
+    /// reconnect too, but keep the chats: the gateway is the same one (`docs/connecting-and-voice.md`
+    /// §11.1).
+    func update(
+        bot: BotConfiguration, apiKey: String?, keyChanged: Bool, backendSignInChanged: Bool = false,
+        accessChanged: Bool = false
+    ) {
         let endpointChanged = bot.baseURL != self.bot.baseURL || keyChanged
         // First, so Bot Mode reads its sign-in for the addresses it's now saved for.
         self.bot = bot
-        updateBackend(bot.backend, signInChanged: backendSignInChanged)
-        guard endpointChanged else { return }
+        updateBackend(bot.backend, signInChanged: backendSignInChanged || accessChanged)
+        guard endpointChanged else {
+            if accessChanged { Task { await connect() } }
+            return
+        }
         client = (apiKey?.isEmpty ?? true) ? nil : HermesClient(baseURL: bot.baseURL, apiKey: apiKey ?? "")
         conversations.values.forEach { $0.cancelAll() }
         conversations = [:]

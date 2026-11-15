@@ -198,6 +198,7 @@ public actor GatewaySocket {
         guard !isFinished else { throw Failure.closed("Disconnected from the Hermes backend.") }
         var upgrade = URLRequest(url: url)
         upgrade.timeoutInterval = 15
+        GatewayAccessRegistry.shared.prepare(&upgrade)
         let task = session.webSocketTask(with: upgrade)
         task.maximumMessageSize = 64 * 1024 * 1024
         self.task = task
@@ -363,6 +364,7 @@ public actor GatewaySocket {
 
     private func closeReason(for error: any Error) -> any Error {
         guard let task else { return error }
+        if let refused = AccessRefusal.refused(task, error: error) { return refused }
         switch task.closeCode.rawValue {
         case 4401: return Failure.closed("The Hermes backend rejected the sign-in. Sign in again in Settings.")
         case 4403: return Failure.closed("The Hermes backend refused this connection (host or origin not allowed).")

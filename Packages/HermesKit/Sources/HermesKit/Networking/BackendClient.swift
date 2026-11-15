@@ -199,6 +199,7 @@ public actor BackendClient {
     func webSocket(path: String, query: [URLQueryItem] = []) async throws -> URLSessionWebSocketTask {
         var request = URLRequest(url: try await socketURL(path: path, query: query))
         request.timeoutInterval = 15
+        GatewayAccessRegistry.shared.prepare(&request)
         let task = session.webSocketTask(with: request)
         task.maximumMessageSize = 16 * 1024 * 1024
         return task
@@ -207,7 +208,7 @@ public actor BackendClient {
     /// A WebSocket to a URL on this backend, on the backend's own URL session: its upgrade never
     /// follows a redirect to another server, and the token or ticket in its URL stays here.
     func webSocketTask(with url: URL) -> URLSessionWebSocketTask {
-        session.webSocketTask(with: url)
+        session.webSocketTask(with: GatewayAccessRegistry.shared.prepared(URLRequest(url: url)))
     }
 
     /// The headers a gateway file needs (`/api/files/stream` takes no token in the URL).
@@ -590,6 +591,8 @@ public actor BackendClient {
                 throw Failure.signInRequired
             }
         }
+        // After the session's own cookie, so an access gateway's sign-in cookie joins it.
+        GatewayAccessRegistry.shared.prepare(&request)
 
         let data: Data
         let response: URLResponse
@@ -601,6 +604,9 @@ public actor BackendClient {
         }
         guard let http = response as? HTTPURLResponse else { throw Failure.notHermes }
         absorbCookies(from: http, force: captureCookies)
+        if !(200..<300).contains(http.statusCode), let refusal = AccessRefusal.classify(http, body: data, to: url) {
+            throw HermesError.accessRefused(host: baseURL.host() ?? baseURL.absoluteString, refusal)
+        }
 
         switch http.statusCode {
         case 200..<300:

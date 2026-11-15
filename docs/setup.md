@@ -618,6 +618,22 @@ iCloud's settings. Builds without the entitlement (the Mac's Debug builds) alway
 row; iPhone and iPad builds carry it, so a simulator signed out of iCloud reads Partly set up.
 With `-HERMES_SETTINGS_SETUP device.hiddenSuggestions` the row's page opens straight away.
 
+### 4.24 Access
+
+`GatewaySetup.access` (HermesKit, tested in `GatewayAccessTests.swift`), shown by `GatewaySetup`
+for a gateway with Access settings or one an access gateway or proxy turned away
+([connecting-and-voice.md](connecting-and-voice.md) §11). Hidden for every other gateway.
+
+| State | Told by | The app shows |
+|---|---|---|
+| Ready | Access settings saved, the gateway answers | The method ("Service token"), Edit Access… |
+| Not set up | An access gateway turned the app away (`signInNeeded`) | Its line, Edit Access…, and the steps: create a service token in the access gateway's dashboard, then enter it in Edit Gateway → Access |
+| Not set up | It refused the token sent (`tokenRejected`) | Its line, Edit Access…, and the steps: check the token hasn't expired and a policy allows it, then enter it again |
+| Not set up | A proxy wants a client certificate | Its line; no fix, as the app can't send one yet |
+| Unknown | The gateway is offline | "Service token. Can't check until … answers." |
+
+Access is checked before Hermes's key, so a sign-in page never reads as a wrong key.
+
 ## 5. Mocks and launch flags
 
 `Tools/mock-hermes/setup.py` serves each "not set up" state: start the backend with `--setup

@@ -18,6 +18,7 @@
 - A dev server on `127.0.0.1:5173` (`--dev-port`) serving the beta sign-up page.
 
 Scripted chat turns (on top of chats.py) by message content:
+  "preview <address>"  -> opens that address in the Preview (`preview.open`), nothing more
   "sign-up" or "beta"  -> writes the page, starts `npm run dev`, opens it in the Preview
                           (`preview.open`), then drives it with `preview.act` (elements, type, click)
                           and reads it back with `preview.read`
@@ -192,6 +193,8 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
 
     def run_chat_turn(sid, text):
         lower = text.lower()
+        if lower.startswith("preview http://") or lower.startswith("preview https://"):
+            return run_open_turn(sid, text)
         if "sign-up" in lower or "sign up" in lower or "beta" in lower:
             return run_preview_turn(sid, text)
         if "pricing" in lower:
@@ -781,6 +784,29 @@ def run_preview_turn(sid, text):
               + (f"; {notes[0]}." if notes else ".") + f" I read the page back: “{(page.get('title') or 'the page')}”.")
     C.stream(sid, "\n\n" + answer)
     C.finish(sid, stored, interim + "\n\n" + answer)
+
+
+def run_open_turn(sid, text):
+    """`preview <address>`: opens that address in the Preview and nothing else, for pages the
+    mock doesn't serve itself (the access gateway's `/__mock/leave`, say)."""
+    stored = B["RUNTIME"][sid]["stored"]
+    G.add_message(stored, "user", text)
+    C.title_later(sid, stored, text)
+    C.emit(sid, "session.info", {"running": True})
+    C.emit(sid, "message.start", {})
+    url = text.split(None, 1)[1].strip()
+    call = f"call_{uuid.uuid4().hex[:8]}"
+    args = {"action": "open", "url": url, "label": "Page"}
+    G.add_message(stored, "assistant", "", finish_reason="tool_calls",
+                  tool_calls=[{"id": call, "type": "function", "function": {"name": "desktop_preview", "arguments": json.dumps(args)}}])
+    C.emit(sid, "tool.start", {"tool_id": call, "name": "desktop_preview", "context": url, "args": args})
+    C.emit(sid, "preview.open", {"url": url, "label": "Page"})
+    G.add_message(stored, "tool", json.dumps({"success": True, "opened": url}), tool_call_id=call, tool_name="desktop_preview")
+    C.emit(sid, "tool.complete", {"tool_id": call, "name": "desktop_preview", "args": args, "duration_s": 0.1,
+                                  "result": json.dumps({"success": True, "opened": url}), "summary": None})
+    answer = "I opened the page beside the chat."
+    C.stream(sid, answer)
+    C.finish(sid, stored, answer)
 
 
 def run_artifact_turn(sid, text):

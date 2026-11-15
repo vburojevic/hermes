@@ -15,6 +15,11 @@ struct PairingConnectView: View {
     @State private var isUpdate = false
     @State private var connectTask: Task<Void, Never>?
     @State private var celebrations = 0
+    /// The Access settings pairing checks with, set up after an access gateway turned it away
+    /// (`pairingAccess`, `docs/connecting-and-voice.md` §11.5).
+    @State private var access: GatewayAccessDraft?
+    @State private var accessCheck: AccessCheck?
+    @State private var showsAccess = false
     @FocusState private var focusesPassword: Bool
 
     private enum Phase: Equatable {
@@ -22,6 +27,8 @@ struct PairingConnectView: View {
         case connecting(AppModel.PairingStep)
         case connected
         case failed(String, suggestion: String?, botModeFailed: Bool)
+        /// An access gateway answered, not Hermes: pairing waits for its Access settings.
+        case accessRefused(AccessRefusal)
     }
 
     private var needsPassword: Bool { link.backend?.signIn == .password }
@@ -84,10 +91,15 @@ struct PairingConnectView: View {
             }
         }
         .onDisappear { connectTask?.cancel() }
+        .sheet(isPresented: $showsAccess) {
+            accessSheet
+        }
         .onChange(of: phase) { _, new in
             switch new {
             case .failed(let message, _, _):
                 AccessibilityNotification.Announcement(message).post()
+            case .accessRefused(let refusal):
+                AccessibilityNotification.Announcement(refusal.title).post()
             case .connected:
                 AccessibilityNotification.Announcement(String(localized: "Connected")).post()
             default:
@@ -139,6 +151,12 @@ struct PairingConnectView: View {
                         .disabled(isBusy)
                 }
 
+                if case .accessRefused(let refusal) = phase {
+                    accessCard(refusal)
+                        .padding(.top, 18)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                }
+
                 if case .failed(let message, let suggestion, _) = phase {
                     VStack(alignment: .leading, spacing: 4) {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -168,6 +186,8 @@ struct PairingConnectView: View {
             String(localized: "Connected to \(link.name)")
         case .connecting:
             String(localized: "Connecting to \(link.name)…")
+        case .accessRefused:
+            String(localized: "Sign-in needed first")
         default:
             isUpdate ? String(localized: "Update \(link.name)?") : String(localized: "Connect to \(link.name)?")
         }
@@ -202,32 +222,19 @@ struct PairingConnectView: View {
                     .glassButton()
                     .controlSize(.large)
             }
-            Button(action: { connect() }) {
-                ZStack {
-                    switch phase {
-                    case .connecting(let step):
-                        HStack(spacing: 10) {
-                            Spinner()
-                            Text(step == .gateway ? LocalizedStringKey("Checking the gateway…") : "Signing in to Bot Mode…")
-                        }
-                        .transition(.blurReplace)
-                    case .connected:
-                        Label("Connected", systemImage: "checkmark")
-                            .transition(.blurReplace)
-                    case .failed:
-                        Text("Try Again")
-                            .transition(.blurReplace)
-                    case .idle:
-                        Text(isUpdate ? "Update" : "Connect")
-                            .transition(.blurReplace)
-                    }
+            if case .accessRefused = phase {
+                Button {
+                    showsAccess = true
+                } label: {
+                    Text("Set Up Access…")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 30)
                 }
-                .font(.headline)
-                .frame(maxWidth: .infinity, minHeight: 30)
+                .keyboardShortcut(.defaultAction)
+                .prominentGlassButton()
+            } else {
+                connectButton
             }
-            .keyboardShortcut(.defaultAction)
-            .prominentGlassButton()
-            .disabled(isBusy || phase == .connected || (needsPassword && password.isEmpty))
 
             Button("Cancel", role: .cancel) {
                 connectTask?.cancel()
@@ -246,6 +253,106 @@ struct PairingConnectView: View {
         .frame(maxWidth: 440)
         .frame(maxWidth: .infinity)
         .background(Theme.canvas)
+    }
+
+    private var connectButton: some View {
+            Button(action: { connect() }) {
+                ZStack {
+                    switch phase {
+                    case .connecting(let step):
+                        HStack(spacing: 10) {
+                            Spinner()
+                            Text(step == .gateway ? LocalizedStringKey("Checking the gateway…") : "Signing in to Bot Mode…")
+                        }
+                        .transition(.blurReplace)
+                    case .connected:
+                        Label("Connected", systemImage: "checkmark")
+                            .transition(.blurReplace)
+                    case .failed, .accessRefused:
+                        Text("Try Again")
+                            .transition(.blurReplace)
+                    case .idle:
+                        Text(isUpdate ? "Update" : "Connect")
+                            .transition(.blurReplace)
+                    }
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 30)
+            }
+            .keyboardShortcut(.defaultAction)
+            .prominentGlassButton()
+            .disabled(isBusy || phase == .connected || (needsPassword && password.isEmpty))
+    }
+
+    /// What turned pairing away, and that it isn't Hermes's key (`pairingAccess`).
+    private func accessCard(_ refusal: AccessRefusal) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(refusal.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                Text(refusal == .signInNeeded
+                     ? String(localized: "It showed a sign-in page. Set up Access for this gateway, then the app pairs with Hermes's key as usual.")
+                     : refusal.detail)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "lock.shield.fill")
+                .foregroundStyle(Theme.warning)
+                .frame(width: 26)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: .rect(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The Access page for a gateway not saved yet: Pair checks again with what's on it.
+    private var accessSheet: some View {
+        NavigationStack {
+            GatewayAccessPage(
+                draft: Binding { access ?? GatewayAccessDraft() } set: { access = $0 },
+                check: accessCheck, host: link.gateway.host() ?? address, checkAgain: checkAccess
+            )
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showsAccess = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Pair") {
+                        showsAccess = false
+                        connect()
+                    }
+                    .disabled(access.map { $0.problem(savedSecret: savedAccessSecret) != nil } ?? true)
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 460, minHeight: 520)
+        #endif
+    }
+
+    /// A gateway already saved at this address keeps its secret unless another is typed.
+    private var savedAccessSecret: String? {
+        app.existingBot(for: link).flatMap { app.accessSecret(for: $0) }
+    }
+
+    /// Check Again on the Access page: reaches Hermes with the settings on screen, saving nothing.
+    private func checkAccess() async {
+        do {
+            _ = try await app.verifyPairing(link, includingBotMode: false, access: access ?? GatewayAccessDraft())
+            accessCheck = .passed
+        } catch let failure as AppModel.PairingFailure {
+            if let refusal = (failure.underlying as? HermesError)?.accessRefusal {
+                accessCheck = .refused(refusal, host: link.gateway.host() ?? address)
+            } else {
+                accessCheck = nil
+            }
+        } catch {
+            accessCheck = nil
+        }
     }
 
     private func warning(_ text: LocalizedStringKey) -> some View {
@@ -290,7 +397,9 @@ struct PairingConnectView: View {
         phase = .connecting(.gateway)
         connectTask = Task {
             do {
-                let pairing = try await app.verifyPairing(link, password: password, includingBotMode: includingBotMode) { step in
+                let pairing = try await app.verifyPairing(
+                    link, password: password, includingBotMode: includingBotMode, access: access
+                ) { step in
                     phase = .connecting(step)
                 }
                 phase = .connected
@@ -322,6 +431,15 @@ struct PairingConnectView: View {
         case .gateway:
             let error = (failure.underlying as? URLError).map { HermesError.from(urlError: $0, host: host) }
                 ?? failure.underlying as? HermesError
+            if let refusal = error?.accessRefusal, !refusal.isCertificate {
+                accessCheck = .refused(refusal, host: host)
+                if access == nil {
+                    access = GatewayAccessDraft(
+                        app.existingBot(for: link)?.access, hasSavedSecret: savedAccessSecret != nil
+                    )
+                }
+                return .accessRefused(refusal)
+            }
             let message = error?.errorDescription ?? BotRoster.describe(failure.underlying)
             let suggestion = error?.recoverySuggestion
                 ?? String(localized: "Make sure this device can reach \(host): the same network, or Tailscale on.")

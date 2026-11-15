@@ -26,7 +26,8 @@ enum BoardEventStream {
                     }
                     continuation.finish()
                 } catch {
-                    continuation.finish(throwing: Task.isCancelled ? CancellationError() : error)
+                    continuation.finish(throwing: Task.isCancelled
+                        ? CancellationError() : AccessRefusal.refused(socket, error: error) ?? error)
                 }
             }
             // A quiet board sends nothing, so a dead connection would go unnoticed without pings.

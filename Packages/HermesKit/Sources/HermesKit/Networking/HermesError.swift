@@ -14,6 +14,9 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
     case unreachable(host: String, reason: Reason)
     case invalidResponse(String)
     case unsupportedServer
+    /// An access gateway or a proxy in front of Hermes stopped the request before Hermes saw it
+    /// (`AccessRefusal`, `docs/connecting-and-voice.md` §11.2).
+    case accessRefused(host: String, AccessRefusal)
 
     public enum Reason: Sendable, Equatable {
         case cannotConnect, timedOut, offline, connectionLost, insecure, tls, other(String)
@@ -56,7 +59,19 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             "Hermes sent a response this app doesn't understand (\(detail))."
         case .unsupportedServer:
             "This Hermes gateway is too old for the app. Run `hermes update`, then restart the gateway."
+        case .accessRefused(let host, let refusal):
+            switch refusal {
+            case .signInNeeded: "An access gateway at \(host) answered, not Hermes."
+            case .tokenRejected: "The access gateway at \(host) refused the service token."
+            case .certificateNeeded: "The proxy at \(host) asks for a client certificate."
+            case .certificateRejected: "The proxy at \(host) refused the client certificate."
+            }
         }
+    }
+
+    /// The access gateway's or proxy's refusal, when that's what this is.
+    public var accessRefusal: AccessRefusal? {
+        if case .accessRefused(_, let refusal) = self { refusal } else { nil }
     }
 
     /// Hermes refused a message, in its words (`SendRefusal.line`).
@@ -104,6 +119,12 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             "Profile URLs (/p/<name>) need that profile's own key."
         case .missingAPIKey:
             "Add the key in Settings → Hermes Gateways."
+        case .accessRefused(_, .signInNeeded):
+            "Set up a service token for this gateway in Edit Gateway → Access."
+        case .accessRefused(_, .tokenRejected):
+            "Check the client ID and secret, and that the token is allowed for this gateway and hasn't expired."
+        case .accessRefused(_, .certificateNeeded), .accessRefused(_, .certificateRejected):
+            "This version of the app can't send a client certificate yet."
         default:
             nil
         }
@@ -150,18 +171,29 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
     }
 
     public static func from(urlError: URLError, host: String) -> HermesError {
+        if let refusal = AccessRefusal.classify(urlError) { return .accessRefused(host: host, refusal) }
         let reason: Reason = switch urlError.code {
         case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff: .offline
         case .timedOut: .timedOut
         case .networkConnectionLost: .connectionLost
         case .appTransportSecurityRequiresSecureConnection: .insecure
         case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
-             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected:
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
             .tls
         case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .badServerResponse: .cannotConnect
         default: .other(urlError.localizedDescription)
         }
         return .unreachable(host: host, reason: reason)
+    }
+
+    /// Maps an HTTP error response to a request to `url`: an access gateway's refusal first
+    /// (`AccessRefusal.classify`), so its sign-in page is never read as Hermes's own 401, then
+    /// Hermes's answer (`from(status:body:contentType:)`).
+    static func from(_ response: HTTPURLResponse, body: Data, url: URL?) -> HermesError {
+        if let refusal = AccessRefusal.classify(response, body: body, to: url) {
+            return .accessRefused(host: url?.host() ?? response.url?.host() ?? "", refusal)
+        }
+        return from(status: response.statusCode, body: body, contentType: response.value(forHTTPHeaderField: "Content-Type"))
     }
 
     /// Maps an HTTP error response, decoding whichever error envelope the route used.

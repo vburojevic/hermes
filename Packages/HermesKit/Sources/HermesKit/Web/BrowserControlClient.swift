@@ -19,6 +19,9 @@ extension HermesClient {
         guard let http = response as? HTTPURLResponse else { throw HermesError.invalidResponse("not HTTP") }
         let json = (try? JSONDecoder().decode(JSONValue.self, from: data)) ?? .null
         guard http.statusCode == 201 || http.statusCode == 200 else {
+            if let refusal = AccessRefusal.classify(http, body: data, to: request.url) {
+                throw HermesError.accessRefused(host: request.url?.host() ?? "", refusal)
+            }
             // `{"error": {"message", "code"}}` (`_error_response`), or aiohttp's bare 404 on a Hermes
             // without the route.
             let error = json["error"]
@@ -33,7 +36,13 @@ extension HermesClient {
     /// protocol, never in the URL (it would land in access logs).
     public func browserControlSocket(_ ticket: BrowserControlTicket) -> URLSessionWebSocketTask? {
         guard let url = browserControlSocketURL(path: ticket.socketPath) else { return nil }
-        return HermesClient.defaultSession.webSocketTask(with: url, protocols: ticket.protocols)
+        var request = URLRequest(url: url)
+        // What `webSocketTask(with:protocols:)` sends, on a request the access headers can join.
+        if !ticket.protocols.isEmpty {
+            request.setValue(ticket.protocols.joined(separator: ", "), forHTTPHeaderField: "Sec-WebSocket-Protocol")
+        }
+        GatewayAccessRegistry.shared.prepare(&request)
+        return HermesClient.defaultSession.webSocketTask(with: request)
     }
 
     /// `ws(s)://<gateway>/<path>`, with nothing in the query.
