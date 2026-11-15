@@ -8,7 +8,7 @@ run inside the person's own Hermes, and are published to public repositories tha
 | Plugin | What it adds | Source | State |
 |---|---|---|---|
 | `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.8 |
-| `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.4.0 |
+| `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.5.0 |
 
 Everything else the app does runs on a stock Hermes Agent: the API server for chats, and
 `hermes serve` for Bot Mode ([architecture.md](architecture.md)). Hermes's own bundled plugins
@@ -187,7 +187,8 @@ that profile ([widgets.md](widgets.md) §11), and Settings → Setup → Widgets
 tells the agent plainly that a short question ("Weather today?") gets its widget, again in chats that
 heard the older rules. It asks for no more access than 1.2.2, so the app updates every profile to it
 quietly. 1.4.0 makes a payload a routine's agent typed into its report into the card it meant, again
-with the same access, and the app updates to it the same way.
+with the same access, and the app updates to it the same way. So does 1.5.0, which adds the source
+and slider glyphs, `unit_one` and `from_now`.
 
 ## 3. Updating
 
@@ -347,11 +348,11 @@ and remove it like `hermes-app-push` (§2–§4), in the root and every profile:
 at once, and the tools and prompt section from each chat's next start. The app installs and updates
 it like the push plugin (§2.1), pinned in `AppPlugin.widgets` (1.2.0: the everyday cards' fields; since
 1.1.1 Bot group chats use its `room` command, and the app marks every chat it knows with one
-`session` call). 1.4.0, the pinned version, makes a widget a routine typed into its report the way
-the tool makes it, with the same access; with an older copy the app reads such a payload as its
-words (§6.1, [widgets.md](widgets.md) §2). 1.5.0, not published or pinned yet, adds the source
-and slider glyphs, `unit_one` and `from_now` (design cbc510c) with the same access; the app draws
-1.4.0's cards as before, since every new field is optional.
+`session` call). 1.4.0 makes a widget a routine typed into its report the way the tool makes it,
+with the same access; with an older copy the app reads such a payload as its words (§6.1,
+[widgets.md](widgets.md) §2). 1.5.0, the pinned version, adds the source and slider glyphs,
+`unit_one` and `from_now` (design cbc510c) with the same access, so the app updates every profile
+to it quietly; it draws an older copy's cards as before, since every new field is optional.
 
 ### 6.1 What it uses in Hermes
 
