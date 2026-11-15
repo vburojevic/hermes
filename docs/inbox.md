@@ -155,6 +155,9 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
   (`ActivityLine.faceMood`, `docs/bot-faces.md` §5.9). Group rows (`GroupInboxRow`) stack the
   members' faces with whoever is working in front.
 - Line 2 is one line, cut at the tail.
+- Only the open chat's row hides what's new (`BadgeScope.rowBadge`): it's read as it's shown. A
+  chat backed out of on iPhone (or an iPad window as narrow) stays selected under the list but
+  isn't open, so its row shows its count, its @ and its draft, a Bot's and a group chat's too.
 
 ### The activity line
 
@@ -246,6 +249,9 @@ search).
 - Only where someone can be reading: the app in front, on the Mac the window in front
   (`controlActiveState`) with the screen unlocked and awake (`ScreenLock`). A window behind
   another, a locked Mac and notification previews never mark anything read.
+- Only the open chat (`BadgeScope.readsAsShown`). On iPhone, a chat you went back from stays
+  selected under the list, its transcript still there, but what comes in then isn't seen: its row
+  shows it (§2) until you open the chat again.
 - Scrolled up with new messages below, the chat stays unread: Hermes' mark only means "read until
   now" (it stamps the time it lands, there's no "read up to this message"). This device remembers
   how far it got; the jump pill offers what's new below.
@@ -464,6 +470,9 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   shows the last messages from the device before the gateway answers (`-HERMES_LAUNCH_LOG YES`:
   "kept last lines shown").
 - The back button's count is the unread, unmuted chats other than the open one.
+- On iPhone, open a group chat, go back to the list and `POST /api/mock/room-say` to it: within a
+  minute its row shows the new messages' count (and the Bots count and the back button with it),
+  as a chat's or a Bot's row does; opening it again clears it.
 - Reduce Motion: no shimmer or slide. Light, dark and Increase Contrast match the renders.
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
   actions open all scroll the chat and the list; a swipe left on a reply still replies, and one

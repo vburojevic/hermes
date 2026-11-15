@@ -565,7 +565,7 @@ private struct SessionRow: View {
         SidebarRow(isSelected: isSelected, height: InboxMetrics.rowHeight) {
             workspace.pick(item)
         } label: {
-            ChatInboxRow(session: session, workspace: workspace, isSelected: isSelected)
+            ChatInboxRow(session: session, workspace: workspace)
         }
         #if DEBUG
         .onAppear { LaunchTrace.mark("first chat row on screen (\(workspace.sessions.count) chats)", id: "first chat row") }
