@@ -180,28 +180,41 @@ class _Explain:
 
     def condition(self, error) -> str:
         """For an error inside ``then``: "when subject.kind is purchase, spend, booking or transfer"."""
-        path = list(error.schema_path)
+        path = list(error.absolute_schema_path)
         if "then" not in path:
             return ""
         index = len(path) - 1 - path[::-1].index("then")
-        node: Any = self.spec.validator(*self._root_key).schema
-        for part in path[:index]:
-            try:
-                node = node[part]
-            except (KeyError, IndexError, TypeError):
-                return ""
+        node = self._schema_at(path[:index])
         cond = node.get("if") if isinstance(node, dict) else None
         words = self._describe(cond or {}, [])
         return f" when {words}" if words else ""
 
     _root_key: tuple[str, str] = ("", "full")
 
+    def _schema_at(self, path: list) -> Any:
+        """The schema node at an error's schema path, following the $refs it went through."""
+        validator = self.spec.validator(*self._root_key)
+        node: Any = validator.schema
+        base = self.base
+        for part in path:
+            try:
+                # jsonschema leaves a $ref out of the path when it steps through one.
+                while isinstance(node, dict) and "$ref" in node and part not in node:
+                    node, base = self._lookup(node["$ref"], base)
+                if part != "$ref":
+                    node = node[part]
+            except (KeyError, IndexError, TypeError, LookupError):
+                return None
+        while isinstance(node, dict) and "$ref" in node and set(node) <= {"$ref", "description"}:
+            node, base = self._lookup(node["$ref"], base)
+        return node
+
     def _describe(self, schema: dict, prefix: list[str]) -> str:
         parts = []
         for name, sub in (schema.get("properties") or {}).items():
             here = prefix + [name]
             if "const" in sub:
-                parts.append(f"{'.'.join(here)} is {sub['const']}")
+                parts.append(f"{'.'.join(here)} is {json.dumps(sub['const']) if isinstance(sub['const'], bool) else sub['const']}")
             elif "enum" in sub:
                 parts.append(f"{'.'.join(here)} is {_or_list(sub['enum'])}")
             elif "properties" in sub:
@@ -221,7 +234,10 @@ class _Explain:
         schema = error.schema if isinstance(error.schema, dict) else {}
         if kind in ("anyOf", "oneOf") and error.context:
             from jsonschema.exceptions import best_match
-            best = best_match(error.context)
+            # A branch the value's type already fits says more than "isn't a string" from the others.
+            fitting = [e for e in error.context
+                       if not (e.validator == "type" and list(e.absolute_path) == list(error.absolute_path))]
+            best = best_match(fitting or error.context)
             if best is not None and list(best.absolute_path) != list(error.absolute_path) or (
                     best is not None and best.validator not in ("type",)):
                 return self.message(best)
@@ -229,9 +245,9 @@ class _Explain:
             return [f"{where} doesn't match any allowed shape ({_or_list([o for o in options if o])})"]
         if kind == "enum":
             return [f"{where}: {_quote(value)} isn't allowed; use {_or_list(error.validator_value)}"
-                    + _did_you_mean(value, error.validator_value)]
+                    + self.condition(error) + _did_you_mean(value, error.validator_value)]
         if kind == "const":
-            return [f"{where} must be {_quote(error.validator_value)}"]
+            return [f"{where} must be {_quote(error.validator_value)}{self.condition(error)}"]
         if kind == "required":
             missing = re.findall(r"'([^']+)' is a required property", error.message)
             name = missing[0] if missing else "?"
@@ -243,8 +259,11 @@ class _Explain:
                 known = self.known_properties(schema, self.base)
                 unexpected = [k for k in value if k not in known]
             known = self.known_properties(schema, self.base)
+            # An error inside a field (source.name too long) leaves that field unevaluated too; the
+            # error itself is reported, so only names the schema doesn't know are unknown.
+            unexpected = [name for name in unexpected if name not in known] if unexpected else ["?"]
             out = []
-            for name in unexpected or ["?"]:
+            for name in unexpected:
                 field = f"{path}.{name}" if path else name
                 if name in ("id", "rev", "producer") and not path:
                     out.append(f"{name} is set by the tool; leave it out")
@@ -295,13 +314,38 @@ class _Explain:
             return [f"{where}: {error.message.replace('is a dependency of', 'is needed with')}"]
         if kind == "propertyNames":
             return [f"{where}: key {error.message}"]
+        if error.schema is False:
+            name = self.refused_field(error)
+            if name:
+                return [f"{path + '.' if path else ''}{name} isn't allowed{self.condition(error)}"]
         return [f"{where}: {error.message}"]
+
+    payload: Any = None
+
+    def refused_field(self, error) -> str | None:
+        """The field a `false` schema refused: jsonschema reports the object, not the field."""
+        path = list(error.absolute_schema_path)
+        if not path or path[-1] != "properties":
+            return None
+        node = self._schema_at(path)
+        target: Any = self.payload
+        for part in error.absolute_path:
+            try:
+                target = target[part]
+            except (KeyError, IndexError, TypeError):
+                return None
+        if not isinstance(node, dict) or not isinstance(target, dict):
+            return None
+        names = [name for name, sub in node.items() if sub is False and name in target
+                 and target[name] == error.instance]
+        return names[0] if names else None
 
 
 def schema_issues(spec: Spec, wtype: str, payload: dict, kind: str = "full") -> list[str]:
     validator = spec.validator(wtype, kind)
     explain = _Explain(spec, validator.schema.get("$id") or BASE_ID)
     explain._root_key = (wtype, kind)
+    explain.payload = payload
     issues: list[str] = []
     for error in sorted(validator.iter_errors(payload), key=lambda e: (list(map(str, e.absolute_path)), e.validator)):
         for line in explain.message(error):

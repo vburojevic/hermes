@@ -83,3 +83,9 @@ def test_the_new_cards_are_accepted_with_generated_text(widgets, name):
         result = call(widgets, {"op": "create", "payload": payload})
     assert "error" not in result, result
     assert result["fallback_text"] == plugin_module("fallback").generate(result["payload"] | {"fallback_text": ""})
+
+
+def test_one_reads_with_the_singular_unit(f):
+    assert f.quantity({"value": 1, "unit": "votes", "unit_one": "vote"}) == "1 vote"
+    assert f.quantity({"value": 2, "unit": "votes", "unit_one": "vote"}) == "2 votes"
+    assert f.quantity({"value": 1, "unit": "votes"}) == "1 votes"  # only the plural: as before

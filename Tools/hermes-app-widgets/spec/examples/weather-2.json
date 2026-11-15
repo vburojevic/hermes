@@ -46,7 +46,8 @@
   "source": {
     "name": "Apple Weather",
     "kind": "api",
-    "url": "https://weatherkit.apple.com/legal-attribution.html"
+    "url": "https://weatherkit.apple.com/legal-attribution.html",
+    "symbol": "cloud.sun.fill"
   },
   "fallback_text": "New York, next 4 days: today 48–63°F, partly cloudy; Fri 46–54°F, rain 80%; Sat 45–64°F, clear; Sun 50–68°F, clear. Saturday morning is the dry, cool slot for the long run."
 }

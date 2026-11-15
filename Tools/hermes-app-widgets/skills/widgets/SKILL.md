@@ -195,9 +195,14 @@ The tool adds `id`. Then:
   - Use absolute dates and times ("Fri 16 Oct at 10:55"); it's read later.
   - Over 2,000 characters, end with "… and 38 more (in the Hermes app)".
 - **`source`:** where the data came from ("App Store Connect", "Apple
-  Health"). Always for numbers you didn't compute.
+  Health"). Always for numbers you didn't compute. Add `symbol` for its
+  footer glyph when one fits (`heart.fill` for Apple Health, `airplane`
+  for flight data); without it the footer shows a link glyph.
 - **Values are data:** send numbers with `unit`, `format` and `currency`,
-  never formatted strings. The app formats them for the reader. Changes
+  never formatted strings. The app formats them for the reader. A count
+  whose unit changes for 1 carries both: `unit: "votes"`, `unit_one:
+  "vote"`. A due date read as plain text is `format: date` with
+  `from_now: true` ("Tue 20 Oct, in 4 days"). Changes
   carry `good` (`up`, `down`, `neutral`), so a cost going up is never shown
   green. **Percentages are fractions:** 0.12 is 12%.
 - **Data from a file:** when a tool wrote the data (a test report, a log,

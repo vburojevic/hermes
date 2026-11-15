@@ -349,7 +349,9 @@ it like the push plugin (§2.1), pinned in `AppPlugin.widgets` (1.2.0: the every
 1.1.1 Bot group chats use its `room` command, and the app marks every chat it knows with one
 `session` call). 1.4.0, the pinned version, makes a widget a routine typed into its report the way
 the tool makes it, with the same access; with an older copy the app reads such a payload as its
-words (§6.1, [widgets.md](widgets.md) §2).
+words (§6.1, [widgets.md](widgets.md) §2). 1.5.0, not published or pinned yet, adds the source
+and slider glyphs, `unit_one` and `from_now` (design cbc510c) with the same access; the app draws
+1.4.0's cards as before, since every new field is optional.
 
 ### 6.1 What it uses in Hermes
 

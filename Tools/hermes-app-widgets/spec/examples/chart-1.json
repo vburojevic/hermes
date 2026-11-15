@@ -77,7 +77,8 @@
   "note": "Above your usual range for 3 days. That often follows short sleep or a stressful stretch; an early night and an easy day may help. It’s an observation, not a diagnosis.",
   "source": {
     "name": "Apple Health",
-    "kind": "device"
+    "kind": "device",
+    "symbol": "heart.fill"
   },
   "fallback_text": "Resting heart rate: 61 bpm today, above your usual range (52–58) for the last 3 days, after 10 days inside it (no reading on 13 October). That often follows short sleep or a stressful stretch; an early night and an easy day may help. It’s an observation, not a diagnosis."
 }

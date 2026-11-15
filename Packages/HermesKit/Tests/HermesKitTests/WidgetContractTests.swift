@@ -47,7 +47,7 @@ struct WidgetContractTests {
     }
 
     @Test func invalidFixturesAreThere() {
-        #expect(Self.invalid.count == 117)
+        #expect(Self.invalid.count == 119)
     }
 
     @Test(arguments: invalid.map(\.name))

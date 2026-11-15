@@ -28,10 +28,9 @@
           "label": "Due",
           "value": {
             "value": "2026-10-20T00:00:00-04:00",
-            "format": "relative"
-          },
-          "detail": "Tue, Oct 20",
-          "state": "warning"
+            "format": "date",
+            "from_now": true
+          }
         },
         {
           "label": "Status",
@@ -58,7 +57,8 @@
     "name": "Invoices folder",
     "kind": "file",
     "url": "hermes-file:invoices/0042.pdf",
-    "detail": "invoices/0042.pdf"
+    "detail": "invoices/0042.pdf",
+    "symbol": "doc.fill"
   },
   "fallback_text": "Invoice INV-0042 (sent Oct 1) to Bluefin Studio LLC: $2,400.00, due Tue, Oct 20 (in 4 days), unpaid. Pay to Chase checking •• 4410. Reply “send a reminder” and I’ll draft one for you to approve."
 }

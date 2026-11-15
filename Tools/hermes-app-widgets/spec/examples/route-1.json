@@ -55,7 +55,8 @@
   ],
   "source": {
     "name": "MTA live departures",
-    "kind": "api"
+    "kind": "api",
+    "symbol": "tram.fill"
   },
   "actions": [
     {

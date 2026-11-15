@@ -6,7 +6,7 @@ contract and the 35 primitive specs live in the design project's `docs/widgets/`
 says how the app builds them.
 
 The contract's machine-readable parts are copied verbatim into
-`Packages/HermesKit/Sources/HermesKit/Widgets/Spec/` (from the design project at `5e1f02f`, the same commit as the plugin's copy):
+`Packages/HermesKit/Sources/HermesKit/Widgets/Spec/` (from the design project at `cbc510c`, the same commit as the plugin's copy):
 
 - `schemas/`: the JSON Schema 2020-12 schemas (`common`, `envelope`, one per primitive);
 - `catalog.json`: every type with its examples, Elyx exports, skeleton and fallback rule;
@@ -333,10 +333,18 @@ widgets.
   widgets[:<type or example>[:<state>[:compact]]]`, draws every example in every state at both
   densities ("widgets:table-1:ready" is that one card). Cards are as wide as in a reply (the
   chat's 20 pt margins), the width the designs are drawn at.
-- **Footers** (`Parts.cardFooter`): the source's name, then its `detail` when the producer sends
-  one ("invoices/0042.pdf", "listed 9 days ago"), else the time.
-- **Inputs:** a control's slider is a thick capsule filled in ink, set by tapping or dragging
-  anywhere along it; the drag starts only when the finger moves sideways, so the chat still
+- **Footers** (`Parts.cardFooter`): the source's glyph, its name, then its `detail` when the
+  producer sends one ("invoices/0042.pdf", "listed 9 days ago"), else the time. The glyph is the
+  source's `symbol` (a plane for flight data, a heart for Apple Health, a page for a folder); a
+  source without one, or with a name the app doesn't draw, keeps the link glyph.
+- **Quantities:** a `unit` is the plural; with `unit_one` a value of exactly 1 reads with it ("1
+  vote", "2 votes"). A date or time with `from_now` adds how far away it is in days, counted in
+  calendar days and kept current by the app ("Tue 20 Oct, in 4 days", "tomorrow", "2 days ago");
+  it reads as plain text, never a tag. The plugin's text fallback leaves the distance out, since
+  it would go stale.
+- **Inputs:** a control's slider is a thick capsule filled in ink, with the slider's `symbol` at
+  its start when it sends one (the sun on a brightness bar), set by tapping or dragging anywhere
+  along it; the drag starts only when the finger moves sideways, so the chat still
   scrolls over it, and VoiceOver adjusts it as a slider. A form's date reads as words ("Fri 30
   Oct") with a calendar glyph and opens a calendar over the field; a menu fills its well, with
   up-down chevrons at the end.
@@ -421,7 +429,7 @@ widgets.
 ## 13. The mock and the tests
 
 - `WidgetContractTests`: the catalogue and `WidgetType` agree; every example validates strictly
-  and reads as a widget; all 117 invalid fixtures fail the strict checks, and the client draws
+  and reads as a widget; all 119 invalid fixtures fail the strict checks, and the client draws
   only the four the fail-closed table forgives; the table itself, one rule at a time.
 - `WidgetDirectiveTests`: directives, fences, streaming, inline blocks and tool results.
 - `WidgetMisfireTests`: a directive written with commas, a payload typed into a routine's delivery,
@@ -434,6 +442,7 @@ The mock (`Tools/mock-hermes/widgets.py`) plays the plugin, in chats and Bot Cha
 claim and get, and `/app-widgets` session, room, get and keys, with the plugin's results and
 messages, signatures checked for real. Its words are in its docstring and
 [development.md](development.md): "widgets" pages through every example, "widget <type>",
+"widget <name> <name>…" (those examples by name, "widget route-1 chart-1"),
 "widget publish" (an approval without Face ID), "widget lunch" (with it), "widget expiring",
 "widget silent" (Try Again), "widget private", "widget gateway image", "widget private
 image" (pictures kept on the gateway, §9) and "widget missing image" (one that isn't there),
@@ -498,18 +507,6 @@ light, dark and Increase Contrast:
   compression, and room marking in a live Bot group chat.
 - **Answer buttons in notifications** for requests that cost nothing, can be undone and aren't
   private: allowed by the contract, not offered (§12).
-- **Where the designs go past the spec** (the app follows the spec):
-  - Footer glyphs: the designs draw one per source (a plane for flight data, a tram for ZET, a
-    heart for Apple Health, a cloud for Apple Weather, a page for the invoices folder), but a
-    source carries only a name, kind, address and detail, and no rule fits the examples (the
-    weather card's icon is a location arrow, its footer a cloud; two App Store Connect cards draw
-    different glyphs). Footers keep the link glyph.
-  - The details card's Due: the design writes "Tue 20 Oct, in 4 days" as plain text; the
-    example sends `state: warning`, which the spec draws as a tag, with `detail` under it.
-  - The control's slider: the design puts a sun at the start of the brightness bar; a control
-    has no glyph field, so the bar is plain.
-  - scoreboard-3 reads "1 votes": the example sends `unit: "votes"` with the value 1, and the
-    client shows a unit as sent.
 - **Client refresh** needs a gateway route a plugin can't add today. Pictures a Bot keeps on its
   gateway load through `/api/fs/download` (§9), which needs Bot Mode; without it they read
   their description, and remote images from other hosts still wait for a tap.

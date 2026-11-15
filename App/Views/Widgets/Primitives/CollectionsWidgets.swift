@@ -705,6 +705,9 @@ struct DetailsBody: View {
                     Text(detail).font(WidgetFont.caption).foregroundStyle(Theme.secondaryText).multilineTextAlignment(stacked ? .leading : .trailing)
                 }
             }
+            // The value takes its width before the spacer does: side by side is only chosen when it
+            // fits, so a value like "Wed, 18 Nov, in 3 days" never truncates beside a short label.
+            .layoutPriority(1)
         }
     }
 }

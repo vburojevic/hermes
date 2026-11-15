@@ -16,6 +16,7 @@ Words in a message:
                                up, reads widget_examples("weather"), answers one sentence and the card
   widgets / widgets 2 …        every example, three per reply, page by page
   widget <type>                that type's examples ("widget checklist", "widget stack"…)
+  widget <name> <name>…        those examples by name, in that order ("widget route-1 chart-1")
   widget publish               an approval that needs no Face ID (a reversible post)
   widget lunch                 an approval that needs Face ID and a signature (it costs money)
   widget expiring              the publish approval, expiring 60 s from now
@@ -78,7 +79,7 @@ from datetime import date, datetime, timedelta
 
 HERE = pathlib.Path(__file__).resolve().parent
 EXAMPLES = HERE.parent.parent / "Packages/HermesKit/Sources/HermesKit/Widgets/Spec/examples"
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 ID_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 RESOLUTIONS = ("done", "failed", "rejected", "cancelled", "expired", "elsewhere")
 BUILT_IN = {"choice": {"answer"}, "form": {"submit", "cancel"}, "checklist": {"check"}, "control": {"set"},
@@ -784,9 +785,14 @@ def script(text, session="", producer=None):
         return steps + [("text", wide_table_reply(create))]
     if re.search(r"\bwidget wide\b", lower):
         return steps + [("text", wide_reply(create))]
-    kinds = {name.rpartition("-")[0] for name, _ in examples()}
-    kind = next((k for k in sorted(kinds) if re.search(rf"\bwidget {re.escape(k)}\b", lower)), None)
-    if kind:
+    named = dict(examples())
+    picked = re.findall(r"\b([a-z]+-\d+)\b", lower) if lower.startswith("widget ") else []
+    kinds = {name.rpartition("-")[0] for name in named}
+    kind = next((k for k in sorted(kinds) if re.search(rf"\bwidget {re.escape(k)}\b(?!-)", lower)), None)
+    if picked and all(name in named for name in picked):
+        chosen = [(name, named[name]) for name in picked]
+        lead = "Here are " + ", ".join(picked) + "."
+    elif kind:
         chosen = examples(kind)
         lead = f"Here are the {kind} widgets."
     else:

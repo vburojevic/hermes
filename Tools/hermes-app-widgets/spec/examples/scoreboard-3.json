@@ -18,7 +18,8 @@
       "initials": "GB",
       "score": {
         "value": 3,
-        "unit": "votes"
+        "unit": "votes",
+        "unit_one": "vote"
       },
       "detail": "Mom, Maya, Eli"
     },
@@ -28,7 +29,8 @@
       "initials": "SP",
       "score": {
         "value": 2,
-        "unit": "votes"
+        "unit": "votes",
+        "unit_one": "vote"
       },
       "detail": "Dad, Nora"
     },
@@ -38,7 +40,8 @@
       "initials": "H",
       "score": {
         "value": 1,
-        "unit": "votes"
+        "unit": "votes",
+        "unit_one": "vote"
       },
       "detail": "Leo"
     }

@@ -1,0 +1,29 @@
+{
+  "$comment": "Must fail validation: sides/0/score: 'unit' is a dependency of 'unit_one'; sides/1/score: 'unit' is a dependency of 'unit_one'",
+  "payload": {
+    "type": "scoreboard",
+    "v": 1,
+    "id": "w_bad02s004",
+    "title": "Lunch poll",
+    "as_of": "2026-10-16T19:20:00-04:00",
+    "fallback_text": "Lunch poll: Green Bowl 3, at home 1.",
+    "kind": "poll",
+    "status": "live",
+    "sides": [
+      {
+        "name": "Green Bowl",
+        "score": {
+          "value": 3,
+          "unit_one": "vote"
+        }
+      },
+      {
+        "name": "At home",
+        "score": {
+          "value": 1,
+          "unit_one": "vote"
+        }
+      }
+    ]
+  }
+}

@@ -205,3 +205,40 @@ def test_a_types_own_built_in_may_be_an_envelope_action(widgets):
             "actions": [{"id": "submit", "label": "Send"}, {"id": "cancel", "label": "Not Now"}]}
     assert "error" not in create(widgets, form)
     assert "reserved" in create(widgets, base(actions=[{"id": "acknowledge", "label": "Acknowledge"}]))["error"]
+
+
+def test_the_footer_and_slider_glyphs_singular_units_and_days_from_now(widgets):
+    """source.symbol, a slider's symbol, unit_one and from_now (docs/widgets.md §9)."""
+    def example(name):
+        return as_input(json.loads((SPEC / "examples" / f"{name}.json").read_text()))
+
+    def error(payload):
+        return create(widgets, payload).get("error", "")
+
+    sourced = create(widgets, base(source={"name": "Apple Health", "kind": "device", "symbol": "heart.fill"}))
+    assert "error" not in sourced and sourced["payload"]["source"]["symbol"] == "heart.fill"
+    # A name outside the allowlist draws the link glyph: a warning, not a refusal.
+    unknown = create(widgets, base(source={"name": "Feed", "symbol": "rocket.fill"}))
+    assert "error" not in unknown, unknown["error"]
+    assert "rocket.fill" in json.dumps(unknown.get("warnings"))
+    bad = error(base(source={"name": "Feed", "symbol": "not a symbol"}))
+    assert "source.symbol" in bad and "unknown field" not in bad, bad
+
+    lights = example("control-1")
+    assert error(lights) == ""
+    switch = json.loads(json.dumps(lights))
+    switch["controls"][0]["symbol"] = "power"
+    assert "controls[0].symbol isn't allowed when kind is switch" in error(switch), error(switch)
+    scenes = json.loads(json.dumps(lights))
+    scenes["controls"][2]["symbol"] = "sofa.fill"
+    assert "controls[2].symbol isn't allowed when kind is scenes" in error(scenes), error(scenes)
+
+    poll = example("scoreboard-3")
+    assert error(poll) == ""
+    del poll["sides"][0]["score"]["unit"]
+    assert "'unit' is needed with 'unit_one'" in error(poll), error(poll)
+
+    invoice = example("details-1")
+    assert error(invoice) == ""
+    invoice["sections"][0]["fields"][2]["value"]["format"] = "number"
+    assert "from_now" in error(invoice), error(invoice)

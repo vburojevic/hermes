@@ -143,6 +143,14 @@
             "minItems": 2,
             "maxItems": 8,
             "description": "Required for scenes (2–8, with glyphs) and segmented (2–4); not allowed on the other kinds."
+          },
+          "symbol": {
+            "allOf": [
+              {
+                "$ref": "common.schema.json#/$defs/Symbol"
+              }
+            ],
+            "description": "slider only: the glyph at the start of the track, sun.max.fill for brightness, speaker.wave.2.fill for volume. Without one the track starts plain."
           }
         },
         "additionalProperties": false,
@@ -178,7 +186,8 @@
                 "step": false,
                 "unit": false,
                 "reading": false,
-                "options": false
+                "options": false,
+                "symbol": false
               }
             }
           },
@@ -241,7 +250,25 @@
                 "max": false,
                 "step": false,
                 "unit": false,
-                "reading": false
+                "reading": false,
+                "symbol": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "stepper"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "symbol": false
               }
             }
           },

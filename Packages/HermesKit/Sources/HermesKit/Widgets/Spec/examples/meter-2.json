@@ -49,7 +49,8 @@
   ],
   "source": {
     "name": "Apple Health",
-    "kind": "device"
+    "kind": "device",
+    "symbol": "heart.fill"
   },
   "fallback_text": "Today’s goals: steps 8,412 of 10,000 (84%); treadmill 34 of 30 minutes (goal met at 17:40); stand hours unknown, because the watch hasn’t synced since 14:00."
 }
