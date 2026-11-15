@@ -204,9 +204,10 @@ to exercise the app's one defensive retry. When Hermes stops waiting on an appro
 came about, the run's events say `approval.settled` with its `prompt_id` and generation. "approve
 elsewhere" allows it on another device after 5 s, then runs the command for 20 s (the card's answer
 in that time finds nothing waiting), and "approve timeout" stops waiting after 20 s (`timeout_s`)
-and denies the command. With "legacy" in the message (say "approve elsewhere legacy") the events
-are an older gateway's: `approval.responded` after this device's answer, and nothing when another
-device answers.
+and denies the command. "approve script" asks for a 20-line heredoc, taller than the card's
+command box (docs/quick-actions.md §1), so the box caps its height and scrolls. With "legacy" in
+the message (say "approve elsewhere legacy") the events are an older gateway's:
+`approval.responded` after this device's answer, and nothing when another device answers.
 
 "clarify" asks a question mid-turn as Hermes does over the API server: a running clarify step, the
 prompt in the run's `pending_controls` and a `clarify.request` on its events, then

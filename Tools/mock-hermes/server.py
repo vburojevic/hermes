@@ -14,7 +14,8 @@ Scripted behaviour by message content:
                          keeps the prompt under the new generation, which Hermes never does;
                          "approve elsewhere": another device allows it after 5 s, and the
                          command then runs for 20 s; "approve timeout": Hermes stops waiting
-                         after 20 s and the command is denied. Hermes says `approval.settled`
+                         after 20 s and the command is denied; "approve script": a long
+                         heredoc, taller than the card's command box. Hermes says `approval.settled`
                          when it stops waiting; with "legacy" the run's events say what older
                          gateways do: `approval.responded` after this device's answer, and
                          nothing when another device answers)
@@ -66,6 +67,32 @@ def load_starve():
 STARVE = load_starve()
 HOUR = 3600
 DAY = 86400
+
+# "approve script": a command far taller than the approval card's command box, so the box caps its
+# height and scrolls (docs/quick-actions.md §1). Hermes asks this way for "script execution via heredoc".
+SCRIPT_COMMAND = (
+    "python3 - <<'PY'\n"
+    "import json, shutil\n"
+    "from pathlib import Path\n"
+    "\n"
+    "root = Path('build')\n"
+    "keep = {'release', 'cache'}\n"
+    "removed, kept = [], []\n"
+    "for entry in sorted(root.iterdir()):\n"
+    "    if entry.name in keep:\n"
+    "        kept.append(entry.name)\n"
+    "        continue\n"
+    "    if entry.is_dir():\n"
+    "        shutil.rmtree(entry)\n"
+    "    else:\n"
+    "        entry.unlink()\n"
+    "    removed.append(entry.name)\n"
+    "report = {'removed': removed, 'kept': kept}\n"
+    "Path('build/cleanup.json').write_text(json.dumps(report, indent=2))\n"
+    "print('removed', len(removed), 'kept', len(kept))\n"
+    "PY\n"
+    "make release && ls -la build/release"
+)
 
 SESSIONS = {}
 ROUTES = {}  # (method, path) -> fn(handler, query) -> handled: routes other modules add (browser_control.py)
@@ -589,7 +616,8 @@ def agent_turn(run):
         elif "approve" in lowered:
             narration = "I'll clean the build folder first. "
             stream_text(run, narration)
-            command = "rm -rf ./build && make release"
+            command = SCRIPT_COMMAND if "script" in lowered else "rm -rf ./build && make release"
+            description = "script execution via heredoc" if "script" in lowered else "Recursive delete"
             choices = ["once", "deny", "session", "always"]
 
             legacy, timeout = "legacy" in lowered, "timeout" in lowered
@@ -599,11 +627,11 @@ def agent_turn(run):
             def ask():
                 request_id = uuid.uuid4().hex
                 run.approval = {"kind": "approval", "prompt_id": request_id, "execution_generation": run.generation,
-                                "command": command, "description": "Recursive delete", "choices": choices, **wait}
+                                "command": command, "description": description, "choices": choices, **wait}
                 run.status = "waiting_for_approval"
                 # The run's event is the prompt as Hermes projects it (session_api_turn.run_api_turn):
                 # `request_id` for `prompt_id`, the allow_* flags, and its generation.
-                run.emit("approval.request", command=command, description="Recursive delete", pattern_key="rm_rf",
+                run.emit("approval.request", command=command, description=description, pattern_key="rm_rf",
                          pattern_keys=["rm_rf"], execution_generation=run.generation, request_id=request_id,
                          allow_session=True, allow_permanent=True, choices=["once", "session", "always", "deny"], **wait)
                 return request_id

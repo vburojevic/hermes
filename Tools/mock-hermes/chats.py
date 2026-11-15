@@ -7,7 +7,8 @@ mock the same property: `backend.py --gateway-port 18642` serves the API-server 
 its sessions, writing turns into its store. Bot Chats keep backend.py's own scripts.
 
 Scripted chat behaviour by message content (gateway-protocol events):
-  contains "approve"  -> asks to run a command (an `approval` server request)
+  contains "approve"  -> asks to run a command (an `approval` server request; "approve script":
+                         a long heredoc, taller than the card's command box)
   contains "fail"     -> the turn fails (recoverable)
   contains "key expired" / "signed out" -> the provider refused its key / sign-in (error_surface)
   contains "slow"     -> a long multi-tool turn (stop, reconnect)
@@ -1173,11 +1174,13 @@ def run_chat_turn(sid, text):
         return run_page_risks_turn(sid, stored)
 
     if "approve" in lower:
-        command = "rm -rf ./build && make release"
+        script = "script" in lower
+        command = G.SCRIPT_COMMAND if script else "rm -rf ./build && make release"
         stream(sid, "I'll clean the build folder first.")
         emit(sid, "message.interim", {"text": "I'll clean the build folder first.", "already_streamed": True})
         result = B["server_request"](sid, "approval", {
-            "request_id": uuid.uuid4().hex, "command": command, "description": "Recursive delete",
+            "request_id": uuid.uuid4().hex, "command": command,
+            "description": "script execution via heredoc" if script else "Recursive delete",
             "pattern_key": "rm_rf", "pattern_keys": ["rm_rf"], "tool_name": "terminal",
             "allow_session": True, "allow_permanent": True})
         if interrupted(sid):

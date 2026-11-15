@@ -26,6 +26,14 @@ struct ChatScreen: View {
     @State private var showsPermissions = false
     /// The card stepped aside for the dock (`docksWhileTyping`), changed with an animation.
     @State private var docksRequest = false
+    /// The card's bottom edge in the window, which stays put however tall the card is, and the
+    /// card's own height, for fitting it under the top bar (`dockRoom`).
+    @State private var dockBottom: CGFloat?
+    @State private var dockContentHeight: CGFloat = 0
+    @State private var dockScroll = ScrollPosition(edge: .bottom)
+    /// The person scrolled the overflowing card themselves, so a change in its room (the keyboard,
+    /// a longer message) leaves it where they put it.
+    @State private var dockScrolledByPerson = false
     /// The chat with its inspector, for choosing where the Team opens.
     @State private var screenSize: CGSize = .zero
 
@@ -274,6 +282,55 @@ struct ChatScreen: View {
         RequestDock.docks(composerFocused: composerFocused, isWide: isWide)
     }
 
+    /// The room above the rest of the bar, up to the top bar. On a turned phone a long card was
+    /// taller than that and pushed the composer off the screen, so past it the card scrolls
+    /// (`docs/quick-actions.md` §1).
+    private var dockRoom: CGFloat {
+        guard let ceiling, let dockBottom, dockBottom > ceiling else { return .infinity }
+        return max(160, dockBottom - ceiling - 12)
+    }
+
+    private var dockOverflows: Bool { dockContentHeight > dockRoom + 1 }
+
+    /// The card in a scroll view that is as tall as the card while it fits. It is always there,
+    /// so turning the phone keeps the card's state; it scrolls and clips only past `dockRoom`,
+    /// with the answers kept in view just above the composer. The card's glass has its own
+    /// container inside the scroll view: the bar's container draws its glass above any clip, so
+    /// a card in it ran on under the top bar.
+    private var fittedRequestDock: some View {
+        ScrollView(.vertical) {
+            GlassEffectContainer(spacing: 10) {
+                requestDock
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dockContentHeight = $0 }
+        }
+        .modifier(HugsContent(maxHeight: dockRoom))
+        .scrollPosition($dockScroll)
+        .defaultScrollAnchor(.bottom)
+        // A card that only starts to overflow when the phone turns kept its top in view on iOS 27,
+        // with the answers below the edge, so it moves to them when it appears, starts to
+        // overflow or turns, and when its room changes until the person scrolls it themselves.
+        .onAppear { showDockAnswers() }
+        .onChange(of: dockOverflows) { showDockAnswers() }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded() } action: { _ in showDockAnswers() }
+        .onChange(of: dockRoom) {
+            if !dockScrolledByPerson { dockScroll.scrollTo(edge: .bottom) }
+        }
+        .onScrollPhaseChange { _, phase in
+            if phase == .tracking || phase == .interacting { dockScrolledByPerson = true }
+        }
+        .scrollDisabled(!dockOverflows)
+        .scrollClipDisabled(!dockOverflows)
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollEdgeEffectHidden()
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY.rounded() } action: { dockBottom = $0 }
+    }
+
+    private func showDockAnswers() {
+        dockScrolledByPerson = false
+        dockScroll.scrollTo(edge: .bottom)
+    }
+
     @ViewBuilder
     private var requestDock: some View {
         if docksRequest {
@@ -460,49 +517,51 @@ struct ChatScreen: View {
     }
 
     private var bottomBar: some View {
-        GlassEffectContainer(spacing: 10) {
-            VStack(spacing: 10) {
-                if conversation.pendingApproval != nil || !conversation.requests.isEmpty {
-                    requestDock
-                        .transition(reduceMotion ? .opacity : .risesFromComposer)
-                }
-                if let notice = conversation.refusedNotice {
-                    RefusedBanner(notice: notice, onRetry: conversation.retryRefused) { conversation.refusedNotice = nil }
-                        .glassEffectID("refused", in: bottomGlass)
-                        .transition(ComposerView.rowAppears)
-                } else if let banner = conversation.banner {
-                    ErrorBanner(error: banner) { conversation.banner = nil }
-                        .glassEffectID("banner", in: bottomGlass)
-                        .transition(ComposerView.rowAppears)
-                }
-                if let goal = conversation.goal {
-                    GoalBar(goal: goal, onClear: conversation.clearGoal)
-                        .glassEffectID("goal", in: bottomGlass)
-                        .transition(ComposerView.rowAppears)
-                }
-                // A reply being read aloud, from this chat or another (`miniPlayer`): 12 pt above
-                // the composer (the stack's 10 and 2 more), riding up with it as it grows
-                // (`docs/voice.md` §3).
-                if ListenPlayer.shared.isActive {
-                    ListenMiniPlayer()
-                        .glassEffectID("listen", in: bottomGlass)
-                        .padding(.bottom, 2)
-                        .transition(ComposerView.rowAppears)
-                }
-                // iPhone and iPad portrait: the Inspector's pill (`inspectorPill`) above the composer.
-                if !usesInspectorPanel, !conversation.inspector.tabs.isEmpty, !conversation.inspector.isPresented {
-                    InspectorPill(inspector: conversation.inspector)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .transition(ComposerView.rowAppears)
-                }
-                ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
-                    .glassEffectID("composer", in: bottomGlass)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
-                if centersComposer, !startsInProject {
-                    centredChips
-                        .padding(.top, 6)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height + 16 } action: { chipsHeight = $0 }
-                        .transition(ComposerView.rowAppears)
+        VStack(spacing: 10) {
+            if conversation.pendingApproval != nil || !conversation.requests.isEmpty {
+                fittedRequestDock
+                    .transition(reduceMotion ? .opacity : .risesFromComposer)
+            }
+            GlassEffectContainer(spacing: 10) {
+                VStack(spacing: 10) {
+                    if let notice = conversation.refusedNotice {
+                        RefusedBanner(notice: notice, onRetry: conversation.retryRefused) { conversation.refusedNotice = nil }
+                            .glassEffectID("refused", in: bottomGlass)
+                            .transition(ComposerView.rowAppears)
+                    } else if let banner = conversation.banner {
+                        ErrorBanner(error: banner) { conversation.banner = nil }
+                            .glassEffectID("banner", in: bottomGlass)
+                            .transition(ComposerView.rowAppears)
+                    }
+                    if let goal = conversation.goal {
+                        GoalBar(goal: goal, onClear: conversation.clearGoal)
+                            .glassEffectID("goal", in: bottomGlass)
+                            .transition(ComposerView.rowAppears)
+                    }
+                    // A reply being read aloud, from this chat or another (`miniPlayer`): 12 pt above
+                    // the composer (the stack's 10 and 2 more), riding up with it as it grows
+                    // (`docs/voice.md` §3).
+                    if ListenPlayer.shared.isActive {
+                        ListenMiniPlayer()
+                            .glassEffectID("listen", in: bottomGlass)
+                            .padding(.bottom, 2)
+                            .transition(ComposerView.rowAppears)
+                    }
+                    // iPhone and iPad portrait: the Inspector's pill (`inspectorPill`) above the composer.
+                    if !usesInspectorPanel, !conversation.inspector.tabs.isEmpty, !conversation.inspector.isPresented {
+                        InspectorPill(inspector: conversation.inspector)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(ComposerView.rowAppears)
+                    }
+                    ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
+                        .glassEffectID("composer", in: bottomGlass)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+                    if centersComposer, !startsInProject {
+                        centredChips
+                            .padding(.top, 6)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height + 16 } action: { chipsHeight = $0 }
+                            .transition(ComposerView.rowAppears)
+                    }
                 }
             }
         }
