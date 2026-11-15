@@ -431,11 +431,13 @@ struct PairingConnectView: View {
         case .gateway:
             let error = (failure.underlying as? URLError).map { HermesError.from(urlError: $0, host: host) }
                 ?? failure.underlying as? HermesError
-            if let refusal = error?.accessRefusal, !refusal.isCertificate {
+            if let refusal = error?.accessRefusal {
                 accessCheck = .refused(refusal, host: host)
                 if access == nil {
+                    let existing = app.existingBot(for: link)
                     access = GatewayAccessDraft(
-                        app.existingBot(for: link)?.access, hasSavedSecret: savedAccessSecret != nil
+                        existing?.access, hasSavedSecret: savedAccessSecret != nil,
+                        identity: existing.flatMap { app.clientIdentity(for: $0) }
                     )
                 }
                 return .accessRefused(refusal)

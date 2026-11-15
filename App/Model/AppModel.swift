@@ -28,9 +28,13 @@ final class AppModel {
     @ObservationIgnored private let retiredWebStores = RetiredWebStores()
     @ObservationIgnored private var webStoreSweep: Task<Void, Never>?
 
-    init(store: BotStore = .standard()) {
+    init(store: BotStore = .standard(identities: AppModel.certificateStore)) {
         self.store = store
         HermesTips.configure()
+        #if DEBUG
+        // The mock mTLS proxy's throwaway CA, trusted by this process alone (docs/development.md).
+        if let path = UserDefaults.standard.string(forKey: "HERMES_TRUST_CA") { DebugTrust.trust(certificateAt: path) }
+        #endif
         #if os(iOS)
         DeviceCamera.warm()
         #endif
@@ -108,9 +112,31 @@ final class AppModel {
         readSecret(of: bot) { try store.accessSecret(for: $0) }
     }
 
+    /// The client certificate's identity a proxy in front of `bot` gets, read only for the
+    /// addresses it was saved for. Nil when the Keychain no longer has it.
+    func clientIdentity(for bot: BotConfiguration) -> ClientIdentity? {
+        readSecret(of: bot) { try store.clientIdentity(for: $0) }
+    }
+
     /// A Bot's Bot Mode sign-in, read only for the addresses it was saved for.
     func backendCredential(for bot: BotConfiguration) -> BackendCredential? {
         readSecret(of: bot) { try store.backendCredential(for: $0) }
+    }
+
+    /// Where client certificates are kept: the Keychain, but in memory for a Debug run with
+    /// `-HERMES_MEMORY_CERTIFICATES` (docs/development.md), so a check on the Mac never adds one
+    /// to its keychain.
+    private static var certificateStore: ClientIdentityStore {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "HERMES_MEMORY_CERTIFICATES") { return .inMemory() }
+        #endif
+        return .keychain
+    }
+
+    /// The certificate identities no saved gateway names any more go from the Keychain.
+    private func releaseCertificate(_ fingerprint: String?) {
+        let inUse = bots.compactMap { $0.access?.clientCertificate?.fingerprint }
+        try? store.identities.release(fingerprint, stillUsed: inUse)
     }
 
     /// Hands every transport what this gateway's requests carry past its access gateway
@@ -179,7 +205,8 @@ final class AppModel {
     func addBot(
         name: String, baseURL: URL, apiKey: String, accent: BotAccent,
         backend: BackendLink? = nil, backendCredential: BackendCredential? = nil,
-        access: GatewayAccess? = nil, accessSecret: String? = nil, startsSetup: Bool = true
+        access: GatewayAccess? = nil, accessSecret: String? = nil, certificate identity: ClientIdentity? = nil,
+        startsSetup: Bool = true
     ) throws -> BotConfiguration {
         let isFirst = bots.isEmpty
         let access = access.flatMap { $0.isEnabled ? $0 : nil }
@@ -187,6 +214,9 @@ final class AppModel {
         try store.setAPIKey(apiKey, for: bot.id)
         if access?.method == .serviceToken {
             try store.setAccessSecret(accessSecret, for: bot.id)
+        }
+        if access?.clientCertificate != nil, let identity {
+            try store.identities.save(identity)
         }
         if let backendCredential {
             try store.setBackendCredential(backendCredential, for: bot.id)
@@ -198,6 +228,7 @@ final class AppModel {
         } catch {
             try? store.save(bots)
             try? store.removeAPIKey(for: bot.id)
+            releaseCertificate(access?.clientCertificate?.fingerprint)
             throw error
         }
         bots = updated
@@ -209,11 +240,12 @@ final class AppModel {
     }
 
     /// Saves edits. Pass `apiKey` only when the key changed, `backendCredential` only after a
-    /// fresh Bot Mode sign-in, `accessSecret` only when the service token's secret changed, and
+    /// fresh Bot Mode sign-in, `accessSecret` only when the service token's secret changed,
+    /// `certificate`, the identity of the access's client certificate, when one was imported, and
     /// `original`, the Bot as an editor showed it, when there is one.
     func updateBot(
         _ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil,
-        accessSecret: String? = nil, editing original: BotConfiguration? = nil
+        accessSecret: String? = nil, certificate identity: ClientIdentity? = nil, editing original: BotConfiguration? = nil
     ) throws {
         guard let index = bots.firstIndex(where: { $0.id == bot.id }) else { return }
         // The edit moves where the Bot's secrets may go, so it starts from addresses they were
@@ -246,8 +278,13 @@ final class AppModel {
             } else if let accessSecret {
                 try store.setAccessSecret(accessSecret, for: bot.id)
             }
+            if bot.access?.clientCertificate != nil, let identity {
+                try store.identities.save(identity)
+            }
         }
+        let previousCertificate = bots[index].access?.clientCertificate?.fingerprint
         bots = updated
+        if previousCertificate != bot.access?.clientCertificate?.fingerprint { releaseCertificate(previousCertificate) }
         registerAccess(bot)
         workspaces[bot.id]?.update(
             bot: bot, apiKey: apiKey ?? self.apiKey(for: bot), keyChanged: apiKey != nil,
@@ -257,6 +294,7 @@ final class AppModel {
 
     func removeBot(_ botID: UUID) throws {
         var updated = bots
+        let certificate = bots.first { $0.id == botID }?.access?.clientCertificate?.fingerprint
         updated.removeAll { $0.id == botID }
         try store.save(updated)
         try? store.removeAPIKey(for: botID)
@@ -289,6 +327,7 @@ final class AppModel {
         retiredWebStores.retire([botID] + [BrowserController.retireStore(gateway: botID)].compactMap { $0 })
         workspaces[botID] = nil
         bots = updated
+        releaseCertificate(certificate)
         UserDefaults.standard.removeObject(forKey: "model.\(botID.uuidString)")
         UserDefaults.standard.removeObject(forKey: "effort.\(botID.uuidString)")
         if selectedBotID == botID {
@@ -433,14 +472,17 @@ final class AppModel {
         if var bot = existingBot(for: link) {
             if let backend = pairing.backend { bot.backend = backend }
             if let access = pairing.access { bot.access = access.access }
-            try updateBot(bot, apiKey: link.apiKey, backendCredential: pairing.credential, accessSecret: pairing.access?.typedSecret)
+            try updateBot(
+                bot, apiKey: link.apiKey, backendCredential: pairing.credential, accessSecret: pairing.access?.typedSecret,
+                certificate: pairing.access?.identity
+            )
             select(bot.id)
             return bot
         }
         return try addBot(
             name: link.name, baseURL: link.gateway, apiKey: link.apiKey, accent: .gold,
             backend: pairing.backend, backendCredential: pairing.credential,
-            access: pairing.access?.access, accessSecret: pairing.access?.typedSecret
+            access: pairing.access?.access, accessSecret: pairing.access?.typedSecret, certificate: pairing.access?.identity
         )
     }
 
@@ -592,8 +634,12 @@ final class AppModel {
 
     /// Checks an address and key before saving them, in the order a person would debug:
     /// is anything there, is it Hermes, does the key work, is it new enough.
+    /// It goes on a connection of its own, so a proxy in front asks for the certificate being
+    /// tried even while the live connection to the same gateway is up.
     nonisolated static func probe(baseURL: URL, apiKey: String) async throws -> ProbeResult {
-        let client = HermesClient(baseURL: baseURL, apiKey: apiKey)
+        let session = HermesClient.checkingSession()
+        defer { session.finishTasksAndInvalidate() }
+        let client = HermesClient(baseURL: baseURL, apiKey: apiKey, session: session)
         let health = try await client.health()
         let capabilities = try await client.capabilities()
         guard capabilities.supportsNativeClient else { throw HermesError.unsupportedServer }
@@ -687,10 +733,24 @@ final class AppModel {
         let backend = value("HERMES_BOOTSTRAP_BACKEND").flatMap { $0 == "none" ? nil : BackendLink.normalizedURL(from: $0) }.map(link)
         // A service token for the mock access gateway (`docs/connecting-and-voice.md` §11.7).
         let accessID = value("HERMES_BOOTSTRAP_ACCESS_ID")
-        let access = accessID.map { GatewayAccess(method: .serviceToken, clientID: $0) }
+        var access = accessID.map { GatewayAccess(method: .serviceToken, clientID: $0) }
+        // A client certificate for the mock mTLS proxy (`Tools/mock-hermes/mtls_proxy.py`): its
+        // .p12 and the fixture's password.
+        let certificate = value("HERMES_BOOTSTRAP_CERTIFICATE").flatMap { path in
+            FileManager.default.contents(atPath: path).flatMap { data in
+                try? ClientCertificate.open(
+                    data, password: value("HERMES_BOOTSTRAP_CERTIFICATE_PASSWORD") ?? "",
+                    fileName: URL(filePath: path).lastPathComponent
+                )
+            }
+        }
+        if let certificate {
+            access = access ?? GatewayAccess(method: .none)
+            access?.clientCertificate = certificate.0
+        }
         _ = try? addBot(
             name: value("HERMES_BOOTSTRAP_NAME") ?? "Hermes", baseURL: url, apiKey: key, accent: .gold, backend: backend,
-            access: access, accessSecret: value("HERMES_BOOTSTRAP_ACCESS_SECRET"), startsSetup: false
+            access: access, accessSecret: value("HERMES_BOOTSTRAP_ACCESS_SECRET"), certificate: certificate?.1, startsSetup: false
         )
     }
     #endif

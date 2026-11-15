@@ -1490,7 +1490,7 @@ final class BotWorkspace: Identifiable {
                 switch self.connection {
                 case .online:
                     misses = await self.isStillOnline() ? 0 : 1
-                case .failed(let error) where !error.isTransient:
+                case .failed(let error) where !error.keepsChecking:
                     continue // a missing or rejected key, a gateway too old: the person fixes it
                 case .connecting where self.connectTask != nil:
                     continue
@@ -1520,7 +1520,7 @@ final class BotWorkspace: Identifiable {
         switch connection {
         case .online:
             checkConnectionNow()
-        case .failed(let error) where !error.isTransient:
+        case .failed(let error) where !error.keepsChecking:
             break // a missing or rejected key, a gateway too old: the person fixes it
         case .connecting:
             break
@@ -1551,7 +1551,7 @@ final class BotWorkspace: Identifiable {
     private func nextCheck(after misses: Int) -> Double {
         switch connection {
         case .online: AppPresence.isInBack ? Self.healthIntervalInBack : Self.healthInterval
-        case .failed(let error) where !error.isTransient: Self.healthInterval
+        case .failed(let error) where !error.keepsChecking: Self.healthInterval
         case .connecting: 5
         // No route at all: nothing to try until there is one (`routeChanged` connects then).
         case .idle, .failed:
@@ -1585,7 +1585,7 @@ final class BotWorkspace: Identifiable {
                 noteSlow()
                 return true
             case .unreachable(let error):
-                guard error.isTransient else { return true } // not a connection problem
+                guard error.keepsChecking else { return true } // not a connection problem
                 failure = error
             }
         }

@@ -81,7 +81,7 @@ struct ImageRedirectTests {
         let (first, other) = try await Self.redirectingServers(status: status, elsewhere: .otherPort)
         defer { first.stop(); other.stop() }
 
-        let session = HermesClient.probeSession()
+        let session = HermesClient.checkingSession()
         defer { session.finishTasksAndInvalidate() }
         #expect(session.delegate is SameOriginRedirects)
         let (_, response) = try await session.data(from: first.baseURL.appending(path: "health"))

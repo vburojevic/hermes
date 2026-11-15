@@ -50,7 +50,7 @@ public struct ConnectionProgress: Sendable, Equatable {
 }
 
 /// Collects one task's metrics, so a timeout can say whether the server had taken the connection.
-/// Redirects are left to the session's own delegate (`HermesClient.probeSession`).
+/// Redirects are left to the session's own delegate (`HermesClient.checkingSession`).
 final class ConnectionWitness: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var progress = ConnectionProgress.none
@@ -62,5 +62,7 @@ final class ConnectionWitness: NSObject, URLSessionTaskDelegate, @unchecked Send
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         let found = ConnectionProgress(metrics.transactionMetrics)
         lock.withLock { progress = found }
+        // This task's metrics come here instead of to the session's delegate.
+        SameOriginRedirects.noteAnswers(metrics)
     }
 }

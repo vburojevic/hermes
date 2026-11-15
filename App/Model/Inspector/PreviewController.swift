@@ -360,6 +360,17 @@ extension PreviewController: WKNavigationDelegate {
         return .cancel
     }
 
+    /// A proxy in front of the gateway asks the page for the gateway's client certificate, as it
+    /// asks every other transport (`docs/connecting-and-voice.md` §11.9). Only the gateway's own
+    /// origins get it; anything else, server trust included, is the system's to decide.
+    func webView(
+        _ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        let (disposition, credential) = SameOriginRedirects.answer(challenge, for: nil)
+        completionHandler(disposition, credential)
+    }
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         syncState(webView, loading: true)
     }

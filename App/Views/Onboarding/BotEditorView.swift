@@ -31,6 +31,7 @@ struct BotEditorView: View {
     @State private var backendPassword = ""
     /// Access settings on screen (`docs/connecting-and-voice.md` §11.1), and what checking them found.
     @State private var access = GatewayAccessDraft()
+    @State private var importsCertificate = false
     @State private var accessCheck: AccessCheck?
     /// The connection check in flight; Cancel stops it before anything is saved.
     @State private var submitTask: Task<Void, Never>?
@@ -88,7 +89,10 @@ struct BotEditorView: View {
             #if os(macOS)
             // The Mac shows Access inline, its status leading the sheet (`macAccess`).
             if let accessCheck {
-                AccessStatusSection(check: accessCheck, host: accessHost, checkAgain: checkAccess)
+                AccessStatusSection(
+                    check: accessCheck, host: accessHost, checkAgain: checkAccess, settings: access,
+                    importCertificate: { importsCertificate = true }
+                )
             }
             #endif
 
@@ -169,7 +173,7 @@ struct BotEditorView: View {
             }
 
             #if os(macOS)
-            GatewayAccessSections(draft: $access)
+            GatewayAccessSections(draft: $access) { importsCertificate = true }
             #else
             GatewayAccessRow(draft: $access, check: accessCheck, host: accessHost, checkAgain: checkAccess)
             #endif
@@ -226,6 +230,7 @@ struct BotEditorView: View {
             }
         }
         .formStyle(.grouped)
+        .certificateImport(isPresented: $importsCertificate, draft: $access)
         .navigationTitle(editingBot == nil ? "Add Gateway" : "Edit Gateway")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -357,7 +362,10 @@ struct BotEditorView: View {
             // sheet, here under the fields with the Access row above it.
             #if os(iOS)
             if let accessCheck {
-                AccessStatusSection(check: accessCheck, host: accessHost, checkAgain: checkAccess)
+                AccessStatusSection(
+                    check: accessCheck, host: accessHost, checkAgain: checkAccess, settings: access,
+                    importCertificate: { importsCertificate = true }
+                )
             }
             #endif
         case .failed(let message, let suggestion):
@@ -395,7 +403,9 @@ struct BotEditorView: View {
             signIn = link.signIn
             backendUsername = link.username ?? ""
         }
-        access = GatewayAccessDraft(bot.access, hasSavedSecret: app.accessSecret(for: bot) != nil)
+        access = GatewayAccessDraft(
+            bot.access, hasSavedSecret: app.accessSecret(for: bot) != nil, identity: app.clientIdentity(for: bot)
+        )
     }
 
     /// What a check sends past the access gateway: the settings on screen, with the saved secret
@@ -499,12 +509,12 @@ struct BotEditorView: View {
                     bot.access = access.access
                     try app.updateBot(
                         bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential,
-                        accessSecret: access.typedSecret, editing: editingBot
+                        accessSecret: access.typedSecret, certificate: access.identity, editing: editingBot
                     )
                 } else {
                     added = try app.addBot(
                         name: finalName, baseURL: url, apiKey: key, accent: accent, backend: link, backendCredential: credential,
-                        access: access.access, accessSecret: access.typedSecret
+                        access: access.access, accessSecret: access.typedSecret, certificate: access.identity
                     )
                 }
                 try? await Task.sleep(for: .milliseconds(450))
