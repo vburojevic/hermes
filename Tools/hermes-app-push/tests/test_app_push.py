@@ -11,6 +11,7 @@ skipped: it never falls back to an installed Hermes.
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import os
 import re
@@ -204,7 +205,7 @@ def test_register_status_and_bad_input(hermes):
     status = json.loads(handler('status {"device_id": "dev-status"}'))
     assert status["registered"] and status["relay_registered"] and status["gateway"]["name"] == "Test Mac"
     manifest = re.search(r"^version: (\S+)$", (PLUGIN_DIR / "plugin.yaml").read_text(), re.M).group(1)
-    assert status["version"] == manifest == "1.4.8"  # VERSION in core.py and plugin.yaml move together
+    assert status["version"] == manifest == "1.4.9"  # VERSION in core.py and plugin.yaml move together
     assert status["preferences"]["tasks"] == "all" and status["preferences"]["bots"] == "mentions"
     bad = json.loads(handler('register {"device_id": "x", "token": "zz"}'))
     assert bad["ok"] is False and "malformed" in bad["error"]
@@ -874,21 +875,35 @@ def test_one_board_watcher_for_every_profile_copy(copies, tmp_path):
 
 
 def test_reads_never_take_the_write_lock(copies, tmp_path, monkeypatch):
-    import fcntl
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+        import msvcrt
     core = copies("app_push_reads")
     store_module = sys.modules["app_push_reads.store"]
     store = core.Store(tmp_path, lock_timeout=0.3)
     store.put_device("dev-reader", {"token": "ab" * 16, "preferences": {}})
     store.open_request("req-1", {"kind": "approval", "session": "s"})
     calls = []
-    real_flock = fcntl.flock
-    recording = types.SimpleNamespace(LOCK_EX=fcntl.LOCK_EX, LOCK_SH=fcntl.LOCK_SH, LOCK_NB=fcntl.LOCK_NB,
-                                      LOCK_UN=fcntl.LOCK_UN,
-                                      flock=lambda fd, op: (calls.append(op), real_flock(fd, op))[1])
-    monkeypatch.setattr(store_module, "fcntl", recording)
+    if fcntl is not None:
+        real_flock = fcntl.flock
+        recording = types.SimpleNamespace(LOCK_EX=fcntl.LOCK_EX, LOCK_SH=fcntl.LOCK_SH, LOCK_NB=fcntl.LOCK_NB,
+                                          LOCK_UN=fcntl.LOCK_UN,
+                                          flock=lambda fd, op: (calls.append(op), real_flock(fd, op))[1])
+        monkeypatch.setattr(store_module, "fcntl", recording)
+    else:
+        real_locking = msvcrt.locking
+        recording = types.SimpleNamespace(LK_NBLCK=msvcrt.LK_NBLCK, LK_UNLCK=msvcrt.LK_UNLCK,
+                                          locking=lambda fd, mode, n: (calls.append(mode), real_locking(fd, mode, n))[1])
+        monkeypatch.setattr(store_module, "msvcrt", recording)
     # Another process (or a stuck thread) holds the write lock.
     with open(store.lock_path, "a+") as holder:
-        real_flock(holder, fcntl.LOCK_EX)
+        if fcntl is not None:
+            real_flock(holder, fcntl.LOCK_EX)
+        else:
+            holder.seek(0)
+            real_locking(holder.fileno(), msvcrt.LK_NBLCK, 1)
         started = time.monotonic()
         assert "dev-reader" in store.devices() and "req-1" in store.open_requests()
         assert store.read()["devices"] and store.presence("dev-reader") is None
@@ -899,8 +914,13 @@ def test_reads_never_take_the_write_lock(copies, tmp_path, monkeypatch):
         with pytest.raises(store_module.StoreBusy):
             store.put_device("dev-blocked", {"token": "cd" * 16})
         assert 0.25 <= time.monotonic() - started < 2
-        assert calls and all(op & fcntl.LOCK_NB for op in calls if op != fcntl.LOCK_UN)
-        real_flock(holder, fcntl.LOCK_UN)
+        if fcntl is not None:
+            assert calls and all(op & fcntl.LOCK_NB for op in calls if op != fcntl.LOCK_UN)
+            real_flock(holder, fcntl.LOCK_UN)
+        else:
+            assert calls and all(op == msvcrt.LK_NBLCK for op in calls if op != msvcrt.LK_UNLCK)
+            holder.seek(0)
+            real_locking(holder.fileno(), msvcrt.LK_UNLCK, 1)
     store.put_device("dev-after", {"token": "ef" * 16})
     assert set(store.devices()) == {"dev-reader", "dev-after"}
     # Readers racing a busy writer only ever see a whole file.
@@ -937,6 +957,210 @@ def test_an_unchanged_state_is_never_rewritten(copies, tmp_path, monkeypatch):
     store.update(lambda s: s["card_cursors"].__setitem__("default", 8))
     assert len(writes) == 1 and store.read()["card_cursors"]["default"] == 8
     assert store.path.stat().st_ino != first.st_ino  # an atomic replace
+
+
+def test_windows_permission_error_retry_and_exhaustion_cleanup(copies, tmp_path, monkeypatch):
+    core = copies("app_push_win_replace")
+    store_module = sys.modules["app_push_win_replace.store"]
+    store = core.Store(tmp_path, lock_timeout=0.05)
+    store.update(lambda s: s.__setitem__("card_cursors", {"default": 1}))
+
+    real_replace = os.replace
+    attempts = {"n": 0}
+
+    def flaky_replace(src, dst):
+        attempts["n"] += 1
+        if attempts["n"] <= 2:
+            raise PermissionError(13, "WinError 5: Access is denied", str(src), 5, str(dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(store_module, "_WINDOWS", True)
+    monkeypatch.setattr(store_module.os, "replace", flaky_replace)
+    store.update(lambda s: s.__setitem__("card_cursors", {"default": 2}))
+    assert attempts["n"] == 3
+    assert store.read()["card_cursors"] == {"default": 2}
+
+    # Persistent PermissionError past lock_timeout raises, preserves state, and cleans up .state-* tmp file.
+    def always_denied(src, dst):
+        raise PermissionError(13, "WinError 5: Access is denied", str(src), 5, str(dst))
+
+    monkeypatch.setattr(store_module.os, "replace", always_denied)
+    with pytest.raises(PermissionError):
+        store.update(lambda s: s.__setitem__("card_cursors", {"default": 99}))
+    assert store.read()["card_cursors"] == {"default": 2}
+    assert list(tmp_path.glob(".state-*")) == []
+
+    # On non-Windows hosts, PermissionError propagates immediately on the first attempt.
+    posix_attempts = {"n": 0}
+
+    def posix_denied(src, dst):
+        posix_attempts["n"] += 1
+        raise PermissionError(13, "Permission denied", str(src), None, str(dst))
+
+    monkeypatch.setattr(store_module, "_WINDOWS", False)
+    monkeypatch.setattr(store_module.os, "replace", posix_denied)
+    with pytest.raises(PermissionError):
+        store.update(lambda s: s.__setitem__("card_cursors", {"default": 100}))
+    assert posix_attempts["n"] == 1
+    assert store.read()["card_cursors"] == {"default": 2}
+    assert list(tmp_path.glob(".state-*")) == []
+
+    # A write holds the lock while it retries, so the retry stops at SHARING_RETRY, well before the lock's
+    # own timeout: a hook that writes never waits on a stuck file for long.
+    monkeypatch.setattr(store_module, "_WINDOWS", True)
+    monkeypatch.setattr(store_module, "SHARING_RETRY", 0.1)
+    monkeypatch.setattr(store_module.os, "replace", always_denied)
+    patient = core.Store(tmp_path, lock_timeout=5.0)
+    started = time.monotonic()
+    with pytest.raises(PermissionError):
+        patient.update(lambda s: s.__setitem__("card_cursors", {"default": 101}))
+    assert 0.1 <= time.monotonic() - started < 1.5
+    assert list(tmp_path.glob(".state-*")) == []
+
+
+def test_windows_reads_retry_a_file_held_for_a_moment(copies, tmp_path, monkeypatch):
+    core = copies("app_push_win_read")
+    store_module = sys.modules["app_push_win_read.store"]
+    store = core.Store(tmp_path, lock_timeout=0.05)
+    store.put_device("dev-1", {"token": "ab" * 16})
+
+    class HeldFile:
+        """The state file, refused to the first ``refusals`` opens as Windows does while it's being replaced."""
+
+        def __init__(self, real, refusals):
+            self.real, self.refusals, self.opens = real, refusals, 0
+
+        def read_text(self):
+            self.opens += 1
+            if self.opens <= self.refusals:
+                raise PermissionError(13, "Access is denied", str(self.real), 5)
+            return self.real.read_text()
+
+    real = store.path
+    monkeypatch.setattr(store_module, "_WINDOWS", True)
+    store.path = HeldFile(real, 2)
+    assert "dev-1" in store.devices() and store.path.opens == 3
+    store.path = HeldFile(real, 10_000)
+    with pytest.raises(PermissionError):
+        store.devices()
+    # Elsewhere a refused read is a real error, raised at once.
+    monkeypatch.setattr(store_module, "_WINDOWS", False)
+    store.path = HeldFile(real, 1)
+    with pytest.raises(PermissionError):
+        store.devices()
+    assert store.path.opens == 1
+
+
+def _fake_msvcrt(calls: list, fail: int | None = None):
+    """msvcrt's locking() on this Mac: LK_NBLCK and LK_UNLCK backed by a real flock on the same descriptor,
+    raising what Windows raises for a held byte (EACCES), or ``fail`` for every lock to stand for a real error."""
+    import fcntl
+
+    def locking(fd, mode, nbytes):
+        calls.append((mode, nbytes))
+        if mode == 2:  # LK_NBLCK
+            if fail is not None:
+                raise OSError(fail, os.strerror(fail))
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise OSError(errno.EACCES, "Permission denied") from None
+        elif mode == 0:  # LK_UNLCK
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        else:
+            raise AssertionError(f"the store only uses LK_NBLCK and LK_UNLCK, not {mode}")
+
+    return types.SimpleNamespace(LK_UNLCK=0, LK_NBLCK=2, locking=locking)
+
+
+def test_the_windows_lock_takes_turns_and_gives_up_in_time(copies, tmp_path, monkeypatch):
+    """The msvcrt branch of the state lock, simulated: msvcrt itself only runs on Windows."""
+    import fcntl
+    core = copies("app_push_win_lock")
+    store_module = sys.modules["app_push_win_lock.store"]
+    store = core.Store(tmp_path, lock_timeout=0.3)
+    calls: list = []
+    monkeypatch.setattr(store_module, "fcntl", None)
+    monkeypatch.setattr(store_module, "msvcrt", _fake_msvcrt(calls), raising=False)
+
+    store.put_device("dev-1", {"token": "ab" * 16})
+    assert calls and calls[0] == (2, 1) and calls[-1] == (0, 1)
+    assert calls.count((2, 1)) == calls.count((0, 1))  # every lock let go
+    with open(store.lock_path, "a+") as probe:  # and nothing still holds it
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(probe, fcntl.LOCK_UN)
+
+    # Another process holds the byte: the write polls, then gives up as StoreBusy.
+    with open(store.lock_path, "a+") as holder:
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        started = time.monotonic()
+        with pytest.raises(store_module.StoreBusy):
+            store.put_device("dev-blocked", {"token": "cd" * 16})
+        assert 0.25 <= time.monotonic() - started < 2
+        fcntl.flock(holder, fcntl.LOCK_UN)
+    store.put_device("dev-2", {"token": "ef" * 16})
+    assert set(store.devices()) == {"dev-1", "dev-2"}
+
+    # Any other error (a bad handle) is raised at once, never waited out as a busy lock.
+    monkeypatch.setattr(store_module, "msvcrt", _fake_msvcrt([], fail=errno.EBADF), raising=False)
+    started = time.monotonic()
+    with pytest.raises(OSError) as raised:
+        store.put_device("dev-3", {"token": "01" * 16})
+    assert raised.value.errno == errno.EBADF and not isinstance(raised.value, store_module.StoreBusy)
+    assert time.monotonic() - started < 0.2
+    assert set(store.devices()) == {"dev-1", "dev-2"}
+
+
+def test_windows_asks_the_process_handle_whether_a_request_still_waits(copies, monkeypatch):
+    """``_alive``'s Windows branch against a stand-in kernel32: kernel32 itself only runs on Windows."""
+    import ctypes
+    from ctypes import wintypes
+    core = copies("app_push_win_alive")
+    store_module = sys.modules["app_push_win_alive.store"]
+
+    class Function:
+        def __init__(self, body):
+            self.body = body
+
+        def __call__(self, *args):
+            return self.body(*args)
+
+    world = {"handle": 0x7FFF_0000_1234, "wait": 0x102, "error": 0}
+    opened, closed, loaded = [], [], []
+    kernel32 = types.SimpleNamespace(
+        OpenProcess=Function(lambda access, inherit, pid: (opened.append((access, inherit, pid)), world["handle"])[1]),
+        WaitForSingleObject=Function(lambda handle, ms: world["wait"] if (handle, ms) == (world["handle"], 0) else None),
+        CloseHandle=Function(lambda handle: closed.append(handle) or True))
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, use_last_error=False: (loaded.append((name, use_last_error)),
+                                                                              kernel32)[1], raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: world["error"], raising=False)
+    monkeypatch.setattr(store_module, "_WINDOWS", True)
+
+    assert store_module._alive(4242) is True  # WAIT_TIMEOUT: still running
+    assert opened == [(0x00100000 | 0x1000, False, 4242)] and closed == [world["handle"]]
+    world["wait"] = 0  # WAIT_OBJECT_0: it exited
+    assert store_module._alive(4242) is False and len(closed) == 2
+    world["wait"] = 0xFFFFFFFF  # WAIT_FAILED can't tell, so it counts as running, as on POSIX
+    assert store_module._alive(4242) is True and len(closed) == 3
+    world.update(handle=None, error=5)  # ERROR_ACCESS_DENIED: another user's process
+    assert store_module._alive(4242) is True
+    world["error"] = 87  # ERROR_INVALID_PARAMETER: no such process
+    assert store_module._alive(4242) is False
+    assert len(closed) == 3  # no handle, nothing to close
+    assert store_module._alive(0) is False and len(opened) == 5
+    # The prototypes are declared, so a 64-bit HANDLE isn't cut to a C int, and kernel32 is loaded once.
+    assert loaded == [("kernel32", True)]
+    assert kernel32.OpenProcess.restype is wintypes.HANDLE
+    assert kernel32.OpenProcess.argtypes == (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    assert kernel32.WaitForSingleObject.restype is wintypes.DWORD
+    assert kernel32.WaitForSingleObject.argtypes == (wintypes.HANDLE, wintypes.DWORD)
+    assert kernel32.CloseHandle.argtypes == (wintypes.HANDLE,) and kernel32.CloseHandle.restype is wintypes.BOOL
+
+    # A waiting request whose process exited stops counting; one whose process runs still counts.
+    world.update(handle=0x7FFF_0000_1234, wait=0)
+    assert not store_module._answerable({"kind": "approval", "pid": 4242, "opened_at": time.time()}, time.time())
+    world["wait"] = 0x102
+    assert store_module._answerable({"kind": "approval", "pid": 4242, "opened_at": time.time()}, time.time())
 
 
 def test_quiet_boards_and_tidies_cost_no_lock_and_no_write(hermes, monkeypatch):

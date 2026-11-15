@@ -1,6 +1,6 @@
 name: hermes-app-push
 label: Hermes app push
-version: 1.4.8
+version: 1.4.9
 manifest_version: 2
 kind: standalone
 description: >

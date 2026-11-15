@@ -45,7 +45,8 @@ extension AppPlugin {
         public init() {}
     }
 
-    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.8 counts only requests
+    /// Push notifications (`Tools/hermes-app-push`, `docs/notifications.md`). 1.4.9 runs on a Windows
+    /// gateway host (its lock, state file and process checks), same access. 1.4.8 counts only requests
     /// the person can still answer (none whose process a restart ended, past its deadline or, without
     /// one, six hours old) and closes a question or approval when its turn ends, same access. 1.4.7 counts a chat Hermes
     /// never marked only once it's read, as the app's list does (`presence away` with `unmarked`), and
@@ -70,7 +71,8 @@ extension AppPlugin {
         capabilities: ["1.0.0": pushAccess, "1.1.0": pushAccess, "1.2.0": pushAccess, "1.2.1": pushAccess, "1.3.0": pushAccess,
                        "1.3.1": pushAccess, "1.3.2": pushAccess, "1.4.0": pushAccess, "1.4.1": pushAccess, "1.4.2": pushAccess,
                        "1.4.3": pushAccess, "1.4.4": pushAccess, "1.4.5": pushAccess, "1.4.6": pushAccess,
-                       "1.4.7": pushCapabilities(since147: true), "1.4.8": pushCapabilities(since147: true)],
+                       "1.4.7": pushCapabilities(since147: true), "1.4.8": pushCapabilities(since147: true),
+                       "1.4.9": pushCapabilities(since147: true)],
         moments: [.ask, .notificationsPrime],
         words: pushWords
     )

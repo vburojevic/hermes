@@ -2,15 +2,21 @@
 
 Hooks fire in whichever Hermes process runs the turn (the TUI gateway, the messaging gateway, a cron
 worker), so everything shared lives in one JSON file under ``<Hermes root>/plugin-data/hermes-app-push``.
-Writes take an exclusive ``fcntl`` lock (with a deadline, never an indefinite wait), skip the disk when
-nothing changed, and land with an atomic replace, so reads need no lock at all: a reader sees the old
-file or the new one, never half of either. The relay's installation secret lives in its own owner-only
+Writes take an exclusive lock (``fcntl`` on macOS and Linux, ``msvcrt`` on Windows; with a deadline,
+never an indefinite wait), skip the disk when nothing changed, and land with an atomic replace, so reads
+need no lock at all: a reader sees the old file or the new one, never half of either. The relay's installation secret lives in its own owner-only
 file and is never logged or returned to a client.
 """
 from __future__ import annotations
 
 import contextlib
-import fcntl
+import errno
+import functools
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl; use msvcrt byte-range locking
+    fcntl = None
+    import msvcrt
 import json
 import logging
 import os
@@ -20,6 +26,15 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 logger = logging.getLogger("hermes_app_push")
+
+# Read once at load; the Windows-only paths below check this, never ``os.name`` itself.
+_WINDOWS = os.name == "nt"
+# Windows refuses to replace or open a file for a moment while another process holds it (a lock-free
+# reader, a virus scanner): there, a read or a replace retries for this long before failing. It stays
+# well under LOCK_TIMEOUT, since a write retries while it holds the lock and a hook waits for it.
+SHARING_RETRY = 1.0
+# What ``msvcrt.locking`` raises when another handle holds the byte; any other error is real.
+_LOCK_BUSY = (errno.EACCES, errno.EDEADLK)
 
 MAX_DEVICES = 32
 # How long a write waits for another process (or thread) to finish its own before giving up. A write
@@ -108,7 +123,16 @@ class Store:
             pause = 0.002
             while True:
                 try:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if fcntl is not None:
+                        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    else:
+                        handle.seek(0)
+                        try:
+                            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                        except OSError as exc:
+                            if exc.errno not in _LOCK_BUSY:
+                                raise  # a real error (a bad handle) fails now, not as StoreBusy later
+                            raise BlockingIOError from None
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
@@ -120,11 +144,29 @@ class Store:
             try:
                 yield
             finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+                else:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+    def _sharing(self, call: Callable[[], Any]) -> Any:
+        """``call()``, retried on Windows while another process briefly holds the file, for
+        ``SHARING_RETRY`` and never past ``lock_timeout``. Elsewhere a PermissionError is raised at once."""
+        deadline = time.monotonic() + min(self.lock_timeout, SHARING_RETRY)
+        pause = 0.001
+        while True:
+            try:
+                return call()
+            except PermissionError:
+                if not _WINDOWS or time.monotonic() >= deadline:
+                    raise
+                time.sleep(pause)
+                pause = min(pause * 2, 0.02)
 
     def _read(self, prune: bool = True) -> dict:
         try:
-            data = json.loads(self.path.read_text())
+            data = json.loads(self._sharing(self.path.read_text))
         except (FileNotFoundError, ValueError):
             return _empty()
         base = _empty()
@@ -139,8 +181,8 @@ class Store:
         try:
             with os.fdopen(fd, "w") as handle:
                 handle.write(text)
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, self.path)
+            os.chmod(tmp, 0o600)  # owner-only on macOS and Linux; Windows ignores all but the read-only bit
+            self._sharing(lambda: os.replace(tmp, self.path))
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
@@ -569,10 +611,43 @@ def _answerable(request: Any, now: float) -> bool:
     return not (request.get("kind") in WAITING_KINDS and isinstance(pid, int) and not _alive(pid))
 
 
+_SYNCHRONIZE = 0x00100000
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_WAIT_OBJECT_0 = 0
+_ERROR_ACCESS_DENIED = 5
+
+
+@functools.lru_cache(maxsize=1)
+def _kernel32():
+    """kernel32 with the prototypes ``_alive`` calls, so a HANDLE isn't cut to a C int on 64-bit Windows.
+    Its own instance: the prototypes never touch ``ctypes.windll`` that other code shares."""
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32
+
+
 def _alive(pid: int) -> bool:
-    """Whether a process runs under ``pid``: signal 0 only checks, it delivers nothing."""
+    """Whether a process runs under ``pid``: signal 0 only checks on POSIX (on Windows 0 is CTRL_C_EVENT)."""
     if pid <= 0:
         return False
+    if _WINDOWS:
+        import ctypes
+        kernel32 = _kernel32()
+        handle = kernel32.OpenProcess(_SYNCHRONIZE | _PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ctypes.get_last_error() == _ERROR_ACCESS_DENIED  # another user's process: it exists
+        try:
+            # Gone only once it has exited; a wait that fails can't tell, so it counts as running.
+            return kernel32.WaitForSingleObject(handle, 0) != _WAIT_OBJECT_0
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

@@ -276,7 +276,13 @@ In `~/.hermes/plugin-data/hermes-app-push/` (the root's, for every profile):
 |---|---|
 | `state.json` | Devices (APNs token, bundle id, public key, name, app version, preferences; at most 32), open requests, recently settled ones, presence (forgotten after 75 s), the chats each device keeps current while away (forgotten after a day), chats and rooms read (forgotten after six hours) and, per device away from the app, which ones it was sent, cleared and counts unread (forgotten when it's back in the app), Live Activity tokens, the relay installation id, the board and tidy cursors. Owner-only (0600), replaced atomically |
 | `relay-secret` | The secret the relay issued this gateway. Owner-only, never logged or sent to the app |
-| `.lock` | The write lock shared by every Hermes process (`fcntl`) |
+| `.lock` | The write lock shared by every Hermes process: `fcntl` on macOS and Linux, a one-byte `msvcrt` lock on Windows |
+
+Owner-only means the file's mode on macOS and Linux. Windows ignores the mode, so there the files take
+the access of the Hermes root folder they're in. Windows also refuses to open or replace a file
+another process holds for a moment (a reader, a virus scanner), so there a read or a replace of
+`state.json` tries again for up to a second before it fails. The hook then skips that one
+notice and logs it only at debug level, so it shows in Hermes's logs only with debug logging on.
 
 ### 5.3 Configuration
 
