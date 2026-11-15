@@ -355,7 +355,10 @@ struct CodeBox: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
             }
-            .frame(height: textHeight > 0 ? min(textHeight, maxHeight) : nil)
+            // Sized in the same pass it is laid out in: a height set from the measured text took a
+            // second pass, with the box first filling all the room it was offered. Inside the card
+            // rising over the composer, iOS 26 then left the composer's bar blank (docs/quick-actions.md §1).
+            .modifier(HugsContent(maxHeight: maxHeight))
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicatorsFlash(onAppear: true)
             // More below: the last lines fade out instead of stopping at a hard edge.
@@ -374,6 +377,30 @@ struct CodeBox: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.hairline))
+    }
+}
+
+/// A scroll view as tall as its content, up to `maxHeight`, and scrolling past that. Also caps the
+/// card rising over the composer (`ChatScreen`).
+struct HugsContent: ViewModifier {
+    let maxHeight: CGFloat
+
+    func body(content: Content) -> some View {
+        Capped(maxHeight: maxHeight) { content }
+    }
+
+    private nonisolated struct Capped: Layout {
+        let maxHeight: CGFloat
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            guard let child = subviews.first else { return .zero }
+            let ideal = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+            return CGSize(width: proposal.width ?? ideal.width, height: min(ideal.height, maxHeight))
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+        }
     }
 }
 

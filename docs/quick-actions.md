@@ -23,6 +23,14 @@ the design's component names, used in code comments.
   the running tool's title ("Asking a question…").
 - An approval always takes the card first; other requests follow, oldest first. Several approvals
   at once (parallel tool calls) share one batch card (§3).
+- The card takes its height in one layout pass, so nothing in it sizes itself after it appears.
+  The command box is as tall as its command, up to 190 pt (96 pt in landscape on iPhone, 220 pt
+  on Mac), and scrolls past that. The composer stays drawn below it.
+- The card never pushes the composer off the screen. When it is taller than the room between the
+  top bar and the rest of the bar (a long command on a turned iPhone), it stops under the top bar
+  and scrolls, opening at its bottom so the answers sit just above the composer. Once the person
+  scrolls it, it stays where they left it while the keyboard or the composer changes its room; it
+  goes back to the answers when it turns or starts to overflow.
 - The card is never wider than the screen. Questions and picks wrap; in a card of several
   questions each earlier answer is one line ("Which Google Workspace…: Yes—Gmail, Calendar…") that
   truncates inside the card, and tapping it goes back to that question. Rows of chips wrap and a
