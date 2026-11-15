@@ -2,10 +2,11 @@
 
 Run with the Hermes venv from this folder's parent:
 
-    HERMES_SOURCE=~/.hermes/hermes-agent ~/.hermes/hermes-agent/.venv/bin/python -m pytest Tools/hermes-app-push/tests --import-mode=importlib
+    HERMES_SOURCE=<hermes-agent checkout> <its venv>/bin/python -m pytest Tools/hermes-app-push/tests --import-mode=importlib
 
 Each test session gets a throwaway HERMES_HOME with only this plugin enabled, a fake relay on
-localhost, and a device key pair; nothing touches ~/.hermes.
+localhost, and a device key pair; nothing touches ~/.hermes. Without HERMES_SOURCE this module is
+skipped: it never falls back to an installed Hermes.
 """
 from __future__ import annotations
 
@@ -25,7 +26,9 @@ from pathlib import Path
 import pytest
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("HERMES_SOURCE", Path.home() / ".hermes" / "hermes-agent")).expanduser()
+if not os.environ.get("HERMES_SOURCE"):
+    pytest.skip("set HERMES_SOURCE to a Hermes Agent checkout", allow_module_level=True)
+SOURCE = Path(os.environ["HERMES_SOURCE"]).expanduser()
 SECRET = "sk-FAKE-not-a-real-key-0000000000000000"  # test fixture, never a real key
 
 HOME = Path(tempfile.mkdtemp(prefix="hermes-app-push-test-"))
