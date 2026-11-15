@@ -98,6 +98,8 @@ final class SetupCenter {
         facts.vaultMissing = reads.vaultMissing
         facts.inAppBrowserRefusal = workspace.inAppBrowser.refusal
         facts.botScreen = reads.botScreen
+        facts.access = workspace.bot.access
+        if case .failed(let error) = workspace.connection { facts.accessRefusal = error.accessRefusal }
         if let projects = workspace.projects, projects.hasLoaded, !projects.isAvailable { facts.projectsMissing = true }
         return facts
     }
@@ -116,11 +118,12 @@ final class SetupCenter {
     var hermesStatuses: [SetupStatus] {
         let facts = facts
         return [
+            GatewaySetup.access(facts),
             GatewaySetup.botMode(facts),
             GatewaySetup.hermes(facts),
             GatewaySetup.priority(facts),
             GatewaySetup.models(facts),
-        ].map(shown)
+        ].compactMap { $0 }.map(shown)
     }
 
     /// What Hermes does for you, each needing something on the gateway.
@@ -360,6 +363,11 @@ final class SetupCenter {
         // Notification permission comes from PushCenter, which reads it whenever the app comes to
         // the front; awaiting the system for it here could hang the check (it did on a simulator).
         DeviceSetup.shared.refresh()
+        // Turned away by an access gateway: Check Again tries the connection itself, so a token
+        // fixed on the gateway's side shows here without leaving the page.
+        if case .failed(let error) = workspace.connection, error.accessRefusal != nil {
+            await workspace.connect()
+        }
         let profile = workspace.bot.profileName
         let roster = workspace.roster?.isConnected == true ? workspace.roster : nil
         pending = roster == nil ? [.models, .jobs] : Set(Self.waiting.keys)

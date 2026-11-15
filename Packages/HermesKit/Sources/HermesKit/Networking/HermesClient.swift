@@ -85,7 +85,7 @@ public struct HermesClient: Sendable {
             let (data, response) = try await session.data(for: request, delegate: witness)
             guard let http = response as? HTTPURLResponse else { return .unreachable(.invalidResponse("not HTTP")) }
             guard (200..<300).contains(http.statusCode) else {
-                return .unreachable(.from(status: http.statusCode, body: data, contentType: http.value(forHTTPHeaderField: "Content-Type")))
+                return .unreachable(.from(http, body: data, url: request.url))
             }
             return .answering
         } catch let error as URLError {
@@ -399,6 +399,8 @@ public struct HermesClient: Sendable {
         if authenticated {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
+        // An access gateway in front of Hermes sees every request first, the health check included.
+        GatewayAccessRegistry.shared.prepare(&request)
         return request
     }
 
@@ -449,7 +451,7 @@ public struct HermesClient: Sendable {
             throw HermesError.invalidResponse("not HTTP")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw HermesError.from(status: http.statusCode, body: data, contentType: http.value(forHTTPHeaderField: "Content-Type"))
+            throw HermesError.from(http, body: data, url: request.url)
         }
         return (data, http)
     }
@@ -473,7 +475,7 @@ public struct HermesClient: Sendable {
                             body.append(byte)
                             if body.count > 64_000 { break }
                         }
-                        throw HermesError.from(status: http.statusCode, body: body, contentType: http.value(forHTTPHeaderField: "Content-Type"))
+                        throw HermesError.from(http, body: body, url: request.url)
                     }
                     var parser = ServerSentEventParser()
                     for try await byte in bytes {

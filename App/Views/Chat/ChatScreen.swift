@@ -706,7 +706,9 @@ struct ConnectionBanner: View {
     #endif
 
     var body: some View {
-        if case .failed(let error) = workspace.connection {
+        if case .failed(let error) = workspace.connection, let refusal = error.accessRefusal {
+            accessBanner(refusal)
+        } else if case .failed(let error) = workspace.connection {
             HStack(spacing: 10) {
                 Image(systemName: "bolt.horizontal.circle")
                     .foregroundStyle(Theme.warning)
@@ -746,6 +748,37 @@ struct ConnectionBanner: View {
             .padding(.top, 4)
             .frame(maxWidth: Theme.readableWidth + 40)
         }
+    }
+
+    /// An access gateway or proxy turned the app away before Hermes saw it (`accessTokenBanner`,
+    /// `docs/connecting-and-voice.md` §11.5): what it said, and Access to fix it.
+    private func accessBanner(_ refusal: AccessRefusal) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: refusal == .signInNeeded ? "lock.shield.fill" : "xmark.shield")
+                .foregroundStyle(refusal == .signInNeeded ? Theme.secondaryText : Theme.danger)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(refusal.bannerTitle)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.primaryText)
+                Text(refusal.bannerDetail(gateway: workspace.bot.name))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 8)
+            Button("Access") {
+                router?.sheet = .editGateway(workspace.bot)
+            }
+            .inkFilledButton()
+            .controlSize(.small)
+        }
+        .padding(12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .frame(maxWidth: Theme.readableWidth + 40)
     }
 
     /// Local Network, Wi-Fi or Mobile Data turned off for Hermes.

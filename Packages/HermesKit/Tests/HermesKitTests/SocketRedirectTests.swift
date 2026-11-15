@@ -131,17 +131,22 @@ final class LoopbackServer: @unchecked Sendable {
         case redirect(Int, String)
         case webSocket(Frame)
         case picture(Data)
+        /// Any other answer: a status, its content type and body (an access gateway's refusal).
+        case page(Int, String, Data)
         case close
     }
 
     let port: UInt16
     var baseURL: URL { URL(string: "http://127.0.0.1:\(port)")! }
     var requests: [String] { recorded.withLock { $0 } }
+    /// Each request's whole head, request line and headers, in the order they came.
+    var heads: [String] { recordedHeads.withLock { $0 } }
 
     private let listener: NWListener
     private let queue: DispatchQueue
     private let answer: @Sendable (String, UInt16) -> Answer
     private let recorded = Mutex<[String]>([])
+    private let recordedHeads = Mutex<[String]>([])
     private let connections = Mutex<[NWConnection]>([])
 
     private init(listener: NWListener, port: UInt16, queue: DispatchQueue, answer: @escaping @Sendable (String, UInt16) -> Answer) {
@@ -217,6 +222,7 @@ final class LoopbackServer: @unchecked Sendable {
         let lines = head.components(separatedBy: "\r\n")
         let requestLine = lines.first ?? ""
         recorded.withLock { $0.append(requestLine) }
+        recordedHeads.withLock { $0.append(head) }
         switch answer(requestLine, port) {
         case .redirect(let status, let location):
             let response = "HTTP/1.1 \(status) Redirect\r\nLocation: \(location)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -231,6 +237,10 @@ final class LoopbackServer: @unchecked Sendable {
         case .picture(let data):
             var response = Data("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: \(data.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".utf8)
             response.append(data)
+            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+        case .page(let status, let type, let body):
+            var response = Data("HTTP/1.1 \(status) Answer\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
+            response.append(body)
             connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
         case .close:
             connection.cancel()

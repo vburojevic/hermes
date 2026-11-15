@@ -102,6 +102,8 @@ public struct SetupFix: Hashable, Sendable {
         public static let linkBotMode = Action(rawValue: "linkBotMode")
         /// Edit Gateway, to sign in to Bot Mode again.
         public static let signIn = Action(rawValue: "signIn")
+        /// Edit Gateway, at its Access settings.
+        public static let editAccess = Action(rawValue: "editAccess")
         /// The feature's own fix: a setting the app writes for it.
         public static let feature = Action(rawValue: "feature")
         /// System Settings for this app.

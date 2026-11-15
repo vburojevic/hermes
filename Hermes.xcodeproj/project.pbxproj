@@ -166,6 +166,7 @@
 		7F168A710171B04B1FD3277A /* Effects.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8186567282DB3FFB0DD3172 /* Effects.swift */; };
 		8114AC295E6F71E005E77AA1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3BE9E26294360C9EDBE2AC4C /* PrivacyInfo.xcprivacy */; };
 		81AEB5B4B8DB60FCEA0F51FC /* HermesVoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E8D804398B2FA4A08F5813 /* HermesVoiceEngine.swift */; };
+		86515792C814FCDEAB0CB7DD /* GatewayAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE879C0F30313EED6BB8C63 /* GatewayAccessView.swift */; };
 		8663174E02D9BDF1BC270291 /* WelcomeDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11EA5EF1AAB5B7B845A055F6 /* WelcomeDemo.swift */; };
 		86872F98BB9420D033F6D558 /* PairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EACA4AA1B8418DE48E92A67F /* PairingSheet.swift */; };
 		88437626B47FBF14208587E1 /* ProcessesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F281FE5600EDDA0A9346D0D /* ProcessesUITests.swift */; };
@@ -601,6 +602,7 @@
 		BCE8194331DB2E9630C792EE /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
 		BD6BD8207EE8F9466A5B0CDC /* ProjectsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsModel.swift; sourceTree = "<group>"; };
 		BD8C7B4E609499F1998E291B /* PluginViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginViews.swift; sourceTree = "<group>"; };
+		BDE879C0F30313EED6BB8C63 /* GatewayAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayAccessView.swift; sourceTree = "<group>"; };
 		BE25E1F87A1791DDE36972A9 /* RequestCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestCard.swift; sourceTree = "<group>"; };
 		BEB322F91E634BC83629682A /* ArtifactViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactViews.swift; sourceTree = "<group>"; };
 		BF7AE21B71BAB7DB97797752 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -830,6 +832,7 @@
 				4592DD87397620D7427C349D /* AppsViews.swift */,
 				839FF3E221883A5EDD627181 /* BuiltInViews.swift */,
 				F6A985699450F23889560E3E /* ConnectionsComponents.swift */,
+				BDE879C0F30313EED6BB8C63 /* GatewayAccessView.swift */,
 				FF62818A2A39AC83CBED2C28 /* MacAppsAndToolsPane.swift */,
 				BD8C7B4E609499F1998E291B /* PluginViews.swift */,
 				35D215F7FDAE63FE0C08BF3E /* ServerViews.swift */,
@@ -1786,6 +1789,7 @@
 				EC61D9545174614E2E27CB99 /* FollowUps.swift in Sources */,
 				F75384FF7ACBD0911C2B5251 /* Formatting.swift in Sources */,
 				444176C4AAE5F530206C801B /* FrameMonitor.swift in Sources */,
+				86515792C814FCDEAB0CB7DD /* GatewayAccessView.swift in Sources */,
 				1E75843BD92DF5E116D855C9 /* GatewayJobView.swift in Sources */,
 				4DF6343EB847C63D3A099EB8 /* GatewayTranscriber.swift in Sources */,
 				CC6798A57CA01ED52A4395AC /* GatewayVoice.swift in Sources */,

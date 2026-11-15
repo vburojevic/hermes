@@ -105,7 +105,28 @@ public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendab
         newRequest request: URLRequest
     ) async -> URLRequest? {
         guard let from = task.originalRequest?.url, let to = request.url else { return nil }
-        return Self.allows(from: from, to: to) ? request : nil
+        guard Self.allows(from: from, to: to) else { return nil }
+        // URLSession copies the original's headers onto the redirect: access headers go back on
+        // only for a gateway's own origin (an http to https upgrade is another origin).
+        return GatewayAccessRegistry.shared.redirected(request, from: task.originalRequest)
+    }
+
+    /// A proxy in front of the gateway asks for a client certificate: the one saved for that
+    /// gateway's origin, or none (the handshake then fails, `AccessRefusal.certificateNeeded`).
+    /// Every other challenge, the server's own trust included, gets the system's handling.
+    public func urlSession(
+        _ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        let space = challenge.protectionSpace
+        guard space.authenticationMethod == NSURLAuthenticationMethodClientCertificate,
+              let credential = GatewayAccessRegistry.shared.clientCertificate(
+                host: space.host, port: space.port, isSecure: space.receivesCredentialSecurely)
+        else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        completionHandler(.useCredential, credential)
     }
 
     /// Same host; same scheme and port, or http upgraded to https. A WebSocket's ws counts as
@@ -140,7 +161,8 @@ public final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendab
 /// photo, an app's logo. Never on `URLSession.shared`, which follows every redirect: a picture the
 /// rules let load (`WebLink`), on the gateway or after a tap that names its host, stays on that
 /// server, so a redirect can't send the request to a third party or into this device's network.
-/// Pictures carry no key, and no cookie either.
+/// Pictures carry no key and no cookie of the session's own; one on a gateway behind an access
+/// gateway carries that gateway's access headers.
 public enum RemotePicture {
     public enum Failure: Error, Equatable {
         /// Not an http or https URL.
@@ -179,7 +201,9 @@ public enum RemotePicture {
     /// The picture's bytes, once the server answered 2xx.
     public static func data(at url: URL, in session: URLSession = RemotePicture.session) async throws -> Data {
         guard WebLink.isWeb(url) else { throw Failure.notWeb }
-        let (data, response) = try await session.data(from: url)
+        // A picture on the gateway passes its access gateway like any other request; one anywhere
+        // else gets nothing (`GatewayAccessRegistry`).
+        let (data, response) = try await session.data(for: GatewayAccessRegistry.shared.prepared(URLRequest(url: url)))
         guard let http = response as? HTTPURLResponse else { throw Failure.notAPicture }
         guard (200..<300).contains(http.statusCode) else { throw Failure.status(http.statusCode) }
         return data

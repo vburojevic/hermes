@@ -117,7 +117,7 @@ final class PreviewController: NSObject {
         if let askedURL, let webView = webViewStorage {
             self.askedURL = nil
             reach = .loading
-            webView.load(URLRequest(url: askedURL))
+            webView.load(GatewayAccessRegistry.shared.prepared(URLRequest(url: askedURL)))
         } else {
             load()
         }
@@ -139,6 +139,8 @@ final class PreviewController: NSObject {
 
     /// The page a navigation wanted when it stopped to ask (`Reach.asks`).
     @ObservationIgnored private var askedURL: URL?
+    /// The navigation last started again with its access headers (`decidePolicyFor`).
+    @ObservationIgnored private var reloadedWithAccess: URL?
     /// Counts loads, so a lookup that finishes after a newer load gives up (`asksFirst`).
     @ObservationIgnored private var loadGeneration = 0
 
@@ -161,7 +163,8 @@ final class PreviewController: NSObject {
             }
             if url.scheme == GatewayFileScheme.scheme { fileScheme?.allowFolder(of: url) }
             loadedURL = url
-            webView.load(URLRequest(url: url))
+            // A page on the gateway itself passes its access gateway (`docs/connecting-and-voice.md` §11.6).
+            webView.load(GatewayAccessRegistry.shared.prepared(URLRequest(url: url)))
         }
     }
 
@@ -328,6 +331,28 @@ extension PreviewController: WKNavigationDelegate {
     /// any more than opening an address can; nor can a frame inside the page, which just doesn't
     /// load (only the page itself asks).
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+        let access = GatewayAccessRegistry.shared
+        let isMainFrame = action.targetFrame?.isMainFrame ?? false
+        // A redirect or a link that leaves the gateway's origins would take the token with it
+        // (WebKit keeps a load's headers across a redirect, and `SameOriginRedirects` doesn't
+        // cover a web view): it starts again without them, and is asked about like any other
+        // address (`docs/connecting-and-voice.md` §11.6).
+        if access.leaksAccess(action.request) {
+            if isMainFrame, action.request.httpMethod ?? "GET" == "GET" {
+                webView.load(access.withoutAccess(action.request))
+            }
+            return .cancel
+        }
+        // A link or a form on a gateway page goes out without the access headers a load adds:
+        // it starts again with them. A frame inside the page passes by the access gateway's cookie.
+        // Once per address, so a web view that drops the headers can't loop.
+        if isMainFrame, action.request.httpMethod ?? "GET" == "GET",
+           access.lacksAccess(action.request), action.request.url != reloadedWithAccess {
+            reloadedWithAccess = action.request.url
+            webView.load(access.prepared(action.request))
+            return .cancel
+        }
+        reloadedWithAccess = nil
         guard let url = action.request.url, let host = await asksFirst(url) else { return .allow }
         guard action.targetFrame?.isMainFrame ?? true else { return .cancel }
         askedURL = url

@@ -95,6 +95,11 @@ public struct GatewaySetupFacts: Sendable, Equatable {
     public var inAppBrowserRefusal: BrowserControlRefusal?
     /// `display.status` for the gateway's default profile: whether its host can give a Bot a screen.
     public var botScreen: BotScreenStatus?
+    /// How the app passes an access gateway in front of Hermes, when one is set (Edit Gateway →
+    /// Access).
+    public var access: GatewayAccess?
+    /// An access gateway or proxy turned the app away on its last connection.
+    public var accessRefusal: AccessRefusal?
 
     public init(gatewayName: String, gatewayOnline: Bool, botMode: BotMode) {
         self.gatewayName = gatewayName
@@ -123,6 +128,7 @@ public enum GatewaySetup {
         public static let priority = "priority"
         public static let botReplies = "botReplies"
         public static let botScreen = "botScreen"
+        public static let access = "access"
     }
 
     public enum Docs {
@@ -141,6 +147,45 @@ public enum GatewaySetup {
         public static let botScreen = HermesDocs.page("user-guide/features/bot-screen")
         /// Hermes's fix for deliveries dying with the sender's chat (upstream, not merged yet).
         public static let botDeliveryFix = URL(string: "https://github.com/NousResearch/hermes-agent/pull/136220")!
+    }
+
+    // MARK: Access
+
+    /// An access gateway in front of Hermes (`docs/setup.md` §4.24): shown only for a gateway
+    /// with Access settings, or one an access gateway or proxy turned away. Access is checked
+    /// before Hermes's key, so a sign-in page is never read as a wrong key.
+    public static func access(_ facts: GatewaySetupFacts) -> SetupStatus? {
+        let title = String(localized: "Access")
+        let fix = SetupFix(title: String(localized: "Edit Access…"), action: .editAccess)
+        if let refusal = facts.accessRefusal {
+            let steps: [SetupStep] = switch refusal {
+            case .signInNeeded:
+                [
+                    SetupStep(String(localized: "In the access gateway's dashboard, create a service token and allow it for \(facts.gatewayName)'s address.")),
+                    SetupStep(String(localized: "In Edit Gateway → Access, choose Service token, then enter its client ID and secret.")),
+                ]
+            case .tokenRejected:
+                [
+                    SetupStep(String(localized: "In the access gateway's dashboard, check that the service token hasn't expired and that a policy allows it for \(facts.gatewayName)'s address.")),
+                    SetupStep(String(localized: "In Edit Gateway → Access, enter the client ID and secret again.")),
+                ]
+            case .certificateNeeded, .certificateRejected:
+                []
+            }
+            return SetupStatus(
+                id: ID.access, state: .notSetUp, title: title, detail: refusal.detail,
+                fix: refusal.isCertificate ? nil : fix, steps: steps
+            )
+        }
+        guard let access = facts.access else { return nil }
+        let summary = GatewayAccessDraft(access).summary
+        if facts.gatewayOnline {
+            return SetupStatus(id: ID.access, state: .ready, title: title, detail: summary, fix: fix)
+        }
+        return .unknown(
+            id: ID.access, title: title,
+            reason: String(localized: "\(summary). Can't check until \(facts.gatewayName) answers.")
+        )
     }
 
     // MARK: Bot Mode and Hermes

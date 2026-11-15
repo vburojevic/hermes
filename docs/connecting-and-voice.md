@@ -363,3 +363,116 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
 Pairing needs only the gateway's API server. Bot Mode's link and sign-in are [setup.md](setup.md)
 §4.1, and Settings → Setup checks them; Local Network on iPhone and iPad shows in the connection
 banner (§4.15).
+
+## 11. Behind an access gateway
+
+Some people put Hermes behind an access gateway (Cloudflare Access and the like) or a proxy that
+asks for a client certificate. The access gateway answers first, so the app has to pass it, and
+Hermes's own API key and Bot Mode sign-in still go on every request behind it.
+
+### 11.1 Access settings
+
+Each gateway has Access settings (`GatewayAccess` in `bots.json`): a page from Edit Gateway's Access
+row on iPhone and iPad (`gatewayAccess`), inline in the Mac's sheet (`macAccess`), and in pairing
+once an access gateway turns it away (§11.5). A status card leads them (`accessStatus`,
+`accessTokenRejected`, `accessReady`) with what the last check found, who said so, and Check
+Again. The methods:
+
+- **None**, the default.
+- **Service token**: a client ID and secret from the access gateway's dashboard, sent as two
+  headers. The names default to Cloudflare Access's (`CF-Access-Client-Id`,
+  `CF-Access-Client-Secret`) and can be changed under Headers.
+- Browser sign-in and a client certificate are in the model (a certificate goes with either of the
+  others) but not in the app yet. A gateway saved with them by a newer build keeps them, and the
+  picker shows Browser sign-in without offering it.
+
+The secret lives in the Keychain like the key (§7), account `<gateway id>.access`, read only for
+the addresses saved with the gateway. The field stays empty for a saved secret and keeps it unless
+something is typed. A header name that could replace one the app sends itself (`Authorization`,
+`Cookie`, `Host`, a `Sec-` or `Proxy-` header, and the like) or a value with a line break is
+refused, in the editor and again when it's sent: `bots.json` is a plain file. Check Again tries the
+settings on screen before they're saved, for the check's own requests alone (`trying`, a task-local
+value): the live connection to the same gateway keeps sending the saved settings meanwhile.
+Saving new settings reconnects the gateway and keeps its chats. Removing the gateway removes the
+secret.
+
+### 11.2 Telling refusals apart
+
+`AccessRefusal` (HermesKit) reads who stopped a request before Hermes saw it, so a sign-in page is
+never taken for a wrong key:
+
+| Answer | Read as |
+|---|---|
+| A redirect (the access gateway's sign-in, on another origin; `SameOriginRedirects` doesn't follow it) | `signInNeeded`, or `tokenRejected` when a token was sent |
+| 401 or 403 with an HTML page, or a body that isn't JSON | the same |
+| 401 or 403 with JSON, or an empty body (the API server's bare 403 for a browser origin) | Hermes's own refusal, as before |
+| A socket's upgrade refused (no body to read) with an HTML page | the same, by the token its upgrade carried |
+| A socket's upgrade refused with any other type (the bare 403 is `text/plain`) | Hermes's own refusal |
+| `URLError.clientCertificateRequired` / `.clientCertificateRejected` | `certificateNeeded` / `certificateRejected` |
+
+They arrive as `HermesError.accessRefused(host:_:)`, checked before Hermes's key, with their own
+title, line and "From the access gateway at …" (or "From the proxy at …").
+
+### 11.3 Where it's set up
+
+[setup.md](setup.md) §4.24 lists Access in Settings → Setup for a gateway with Access settings or
+one an access gateway turned away, with Check Again and Edit Access…. A certificate refusal has no
+fix in the app yet: it says the app can't send one.
+
+### 11.4 What isn't built
+
+Browser sign-in (the access gateway's page in a web view, its cookie kept in the Keychain) and
+client certificates have their places in the seam (§11.6: cookies, and the certificate answering a
+proxy's challenge) and in `AccessRefusal`, but no settings in the app.
+
+### 11.5 Where a refusal shows
+
+- **Pairing** (`pairingAccess`): instead of "Hermes rejected the API key" the card says an access
+  gateway answered, where from, and Set Up Access…, a sheet with the settings above. Pairing then
+  checks again with them and saves them with the gateway.
+- **A chat** (`accessTokenBanner`): the banner names the gateway and offers Access.
+- **Settings → Setup**: the Access row (§11.3).
+
+### 11.6 One seam for every request
+
+`GatewayAccessRegistry.shared` (HermesKit) is the one place gateway requests get what an access
+gateway asks for. `AppModel` hands it each gateway's credentials for that gateway's own addresses
+(its API server and Bot Mode), and every transport passes its requests through `prepare`:
+`HermesClient` (calls, run streams, uploads inline in a message, the browser bridge's socket),
+`BackendClient` (calls, file reads and writes, downloads, its sockets), `GatewaySocket`,
+`BoardEventStream`, `GatewayAudio`, `BrowserControlClient`, `RemotePicture` (every gateway image)
+and the Preview's web view. Reconnects build their requests again, so they get it too.
+
+- A request gets the headers and cookies only when it goes to exactly the gateway's origin
+  (scheme, host and port; `ws` counts as `http`, `wss` as `https`). Another port, `http` for
+  `https`, or `localhost` for `127.0.0.1` gets nothing.
+- Hermes's `Authorization` header and its session cookie stay; the access gateway's cookies are
+  added after them.
+- `SameOriginRedirects` takes every access header and cookie off a redirect and puts them back only
+  when it leads to the same origin. A redirect within the request's own origin keeps the headers
+  it went out with, so settings being tried survive it.
+- A page the Preview opens on the gateway loads with them, and a link on it within the gateway
+  loads again with them. A web view keeps a load's headers across a redirect and isn't covered by
+  `SameOriginRedirects`, so a redirect or a link off the gateway's origins is stopped and loaded
+  again without them (`leaksAccess`), then asked about like any other address.
+- A page's own images, scripts and frames go out without the headers. They pass by the access
+  gateway's session cookie (`CF_Authorization`), which it sets in the web view on the page's
+  first load.
+
+### 11.7 Mock
+
+`Tools/mock-hermes/access_gateway.py` stands in front of the mocks
+([development.md](development.md)): pair with its port, see the refusal, then set Service token
+with the mock's client ID and secret. A token pass sets a `CF_Authorization` cookie that later
+requests can pass by. `/__mock/leave` redirects a page to the sign-in origin, whose log says
+whether the token came along; "preview <address>" in a chat opens it in the Preview.
+
+### 11.8 Checks
+
+- Pairing through the mock access gateway without a token shows "An access gateway answered, not
+  Hermes", never "Hermes rejected the API key".
+- With the token, a chat streams, a file goes up and comes down, the Board's live stream runs, a
+  preview and an image load, and stopping and starting the mock behind reconnects without a tap.
+- The mock's log shows the token on every kind of request, and the gateway's key never reaches
+  another server.
+- "preview http://127.0.0.1:20642/__mock/leave" in a chat: the sign-in origin logs `token=none`.

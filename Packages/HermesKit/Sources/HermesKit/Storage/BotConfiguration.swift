@@ -17,14 +17,26 @@ public struct BotConfiguration: Identifiable, Hashable, Codable, Sendable {
     /// The `hermes serve` backend behind this gateway, for Bot Mode. Optional:
     /// sessions work without it.
     public var backend: BackendLink?
+    /// How the app passes an access gateway in front of this gateway and its backend; nil is none
+    /// (`docs/connecting-and-voice.md` §11). Its secret is in the Keychain (`BotStore.accessSecret`).
+    public var access: GatewayAccess?
 
-    public init(id: UUID = UUID(), name: String, baseURL: URL, accent: String, createdAt: Date = .now, backend: BackendLink? = nil) {
+    public init(
+        id: UUID = UUID(), name: String, baseURL: URL, accent: String, createdAt: Date = .now, backend: BackendLink? = nil,
+        access: GatewayAccess? = nil
+    ) {
         self.id = id
         self.name = name
         self.baseURL = baseURL
         self.accent = accent
         self.createdAt = createdAt
         self.backend = backend
+        self.access = access
+    }
+
+    /// The addresses an access gateway's headers may go to: the gateway's and its backend's.
+    public var accessAddresses: [URL] {
+        [baseURL] + (backend.map { [$0.url] } ?? [])
     }
 
     /// The Hermes profile this gateway serves: the `<name>` of a multiplexed `/p/<name>` URL,
@@ -368,11 +380,37 @@ public struct BotStore: Sendable {
         try keychain.setString(key, for: bot.uuidString)
     }
 
-    /// Forgets the key, and where it could go.
+    /// Forgets the key, the access gateway's secret, and where they could go.
     public func removeAPIKey(for bot: BotConfiguration.ID) throws {
         verified.set(nil, for: bot)
         try keychain.removeValue(for: bot.uuidString)
+        try? keychain.removeValue(for: "\(bot.uuidString).access")
         try? keychain.removeValue(for: "\(bot.uuidString).destinations")
+    }
+
+    /// The service token's secret for the access gateway in front of `bot`, read only for the
+    /// addresses it was saved for (`check`), like the key.
+    public func accessSecret(for bot: BotConfiguration) throws -> String? {
+        try check(bot)
+        return try keychain.string(for: "\(bot.id.uuidString).access")
+    }
+
+    /// Saves the secret, or removes it when nil or empty.
+    public func setAccessSecret(_ secret: String?, for bot: BotConfiguration.ID) throws {
+        guard let secret, !secret.isEmpty else {
+            try keychain.removeValue(for: "\(bot.uuidString).access")
+            return
+        }
+        try keychain.setString(secret, for: "\(bot.uuidString).access")
+    }
+
+    /// What `bot`'s requests carry past its access gateway, or nil when none is set up or its
+    /// secret can't be read.
+    public func accessCredentials(for bot: BotConfiguration) -> GatewayAccessRegistry.Credentials? {
+        guard let access = bot.access, access.method == .serviceToken, !access.clientID.isEmpty,
+              let secret = try? accessSecret(for: bot), !secret.isEmpty
+        else { return nil }
+        return .serviceToken(access, secret: secret)
     }
 
     /// The Bot Mode sign-in (session token or cookies), next to the API key, read only for the

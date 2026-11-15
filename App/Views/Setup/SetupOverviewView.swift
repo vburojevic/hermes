@@ -114,6 +114,7 @@ struct SetupOverviewView: View {
 
     static func symbol(for id: String) -> String {
         switch id {
+        case GatewaySetup.ID.access: "lock.shield"
         case GatewaySetup.ID.botMode: "person.2"
         case GatewaySetup.ID.hermes: "server.rack"
         case GatewaySetup.ID.priority: "gauge.with.dots.needle.67percent"
@@ -255,7 +256,7 @@ private struct SetupFeaturePage: View {
     private func fix(for status: SetupStatus) -> (() -> Void)? {
         guard let fix = status.fix else { return nil }
         switch fix.action {
-        case .linkBotMode, .signIn:
+        case .linkBotMode, .signIn, .editAccess:
             return { editing = workspace.bot }
         case .openSettings:
             return DeviceSetup.shared.fix(for: status.id) ?? { DeviceSetup.openSettings(.app) }

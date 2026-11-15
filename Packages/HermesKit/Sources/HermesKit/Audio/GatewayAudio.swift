@@ -205,6 +205,7 @@ extension BackendClient {
         url.append(queryItems: [URLQueryItem(name: "path", value: path)])
         var request = URLRequest(url: url)
         for (name, value) in authorizationHeaders() { request.setValue(value, forHTTPHeaderField: name) }
+        GatewayAccessRegistry.shared.prepare(&request)
         return request
     }
 
