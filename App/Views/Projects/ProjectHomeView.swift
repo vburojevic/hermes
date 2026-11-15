@@ -16,6 +16,7 @@ struct ProjectHomeView: View {
     /// The toolbar names the project once its header has scrolled away.
     @State private var headerScrolledAway = false
     @State private var width: CGFloat = 0
+    @State private var actionError: HermesError?
 
     private var projects: ProjectsModel { workspace.projects }
     private var node: ProjectNode? { projects.node(projectID) }
@@ -29,6 +30,10 @@ struct ProjectHomeView: View {
         #else
         horizontalSizeClass == .regular
         #endif
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
     }
 
     var body: some View {
@@ -48,6 +53,14 @@ struct ProjectHomeView: View {
             }
         }
         .background(Theme.canvas.ignoresSafeArea())
+        // Undo for a chat archived here, above the composer (`docs/projects.md` §2). The chat
+        // list keeps its own, so a window shows one.
+        .modifier(ArchivedToast(workspace: workspace, place: .project, bottomPadding: 12) { actionError = $0 })
+        .alert("Something went wrong", isPresented: errorBinding, presenting: actionError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { error in
+            Text(error.errorDescription ?? "")
+        }
         // Where the top bar ends: the composer's menus stop there.
         .overlay { CeilingMarker(ceiling: $ceiling) }
         .safeAreaBar(edge: .bottom) {
@@ -304,17 +317,49 @@ struct ProjectHomeView: View {
 
     @ViewBuilder
     private func chatMenu(_ row: ProjectSessionRow) -> some View {
+        let session = workspace.session(forKey: row.stableID) ?? row.session
+        let key = session.stableID
+        let isUnread = workspace.unread.badge(for: key).isUnread || workspace.unread.readMark(for: key) == .markedUnread
+        // The chat list's row actions, in its order (`docs/projects.md` §2). Pin is the one that
+        // also brings a project chat back into the flat list (`inboxSessions`).
+        Button(isUnread ? "Mark as Read" : "Mark as Unread", systemImage: isUnread ? "envelope.open" : "envelope.badge") {
+            toggleRead(key, isUnread: isUnread)
+        }
+        Button(session.pinned ? "Unpin" : "Pin", systemImage: session.pinned ? "pin.slash" : "pin") {
+            togglePin(session)
+        }
+        MuteMenu(unread: workspace.unread, key: key)
+        Divider()
         Button("Move to Project…", systemImage: "folder") {
-            projects.movingSession = workspace.session(forKey: row.stableID) ?? row.session
+            projects.movingSession = session
         }
         if workspace.roster?.isConnected == true {
             Button("Checkpoints…", systemImage: "clock.arrow.circlepath") {
-                workspace.showCheckpoints(for: workspace.session(forKey: row.stableID) ?? row.session)
+                workspace.showCheckpoints(for: session)
             }
         }
         Button("Copy Session ID", systemImage: "number") {
             Pasteboard.copy(row.id)
         }
+        Button("Archive", systemImage: "archivebox") {
+            archive(session)
+        }
+    }
+
+    private func toggleRead(_ key: String, isUnread: Bool) {
+        if isUnread { workspace.unread.markRead(key) } else { workspace.unread.markUnread(key) }
+    }
+
+    private func togglePin(_ session: HermesSession) {
+        Task { await run { try await workspace.setPinned(session, !session.pinned) } }
+    }
+
+    private func archive(_ session: HermesSession) {
+        Task { await run { try await workspace.archive(session, from: .project) } }
+    }
+
+    private func run(_ action: () async throws -> Void) async {
+        do { try await action() } catch { actionError = error as? HermesError ?? .invalidResponse(error.localizedDescription) }
     }
 
     private func open(_ row: ProjectSessionRow) {

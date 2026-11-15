@@ -99,7 +99,21 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
   - Lanes, in the gateway's order: main checkout first, then worktrees by recency, then "Card
     worktrees". Each lane (`laneHeader*`) shows its chats newest first (`laneChatRow`: title, first
     line, time, working dot), three at a time with "Show All N" / "Show Less". A chat's context
-    menu has Move to Project…, Checkpoints… and Copy Session ID.
+    menu has the chat list's row actions in its order, on every platform (`docs/inbox.md` §5):
+    Mark as Read / Mark as Unread, Pin / Unpin, Mute, then Move to Project…, Checkpoints… (with
+    Bot Mode), Copy Session ID and Archive. Pin is also what brings a project's chat into the flat
+    chat list, which otherwise keeps project chats in the project; a pinned chat stays in its lane
+    too. Hermes lists every pinned chat, so Pin reads right however old the chat, and a chat
+    older than the chat list's loaded pages joins the list as it's pinned. A failed Pin or
+    Archive puts the row back as it was and says why.
+  - Archive works as it does in the chat list (`docs/inbox.md` §5): the row leaves its lane at
+    once and "Archived “title” Undo" shows above the composer for 5 s; Undo puts the row back in
+    its lane at once, the lane too if it went with its last chat. The toast shows where the chat
+    was archived from, so a window never shows two, and leaving the project ends its Undo. The app lays its archives and Undos over the
+    gateway's answers until a read that started after the call landed, since a read from before it
+    still has the old state; an archive whose Undo still shows stays laid over every read, so
+    Undo has the row to put back however soon a read came in. Which chats the flat history leaves out is worked out from the
+    project as shown, so a chat brought back with Undo stays out of it.
   - A project with no chats says "No chats yet" and where its chats will run.
   - `factsCard` ("What Hermes knows about this project": Built with, Checks Hermes runs before
     saying it's done, Reads first): at the end of the list on iPhone and narrow iPad layouts; in a
@@ -213,6 +227,11 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
 - Chats in a project don't appear again in the flat history, except under Pinned.
 - Moving a running chat keeps it running and moves it to the new project's lane.
 - Deleting a project never deletes chats.
+- Archiving a chat from a lane takes its row away at once, and it stays gone after a refresh; Undo
+  brings it back at once, in its lane and still out of the flat history. One Undo toast shows, in
+  the project home, on iPhone, iPad (both orientations) and Mac.
+- A chat's menu in a lane reads as the chat list's: Mark as Read / Unread, Pin and Mute change at
+  once, and a chat pinned there shows under Pinned in the flat list and stays in its lane.
 - A heartbeat or a compaction in a project's chat moves neither the project's time nor its place:
   seeded, dotfiles (a heartbeat 7 minutes ago) stays last, at its message 32 days ago, and Blog
   (compacted 25 minutes ago) stays at its last message, three days ago.

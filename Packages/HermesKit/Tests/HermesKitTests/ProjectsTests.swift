@@ -214,6 +214,178 @@ struct ProjectsTests {
         #expect(RowTime.ofProject(chats: [], chatCount: 0, activity: nil, created: ago(86_400)) == ago(86_400))
     }
 
+    // MARK: Archiving a chat from a project
+
+    private func hermesApp() throws -> ProjectNode {
+        let json = try #require(JSONValue.parse(Self.treeJSON))
+        return try #require(ProjectTree(json: json).node(id: "p_4f2a9c1e"))
+    }
+
+    /// The project as the gateway reads it once a chat is archived: the row is gone, and a lane
+    /// goes with its last chat.
+    private func withoutChat(_ id: String, from node: ProjectNode) -> ProjectNode {
+        var node = node
+        for r in node.repos.indices {
+            for l in node.repos[r].lanes.indices where node.repos[r].lanes[l].sessions.contains(where: { $0.id == id }) {
+                node.repos[r].lanes[l].sessions.removeAll { $0.id == id }
+                node.repos[r].sessionCount -= 1
+            }
+            node.repos[r].lanes.removeAll { $0.sessions.isEmpty }
+        }
+        node.sessionIDs.removeAll { $0 == id }
+        node.sessionCount -= 1
+        return node
+    }
+
+    @Test func anArchivedChatLeavesItsLaneAtOnce() throws {
+        let node = try hermesApp()
+        var changes = ProjectChatChanges()
+        #expect(changes.archiving(key: "s_push", ids: ["s_push"], in: [node]) == "p_4f2a9c1e")
+
+        let shown = changes.applied(to: node, hydrated: true)
+        #expect(shown.lanes[1].sessions.map(\.id) == ["s_push2"])
+        #expect(shown.sessionCount == 3 && shown.repos[0].sessionCount == 3)
+        #expect(!shown.sessionIDs.contains("s_push"))
+        // A compressed chat is found by its lineage root as well as its stored id.
+        #expect(changes.archiving(key: "s_root", ids: ["s_new", "s_root"], in: [node]) == "p_4f2a9c1e")
+        #expect(changes.applied(to: node, hydrated: true).lanes[0].sessions.isEmpty)
+        // A chat no project has is left alone.
+        #expect(changes.archiving(key: "s_elsewhere", ids: ["s_elsewhere"], in: [node]) == nil)
+    }
+
+    @Test func aReadFromBeforeTheArchiveLandedDoesNotBringTheRowBack() throws {
+        let node = try hermesApp()
+        let start = Date(timeIntervalSince1970: 1_790_001_000)
+        var changes = ProjectChatChanges()
+        changes.archiving(key: "s_push", ids: ["s_push"], in: [node])
+        // In flight: no read drops it, however late it started.
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(60))
+        #expect(changes.change(for: "s_push") == .archived)
+
+        changes.landed(.archived, key: "s_push", at: start)
+        // A read that started before the archive landed still has the row: hidden.
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(-1))
+        #expect(!changes.applied(to: node, hydrated: true).hydratedSessions.contains { $0.id == "s_push" })
+        // A read of another project changes nothing here.
+        changes.read(projectID: "p_other", startedAt: start.addingTimeInterval(1))
+        #expect(changes.change(for: "s_push") == .archived)
+        // One that started after it has the gateway's word for it: the change is done.
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(1))
+        #expect(changes.isEmpty)
+        // Counting the gateway's answer once: an absent row is not taken off again.
+        let read = withoutChat("s_push", from: node)
+        var again = ProjectChatChanges()
+        again.archiving(key: "s_push", ids: ["s_push"], in: [node])
+        #expect(again.applied(to: read, hydrated: true).sessionCount == 3)
+    }
+
+    @Test func undoPutsTheRowBackWhereItWas() throws {
+        let node = try hermesApp()
+        let start = Date(timeIntervalSince1970: 1_790_001_000)
+        var changes = ProjectChatChanges()
+        changes.archiving(key: "s_push", ids: ["s_push"], in: [node])
+        changes.landed(.archived, key: "s_push", at: start)
+        // The read after the archive dropped the row; Undo brings it back before its call lands.
+        let read = withoutChat("s_push", from: node)
+        changes.restoring(key: "s_push")
+        let shown = changes.applied(to: read, hydrated: true)
+        #expect(shown.lanes[1].sessions.map(\.id) == ["s_push", "s_push2"])
+        #expect(shown.sessionCount == 4 && shown.repos[0].sessionCount == 4)
+        #expect(shown.sessionIDs.contains("s_push"))
+        // A read that still has it, or the tree's lanes, which carry no chats, get no second copy.
+        #expect(changes.applied(to: node, hydrated: true) == node)
+        // The archive answering after Undo doesn't count as the unarchive.
+        changes.landed(.archived, key: "s_push", at: start.addingTimeInterval(4))
+        // In flight, a read can't drop the Undo; once the unarchive landed, a later read does.
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(5))
+        #expect(changes.change(for: "s_push") == .restored)
+        changes.landed(.restored, key: "s_push", at: start.addingTimeInterval(6))
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(7))
+        #expect(changes.isEmpty)
+    }
+
+    @Test func undoWorksAfterAReadThatAlreadyHadTheArchive() throws {
+        let node = try hermesApp()
+        let start = Date(timeIntervalSince1970: 1_790_001_000)
+        var changes = ProjectChatChanges()
+        changes.archiving(key: "s_push", ids: ["s_push"], in: [node])
+        changes.landed(.archived, key: "s_push", at: start)
+        // A read after the archive landed, while its Undo still shows, keeps it.
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(1), keeping: "s_push")
+        #expect(changes.change(for: "s_push") == .archived)
+        changes.restoring(key: "s_push")
+        let shown = changes.applied(to: withoutChat("s_push", from: node), hydrated: true)
+        #expect(shown.lanes[1].sessions.map(\.id) == ["s_push", "s_push2"])
+        #expect(shown.sessionIDs.contains("s_push"))
+        // Once the unarchive landed, a later read drops the Undo even with the toast still up.
+        changes.landed(.restored, key: "s_push", at: start.addingTimeInterval(2))
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(3), keeping: "s_push")
+        #expect(changes.isEmpty)
+    }
+
+    @Test func undoBringsBackALaneThatWentWithItsLastChat() throws {
+        let node = try hermesApp()
+        var changes = ProjectChatChanges()
+        changes.archiving(key: "s_task", ids: ["s_task"], in: [node])
+        #expect(changes.applied(to: node, hydrated: true).taskCount == 0)
+        let read = withoutChat("s_task", from: node)
+        #expect(read.lanes.count == 2)
+        changes.restoring(key: "s_task")
+        let shown = changes.applied(to: read, hydrated: true)
+        #expect(shown.lanes.map(\.kind) == [.main, .worktree, .tasks])
+        #expect(shown.taskCount == 1 && shown.sessionCount == 4)
+    }
+
+    @Test func aFailedArchiveOrUnarchiveLeavesTheGatewaysAnswer() throws {
+        let node = try hermesApp()
+        let start = Date(timeIntervalSince1970: 1_790_001_000)
+        var changes = ProjectChatChanges()
+        // The archive failed: the row was never archived.
+        changes.archiving(key: "s_push", ids: ["s_push"], in: [node])
+        changes.forget(key: "s_push")
+        #expect(changes.applied(to: node, hydrated: true) == node)
+        // The unarchive failed after the archive landed: the chat stays archived until a read
+        // after that says so.
+        changes.archiving(key: "s_push", ids: ["s_push"], in: [node])
+        changes.landed(.archived, key: "s_push", at: start)
+        changes.restoring(key: "s_push")
+        changes.archivedAgain(key: "s_push", at: start.addingTimeInterval(2))
+        #expect(!changes.applied(to: node, hydrated: true).hydratedSessions.contains { $0.id == "s_push" })
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(1))
+        #expect(changes.change(for: "s_push") == .archived)
+        changes.read(projectID: "p_4f2a9c1e", startedAt: start.addingTimeInterval(3))
+        #expect(changes.isEmpty)
+    }
+
+    @Test func theTreeLosesAnArchivedChatToo() throws {
+        let tree = ProjectTree(json: try #require(JSONValue.parse(Self.treeJSON)))
+        var changes = ProjectChatChanges()
+        changes.archiving(key: "s_task", ids: ["s_task"], in: tree.explicitProjects)
+        let shown = changes.applied(to: tree)
+        #expect(shown.explicitSessionIDs == ["s_new", "s_push", "s_push2"])
+        #expect(shown.node(id: "p_4f2a9c1e")?.sessionCount == 3)
+        #expect(shown.node(id: "__no_project__") == tree.node(id: "__no_project__"))
+    }
+
+    @Test func aChatBroughtBackWithUndoStaysInItsProject() throws {
+        let tree = ProjectTree(json: try #require(JSONValue.parse(Self.treeJSON)))
+        // A tree read while the chat was archived, which doesn't list it anywhere.
+        let readWhileArchived = ProjectTree(json: try #require(JSONValue.parse(Self.treeJSON
+            .replacingOccurrences(of: #"{"id": "s_push", "title": "Push plugin", "git_branch": "feature/push", "message_count": 2},"#, with: "")
+            .replacingOccurrences(of: #""s_push", "#, with: ""))))
+        #expect(readWhileArchived.projectIndex()["s_push"] == nil)
+        var changes = ProjectChatChanges()
+        changes.archiving(key: "s_push", ids: ["s_push"], in: tree.explicitProjects)
+        #expect(changes.applied(to: tree).projectIndex()["s_push"] == nil)
+        // Undo: the index built from what's shown keeps it out of the flat history again.
+        changes.restoring(key: "s_push")
+        let index = changes.applied(to: readWhileArchived).projectIndex()
+        #expect(index["s_push"] == "p_4f2a9c1e")
+        // Compressed chats are found by their lineage root too; Home and auto projects aren't scoped.
+        #expect(index["s_new"] == "p_4f2a9c1e" && index["s_root"] == "p_4f2a9c1e")
+        #expect(index["s_home"] == nil && index["s_site"] == nil)
+    }
+
     @Test func abbreviatesHomeFolders() {
         #expect(ProjectPath.abbreviated("/Users/ada/Code/app") == "~/Code/app")
         #expect(ProjectPath.abbreviated("/home/ada/blog") == "~/blog")

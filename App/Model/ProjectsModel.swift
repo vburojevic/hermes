@@ -68,7 +68,13 @@ final class ProjectsModel {
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var activeFetch: Task<[ActiveSession]?, Never>?
     @ObservationIgnored private var activeFetched: (at: Date, rows: [ActiveSession])?
+    /// Which project each chat is in, by every id it goes by, as `tree` and `details` show it.
     @ObservationIgnored private var sessionIndex: [String: String] = [:]
+    /// What the gateway last answered; `tree` and `details` are these with `chatChanges` laid over.
+    @ObservationIgnored private var fetchedTree = ProjectTree()
+    @ObservationIgnored private var fetchedDetails: [String: ProjectNode] = [:]
+    /// Chats archived or brought back here that the gateway's reads haven't caught up with.
+    @ObservationIgnored private var chatChanges = ProjectChatChanges()
 
     init(workspace: BotWorkspace) {
         self.workspace = workspace
@@ -264,10 +270,15 @@ final class ProjectsModel {
         guard let client else { return }
         let current = Array(projects.values)
         let needsList = includeProjects || current.isEmpty
+        let started = Date.now
         do {
             async let tree = client.tree()
             async let list = needsList ? client.list().projects : current
             let (freshTree, freshList) = try await (tree, list)
+            // A project whose lanes aren't loaded has only the tree to catch up with a change.
+            for node in freshTree.explicitProjects where fetchedDetails[node.id] == nil {
+                chatChanges.read(projectID: node.id, startedAt: started, keeping: undoable)
+            }
             apply(tree: freshTree, projects: freshList)
             isAvailable = true
             lastError = nil
@@ -292,26 +303,17 @@ final class ProjectsModel {
     }
 
     private func apply(tree fresh: ProjectTree, projects list: [HermesProject]) {
-        var index: [String: String] = [:]
-        for node in fresh.explicitProjects {
-            for id in node.sessionIDs { index[id] = node.id }
-        }
-        // Rows that came back with their lineage root (compressed chats) are found either way.
-        for node in fresh.explicitProjects {
-            for row in node.previewSessions + node.hydratedSessions where row.stableID != row.id {
-                index[row.stableID] = node.id
-            }
-        }
+        let index = fresh.projectIndex()
         for (id, project) in placedSessions where index[id] != nil || fresh.scopedSessionIDs.contains(id) {
             // The tree knows where it is now; keep the local placement only until then.
             if index[id] == project || fresh.scopedSessionIDs.contains(id) { placedSessions[id] = nil }
         }
-        sessionIndex = index
-        if fresh != tree {
-            tree = fresh
+        if fresh != fetchedTree {
+            fetchedTree = fresh
             // Its projects' newest chats, for the projects' times.
             workspace?.unread.readStaleLines()
         }
+        publish()
         let byID = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         if byID != projects { projects = byID }
         let known = Set(byID.keys)
@@ -345,16 +347,72 @@ final class ProjectsModel {
     /// One project's lanes with their chats (the project home).
     func loadDetail(_ id: String) async {
         guard let client else { return }
+        let started = Date.now
         do {
             if let node = try await client.projectSessions(projectID: id) {
-                for row in node.hydratedSessions where row.stableID != row.id {
-                    sessionIndex[row.stableID] = id
-                }
-                if details[id] != node { details[id] = node }
+                fetchedDetails[id] = node
+                chatChanges.read(projectID: id, startedAt: started, keeping: undoable)
+                publish()
             }
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// The chat whose Undo still shows: its archive stays laid over reads, so Undo can bring its
+    /// row back at once (`docs/projects.md` §2).
+    private var undoable: String? {
+        workspace?.recentlyArchived?.stableID
+    }
+
+    /// Lays this device's archives and Undos over the gateway's last answers, publishing only
+    /// what changed.
+    private func publish() {
+        let shownTree = chatChanges.applied(to: fetchedTree)
+        if shownTree != tree { tree = shownTree }
+        for (id, node) in fetchedDetails {
+            let shown = chatChanges.applied(to: node, hydrated: true)
+            if details[id] != shown { details[id] = shown }
+        }
+        for id in details.keys where fetchedDetails[id] == nil { details[id] = nil }
+        // From what's shown, so a chat brought back with Undo stays out of the flat history even
+        // when a read from while it was archived came in between (`docs/projects.md` §2).
+        sessionIndex = shownTree.projectIndex(details: Array(details.values))
+    }
+
+    // MARK: Archiving chats
+
+    /// A chat's archive starts: its row leaves its lane now (`docs/projects.md` §2).
+    func archiving(_ session: HermesSession) {
+        let nodes = Array(fetchedDetails.values) + fetchedTree.explicitProjects
+        guard chatChanges.archiving(key: session.stableID, ids: [session.id, session.stableID], in: nodes) != nil else { return }
+        publish()
+    }
+
+    /// Undo: the row comes back now, before its unarchive is sent.
+    func restoring(_ session: HermesSession) {
+        guard chatChanges.change(for: session.stableID) != nil else { return }
+        chatChanges.restoring(key: session.stableID)
+        publish()
+    }
+
+    /// The archive or unarchive was stored; the next read that starts after now has it.
+    func chatChangeLanded(_ session: HermesSession, _ change: ProjectChatChanges.Change) {
+        chatChanges.landed(change, key: session.stableID)
+    }
+
+    /// The archive failed, or never happened: the gateway's answer stands.
+    func chatChangeFailed(_ session: HermesSession) {
+        guard chatChanges.change(for: session.stableID) != nil else { return }
+        chatChanges.forget(key: session.stableID)
+        publish()
+    }
+
+    /// The unarchive failed: the chat stays archived and off its lane.
+    func unarchiveFailed(_ session: HermesSession) {
+        guard chatChanges.change(for: session.stableID) != nil else { return }
+        chatChanges.archivedAgain(key: session.stableID)
+        publish()
     }
 
     func loadFacts(_ path: String) async {
@@ -449,7 +507,8 @@ final class ProjectsModel {
         guard let client else { throw GatewaySocket.Failure.notConnected }
         let list = try await client.delete(id: id)
         projects = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        details[id] = nil
+        fetchedDetails[id] = nil
+        publish()
         setPinned(id, false)
         expandedIDs.remove(id)
         leaveProjectHome(id)
@@ -464,6 +523,7 @@ final class ProjectsModel {
     func setActive(_ id: String?) async {
         guard let client, tree.activeID != id else { return }
         tree.activeID = id
+        fetchedTree.activeID = id
         _ = try? await client.setActive(id: id)
     }
 

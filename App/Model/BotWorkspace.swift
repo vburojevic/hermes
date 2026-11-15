@@ -112,8 +112,11 @@ final class BotWorkspace: Identifiable {
     /// those (Only).
     var inboxShow = InboxShow.atLaunch
     var inboxFilter = InboxFilter.all
-    /// A chat just archived from the list, for Undo.
+    /// A chat just archived, for Undo.
     var recentlyArchived: HermesSession?
+    /// Where it was archived from: Undo shows there, once per window.
+    private(set) var recentlyArchivedPlace = ArchivePlace.chatList
+    enum ArchivePlace { case chatList, project }
     /// Archive calls on their way, by chat: Undo goes after its archive, never alongside it.
     @ObservationIgnored private var archiving: [String: Task<Void, any Error>] = [:]
     private(set) var isLoadingSessions = false
@@ -1343,37 +1346,52 @@ final class BotWorkspace: Identifiable {
 
     func setPinned(_ session: HermesSession, _ pinned: Bool) async throws {
         guard let client else { return }
-        if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
+        // A project chat older than the loaded pages joins the list as it's pinned: Hermes lists
+        // every pinned chat, so the next read would bring it anyway.
+        let joined = pinned && !allSessions.contains { $0.stableID == session.stableID }
+        if joined {
+            var row = session
+            row.pinned = true
+            allSessions.append(row)
+        } else if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
             allSessions[index].pinned = pinned
         }
         do {
             let updated = try await client.setSessionFlags(id: session.id, pinned: pinned)
             replace(session, with: updated)
         } catch {
-            if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
+            if joined {
+                allSessions.removeAll { $0.stableID == session.stableID }
+            } else if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
                 allSessions[index].pinned = !pinned
             }
             throw error
         }
     }
 
-    /// Archive (`docs/inbox.md` §5): Hermes keeps the chat and leaves it out of the list.
-    func archive(_ session: HermesSession) async throws {
+    /// Archive (`docs/inbox.md` §5): Hermes keeps the chat and leaves it out of the list and its
+    /// project's lanes (`docs/projects.md` §2). `place` is where it was archived from, which shows
+    /// the Undo.
+    func archive(_ session: HermesSession, from place: ArchivePlace = .chatList) async throws {
         guard let client else { return }
         let index = allSessions.firstIndex { $0.stableID == session.stableID }
         allSessions.removeAll { $0.stableID == session.stableID }
+        projects?.archiving(session)
         if selection == .session(session.stableID) { closeSelection() }
         // Undo is offered at once, not once a busy Mac has answered.
+        recentlyArchivedPlace = place
         recentlyArchived = session
         let call = Task { _ = try await client.setSessionFlags(id: session.id, archived: true) }
         archiving[session.stableID] = call
         defer { if archiving[session.stableID] == call { archiving[session.stableID] = nil } }
         do {
             try await call.value
+            projects?.chatChangeLanded(session, .archived)
         } catch {
             // Undone meanwhile: the row is back and the chat was never archived; nothing to say.
             let undone = recentlyArchived?.stableID != session.stableID && allSessions.contains { $0.stableID == session.stableID }
             if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
+            projects?.chatChangeFailed(session)
             if !allSessions.contains(where: { $0.stableID == session.stableID }) {
                 allSessions.insert(session, at: min(index ?? 0, allSessions.count))
             }
@@ -1384,16 +1402,18 @@ final class BotWorkspace: Identifiable {
     func unarchive(_ session: HermesSession) async throws {
         guard let client else { return }
         if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
-        // Back in the list at once; the gateway's row replaces it when it answers.
+        // Back in the list and its lane at once; the gateway's row replaces it when it answers.
         if !allSessions.contains(where: { $0.stableID == session.stableID }) {
             allSessions.append(session)
         }
+        projects?.restoring(session)
         // After the archive still on its way: two calls in flight could land in either order.
         if case .failure? = await archiving[session.stableID]?.result {
             return // it never was archived
         }
         do {
             let updated = try await client.setSessionFlags(id: session.id, archived: false)
+            projects?.chatChangeLanded(session, .restored)
             // A list read between Undo and here (the gateway still had it archived) took the row.
             if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
                 allSessions[index] = updated
@@ -1402,6 +1422,7 @@ final class BotWorkspace: Identifiable {
             }
         } catch {
             allSessions.removeAll { $0.stableID == session.stableID }
+            projects?.unarchiveFailed(session)
             throw error
         }
     }
