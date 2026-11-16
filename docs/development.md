@@ -523,8 +523,10 @@ the run, as ⌘↓ would, and `-HERMES_SEARCH_OPEN YES` (with `-HERMES_SEARCH`) 
 both reach on the Mac what a tap or a key would, without taking over the screen.
 
 Measuring a streaming reply: "essay" streams a long Markdown reply for about ten seconds, and
-`-HERMES_SEND_HERE "essay please" -HERMES_SEND_HERE_AFTER 10` sends it into the chat that opened,
-marking the frame log as it goes. A streamed word should redraw only its reply's row
+`-HERMES_SEND_HERE "essay please" -HERMES_SEND_HERE_AFTER 10` sends it into the chat that opened.
+The frame log works on the Mac too, and marks the send (`send-here: sending`) and the reply's end
+(`reply ended`): the main thread's CPU between the two marks, and the busy frames logged between
+them, are what one streamed reply costs. A streamed word should redraw only its reply's row
 ([chat.md](chat.md) §4): to see what else does, and why, put `let _ = Self._printChanges()` at the
 top of the views' bodies in a scratch copy and count the lines while it streams (Instruments'
 SwiftUI template doesn't record on a simulator). The environment tells values apart by their
