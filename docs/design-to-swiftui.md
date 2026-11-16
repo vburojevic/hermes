@@ -263,8 +263,8 @@ column says where each item lives in the code now.
 | Search chats | `.searchable` in the root's bottom toolbar; the results open with filter chips (All, Chats, Projects, Bots, Tasks) | The sidebar's search field, the same chips | The source list's field, ⌥⌘F, the same chips | `navSearch`, `macSearch` | `CompactListChrome`, `SidebarView.toolbar`; `SearchField`; `SearchResultsSection`, `SearchChips` |
 | Quick Open | ⌘K with a hardware keyboard only | ⌘K | ⌘K palette, File menu | `macSearch` | `HermesCommands` (unchanged) |
 | Tasks, Skills | Rows at the top of the root; push | Sidebar rows | Source list rows; ⇧⌘1, ⇧⌘2, View menu | `navChats` | `SidebarView.navigationRows` |
-| Board | From a project; push | From a project | From a project, ⇧⌘B, View menu | `macNavMenuView` `boardItem` | `DetailView` (`navigationDestination` over `ProjectHomeView`) |
-| Projects (recent, All Projects) | A section of the root; All Projects pushes | Sidebar section | Source list disclosure tree | `navChats`, `macSidebar` | `ProjectSidebarSection` |
+| Board | From a project; push, Back returns to the project | From a project | From a project, ⇧⌘B, View menu | `macNavMenuView` `boardItem` | `DetailView` (`navigationDestination` over `ProjectHomeView`) |
+| Projects (recent, All Projects) | A section of the root; All Projects pushes; a project's chat pushes over its home, and Back returns to the project, then the list | Sidebar section; a project's chat replaces its home in the detail | Source list disclosure tree; a project's chat replaces its home in the detail | `navChats`, `macSidebar` | `ProjectSidebarSection`; `DetailView` (`navigationDestination` over `ProjectHomeView`, `DetailRoute.projectChat`) |
 | Bots roster, groups, All Bots | The Bots root: All Bots pushes the grid, then the roster | Sidebar rows | Source list rows | `navBots`, `macSidebarBots` | `BotRosterSections` |
 | Pinned chats | A Pinned section of the root | The same | The same | `navChats` | `SidebarView.sessionSections` |
 | Archived chats | Search | Search | Search | `navSearch` | `SearchResultsSection` |

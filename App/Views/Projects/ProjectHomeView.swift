@@ -81,10 +81,11 @@ struct ProjectHomeView: View {
         #if os(macOS)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
-        #if os(macOS)
         .navigationTitle(name)
-        #else
-        .navigationTitle(headerScrolledAway ? name : "")
+        #if os(iOS)
+        // Shown once the header has scrolled away, but always the title: a chat or the Board
+        // pushed over the project names it on its back button, for VoiceOver too.
+        .toolbar(removing: headerScrolledAway ? nil : .title)
         #endif
         .toolbarTitleDisplayMode(.inline)
         // Again once the socket is up: a home opened at launch loads before it connects.
@@ -96,7 +97,7 @@ struct ProjectHomeView: View {
     private var voiceMode: (() -> Void)? {
         #if os(iOS)
         return {
-            workspace.startNewChat(inProject: projectID)
+            workspace.startNewChat(inProject: projectID, fromHome: true)
             workspace.voiceModeRequested = true
         }
         #else
@@ -400,7 +401,7 @@ struct ProjectHomeView: View {
     }
 
     private func open(_ row: ProjectSessionRow) {
-        workspace.open(row.session)
+        workspace.open(row.session, fromProject: projectID)
     }
 
     // MARK: Facts and folders

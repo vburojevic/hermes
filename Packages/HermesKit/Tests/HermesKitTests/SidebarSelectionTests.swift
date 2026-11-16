@@ -155,6 +155,127 @@ struct CompactNavigationTests {
         #expect(navigation.pops == 1)
     }
 
+    @Test func aChatOpenedFromAProjectGoesBackToIt() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .project("p1"), keepsPlace: false)
+        #expect(navigation.parentProject == nil)
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false, fromProject: "p1")
+        #expect(navigation.parentProject == "p1")
+        // It pushes over the project's home on a compact width; Back selects the project.
+        let route = DetailRoute(selection: .session("s1"), mode: .chats, hasBotMode: true, parentProject: navigation.parentProject)
+        #expect(route == .projectChat("p1"))
+        #expect(route.backSelection == .project("p1"))
+        // The window is already back on the project's home: selecting it pushes nothing more.
+        let pushes = navigation.pushes
+        navigation.selectionChanged(to: route.backSelection, keepsPlace: true)
+        #expect(navigation.parentProject == nil)
+        #expect(navigation.pushes == pushes)
+        // A second Back is the list's own: the project has nothing to go back to.
+        #expect(DetailRoute(selection: .project("p1"), mode: .chats, hasBotMode: true).backSelection == nil)
+    }
+
+    @Test func backToAProjectsHomeKeepsTheHomeOnShow() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .project("p1"), keepsPlace: false)
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false, fromProject: "p1")
+        #expect(navigation.homeUnderList == nil)
+        // Back from the chat: the home stays on screen, though the split view says the list.
+        navigation.selectionChanged(to: .project("p1"), keepsPlace: true)
+        navigation.poppedToProject("p1")
+        #expect(navigation.homeUnderList == "p1")
+        // Another chat, the Board or a new chat opened from that home push over it.
+        navigation.selectionChanged(to: .session("s2"), keepsPlace: false, fromProject: "p1")
+        #expect(navigation.homeUnderList == "p1")
+        navigation.selectionChanged(to: .board("p1"), keepsPlace: false)
+        #expect(navigation.homeUnderList == "p1")
+        navigation.selectionChanged(to: nil, keepsPlace: false, fromProject: "p1")
+        navigation.show()
+        #expect(navigation.homeUnderList == "p1")
+    }
+
+    @Test func aPushAnywhereElseEndsTheHomeUnderTheList() {
+        // A row picked in the list, even the project already selected.
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .project("p1"), keepsPlace: false)
+        navigation.poppedToProject("p1")
+        navigation.show()
+        #expect(navigation.homeUnderList == nil)
+        // A chat opened from the list, a notification, search or a link.
+        navigation.poppedToProject("p1")
+        navigation.selectionChanged(to: .session("s9"), keepsPlace: false)
+        #expect(navigation.homeUnderList == nil)
+        // Another project, or another project's Board.
+        navigation.poppedToProject("p1")
+        navigation.selectionChanged(to: .board("p2"), keepsPlace: false)
+        #expect(navigation.homeUnderList == nil)
+        // The screen on show went away: back to the list.
+        navigation.poppedToProject("p1")
+        navigation.dismiss()
+        #expect(navigation.homeUnderList == nil)
+        // Renaming what is on show pushes nothing and keeps it.
+        navigation.poppedToProject("p1")
+        navigation.selectionChanged(to: .project("p1"), keepsPlace: true)
+        #expect(navigation.homeUnderList == "p1")
+    }
+
+    @Test func aChatOpenedAnyOtherWayGoesBackToTheList() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false, fromProject: "p1")
+        // The same chat, or another, picked in the list, a notification, search or a link.
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false)
+        #expect(navigation.parentProject == nil)
+        let route = DetailRoute(selection: .session("s1"), mode: .chats, hasBotMode: true, parentProject: navigation.parentProject)
+        #expect(route == .chat)
+        #expect(route.backSelection == nil)
+    }
+
+    @Test func aChatStartedInAProjectGoesBackToItOnceSent() {
+        var navigation = CompactNavigation()
+        // Talk on a project's home opens a new chat's draft from the project.
+        navigation.selectionChanged(to: nil, keepsPlace: false, fromProject: "p1")
+        #expect(DetailRoute(selection: nil, mode: .chats, hasBotMode: true, parentProject: navigation.parentProject) == .projectChat("p1"))
+        // Sent, the draft is filed under its chat, which keeps its place and its project.
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: true)
+        #expect(navigation.parentProject == "p1")
+        // The project home's own composer: its chat opens from the project as it's filed.
+        navigation.selectionChanged(to: .project("p2"), keepsPlace: false)
+        navigation.selectionChanged(to: .session("s2"), keepsPlace: true, fromProject: "p2")
+        #expect(navigation.parentProject == "p2")
+    }
+
+    @Test func aChatThatWentAwayLeavesItsProject() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false, fromProject: "p1")
+        // Archived or deleted while on screen: the selection clears and the window goes back.
+        navigation.selectionChanged(to: nil, keepsPlace: false)
+        navigation.dismiss()
+        #expect(navigation.parentProject == nil)
+        #expect(navigation.pops == 1)
+    }
+
+    @Test func onlyChatsComeFromAProject() {
+        var navigation = CompactNavigation()
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false, fromProject: "p1")
+        // Switching to Bots brings back that mode's selection under its list.
+        navigation.selectionChanged(to: .bot("ada"), keepsPlace: true)
+        #expect(navigation.parentProject == nil)
+        navigation.selectionChanged(to: .board("p1"), keepsPlace: false, fromProject: "p1")
+        #expect(navigation.parentProject == nil)
+        // A cleared selection that keeps its place (the other mode had none) has no project.
+        navigation.selectionChanged(to: .session("s1"), keepsPlace: false, fromProject: "p1")
+        navigation.selectionChanged(to: nil, keepsPlace: true)
+        #expect(navigation.parentProject == nil)
+    }
+
+    @Test func wideWindowsShowAProjectsChatInPlace() {
+        // The parent is passed only on a compact width; without it the chat is the detail.
+        #expect(DetailRoute(selection: .session("s1"), mode: .chats, hasBotMode: true) == .chat)
+        // Bots mode with nothing picked stays on the Bots' home.
+        #expect(DetailRoute(selection: nil, mode: .bots, hasBotMode: true, parentProject: "p1") == .botsHome)
+        #expect(DetailRoute(selection: .bot("ada"), mode: .bots, hasBotMode: true, parentProject: "p1") == .chat)
+        #expect(DetailRoute(selection: .board("p1"), mode: .chats, hasBotMode: true).backSelection == .project("p1"))
+    }
+
     @Test func theScreenStartsOnScreen() {
         // Wide windows never push: the detail is always there.
         #expect(CompactNavigation().showsDetail)

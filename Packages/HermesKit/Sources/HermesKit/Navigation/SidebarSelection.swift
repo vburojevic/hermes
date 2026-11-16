@@ -64,19 +64,36 @@ public enum DetailRoute: Hashable, Sendable {
     case group(String)
     case project(String)
     case board(String)
+    /// A chat opened from a project's home, on a compact width: it pushes over that home, so
+    /// Back returns to the project (`docs/projects.md` §2).
+    case projectChat(String)
     case allProjects
 
-    /// - Parameter hasBotMode: the gateway has a Hermes backend linked (a roster).
-    public init(selection: SidebarItem?, mode: SidebarMode, hasBotMode: Bool) {
+    /// - Parameters:
+    ///   - hasBotMode: the gateway has a Hermes backend linked (a roster).
+    ///   - parentProject: the project the selected chat was opened from
+    ///     (`CompactNavigation.parentProject`), passed only on a compact width. Wider windows show
+    ///     the chat in place of the project, as the sidebar is there to go back with.
+    public init(selection: SidebarItem?, mode: SidebarMode, hasBotMode: Bool, parentProject: String? = nil) {
         switch selection {
-        case nil: self = mode == .bots && hasBotMode ? .botsHome : .chat
-        case .session, .bot: self = .chat
+        case nil where mode == .bots && hasBotMode: self = .botsHome
+        case nil, .session: self = parentProject.map(DetailRoute.projectChat) ?? .chat
+        case .bot: self = .chat
         case .tasks: self = .tasks
         case .skills: self = .skills
         case .group(let id): self = .group(id)
         case .project(let id): self = .project(id)
         case .board(let id): self = .board(id)
         case .allProjects: self = .allProjects
+        }
+    }
+
+    /// What Back from this screen selects when it returns to another screen rather than the list:
+    /// a project's chat and its Board go back to the project.
+    public var backSelection: SidebarItem? {
+        switch self {
+        case .projectChat(let id), .board(let id): .project(id)
+        default: nil
         }
     }
 }
@@ -134,6 +151,18 @@ public struct CompactNavigation: Equatable, Sendable {
     /// it is pushed. A chat that was backed out of stays selected, but isn't open: it reads no
     /// replies and counts as unread again.
     public var showsDetail = true
+    /// The project whose home the selected chat was opened from (`docs/projects.md` §2): a compact
+    /// window pushes the chat over that home, so Back returns to the project and a second Back to
+    /// the list. Nil for a chat opened any other way (the list, a notification, search, a link),
+    /// which goes back to the list.
+    public private(set) var parentProject: String?
+    /// The project whose home is on screen under a collapsed split view that says the list is.
+    /// Back from a screen pushed over the home (its chat, its Board) leaves the home on screen, but
+    /// the split view reports that pop as going back to the list; asked to show the detail again,
+    /// it popped the next screen pushed over the home as soon as it came. While this is set, the
+    /// window leaves the split view's column as it is and counts the home as on show, until a
+    /// screen is pushed anywhere but over that home.
+    public private(set) var homeUnderList: String?
 
     public init() {}
 
@@ -141,19 +170,34 @@ public struct CompactNavigation: Equatable, Sendable {
     /// other mode's selection under its list, or when the screen on show only gets a new name (a
     /// draft filed under its chat once sent); a selection that clears (its chat deleted) leaves
     /// the window where it is too, and `dismiss()` says when it should go back.
-    public mutating func selectionChanged(to item: SidebarItem?, keepsPlace: Bool) {
+    /// - Parameter project: the project home the chat (or a new chat's draft, `nil`) was opened
+    ///   from. A chat that only gets a new name keeps the project it came from.
+    public mutating func selectionChanged(to item: SidebarItem?, keepsPlace: Bool, fromProject project: String? = nil) {
+        parentProject = switch item {
+        case .session, nil: project ?? (keepsPlace && item != nil ? parentProject : nil)
+        default: nil
+        }
         guard item != nil, !keepsPlace else { return }
         pushes += 1
+        if let home = homeUnderList, item != .board(home), parentProject != home { homeUnderList = nil }
     }
 
     /// A screen asked for by name: a row picked (even the selected one), New Chat, All Bots, a
     /// window opening on what it showed last.
     public mutating func show() {
         pushes += 1
+        // A new chat started from the project's home opens over it.
+        if let home = homeUnderList, parentProject != home { homeUnderList = nil }
+    }
+
+    /// A collapsed window went back from a chat or a Board to the project's home under it.
+    public mutating func poppedToProject(_ projectID: String) {
+        homeUnderList = projectID
     }
 
     /// The selected screen is gone: back to the list.
     public mutating func dismiss() {
         pops += 1
+        homeUnderList = nil
     }
 }
