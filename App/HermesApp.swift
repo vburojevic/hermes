@@ -82,9 +82,7 @@ struct HermesApp: App {
                     RootView()
                         .onAppear {
                             LaunchTrace.mark("first view on screen")
-                            #if os(iOS)
                             FrameMonitor.shared.startIfRequested()
-                            #endif
                             ScrollRun.shared.startIfRequested()
                         }
                 }

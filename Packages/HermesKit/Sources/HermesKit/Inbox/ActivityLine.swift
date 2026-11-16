@@ -46,6 +46,14 @@ public enum ActivityLine: Hashable, Sendable {
         return true
     }
 
+    /// What a row's cross-fade follows: what the chat does, not each of its newest words. Those
+    /// change up to four times a second while a reply streams; cross-faded, the line was always
+    /// mid-fade, and the Mac draws a fading line on the CPU (`docs/inbox.md` §3).
+    public var fadeKey: ActivityLine {
+        if case .writing = self { return .writing("") }
+        return self
+    }
+
     /// The words shimmer while Hermes works (`docs/chat.md` §4a). Waiting for the person or the
     /// gateway, and a stop, stay solid and still: nothing is working.
     public var shimmers: Bool {

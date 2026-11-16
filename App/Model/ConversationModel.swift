@@ -1152,7 +1152,12 @@ final class ConversationModel: Identifiable {
         if finished != lineSawFinishedTurn {
             lineSawFinishedTurn = finished
             lastLineVersion &+= 1
-            if finished { LoadTrace.mark(stableKey, "reply ended") }
+            if finished {
+                LoadTrace.mark(stableKey, "reply ended")
+                #if DEBUG
+                FrameMonitor.shared.mark("reply ended")
+                #endif
+            }
         }
         defer {
             // The chat lists' activity line follows the turn, and their last line the chat

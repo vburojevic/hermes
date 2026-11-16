@@ -688,6 +688,17 @@ struct InboxTests {
         #expect(end.hasPrefix("…") && end.hasSuffix("the last few words") && !end.contains("*") && end.count <= 21)
     }
 
+    @Test func aRowCrossFadesANewStepButNotEachNewWord() {
+        // New words while a reply streams keep the key: they switch in place.
+        #expect(ActivityLine.writing("The socket").fadeKey == ActivityLine.writing("The socket reconnects").fadeKey)
+        // Anything that says the chat does something else changes it, and fades.
+        #expect(ActivityLine.thinking.fadeKey != ActivityLine.writing("The socket").fadeKey)
+        let running = ActivityLine.tool(symbol: "terminal", title: "Running swift test", progress: nil)
+        #expect(running.fadeKey != ActivityLine.writing("Done").fadeKey)
+        #expect(running.fadeKey != ActivityLine.tool(symbol: "magnifyingglass", title: "Searching", progress: nil).fadeKey)
+        #expect(ActivityLine.waiting(.approval).fadeKey == .waiting(.approval))
+    }
+
     @Test func aMessageWaitingForTheGatewayIsAStillWaitNeverThinking() {
         // The row, the pill and the Live Activity say the message waits; nothing works on it yet.
         let line = ActivityLine.sending(gateway: "MacBook Pro")

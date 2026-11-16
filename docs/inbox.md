@@ -213,7 +213,7 @@ search).
 | Count appears / changes | Scale 0.6 → 1 (spring 0.3 / 0.7), digits roll (`.numericText`) |
 | Live dot | Still: an ink dot in a soft halo |
 | Activity shimmer | A soft `thinking-shimmer` band, the words' full ink, crosses them at a steady pace every 1.6 s, then rests ([chat.md](chat.md) §4a) |
-| Activity text | Cross-fade, at most 4 updates a second |
+| Activity text | Cross-fades when the chat does something else (thinking, a step, writing); a reply's newest words, at most 4 updates a second, switch in place. Cross-faded, a streaming chat's row was always mid-fade, and on the Mac that fade is drawn on the CPU: about a third of the app's main-thread time while an essay streamed (`ActivityLine.fadeKey`) |
 | Rows | Spring to the top (0.4 / 0.85) |
 | New Messages line | Fades in with the chat, out (0.3 s) |
 | Jump pill | Rises 12 pt with scale 0.9 → 1; its content morphs |
