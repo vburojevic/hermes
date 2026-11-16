@@ -1,4 +1,5 @@
 import HermesKit
+import os
 import SwiftUI
 
 /// The split view's sidebar: the gateway, Chats | Bots, search, the navigation rows, then the
@@ -588,8 +589,8 @@ private struct DestinationRow: View {
     }
 }
 
-/// The gateway in front, and a menu to switch or add one (iPad and Mac; on iPhone the large
-/// title's menu).
+/// The gateway in front, and a menu to switch or add one (iPad and Mac; on iPhone the toolbar's
+/// `GatewayToolbarMenu`).
 struct BotSwitcher: View {
     let workspace: BotWorkspace
 
@@ -681,8 +682,9 @@ struct GatewayMenuContent: View {
 }
 
 #if os(iOS)
-/// iPhone's list screen: the gateway as the large title with its menu, the connection under it,
-/// search in the bottom bar, and the unread count on the back button of what is pushed over it.
+/// iPhone's list screen: the gateway as the large title, the connection under it, the gateway menu
+/// leading the top bar, search in the bottom bar, and the unread count on the back button of what
+/// is pushed over it (`docs/design-to-swiftui.md` §6).
 private struct CompactListChrome: ViewModifier {
     @Bindable var workspace: BotWorkspace
     let isCompact: Bool
@@ -695,6 +697,11 @@ private struct CompactListChrome: ViewModifier {
                 .navigationTitle(workspace.bot.name)
                 .navigationBarTitleDisplayMode(.large)
                 .navigationSubtitle(ConnectionStatus(workspace).line)
+                // A large title shows no menu mark and opens nothing until it collapses, so the
+                // switcher is a button of its own; the collapsed title opens the same menu.
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { GatewayToolbarMenu(workspace: workspace) }
+                }
                 .toolbarTitleMenu { GatewayMenuContent(workspace: workspace) }
                 .searchable(text: $workspace.searchText, prompt: prompt)
                 .searchFocused(searchFocused)
@@ -702,10 +709,30 @@ private struct CompactListChrome: ViewModifier {
                     BackButtonCount(count: workspace.unread.unreadElsewhere)
                         .frame(width: 0, height: 0)
                         .accessibilityHidden(true)
+                    GatewayMenuHint(gateway: workspace.bot.name)
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
                 }
         } else {
             content
         }
+    }
+}
+
+/// iPhone's gateway switcher: a system toolbar menu with the `server.rack` symbol, so it shows at
+/// rest as a glass button and keeps its size at the largest text sizes. It holds the same menu as
+/// the iPad and Mac header, and with one gateway shows it checked above Add, Pair and Manage.
+private struct GatewayToolbarMenu: View {
+    let workspace: BotWorkspace
+
+    var body: some View {
+        Menu {
+            GatewayMenuContent(workspace: workspace)
+        } label: {
+            Label(workspace.bot.name, systemImage: "server.rack")
+        }
+        .accessibilityLabel(Text("Gateway, \(workspace.bot.name)"))
+        .accessibilityIdentifier("sidebar.gatewayMenu")
     }
 }
 
@@ -731,13 +758,8 @@ private struct BackButtonCount: UIViewControllerRepresentable {
             apply()
         }
 
-        /// The screen the navigation controller holds: the first ancestor whose parent it is.
         func apply() {
-            var screen: UIViewController? = self
-            while let current = screen, !(current.parent is UINavigationController) {
-                screen = current.parent
-            }
-            guard let item = screen?.navigationItem else { return }
+            guard let item = navigationScreen?.navigationItem else { return }
             if count > 0 {
                 let title = count.formatted()
                 guard item.backBarButtonItem?.title != title else { return }
@@ -750,6 +772,89 @@ private struct BackButtonCount: UIViewControllerRepresentable {
                 item.backButtonDisplayMode = .minimal
             }
         }
+    }
+}
+
+/// VoiceOver's hint for the gateway menu. SwiftUI hands a toolbar menu's label and identifier to
+/// its bar button but drops its hint (and its help text), and clears one set on the bar button
+/// item, so this sets it on the button the navigation bar draws, found by the menu's identifier.
+/// The bar builds that button again whenever SwiftUI hands it new items, so the hint goes back on
+/// each time, once the bar has laid the new button out.
+private struct GatewayMenuHint: UIViewControllerRepresentable {
+    /// Unused by the probe itself: a new gateway is what makes SwiftUI hand the bar new items, and
+    /// passing it here runs `updateUIViewController` then, so the hint goes back on.
+    let gateway: String
+
+    func makeUIViewController(context: Context) -> Probe { Probe() }
+
+    func updateUIViewController(_ probe: Probe, context: Context) {
+        probe.applySoon()
+    }
+
+    final class Probe: UIViewController {
+        private weak var observedItem: UINavigationItem?
+        private var itemsObservation: NSKeyValueObservation?
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            applySoon()
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            applySoon()
+        }
+
+        func applySoon() {
+            Task { @MainActor [weak self] in self?.apply() }
+        }
+
+        private func apply() {
+            guard let screen = navigationScreen, let bar = screen.navigationController?.navigationBar else { return }
+            // On a cold launch the probe joins the hierarchy before its screen joins the navigation
+            // controller, so the items are watched from the first time the screen's item is found.
+            if observedItem !== screen.navigationItem {
+                observedItem = screen.navigationItem
+                itemsObservation = screen.navigationItem.observe(\.leadingItemGroups) { [weak self] _, _ in
+                    Task { @MainActor in self?.applySoon() }
+                }
+            }
+            bar.layoutIfNeeded()
+            guard let button = bar.descendant(identified: "sidebar.gatewayMenu") else {
+                #if DEBUG
+                // No UI test can read a hint, so a bar that no longer carries the menu's identifier
+                // on the button it draws shows up here, rather than as VoiceOver going quiet. A chat
+                // pushed over the list takes the bar, and the menu with it, so that isn't counted.
+                if bar.topItem === screen.navigationItem {
+                    Logger(subsystem: "co.caffeinatedcode.hermes", category: "sidebar")
+                        .debug("The gateway menu's bar button wasn't found; its VoiceOver hint is missing")
+                }
+                #endif
+                return
+            }
+            button.accessibilityHint = String(localized: "Switches gateways, or adds or pairs one.")
+        }
+    }
+}
+
+private extension UIViewController {
+    /// The screen the navigation controller holds: the first ancestor, or self, whose parent it is.
+    var navigationScreen: UIViewController? {
+        var screen: UIViewController? = self
+        while let current = screen, !(current.parent is UINavigationController) {
+            screen = current.parent
+        }
+        return screen
+    }
+}
+
+private extension UIView {
+    func descendant(identified identifier: String) -> UIView? {
+        if accessibilityIdentifier == identifier { return self }
+        for subview in subviews {
+            if let match = subview.descendant(identified: identifier) { return match }
+        }
+        return nil
     }
 }
 #endif
