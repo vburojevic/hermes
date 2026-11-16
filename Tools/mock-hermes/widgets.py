@@ -1389,9 +1389,9 @@ def install_backend(backend_globals, chats, push=None):
     chats.run_chat_turn = run_chat_turn
     original_discussion = chats.run_discussion
 
-    def run_discussion(room, text, wait=True, approve=False):
+    def run_discussion(room, text, wait=True, approve=False, **more):
         if room["room_id"] in ROOMS and matches(text):
             return room_turn(room, text)
-        return original_discussion(room, text, wait=wait, approve=approve)
+        return original_discussion(room, text, wait=wait, approve=approve, **more)
 
     chats.run_discussion = run_discussion
