@@ -77,7 +77,8 @@ eyes or dots; their only motion is a slow breath (§3).
 
 Drawn exactly as Hermes draws them, some shapes were cut off (the triangle's tip), some loomed over
 others, and narrow shapes let the eyes drift off the body. So the app keeps Hermes's outlines but
-fits each one into the box once, at launch (`FaceBody.of(_:)`, cached per shape):
+fits each one into the box once, at launch (`FaceBody.of(_:)`, cached per shape). The fit starts on a
+background task from `AppModel.init`, so it stays off the main thread while the window opens:
 
 1. Sample the outline at 480 points and resample it evenly by arc length.
 2. Scale it to the same weight for every shape: about 680 square units (a circle about 29.5 units
