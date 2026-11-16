@@ -1,6 +1,10 @@
-#if DEBUG && os(iOS)
+#if DEBUG
 import QuartzCore
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Debug only (`-HERMES_FRAME_LOG YES`): logs every frame that took longer than its budget, so a
 /// hitch during an animation (opening a chat, going back) shows as a line with its length. Times
@@ -34,7 +38,13 @@ final class FrameMonitor: NSObject {
 
     func startIfRequested() {
         guard UserDefaults.standard.bool(forKey: "HERMES_FRAME_LOG"), link == nil else { return }
+        #if os(iOS)
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        #else
+        // The Mac's display link follows the screen it's made from: the main one, where the
+        // window opens in a measuring run.
+        guard let link = NSScreen.main?.displayLink(target: self, selector: #selector(tick(_:))) else { return }
+        #endif
         link.add(to: .main, forMode: .common)
         self.link = link
         start = Self.processStart()

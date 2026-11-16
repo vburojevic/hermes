@@ -409,6 +409,9 @@ struct RootView: View {
             for round in 1...max(1, rounds > 0 ? rounds : 3) {
                 let conversation = chat.map { workspace.conversation(forKey: $0) } ?? workspace.currentConversation
                 conversation.draft = rounds == 1 ? text : "\(text) (\(round))"
+                #if DEBUG
+                FrameMonitor.shared.mark("send-here: sending")
+                #endif
                 conversation.send()
                 try? await Task.sleep(for: .seconds(20))
             }

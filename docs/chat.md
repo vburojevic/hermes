@@ -862,7 +862,7 @@ typing bubbles, no waving dots and no spinners for agent work.
 | A chat, while the reply streams | Nothing: the words arriving are the sign. The header goes still ("Working · 3 tools") | The composer's Stop button says it's still running |
 | A Bot chat's toolbar | The face's mood (eyes up while thinking, a glance while working). No dots | The subtitle keeps the handle. Never "Thinking…", never orange (orange means it needs you) |
 | A group chat, before a Bot's first words | `botThinkingLine`: the Bot's face thinking, no dots, and "Ada is thinking…" shimmering. One line per Bot, at most two, then "+1 more" | – |
-| Rows: chats, Bots, groups, the Mac sidebar | The activity line's words shimmer (`activityLine`) | A still ink dot before a running chat's title. Faces show the mood, without dots |
+| Rows: chats, Bots, groups, the Mac sidebar | The activity line's words shimmer (`activityLine`) | A still ink dot before a running chat's title. Faces show the mood, without dots. While a reply streams, its newest words switch in place: only a new step cross-fades ([inbox.md](inbox.md) §3) |
 | The jump pill | "Hermes is writing…" (or the running step) shimmers (`newMessagesPillLive`) | – |
 | Live Activity, Dynamic Island, notifications, widgets | Static words (the system can't shimmer) | The face shows its dots only where it stands alone (the compact Island) |
 | Waiting for you, or stopped | Nothing: solid orange or red words ("Waiting for your approval", "Waiting for your answer" while a question or other request waits on its card) | The card says what's waiting; the line above it doesn't shimmer the tool that asked |

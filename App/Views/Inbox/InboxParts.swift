@@ -204,8 +204,9 @@ extension ActivityLine {
 }
 
 /// The line that replaces a row's preview while something happens (`activityLine` and its
-/// variants): a glyph when it names the tool, helpers or a need, then the words, cross-fading as
-/// they change. The words shimmer while Hermes works; waiting for you and stopped stay solid.
+/// variants): a glyph when it names the tool, helpers or a need, then the words, cross-fading when
+/// the chat does something else. The words shimmer while Hermes works; waiting for you and stopped
+/// stay solid.
 struct ActivityLineView: View {
     let line: ActivityLine
     var font = InboxMetrics.lineFont
@@ -230,7 +231,8 @@ struct ActivityLineView: View {
                     .contentTransition(.opacity)
             }
         }
-        .animation(.smooth(duration: 0.25), value: line)
+        // A new step cross-fades; a reply's newest words switch in place (`ActivityLine.fadeKey`).
+        .animation(.smooth(duration: 0.25), value: line.fadeKey)
     }
 }
 
