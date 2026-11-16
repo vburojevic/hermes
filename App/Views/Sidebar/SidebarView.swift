@@ -5,7 +5,8 @@ import SwiftUI
 /// The split view's sidebar: the gateway, Chats | Bots, search, the navigation rows, then the
 /// history or the roster (Elyx `blocks/sidebar.elyx`). On iPad and Mac it carries its own header
 /// and the connection footer. On iPhone it is the first screen: the gateway is the large title
-/// (its menu switches gateways), the connection its subtitle, Settings top right, and the filter,
+/// (its menu switches gateways), the connection its subtitle (from AX1 up the list's first row),
+/// Settings top right, and the filter,
 /// search and compose sit in the bottom bar (`docs/design-to-swiftui.md` §6).
 struct SidebarView: View {
     @Bindable var workspace: BotWorkspace
@@ -24,9 +25,16 @@ struct SidebarView: View {
     /// laying out every kept chat first (`docs/inbox.md` §1).
     @State private var isFirstFrame = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var query: String { workspace.searchText.trimmingCharacters(in: .whitespaces) }
     private var isSearching: Bool { !query.isEmpty }
+
+    /// iPhone's connection status: the subtitle under the large title, or from AX1 up the list's
+    /// first row, where it wraps instead of being cut off (`docs/design-to-swiftui.md` §6).
+    private var statusPlacement: ConnectionStatusPlacement {
+        ConnectionStatusPlacement(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize, isSearching: isSearching)
+    }
 
     /// iPhone (and an iPad window as narrow as one): the list is a screen of its own.
     private var isCompact: Bool {
@@ -102,7 +110,7 @@ struct SidebarView: View {
             }
             .toolbar { toolbar }
             #if os(iOS)
-            .modifier(CompactListChrome(workspace: workspace, isCompact: isCompact, prompt: searchPrompt, searchFocused: $searchFocused))
+            .modifier(CompactListChrome(workspace: workspace, isCompact: isCompact, statusPlacement: statusPlacement, prompt: searchPrompt, searchFocused: $searchFocused))
             .onChange(of: router?.sidebarSearchFocus) { if isCompact { searchFocused = true } }
             #endif
             // The chats search follows the field; Bots mode filters the roster itself.
@@ -142,6 +150,14 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var rowContent: some View {
+        if isCompact, statusPlacement.showsRow {
+            // The connection under the large title at the accessibility sizes, above the Chats /
+            // Bots switch, or above Tasks without Bot Mode. It isn't a button.
+            ConnectionStatusLabel(workspace: workspace)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 10)
+                .modifier(SidebarRowInsets())
+        }
         if isCompact, !isSearching, workspace.roster != nil {
             // Chats | Bots under the large title, scrolling with the list.
             SidebarModeSwitcher(mode: $workspace.sidebarMode, unread: workspace.unread)
@@ -682,12 +698,14 @@ struct GatewayMenuContent: View {
 }
 
 #if os(iOS)
-/// iPhone's list screen: the gateway as the large title, the connection under it, the gateway menu
+/// iPhone's list screen: the gateway as the large title, the connection under it (from AX1 up the
+/// list's first row says it instead, `ConnectionStatusPlacement`), the gateway menu
 /// leading the top bar, search in the bottom bar, and the unread count on the back button of what
 /// is pushed over it (`docs/design-to-swiftui.md` §6).
 private struct CompactListChrome: ViewModifier {
     @Bindable var workspace: BotWorkspace
     let isCompact: Bool
+    let statusPlacement: ConnectionStatusPlacement
     let prompt: LocalizedStringKey
     var searchFocused: FocusState<Bool>.Binding
 
@@ -696,7 +714,9 @@ private struct CompactListChrome: ViewModifier {
             content
                 .navigationTitle(workspace.bot.name)
                 .navigationBarTitleDisplayMode(.large)
-                .navigationSubtitle(ConnectionStatus(workspace).line)
+                // The system draws the subtitle on one line, so at the accessibility sizes it would
+                // stop mid-word: it stays empty there and the list's first row says it in full.
+                .navigationSubtitle(statusPlacement.showsSubtitle ? ConnectionStatus(workspace).line : "")
                 // A large title shows no menu mark and opens nothing until it collapses, so the
                 // switcher is a button of its own; the collapsed title opens the same menu.
                 .toolbar {
@@ -927,22 +947,41 @@ enum GatewayAvatarRasterizer {
     }
 }
 
-/// How the gateway (and in Bots mode, Bot Mode) is doing: a status dot and one line.
+/// How the gateway (and in Bots mode, Bot Mode) is doing: a status dot and one line. The iPad and
+/// Mac sidebar footer shows it, and iPhone's chat list at the accessibility sizes.
 struct ConnectionStatusLabel: View {
     let workspace: BotWorkspace
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// How far the middle of a footnote line sits above its baseline (0.355 em of SF at 13 pt), so
+    /// the dot centres on the first line when the line wraps.
+    @ScaledMetric(relativeTo: .footnote) private var firstLineMiddle: CGFloat = 4.6
 
     var body: some View {
         let status = ConnectionStatus(workspace)
-        HStack(spacing: 8) {
-            StatusDot(color: status.color)
-            Text(status.line)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // The line wraps between words rather than stopping at "Connecte…", with the
+                // larger dot beside its first line, not the middle of the block
+                // (`docs/design-to-swiftui.md` §6). The guide may run off the main actor, so it
+                // takes the offset as a value.
+                let middle = firstLineMiddle
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    StatusDot(color: status.color, size: 11)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + middle }
+                    Text(status.line)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    StatusDot(color: status.color)
+                    Text(status.line)
+                }
+                .lineLimit(1)
+            }
         }
         .font(.footnote)
         .foregroundStyle(Theme.secondaryText)
-        // One line until the accessibility sizes, where it wraps rather than stopping at "Connecte…".
-        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
         .accessibilityElement(children: .combine)
     }
 }
