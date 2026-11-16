@@ -31,6 +31,59 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611160232 (November 16, 2026)
+
+- **Widgets:** pictures a Bot keeps on its gateway show in the widget
+- **Widgets:** a routine that types a widget into its report shows the card instead of code
+- **Widgets:** a widget that can't show keeps its place and the reply around it stays
+- **Widgets:** a widget that stops halfway shows "Couldn't show this card" in its place, never raw JSON
+- **Widgets:** cards show where their data comes from, sliders their glyph, and counts and due dates read naturally
+- **Chat:** the jump pill counts every new message and takes you to the first of them
+- **Chat:** a finished background process's notice never shows as your message while Hermes answers it
+- **Chat:** a reply that finished while you were away shows instead of an endless thinking timer
+- **Chat:** a turn started elsewhere or a send whose answer never came ends from the stored chat when the socket goes quiet
+- **Chat:** a long approval card you scrolled stays where you left it when the keyboard or composer changes its room
+- **Chat:** an approval card no longer leaves the composer's bar blank on iOS 26
+- **Chat:** a long approval card scrolls under the top bar so the composer stays on screen when the phone is turned
+- **Chat:** a Reply swipe on a message follows your finger from where it touched down
+- **Navigation:** on iPhone the chat list is the first screen and a chat opens on top of it; iPad and Mac use the system sidebar
+- **Navigation:** on iPad the sidebar keeps its header, footer and the open chat's highlight
+- **Navigation:** on iPhone, deleting or archiving the open chat goes back to the chat list
+- **Navigation:** iPhone opens on the chat list when you left it there
+- **Accessibility:** VoiceOver offers each chat row's actions once on iPhone and iPad
+- **Chats:** the end of a filtered list keeps loading older chats while it stays on screen
+- **Chats:** VoiceOver stays on the row you were reading when a reply arrives
+- **Chats:** the list starts with this app's recent chats; other platforms and scheduled runs are a filter away
+- **Chats:** scheduled runs stay out of the chat list, and empty runs show nowhere
+- **Chats:** a chat you went back from on iPhone shows what came in since, group chats included
+- **Bots:** a group chat's badge counts every new message, however long the chat has run
+- **Bots:** a Bot's photo no longer goes blank after you move around
+- **Plugins:** the app installs the widgets plugin that draws a routine's widget
+- **Plugins:** a version of Hermes that can't sync hidden plugins no longer counts as something to set up
+- **Plugins:** plugins you hide from Suggested stay hidden on all your devices
+- **Plugins:** the app updates the widgets plugin so cards show where their data comes from and counts read naturally
+- **Composer:** recording a second voice message no longer crashes as transcription starts
+- **Composer:** files and PDFs attach and send again, and a refused file says why
+- **Composer:** typing with Pinyin and other input methods keeps the word you're composing and your place
+- **Board:** live updates no longer crash when the connection check answers twice
+- **Skills:** opening a skill shows the skill instead of the list again
+- **Talk:** the call summary collapses when you tap it
+- **Memory:** setting up a provider no longer crashes on a repeated field
+- **Connections:** reach a gateway behind an access gateway with a service token, and Hermes's key still on
+- **Connections:** a preview leaves the access token behind when it leaves the gateway
+- **Connections:** reach a gateway behind a proxy that asks for a client certificate
+- **Connections:** a certificate from an issuing CA is sent with its chain, and checking another certificate asks the proxy again
+- **Connections:** a certificate refusal keeps the connection checking, so a drop that looked like one reconnects
+- **Connections:** sign in to a gateway's access gateway in the app, and a chat picks up where it left off after signing in again
+- **Connections:** signing in again from Edit Gateway picks up a waiting chat, and Bot Mode waits for the sign-in instead of retrying
+- **Connections:** a Bot chat and the Bots list offer Sign In when the access sign-in runs out
+- **Connections:** Edit Gateway keeps a sign-in made on the Access page on iPhone and iPad
+- **Connections:** a Bot chat no longer says Reconnecting while it waits for the access sign-in
+- **Push:** the app installs plugin 1.4.9, which runs on a Windows gateway host
+- **Projects:** a chat's menu in a project can archive it, with Undo, and mark it read, pin it or mute it
+- **Projects:** swipe a project's chat to archive or mute it, as in the chat list
+- **Projects:** a muted chat shows the slashed bell before its time in its lane, as in the chat list
+
 ### Build 2611080939 (November 8, 2026)
 
 - **Chat:** bullets, code blocks and tables fade in at the stream's pace while a reply writes
