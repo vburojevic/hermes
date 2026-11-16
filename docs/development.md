@@ -505,10 +505,19 @@ its end to its top and back, `-HERMES_SCROLL_SPEED` points a second (2000 by def
 `-HERMES_SCROLL_AFTER` seconds after launch (10), only up with `-HERMES_SCROLL_LEGS up` (to send,
 jump to the end or let a turn end from far back): a step a frame, taken by the chat as a drag, so
 pages come in at the top and go below as they would under a finger. Each leg is marked
-(`SCROLLRUN`, and in the frame log on iOS). It works on the Mac too. With `-HERMES_SCROLL_LOG YES`
+(`SCROLLRUN`, and in the frame log on iOS). It works on the Mac too, where each leg's mark says
+whether the window is on screen or covered, and a change mid-leg is marked (`window covered`): a
+covered window gets no frames, so a run with one measures nothing. With `-HERMES_SCROLL_LOG YES`
 the window's changes show between the per-frame offsets (`SCROLLLOG drop below`, `later in`,
 `drop above`, `back above`, `earlier page`) with each step the run set (`SCROLLRUN set`): across
-every change but a new earlier page the offset must stay where the run put it.
+every change but a new earlier page the offset must stay where the run put it. Each step also says
+where the run found the chat (`from`), and each row logs its top in the content as it moves
+(`SCROLLLOG row`). Between two steps the first row on screen moved by its top's change less the
+offset's change the chat made itself: that stays within 2 pt, across an earlier page too.
+`SCROLLLOG at the first message` marks the run reaching the chat's first message, and
+`waiting at the edge` and `moving again` the run waiting at an edge for rows (up to 4 s; a leg
+stops after 150 s). On the Mac, `-HERMES_SCROLL_WHO YES` logs each move of the chat the run didn't
+make, with who made it (`SCROLLRUN chat moved`, from where to where, and the call stack).
 `-HERMES_SCROLL_THEN_JUMP <s>` (with `-HERMES_SCROLL_LEGS up`) jumps to the end that long after
 the run, as ⌘↓ would, and `-HERMES_SEARCH_OPEN YES` (with `-HERMES_SEARCH`) opens the first result:
 both reach on the Mac what a tap or a key would, without taking over the screen.

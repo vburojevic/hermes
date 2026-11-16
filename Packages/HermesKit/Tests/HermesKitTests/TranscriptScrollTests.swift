@@ -47,4 +47,22 @@ struct TranscriptScrollTests {
         #expect(TranscriptWindow.bringBackSteps * TranscriptWindow.fillStep >= TranscriptWindow.readingPage)
         #expect((TranscriptWindow.bringBackSteps - 1) * TranscriptWindow.fillStep < TranscriptWindow.readingPage)
     }
+
+    @Test("The earlier page is asked for before the window reaches the oldest held message")
+    func fetchesAhead() {
+        let ahead = TranscriptWindow.fetchAheadRows
+        #expect(TranscriptWindow.fetchesEarlier(first: ahead, hasEarlier: true, isLoading: false))
+        #expect(TranscriptWindow.fetchesEarlier(first: 0, hasEarlier: true, isLoading: false))
+        #expect(!TranscriptWindow.fetchesEarlier(first: ahead + 1, hasEarlier: true, isLoading: false))
+        #expect(!TranscriptWindow.fetchesEarlier(first: 10, hasEarlier: false, isLoading: false))
+        #expect(!TranscriptWindow.fetchesEarlier(first: 10, hasEarlier: true, isLoading: true))
+    }
+
+    @Test("A drop below never takes a row that starts on screen")
+    func dropsOnlyBelow() {
+        #expect(TranscriptWindow.dropsOnlyBelow(firstGoingTop: 1200, screenBottom: 1000))
+        #expect(TranscriptWindow.dropsOnlyBelow(firstGoingTop: 1000, screenBottom: 1000))
+        // Counted from rows a page had pushed far above the view.
+        #expect(!TranscriptWindow.dropsOnlyBelow(firstGoingTop: 2322, screenBottom: 11514))
+    }
 }

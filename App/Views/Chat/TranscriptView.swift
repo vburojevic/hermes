@@ -69,6 +69,10 @@ struct TranscriptView: View {
     /// Earlier messages are going in above: the content keeps its bottom in place meanwhile, so
     /// what the reader is looking at stays put.
     @State private var isPrepending = false
+    /// The row that was first while a page goes in above it: as it moves down the content, the
+    /// view moves with it in the same pass (`ScrollHold`), so what's on screen stays put.
+    @State private var heldKey: String?
+    @State private var hold = ScrollHold()
     /// Later rows are going back in below (`showLater`).
     @State private var isAppending = false
     /// Blank room at the top where rows that went above the screen were (`dropAbove`): the rows
@@ -79,6 +83,8 @@ struct TranscriptView: View {
     @State private var aboveRoom: CGFloat = 0
     /// Rows whose place in the content is read (`edge.frames`), for `dropAbove`.
     @State private var measuredKeys: Set<String> = []
+    /// The first row a drop below would take off, whose top is read first (`edge.dropCheckTop`).
+    @State private var dropCheckKey: String?
     /// The composer's height over the end of the chat (see the end marker).
     @State private var bottomInset: CGFloat = 0
     /// The jump pill stands in the room between the bars. A composer menu that takes that room
@@ -179,12 +185,34 @@ struct TranscriptView: View {
                                     .opacity(flashOn ? 1 : 0)
                                     .padding(-10)
                             }
+                            if shown.key == heldKey {
+                                Color.clear
+                                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { old, new in
+                                        hold.shift(by: new - old)
+                                    }
+                            }
+                            if shown.key == dropCheckKey {
+                                Color.clear
+                                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { top in
+                                        edge.dropCheckTop = top
+                                    }
+                            }
                             if measuredKeys.contains(shown.key) {
                                 Color.clear
                                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.contentSpace)) } action: { frame in
                                         edge.frames[shown.key] = frame
                                     }
                             }
+                            #if DEBUG
+                            // With the scroll log: each row's top in the content, as it moves, so
+                            // a check can tell what moved on screen (`SCROLLRUN set … from`).
+                            if Self.logsScroll {
+                                Color.clear
+                                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { top in
+                                        print(String(format: "SCROLLLOG row %@ %.1f", shown.key, Double(top)))
+                                    }
+                            }
+                            #endif
                             if shown.key == anchorKey {
                                 Color.clear
                                     .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { top in
@@ -246,6 +274,7 @@ struct TranscriptView: View {
                 }
             }
             .scrollTargetLayout()
+            .background { ScrollHoldFinder(hold: hold) }
             .transformEnvironment(\.pausesDecorativeMotion) { paused in
                 paused = paused || isGliding
             }
@@ -257,6 +286,7 @@ struct TranscriptView: View {
             .padding(.bottom, Self.bottomPadding)
             .frame(maxWidth: .infinity)
             .coordinateSpace(.named(Self.contentSpace))
+            .modifier(WholePointHeight())
         }
         .environment(\.references, references)
         .environment(\.widgetHost, conversation.widgetHost)
@@ -317,6 +347,7 @@ struct TranscriptView: View {
             let distance = new.distance - runway
             edge.distance = distance
             edge.top = new.top
+            edge.visibleTop = new.visibleTop
             edge.container = new.container
             if new.inset != bottomInset { bottomInset = new.inset }
             let fits = new.container >= pillHeight + Self.pillGap
@@ -346,11 +377,9 @@ struct TranscriptView: View {
             // Near the top while reading back (or a short page that doesn't fill the screen):
             // the next page of earlier messages, from memory or from the gateway.
             let fillsScreen = new.height > new.container
-            // Near the top of the rows shown (below any room left by rows gone above). Rows that
-            // went come back from further off, so they're in before the reader gets there.
-            let reach = edge.droppedAbove.isEmpty ? Self.nearTop : Self.nearEdge
-            let nearTop = new.visibleTop < 20 + aboveRoom + reach
-            let wasNearTop = old.visibleTop < 20 + aboveRoom + reach
+            // Near the top of the rows shown (below any room left by rows gone above).
+            let nearTop = new.visibleTop < 20 + aboveRoom + Self.nearEdge
+            let wasNearTop = old.visibleTop < 20 + aboveRoom + Self.nearEdge
             if nearTop, !wasNearTop || isScrolledByHand || !fillsScreen, !isFollowing || isScrolledByHand || !fillsScreen {
                 showEarlier()
             }
@@ -598,11 +627,9 @@ struct TranscriptView: View {
     /// Rows kept past the screen on the side the reader is leaving, reading back.
     private static let keptBeyond = TranscriptWindow.keptBeyond
 
-    /// How near the top a page of earlier messages comes in.
-    private static let nearTop: CGFloat = 400
-
-    /// How near an edge of the window rows held back come in: early enough to be built, a few a
-    /// frame, before the reader gets there.
+    /// How near an edge of the window rows come in, held back or a page of earlier ones: early
+    /// enough to be built before the reader gets there. A page asked for 400 points from the top
+    /// was still going in when a fast scroll reached it.
     private static let nearEdge: CGFloat = 1200
 
     /// The loading row above the rows shown, and the room it takes with the stack's spacing.
@@ -726,6 +753,9 @@ struct TranscriptView: View {
         let all = conversation.rows
         let first = firstShownIndex(in: all)
         guard first > 0 else {
+            #if DEBUG
+            if Self.logsScroll, !conversation.hasEarlierMessages { print("SCROLLLOG \(Int(CACurrentMediaTime() * 1000) % 100_000)ms at the first message") }
+            #endif
             // Everything held is on screen: ask the gateway for the page before it.
             guard conversation.hasEarlierMessages, !conversation.isLoadingEarlier else { return }
             Task {
@@ -734,13 +764,24 @@ struct TranscriptView: View {
             }
             return
         }
+        // The page before the oldest held message is asked for while rows held above the window
+        // still fill the scroll: asked for at the top, a fast scroll waited there for it.
+        if TranscriptWindow.fetchesEarlier(first: first, hasEarlier: conversation.hasEarlierMessages, isLoading: conversation.isLoadingEarlier) {
+            Task {
+                await conversation.loadEarlier()
+                // A view that reached the top while the page was on its way waits there without
+                // scrolling, so nothing else would show it.
+                showEarlierIfNearTop()
+            }
+        }
         let target = pageStart(in: all, above: first)
         let key = conversation.displayID(for: all[target])
-        let keep = conversation.displayID(for: all[first])
         let answers = ConversationModel.answers(in: all[target..<first])
         var instant = Transaction()
         instant.disablesAnimations = true
         isPrepending = true
+        // Its place is read from now, before the page goes in.
+        heldKey = conversation.displayID(for: all[first])
         Task { @MainActor in
             // Their Markdown parsed off the main thread first: a page of replies parsed in the
             // frame they go in stuttered the scroll.
@@ -748,13 +789,15 @@ struct TranscriptView: View {
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG") { print("SCROLLLOG earlier page \(first)->\(target)") }
             #endif
+            // The row that was first holds the view in place as the page goes in above it.
             withTransaction(instant) { firstShownKey = key }
             Task { @MainActor in
-                withTransaction(instant) { position.scrollTo(id: keep, anchor: .top) }
                 try? await Task.sleep(for: .milliseconds(250))
+                heldKey = nil
                 isPrepending = false
                 await withCheckedContinuation { done in NextFrame.run { done.resume() } }
                 dropBelow()
+                showEarlierIfNearTop()
             }
         }
     }
@@ -789,7 +832,15 @@ struct TranscriptView: View {
             try? await Task.sleep(for: .milliseconds(250))
             isPrepending = false
             dropBelow()
+            showEarlierIfNearTop()
         }
+    }
+
+    /// Once a page is in: the next one, if the view still sits near the top. A scroll asks for it
+    /// otherwise, and a view waiting at the top doesn't scroll, so it would wait there for good.
+    private func showEarlierIfNearTop() {
+        guard edge.visibleTop < 20 + aboveRoom + Self.nearEdge, !isFollowing || isScrolledByHand else { return }
+        showEarlier()
     }
 
     /// The loading row above the rows shown: more is held above them, or the gateway has more.
@@ -844,20 +895,42 @@ struct TranscriptView: View {
     }
 
     /// Reading back: rows more than `keptBeyond` below the screen leave the window. Only rows
-    /// below change, so with the top anchor the view keeps its place.
+    /// below change, so with the top anchor the view keeps its place. The first row to go is
+    /// measured first: the rows counted as on screen (`visibleKeys`) can still be the ones a
+    /// page going in above pushed off it, and a drop counted from them took the rows on screen.
     private func dropBelow() {
-        guard !isFollowing, !isPrepending, !isAppending, !edge.landing, !isGliding, flashKey == nil else { return }
+        guard !isFollowing, !isPrepending, !isAppending, !edge.landing, !isGliding, flashKey == nil, dropCheckKey == nil else { return }
         let all = conversation.rows
         let visible = Set(edge.visibleKeys)
         guard let lastVisible = all.lastIndex(where: { visible.contains(conversation.displayID(for: $0)) }) else { return }
         let end = windowEnd(in: all, from: firstShownIndex(in: all))
         guard let target = TranscriptWindow.lastAfterDropBelow(lastVisible: lastVisible, end: end) else { return }
-        #if DEBUG
-        if UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG") { print("SCROLLLOG drop below \(end - 1)->\(target) of \(all.count)") }
-        #endif
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) { lastShownKey = conversation.displayID(for: all[target]) }
+        let last = conversation.displayID(for: all[target])
+        let going = conversation.displayID(for: all[target + 1])
+        Task { @MainActor in
+            defer { dropCheckKey = nil }
+            edge.dropCheckTop = nil
+            dropCheckKey = going
+            for _ in 0..<6 where edge.dropCheckTop == nil {
+                await withCheckedContinuation { done in NextFrame.run { done.resume() } }
+            }
+            // Not measured, the reader went on, or the row is on screen: another time.
+            let screenBottom = edge.visibleTop + edge.container
+            guard let top = edge.dropCheckTop, !isFollowing, !isPrepending, !isAppending, !edge.landing, !isGliding,
+                  TranscriptWindow.dropsOnlyBelow(firstGoingTop: Double(top), screenBottom: Double(screenBottom)),
+                  conversation.rows.contains(where: { conversation.displayID(for: $0) == last }) else {
+                #if DEBUG
+                if Self.logsScroll { print("SCROLLLOG no drop below: row at \(Int(edge.dropCheckTop ?? -1)), screen ends \(Int(screenBottom))") }
+                #endif
+                return
+            }
+            #if DEBUG
+            if Self.logsScroll { print("SCROLLLOG drop below \(end - 1)->\(target) of \(all.count)") }
+            #endif
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { lastShownKey = last }
+        }
     }
 
     /// Reading back down: rows more than `keptBeyond` above the screen leave the window, and the
@@ -1067,6 +1140,8 @@ struct TranscriptView: View {
         var container: CGFloat = 0
         /// Where the view is (`ScrollEdge.top`).
         var top: CGFloat = 0
+        /// The top of what's visible (`ScrollEdge.visibleTop`).
+        var visibleTop: CGFloat = 0
         /// A message was just sent: the glide to it waits for the room after it.
         var landing = false
         /// The runway for the sent message has gone in; the glide goes once it's laid out.
@@ -1078,6 +1153,8 @@ struct TranscriptView: View {
         var dividerTop: CGFloat?
         /// Where the rows in `measuredKeys` are, in the content's coordinates.
         var frames: [String: CGRect] = [:]
+        /// Where the row in `dropCheckKey` starts, in the content's coordinates.
+        var dropCheckTop: CGFloat?
         /// Rows gone above the screen, nearest last: the first row of each few and the room
         /// they took (rows and spacing), so they come back exactly where they were.
         var droppedAbove: [(key: String, height: CGFloat)] = []
@@ -1158,6 +1235,9 @@ struct TranscriptView: View {
 
     private static let endID = "transcript-end"
     nonisolated private static let contentSpace = "transcript-content"
+    #if DEBUG
+    private static let logsScroll = UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG")
+    #endif
     /// Between the top bar and a message sending put at the top.
     private static let landingGap: CGFloat = 14
     /// The jump pill's gap above the composer (`docs/inbox.md`, the jump pill).
@@ -1296,12 +1376,13 @@ struct TranscriptView: View {
     /// What stays put when the content changes size: the bottom while following the end on the
     /// Mac (the content moves up in the same layout pass as it grows: a scroll request resolves
     /// against the previous frame, so following by scrolling trailed every change by a frame) and
-    /// while earlier messages go in above; the top otherwise (reading back, opening a fold).
+    /// while earlier messages go in above with no row held (`heldKey`); the top otherwise
+    /// (reading back, opening a fold, a held row moving the view itself).
     private var sizeChangeAnchor: UnitPoint {
         #if os(macOS)
         if isFollowing, !isScrolledByHand, !keepsTop, !holdsTurn { return .bottom }
         #endif
-        return isPrepending ? .bottom : .top
+        return isPrepending && heldKey == nil ? .bottom : .top
     }
 
     /// Once things stop moving, make sure the end really is on the composer: a change that lands
@@ -2166,6 +2247,42 @@ private struct TakesOfferedSize: ViewModifier {
     }
 }
 
+/// The chat's content, its height rounded up to a whole point on the Mac. When the content's
+/// height changes by a fraction of a point, `NSClipView` keeps its place by moving the view half
+/// a point (`_reflectDocumentViewFrameChange`), and reading back far moved it up to nine times a
+/// run. Whole points leave one such move a run; a slow frame can still show up to 3 points.
+private struct WholePointHeight: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        Rounded { content }
+        #else
+        content
+        #endif
+    }
+
+    private nonisolated struct Rounded: Layout {
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            guard let content = subviews.first else { return .zero }
+            let size = content.sizeThatFits(proposal)
+            return CGSize(width: size.width, height: size.height.rounded(.up))
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+        }
+
+        // Asked by default, the content would be laid out again to find its guides: the whole
+        // chat. A scroll view's content has none to pass up.
+        func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+            nil
+        }
+
+        func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGFloat? {
+            nil
+        }
+    }
+}
+
 /// A row that takes its height gradually as it appears: the space for it opens over the
 /// animation instead of in one frame. The row itself is laid out at full size from the start.
 struct GrowIn: ViewModifier, Animatable {
@@ -2284,3 +2401,79 @@ enum ReplyPhase: Equatable {
         }
     }
 }
+
+/// The chat's scroll view as the platform draws it, so a page of earlier messages going in above
+/// the screen moves it in the same pass (`docs/chat.md` §4). Neither the size-change anchor nor a
+/// scroll position held there: the screen showed other rows for a frame, a page's height away.
+@MainActor
+final class ScrollHold {
+    #if os(iOS)
+    fileprivate weak var view: UIScrollView?
+    #else
+    fileprivate weak var view: NSScrollView?
+    #endif
+
+    /// Moves what's shown down the content by `delta`, as the rows above it grew by that much.
+    func shift(by delta: CGFloat) {
+        guard let view, abs(delta) > 0.25 else { return }
+        #if os(iOS)
+        view.contentOffset.y += delta
+        #else
+        let clip = view.contentView
+        var origin = clip.bounds.origin
+        origin.y += view.documentView?.isFlipped == false ? -delta : delta
+        clip.scroll(to: origin)
+        view.reflectScrolledClipView(clip)
+        #endif
+    }
+}
+
+/// Finds the scroll view it sits in for `hold`.
+private struct ScrollHoldFinder {
+    let hold: ScrollHold
+}
+
+#if os(iOS)
+extension ScrollHoldFinder: UIViewRepresentable {
+    func makeUIView(context: Context) -> FinderView {
+        let view = FinderView()
+        view.hold = hold
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: FinderView, context: Context) {}
+
+    final class FinderView: UIView {
+        weak var hold: ScrollHold?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            var next = superview
+            while let view = next, !(view is UIScrollView) { next = view.superview }
+            hold?.view = next as? UIScrollView
+        }
+    }
+}
+#else
+extension ScrollHoldFinder: NSViewRepresentable {
+    func makeNSView(context: Context) -> FinderView {
+        let view = FinderView()
+        view.hold = hold
+        return view
+    }
+
+    func updateNSView(_ view: FinderView, context: Context) {}
+
+    final class FinderView: NSView {
+        weak var hold: ScrollHold?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            hold?.view = enclosingScrollView
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+#endif
