@@ -186,7 +186,13 @@ code field. The Mac reads the pasteboard when asked.
 - Chat toolbar: the centred model picker (a Bot Chat shows the Bot's title instead) and a
   trailing New Chat (a Bot Chat has Routines and a … menu). iPad and Mac add the Inspector button
   ([inspector.md](inspector.md)). Leading is the system's: the back button of a pushed chat on
-  iPhone, the sidebar button on iPad and the Mac. The app draws no button of its own there.
+  iPhone, the sidebar button on iPad and the Mac. The app draws no button of its own there,
+  except the gateway menu on iPhone's chat list.
+- iPhone's chat list leads its top bar with the gateway menu (`server.rack`), which shows at rest
+  and keeps its size at the largest text sizes; its items are the iPad and Mac header's. A large
+  title opens no menu until it collapses, so the title menu is only the second way in. VoiceOver
+  reads it as "Gateway, <name>" with the hint "Switches gateways, or adds or pairs one." Its touch
+  target is the system toolbar's, the same as the Settings gear's, not a frame of its own.
 - Not built yet: the toolbar shrinking while scrolling (frame `chatReplyMinimized`).
 - One `NavigationSplitView` (`MainView` in `RootView`; balanced, sidebar 240–380 pt, ideally 290)
   on every platform. The sidebar floats as inset glass by default on the current SDK. iPad in
@@ -233,7 +239,7 @@ column says where each item lives in the code now.
 | Routines, … menu (Bot Chat) | Trailing in the pushed Bot Chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar; Routines ⌥⌘R | `botToolbarPushed` | `BotChatViews` |
 | Inspector | Not on iPhone | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions | `ChatScreen.inspectorToolbarItem` |
 | Chats / Bots switch and counts | The switch as the root's first row, under the large title | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
-| Gateway name, switcher, Add Gateway, Pair a Device, Manage Gateways | The root's large title with a menu | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `CompactListChrome` and `GatewayMenuContent` (`SidebarView`); `BotSwitcher` |
+| Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The root's large title names the gateway; a `server.rack` menu leads the root's top bar, and the collapsed title opens the same menu | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `GatewayToolbarMenu`, `CompactListChrome` and `GatewayMenuContent` (`SidebarView`); `BotSwitcher` |
 | Connection status | The subtitle under the large title | The sidebar footer | The source list footer | `navChats` | `CompactListChrome`; `SidebarFooter` |
 | Settings | Gear trailing in the root's top bar | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `SidebarView.toolbar`; `SidebarFooter` |
 | Default list | This app's recent chats (`api_server`, `desktop`, `hermes_app`, no source) | The same | The same | `navChats`, `macNavWindow` | `BotWorkspace.inboxShow` (This App), `SessionOrigin`; `BotWorkspace.inboxSessions` |
