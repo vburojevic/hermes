@@ -133,6 +133,45 @@ public struct RoomLogPage: Sendable {
     }
 }
 
+/// A group chat's line in the chat list and the sidebar (`docs/inbox.md` §2): the room's newest
+/// message, a member's or the person's, and when it was written. Only messages move it: presence,
+/// rounds, settling and renames move the room's `updated_at`, not its line.
+public struct RoomRowLine: Hashable, Sendable {
+    public var seq: Int
+    /// Who wrote it; nil for the person.
+    public var memberID: String?
+    public var text: String
+    public var at: Date?
+
+    public init(seq: Int, memberID: String?, text: String, at: Date?) {
+        self.seq = seq
+        self.memberID = memberID
+        self.text = text
+        self.at = at
+    }
+
+    /// The newest message among `events`, whatever order they come in.
+    public static func newest(in events: [RoomEvent]) -> RoomRowLine? {
+        guard let event = events.filter({ $0.kind == "message.member" || $0.kind == "message.user" }).max(by: { $0.seq < $1.seq }) else { return nil }
+        let text = LastLine.flatten(event.payload["text"]?.stringValue ?? "")
+        let member = event.kind == "message.member" ? (event.payload["member_id"]?.stringValue ?? event.actorID) : nil
+        return RoomRowLine(seq: event.seq, memberID: member, text: text, at: event.createdAt)
+    }
+
+    /// The later of two lines: an open chat's poll and the list's refresh can land in either order.
+    public static func newer(_ a: RoomRowLine?, _ b: RoomRowLine?) -> RoomRowLine? {
+        guard let a else { return b }
+        guard let b else { return a }
+        return b.seq >= a.seq ? b : a
+    }
+
+    /// "Writer: Release notes are in." for a member, the person's own words as they are.
+    public func preview(memberName: (String) -> String) -> String {
+        guard let memberID else { return text }
+        return "\(memberName(memberID)): \(text)"
+    }
+}
+
 extension RoomTranscript {
     /// Hermes' largest `groups.log` page (`MAX_LOG_LIMIT`).
     public static let logPageLimit = 500
@@ -159,6 +198,38 @@ extension RoomTranscript {
             since = page.cursor
         }
         return unread(events, after: seen, names: names)
+    }
+
+    /// How many events from the end a row's line is looked for first.
+    public static let lineWindow = 50
+
+    /// A room's newest message after `known`, for its row (`docs/inbox.md` §2). `groups.list`
+    /// carries no last message and `groups.log` reads only forward, so this reads the log's tail
+    /// first, then windows further back (each up to a page) until one holds a message or it reaches
+    /// `known`. Nil when nothing after `known` is a message: the row keeps the line it has.
+    nonisolated(nonsending)
+    public static func lastLine(after known: Int, latest: Int,
+                                read: nonisolated(nonsending) (_ sinceSeq: Int, _ limit: Int) async throws -> RoomLogPage) async throws -> RoomRowLine? {
+        var end = latest
+        var span = lineWindow
+        var pages = 0
+        while end > known, pages < maxCountPages {
+            let start = max(known, end - span)
+            var since = start
+            var newest: RoomRowLine?
+            while since < end, pages < maxCountPages {
+                let page = try await read(since, min(logPageLimit, end - since))
+                pages += 1
+                newest = RoomRowLine.newer(newest, RoomRowLine.newest(in: page.events.filter { $0.seq <= end }))
+                // A page that doesn't move on (a 2 MiB event, a log cut short) ends the window.
+                guard page.cursor > since, page.hasMore else { break }
+                since = page.cursor
+            }
+            if let newest { return newest }
+            end = start
+            span = min(span * 4, logPageLimit)
+        }
+        return nil
     }
 }
 

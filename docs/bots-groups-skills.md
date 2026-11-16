@@ -196,9 +196,17 @@ room's name, "N Bots" is its members as created, which can include a hidden Bot 
 deleted (Hermes keeps both; a deleted one's turn ends in `member.unavailable`), as Group
 Settings' "Members · N" lists them.
 
-The sidebar row shows a room's latest line and "Needs you" only for rooms opened since the app
-started (their chat model holds the log). Notifications for room messages, all or only those that
-mention the person, are sent by the gateway plugin ([notifications.md](notifications.md)).
+A room's row in the chat list and the sidebar shows its newest message, a member's ("Ada: …") or
+the person's, and that message's time, for every room, opened this launch or not
+(`RoomRowLine`). `groups.list` carries no last message and its `updated_at` moves on every event,
+so on each refresh where a room's `latest_seq` moved, the app reads the log's tail
+(`RoomTranscript.lastLine`): the last 50 events, then four times further back up to 500 a page
+while the tail holds only bookkeeping, never before the line it already has. Presence, rounds,
+settling and renames never move the time. An open room's poll hands the newest message it read to
+the same line, so whichever reads first, the newer message stays. "Needs you" shows only for rooms
+opened since the app started (their chat model reads `groups.state`). Notifications for room
+messages, all or only those that mention the person, are sent by the gateway plugin
+([notifications.md](notifications.md)).
 
 ### What the app does about members, the lead and pausing
 
@@ -264,6 +272,12 @@ Rescan (`skills.reload`).
   only when it was read with the app in front.
 - A group chat runs its rounds, shows passes, failures and the settled divider, takes an approval,
   stops the whole room, renames and deletes after confirmation.
+- A group chat's row shows its newest message and that message's time within a refresh of it
+  arriving, with the list on screen and with another chat open, for a room opened earlier this
+  launch and left, and for one never opened. Mock: `backend.py --group-counts`, then `POST
+  /api/mock/room-say` with `{"room": "launch-crew", "text": "Status check", "reply": "…"}`
+  (with `X-Hermes-Session-Token`, as in [development.md](development.md)): the last member's words
+  in the second round are `reply`, so each post leaves a newest message of its own to look for.
 - Use on a skill puts it in the tray of the last chat, or of a new chat.
 - Opening Skills a second time asks the gateway for nothing and shows the list at once; the first
   time it shows placeholder rows until the list arrives.

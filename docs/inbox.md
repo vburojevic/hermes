@@ -106,6 +106,11 @@ right after it ([connecting-and-voice.md](connecting-and-voice.md) §8).
   as soon as the lists move, rows further down as they
   come on screen, 4 reads at a time (1 while the Mac is busy), once per activity. A chat in a
   turn shows its activity line and is read when it stops.
+- **Group chats**, open or not, opened this launch or never: when a room's `latest_seq` moves, the
+  list refresh reads its log's tail for the newest message, a member's or the person's
+  (`RoomRowLine`, [bots-groups-skills.md](bots-groups-skills.md) §2); an open room's poll hands
+  over what it read. Presence, rounds, settling and renames move `updated_at` but not the line or
+  its time.
 - A line read at an earlier activity never replaces one read at a later activity: reads come
   back in any order, and one asked for before the reply landed mustn't bring back the message.
 
@@ -473,6 +478,9 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
 - On iPhone, open a group chat, go back to the list and `POST /api/mock/room-say` to it: within a
   minute its row shows the new messages' count (and the Bots count and the back button with it),
   as a chat's or a Bot's row does; opening it again clears it.
+- A group chat's row shows its newest message ("Ada: …") and that message's time, never "N Bots"
+  or a frozen line, with the list on screen or another chat open, for a room left earlier and for
+  one never opened (`room-say` with `reply`, [bots-groups-skills.md](bots-groups-skills.md) §4).
 - Reduce Motion: no shimmer or slide. Light, dark and Increase Contrast match the renders.
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
   actions open all scroll the chat and the list; a swipe left on a reply still replies, and one
@@ -485,6 +493,7 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
   compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),
   `SidebarCountsTests` (a group chat's count read page by page, the segments' rows),
+  `GroupRowSummaryTests` (a group chat's newest message and its time, opened or not),
   `SidewaysSwipeTests` (which drags a row's swipe takes, and `RowSwipe`'s geometry),
   `SidewaysScrollTests` (which Mac scrolls reply).
 

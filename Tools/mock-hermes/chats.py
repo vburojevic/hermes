@@ -36,10 +36,12 @@ def install(backend_globals, gateway_module):
     def say_in_room(query, body):
         # Mock-only: the person says something in a group chat (`{"room", "text"}`), as if typed,
         # so the room's discussion runs (turn.started, replies, hand-offs) without driving the UI.
+        # `reply` is what the last member says, so each run leaves a different newest message.
         room = ROOMS.get(body.get("room") or "") or next(iter(ROOMS.values()), None)
         if room is None:
             return 404, {"detail": "No room"}
-        threading.Thread(target=run_discussion, args=(room, body.get("text") or "What do we still need?"), daemon=True).start()
+        threading.Thread(target=run_discussion, args=(room, body.get("text") or "What do we still need?"),
+                         kwargs={"reply": body.get("reply")}, daemon=True).start()
         return 200, {"ok": True, "room": room["room_id"]}
 
     B["HTTP_ROUTES"][("POST", "/api/mock/room-say")] = say_in_room
@@ -749,7 +751,7 @@ def seed_count_rooms(now):
                    {"status": "settled", "reason_code": "silent_round", "thread_id": "main", "discussion_event_id": "d1"})
 
 
-def run_discussion(room, text, wait=True, approve=False, client_id=None):
+def run_discussion(room, text, wait=True, approve=False, client_id=None, reply=None):
     event = room_event(room, "message.user", {"kind": "user", "id": "desktop"}, {"text": text, "thread_id": "main"})
     if client_id:
         with ROOMS_LOCK:
@@ -798,7 +800,7 @@ def run_discussion(room, text, wait=True, approve=False, client_id=None):
                                                  "description": "Backs up the production database", "choices": ["once", "deny"]}}]
                 while room["pending"] and not room["stop"]:
                     time.sleep(0.3)
-            line = MEMBER_LINES.get(profile) if round_index == 0 else "Release notes are in: typed throws, Bot Chat routine cards and faster reconnects. Want the post in the same voice?"
+            line = MEMBER_LINES.get(profile) if round_index == 0 else reply or "Release notes are in: typed throws, Bot Chat routine cards and faster reconnects. Want the post in the same voice?"
             if line:
                 message = room_event(room, "message.member", {"kind": "member", "id": profile, "profile": profile}, {**fields, "text": line})
                 room_event(room, "turn.settled", {"kind": "gateway", "id": "mock"}, {**fields, "message_event_id": message["event_id"], "passed": False, "seen_through_seq": message["seq"]})

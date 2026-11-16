@@ -27,6 +27,11 @@ final class GroupRooms {
     }
     /// The first unseen message in a room that mentions the person: who, and where.
     private(set) var mentions: [String: (memberID: String, seq: Int)] = [:]
+    /// Each room's newest message, for its row (`docs/inbox.md` §2): read from the log's tail at
+    /// each refresh, and from what an open chat polls, whichever is newer.
+    private(set) var lines: [String: RoomRowLine] = [:]
+    /// How far each room's log was read for its line.
+    @ObservationIgnored private var lineSeq: [String: Int] = [:]
     /// Open chats, by room id.
     @ObservationIgnored private var chats: [String: GroupChatModel] = [:]
     @ObservationIgnored private weak var roster: BotRoster?
@@ -62,6 +67,7 @@ final class GroupRooms {
         rooms = rows.compactMap(GroupRoom.parse).filter { $0.disbandedAt == nil }
         isLoaded = true
         await countUnread()
+        await readLines()
     }
 
     /// Bot Mode came back: ask again whether rooms run and turn isolation is on, so a room
@@ -117,6 +123,44 @@ final class GroupRooms {
         let ids = Set(rooms.map(\.id))
         unreadCounts = unreadCounts.filter { ids.contains($0.key) }
         if seededAny { UserDefaults.standard.set(seenSeq, forKey: seenKey) }
+    }
+
+    /// Rooms whose log moved since their line was read: the newest message since, from the log's
+    /// tail. Rooms never opened this launch get theirs here too; a read that fails is tried again
+    /// at the next refresh.
+    private func readLines() async {
+        guard let roster else { return }
+        for room in rooms {
+            guard let latest = room.latestSeq else { continue }
+            let read = lineSeq[room.id] ?? 0
+            if latest < read {
+                // The log started again (a room recreated under its id): what the row had is gone.
+                lines[room.id] = nil
+                lineSeq[room.id] = nil
+            }
+            guard latest > (lineSeq[room.id] ?? 0) else { continue }
+            let known = max(lineSeq[room.id] ?? 0, lines[room.id]?.seq ?? 0)
+            do {
+                let line = try await RoomTranscript.lastLine(after: known, latest: latest, read: { since, limit in
+                    let page = try await roster.request("groups.log", ["room_id": .string(room.id), "since_seq": .number(Double(since)), "limit": .number(Double(limit))])
+                    guard let page = RoomLogPage.parse(page) else { throw URLError(.cannotParseResponse) }
+                    return page
+                })
+                noteLine(line, room: room.id, readTo: latest)
+            } catch {
+                continue
+            }
+        }
+        let ids = Set(rooms.map(\.id))
+        if lines.keys.contains(where: { !ids.contains($0) }) { lines = lines.filter { ids.contains($0.key) } }
+        lineSeq = lineSeq.filter { ids.contains($0.key) }
+    }
+
+    /// A room's log was read up to `readTo`, with `line` the newest message in what was read.
+    func noteLine(_ line: RoomRowLine?, room id: String, readTo: Int) {
+        lineSeq[id] = max(lineSeq[id] ?? 0, readTo)
+        guard let newer = RoomRowLine.newer(lines[id], line), newer != lines[id] else { return }
+        lines[id] = newer
     }
 
     /// Where a room was read up to on this device, for its New Messages line; taken as it opens.
@@ -218,12 +262,13 @@ final class GroupRooms {
         return chat.activeMemberID.map { [$0] } ?? []
     }
 
-    /// The latest line, when it was written and whether the room waits on the person, for the
-    /// roster row.
+    /// The newest message, when it was written and whether the room waits on the person, for the
+    /// roster row. The line is the room's whether or not it was opened this launch.
     func summary(for id: String) -> (preview: String?, at: Date?, needsYou: Bool) {
-        guard let chat = chats[id] else { return (nil, nil, false) }
-        let latest = chat.latestMessage
-        return (latest?.text, latest?.at, chat.pendingApproval != nil)
+        let line = lines[id]
+        let members = room(id)?.members ?? []
+        let preview = line?.preview { memberID in members.first { $0.memberID == memberID }?.displayName ?? memberID }
+        return (preview, line?.at, chats[id]?.pendingApproval != nil)
     }
 }
 
@@ -344,18 +389,6 @@ final class GroupChatModel {
     }
     var currentRound: Int { RoomTranscript.currentRound(events) }
 
-    /// The newest message, a member's or the person's: the row's line and its time (`RowTime`).
-    var latestMessage: (text: String, at: Date?)? {
-        for item in items.reversed() {
-            switch item {
-            case .member(_, let memberID, let text, let date): return ("\(member(memberID)?.displayName ?? memberID): \(text)", date)
-            case .user(_, let text, let date): return (text, date)
-            default: continue
-            }
-        }
-        return nil
-    }
-
     func member(_ id: String) -> GroupRoom.Member? {
         room.members.first { $0.memberID == id }
     }
@@ -426,6 +459,7 @@ final class GroupChatModel {
                 if let name = fresh.last(where: { $0.kind == "room.renamed" })?.payload["name"]?.stringValue { room.name = name }
                 room.updatedAt = fresh.last?.createdAt ?? room.updatedAt
                 rooms?.touched(room)
+                rooms?.noteLine(RoomRowLine.newest(in: fresh), room: room.id, readTo: lastSeq)
                 // Read as it comes in, while it's on screen.
                 if Self.isInFront, roster.workspace?.unread.openKey == UnreadStore.groupKey(room.id) { rooms?.markRead(room.id) }
             }
