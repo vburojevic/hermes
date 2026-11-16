@@ -1202,4 +1202,22 @@ public enum TranscriptWindow {
         let target = min(count - 1, last + readingPage)
         return target > last ? target : nil
     }
+
+    /// Rows before the window's first at which the gateway is asked for the page before the
+    /// oldest held message. Asked only once the window reached that message, a fast scroll up
+    /// waited at the top for the page to arrive and fold.
+    public static let fetchAheadRows = 60
+
+    /// Scrolling up: whether to ask the gateway for the earlier page now. `first` is the
+    /// window's first row among the rows held.
+    public static func fetchesEarlier(first: Int, hasEarlier: Bool, isLoading: Bool) -> Bool {
+        hasEarlier && !isLoading && first <= fetchAheadRows
+    }
+
+    /// Reading back up: whether the first row a drop below takes off starts below the screen.
+    /// The rows counted as on screen can trail a page going in above by a few frames, and a drop
+    /// counted from them took the rows on screen with it.
+    public static func dropsOnlyBelow(firstGoingTop: Double, screenBottom: Double) -> Bool {
+        firstGoingTop >= screenBottom
+    }
 }

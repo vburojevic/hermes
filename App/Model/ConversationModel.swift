@@ -1840,7 +1840,6 @@ final class ConversationModel: Identifiable {
         defer { isLoadingEarlier = false }
         guard let page = try? await fetchPage(sessionID, limit: 200, offset: rawMessages.count),
               self.sessionID == sessionID, !isFinishing else { return }
-        hasEarlierMessages = page.hasEarlier
         // Folded off the main thread, with the replies that go in just above what's on screen
         // parsed ahead (scrolling up shows them next).
         let base = rawMessages
@@ -1848,6 +1847,9 @@ final class ConversationModel: Identifiable {
         let built = await Self.prepare(merged, hasEarlier: page.hasEarlier, hidesSilence: botName != nil, warming: items.count)
         await preloadImages(for: built)
         guard self.sessionID == sessionID else { return }
+        // Said with the rows, in the same update: said as the page arrived, the chat showed its
+        // start (no loading row) while the page was still being folded.
+        hasEarlierMessages = page.hasEarlier
         if rawMessages == base {
             rebuild(from: merged, built: built)
         } else {

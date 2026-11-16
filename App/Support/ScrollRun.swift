@@ -28,6 +28,8 @@ final class ScrollRun {
     private var glide: Glide?
     private var started = false
     private let logsSteps = UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG")
+    /// While the run moves the chat itself (`HERMES_SCROLL_WHO` counts only the chat's moves).
+    private var setting = false
 
     private struct Glide {
         let scroll: Scrolled
@@ -60,10 +62,39 @@ final class ScrollRun {
             mark("scroll: no chat to scroll")
             return
         }
+        #if os(macOS)
+        // A covered Mac window gets no frames, so a run in one measures the cover, not the chat:
+        // each mark says whether the window is on screen, and a change mid-leg is marked too.
+        let covering = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: scroll.view.window, queue: .main
+        ) { note in
+            guard let window = note.object as? NSWindow else { return }
+            MainActor.assumeIsolated {
+                ScrollRun.shared.mark("window \(window.occlusionState.contains(.visible) ? "on screen" : "covered")")
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(covering) }
+        // With `-HERMES_SCROLL_WHO`: each move of the chat the run didn't make, with who made it.
+        var moves: (any NSObjectProtocol)?
+        if UserDefaults.standard.bool(forKey: "HERMES_SCROLL_WHO") {
+            let clip = scroll.view.contentView
+            clip.postsBoundsChangedNotifications = true
+            seenTop = clip.bounds.minY
+            moves = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: clip, queue: nil
+            ) { note in
+                guard let clip = note.object as? NSClipView else { return }
+                MainActor.assumeIsolated { ScrollRun.shared.noteMove(of: clip) }
+            }
+        }
+        defer { moves.map(NotificationCenter.default.removeObserver) }
+        #endif
         for round in 1...rounds {
-            mark(String(format: "scroll %d: up from the end (content %.0f pt)", round, scroll.contentHeight))
+            mark(String(format: "scroll %d: up from the end (content %.0f pt)", round, scroll.contentHeight)
+                + scroll.windowNote)
             await move(scroll, up: true, speed: speed)
-            mark(String(format: "scroll %d: top, back down (content %.0f pt)", round, scroll.contentHeight))
+            mark(String(format: "scroll %d: top, back down (content %.0f pt)", round, scroll.contentHeight)
+                + scroll.windowNote)
             if upOnly {
                 let jumpAfter = UserDefaults.standard.double(forKey: "HERMES_SCROLL_THEN_JUMP")
                 guard jumpAfter > 0 else { return }
@@ -73,10 +104,28 @@ final class ScrollRun {
                 return
             }
             await move(scroll, up: false, speed: speed)
-            mark(String(format: "scroll %d: end (content %.0f pt)", round, scroll.contentHeight))
+            mark(String(format: "scroll %d: end (content %.0f pt)", round, scroll.contentHeight) + scroll.windowNote)
             try? await Task.sleep(for: .seconds(1))
         }
     }
+
+    #if os(macOS)
+    /// Where the chat's clip view was last seen (`HERMES_SCROLL_WHO`).
+    private var seenTop: CGFloat = 0
+
+    private func noteMove(of clip: NSClipView) {
+        let now = clip.bounds.minY
+        defer { seenTop = now }
+        guard !setting, abs(now - seenTop) > 0.01 else { return }
+        // Each frame without its index; deep enough to reach the layout pass that moved it.
+        let callers = Thread.callStackSymbols.dropFirst(2).prefix(48).map { frame in
+            let words = frame.split(separator: " ", omittingEmptySubsequences: true).dropFirst()
+            return String(words.joined(separator: " ").prefix(120))
+        }
+        print(String(format: "SCROLLRUN chat moved %.2f -> %.2f by ", Double(seenTop), Double(now))
+            + callers.joined(separator: " < "))
+    }
+    #endif
 
     private func mark(_ event: String) {
         print("SCROLLRUN \(Int(CACurrentMediaTime() * 1000) % 100_000)ms \(event)")
@@ -85,12 +134,12 @@ final class ScrollRun {
         #endif
     }
 
-    /// Moves `scroll` to its top or end, at most 40 s: pages coming in and going on the way
-    /// change its length.
+    /// Moves `scroll` to its top or end, at most 150 s (a 300-turn chat at 3000 pt/s takes about
+    /// 100): pages coming in and going on the way change its length.
     private func move(_ scroll: Scrolled, up: Bool, speed: CGFloat) async {
         NotificationCenter.default.post(name: Self.drags, object: true)
         await withCheckedContinuation { done in
-            glide = Glide(scroll: scroll, up: up, speed: speed, until: CACurrentMediaTime() + 40, done: done)
+            glide = Glide(scroll: scroll, up: up, speed: speed, until: CACurrentMediaTime() + 150, done: done)
             last = CACurrentMediaTime()
             let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
@@ -110,18 +159,25 @@ final class ScrollRun {
         last = now
         let scroll = glide.scroll
         let step = glide.speed * frame * (glide.up ? -1 : 1)
-        let y = min(max(scroll.offset + step, scroll.top), scroll.end)
+        let from = scroll.offset
+        let y = min(max(from + step, scroll.top), scroll.end)
+        setting = true
         scroll.offset = y
-        // With the scroll log: what the run set, so a check can tell its moves from the chat's.
-        if logsSteps { print(String(format: "SCROLLRUN set %.0f", Double(y))) }
+        setting = false
+        // With the scroll log: what the run set and where it found the chat, so a check can tell
+        // its moves from the chat's (with the rows' tops, `SCROLLLOG row`, what moved on screen).
+        if logsSteps { print(String(format: "SCROLLRUN set %.0f from %.0f", Double(y), Double(from))) }
         // At an edge, more rows may be on their way, as when a finger stops there: rows that
         // come in give the run room, and it carries on.
         let reached = glide.up ? y <= scroll.top : y >= scroll.end
         if reached, now < glide.until {
+            // Marked, so a check can tell how long the run waited at the edge for rows.
+            if glide.reachedEdge == nil, logsSteps { mark("waiting at the edge") }
             let since = glide.reachedEdge ?? now
             self.glide?.reachedEdge = since
             if now - since < 4 { return }
         } else if !reached {
+            if glide.reachedEdge != nil, logsSteps { mark("moving again") }
             self.glide?.reachedEdge = nil
         }
         if reached || now >= glide.until {
@@ -139,6 +195,7 @@ private struct Scrolled {
     let view: UIScrollView
 
     var contentHeight: CGFloat { view.contentSize.height }
+    var windowNote: String { "" }
     var top: CGFloat { -view.adjustedContentInset.top }
     var end: CGFloat { max(top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom) }
     var offset: CGFloat {
@@ -168,6 +225,9 @@ private struct Scrolled {
 
     private var clip: NSClipView { view.contentView }
     var contentHeight: CGFloat { view.documentView?.frame.height ?? 0 }
+    var windowNote: String {
+        ", window " + (view.window?.occlusionState.contains(.visible) == true ? "on screen" : "covered")
+    }
     var top: CGFloat { -view.contentInsets.top }
     var end: CGFloat { max(top, contentHeight - clip.bounds.height + view.contentInsets.bottom) }
     /// From the content's top, whichever way the document view runs.

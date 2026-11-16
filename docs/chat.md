@@ -756,28 +756,43 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
 - **Loading.** A chat whose messages are on their way shows its shape after a beat (`chatSkeleton`):
   your message as a bubble on the right, replies as lines, newest at the bottom where the
   transcript puts them. It holds still, and fades as the chat fades in; a fast load shows nothing.
-- **Long history.** A chat opens with as many of its newest rows as cover the screen two and a
-  half times over (three to eight, by their height at the least: `TranscriptItem.leastHeight`),
-  and the rest of its page goes in above a moment later, a few rows a frame. A page is 20 rows, or
-  fewer when they cover six screens already: twenty replies of code were a dozen screens, built
-  in the moments after the chat opened. Scrolling near the top shows the next page the same way,
-  and fetches earlier pages from the gateway when those run out. A chat kept
-  open and read at its end lets rows far above the screen go again once rows stop coming (its
-  newest page plus ten stay), so it stays as quick as when it opened; nothing on screen moves when
-  they go.
+- **Long history.** A chat opens with as many of its newest rows as cover the screen two and a half
+  times over (three to eight, by their height at the least: `TranscriptItem.leastHeight`), and the
+  rest of its page goes in above a moment later, a few rows a frame. A page is 20 rows, or fewer
+  when they cover six screens already: twenty replies of code were a dozen screens, built in the
+  moments after the chat opened. Scrolling within 1,200 points of the top shows the next page the
+  same way (about 0.4 s of a fast scroll, time for a page to be built before the reader gets there),
+  and fetches earlier pages from the gateway when those run out: asked for once 60 or fewer of the
+  rows the chat holds are left above the ones shown (`TranscriptWindow.fetchAheadRows`), so a fast
+  scroll doesn't wait at the top for them. As a page goes in above, the row that was first carries
+  the view down with it in the same pass, so nothing on screen moves even mid-scroll. Once the page
+  is in, the next one follows if the view still sits near the top: a view resting there sends no
+  scroll that would ask for it, and a page from the gateway that lands while it rests there goes
+  in the same way. Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone
+  went from waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
+  message, to the first message in about 105 s, the time its height takes at that speed, with no
+  wait and nothing on screen moving more than 1 point (`-HERMES_SCROLL_RUN`,
+  `docs/development.md`). On a Mac it went from about 30 waits of up to 4 s and never reaching the
+  first message to the first message in about 94 s with no wait. There the chat's height is kept
+  to whole points, so AppKit's clip view moves the screen half a point at most once a scroll (it
+  keeps its place after a height change by moving the view a backing pixel); in a frame that runs
+  long, rows can still move up to 3 points. A chat kept open and read at its end lets rows far
+  above the screen go again once rows stop coming (its newest page plus ten stay), so it stays as
+  quick as when it opened; nothing on screen moves when they go.
 - **Reading back.** Every row the chat holds costs every frame of a scroll, so reading far back
-  keeps a few screens of rows around the one on screen, never the whole chat: as earlier pages
-  come in above, rows more than four below the screen go, and scrolling back down brings them back
-  ten at a time while rows far above go into blank room of exactly their height, and come back
-  into it when the reader scrolls up again. Nothing on screen moves either way, and rows coming
-  back don't grow in (they aren't new). The pill, ⌘↓, sending and search all reach rows that
-  aren't held: the end's page comes back at once, and a search result brings its rows with it. A
-  chat opened where it was left, or at a New Messages line with a lot new, holds a page past that
-  row to begin with. In a long chat of code replies this took scrolling back through it from about
-  80% of the main thread, with every frame late, to about 45% (measured with `-HERMES_SCROLL_RUN`,
-  `docs/development.md`). Keeping four rows past the screen rather than ten took a Mac scroll at
-  3,000 points a second from about 67% to 58%, and what the scroll adds to the app's memory from
-  about 70 MB to about 10 MB (`TranscriptWindow`).
+  keeps a few screens of rows around the one on screen, never the whole chat: as earlier pages come
+  in above, rows more than four below the screen go (the first of them measured first, and kept
+  while it starts on screen: the rows counted as on screen can trail a page going in above by a few
+  frames), and scrolling back down brings them back ten at a time while rows far above go into blank
+  room of exactly their height, and come back into it when the reader scrolls up again. Nothing on
+  screen moves either way, and rows coming back don't grow in (they aren't new). The pill, ⌘↓,
+  sending and search all reach rows that aren't held: the end's page comes back at once, and a
+  search result brings its rows with it. A chat opened where it was left, or at a New Messages line
+  with a lot new, holds a page past that row to begin with. In a long chat of code replies this took
+  scrolling back through it from about 80% of the main thread, with every frame late, to about 45%
+  (measured with `-HERMES_SCROLL_RUN`, `docs/development.md`). Keeping four rows past the screen
+  rather than ten took a Mac scroll at 3,000 points a second from about 67% to 58%, and what the
+  scroll adds to the app's memory from about 70 MB to about 10 MB (`TranscriptWindow`).
 - **Long press on your message** (`Overlays.userMessageMenu`): Copy (the plain form, with `@`
   handles and `/skill` prefixes), Edit and Resend, Send Again, Branch from Here, Share. Edit and
   Resend and Branch from Here need the gateway protocol; Send Again works everywhere and queues
