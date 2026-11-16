@@ -630,7 +630,7 @@ struct BotSwitcher: View {
     }
 }
 
-/// The gateways to switch between, then Add Gateway, Pair a Device and Manage Gateways.
+/// The gateways to switch between, then Add Gateway, Pair a Device and Edit Gateways.
 struct GatewayMenuContent: View {
     let workspace: BotWorkspace
     @Environment(AppModel.self) private var app
@@ -660,7 +660,7 @@ struct GatewayMenuContent: View {
         Button("Pair a Device…", systemImage: "qrcode") {
             router?.sheet = .pairing(workspace.bot.id)
         }
-        Button("Manage Gateways…", systemImage: "gearshape") {
+        Button("Edit Gateways…", systemImage: "gearshape") {
             #if os(macOS)
             openSettings()
             #else
