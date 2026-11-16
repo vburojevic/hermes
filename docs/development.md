@@ -27,10 +27,12 @@ xcodebuild -project Hermes.xcodeproj -scheme Hermes -configuration Debug \
   -destination 'platform=macOS' -derivedDataPath build/DerivedData-mac build
 ```
 
-Simulator builds need no signing. To run on your own iPhone or Mac, set `DEVELOPMENT_TEAM` and
-`bundleIdPrefix` in `project.yml` to your own team and prefix (and the App Group and Keychain group
-settings next to them), then generate again. Push notifications need the APNs entitlement and the
-relay, so expect them to stay quiet on a personal team.
+Simulator builds need no signing set up. Build Release for the simulator with signing on, as it is
+by default: a build made with `CODE_SIGNING_ALLOWED=NO` carries no entitlements, so it can't save
+the API key, and signing it ad hoc afterwards stopped it launching. To run on your own iPhone or
+Mac, set `DEVELOPMENT_TEAM` and `bundleIdPrefix` in `project.yml` to your own team and prefix (and
+the App Group and Keychain group settings next to them), then generate again. Push notifications
+need the APNs entitlement and the relay, so expect them to stay quiet on a personal team.
 
 ### Debug and Release
 
@@ -549,10 +551,13 @@ member whose Bot no longer exists (Hermes keeps a room's members as created). "R
 199 events, so the next discussion in it lands past seq 200: `POST /api/mock/room-say
 {"room": "release-log", "text": "…"}` (with `X-Hermes-Session-Token`, printed at start) should
 show a count of 4 on its row, one for each member's message. The same post to `launch-crew` is the
-short room to compare it with. `POST /api/mock/routine-elsewhere {"profile": "writer"}` gives Ada
-unread routine news that leaves the rooms alone, and `POST /api/mock/drop-sockets {}` reconnects
-without moving any count. Mute a Bot or a group from its row's menu, and turn Bot Mode off and on
-in Settings, to check that a muted row keeps its grey count and every badge returns as it was.
+short room to compare it with. An optional `"reply": "…"` sets what the last member says in the
+second round, so each post leaves a newest message of its own (the row-line check in
+[bots-groups-skills.md](bots-groups-skills.md) §4). `POST /api/mock/routine-elsewhere
+{"profile": "writer"}` gives Ada unread routine news that leaves the rooms alone, and `POST
+/api/mock/drop-sockets {}` reconnects without moving any count. Mute a Bot or a group from its
+row's menu, and turn Bot Mode off and on in Settings, to check that a muted row keeps its grey
+count and every badge returns as it was.
 
 Widgets (`Tools/mock-hermes/widgets.py`, [widgets.md](widgets.md) §13) play the
 hermes-app-widgets plugin over both servers: "widgets" pages through every example (three per
