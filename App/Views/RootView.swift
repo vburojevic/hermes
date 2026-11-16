@@ -740,7 +740,8 @@ struct MainView: View {
         // Something was picked (a row, a link, a notification, New Chat): a collapsed window
         // pushes it; in portrait the sidebar the system button brought back steps aside.
         .onChange(of: workspace.navigation.pushes) {
-            compactColumn = .detail
+            // Over a project's home the split view's column is left alone (`homeUnderList`).
+            if workspace.navigation.homeUnderList == nil { compactColumn = .detail }
             #if os(iOS)
             if horizontalSizeClass != .compact, isPortraitLike, !boardHidesSidebar, columnVisibility != .detailOnly {
                 withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
@@ -767,12 +768,17 @@ struct MainView: View {
         #endif
         #if os(iOS)
         // Back on the list (iPhone), the chat under it isn't open: its replies count as unread.
-        .onChange(of: horizontalSizeClass == .compact && compactColumn != .detail, initial: true) { _, showsList in
+        // A project's home under a split view that says the list is shows the project
+        // (`CompactNavigation.homeUnderList`).
+        .onChange(of: horizontalSizeClass == .compact && compactColumn != .detail && workspace.navigation.homeUnderList == nil,
+                  initial: true) { _, showsList in
             workspace.setShowsDetail(!showsList)
         }
-        // Only a change the person made is kept: the list the window first draws isn't one.
+        // Only a change the person made is kept: the list the window first draws isn't one, and
+        // neither is the list a split view reports over a project's home.
         .onChange(of: compactColumn) { _, column in
-            if horizontalSizeClass == .compact { storedOnList = column != .detail }
+            guard horizontalSizeClass == .compact, workspace.navigation.homeUnderList == nil else { return }
+            storedOnList = column != .detail
         }
         .onGeometryChange(for: Bool.self) { proxy in
             proxy.size.width < proxy.size.height || proxy.size.width < 700
@@ -881,12 +887,24 @@ private struct BotSheetTarget: Identifiable {
 struct DetailView: View {
     @Bindable var workspace: BotWorkspace
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// iPhone, and an iPad window too narrow for the sidebar: a chat opened from a project's home
+    /// pushes over it.
+    private var route: DetailRoute {
+        #if os(iOS)
+        workspace.detailRoute(compact: horizontalSizeClass == .compact)
+        #else
+        workspace.detailRoute(compact: false)
+        #endif
+    }
+
     var body: some View {
         // Read so the screen is resolved again when the selection stays the same: the selected
         // row picked again, or what the window opened on once the gateway answers (`DetailPass`).
         let _ = workspace.detailPass
         Group {
-            switch workspace.detailRoute {
+            switch route {
             case .botsHome:
                 if let roster = workspace.roster {
                     BotsHomeView(roster: roster, workspace: workspace)
@@ -902,12 +920,19 @@ struct DetailView: View {
                 } else {
                     StateMessage(symbol: "person.3", title: String(localized: "Group chat not found"), message: String(localized: "It may have been deleted on the gateway."))
                 }
-            case .project(let id), .board(let id):
-                // The Board pushes over its project, so its back button is the system's and
-                // leads to the project (`docs/projects.md`).
+            case .project(let id), .board(let id), .projectChat(let id):
+                // The Board, and on iPhone a chat opened here, push over their project, so the
+                // back button and swipe are the system's and lead to the project
+                // (`docs/projects.md` §2).
                 ProjectHomeView(workspace: workspace, projectID: id)
                     .navigationDestination(isPresented: boardShown(id)) {
                         BoardScreen(workspace: workspace, projectID: id)
+                    }
+                    .navigationDestination(item: chatShown(id)) { conversationID in
+                        // By the conversation it pushed with: going back selects the project
+                        // before the chat has slid away, and it keeps its transcript meanwhile.
+                        ChatScreen(conversation: workspace.loadedConversation(id: conversationID) ?? workspace.currentConversation,
+                                   workspace: workspace)
                     }
                     .id(id)
             case .allProjects:
@@ -931,9 +956,22 @@ struct DetailView: View {
         } set: { shown in
             if shown {
                 if workspace.selection != .board(id) { workspace.selection = .board(id) }
-            } else if workspace.selection == .board(id) {
-                workspace.selection = .project(id)
+            } else if workspace.selection == .board(id), let back = route.backSelection {
+                // A compact window is already on the project's home, as from its chats.
+                if horizontalSizeClass == .compact { workspace.returnToProject(id) } else { workspace.selection = back }
             }
+        }
+    }
+
+    /// A chat opened from the project's home is on show over it (compact widths); going back from
+    /// it shows the project. The chat stays as read as it was: the project is selected, so its
+    /// replies count as unread again (`docs/inbox.md` §4).
+    private func chatShown(_ id: String) -> Binding<UUID?> {
+        Binding {
+            route == .projectChat(id) ? workspace.currentConversation.id : nil
+        } set: { conversationID in
+            guard conversationID == nil, route == .projectChat(id) else { return }
+            workspace.returnToProject(id)
         }
     }
 }
