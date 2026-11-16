@@ -193,6 +193,20 @@ code field. The Mac reads the pasteboard when asked.
   title opens no menu until it collapses, so the title menu is only the second way in. VoiceOver
   reads it as "Gateway, <name>" with the hint "Switches gateways, or adds or pairs one." Its touch
   target is the system toolbar's, the same as the Settings gear's, not a frame of its own.
+- iPhone's chat list says how the connection is doing (`ConnectionStatus.line`, "Connected ·
+  Hermes 0.9.2") in the subtitle under the large title. The system draws that subtitle on one
+  line, so at the accessibility text sizes (AX1 to AX5) it stopped mid-word. From AX1 up the
+  subtitle stays empty and the status is the list's first row instead (`navStatusRow`, frames in
+  `screens/iphone/navigation-ax5.elyx` and `navigation-ax3.elyx`): `ConnectionStatusLabel`, the
+  dot and the whole line wrapping between words, above the Chats / Bots switch, or above Tasks
+  on a gateway without Bot Mode. The row hides while a search has text in it, as the switch and
+  the Tasks and Skills rows do. It isn't a button, and VoiceOver reads it as one element, the
+  whole line. `ConnectionStatusPlacement` (HermesKit) makes the choice. At those sizes the label
+  sets its dot at 11 pt (every other status dot is 7 pt) beside the first line, not the middle
+  of the block, 10 pt from the words; the iPad sidebar footer draws the same label the same way
+  (`screens/ipad/navigation-ax5.elyx`). Below AX1 nothing changes, so the Mac's footer looks as
+  before. A shorter line at those sizes lost: it dropped the version or the reason
+  where reading is hardest and needed a second place for the rest.
 - Not built yet: the toolbar shrinking while scrolling (frame `chatReplyMinimized`).
 - One `NavigationSplitView` (`MainView` in `RootView`; balanced, sidebar 240–380 pt, ideally 290)
   on every platform. The sidebar floats as inset glass by default on the current SDK. iPad in
@@ -240,7 +254,7 @@ column says where each item lives in the code now.
 | Inspector | Not on iPhone | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions | `ChatScreen.inspectorToolbarItem` |
 | Chats / Bots switch and counts | The switch as the root's first row, under the large title | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
 | Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The root's large title names the gateway; a `server.rack` menu leads the root's top bar, and the collapsed title opens the same menu | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `GatewayToolbarMenu`, `CompactListChrome` and `GatewayMenuContent` (`SidebarView`); `BotSwitcher` |
-| Connection status | The subtitle under the large title | The sidebar footer | The source list footer | `navChats` | `CompactListChrome`; `SidebarFooter` |
+| Connection status | The subtitle under the large title; from AX1 up the root's first row, above the Chats / Bots switch | The sidebar footer | The source list footer | `navChats`; `navStatusRow`, `navChatsAx` | `CompactListChrome`, `SidebarView.rowContent` (`ConnectionStatusLabel`, `ConnectionStatusPlacement`); `SidebarFooter` |
 | Settings | Gear trailing in the root's top bar | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `SidebarView.toolbar`; `SidebarFooter` |
 | Default list | This app's recent chats (`api_server`, `desktop`, `hermes_app`, no source) | The same | The same | `navChats`, `macNavWindow` | `BotWorkspace.inboxShow` (This App), `SessionOrigin`; `BotWorkspace.inboxSessions` |
 | Other platforms, scheduled chats | The filter: All Chats, Other Platforms, Scheduled Tasks | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu | The Show section of `InboxFilterMenuContent`; `CaughtUpState(show:)` for an empty one (`caughtUpThisApp`, `caughtUpOtherPlatforms`, `caughtUpScheduled`) |

@@ -441,7 +441,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 - At the accessibility text sizes on iPhone and iPad the list keeps everything and cuts nothing
   off: the Chats / Bots switcher stacks its two halves, a row's title wraps with its marks and time on the line below it, the New Chat, Tasks,
   Skills and settings glyphs grow with the text up to a cap, and the connection line wraps with
-  the settings button below it.
+  the settings button below it. On iPhone the connection line leaves the subtitle under the large
+  title, which the system cuts off, and is the list's first row instead
+  ([design-to-swiftui.md](design-to-swiftui.md) §6).
 
 ## 7. Checks
 

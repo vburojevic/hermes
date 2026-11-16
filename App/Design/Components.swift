@@ -25,12 +25,14 @@ struct BotAvatar: View {
 struct StatusDot: View {
     let color: Color
     var pulsing = false
+    /// 7 pt everywhere but the connection status at the accessibility text sizes (11 pt).
+    var size: CGFloat = 7
 
     var body: some View {
         DecorativeLoop { runs in
             Circle()
                 .fill(color)
-                .frame(width: 7, height: 7)
+                .frame(width: size, height: size)
                 .background {
                     if pulsing, runs {
                         PulseHalo(color: color.opacity(0.35), scale: 2.2, period: 1.4)
