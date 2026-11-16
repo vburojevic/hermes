@@ -229,6 +229,13 @@ struct BotFace: View {
     /// A new shape or colour settles in this long.
     private static let morphDuration = 0.42
 
+    /// Measures the face outlines (`FaceBody`) off the main thread, at launch (`docs/bot-faces.md`
+    /// §1.1). Otherwise they're measured all at once, on the main thread, the first time any face is
+    /// drawn, while the window is still opening.
+    nonisolated static func measureShapesEarly() {
+        Task.detached(priority: .userInitiated) { _ = FaceBody.of(.circle) }
+    }
+
     var body: some View {
         content
             .keyframeAnimator(initialValue: 0.0, trigger: wiggles) { content, angle in

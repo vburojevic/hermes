@@ -30,6 +30,7 @@ final class AppModel {
 
     init(store: BotStore = .standard(identities: AppModel.certificateStore)) {
         self.store = store
+        BotFace.measureShapesEarly()
         HermesTips.configure()
         #if DEBUG
         // The mock mTLS proxy's throwaway CA, trusted by this process alone (docs/development.md).
