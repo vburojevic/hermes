@@ -24,15 +24,16 @@ struct AppPluginsTests {
         }
     }
 
-    /// Widgets 1.5.0 adds the source and slider glyphs, `unit_one` and `from_now` with 1.4.0's access,
-    /// so a gateway with 1.4.0 updates to it without the consent card.
-    @Test func widgets140UpdatesQuietlyTo150() {
+    /// Widgets 1.6.0 adds the `client` command with 1.5.0's access, so a gateway with 1.5.0 updates to it
+    /// without the consent card.
+    @Test func widgets150UpdatesQuietlyTo160() {
         let widgets = AppPlugin.widgets
-        #expect(widgets.version == "1.5.0" && widgets.minimumVersion == "1.5.0")
-        #expect(widgets.state(in: [row("hermes-app-widgets", version: "1.4.0")]) == .outdated(version: "1.4.0"))
-        #expect(widgets.widening(from: "1.4.0") == nil, "1.5.0 asks for no more access than 1.4.0")
-        #expect(widgets.widening(from: "1.3.0") == nil, "nor than 1.3.0")
-        #expect(widgets.state(in: [row("hermes-app-widgets", version: "1.5.0")]) == .current(version: "1.5.0"))
+        #expect(widgets.version == "1.6.0" && widgets.minimumVersion == "1.6.0")
+        #expect(widgets.ref == "929b6f60affee11a1fef017c73d97052f984011e")
+        #expect(widgets.state(in: [row("hermes-app-widgets", version: "1.5.0")]) == .outdated(version: "1.5.0"))
+        #expect(widgets.widening(from: "1.5.0") == nil, "1.6.0 asks for no more access than 1.5.0")
+        #expect(widgets.widening(from: "1.4.0") == nil, "nor than 1.4.0")
+        #expect(widgets.state(in: [row("hermes-app-widgets", version: "1.6.0")]) == .current(version: "1.6.0"))
     }
 
     @Test func versionsCompareByNumber() {
