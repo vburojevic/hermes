@@ -171,7 +171,7 @@ final class BotWorkspace: Identifiable {
         didSet {
             if case .session(let key) = selection { lastChatKey = key }
             if selection == nil { lastChatKey = nil }
-            navigation.selectionChanged(to: selection, keepsPlace: keepsPlace)
+            navigation.selectionChanged(to: selection, keepsPlace: keepsPlace, fromProject: openingFromProject)
             openSelection()
         }
     }
@@ -180,6 +180,8 @@ final class BotWorkspace: Identifiable {
     private(set) var navigation = CompactNavigation()
     /// The next selection change keeps a compact window where it is (`CompactNavigation`).
     @ObservationIgnored private var keepsPlace = false
+    /// The next selection is a chat opened from this project's home (`CompactNavigation.parentProject`).
+    @ObservationIgnored private var openingFromProject: String?
 
     /// Selects without pushing: the other mode's selection coming back under its list, or the
     /// screen on show getting a new name.
@@ -229,9 +231,27 @@ final class BotWorkspace: Identifiable {
     /// (`DetailPass`, `docs/bots-groups-skills.md` §1.2).
     private(set) var detailPass = DetailPass()
 
-    /// The screen the main area shows for the selection.
-    var detailRoute: DetailRoute {
-        DetailRoute(selection: selection, mode: sidebarMode, hasBotMode: roster != nil)
+    /// The screen the main area shows for the selection. On a compact width a chat opened from a
+    /// project's home pushes over that home (`docs/projects.md` §2).
+    func detailRoute(compact: Bool) -> DetailRoute {
+        DetailRoute(selection: selection, mode: sidebarMode, hasBotMode: roster != nil,
+                    parentProject: compact ? navigation.parentProject : nil)
+    }
+
+    /// Selects a chat (or, `nil`, the new-chat draft) opened from a project's home, so a compact
+    /// window's Back returns to the project.
+    private func select(_ item: SidebarItem?, fromProject projectID: String, keepingPlace: Bool = false) {
+        openingFromProject = projectID
+        if keepingPlace { reselect(item) } else { selection = item }
+        openingFromProject = nil
+    }
+
+    /// Back from a chat or a Board pushed over its project's home (a compact window): the window
+    /// is already on the project, so selecting it pushes nothing more (a push there stacked a
+    /// second copy of the home).
+    func returnToProject(_ projectID: String) {
+        reselect(.project(projectID))
+        navigation.poppedToProject(projectID)
     }
 
     /// A row picked in the sidebar: the row that is already selected shows its screen again.
@@ -788,14 +808,19 @@ final class BotWorkspace: Identifiable {
     /// New Task opens with these filled in (setup's morning briefing).
     var pendingNewTask: TaskPrefill?
 
-    func startNewChat(inProject projectID: String? = nil) {
+    /// - Parameter fromHome: started on that project's home (Talk), so Back returns to it.
+    func startNewChat(inProject projectID: String? = nil, fromHome: Bool = false) {
         if !draft.isEmpty || draft.sessionID != nil || (projectID != nil && draft.placement?.projectID != projectID) {
             draft = ConversationModel(workspace: self)
         }
         if let projectID {
             draft.placement = projects.placement(in: projectID)
         }
-        selection = nil
+        if fromHome, let projectID {
+            select(nil, fromProject: projectID)
+        } else {
+            selection = nil
+        }
         navigation.show()
     }
 
@@ -808,9 +833,14 @@ final class BotWorkspace: Identifiable {
 
     /// Opens a chat that may not be in the loaded history page (a project's chats come from the
     /// tree, which reaches further back).
-    func open(_ session: HermesSession) {
+    /// - Parameter projectID: the project home it was opened from, so Back returns to it.
+    func open(_ session: HermesSession, fromProject projectID: String? = nil) {
         list(session)
-        selection = .session(session.stableID)
+        if let projectID {
+            select(.session(session.stableID), fromProject: projectID)
+        } else {
+            selection = .session(session.stableID)
+        }
     }
 
     /// Puts a chat opened from elsewhere in the list, in its place by time, unless it's there.
@@ -891,7 +921,7 @@ final class BotWorkspace: Identifiable {
             // Sent from a project home: the chat opens.
             projectDrafts[projectID] = nil
             if selection == .project(projectID) {
-                reselect(.session(session.stableID))
+                select(.session(session.stableID), fromProject: projectID, keepingPlace: true)
             }
         }
     }
@@ -920,7 +950,8 @@ final class BotWorkspace: Identifiable {
             if selection == nil { reselect(.session(chat.rowKey)) }
         } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
             projectDrafts[projectID] = nil
-            if selection == .project(projectID) { reselect(.session(chat.rowKey)) }
+            // Opened from the project, as when Hermes makes the chat (`adopt`), so Back returns to it.
+            if selection == .project(projectID) { select(.session(chat.rowKey), fromProject: projectID, keepingPlace: true) }
         }
     }
 

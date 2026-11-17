@@ -130,6 +130,16 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
     right column on iPad landscape and Mac, with the folders (`folderRow*`) on Mac.
   - The composer at the bottom starts a new chat in the project (voice mode too). The trailing …
     holds `projectMenu`.
+  - On iPhone a chat opened from the project home (a lane row, Show All, or a chat sent from its
+    composer, also one waiting for the gateway) pushes over the home, and so does Talk's new chat,
+    as soon as Talk starts: Back, or the swipe from the screen's edge, returns to the project,
+    which the back button names, and a second Back goes to the chat list. A chat or the Board
+    opened again from the home after a Back stays open; the Board's back button names the
+    project too. The chat you went back from is no longer open, so its
+    replies count as unread (`docs/inbox.md`). A chat opened any other way (the chat list, a
+    notification, search, Quick Open, a link) goes back to the chat list, and archiving or
+    deleting the chat on screen goes back to the chat list too. On iPad and Mac the chat replaces
+    the project home in the detail column, as before.
   - A project that was archived or deleted elsewhere shows "Project not found" with a way back to
     All Projects.
 - **A project's time** and its place in both lists (`ProjectsModel.rowTime`, `RowTime.ofProject`)
@@ -220,7 +230,17 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
   system's swipe actions and the iPhone's push and back swipe. On Mac each project is a custom disclosure row
   (`MacProjectRows`), with its lanes loaded when it expands.
 - Project home: a `NavigationStack` destination on iPhone. On iPad and Mac it is the detail column
-  of the `NavigationSplitView`, with two columns where there is room.
+  of the `NavigationSplitView`, with two columns where there is room. On iPhone a chat opened from
+  the home is a `navigationDestination` over it, keyed on the chat, the way the Board is: the
+  workspace remembers the project the chat came from (`CompactNavigation.parentProject`), the route
+  becomes `DetailRoute.projectChat`, and the system back selects the project again
+  (`DetailRoute.backSelection`). The home keeps `navigationTitle(name)` for the back button and
+  hides the title until the header scrolls away. Back from a chat or the Board leaves the home on
+  screen, but the collapsed split view reports that pop as going back to the list; showing the
+  detail again then popped the next chat or Board as soon as it came. So the workspace remembers
+  the home under the list (`CompactNavigation.homeUnderList`), and while it does the window leaves
+  the split view's column alone, until a screen is pushed anywhere but over that home. The Board's
+  edge swipe is taken by its paging lanes, so its back button is the way back.
 - Tile (`ProjectTile`): a continuous rounded rectangle filled with the accent gradient and a white
   `Image(systemName:)`. The gradient starts part-way to the deep stop so the white glyph clears
   3.2:1 on every accent (the lighter design stops for gold, mint and dark-mode graphite didn't).
@@ -236,6 +256,11 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
   right lane without a manual refresh.
 - Chats in a project don't appear again in the flat history, except under Pinned.
 - Moving a running chat keeps it running and moves it to the new project's lane.
+- On iPhone, Back (button or edge swipe) from a chat opened in a project home (a lane row, Show
+  All, a chat sent from its composer, online or waiting for the gateway) shows the project home,
+  and a second Back shows the chat list; VoiceOver reads the back button as the project's name.
+  Opening another chat, or the Board, from the home after that Back keeps it open. A chat opened
+  from the chat list still goes back to the list, and iPad and Mac are unchanged.
 - Deleting a project never deletes chats.
 - Archiving a chat from a lane takes its row away at once, and it stays gone after a refresh; Undo
   brings it back at once, in its lane and still out of the flat history. One Undo toast shows, in

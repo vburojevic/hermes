@@ -350,35 +350,70 @@ private struct MarkdownTableView: View {
     @Environment(\.markdownBodyFont) private var bodyFont
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            TableLayout(columns: table.columnCount) {
-                ForEach(0..<table.columnCount, id: \.self) { column in
-                    cell(table.header[safe: column] ?? [], column: column)
-                        .font(bodyFont.weight(.semibold))
-                }
-                ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
-                    Divider()
-                    ForEach(0..<table.columnCount, id: \.self) { column in
-                        cell(row[safe: column] ?? [], column: column)
-                            .font(bodyFont)
-                    }
-                }
-            }
-            .surface(radius: 12)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        let grid = TableGrid(columns: table.columnCount, items: items)
+        // Only a table wider than the reply scrolls: every scroll view in a long chat is work on
+        // each frame of scrolling back past it (docs/chat.md §3).
+        ViewThatFits(in: .horizontal) {
+            grid
+            ScrollView(.horizontal, showsIndicators: false) { grid }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func cell(_ inlines: [MarkdownInline], column: Int) -> some View {
+    /// The header row's cells, then each row's rule and cells, in `TableLayout`'s order.
+    private var items: [TableItem] {
+        var items = (0..<table.columnCount).map { cell(table.header[safe: $0] ?? [], column: $0, font: bodyFont.weight(.semibold)) }
+        for row in table.rows {
+            items.append(.rule)
+            items += (0..<table.columnCount).map { cell(row[safe: $0] ?? [], column: $0, font: bodyFont) }
+        }
+        return items
+    }
+
+    private func cell(_ inlines: [MarkdownInline], column: Int, font: Font) -> TableItem {
         let alignment: Alignment = switch table.alignments[safe: column] ?? .leading {
         case .leading: .leading
         case .center: .center
         case .trailing: .trailing
         }
-        return Text(InlineRenderer.attributed(inlines))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minWidth: 60, maxWidth: TableLayout.widest, alignment: alignment)
+        return .cell(InlineRenderer.attributed(inlines), alignment, font)
+    }
+}
+
+/// The table itself, built from its finished cells. Its rows come from a nonisolated builder: the
+/// `ViewThatFits` around it may build them on SwiftUI's render thread, where a main-actor closure
+/// traps.
+private nonisolated struct TableGrid: View {
+    let columns: Int
+    let items: [TableItem]
+
+    var body: some View {
+        TableLayout(columns: columns) {
+            ForEach(items.indices, id: \.self, content: item)
+        }
+        .surface(radius: 12)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private nonisolated func item(_ index: Int) -> TableItem { items[index] }
+}
+
+/// One of a table's cells, or the rule above a row.
+private nonisolated enum TableItem: View {
+    case cell(AttributedString, Alignment, Font)
+    case rule
+
+    var body: some View {
+        switch self {
+        case .cell(let text, let alignment, let font):
+            Text(text)
+                .font(font)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minWidth: 60, maxWidth: TableLayout.widest, alignment: alignment)
+        case .rule:
+            Divider()
+        }
     }
 }
 
