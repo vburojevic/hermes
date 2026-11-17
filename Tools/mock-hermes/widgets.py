@@ -62,7 +62,9 @@ the newest revision from "another device" (the newest widget without an id): a m
 widget's chat, as a phone would send it; ``hold`` keeps the agent that many seconds between its
 claim and its update, so the lock shows.
 ``/app-widgets client`` files the app's turn markers as plugin 1.6.0 does (the same checks and
-refusals, at most 8 per chat for 10 minutes, kept in memory); the mock runs no model, so nothing reads them.
+refusals, at most 8 per chat for 10 minutes, kept in memory). The mock runs no model: each socket
+``prompt.submit`` takes the oldest marker whose hash matches its text, as the plugin's pre_llm_call
+does, and logs whether one did.
 ``--widgets-version 1.5.0`` plays the plugin before it: ``client`` is an unknown command and status says 1.5.0.
 ``--no-widgets`` leaves the plugin out: no ``widgets`` toolset, no scenario, ``/app-widgets`` is 4018.
 """
@@ -612,6 +614,7 @@ def command(raw):
     name, _, body = (raw or "").strip().partition(" ")
     known = ("session", "room", "get", "keys.register", "keys.remove", "keys.list", "status")
     if name not in known + (("client",) if PLUGIN["version"] != "1.5.0" else ()):
+        print(f"[mock-widgets] {name or '(none)'}: unknown command to plugin {PLUGIN['version']}", flush=True)
         return dump({"ok": False, "error": f"unknown command {name!r}"})
     try:
         args = json.loads(body) if body.strip() else {}
@@ -640,7 +643,8 @@ def command(raw):
             for session_id in ids:
                 live = [m for m in CLIENTS.get(session_id, []) if now - m["at"] <= CLIENT_TTL]
                 CLIENTS[session_id] = (live + [{"sha": sha, "client": client, "at": now}])[-CLIENT_MARKERS:]
-            print(f"[mock-widgets] {client['device']} app {client['version']} sent a turn", flush=True)
+            print(f"[mock-widgets] client: {client['device']} app {client['version']} ({client['build']}) sent a turn "
+                  f"in {', '.join(ids)}: text_sha256 {sha}", flush=True)
             return dump({"ok": True, "session_ids": ids, "pending": len(CLIENTS[ids[0]])})
         if name == "room":
             room_id = str(args.get("room_id") or "")
@@ -1431,8 +1435,36 @@ def install_backend(backend_globals, chats, push=None):
         backend_globals["start_turn"](sid, text, runner)
         return 200, {"ok": True, "session_id": sid, "rev": payload["rev"]}
 
+    original_submit = methods.get("prompt.submit")
+
+    def submit(params):
+        # Before the turn runs, as the plugin's pre_llm_call reads it: the oldest marker for the
+        # same text in this chat (by runtime or stored id) is used up.
+        sid = str(params.get("session_id") or "")
+        stored = (backend_globals["RUNTIME"].get(sid) or {}).get("stored") or ""
+        sha = hashlib.sha256(str(params.get("text") or "").encode("utf-8")).hexdigest()
+        now = time.time()
+        taken = None
+        with LOCK:
+            # One marker is filed under each of the chat's ids: the turn uses up its copy in each.
+            for session_id in dict.fromkeys(i for i in (sid, stored) if i in CLIENTS):
+                markers = [m for m in CLIENTS[session_id] if now - m["at"] <= CLIENT_TTL]
+                match = next((m for m in markers if m["sha"] == sha), None)
+                if match:
+                    markers.remove(match)
+                    taken = taken or match
+                CLIENTS[session_id] = markers
+        found = f"matches the {taken['client']['device']} app's client marker" if taken else "has no client marker"
+        # A message sent while the chat's turn runs is held for the next one (`queued`).
+        busy = (backend_globals["RUNTIME"].get(sid) or {}).get("running")
+        held = " (held for the next turn)" if busy and params.get("queued") else ""
+        print(f"[mock-widgets] prompt.submit{held} in {stored or sid}: text_sha256 {sha} {found}", flush=True)
+        return original_submit(params)
+
     methods["tools.list"] = tools_list
     methods["command.dispatch"] = dispatch
+    if original_submit:
+        methods["prompt.submit"] = submit
     backend_globals["HTTP_ROUTES"][("POST", "/api/mock/widget-answer")] = another_device
     original_turn = chats.run_chat_turn
 

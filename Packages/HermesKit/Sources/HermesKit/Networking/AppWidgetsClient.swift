@@ -56,6 +56,21 @@ public struct AppWidgetsClient: Sendable {
         _ = try await run("session", ["session_id": .string(runtimeID), "stored_session_id": .string(storedID)], sessionID: runtimeID)
     }
 
+    /// Tells the plugin which app sends the chat's next turn (plugin 1.6.0, `docs/widgets.md` §11),
+    /// just before its `prompt.submit`: the plugin matches the turn by `textHash`
+    /// (`ClientApp.textHash` of the exact text sent). Answers how many turns wait on that chat.
+    /// A plugin older than 1.6.0 refuses it as an unknown command (`ClientAnnouncements.outcome`).
+    @discardableResult
+    public func announceClient(runtimeID: String, storedID: String, client: ClientApp, textHash: String) async throws -> Int? {
+        let answer = try await run("client", [
+            "session_id": .string(runtimeID),
+            "stored_session_id": .string(storedID),
+            "client": .object(client.json),
+            "turn": .object(["text_sha256": .string(textHash)]),
+        ], sessionID: runtimeID)
+        return answer["pending"]?.intValue
+    }
+
     /// Marks many chats at once by their stored ids (`session_ids`, at most 500 a call; plugin 1.1.1):
     /// chats this device knows but hasn't opened still get widgets.
     public func markSessions(_ storedIDs: [String]) async throws {
