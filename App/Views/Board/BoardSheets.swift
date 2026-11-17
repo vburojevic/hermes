@@ -562,16 +562,23 @@ struct WatchRunSheet: View {
     private var visibleMessages: [SessionMessage] {
         messages.filter { message in
             switch message.role {
-            case "user", "assistant": !message.content.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.toolCalls.isEmpty
+            case "user": !words(of: message).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case "assistant": !message.content.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.toolCalls.isEmpty
             default: false
             }
         }
     }
 
+    /// A user row's own words, without the photo lines and context Hermes stores with a photo turn
+    /// (docs/chat.md §1).
+    private func words(of message: SessionMessage) -> String {
+        StoredImages.split(message.content.text, typedAsk: message.typedAsk).text
+    }
+
     @ViewBuilder
     private func messageView(_ message: SessionMessage) -> some View {
         if message.role == "user" {
-            Text(message.content.text)
+            Text(words(of: message))
                 .font(.subheadline)
                 .foregroundStyle(Theme.primaryText)
                 .padding(.horizontal, 14)

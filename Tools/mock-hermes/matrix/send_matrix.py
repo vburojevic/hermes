@@ -535,7 +535,7 @@ def photo_running(r):
              r.log_since(mark), expect=["on Hermes", "photo-running: what is this?"], stored=("photo-running: what is this?", 1))
     # Once it ran, its bubble shows the photo, as one sent while Hermes was idle does.
     r.record("photo_running_thumbnail", [("photoWhileBusy", "turnRunning·ran")], labels_after, "",
-             expect=[("Attached image", "attached image")], forbid=FORBIDDEN + ["@image:", "1 image"])
+             expect=[("Attached image", "attached image")], forbid=FORBIDDEN + ["@image:", "[Image attached", "Hermes app client", "1 image"])
 
 
 def photo_idle(r):
@@ -553,7 +553,7 @@ def photo_idle(r):
     time.sleep(25)
     labels = r.shot("photo-idle-after")
     r.record("photo_idle", [("photoWhileBusy", "idle")], labels, r.log_since(mark),
-             expect=["photo-idle: what is this?", ("Attached image", "attached image")], forbid=FORBIDDEN + ["@image:", "1 image"],
+             expect=["photo-idle: what is this?", ("Attached image", "attached image")], forbid=FORBIDDEN + ["@image:", "[Image attached", "Hermes app client", "1 image"],
              stored=("photo-idle: what is this?", 1))
 
 

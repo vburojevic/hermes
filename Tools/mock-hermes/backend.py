@@ -115,6 +115,17 @@ def load_starve():
     return module
 
 
+def load_image_turns():
+    """image_turns.py: the user row Hermes stores for a turn with photos, shared with the gateway mock."""
+    module = sys.modules.get("mock_image_turns")
+    if module is None:
+        spec = importlib.util.spec_from_file_location("mock_image_turns", pathlib.Path(__file__).resolve().parent / "image_turns.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["mock_image_turns"] = module
+        spec.loader.exec_module(module)
+    return module
+
+
 def load_edits():
     """edits.py: the "many edits" turn."""
     module = sys.modules.get("mock_edits")
@@ -793,26 +804,20 @@ def begin_turn(sid, stored, text, add):
     """The turn's user row and its start. Hermes with `dashboard.turn_isolation` stores the row only once
     the turn's own process starts (`_persist_turn_start`), a while after the turn began: only the live
     session's `inflight` has it meanwhile (`--turn-isolation SECONDS`)."""
-    text = with_image_refs(text, RUNTIME[sid].get("turn_images") or [])
+    text, extra = image_turn_row(text, RUNTIME[sid].get("turn_images") or [], refs=CONFIG.get("image_refs", False))
     late = CONFIG.get("turn_isolation") or 0
     if late <= 0:
-        add(stored, "user", text)
+        add(stored, "user", text, **extra)
     emit(sid, "session.info", {"running": True})
     emit(sid, "message.start", {})
     if late > 0:
         time.sleep(late)
-        add(stored, "user", text)
+        add(stored, "user", text, **extra)
 
 
-def with_image_refs(text, images):
-    """The user row Hermes stores for a turn with photos, held or not (`_build_persist_user_message`,
-    `_durable_content`): the words, an `@image:<path>` line per photo, and, as a vision model gets the
-    photos themselves, a `[screenshot]` line per photo after them."""
-    if not images:
-        return text
-    refs = "\n".join(f"@image:{path}" for path in images)
-    persisted = f"{text}\n{refs}" if text else refs
-    return persisted + "\n[screenshot]" * len(images)
+def image_turn_row(text, images, refs=False):
+    """The user row Hermes stores for a turn with photos (image_turns.py)."""
+    return load_image_turns().image_turn_row(text, images, refs=refs)
 
 
 def store_user(sid, stored, text):
@@ -2425,7 +2430,7 @@ def method_image_attach_bytes(params):
     """Staged for whichever prompt comes next on the chat (Hermes's `attached_images`): a refused
     prompt leaves them for the next one, until `image.detach` takes them back by path."""
     sid, runtime = runtime_for(params)
-    path = f"/tmp/hermes-mock/images/upload_{uuid.uuid4().hex[:8]}.jpg"
+    path = f"/home/user/.hermes/images/upload_{uuid.uuid4().hex[:8]}.png"
     with LOCK:
         runtime.setdefault("attached_images", []).append(path)
         count = len(runtime["attached_images"])
@@ -3089,6 +3094,9 @@ def main():
     parser.add_argument("--routine-runs", action="store_true",
                         help="with --gateway-port: two routines every ten minutes over the last day, most runs empty "
                              "(server.py seed_routine_runs)")
+    parser.add_argument("--photo-chats", action="store_true",
+                        help="with --gateway-port: a chat whose photo turns Hermes stored with its notes for the model "
+                             "(server.py seed_photo_chats)")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: both mocks answer in bursts every MIN-MAX seconds, "
                              "health checks too (starve.py; POST /api/mock/starve to start, change or stop it)")
@@ -3114,6 +3122,9 @@ def main():
                              "listens, even mid-run (Hermes: 300)")
     parser.add_argument("--turn-isolation", type=float, default=0, metavar="SECONDS",
                         help="store a turn's user row this long after it starts (Hermes' dashboard.turn_isolation)")
+    parser.add_argument("--image-refs", action="store_true",
+                        help="store a turn's photos as `@image:` lines, as Hermes does when the socket runs the turn in "
+                             "process, instead of the gateway's `[Image attached at: …]` lines (image_turn_row)")
     parser.add_argument("--dev-port", type=int, default=5173, help="the Inspector's localhost dev server (inspector.py)")
     parser.add_argument("--checkpoints", choices=["on", "off"], default="on",
                         help="checkpoints.enabled on the gateway (off: the Turn On state)")
@@ -3154,6 +3165,7 @@ def main():
     CONFIG["agent_build"] = args.agent_build
     CONFIG["slow_history"] = args.slow_history
     CONFIG["turn_isolation"] = args.turn_isolation
+    CONFIG["image_refs"] = args.image_refs
     CONFIG["slow_status"] = args.slow_status
     CONFIG["plain_edits"] = args.plain_edits
     CONFIG["long_bot_chats"] = args.long_bot_chats
@@ -3180,6 +3192,8 @@ def main():
             gateway.seed_many_chats(args.many_chats, sparse=args.sparse_chats)
         if args.routine_runs:
             gateway.seed_routine_runs()
+        if args.photo_chats:
+            gateway.seed_photo_chats()
         GATEWAY_PAGING.extend([gateway.page_rows, gateway.throttle])
         GATEWAY.append(gateway)
         api = ThreadingHTTPServer((args.host, args.gateway_port), gateway.Handler)

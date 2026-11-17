@@ -382,9 +382,12 @@ public struct ProjectSessionRow: Identifiable, Hashable, Sendable {
         return String(localized: "New Chat")
     }
 
-    /// Hermes' preview (the first message), unless it's a compaction summary (`CompactionSummary`).
+    /// Hermes' preview (the first message) without its photos' lines, unless it's a compaction
+    /// summary (`CompactionSummary`), as `HermesSession.listPreview`.
     public var listPreview: String? {
-        preview.flatMap { CompactionSummary.matches($0) ? nil : $0 }
+        guard let preview, !CompactionSummary.matches(preview) else { return nil }
+        let words = StoredImages.preview(preview)
+        return words.isEmpty ? nil : words
     }
 
     /// A history row for this chat, so it opens like any other.
