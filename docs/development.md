@@ -424,19 +424,22 @@ proves each of these against the mock.
 `desktop`; `late: true` takes the next send, stores it and refuses the turn as it runs instead (the
 `error` event shape). `POST /api/mock/held-notice {profile}` is a turn Hermes starts itself there
 refused the same way (`message.start`, then `error`), as the notice of a finished process was on
-2026-10-21. `-HERMES_PUSH_OPEN botreply:<profile>` opens a
-reply's notification for that Bot 20 s after launch, as a tap would. `-HERMES_FACE_CANVAS YES`
-draws every Bot face instead of playing resting faces on layers ([bot-faces.md](bot-faces.md) §3),
-to compare the two. Live indicators ([chat.md](chat.md) §4a): "ponder" thinks for about 14 s before
-a word (the live line's "Thinking… · 12s"); in the group chat (`-HERMES_OPEN group:launch-crew
--HERMES_GROUP_SEND "… together"`) "together" has Research Buddy, Ada and Ops think at once.
-`-HERMES_MOTION_PROBE YES` puts the number of shimmers sweeping on screen in a near-invisible
-`motionProbe` element for the UI tests, `-HERMES_GALLERY indicators` shows every indicator (with
-`-HERMES_GALLERY_LOOK …+reducemotion` for Reduce Motion), and `-HERMES_SHIMMER_TIMELINE YES` draws
-the shimmer from a `TimelineView` instead of its layer, to measure the two. `--slow-status SECONDS` answers `/api/status` that late, and past 30 s with a 502 at 30 s, like a
-proxy in front of a dashboard on an overloaded Mac: the Bots still connect. `--turn-isolation
-SECONDS` stores a turn's message that long after the turn starts, as Hermes does with
-`dashboard.turn_isolation`: only the live session (`inflight`) has it meanwhile, so a second
+2026-10-21. `-HERMES_PUSH_OPEN botreply:<profile>` opens a reply's notification for that Bot 20 s
+after launch, as a tap would, and `-HERMES_PUSH_OPEN chatreply:<profile>:<session>` one about that
+chat, tagged with that profile, 8 s after launch (`chatreply:researcher:api_1760_welcome` is a chat
+the list holds; on the Mac it goes through what a click on the Mac's own notification runs).
+`-HERMES_FACE_CANVAS YES` draws every Bot face instead of playing resting faces on layers
+([bot-faces.md](bot-faces.md) §3), to compare the two. Live indicators ([chat.md](chat.md) §4a):
+"ponder" thinks for about 14 s before a word (the live line's "Thinking… · 12s"); in the group
+chat (`-HERMES_OPEN group:launch-crew -HERMES_GROUP_SEND "… together"`) "together" has Research
+Buddy, Ada and Ops think at once. `-HERMES_MOTION_PROBE YES` puts the number of shimmers sweeping on
+screen in a near-invisible `motionProbe` element for the UI tests, `-HERMES_GALLERY indicators`
+shows every indicator (with `-HERMES_GALLERY_LOOK …+reducemotion` for Reduce Motion), and
+`-HERMES_SHIMMER_TIMELINE YES` draws the shimmer from a `TimelineView` instead of its layer, to
+measure the two. `--slow-status SECONDS` answers `/api/status` that late, and past 30 s with a 502
+at 30 s, like a proxy in front of a dashboard on an overloaded Mac: the Bots still connect.
+`--turn-isolation SECONDS` stores a turn's message that long after the turn starts, as Hermes does
+with `dashboard.turn_isolation`: only the live session (`inflight`) has it meanwhile, so a second
 device on the same chat shows whether it reads it from there ([chat.md](chat.md) §2).
 `--slow-history SECONDS` answers stored chats' messages that late while the socket keeps up, as
 a dashboard on an overloaded Mac does: a message sent meanwhile goes out before the history comes

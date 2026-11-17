@@ -125,8 +125,9 @@ final class BotWorkspace: Identifiable {
     /// `allSessions.count` can't be used as the next offset. Observed: the loading rows at the end of
     /// the list load again each time it moves (`docs/inbox.md` §5).
     private(set) var nextSessionOffset = 0
-    /// The gateway's chat list arrived this launch: the device's copy never goes over it.
-    @ObservationIgnored private var hasFetchedSessions = false
+    /// The gateway's chat list arrived this launch: the device's copy never goes over it, and a
+    /// tap on a notice that launched the app waits for it (`PushCenter.show`).
+    @ObservationIgnored private(set) var hasFetchedSessions = false
     private(set) var modelOptions: ModelOptions?
     /// The "/" menu's skills and commands, per profile.
     @ObservationIgnored private var slashCatalogs: [String: SlashCatalog] = [:]

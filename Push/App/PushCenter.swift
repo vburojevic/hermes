@@ -773,47 +773,65 @@ final class PushCenter {
         let appID = shared.gateway(notice.gateway?.id)?.appID ?? model.selectedBotID
         guard let appID, let workspace = model.workspaces[appID] else { return }
         model.select(appID)
-        if notice.kind.isCard, let card = notice.cardID {
-            workspace.openCard(card, board: notice.board, projectID: notice.projectID)
-        } else if notice.kind == .tidied {
-            workspace.openLearned(.tidying, bot: notice.profile)
-        } else if let room = notice.roomID {
-            workspace.sidebarMode = .bots
-            workspace.selection = .group(room)
-        } else if let profile = notice.profile ?? botProfile(forChat: notice.chatID, in: workspace) {
-            workspace.sidebarMode = .bots
-            workspace.selection = .bot(profile)
-            catchUp(notice, in: workspace)
-        } else if notice.kind == .task || notice.kind == .taskFailed {
-            workspace.selection = .tasks
-        } else if let chat = notice.chatID {
-            if let roster = workspace.roster, !roster.hasLiveList {
-                // A tap that launched the app can come before the Bots have loaded: a moment for
-                // them, since a Bot's own chat opens the Bot. The device's copy can be missing a
-                // Bot made since, so it's the gateway's list that's waited for.
-                Task { [weak self] in
-                    for _ in 0..<20 where !roster.hasLiveList {
-                        try? await Task.sleep(for: .milliseconds(250))
-                    }
-                    self?.showChat(chat, in: workspace)
-                    self?.catchUp(notice, in: workspace)
-                }
-            } else {
-                showChat(chat, in: workspace)
-                catchUp(notice, in: workspace)
+        show(notice, in: workspace)
+    }
+
+    /// Opens what a notice names in its gateway (`NoticeRouting`), for a push here and for the
+    /// Mac's own notifications.
+    func show(_ notice: PushNotice, in workspace: BotWorkspace) {
+        let loading = { workspace.roster.map { !$0.hasLiveList } == true || !workspace.hasFetchedSessions }
+        guard NoticeRouting.chat(of: notice) != nil, loading() else {
+            return go(to: routing(in: workspace).destination(for: notice), notice, in: workspace)
+        }
+        // A tap that launched the app can come before the Bots and the chats have loaded: a
+        // moment for them, since a Bot's own chat opens the Bot and a listed chat opens itself.
+        // The device's copies can miss a Bot or a chat made since, so it's the gateway's lists
+        // that are waited for.
+        Task { [weak self] in
+            for _ in 0..<20 where loading() {
+                try? await Task.sleep(for: .milliseconds(250))
             }
+            guard let self else { return }
+            self.go(to: self.routing(in: workspace).destination(for: notice), notice, in: workspace)
         }
     }
 
-    private func showChat(_ chat: String, in workspace: BotWorkspace) {
-        if let profile = botProfile(forChat: chat, in: workspace) {
+    private func go(to destination: NoticeDestination?, _ notice: PushNotice, in workspace: BotWorkspace) {
+        switch destination {
+        case .card(let card, let board, let projectID)?:
+            workspace.openCard(card, board: board, projectID: projectID)
+        case .tidying(let bot)?:
+            workspace.openLearned(.tidying, bot: bot)
+        case .room(let room)?:
+            workspace.sidebarMode = .bots
+            workspace.selection = .group(room)
+        case .tasks?:
+            workspace.selection = .tasks
+        case .bot(let profile)?:
             workspace.sidebarMode = .bots
             workspace.selection = .bot(profile)
-        } else {
-            let key = workspace.sessions.first { $0.id == chat || $0.stableID == chat }?.stableID ?? chat
+            catchUp(notice, in: workspace)
+        case .chat(let key)?:
             workspace.sidebarMode = .chats
             workspace.selection = .session(key)
+            catchUp(notice, in: workspace)
+        case nil:
+            break
         }
+    }
+
+    /// What the app knows of this gateway's Bots and chats right now. What was shared with the
+    /// extension fills in for a roster that hasn't loaded.
+    func routing(in workspace: BotWorkspace) -> NoticeRouting {
+        var chatKeys: [String: String] = [:]
+        for session in workspace.sessions {
+            chatKeys[session.stableID] = session.stableID
+            chatKeys[session.id] = session.stableID
+        }
+        return NoticeRouting(
+            botChats: shared.botChats(gateway: workspace.id).merging(workspace.roster?.botChats ?? [:]) { $1 },
+            chatKeys: chatKeys
+        )
     }
 
     /// What a reply or a message announced is fetched at once in the chat it opened, or the one on
@@ -825,14 +843,6 @@ final class PushCenter {
         case .bot?, .session?: workspace.currentConversation.notificationOpened(sentAt: notice.sentAt)
         default: break
         }
-    }
-
-    /// The Bot whose own chat this is (the primary Bot's notices carry no profile): the roster
-    /// knows, or what was shared with the extension does when a tap launched the app before the
-    /// roster loaded.
-    private func botProfile(forChat chat: String?, in workspace: BotWorkspace) -> String? {
-        guard let chat else { return nil }
-        return workspace.roster?.botChats[chat] ?? shared.botChats(gateway: workspace.id)[chat]
     }
 
     /// Shares each Bot's own chats with the service extension when they change, so their notices

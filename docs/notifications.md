@@ -174,9 +174,12 @@ for the gateway, the per-gateway category (§2, Hidden details), the badge, and 
 `INImage`, rendered by the app into the App Group). The plugin tags a Bot Chat's notice with the
 Bot's profile, except the primary Bot's (the gateway's own profile): the app shares each Bot's own
 chat by session id (`PushShared.botChats`, from the roster's `canonical_session`), so that Bot's
-notices still carry its name and face (`PushNotice.nameBot`). It also clears delivered notices for
-requests answered elsewhere and for chats read since (`read`, §2 Reading), adds the notice's chat to
-the unread list and sets the badge (§2, Badge). If anything fails or time runs out, the
+notices still carry its name and face (`PushNotice.nameBot`). On a gateway that runs under a Bot's
+profile every chat's notice carries that profile, so it shows that Bot's name and face when Bot
+Mode lists it: that profile is who answered, with its own model, memory and persona, so its name
+says who replied. A tap still opens the chat it came from (§3). It also clears delivered notices
+for requests answered elsewhere and for chats read since (`read`, §2 Reading), adds the notice's
+chat to the unread list and sets the badge (§2, Badge). If anything fails or time runs out, the
 notification keeps the relay's kind-only text, never content.
 
 ### 1.6 Mac
@@ -186,7 +189,8 @@ The Mac app hears its chats over its own connections and posts local notificatio
 the chat isn't the one on screen. Answers go straight back through the chat. The Mac checks that
 the plugin is there (`status`) but doesn't register, so the relay never pushes to it. It remembers the
 gateway's installation from that answer and asks `status` again every 30 s for the open requests,
-which its Dock badge counts as the iPhone's icon does (§2 Badge).
+which its Dock badge counts as the iPhone's icon does (§2 Badge). A click opens where a push's tap
+does, by the same rules (§3).
 
 Not built yet: notifications on the Mac while its app is closed (the plugin already understands a
 `running` presence with the chats the Mac notifies about itself, `live`).
@@ -455,11 +459,19 @@ Rules:
   the first and the rest in the app.
 - **Reply…** on a reply or a message sends a new message: a chat's as a new run on the API server
   (`POST /v1/runs`), a Bot Chat's with `session.resume` in the Bot's profile and `prompt.submit`, a
-  room's with `groups.send`. On a card that needs you it comments on the card and moves it back to
-  Ready ([board.md](board.md)).
-- A tap or **Open** shows the chat, Bot Chat, room, Tasks, the card or Tidying. A Bot Chat opens
-  as the Bot, found by the notice's profile or, for the primary Bot, by its chat
-  (`PushCenter.open`); the Mac's own notifications carry the profile.
+  room's with `groups.send`. Which of the first two is decided by the chat, as a tap is: a chat
+  that isn't a Bot's own runs on the gateway even when its notice carries a profile, so it needs no
+  Bot Mode. On a card that needs you it comments on the card and moves it back to Ready
+  ([board.md](board.md)).
+- A tap or **Open** shows the chat, Bot Chat, room, Tasks, the card or Tidying (`NoticeRouting`,
+  for pushes and the Mac's own notifications alike). The chat a notice names decides, never its
+  profile: a Bot's own chat (the roster's, or the copy shared with the extension) opens the Bot,
+  and any other chat opens that chat, by its place in the list or, when the list doesn't hold it
+  yet, by its id. The plugin tags a reply with the profile that ran it, so a gateway that runs
+  under a profile tags every chat it has, and nothing tells the app which profile that is when
+  its address isn't a `/p/<name>` one. A Bot's reply that names no chat opens the Bot. A tap that
+  launches the app waits up to 5 s for the gateway's Bots and chats (not the copies on the
+  device) before it decides.
 - A reply or message it opens is fetched at once (`ConversationModel.notificationOpened`), not
   when the roster next notices the chat moved: on a busy Mac that waited for the socket, then
   `profiles.list`, then the whole page. Until the newest row is Hermes's, stored no earlier than

@@ -169,21 +169,13 @@ final class MacNotifier {
         conversation.answer(request, with: .object(["answers": .object(answers)]), receipt: String(localized: "Answered · \(text)"))
     }
 
-    private func open(_ notice: PushNotice) {
+    func open(_ notice: PushNotice) {
         NSApp.activate()
         guard let model = center.model, let id = posted[notice.id]?.gatewayID ?? notice.gateway.flatMap({ UUID(uuidString: $0.id) }),
               let workspace = model.workspaces[id]
         else { return }
         model.select(id)
-        if let chat = notice.chatID {
-            if let profile = notice.profile ?? workspace.roster?.botChats[chat] {
-                workspace.sidebarMode = .bots
-                workspace.selection = .bot(profile)
-            } else {
-                workspace.sidebarMode = .chats
-                workspace.selection = .session(workspace.sessions.first { $0.id == chat || $0.stableID == chat }?.stableID ?? chat)
-            }
-        }
+        center.show(notice, in: workspace)
     }
 
     /// The reply's opening lines, as lines (its points read as points), like the iPhone's.
