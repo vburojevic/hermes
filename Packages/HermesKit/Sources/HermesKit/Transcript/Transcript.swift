@@ -1062,8 +1062,9 @@ public enum TranscriptBuilder {
         // A request Hermes restated after a compaction is the person's message it replaced.
         if let restated = CompactionSummary.restatedRequest(text) { text = restated }
         text = HermesScaffold.withoutMemoryContext(text)
-        // The photos' lines come last, after any attached context, so they're read first.
-        let photos = StoredImages.split(text)
+        // The photos' lines and the notes Hermes added after them go first: only the person's words
+        // stay (``StoredImages``).
+        let photos = StoredImages.split(text, typedAsk: message.typedAsk)
         text = photos.text
         // A skill used elsewhere is stored expanded: the skill as a chip, the words as typed.
         let invocation = SkillInvocation.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))

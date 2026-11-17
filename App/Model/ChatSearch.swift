@@ -188,8 +188,8 @@ final class ChatSearch {
                 case .tasks, .chats, .all: true
                 }
             }
-            .map { Hit(result: SessionSearchResult(sessionID: $0.id, lineageRoot: $0.lineageRootID, title: $0.title, preview: $0.preview,
-                                                   snippet: $0.preview ?? "", source: $0.source, model: $0.model,
+            .map { Hit(result: SessionSearchResult(sessionID: $0.id, lineageRoot: $0.lineageRootID, title: $0.title, preview: $0.listPreview,
+                                                   snippet: $0.listPreview ?? "", source: $0.source, model: $0.model,
                                                    sessionStarted: $0.startedAt, lastActive: $0.lastActive)) }
     }
 

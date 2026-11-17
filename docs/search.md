@@ -39,10 +39,15 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
 
 - `session_id`: the live chat to open (the newest segment), and `lineage_root`: the first segment,
   which stays the same.
-- `title` and `preview`.
+- `title` and `preview`. The preview is the chat's first message as Hermes stored it, cut at 60
+  characters; the app drops its photos' lines and what follows them, wherever the cut lands
+  ([chat.md](chat.md) §1, `StoredImages.preview`).
 - `snippet`: about 40 tokens around the match, with matched words between `>>>` and `<<<`. The
   app draws them in `text-primary` semibold and the rest in `text-secondary`, and removes every
-  marker, even unbalanced ones (`SnippetRun.parse`). Markers never show.
+  marker, even unbalanced ones (`SnippetRun.parse`). Markers never show. Hermes indexes the stored
+  row, so a message sent with a photo can match on its photo's path or the notes Hermes added for
+  the model, and its snippet shows them; the app can't tell them from the person's words in an
+  excerpt, so it leaves snippets as they are.
 - `role`: who wrote the matched message (`user`, `assistant`); empty for ID and title matches.
   When it's `assistant` the snippet starts with "Hermes:" or the Bot's name.
 - `source`, `model`, `session_started`, `last_active`, `message_count`, `archived`, `profile`.
@@ -92,9 +97,9 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
   so on iPad and the Mac, where the chat opens beside the list, it doesn't wait at all.
 - **Empty** (`drawerNoResults`): "No chats mention “…”", with **Search All** when a chip narrowed it, else "Try a
   different word, or a shorter one."
-- **Without full text,** chats match by title only (the first message for untitled chats), every
-  word as a prefix, ignoring case and accents (`SessionSearch.titleMatches`), over the chats the
-  list has loaded:
+- **Without full text,** chats match by title only (the first message for untitled chats, without
+  its photos' lines), every word as a prefix, ignoring case and accents
+  (`SessionSearch.titleMatches`), over the chats the list has loaded:
   - offline: "Showing saved chats only. Connect to search everything.";
   - online without Bot Mode: "Searching titles only. Bot Mode searches what was said.";
   - the count line then reads "3 chat titles have “…”".

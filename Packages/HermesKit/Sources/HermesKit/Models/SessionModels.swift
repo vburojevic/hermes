@@ -141,10 +141,12 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         return "New chat"
     }
 
-    /// Hermes' preview (the first message), unless it's a compaction summary: a compacted chat
-    /// starts with one (`CompactionSummary`).
+    /// Hermes' preview (the first message) without its photo lines (``StoredImages/preview(_:)``),
+    /// unless it's a compaction summary: a compacted chat starts with one (`CompactionSummary`).
     public var listPreview: String? {
-        preview.flatMap { CompactionSummary.matches($0) ? nil : $0 }
+        guard let preview, !CompactionSummary.matches(preview) else { return nil }
+        let words = StoredImages.preview(preview)
+        return words.isEmpty ? nil : words
     }
 
     public var hasRealTitle: Bool {
@@ -221,6 +223,11 @@ public struct SessionMessage: Codable, Sendable, Hashable {
     /// emptied the queue before it ran. Hermes swaps it for a row of the turn's own when the message
     /// runs, so a marked row is never a turn (`docs/chat.md` §4c).
     public var isWaitingInQueue = false
+    /// The text part of a turn with photos as Hermes stamped it before adding the turn's context
+    /// (`display_metadata` `typed_ask`, hermes-agent `agent/turn_context.py` `_stamp_typed_ask_once`):
+    /// the words and Hermes's photo lines, without the notes it appended for the model after the
+    /// photos. Older rows don't carry it (``StoredImages``).
+    public var typedAsk: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, timestamp, reasoning
@@ -268,9 +275,11 @@ public struct SessionMessage: Codable, Sendable, Hashable {
         var metadata = try? c.decodeIfPresent(JSONValue.self, forKey: .displayMetadata)
         if let text = metadata?.stringValue { metadata = JSONValue.parse(text) }
         isWaitingInQueue = metadata?[Self.queuedMarker]?.boolValue == true
+        typedAsk = metadata?[Self.typedAskKey]?.stringValue
     }
 
     static let queuedMarker = "_queued_prompt"
+    static let typedAskKey = "typed_ask"
 
     /// The same shape as the server's rows, so a cached transcript decodes like a fetched one.
     public func encode(to encoder: any Encoder) throws {
@@ -286,7 +295,10 @@ public struct SessionMessage: Codable, Sendable, Hashable {
         try c.encodeIfPresent(reasoning, forKey: .reasoning)
         try c.encodeIfPresent(displayKind, forKey: .displayKind)
         try c.encodeIfPresent(displayContent, forKey: .displayContent)
-        if isWaitingInQueue { try c.encode(JSONValue.object([Self.queuedMarker: .bool(true)]), forKey: .displayMetadata) }
+        var metadata: [String: JSONValue] = [:]
+        if isWaitingInQueue { metadata[Self.queuedMarker] = .bool(true) }
+        if let typedAsk { metadata[Self.typedAskKey] = .string(typedAsk) }
+        if !metadata.isEmpty { try c.encode(JSONValue.object(metadata), forKey: .displayMetadata) }
     }
 }
 

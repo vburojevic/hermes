@@ -64,7 +64,8 @@ public struct SessionSearchResult: Identifiable, Hashable, Sendable {
             sessionID: id,
             lineageRoot: json["lineage_root"]?.stringValue,
             title: json["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 },
-            preview: json["preview"]?.stringValue,
+            // The first message as Hermes previews it, without its photos' lines (``StoredImages``).
+            preview: json["preview"]?.stringValue.map(StoredImages.preview),
             snippet: json["snippet"]?.stringValue ?? "",
             role: json["role"]?.stringValue,
             source: json["source"]?.stringValue,
@@ -150,7 +151,7 @@ public enum SessionSearch {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
         return sessions.filter { session in
-            let title = (session.title ?? session.preview ?? "")
+            let title = (session.title ?? session.listPreview ?? "")
             let titleWords = title.split { !$0.isLetter && !$0.isNumber }.map(String.init)
             return words.allSatisfy { word in
                 titleWords.contains { $0.range(of: word, options: [.caseInsensitive, .diacriticInsensitive, .anchored]) != nil }

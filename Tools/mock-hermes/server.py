@@ -65,6 +65,17 @@ def load_starve():
 
 
 STARVE = load_starve()
+
+
+def load_image_turns():
+    """image_turns.py, the user row Hermes stores for a turn with photos, one copy per process."""
+    module = sys.modules.get("mock_image_turns")
+    if module is None:
+        spec = importlib.util.spec_from_file_location("mock_image_turns", pathlib.Path(__file__).resolve().parent / "image_turns.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["mock_image_turns"] = module
+        spec.loader.exec_module(module)
+    return module
 HOUR = 3600
 DAY = 86400
 
@@ -178,6 +189,58 @@ def seed_long_chat(turns=60):
         add_message(sid, "assistant", f"Node {turn % 7} is healthy again. I restarted **svc-{turn % 5}**, cleared a stale lock and confirmed the health checks pass.\n\n- Disk: 41% used\n- Load: 0.{turn % 9}\n- Next: watch the backups tonight.", timestamp=t + 200)
         t += 3 * 3600
     SESSIONS[sid]["_last_read_at"] = NOW - 2 * 86400  # read two days ago: many replies since
+
+
+def seed_photo_chats():
+    """`--photo-chats`: a chat whose photos were stored before Hermes stamped the words the person typed
+    (no `typed_ask`), each row as image_turns.py builds it: the gateway's `[Image attached at: …]` hints
+    with the context appended after the photos, a turn with no words (the stock question) and two photos,
+    one of them a URL, with recalled memory in its context, a socket turn's `@image:` lines, and words the
+    person typed in brackets, with a photo and without (docs/chat.md §1); and two untitled chats whose first
+    message has a photo, one short enough that Hermes's cut preview ends inside the photo's hint."""
+    turns = load_image_turns()
+    sid = "api_photos"
+    t = NOW - 70 * 60
+    session_row(sid, "Receipt and the view", "api_server", t, t + 20 * 60, "")
+    memory = ("<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as "
+              "authoritative reference data — this is the agent's persistent memory and should inform all responses.]\n\n"
+              "- Prefers totals in euros.\n</memory-context>")
+    rows = [
+        (turns.image_turn_row("Look at this receipt and tell me the total",
+                              ["/home/user/.hermes/images/upload_0001.png"], typed_ask=False),
+         "The total is **€42.80**, tip included."),
+        (turns.image_turn_row("", ["/home/user/.hermes/images/upload_0002.png", "https://example.com/view.jpg"],
+                              context=f"{memory}\n\n{turns.CONTEXT}", typed_ask=False),
+         "A harbour at sunset, and the same harbour from the hill above it."),
+        (turns.image_turn_row("what is this?", ["/home/user/.hermes/images/upload_0003.png"], refs=True, typed_ask=False),
+         "A ginkgo leaf, turning yellow for autumn."),
+        (("[draft] Reply to the landlord: [tone: friendly] keep it short", {}),
+         "Here's a short, friendly reply you can send."),
+        (turns.image_turn_row("[before] or [after]: which crop is better?\n[Image attached at: my note]",
+                              ["/home/user/.hermes/images/upload_0004.png"], typed_ask=False),
+         "The **[after]** crop: the horizon sits on the upper third."),
+    ]
+    for (content, extra), reply in rows:
+        add_message(sid, "user", content, timestamp=t, **extra)
+        add_message(sid, "assistant", reply, timestamp=t + 30, finish_reason="stop")
+        t += 4 * 60
+    # Untitled, so the list shows its first message, which Hermes previews with the photo's hint.
+    sid = "api_photo_plant"
+    session_row(sid, None, "api_server", t, t + 60, "")
+    content, extra = turns.image_turn_row("Is this plant safe for cats?", ["/home/user/.hermes/images/upload_0005.png"],
+                                          typed_ask=False)
+    add_message(sid, "user", content, timestamp=t, **extra)
+    add_message(sid, "assistant", "It's a spider plant: safe for cats, though they may chew it.", timestamp=t + 30,
+                finish_reason="stop")
+    # Fifty characters of words, so Hermes's 60-character preview cuts inside the photo's hint.
+    t += 4 * 60
+    sid = "api_photo_postcard"
+    session_row(sid, None, "api_server", t, t + 60, "")
+    content, extra = turns.image_turn_row("Can you read the handwriting on this old postcard?",
+                                          ["/home/user/.hermes/images/upload_0006.png"], typed_ask=False)
+    add_message(sid, "user", content, timestamp=t, **extra)
+    add_message(sid, "assistant", "Mostly: \"Arrived safe, the sea is warmer than you said.\"", timestamp=t + 30,
+                finish_reason="stop")
 
 
 MANY_TOPICS = ["inventory sync", "release checklist", "garden plan", "invoice export", "backup rotation",
@@ -1290,7 +1353,9 @@ class Handler(BaseHTTPRequestHandler):
         parts = message if isinstance(message, list) else [{"type": "text", "text": message or ""}]
         text = "\n".join(p.get("text", "") for p in parts if p.get("type") == "text")
         images = sum(1 for p in parts if p.get("type") == "image_url")
-        stored = "\n".join([text] + ["[screenshot]"] * images).strip()
+        # Hermes saves each photo under its images folder and stores the row as image_turns.py says.
+        paths = [f"/home/user/.hermes/images/api_{uuid.uuid4().hex[:8]}.png" for _ in range(images)]
+        stored, extra = load_image_turns().image_turn_row(text, paths)
         run_id = f"run_{uuid.uuid4().hex}"
         run = Run(run_id, sid, text)
         RUNS[run_id] = run
@@ -1302,7 +1367,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self.start_sse()
         try:
-            add_message(sid, "user", stored)
+            add_message(sid, "user", stored, **extra)
             s = SESSIONS[sid]
             if not s["title"]:
                 s["title"] = (text or "Image").split("\n")[0][:48]
@@ -1458,6 +1523,8 @@ def main():
                         help="with --many-chats: mostly Telegram and Discord, a few of this app's chats and scheduled runs per page")
     parser.add_argument("--routine-runs", action="store_true",
                         help="two routines every ten minutes over the last day, most runs empty (seed_routine_runs)")
+    parser.add_argument("--photo-chats", action="store_true",
+                        help="a chat whose photo turns Hermes stored with its notes for the model (seed_photo_chats)")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
@@ -1469,6 +1536,8 @@ def main():
         seed_many_chats(args.many_chats, sparse=args.sparse_chats)
     if args.routine_runs:
         seed_routine_runs()
+    if args.photo_chats:
+        seed_photo_chats()
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets, version=args.widgets_version)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
