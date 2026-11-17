@@ -146,8 +146,14 @@ final class AppPluginsModel {
         defer { phase = .idle }
         let profiles = Self.profiles(roster.profiles.map(\.name))
         let transport = Self.transport(roster)
+        let before = survey?.entries.filter { $0.plugin == .widgets }
         survey = await AppPluginsSurvey.read(profiles: profiles) { profile in
             try await ConnectionsClient(profile: profile, transport: transport).plugins()
+        }
+        if survey?.entries.filter({ $0.plugin == .widgets }) != before {
+            // A widgets plugin installed, updated or turned on may now take the turn's client
+            // (`docs/widgets.md` §11).
+            workspace?.widgets.pluginMayHaveChanged()
         }
         checkedAt = .now
         if let survey, !survey.failures.isEmpty {
@@ -175,6 +181,7 @@ final class AppPluginsModel {
     private func markRestarted() {
         UserDefaults.standard.removeObject(forKey: restartPIDKey)
         needsRestart = false
+        workspace?.widgets.pluginMayHaveChanged()
     }
 
     /// Keeping current (`docs/plugins.md` §7): the plan, never past what the person allowed,

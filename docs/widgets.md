@@ -413,6 +413,18 @@ widgets.
   exactly as sent, nothing trimmed (`tests/client_vectors.json` has worked examples). It carries
   no device name, no identifier and nothing the person typed. The plugin checks every field against
   a short list or pattern and refuses anything else with one line of JSON.
+- **When the app sends it** (`WidgetStore.announceClient`, `ClientApp`): before every socket
+  `prompt.submit` of a chat whose profile the plugin reaches, a message held for the next turn
+  (`queued`) included, after the chat is marked. The hash is of the text the submit carries: after
+  `/skill` prefixes are expanded and attachment references joined. `version` and `build` are the
+  app's (`CFBundleShortVersionString`, `CFBundleVersion`), `os_version` the system's (26.1, or
+  26.1.2 with a patch), and `renders` has widgets only where the plugin reaches the chat's profile.
+  The send waits at most 2 seconds for the answer; a timeout or any other error is logged and the
+  message goes anyway. A plugin older than 1.6.0 ("unknown command") or a profile without one
+  (4018) is remembered for that gateway and profile, so later turns don't ask again, until the
+  plugin may have changed: the socket reconnects, the plugin survey's widgets entries change (an
+  install, an update, a copy turned on) or the gateway restarts ([plugins.md](plugins.md) §2.1).
+  Nothing about it shows in the app. A reply from a notification goes without it.
 - **What the model sees:** the plugin keeps at most 8 markers per chat for 10 minutes. In
   `pre_llm_call` it hashes the turn's text, takes the oldest live marker that matches (under the
   chat's id or one it was compacted from) and, when the client differs from the one that chat's
@@ -479,8 +491,11 @@ halfway; "widget routine directive" repeats the stored widget's directive in the
 "widget routine missing" names one that was never stored (§2). Over the socket a chat the app
 didn't mark gets each widget's `fallback_text`, as the plugin's `transform_llm_output` gives it. `POST
 /api/mock/widget-answer {id, action}` answers from another device. `/app-widgets client` files
-markers with the plugin's checks and refusals (8 per chat, 10 minutes, in memory; no model reads
-them), and `--widgets-version 1.5.0` plays the plugin before it, where `client` is an unknown
+markers with the plugin's checks and refusals (8 per chat, 10 minutes, in memory), and each socket
+`prompt.submit` uses up the oldest marker whose hash matches its text, as `pre_llm_call` would, and
+logs `[mock-widgets] prompt.submit in <chat>: text_sha256 <hash> matches the <device> app's client
+marker` (or "has no client marker", and "(held for the next turn)" after `prompt.submit` for a
+held message); and `--widgets-version 1.5.0` plays the plugin before it, where `client` is an unknown
 command (`tests/test_widgets_client.py`). `--no-widgets` leaves the plugin out. Every payload,
 update and resolution the mock makes passes the plugin's own validator.
 
@@ -518,6 +533,10 @@ light, dark and Increase Contrast:
 - "widget private image": the same pictures, covered in the app switcher; nothing of them in the
   app's container (search it for the pictures' hashes after they've shown).
 - "widget suggestions": rows under the newest reply only; tapping one sends its words.
+- Which app sent the turn: in the backend's log every message, a held one and one with a skill or a
+  file included, has a `client:` line just before its `prompt.submit` line, and the submit's hash
+  matches it. With `--widgets-version 1.5.0` messages send as before, and `client` is tried once
+  per profile, not every turn.
 - A Bot group chat: "widget publish" in the room, the card from Ops, answered into the room.
 - VoiceOver reads each card as one sentence-led container; Audio Graphs plays a chart.
 - `HermesUITests/WidgetsUITests` and `WidgetGalleryUITests` pass; the gallery's pages are in the

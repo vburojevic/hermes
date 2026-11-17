@@ -997,6 +997,10 @@ answer says what became of it (`SubmitAnswer`, hermes-agent `tui_gateway/methods
 | `steered` / `redirected` | It went into the running turn (an older client's busy mode): it shows as a steer of that turn |
 | `voice_stopped` | A typed stop phrase ended the voice chat: nothing was sent and no turn starts |
 
+Just before each `prompt.submit`, a held message's included, the app tells the widgets plugin
+which app sends the turn, by the hash of the exact text it sends ([widgets.md](widgets.md) §11). It
+waits at most 2 seconds for that and sends either way.
+
 What becomes of a message is decided from Hermes's answers and events only, never guessed, so a
 message is always in one of these states:
 

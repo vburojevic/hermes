@@ -3208,6 +3208,7 @@ final class ConversationModel: Identifiable {
                     references.append(try await attach(file, runtime: runtime, roster: roster, staged: &staged))
                 }
                 let prompt = ([item.text] + references).filter { !$0.isEmpty }.joined(separator: "\n")
+                await announceClient(runtime: runtime, text: prompt, roster: roster)
                 sent = true
                 let result = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt), "queued": .bool(true)])
                 if SubmitAnswer(result: result).startedItsTurn {
@@ -5259,6 +5260,7 @@ extension ConversationModel {
                     rememberParts(prompt: prompt, text: text, skills: [])
                 }
                 await markForWidgets(runtime: runtime, roster: roster)
+                await announceClient(runtime: runtime, text: prompt, roster: roster)
                 await prepareInAppBrowser(.socket(sessionID: runtime))
                 turnGate.send()
                 submitted = SentPrompt(at: .now, knownNewestID: rawMessages.last?.id)
@@ -7246,5 +7248,14 @@ extension ConversationModel {
         // Where only a Bot has the plugin, its open chat is the way in for the rest (`pluginClient`).
         widgets.markKnownChats()
         await widgets.registerKeyIfNeeded()
+    }
+
+    /// Tells the plugin which app sends this turn, just before its `prompt.submit`, with `text`
+    /// exactly as the submit sends it: after skills are expanded and attachments joined (§11).
+    fileprivate func announceClient(runtime: String, text: String, roster: BotRoster) async {
+        guard let widgets = workspace?.widgets, let stored = sessionID else { return }
+        await widgets.announceClient(runtime: runtime, storedID: stored, text: text, profile: gatewayProfile) { method, params in
+            try await roster.request(method, params)
+        }
     }
 }

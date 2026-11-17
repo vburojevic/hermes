@@ -3,6 +3,9 @@ import HermesKit
 import HermesPush
 import Observation
 import os
+#if os(iOS)
+import UIKit
+#endif
 
 /// One gateway's widgets (`docs/widgets.md` §4): the newest revision of each, what this device
 /// sent and when, batches waiting to go, and each widget's view state. Answered, locked and
@@ -251,6 +254,8 @@ final class WidgetStore {
     /// Bot Mode's socket is up: what goes through it (the signing key, marking the chats this device
     /// knows) runs now, since the gateway's tool list is usually read before the socket opens.
     func socketConnected() {
+        // A gateway that restarted may run a newer plugin.
+        pluginMayHaveChanged()
         guard isAvailable else { return }
         Task { [weak self] in
             await self?.registerKeyIfNeeded()
@@ -300,6 +305,48 @@ final class WidgetStore {
 
     func noteMarked(_ sessionID: String) {
         marked.insert(sessionID)
+    }
+
+    // MARK: - Which app sends a turn (`docs/widgets.md` §11)
+
+    /// How long a send waits for the plugin to file its turn marker before it goes anyway.
+    static let announceLimit = 2.0
+    /// Profiles whose plugin is older than 1.6.0 or missing: not asked again every turn.
+    @ObservationIgnored private var announcements = ClientAnnouncements()
+
+    /// What this device draws in a chat of `profile`: widgets where the plugin reaches it.
+    func renders(profile: String?) -> [ClientApp.Render] {
+        ClientApp.alwaysRenders + (reaches(profile: profile) ? [.widgets] : [])
+    }
+
+    /// Tells the plugin that this app sends the chat's next turn, just before its `prompt.submit`,
+    /// so the marker is filed when the plugin's `pre_llm_call` looks for it. `text` is exactly what
+    /// the turn sends. Never holds the send up for long or fails it: past `announceLimit`, or on
+    /// any error, the turn goes without it.
+    func announceClient(runtime: String, storedID: String, text: String, profile: String?,
+                        transport: @escaping AppWidgetsClient.Transport) async {
+        guard reaches(profile: profile), announcements.shouldAnnounce(profile: profile) else { return }
+        let client = AppWidgetsClient(profile: profile, transport: transport)
+        let identity = ClientApp.thisDevice(renders: renders(profile: profile))
+        let hash = ClientApp.textHash(text)
+        do {
+            _ = try await AppModel.withDeadline(seconds: Self.announceLimit) {
+                try await client.announceClient(runtimeID: runtime, storedID: storedID, client: identity, textHash: hash)
+            }
+            announcements.record(.announced, profile: profile)
+        } catch {
+            let outcome = ClientAnnouncements.outcome(of: error)
+            announcements.record(outcome, profile: profile)
+            if outcome == .failed, !(error is CancellationError) {
+                WidgetStore.logger.notice("widgets: telling the plugin which app sends the turn failed (\(BotRoster.describe(error), privacy: .public))")
+            }
+        }
+    }
+
+    /// The plugin may be new or newer (installed, updated, the gateway reconnected): profiles that
+    /// couldn't be told the client are asked again at their next turn.
+    func pluginMayHaveChanged() {
+        announcements.forgetUnsupported()
     }
 
     // MARK: - Sending
@@ -445,5 +492,25 @@ private struct WeakConversation {
 
     init(_ conversation: ConversationModel) {
         self.conversation = conversation
+    }
+}
+
+extension ClientApp {
+    /// This build on this device, for `/app-widgets client`: the app's version and build, the
+    /// system's version and the kind of device. Never its name or any identifier.
+    static func thisDevice(renders: [Render]) -> ClientApp {
+        let info = Bundle.main.infoDictionary
+        let device: Device
+        #if os(macOS)
+        device = .mac
+        #else
+        device = UIDevice.current.userInterfaceIdiom == .pad ? .ipad : .iphone
+        #endif
+        return ClientApp(
+            version: info?["CFBundleShortVersionString"] as? String ?? "0",
+            build: info?["CFBundleVersion"] as? String ?? "0",
+            device: device,
+            osVersion: osVersion(ProcessInfo.processInfo.operatingSystemVersion),
+            renders: renders)
     }
 }
