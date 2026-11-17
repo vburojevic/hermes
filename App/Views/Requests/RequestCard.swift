@@ -81,6 +81,7 @@ private struct ClarifyCard: View {
             Text(question.question)
                 .font(.body)
                 .foregroundStyle(Theme.primaryText)
+                .selectableOnMac()
             if question.choices.isEmpty {
                 TextField("Your answer", text: $freeText, axis: .vertical)
                     .lineLimit(3...6)
@@ -272,6 +273,7 @@ private struct SecretCard: View {
                 Text(prompt)
                     .font(.subheadline)
                     .foregroundStyle(Theme.primaryText)
+                    .selectableOnMac()
             }
             TagLabel(title: envVar)
                 .font(.caption2.monospaced())
@@ -325,6 +327,7 @@ private struct VaultUnlockCard: View {
             Text("\(conversation.askerName) needs a login from \(name).")
                 .font(.subheadline)
                 .foregroundStyle(Theme.primaryText)
+                .selectableOnMac()
             MaskedField(placeholder: String(localized: "Master password"), text: $password, symbol: "lock", isPassword: true, allowsPaste: false, onSubmit: unlock)
                 .privacySensitive()
             FinePrint(text: String(localized: "Goes straight to \(name) on \(conversation.gatewayName). Only a session token stays, and it locks after 30 minutes idle."))
@@ -391,6 +394,7 @@ private struct CodeCard: View {
             Text(hint ?? String(localized: "Open your authenticator app and type the code for \(site ?? "this sign-in")."))
                 .font(.subheadline)
                 .foregroundStyle(Theme.primaryText)
+                .selectableOnMac()
             ZStack {
                 TextField("", text: $code)
                     .focused($focused)
@@ -482,6 +486,7 @@ private struct ChooseCard: View {
                 Text(choice.question)
                     .font(.body)
                     .foregroundStyle(Theme.primaryText)
+                    .selectableOnMac()
             }
             switch choice.kind {
             case "accent": swatches
@@ -671,6 +676,7 @@ private struct ConnectionCard: View {
                 Text(detail)
                     .font(.subheadline)
                     .foregroundStyle(Theme.primaryText)
+                    .selectableOnMac()
             }
             badges(origin: target.origin, scan: target.scan)
             ForEach(target.requiredEnv) { field in
@@ -721,6 +727,7 @@ private struct ConnectionCard: View {
                     Label(detail, systemImage: "person.crop.circle")
                         .font(.subheadline)
                         .foregroundStyle(Theme.primaryText)
+                        .selectableOnMac()
                 }
             } else {
                 RequestHeader(symbol: "link", title: String(localized: "Sign in to \(name)"), subtitle: String(localized: "Needed by \(conversation.askerName)"), deadline: request.deadline)
@@ -739,6 +746,7 @@ private struct ConnectionCard: View {
                         Text(detail)
                             .font(.subheadline)
                             .foregroundStyle(Theme.primaryText)
+                            .selectableOnMac()
                     }
                     Button {
                         signingIn = true
@@ -778,10 +786,12 @@ private struct ConnectionCard: View {
                         Text(target.name)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Theme.primaryText)
+                            .selectableOnMac()
                         if let detail = target.detail {
                             Text(detail)
                                 .font(.footnote)
                                 .foregroundStyle(Theme.secondaryText)
+                                .selectableOnMac()
                         }
                         HStack(spacing: 6) {
                             Text([kindLabel(target), target.origin?.capitalized].compactMap { $0 }.joined(separator: " · "))
