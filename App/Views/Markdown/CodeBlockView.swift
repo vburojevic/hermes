@@ -1,9 +1,9 @@
 import HermesMarkdown
 import SwiftUI
 
-/// A fenced code block: language label, copy button, horizontally scrolling tinted code. A block
-/// with a very long line wraps instead, and a very long block shows its start (`CodeBlockLayout`):
-/// one text run past a few thousand points draws nothing at all.
+/// A fenced code block: language label, copy button, tinted code that scrolls sideways when it's
+/// wider than the reply. A block with a very long line wraps instead, and a very long block shows
+/// its start (`CodeBlockLayout`): one text run past a few thousand points draws nothing at all.
 struct CodeBlockView: View {
     let language: String?
     let code: String
@@ -49,15 +49,20 @@ struct CodeBlockView: View {
                     .padding(.bottom, shown.hidden > 0 ? 6 : 14)
                     .padding(.top, 2)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(Self.highlight(shown.text, language: language, caches: caches))
-                        .font(Theme.Typography.code)
-                        .lineSpacing(2)
-                        .fixedSize(horizontal: true, vertical: true)
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, shown.hidden > 0 ? 6 : 14)
-                        .padding(.top, 2)
+                let lines = Text(Self.highlight(shown.text, language: language, caches: caches))
+                    .font(Theme.Typography.code)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, shown.hidden > 0 ? 6 : 14)
+                    .padding(.top, 2)
+                // Only a block wider than the reply scrolls: every scroll view in a long chat is
+                // work on each frame of scrolling back past it (docs/chat.md §3).
+                ViewThatFits(in: .horizontal) {
+                    lines
+                    ScrollView(.horizontal, showsIndicators: false) { lines }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if shown.hidden > 0 {
                 Text("\(shown.hidden) more characters. Copy copies all of it.")

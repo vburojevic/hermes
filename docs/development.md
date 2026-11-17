@@ -532,6 +532,27 @@ top of the views' bodies in a scratch copy and count the lines while it streams 
 SwiftUI template doesn't record on a simulator). The environment tells values apart by their
 contents, not by `==`: hand rows the same value when nothing changed (`stableReferences`).
 
+Measuring a scroll back: use a chat long enough that reading back loads page after page.
+`backend.py --long-chat` seeds "Homelab rebuild" with `seed_long_chat()`, 60 turns; for a few
+hundred turns with headings, lists, code blocks, tables and tool steps, raise its `turns` and add
+those blocks to its replies in a scratch copy of the mock. Open the chat with
+`-HERMES_RESTORE session:<key>` and scroll it with `-HERMES_SCROLL_RUN 1 -HERMES_SCROLL_SPEED 3000`
+`-HERMES_SCROLL_AFTER 14 -HERMES_SCROLL_LOG 1` (the log marks each page it loads). On the Mac,
+build Debug (the launch flags need it) with `SWIFT_OPTIMIZATION_LEVEL=-O`
+`SWIFT_COMPILATION_MODE=wholemodule`, and run a copy with its own bundle id and
+`CFFIXED_USER_HOME`, so it keeps its own data and never meets the Hermes you use. A leg's cost is
+the main thread's CPU time over its wall time between its `SCROLLRUN` marks (`ps -M -p <pid>` at
+each mark): its busy share. An app in a simulator is a process on the Mac, so the same reading
+works there. Note the pages each leg loads (`earlier page`), the time to the top and the footprint
+before and after. One run is noise: compare a change with the build before it in interleaved pairs
+(B F F B B F F B B F, after an unmeasured run of each to warm caches, each run from the same copy
+of its home), with the load average and `memory_pressure -Q` noted for each run, and report the
+median and range. To see where the time goes, run `sample <pid> 30 1 -file <out>` from a leg's
+mark (a run apart from the measured ones: the sampler costs time), and read the main thread's own
+call graph. Most of a scroll's time is SwiftUI's attribute graph rather than any one body, so
+count what changes it: how many views each settled message builds, and how many stay in the
+window while it moves.
+
 Background processes (`Tools/mock-hermes/processes.py`, [background-processes.md](background-processes.md)),
 in Bot Chats and normal chats: "release" with "docs" (or "processes") starts a Docs site that runs
 on and a Release build that exits 0 after ~35 s with no event, and closes the Docs site's tab
