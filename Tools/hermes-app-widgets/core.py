@@ -6,6 +6,7 @@ store under the Hermes root is shared by every process and profile.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -24,7 +25,7 @@ from .validate import MAX_PAYLOAD, Checks, Spec, WidgetError, schema_issues
 
 logger = logging.getLogger("hermes_app_widgets")
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 # Bumped when the one-time reminder (prompt.REMINDER) changes enough to send again.
 REMINDER_VERSION = 2
 OPS = ("create", "update", "resolve", "claim", "get")
@@ -41,6 +42,14 @@ PRIVATE_CHAT_TYPES = ("dm", "private", "")
 MAX_SESSIONS = 5000
 # Sessions whose compression ancestors were read, kept per process: a session's ancestors never change.
 MAX_LINEAGES = 2000
+# `/app-widgets client` (docs/widgets.md §11): what the app may say about itself, all of it checked.
+CLIENT_OS = ("iOS", "iPadOS", "macOS")
+CLIENT_DEVICES = ("iphone", "ipad", "mac")
+CLIENT_RENDERS = ("widgets", "gateway-file-images", "markdown", "code", "tables")
+CLIENT_FIELDS = {"id": r"hermes-app", "version": r"[0-9][0-9A-Za-z.+-]{0,19}", "build": r"[0-9A-Za-z.]{1,20}",
+                 "os": "|".join(CLIENT_OS), "os_version": r"[0-9]{1,3}(\.[0-9]{1,3}){0,2}",
+                 "device": "|".join(CLIENT_DEVICES)}
+SESSION_ID = r"[A-Za-z0-9_.:-]{1,128}"
 
 
 def _session_env(name: str) -> str:
@@ -815,23 +824,61 @@ class Widgets:
     # ---- hooks
 
     def pre_llm_call(self, session_id: str = "", platform: str = "", is_first_turn: bool = False,
-                     **_: Any) -> dict | None:
-        """Once per app chat, the widget rules as turn context. Hermes builds a chat's system prompt
-        at its first turn and keeps it, so a chat that started before it had widgets (a long-lived
-        Bot Chat, or one the app marked after its first message) never sees the prompt section."""
+                     user_message: Any = None, **_: Any) -> dict | None:
+        """Turn context for the app's chats, merged into one: the widget rules once per chat
+        (``_reminder``), and the line naming the app that sent this turn when it changed (``_client``)."""
         if not session_id:
             return None
         s = self.session(session_id, str(platform or "").lower())
-        if not s.app or s.platform == "cron":
+        if s.subagent or s.platform == "cron":
             return None
-        seen = self._marks("reminded").get(session_id) or {}
+        parts = []
+        for part in (self._reminder, self._client):
+            try:
+                text = part(s, is_first_turn, user_message)
+            except Exception:
+                logger.warning("widgets: turn context failed", exc_info=True)
+                text = None
+            if text:
+                parts.append(text)
+        return {"context": "\n\n".join(parts)} if parts else None
+
+    def _reminder(self, s: Session, is_first_turn: bool, _message: Any) -> str | None:
+        """Once per app chat, the widget rules as turn context. Hermes builds a chat's system prompt
+        at its first turn and keeps it, so a chat that started before it had widgets (a long-lived
+        Bot Chat, or one the app marked after its first message) never sees the prompt section."""
+        if not s.app:
+            return None
+        seen = self._marks("reminded").get(s.id) or {}
         if seen.get("version", 0) >= REMINDER_VERSION:
             return None
-        self.mark_session(session_id, "reminded", version=REMINDER_VERSION)
+        self.mark_session(s.id, "reminded", version=REMINDER_VERSION)
         if is_first_turn:
             return None  # the prompt section was built with this turn
         from .prompt import REMINDER
-        return {"context": REMINDER}
+        return REMINDER
+
+    def _client(self, s: Session, _first: bool, message: Any) -> str | None:
+        """The app files a marker (``/app-widgets client``) just before it sends a turn: the hash of the
+        text it sends and the client sending it. A turn whose clean text hashes the same, in the same
+        chat or one Hermes compacted it from, is the app's; the oldest such marker is used up. The
+        model hears about the client only when it differs from the one it was last told about."""
+        text = _message_text(message)
+        if text is None:
+            return None
+        sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        now = self.clock().timestamp()
+        waiting = self.store.client_turn_keys(sha, now)
+        if not waiting:
+            return None  # not the app's turn: nothing locked, no lineage read
+        candidates = [s.id] if s.id in waiting else [s.id, *reversed(self.ancestors(s.id))]
+        if not waiting.intersection(candidates):
+            return None
+        client = self.store.take_client_turn(s.id, candidates, sha, now)
+        if client is None:
+            return None
+        from .prompt import client_line
+        return client_line(client)
 
     def transform_llm_output(self, response_text: str = "", session_id: str = "", platform: str = "",
                              **_: Any) -> str | None:
@@ -957,11 +1004,11 @@ class Widgets:
 
     # ---- the /app-widgets command
 
-    COMMANDS = ("session", "room", "get", "keys.register", "keys.remove", "keys.list", "status")  # as in __init__
+    COMMANDS = ("session", "client", "room", "get", "keys.register", "keys.remove", "keys.list", "status")  # as in __init__
 
     def command(self, name: str, args: dict) -> dict:
         platform = (_session_env("HERMES_SESSION_PLATFORM") or "").lower()
-        if name in ("session", "room", "keys.register", "keys.remove") and platform and platform not in ("cli", "api_server"):
+        if name in ("session", "client", "room", "keys.register", "keys.remove") and platform and platform not in ("cli", "api_server"):
             return {"ok": False, "error": f"/app-widgets {name} is for the Hermes app, not {platform}"}
         if name == "session":
             # A Bot Mode chat has a runtime id (session.create's session_id) and the stored one its
@@ -969,11 +1016,21 @@ class Widgets:
             many = args.get("session_ids") if isinstance(args.get("session_ids"), list) else []
             ids = [str(v) for v in (args.get("session_id"), args.get("stored_session_id"), *many[:500],
                                     _session_env("HERMES_SESSION_ID"), _session_env("HERMES_SESSION_KEY")) if v]
-            ids = [i for i in dict.fromkeys(ids) if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", i)]
+            ids = [i for i in dict.fromkeys(ids) if re.fullmatch(SESSION_ID, i)]
             if not ids:
                 return {"ok": False, "error": "session_id is required"}
             self.mark_sessions(ids)
             return {"ok": True, "session_ids": ids}
+        if name == "client":
+            checked = _client_args(args)
+            if isinstance(checked, str):
+                return {"ok": False, "error": checked}
+            given, client, sha = checked
+            # Filed under every id the chat's turn may run as, as `session` marks them.
+            ids = list(dict.fromkeys([*given, *(v for v in (_session_env("HERMES_SESSION_ID"), _session_env("HERMES_SESSION_KEY"))
+                                                if re.fullmatch(SESSION_ID, v or ""))]))
+            pending = self.store.add_client_turn(ids, client, sha, self.clock().timestamp())
+            return {"ok": True, "session_ids": ids, "pending": pending}
         if name == "room":
             room_id = str(args.get("room_id") or "")
             if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", room_id):
@@ -1024,6 +1081,62 @@ class Widgets:
 
 
 # ---- helpers
+
+
+def _client_args(args: Any) -> tuple[list[str], dict, str] | str:
+    """``/app-widgets client``'s arguments, checked: (the chat's ids, the client, the text's hash), or
+    what is wrong. Known keys only, every value from a short list or a short pattern, nothing free."""
+    if not isinstance(args, dict):
+        return "arguments must be a JSON object"
+    extra = set(args) - {"session_id", "stored_session_id", "client", "turn"}
+    if extra:
+        return f"unknown argument {sorted(extra)[0]!r}"
+    ids = []
+    for key in ("session_id", "stored_session_id"):
+        value = args.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not re.fullmatch(SESSION_ID, value):
+            return f"{key} must be a session id"
+        ids.append(value)
+    if not ids:
+        return "session_id is required"
+    client = args.get("client")
+    if not isinstance(client, dict):
+        return "client is required"
+    extra = set(client) - {*CLIENT_FIELDS, "renders"}
+    if extra:
+        return f"unknown client field {sorted(extra)[0]!r}"
+    checked: dict[str, Any] = {}
+    for key, pattern in CLIENT_FIELDS.items():
+        value = client.get(key)
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            return f"client.{key} is missing or not allowed"
+        checked[key] = value
+    renders = client.get("renders")
+    if (not isinstance(renders, list) or not all(isinstance(r, str) and r in CLIENT_RENDERS for r in renders)
+            or len(set(renders)) != len(renders)):
+        return f"client.renders must list distinct values from {', '.join(CLIENT_RENDERS)}"
+    checked["renders"] = list(renders)
+    turn = args.get("turn")
+    if not isinstance(turn, dict) or set(turn) != {"text_sha256"}:
+        return "turn must be {\"text_sha256\": ...}"
+    sha = turn["text_sha256"]
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        return "turn.text_sha256 must be 64 lowercase hex characters"
+    return list(dict.fromkeys(ids)), checked, sha
+
+
+def _message_text(message: Any) -> str | None:
+    """The turn's clean text as Hermes hands it to ``pre_llm_call``: a string, or the first text part
+    of a multimodal message. None when there is none."""
+    if isinstance(message, str):
+        return message
+    if isinstance(message, list):
+        for part in message:
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
+                return part["text"]
+    return None
 
 
 def _cap(text: str, limit: int = 2000) -> str:

@@ -1424,7 +1424,7 @@ TOOLSETS = [
 ]
 
 
-def install_widgets(gateway, enabled=True):
+def install_widgets(gateway, enabled=True, version=None):
     """The widgets plugin's scenario (widgets.py), loaded beside this file like backend.py's modules."""
     import importlib.util
     import pathlib
@@ -1432,6 +1432,7 @@ def install_widgets(gateway, enabled=True):
     widgets = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(widgets)
     widgets.ENABLED["on"] = enabled
+    widgets.PLUGIN["version"] = version or widgets.VERSION
     widgets.install_gateway(gateway)
     return widgets
 
@@ -1442,6 +1443,8 @@ def main():
     parser.add_argument("--port", type=int, default=18642)
     parser.add_argument("--key", default="dev-key-0123456789abcdef")
     parser.add_argument("--no-widgets", action="store_true", help="a gateway without the hermes-app-widgets plugin")
+    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0"], default="1.6.0",
+                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: answers come in bursts every MIN-MAX seconds (starve.py)")
     parser.add_argument("--run-stream-ttl", type=float, default=300, metavar="SECONDS",
@@ -1466,7 +1469,7 @@ def main():
         seed_many_chats(args.many_chats, sparse=args.sparse_chats)
     if args.routine_runs:
         seed_routine_runs()
-    install_widgets(sys.modules[__name__], enabled=not args.no_widgets)
+    install_widgets(sys.modules[__name__], enabled=not args.no_widgets, version=args.widgets_version)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
     print(f"[mock-hermes] listening on http://{args.host}:{args.port} (key: {args.key})", flush=True)

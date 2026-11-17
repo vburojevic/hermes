@@ -634,9 +634,12 @@ does: it looks the forecast up, reads the weather examples and answers one sente
 weather card. Over the socket, a chat the app didn't mark gets each widget's plain text instead,
 as on a real gateway. In a Bot group chat the app marked, the same words make Ops answer with an inline block. `POST
 /api/mock/widget-answer {id?, action, device?, hold?}` answers the newest widget from another
-device; `--no-widgets` leaves the plugin out. On a simulator, enrol Face ID with `xcrun simctl
-spawn <udid> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1` (then `-p` the same name)
-and pass a check with `notifyutil -p com.apple.BiometricKit_Sim.pearl.match`.
+device; `--no-widgets` leaves the plugin out. `/app-widgets client` (which app sent a turn,
+[widgets.md](widgets.md) §11) answers as plugin 1.6.0 does, refusals included; `--widgets-version
+1.5.0` (either server) plays the plugin before it, where `client` is an unknown command and
+`status` says 1.5.0. On a simulator, enrol Face ID with `xcrun simctl spawn <udid> notifyutil -s
+com.apple.BiometricKit.enrollmentChanged 1` (then `-p` the same name) and pass a check with
+`notifyutil -p com.apple.BiometricKit_Sim.pearl.match`.
 
 UI tests (`HermesUITests`, `UITests/`) run against the mock: start it first, then
 `xcodebuild test -scheme HermesUITests -destination 'platform=iOS Simulator,name=…'`

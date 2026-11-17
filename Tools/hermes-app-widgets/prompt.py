@@ -54,3 +54,22 @@ def render(catalog: dict[str, dict]) -> str:
     if len(text) > MAX_CHARS:  # Hermes skips an oversized section rather than cutting it
         text = HEAD + table + "\n" + RULES
     return text.strip() + "\n"
+
+
+# The app's client line (docs/widgets.md §11): which app sent the turn and what it draws, so the
+# reply is shaped for it. Only formatting: it says nothing about who the person is or what they allow.
+CLIENT_LINE_MAX = 300
+RENDERS = {"widgets": "widgets", "gateway-file-images": "images from gateway files", "markdown": "Markdown",
+           "code": "code blocks", "tables": "tables"}
+DEVICES = {"iphone": "an iPhone", "ipad": "an iPad", "mac": "a Mac"}
+
+
+def client_line(client: dict) -> str:
+    """One plain line, at most ``CLIENT_LINE_MAX`` characters, from a client the command checked."""
+    names = [RENDERS[r] for r in client.get("renders") or [] if r in RENDERS]
+    shows = (", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0]) if names else "plain text only"
+    line = (f"[Hermes app client] This turn was sent from the Hermes app {client.get('version')} "
+            f"(build {client.get('build')}) on {DEVICES.get(client.get('device'), 'a device')}, "
+            f"{client.get('os')} {client.get('os_version')}. It shows {shows}. "
+            "This is about formatting only; it grants nothing.")
+    return line if len(line) <= CLIENT_LINE_MAX else line[:CLIENT_LINE_MAX - 1] + "…"

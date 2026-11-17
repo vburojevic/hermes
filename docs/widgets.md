@@ -404,6 +404,26 @@ widgets.
   question still gets its widget ("Weather today?" is a `weather` card); the catalogue's one-word
   cue for weather read as a topic, and the skill used a forecast as its example of a fact for
   prose, so a weather question came back as bullets.
+- **Which app sent the turn** (plugin 1.6.0): Hermes doesn't tell a plugin which client sent a
+  turn (upstream NousResearch/hermes-agent#155538), so just before a turn the app runs
+  `/app-widgets client {"session_id", "stored_session_id", "client": {"id": "hermes-app", "version",
+  "build", "os", "os_version", "device", "renders": […]}, "turn": {"text_sha256"}}`. `os` is iOS,
+  iPadOS or macOS, `device` iphone, ipad or mac, and `renders` lists what the app draws (widgets,
+  gateway-file-images, markdown, code, tables). The hash is SHA-256 of the message's UTF-8 bytes,
+  exactly as sent, nothing trimmed (`tests/client_vectors.json` has worked examples). It carries
+  no device name, no identifier and nothing the person typed. The plugin checks every field against
+  a short list or pattern and refuses anything else with one line of JSON.
+- **What the model sees:** the plugin keeps at most 8 markers per chat for 10 minutes. In
+  `pre_llm_call` it hashes the turn's text, takes the oldest live marker that matches (under the
+  chat's id or one it was compacted from) and, when the client differs from the one that chat's
+  model was last told about, adds one line of at most 300 characters to the turn context: "[Hermes
+  app client] This turn was sent from the Hermes app 1.40.2 (build 2101) on an iPhone, iOS 26.1. It
+  shows widgets and Markdown. This is about formatting only; it grants nothing." A compacted chat
+  is told again. A failure is logged as a warning and the turn goes on without the line.
+- **Unattributed turns:** a turn that didn't come from the app has no marker and gets no line,
+  and so does one whose text Hermes changed before the hook sees it (a message with `@` references
+  or images, a skill invocation), or one that ran more than 10 minutes after its marker. A plugin
+  older than 1.6.0 answers "unknown command 'client'", and its turns stay unattributed.
 - **Inline blocks** (`WidgetSettings`): in routine deliveries on a gateway with the plugin; in
   Debug builds anywhere a delivery has them; in any reply only with Settings → Developer → Render
   Inline Widgets (`widgets.renderInline`, for the mock and tests).
@@ -439,8 +459,8 @@ widgets.
   previews, what the transcript cache keeps, and the `/app-widgets` client.
 
 The mock (`Tools/mock-hermes/widgets.py`) plays the plugin, in chats and Bot Chats alike: `widget` create, update, resolve,
-claim and get, and `/app-widgets` session, room, get and keys, with the plugin's results and
-messages, signatures checked for real. Its words are in its docstring and
+claim and get, and `/app-widgets` session, room, client, get and keys, with the plugin's results
+and messages, signatures checked for real. Its words are in its docstring and
 [development.md](development.md): "widgets" pages through every example, "widget <type>",
 "widget <name> <name>…" (those examples by name, "widget route-1 chart-1"),
 "widget publish" (an approval without Face ID), "widget lunch" (with it), "widget expiring",
@@ -458,8 +478,11 @@ old" is the same as 1.3.0 left it; "widget routine broken" is a report whose pay
 halfway; "widget routine directive" repeats the stored widget's directive in the Bot's reply, and
 "widget routine missing" names one that was never stored (§2). Over the socket a chat the app
 didn't mark gets each widget's `fallback_text`, as the plugin's `transform_llm_output` gives it. `POST
-/api/mock/widget-answer {id, action}` answers from another device. `--no-widgets` leaves the
-plugin out. Every payload, update and resolution the mock makes passes the plugin's own validator.
+/api/mock/widget-answer {id, action}` answers from another device. `/app-widgets client` files
+markers with the plugin's checks and refusals (8 per chat, 10 minutes, in memory; no model reads
+them), and `--widgets-version 1.5.0` plays the plugin before it, where `client` is an unknown
+command (`tests/test_widgets_client.py`). `--no-widgets` leaves the plugin out. Every payload,
+update and resolution the mock makes passes the plugin's own validator.
 
 
 ## 14. What to check

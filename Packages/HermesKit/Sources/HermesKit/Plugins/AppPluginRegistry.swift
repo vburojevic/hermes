@@ -98,7 +98,7 @@ extension AppPlugin {
                        "1.1.1": widgetsAccess(since111: true), "1.2.0": widgetsAccess(since111: true),
                        "1.2.1": widgetsAccess(since111: true), "1.2.2": widgetsAccess(since111: true),
                        "1.3.0": widgetsAccess(since111: true), "1.4.0": widgetsAccess(since111: true),
-                       "1.5.0": widgetsAccess(since111: true)],
+                       "1.5.0": widgetsAccess(since111: true), "1.6.0": widgetsAccess(since111: true)],
         moments: [.ask, .whatsNew, .checklist],
         words: widgetsWords
     )

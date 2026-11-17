@@ -1,0 +1,30 @@
+{
+  "about": "SHA-256 of each text's UTF-8 bytes, exactly as sent: no trimming or normalising. The app's turn marker (/app-widgets client) and the plugin's pre_llm_call hash the same way; HermesKit's test reads the same values.",
+  "cases": [
+    {
+      "name": "ascii",
+      "text": "What's the weather in Lisbon today?",
+      "sha256": "a986bf72c6fb66e6ba026499d092e5eb99c8e6ad0a57318c05a3338dc770b36f"
+    },
+    {
+      "name": "emoji-cjk",
+      "text": "Plan a trip 🗺️ to 東京 and 서울, café included 👍🏽",
+      "sha256": "22f9f12ced2689855b2edf856188aca7527cf232cd3ca3361d1a932fdc67185e"
+    },
+    {
+      "name": "multi-line",
+      "text": "First line\nSecond line with a tab\there\r\nThird line, Windows ending\n",
+      "sha256": "1682fc07732f512140dfc3434a4f5d23e208d0cf9d9006026908859fe39c1fff"
+    },
+    {
+      "name": "empty-after-trim",
+      "text": "   \n\t  ",
+      "sha256": "f85ca008e762758d9cf5b8d7c44c3e74673139ada7adf2e48b4f12715f69f67c"
+    },
+    {
+      "name": "empty",
+      "text": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
