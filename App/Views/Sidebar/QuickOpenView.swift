@@ -450,7 +450,7 @@ struct QuickOpenView: View {
             dismiss()
         case .gateway(let id):
             dismiss()
-            app.select(id)
+            app.select(id, in: router?.windowID)
         }
     }
 }

@@ -659,7 +659,8 @@ struct GatewayMenuContent: View {
     var body: some View {
         Section("Hermes Gateways") {
             ForEach(app.bots) { bot in
-                Toggle(isOn: Binding(get: { bot.id == app.selectedBotID }, set: { if $0 { app.select(bot.id) } })) {
+                // This window's gateway: switching here leaves the other windows on theirs.
+                Toggle(isOn: Binding(get: { bot.id == workspace.id }, set: { if $0 { app.select(bot.id, in: router?.windowID) } })) {
                     Label {
                         Text(bot.name)
                         Text(subtitle(for: bot))
@@ -685,9 +686,9 @@ struct GatewayMenuContent: View {
         }
     }
 
-    /// "Connected · Bot Mode" for the current gateway; the address for the others.
+    /// "Connected · Bot Mode" for this window's gateway; the address for the others.
     private func subtitle(for bot: BotConfiguration) -> String {
-        guard bot.id == app.selectedBotID else { return bot.displayAddress }
+        guard bot.id == workspace.id else { return bot.displayAddress }
         let state: String = switch workspace.connection {
         case .online: String(localized: "Connected")
         case .connecting, .idle: String(localized: "Connecting…")
