@@ -31,6 +31,18 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611170727 (November 17, 2026)
+
+- **Bots:** a group chat's row shows its newest message and when it came
+- **iPhone:** the chat list shows which gateway you're on and switches it in one tap
+- **Sidebar:** the gateway menu's last row reads Edit Gateways… and fits on one line
+- **Sidebar:** on iPhone the connection line under the gateway name reads in full at the largest text sizes
+- **Projects:** on iPhone, a chat or the Board opened again after Back from a project stays open
+- **Chat:** reading back on the Mac keeps the screen still while earlier messages come in
+- **Chat:** code blocks and tables that fit the reply no longer scroll sideways, so scrolling back through a long chat is lighter
+- **Launch:** Bot faces measure their outlines off the main thread while the app opens
+- **Chats:** a streaming chat's row switches its newest words in place, so the Mac draws far less while a reply streams
+
 ### Build 2611160232 (November 16, 2026)
 
 - **Widgets:** pictures a Bot keeps on its gateway show in the widget
