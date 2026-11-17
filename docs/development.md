@@ -498,6 +498,20 @@ too, it's the launch where the Mac's detail once missed the selection
 doesn't load until it's in front; measure the open chat on the simulator. Kill the app between
 launches, and launch twice: the first after a build pays for loading the new binary.
 
+Where a Mac cold launch stood on 2026-11-17 (Debug at `-O` whole module; restored at launch, a
+300-turn chat with headings, code blocks, tables, lists, images and tool steps, seeded from a
+scratch copy of `backend.py --long-chat` as in Measuring a scroll back below; `--many-chats 200`;
+20 base launches over 4 batches, the last 3 interleaved with each lever; 82 to 83% memory free,
+thermal nominal, load 6 to 16): settled 1163 ms median (1084 to 1238), first view 450, window on
+screen 832, open span 553, main CPU 1.02 s. Three levers measured within that range and were
+reverted: reading and building the restored chat's kept copy while the window goes up (1146),
+showing it in the window's first layout (1134, but the window waited until 1129 and the first
+measure cost more), restoring the selection on appear instead of in a task (1152). What remains is
+serial main-thread work (Time Profiler, 1 sample = 1 ms): from first view to window, 305 to 320
+samples, of which the hosting view's layout 128 to 141, the toolbar 43 to 45 and the sidebar's
+row heights 14 to 29; then the transcript's first measure, `RowEdges` 89 to 95 (tables 20 to 24,
+text selection 17, TextKit 13). Reordering the two doesn't help; one of them has to get cheaper.
+
 The frame log's times count from the process's start, with marks for the root view, the first
 frame and the open chat showing (`chat showing`), and each mark carries the main thread's CPU so
 far: a cold launch reads straight off it. `-HERMES_SCROLL_RUN <rounds>` scrolls the open chat from
