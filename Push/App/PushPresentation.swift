@@ -38,12 +38,30 @@ struct PushPresentation: ViewModifier {
     }
 
     #if DEBUG
-    /// `-HERMES_PUSH_OPEN prime|setup|settings|ask|tidied|botchat:<session>|botreply:<profile>`
+    /// `-HERMES_PUSH_OPEN prime|setup|settings|ask|tidied|botchat:<session>|botreply:<profile>|chatreply:<profile>:<session>`
     /// (screenshots and UI tests; `ask` requests permission straight away; `tidied` opens a tidy's
     /// notice as a tap would, `botchat:` a reply's in that chat with no profile, as the primary
-    /// Bot's arrive, and `botreply:` a Bot's reply after 20 s, time to deliver it off the socket).
+    /// Bot's arrive, `botreply:` a Bot's reply after 20 s, time to deliver it off the socket, and
+    /// `chatreply:` a reply's in that chat tagged with that profile after 8 s, through what a click
+    /// on the Mac's own notification runs there).
     private func openDebugSheet() async {
         let flag = UserDefaults.standard.string(forKey: "HERMES_PUSH_OPEN") ?? ""
+        if flag.hasPrefix("chatreply:") {
+            let parts = flag.dropFirst("chatreply:".count).split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return }
+            try? await Task.sleep(for: .seconds(8))
+            guard let gateway = push.model?.selectedBotID else { return }
+            var notice = PushNotice(kind: .reply, id: "reply-debug", body: "Done.", summary: "Chat", sessionID: parts[1],
+                                    gateway: .init(id: gateway.uuidString, name: ""))
+            notice.profile = parts[0]
+            notice.sentAt = .now
+            #if os(macOS)
+            MacNotifier.shared.open(notice)
+            #else
+            push.open(notice)
+            #endif
+            return
+        }
         if flag.hasPrefix("botchat:") {
             try? await Task.sleep(for: .seconds(6))
             let chat = String(flag.dropFirst("botchat:".count))

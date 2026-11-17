@@ -223,7 +223,10 @@ enum PushResponder {
     }
 
     /// Reply…: a new message in that chat (or room). The turn runs on the gateway; the reply
-    /// notifies like any other.
+    /// notifies like any other. Where it goes is decided by the chat, as a tap is (`NoticeRouting`,
+    /// `docs/notifications.md` §3): a Bot's own chat is answered in the Bot's profile on the backend,
+    /// any other chat as a run on the gateway, as the app sends there, even when the notice carries
+    /// the profile the gateway runs under.
     @MainActor
     static func reply(_ notice: PushNotice, with text: String, center: PushCenter) async throws {
         let (workspace, apiKey) = try gateway(for: notice, center: center)
@@ -237,7 +240,7 @@ enum PushResponder {
             return
         }
         guard let chat = notice.chatID else { throw Failure.unknownGateway }
-        if let profile = notice.profile {
+        if case .bot(let profile)? = center.routing(in: workspace).destination(for: notice) {
             // A Bot Chat: its session lives in the Bot's profile, on the backend.
             _ = try await withSocket(workspace) { request in
                 let resumed = try await request("session.resume", [
