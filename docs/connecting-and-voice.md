@@ -222,7 +222,22 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
 
 ## 8. Staying connected
 
-**API server** (`BotWorkspace`). Only the gateway in front keeps checking.
+**Windows.** Each Mac window, and each iPad scene, keeps its own gateway, restored with the window
+(`SceneStorage("window.gateway")`; one since removed falls back to the last-used gateway). A Mac
+window's saved state arrives just after the window appears on the last-used gateway; it then goes
+back to its own, unless it was switched in the meantime, and reopens the chat it showed there. A
+window's saved chat names its gateway, so it never opens on another one.
+Switching in one window leaves the others alone, and a new window opens on the last-used gateway.
+The last-used gateway is the one app-wide places use (Settings, Talk, the menu bar extra, a
+notification): it follows the latest switch and the window that last became active. A
+notification, a link or a new gateway switches the window that was active last; menu commands act
+on the focused window's gateway (`WindowGateways`, `AppModel.select(_:in:)`). iPhone has one
+window, so it behaves as before.
+
+**API server** (`BotWorkspace`). The last-used gateway always keeps checking, so the menu bar extra
+and Talk stay current with every window minimized or closed. Every other gateway shown in an
+open, visible window keeps checking too; one no visible window shows (only a minimized window, or
+an iPad scene in the background) stops until one does.
 
 - Requests wait up to 120 s (a busy Mac can be slow over a chat list while its health check answers
   at once). A request still running after 8 s while `/health` answers marks the gateway busy: the
@@ -312,7 +327,7 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   thread (`ProcessInfo.performExpiringActivity`): the main thread only wraps up afterwards
   (pausing the socket), whenever it gets to run. Answering from a notification and the presence
   report hold time the same way.
-- Coming back (after more than 5 s away, or the Mac waking) the chat on screen reads what happened
+- Coming back (after more than 5 s away, or the Mac waking) the chats on screen read what happened
   meanwhile over HTTP at once (`catchUpOnReturn`), while the socket, the roster and the chat's
   re-attach are still on their way: on a busy Mac they take seconds. A Bot Chat opened while the
   socket is down loads the same way when its stored id is known (from the roster, or from the copy

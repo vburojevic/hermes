@@ -9,13 +9,17 @@ import BackgroundTasks
 import UIKit
 #endif
 
-/// App-wide state: the configured bots and which one is in front.
+/// App-wide state: the configured bots, which gateway each window shows, and the one used last.
 @MainActor
 @Observable
 final class AppModel {
     private(set) var bots: [BotConfiguration] = []
     private(set) var workspaces: [UUID: BotWorkspace] = [:]
-    private(set) var selectedBotID: UUID?
+    /// Which gateway each window shows (`docs/connecting-and-voice.md` §8).
+    private(set) var windows = WindowGateways()
+    /// The gateway used last: the one app-wide places use (Settings, Talk, the menu bar extra,
+    /// notifications). Each window shows its own (`gatewayID(in:)`).
+    var selectedBotID: UUID? { windows.lastUsed }
     /// A problem reading or writing local configuration.
     var storageError: String?
 
@@ -51,7 +55,7 @@ final class AppModel {
             workspaces[bots[index].id] = makeWorkspace(bots[index], apiKey: key)
         }
         let saved = UserDefaults.standard.string(forKey: PreferenceKey.selectedBot).flatMap(UUID.init(uuidString:))
-        selectedBotID = bots.first { $0.id == saved }?.id ?? bots.first?.id
+        windows = WindowGateways(lastUsed: bots.first { $0.id == saved }?.id ?? bots.first?.id)
         sweepRetiredWebStores()
         #if DEBUG
         bootstrapFromEnvironment()
@@ -78,26 +82,101 @@ final class AppModel {
         selectedBotID.flatMap { workspaces[$0] }
     }
 
-    /// A Bot Chat is on screen (for menu commands).
-    var isShowingBotChat: Bool {
-        if case .bot? = currentWorkspace?.selection { return true }
-        return false
+    /// An app-wide switch (a notification, a link, a new gateway): the window that was active
+    /// last shows the gateway.
+    func select(_ botID: UUID) {
+        select(botID, in: nil)
     }
 
-    func select(_ botID: UUID) {
-        guard workspaces[botID] != nil else { return }
-        selectedBotID = botID
-        UserDefaults.standard.set(botID.uuidString, forKey: PreferenceKey.selectedBot)
-        // Only the gateway in front keeps checking its connection.
-        for (id, workspace) in workspaces where id != botID {
+    /// The person switched a window to a gateway; the other windows keep theirs. Without a
+    /// window, the one that was active last switches.
+    func select(_ botID: UUID, in window: UUID?) {
+        guard let workspace = workspaces[botID] else { return }
+        updateWindows { $0.show(botID, in: window ?? $0.mostRecentWindow) }
+        if !workspace.connection.isOnline {
+            Task { await workspace.connect() }
+        }
+    }
+
+    // MARK: - Windows
+
+    /// The gateway a window shows: its own, or the last-used one until it has one.
+    func gatewayID(in window: UUID) -> UUID? {
+        windows.gateway(in: window)
+    }
+
+    func workspace(in window: UUID) -> BotWorkspace? {
+        gatewayID(in: window).flatMap { workspaces[$0] }
+    }
+
+    /// The gateway a window comes back on: the one it showed, or the last-used one when that's gone.
+    func restoredGateway(_ stored: String?) -> UUID? {
+        WindowGateways.restored(stored.flatMap(UUID.init(uuidString:)), among: workspaces.keys, lastUsed: selectedBotID)
+    }
+
+    func windowOpened(_ window: UUID, showing gateway: UUID?) {
+        updateWindows { $0.open(window, showing: gateway) }
+    }
+
+    /// A Mac window's saved gateway arrived after it opened: it goes back to it, if that still exists.
+    func windowRestored(_ window: UUID, showing stored: String) {
+        guard let gateway = UUID(uuidString: stored), workspaces[gateway] != nil else { return }
+        updateWindows { $0.restore(gateway, in: window) }
+    }
+
+    func windowClosed(_ window: UUID) {
+        updateWindows { $0.close(window) }
+    }
+
+    func windowBecameActive(_ window: UUID) {
+        updateWindows { $0.activate(window) }
+    }
+
+    func window(_ window: UUID, isVisible: Bool) {
+        updateWindows { $0.setVisible(isVisible, window: window) }
+    }
+
+    /// Gateways kept connected now: every one a visible window shows.
+    @ObservationIgnored private var keptConnected: Set<UUID> = []
+
+    private func updateWindows(_ change: (inout WindowGateways) -> Void) {
+        var updated = windows
+        change(&updated)
+        guard updated != windows else { return }
+        if updated.lastUsed != windows.lastUsed {
+            UserDefaults.standard.set(updated.lastUsed?.uuidString, forKey: PreferenceKey.selectedBot)
+        }
+        windows = updated
+        keepShownGatewaysConnected()
+    }
+
+    /// Every gateway a visible window shows keeps checking its connection; the others stop. While
+    /// the app is away nothing starts: coming back starts them (`didBecomeActive`).
+    private func keepShownGatewaysConnected() {
+        let kept = windows.keptConnected
+        for (id, workspace) in workspaces where !kept.contains(id) {
             workspace.stopKeepingConnected()
         }
-        if let workspace = workspaces[botID] {
+        guard backgroundedAt == nil else {
+            keptConnected.formIntersection(kept)
+            return
+        }
+        for id in kept.subtracting(keptConnected) {
+            guard let workspace = workspaces[id] else { continue }
             workspace.keepConnected()
             if !workspace.connection.isOnline {
                 Task { await workspace.connect() }
             }
         }
+        if kept != keptConnected {
+            ConnectionLog.logger.notice("app: \(kept.count, privacy: .public) gateways shown in \(self.windows.windowCount, privacy: .public) windows keep connected")
+        }
+        keptConnected = kept
+    }
+
+    /// The gateways visible windows show.
+    private var shownWorkspaces: [BotWorkspace] {
+        windows.keptConnected.compactMap { workspaces[$0] }
     }
 
     // MARK: - Secrets
@@ -198,7 +277,7 @@ final class AppModel {
     private func retryUnverifiedBots() {
         for workspace in workspaces.values where !store.isVerified(workspace.bot) {
             registerAccess(workspace.bot)
-            if workspace.id == selectedBotID {
+            if windows.keptConnected.contains(workspace.id) {
                 Task { await workspace.connect() }
             } else {
                 workspace.roster?.connectIfNeeded()
@@ -378,10 +457,9 @@ final class AppModel {
         releaseCertificate(certificate)
         UserDefaults.standard.removeObject(forKey: "model.\(botID.uuidString)")
         UserDefaults.standard.removeObject(forKey: "effort.\(botID.uuidString)")
-        if selectedBotID == botID {
-            selectedBotID = bots.first?.id
-            if let id = selectedBotID { select(id) }
-        }
+        // Windows on it go to the first gateway left.
+        keptConnected.remove(botID)
+        updateWindows { $0.remove(gateway: botID, fallback: bots.first?.id) }
     }
 
     /// Deletes the stores removed gateways left behind (`docs/connecting-and-voice.md` §7), at
@@ -563,17 +641,18 @@ final class AppModel {
     func didBecomeActive() {
         let returning = backgroundedAt.map { Date.now.timeIntervalSince($0) > 5 } ?? false
         backgroundedAt = nil
-        for workspace in workspaces.values where workspace.id != selectedBotID {
+        let shown = shownWorkspaces
+        keptConnected = Set(shown.map(\.id))
+        for workspace in workspaces.values where !keptConnected.contains(workspace.id) {
             workspace.roster?.resume()
         }
-        currentWorkspace?.didBecomeActive()
+        for workspace in shown { workspace.didBecomeActive() }
         guard returning else { return }
-        let workspace = currentWorkspace
         Task {
             await recycleConnections()
-            // The chat on screen shows what happened while the app was away without waiting for
+            // The chats on screen show what happened while the app was away without waiting for
             // the socket to come back.
-            workspace?.currentConversation.catchUpOnReturn()
+            for workspace in shown { workspace.currentConversation.catchUpOnReturn() }
         }
     }
 
@@ -585,6 +664,7 @@ final class AppModel {
         // (`docs/web.md` §6.5). The next turn registers it again.
         BrowserController.detachAll()
         #endif
+        keptConnected = []
         for workspace in workspaces.values {
             workspace.stopKeepingConnected()
             workspace.roster?.didEnterBackground()
@@ -643,6 +723,7 @@ final class AppModel {
 
     private func willSleep() {
         ConnectionLog.logger.notice("app: the Mac is going to sleep")
+        keptConnected = []
         for workspace in workspaces.values {
             workspace.stopKeepingConnected()
             workspace.roster?.willSleep()
@@ -651,24 +732,25 @@ final class AppModel {
 
     private func didWake() {
         ConnectionLog.logger.notice("app: the Mac woke")
-        for workspace in workspaces.values where workspace.id != selectedBotID {
+        let shown = shownWorkspaces
+        keptConnected = Set(shown.map(\.id))
+        for workspace in workspaces.values where !keptConnected.contains(workspace.id) {
             workspace.roster?.didWake()
         }
-        currentWorkspace?.didWake()
-        let workspace = currentWorkspace
+        for workspace in shown { workspace.didWake() }
         Task {
             await recycleConnections()
-            workspace?.currentConversation.catchUpOnReturn() // what came while it slept
+            for workspace in shown { workspace.currentConversation.catchUpOnReturn() } // what came while it slept
         }
     }
 
-    /// Behind other apps the gateway in front is checked every 2 minutes, not every 30 s
+    /// Behind other apps the gateways on screen are checked every 2 minutes, not every 30 s
     /// (`BotWorkspace.nextCheck`); back in front, a check that's due goes now.
     private func watchActivation() {
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.retryUnverifiedBots()
-                self?.currentWorkspace?.cameToFront()
+                for workspace in self?.shownWorkspaces ?? [] { workspace.cameToFront() }
             }
         }
     }

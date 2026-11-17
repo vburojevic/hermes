@@ -9,16 +9,28 @@ import UniformTypeIdentifiers
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.appearsActive) private var appearsActive
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     #endif
     @AppStorage(PreferenceKey.appearance) private var appearance = AppearancePreference.system
     /// This window's sheets.
     @State private var router = WindowRouter()
+    /// The gateway this window showed, so it comes back on it (`docs/connecting-and-voice.md` §8).
+    @SceneStorage("window.gateway") private var storedGateway: String?
+
+    /// This window's gateway: its own once the window is open, until then the one it restores.
+    private var gatewayID: UUID? {
+        app.gatewayID(in: router.windowID) ?? app.restoredGateway(storedGateway)
+    }
+
+    private var windowWorkspace: BotWorkspace? {
+        gatewayID.flatMap { app.workspaces[$0] }
+    }
 
     var body: some View {
         Group {
-            if let workspace = app.currentWorkspace {
+            if let workspace = windowWorkspace {
                 MainView(workspace: workspace)
                     .id(workspace.id)
                     .task(id: workspace.id) {
@@ -141,7 +153,30 @@ struct RootView: View {
         #else
         .preferredColorScheme(appearance.colorScheme)
         #endif
+        // Each window keeps its own gateway; the one in front is the last used, and every one on
+        // screen keeps connected (`docs/connecting-and-voice.md` §8). A window opens visible: its
+        // scene phase still reads background while it appears, which would stop and restart its
+        // gateway for nothing.
+        .onAppear {
+            app.windowOpened(router.windowID, showing: app.restoredGateway(storedGateway))
+            if appearsActive { app.windowBecameActive(router.windowID) }
+        }
+        .onDisappear { app.windowClosed(router.windowID) }
+        .onChange(of: appearsActive) { _, active in
+            if active { app.windowBecameActive(router.windowID) }
+        }
+        .onChange(of: gatewayID, initial: true) { _, id in
+            storedGateway = id?.uuidString
+        }
+        // The Mac restores a window's saved state after it appears: a stored gateway this window
+        // didn't write is the one it showed before. A window switched since it opened keeps its own.
+        .onChange(of: storedGateway) { _, stored in
+            guard let stored, stored != gatewayID?.uuidString else { return }
+            app.windowRestored(router.windowID, showing: stored)
+            storedGateway = gatewayID?.uuidString
+        }
         .onChange(of: scenePhase) { _, phase in
+            app.window(router.windowID, isVisible: phase != .background)
             if phase == .active { app.didBecomeActive() }
         }
         .sheet(item: $router.sheet, onDismiss: router.sheetDidDismiss) { sheet in
@@ -259,7 +294,7 @@ struct RootView: View {
             EmptyView()
             #endif
         case .quickOpen:
-            if let workspace = app.currentWorkspace {
+            if let workspace = windowWorkspace {
                 QuickOpenView(workspace: workspace)
                     #if os(macOS)
                     .frame(width: 580, height: 440)
@@ -279,9 +314,9 @@ struct RootView: View {
         guard !projectID.isEmpty else { return true }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         if let gateway = items.first(where: { $0.name == "gateway" })?.value.flatMap(UUID.init(uuidString:)), app.workspaces[gateway] != nil {
-            app.select(gateway)
+            app.select(gateway, in: router.windowID)
         }
-        guard let workspace = app.currentWorkspace else { return true }
+        guard let workspace = windowWorkspace else { return true }
         let card = items.first(where: { $0.name == "card" })?.value
         // Any app or page can send this link, and opening a board makes it when it's missing: only
         // one of the gateway's own projects opens, once the list is in (security scan F37).
@@ -615,11 +650,11 @@ struct RootView: View {
     /// Quick Open (screenshot and flow tests).
     private func openDebugSheet() {
         let defaults = UserDefaults.standard
-        if defaults.string(forKey: "HERMES_OPEN_PAIRING") != nil, let botID = app.selectedBotID {
+        if defaults.string(forKey: "HERMES_OPEN_PAIRING") != nil, let botID = gatewayID {
             router.sheet = .pairing(botID)
         } else if let link = defaults.string(forKey: "HERMES_OPEN_LINK").flatMap(URL.init(string:)) {
             router.open(link)
-        } else if defaults.string(forKey: "HERMES_OPEN_QUICK") != nil, app.currentWorkspace != nil {
+        } else if defaults.string(forKey: "HERMES_OPEN_QUICK") != nil, windowWorkspace != nil {
             router.sheet = .quickOpen
         } else if defaults.string(forKey: "HERMES_OPEN") == "settings" {
             router.sheet = .settings
@@ -654,6 +689,9 @@ struct MainView: View {
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     /// What this window showed (a task list, Skills, a project, a chat), restored with the window.
     @SceneStorage("window.selection") private var storedSelection: String?
+    /// The gateway that selection is on: a Mac window waiting for its own gateway mustn't take
+    /// another gateway's chat, and its restored chat must not open on another gateway.
+    @SceneStorage("window.selectionGateway") private var storedSelectionGateway: String?
     /// iPhone: the window was back on the list, so it opens there again with the chat unpushed.
     @SceneStorage("window.onList") private var storedOnList = false
 
@@ -691,24 +729,39 @@ struct MainView: View {
             #endif
             .task {
                 // The window comes back where it was (Tasks keeps its task; see TasksSplitView).
-                var restored = storedSelection
+                // One saved before selections named their gateway counts as this one's.
+                let onThisGateway = storedSelectionGateway.map { $0 == workspace.id.uuidString } ?? true
+                var restored = onThisGateway ? storedSelection : nil
                 #if DEBUG
                 // `-HERMES_RESTORE bot:ops` (or `session:<key>`): as if the window had been showing it.
                 restored = UserDefaults.standard.string(forKey: "HERMES_RESTORE") ?? restored
                 #endif
-                if workspace.selection == nil, let restored, let item = SidebarItem(storedValue: restored) {
-                    if case .project = item { workspace.sidebarMode = .chats }
-                    workspace.openAtLaunch(item, pushed: !(horizontalSizeClass == .compact && storedOnList))
+                if workspace.selection == nil, let restored {
+                    reopen(restored)
                 }
+            }
+            // The Mac restores a window's saved state after it appears (`docs/connecting-and-voice.md`
+            // §8): a stored selection this window didn't write is where it was, if it's on this gateway.
+            .onChange(of: storedSelection) { _, stored in
+                guard let stored, stored != workspace.selection?.storedValue,
+                      storedSelectionGateway == workspace.id.uuidString else { return }
+                reopen(stored)
             }
             // Another chat, Bot or page: the composer it typed into is gone.
             .onChange(of: workspace.selection) {
+                storedSelectionGateway = workspace.id.uuidString
                 storedSelection = workspace.selection?.storedValue
                 Keyboard.dismiss()
                 #if DEBUG && os(iOS)
                 FrameMonitor.shared.mark("selection changed")
                 #endif
             }
+    }
+
+    private func reopen(_ stored: String) {
+        guard let item = SidebarItem(storedValue: stored) else { return }
+        if case .project = item { workspace.sidebarMode = .chats }
+        workspace.openAtLaunch(item, pushed: !(horizontalSizeClass == .compact && storedOnList))
     }
 
     private var splitView: some View {

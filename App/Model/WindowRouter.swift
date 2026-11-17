@@ -37,6 +37,8 @@ enum WindowSheet: Identifiable {
 @MainActor
 @Observable
 final class WindowRouter {
+    /// Names this window to `AppModel`, which keeps the gateway each window shows.
+    let windowID = UUID()
     var sheet: WindowSheet?
     /// Runs once the current sheet has gone: for actions that bring up another of the
     /// window's sheets, which can't appear while this one is still leaving.

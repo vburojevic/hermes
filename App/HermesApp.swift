@@ -176,9 +176,21 @@ struct HermesCommands: Commands {
     @FocusedValue(\.windowRouter) private var router
     @Environment(\.openWindow) private var openWindow
 
+    /// The key window's gateway; with no window in front, the last-used one
+    /// (`docs/connecting-and-voice.md` §8).
+    private var workspace: BotWorkspace? {
+        router.flatMap { model.workspace(in: $0.windowID) } ?? model.currentWorkspace
+    }
+
+    /// A Bot Chat is on screen in the key window.
+    private var isShowingBotChat: Bool {
+        if case .bot? = workspace?.selection { return true }
+        return false
+    }
+
     /// The open chat was marked unread (⇧⌘U flips it back).
     private var openChatIsUnread: Bool {
-        guard let workspace = model.currentWorkspace, let key = workspace.unread.openKey else { return false }
+        guard let workspace, let key = workspace.unread.openKey else { return false }
         return workspace.unread.readMark(for: key) == .markedUnread
     }
 
@@ -186,7 +198,7 @@ struct HermesCommands: Commands {
         // File (Elyx macMenuFile): New Chat, New Bot…, New Window; Pair a Device…; Close Window.
         CommandGroup(replacing: .newItem) {
             // On a Board, ⌘N adds a card (`docs/board.md` §2).
-            if let board = model.currentWorkspace?.shownBoard {
+            if let board = workspace?.shownBoard {
                 Button("New Card") {
                     board.newCard = BoardModel.NewCardTarget()
                 }
@@ -194,20 +206,20 @@ struct HermesCommands: Commands {
                 .disabled(!board.isOnline || board.workflow == nil)
             } else {
                 Button("New Chat") {
-                    guard let workspace = model.currentWorkspace else { return }
+                    guard let workspace else { return }
                     workspace.sidebarMode = .chats
                     workspace.startNewChat()
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(model.currentWorkspace == nil)
+                .disabled(workspace == nil)
             }
             Button("New Bot…") {
-                guard let workspace = model.currentWorkspace, let roster = workspace.roster else { return }
+                guard let workspace, let roster = workspace.roster else { return }
                 workspace.sidebarMode = .bots
                 roster.isCreatingBot = true
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
-            .disabled(model.currentWorkspace?.roster == nil)
+            .disabled(workspace?.roster == nil)
             Button("New Window") {
                 openWindow(id: HermesApp.mainWindow)
             }
@@ -222,34 +234,34 @@ struct HermesCommands: Commands {
                 #endif
             }
             .keyboardShortcut("k", modifiers: .command)
-            .disabled(model.currentWorkspace == nil || router == nil)
+            .disabled(workspace == nil || router == nil)
             Button("Pair a Device…") {
-                if let botID = model.selectedBotID { router?.sheet = .pairing(botID) }
+                if let botID = workspace?.id { router?.sheet = .pairing(botID) }
             }
-            .disabled(model.selectedBotID == nil || router == nil)
+            .disabled(workspace == nil || router == nil)
         }
         // View (macMenuView): Chats, Bots; Tasks, Skills, Board, Filter; then the system's sidebar items.
         CommandGroup(before: .sidebar) {
-            Button("Chats") { model.currentWorkspace?.sidebarMode = .chats }
+            Button("Chats") { workspace?.sidebarMode = .chats }
                 .keyboardShortcut("1", modifiers: .command)
-                .disabled(model.currentWorkspace?.roster == nil)
-            Button("Bots") { model.currentWorkspace?.sidebarMode = .bots }
+                .disabled(workspace?.roster == nil)
+            Button("Bots") { workspace?.sidebarMode = .bots }
                 .keyboardShortcut("2", modifiers: .command)
-                .disabled(model.currentWorkspace?.roster == nil)
+                .disabled(workspace?.roster == nil)
             Divider()
             Button("Tasks") {
-                model.currentWorkspace?.selection = .tasks
+                workspace?.selection = .tasks
             }
             .keyboardShortcut("1", modifiers: [.command, .shift])
-            .disabled(model.currentWorkspace == nil)
+            .disabled(workspace == nil)
             Button("Skills") {
-                model.currentWorkspace?.selection = .skills
+                workspace?.selection = .skills
             }
             .keyboardShortcut("2", modifiers: [.command, .shift])
-            .disabled(model.currentWorkspace == nil)
+            .disabled(workspace == nil)
             // The project's Board: from its home, one of its chats, or the Board itself (back home).
             Button("Board") {
-                guard let workspace = model.currentWorkspace, let projectID = workspace.currentProjectID else { return }
+                guard let workspace, let projectID = workspace.currentProjectID else { return }
                 workspace.sidebarMode = .chats
                 if case .board = workspace.selection {
                     workspace.selection = .project(projectID)
@@ -258,10 +270,10 @@ struct HermesCommands: Commands {
                 }
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
-            .disabled(model.currentWorkspace?.currentProjectID == nil || model.currentWorkspace?.roster == nil)
+            .disabled(workspace?.currentProjectID == nil || workspace?.roster == nil)
             // Drag and drop's keyboard path (`docs/board.md` §6): the selected card to the next
             // column it may go to. Off while typing in the card, where ⌘→ moves the cursor.
-            let board = model.currentWorkspace?.shownBoard
+            let board = workspace?.shownBoard
             let canMove = board.map { $0.openCardID != nil && !$0.isTyping } ?? false
             Button("Move Card Right") { Task { await board?.moveOpenCard(forward: true) } }
                 .keyboardShortcut(.rightArrow, modifiers: .command)
@@ -270,7 +282,7 @@ struct HermesCommands: Commands {
                 .keyboardShortcut(.leftArrow, modifiers: .command)
                 .disabled(!canMove)
             // The chat list's filter, as the sidebar's filter button has it (`docs/inbox.md` §5).
-            if let workspace = model.currentWorkspace {
+            if let workspace {
                 Menu("Filter") { InboxFilterMenuContent(workspace: workspace) }
             } else {
                 Menu("Filter") {}.disabled(true)
@@ -281,7 +293,7 @@ struct HermesCommands: Commands {
         CommandMenu("Chat") {
             // ⌘. stops the turn; with none running, the process the Terminal shows (after a
             // confirmation). One command: UIKit refuses two with the same keys.
-            let current = model.currentWorkspace?.currentConversation
+            let current = workspace?.currentConversation
             let stopsProcess = current?.isWorking != true && current?.inspector.selectedProcessID != nil
             Button(stopsProcess ? "Stop Process…" : "Stop Responding") {
                 if stopsProcess {
@@ -294,20 +306,20 @@ struct HermesCommands: Commands {
             .disabled(!(current?.isWorking ?? false) && !stopsProcess)
 
             Button("Routines…") {
-                guard let workspace = model.currentWorkspace, case .bot(let name) = workspace.selection else { return }
+                guard let workspace, case .bot(let name) = workspace.selection else { return }
                 workspace.roster?.routinesBot = name
             }
             .keyboardShortcut("r", modifiers: [.command, .option])
-            .disabled(!model.isShowingBotChat)
+            .disabled(!isShowingBotChat)
 
             Button("Reload Conversation") {
-                model.currentWorkspace?.currentConversation.reload()
+                workspace?.currentConversation.reload()
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(model.currentWorkspace?.currentConversation.sessionID == nil && !model.isShowingBotChat)
+            .disabled(workspace?.currentConversation.sessionID == nil && !isShowingBotChat)
 
             // The chat's helpers (`docs/helpers.md`): the Team inspector, or the Team page.
-            let helpers = model.currentWorkspace?.currentConversation.helpers
+            let helpers = workspace?.currentConversation.helpers
             Button(helpers?.shownTeam == nil ? "Show Team" : "Hide Team") {
                 helpers?.toggleTeam()
             }
@@ -318,14 +330,14 @@ struct HermesCommands: Commands {
                 if TalkCenter.shared.isActive {
                     TalkCenter.shared.end()
                 } else {
-                    model.currentWorkspace?.voiceToggleRequests += 1
+                    workspace?.voiceToggleRequests += 1
                 }
             }
             .keyboardShortcut("v", modifiers: [.command, .option])
-            .disabled(model.currentWorkspace == nil && !TalkCenter.shared.isActive)
+            .disabled(workspace == nil && !TalkCenter.shared.isActive)
 
             // The Inspector (`docs/inspector.md` §1): show or hide it, open an address, switch tabs.
-            let inspector = model.currentWorkspace?.currentConversation.inspector
+            let inspector = workspace?.currentConversation.inspector
             Button(inspector?.isPresented == true ? "Hide Inspector" : "Show Inspector") {
                 inspector?.toggle()
             }
@@ -359,20 +371,20 @@ struct HermesCommands: Commands {
 
             // Search (`docs/search.md`): find in this chat, or search every chat in the sidebar.
             Button("Find in Chat…") {
-                if let conversation = model.currentWorkspace?.currentConversation { conversation.find(conversation.findText ?? "") }
+                if let conversation = workspace?.currentConversation { conversation.find(conversation.findText ?? "") }
             }
             .keyboardShortcut("f", modifiers: .command)
-            .disabled(model.currentWorkspace?.currentConversation.isEmpty ?? true)
+            .disabled(workspace?.currentConversation.isEmpty ?? true)
             Button("Search Chats") {
-                model.currentWorkspace?.sidebarMode = .chats
+                workspace?.sidebarMode = .chats
                 router?.focusSidebarSearch()
             }
             .keyboardShortcut("f", modifiers: [.command, .option])
-            .disabled(model.currentWorkspace == nil || router == nil)
+            .disabled(workspace == nil || router == nil)
 
             // Checkpoints (`docs/checkpoints.md`): the sheet, and Undo for the newest reply that
             // changed files.
-            let conversation = model.currentWorkspace?.currentConversation
+            let conversation = workspace?.currentConversation
             Button("Checkpoints…") {
                 conversation?.checkpoints.showTimeline()
             }
@@ -387,36 +399,36 @@ struct HermesCommands: Commands {
 
             // Unread (`docs/inbox.md` §4, §5).
             Button("Jump to Latest") {
-                model.currentWorkspace?.currentConversation.jumpToLatestRequests += 1
+                workspace?.currentConversation.jumpToLatestRequests += 1
             }
             .keyboardShortcut(.downArrow, modifiers: .command)
-            .disabled(model.currentWorkspace?.currentConversation.isReadingBack != true)
+            .disabled(workspace?.currentConversation.isReadingBack != true)
             Button("Next Unread Chat") {
-                model.currentWorkspace?.selectAdjacentUnread(1)
+                workspace?.selectAdjacentUnread(1)
             }
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-            .disabled(model.currentWorkspace == nil)
+            .disabled(workspace == nil)
             Button("Previous Unread Chat") {
-                model.currentWorkspace?.selectAdjacentUnread(-1)
+                workspace?.selectAdjacentUnread(-1)
             }
             .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-            .disabled(model.currentWorkspace == nil)
+            .disabled(workspace == nil)
             Button(openChatIsUnread ? "Mark as Read" : "Mark as Unread") {
-                model.currentWorkspace?.toggleOpenChatRead()
+                workspace?.toggleOpenChatRead()
             }
             .keyboardShortcut("u", modifiers: [.command, .shift])
-            .disabled(model.currentWorkspace?.unread.openKey == nil)
+            .disabled(workspace?.unread.openKey == nil)
 
             Button("Next Conversation") {
-                model.currentWorkspace?.selectAdjacent(1)
+                workspace?.selectAdjacent(1)
             }
             .keyboardShortcut(.tab, modifiers: .control)
-            .disabled(model.currentWorkspace == nil)
+            .disabled(workspace == nil)
             Button("Previous Conversation") {
-                model.currentWorkspace?.selectAdjacent(-1)
+                workspace?.selectAdjacent(-1)
             }
             .keyboardShortcut(.tab, modifiers: [.control, .shift])
-            .disabled(model.currentWorkspace == nil)
+            .disabled(workspace == nil)
 
             Divider()
 
@@ -425,7 +437,7 @@ struct HermesCommands: Commands {
             }
             .disabled(router == nil)
             ForEach(Array(model.bots.enumerated()), id: \.element.id) { index, bot in
-                Toggle(bot.name, isOn: Binding(get: { bot.id == model.selectedBotID }, set: { if $0 { model.select(bot.id) } }))
+                Toggle(bot.name, isOn: Binding(get: { bot.id == workspace?.id }, set: { if $0 { model.select(bot.id, in: router?.windowID) } }))
                     .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command, .control]) : nil)
             }
         }
