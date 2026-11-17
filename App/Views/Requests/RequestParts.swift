@@ -12,6 +12,18 @@ extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(.regular, in: .rect(cornerRadius: 22))
     }
+
+    /// On the Mac a card's words can be selected and copied, as a reply's can; iPhone and iPad
+    /// keep them as they are (docs/quick-actions.md §1). Only plain text takes this: rows,
+    /// buttons and fields stay single-click controls.
+    @ViewBuilder
+    func selectableOnMac() -> some View {
+        #if os(macOS)
+        textSelection(.enabled)
+        #else
+        self
+        #endif
+    }
 }
 
 /// Kind tile, title, who's asking, how long Hermes will wait, and the … menu (`actionHeader`).
@@ -318,6 +330,7 @@ struct FinePrint: View {
             Text(text)
                 .font(.footnote)
                 .foregroundStyle(Theme.tertiaryText)
+                .selectableOnMac()
         }
     }
 }
@@ -371,6 +384,7 @@ struct CodeBox: View {
             .accessibilityLabel(Text(text))
             if let risk, !risk.isEmpty {
                 TagLabel(title: risk, symbol: "exclamationmark.triangle.fill", style: .danger)
+                    .selectableOnMac()
             }
         }
         .padding(12)

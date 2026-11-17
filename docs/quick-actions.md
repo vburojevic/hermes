@@ -35,6 +35,11 @@ the design's component names, used in code comments.
   questions each earlier answer is one line ("Which Google Workspace…: Yes—Gmail, Calendar…") that
   truncates inside the card, and tapping it goes back to that question. Rows of chips wrap and a
   chip too long for a line shortens its text (`FlowLines`).
+- On the Mac a card's words can be selected and copied, as a reply's can: the question or prompt,
+  the description, each command and its risk, the scope line and the fine print. A right click on
+  a selection offers Copy. Rows, buttons, tiles, fields and the countdown don't select: one click
+  still picks, answers or types, and selecting never answers or closes the card. On iPhone and
+  iPad a card's text stays as it is ([chat.md](chat.md) §3, Selection).
 - A card with a deadline shows a countdown in its header ("m:ss", red under 30 s). Connection
   requests carry one (`deadline_at` or `timeout_seconds`); other requests do when their params
   include `timeout_seconds`.
@@ -350,6 +355,9 @@ yes such as "yes", "go ahead", "run it"), "allow in this chat", or "deny" (any n
   moves on.
 - No card is wider than the screen: "clarify pair", answered with its long first pick, shows
   "Question 2 of 2" whole on the smallest iPhone, an iPad and the Mac (`RequestCardUITests`).
+- On the Mac, a double click on the question of "clarify multi" or on the "Recursive delete" risk
+  of "approve" selects a word, and a right click over it offers Copy. A single click still picks a
+  row or presses Allow Once, and "approve script" still scrolls and fades its command.
 - Against the mock backend (`Tools/mock-hermes/chats.py`), words in a message ask for each card:
   "approve", "batch", "flagged", "clarify" (and "clarify steps", "clarify multi", "clarify open",
   "clarify long" for picks of three lines, "clarify pair" for two questions with a long first answer,

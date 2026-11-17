@@ -114,12 +114,14 @@ struct ApprovalCard: View {
                 Text(description)
                     .font(.subheadline)
                     .foregroundStyle(Theme.primaryText)
+                    .selectableOnMac()
             }
             tiles
             if let scope {
                 Text("Allowing covers \(scope) like this one. Change it any time in Chat Permissions.")
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
+                    .selectableOnMac()
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
@@ -192,6 +194,7 @@ struct ApprovalCard: View {
             Text("You can still run it once if you trust it.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
+                .selectableOnMac()
             HStack(spacing: 10) {
                 ActionTile(symbol: "exclamationmark.triangle.fill", title: String(localized: "Run Once Anyway"), detail: String(localized: "Only this command"), style: .danger) {
                     onChoice(.once)
@@ -226,6 +229,7 @@ struct ApprovalCard: View {
                         Text(item.summary)
                             .font(Theme.Typography.code)
                             .foregroundStyle(Theme.primaryText)
+                            .selectableOnMac()
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
