@@ -435,7 +435,12 @@ widgets.
 - **Unattributed turns:** a turn that didn't come from the app has no marker and gets no line,
   and so does one whose text Hermes changed before the hook sees it (a message with `@` references
   or images, a skill invocation), or one that ran more than 10 minutes after its marker. A plugin
-  older than 1.6.0 answers "unknown command 'client'", and its turns stay unattributed.
+  older than 1.6.0 answers "unknown command 'client'", and its turns stay unattributed until the
+  app moves it to its pin, 1.6.0 ([plugins.md](plugins.md) §2.1). The app's own HTTP chats and
+  replies from a notification carry no marker either, because the app announces its client only
+  before a socket `prompt.submit`. Turns the app didn't send (routines, other clients) stay
+  unattributed until Hermes tells plugins which client sent a turn (upstream
+  NousResearch/hermes-agent#155538).
 - **Inline blocks** (`WidgetSettings`): in routine deliveries on a gateway with the plugin; in
   Debug builds anywhere a delivery has them; in any reply only with Settings → Developer → Render
   Inline Widgets (`widgets.renderInline`, for the mock and tests).

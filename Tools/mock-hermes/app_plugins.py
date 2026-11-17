@@ -44,8 +44,8 @@ APPS = {
                        "prompts, finished replies, scheduled tasks, background work and group chats.",
     },
     "hermes-app-widgets": {
-        "repo": "vburojevic/hermes-app-widgets", "version": "1.5.0",
-        "published": "ee97b4823978af3f7c275ef9005677bf82aa36b0",
+        "repo": "vburojevic/hermes-app-widgets", "version": "1.6.0",
+        "published": "929b6f60affee11a1fef017c73d97052f984011e",
         "activation": {"activated_now": {"hooks": ["pre_llm_call", "subagent_start"],
                                          "gateway_transforms": ["transform_llm_output", "pre_gateway_dispatch"],
                                          "gateway_commands": ["app-widgets"]},
@@ -67,7 +67,7 @@ MODES = ("current", "missing", "partial", "old", "widened", "off", "failing")
 
 # Older published versions (AppPlugin's capability lists): `old` keeps the same access, so the app
 # updates quietly; `widened` has widgets 1.1.0, before 1.1.1 added pre_llm_call, so it asks first.
-OLD = {"hermes-app-push": "1.1.0", "hermes-app-widgets": "1.4.0"}
+OLD = {"hermes-app-push": "1.1.0", "hermes-app-widgets": "1.5.0"}
 WIDENED = {"hermes-app-widgets": "1.1.0"}
 
 

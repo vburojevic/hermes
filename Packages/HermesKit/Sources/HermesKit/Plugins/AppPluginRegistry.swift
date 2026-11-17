@@ -77,7 +77,9 @@ extension AppPlugin {
         words: pushWords
     )
 
-    /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.5.0 teaches and
+    /// Widgets agents send to the app (`Tools/hermes-app-widgets`, `docs/widgets.md`). 1.6.0 adds the
+    /// `client` command, so a chat's model learns which app and device sent each turn and what it can
+    /// draw, with the same access, so the app moves every profile to it quietly. 1.5.0 teaches and
     /// checks the source and slider glyphs, `unit_one` and `from_now`, with the same access, so the app
     /// moves every profile to it quietly and cards show where their data comes from. 1.4.0 makes a
     /// widget a routine typed into its report the way the tool does, with the same access, so the app
@@ -93,7 +95,7 @@ extension AppPlugin {
     /// brought marking many chats in one `session` call and unprompted widgets.
     public static let widgets = AppPlugin(
         name: "hermes-app-widgets", repo: "vburojevic/hermes-app-widgets",
-        ref: "ee97b4823978af3f7c275ef9005677bf82aa36b0", version: "1.5.0", minimumVersion: "1.5.0",
+        ref: "929b6f60affee11a1fef017c73d97052f984011e", version: "1.6.0", minimumVersion: "1.6.0",
         capabilities: ["1.0.0": widgetsAccess(since111: false), "1.1.0": widgetsAccess(since111: false),
                        "1.1.1": widgetsAccess(since111: true), "1.2.0": widgetsAccess(since111: true),
                        "1.2.1": widgetsAccess(since111: true), "1.2.2": widgetsAccess(since111: true),

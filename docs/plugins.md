@@ -8,7 +8,7 @@ run inside the person's own Hermes, and are published to public repositories tha
 | Plugin | What it adds | Source | State |
 |---|---|---|---|
 | `hermes-app-push` | Push notifications on iPhone and iPad, answers from the Lock Screen, Live Activity updates, scheduled tasks delivered to the app | [`Tools/hermes-app-push`](../Tools/hermes-app-push/README.md), published to [vburojevic/hermes-app-push](https://github.com/vburojevic/hermes-app-push) | Shipped, 1.4.9 |
-| `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.5.0 |
+| `hermes-app-widgets` | Widgets agents send to the app: approvals, forms, checklists, results, with plain text on every other platform | [`Tools/hermes-app-widgets`](../Tools/hermes-app-widgets/README.md), published to [vburojevic/hermes-app-widgets](https://github.com/vburojevic/hermes-app-widgets) | Shipped, 1.6.0 |
 
 Everything else the app does runs on a stock Hermes Agent: the API server for chats, and
 `hermes serve` for Bot Mode ([architecture.md](architecture.md)). Hermes's own bundled plugins
@@ -71,7 +71,9 @@ The design is the Elyx project's `docs/plugins.md`; its frames are named below.
   reaches it) and that every pinned hook is named on the review. A version changed in `Tools/` but
   not yet published has its list ahead of the pin until it's published. A pin that adds access shows
   the consent card: push 1.4.7 added `on_session_delete` ("Knows when chats are deleted or
-  archived"). A new app plugin is one entry and a What's New row.
+  archived"). The pins are push 1.4.9 and widgets 1.6.0; widgets 1.6.0 adds the `client` command
+  (the model learns which app and device sent each turn, §6) with 1.5.0's access, so the app moves
+  every profile to it without the consent card. A new app plugin is one entry and a What's New row.
 - **When it looks.** When Bot Mode connects (at most hourly) it reads every profile's plugins
   (`plugins.manage {action: list, profile}` for each profile in `profiles.list`, the root as
   `default`). A plugin is missing, older than the app's minimum version, turned off, or current.
@@ -188,7 +190,7 @@ tells the agent plainly that a short question ("Weather today?") gets its widget
 heard the older rules. It asks for no more access than 1.2.2, so the app updates every profile to it
 quietly. 1.4.0 makes a payload a routine's agent typed into its report into the card it meant, again
 with the same access, and the app updates to it the same way. So does 1.5.0, which adds the source
-and slider glyphs, `unit_one` and `from_now`.
+and slider glyphs, `unit_one` and `from_now`, and so does 1.6.0, which adds the `client` command.
 
 ## 3. Updating
 
@@ -356,12 +358,13 @@ it like the push plugin (§2.1), pinned in `AppPlugin.widgets` (1.2.0: the every
 1.1.1 Bot group chats use its `room` command, and the app marks every chat it knows with one
 `session` call). 1.4.0 makes a widget a routine typed into its report the way the tool makes it,
 with the same access; with an older copy the app reads such a payload as its words (§6.1,
-[widgets.md](widgets.md) §2). 1.5.0, the pinned version, adds the source and slider glyphs,
-`unit_one` and `from_now` (design cbc510c) with the same access, so the app updates every profile
-to it quietly; it draws an older copy's cards as before, since every new field is optional.
-1.6.0 adds the `client` command, which tells a chat's model which Hermes app sent the turn and what
-it draws ([widgets.md](widgets.md) §11). It uses the `pre_llm_call` hook 1.5.0 already registers,
-so its access is the same; an older copy answers "unknown command 'client'".
+[widgets.md](widgets.md) §2). 1.5.0 adds the source and slider glyphs, `unit_one` and `from_now`
+(design cbc510c) with the same access, so the app updates every profile to it quietly; it draws an
+older copy's cards as before, since every new field is optional.
+1.6.0, the pinned version, adds the `client` command, which tells a chat's model which Hermes app
+sent the turn and what it draws ([widgets.md](widgets.md) §11). It uses the `pre_llm_call` hook
+1.5.0 already registers, so its access is the same and the app updates to it quietly; an older copy
+answers "unknown command 'client'".
 
 ### 6.1 What it uses in Hermes
 
