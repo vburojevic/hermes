@@ -643,7 +643,8 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   "Image": a reply has no folder to read it from.
 - **Horizontal rule**: a hairline with 6 pt above and below.
 - **Wide tables and long code lines** scroll sideways inside their block; the page never scrolls
-  sideways. Table cells are 60 to 320 pt wide.
+  sideways. Table cells are 60 to 320 pt wide. Only a table or code block wider than the reply
+  gets a scroll view: each one in a long chat was work on every frame of scrolling back past it.
 - **Nothing widens the reply.** Every part of a reply is laid out at the column's width: a long
   word, address or inline code path (no spaces) breaks where the line ends, code without a hyphen
   added that would read as part of it, and a widget card wraps its words inside the card
