@@ -9,7 +9,7 @@ its place (``transform_llm_output``, before the reply is stored). Answers come b
 in the design project; the bundled copy is in ``spec/``.
 
 The app talks to the plugin with ``command.dispatch {name: "app-widgets", arg: "<command> <json>"}``
-(plugins can't add gateway RPC methods): session, room, get, keys.register, keys.remove, keys.list, status.
+(plugins can't add gateway RPC methods): session, client, room, get, keys.register, keys.remove, keys.list, status.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ HERE = Path(__file__).resolve().parent
 _widgets = None
 _ctx = None
 RESOLUTIONS = ("done", "failed", "rejected", "cancelled", "expired", "elsewhere")
-COMMANDS = ("session", "room", "get", "keys.register", "keys.remove", "keys.list", "status")
+COMMANDS = ("session", "client", "room", "get", "keys.register", "keys.remove", "keys.list", "status")
 
 WIDGET_SCHEMA = {
     "name": "widget",

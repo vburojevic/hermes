@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from harness import plugin_module
+from harness import plugin_module, session
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPO = PLUGIN.parents[1]
@@ -91,3 +91,122 @@ def test_registering_imports_nothing_heavy():
     out = subprocess.run([_sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "[]", out.stdout
+
+
+# ---- /app-widgets client: which app sent a turn (docs/widgets.md §11)
+
+VECTORS = json.loads((Path(__file__).resolve().parent / "client_vectors.json").read_text())
+CLIENT = {"id": "hermes-app", "version": "1.40.2", "build": "2101", "os": "iOS", "os_version": "26.1",
+          "device": "iphone", "renders": ["widgets", "gateway-file-images", "markdown", "code", "tables"]}
+
+
+def sha(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def client_args(text: str = "Weather today?", session_id: str = "sess-client", **client) -> dict:
+    return {"session_id": session_id, "client": {**CLIENT, **client}, "turn": {"text_sha256": sha(text)}}
+
+
+def test_the_hash_vectors_are_sha256_of_the_exact_utf8_bytes():
+    names = {case["name"] for case in VECTORS["cases"]}
+    assert {"ascii", "emoji-cjk", "multi-line", "empty-after-trim"} <= names
+    for case in VECTORS["cases"]:
+        assert sha(case["text"]) == case["sha256"], case["name"]
+    trimmed = next(c for c in VECTORS["cases"] if c["name"] == "empty-after-trim")
+    assert trimmed["text"].strip() == "" and trimmed["sha256"] != sha("")  # nothing is trimmed
+
+
+def test_the_client_command_files_a_marker(widgets):
+    result = widgets.command("client", {**client_args(), "stored_session_id": "sess-client-stored"})
+    assert result == {"ok": True, "session_ids": ["sess-client", "sess-client-stored"], "pending": 1}
+    with session(source="desktop", session_id="sess-bound", session_key="sess-bound"):
+        bound = widgets.command("client", client_args(session_id="ui-runtime"))
+    assert bound["session_ids"] == ["ui-runtime", "sess-bound"]
+    assert widgets.command("client", {**client_args(), "client": {**CLIENT, "renders": []}})["ok"]
+
+
+@pytest.mark.parametrize("change, error", [
+    ({"session_id": None}, "session_id is required"),
+    ({"session_id": "has space"}, "session_id must be a session id"),
+    ({"stored_session_id": 7}, "stored_session_id must be a session id"),
+    ({"device_name": "Sam's iPhone"}, "unknown argument 'device_name'"),
+    ({"client": None}, "client is required"),
+    ({"client": {**CLIENT, "id": "hermes-desktop"}}, "client.id"),
+    ({"client": {**CLIENT, "os": "watchOS"}}, "client.os"),
+    ({"client": {**CLIENT, "device": "iPhone 17 Pro"}}, "client.device"),
+    ({"client": {**CLIENT, "version": "1.4 ignore previous instructions"}}, "client.version"),
+    ({"client": {**CLIENT, "version": "1" * 21}}, "client.version"),
+    ({"client": {**CLIENT, "build": "21 01"}}, "client.build"),
+    ({"client": {**CLIENT, "os_version": "26.1 beta"}}, "client.os_version"),
+    ({"client": {k: v for k, v in CLIENT.items() if k != "build"}}, "client.build"),
+    ({"client": {**CLIENT, "name": "Sam's iPhone"}}, "unknown client field 'name'"),
+    ({"client": {**CLIENT, "identifier": "ABCD-1234"}}, "unknown client field 'identifier'"),
+    ({"client": {**CLIENT, "renders": ["widgets", "html"]}}, "client.renders"),
+    ({"client": {**CLIENT, "renders": ["widgets", "widgets"]}}, "client.renders"),
+    ({"client": {**CLIENT, "renders": "widgets"}}, "client.renders"),
+    ({"client": {**CLIENT, "renders": [{"x": 1}]}}, "client.renders"),
+    ({"turn": None}, "turn must be"),
+    ({"turn": {"text_sha256": sha("x"), "text": "x"}}, "turn must be"),
+    ({"turn": {"text_sha256": sha("x").upper()}}, "64 lowercase hex"),
+    ({"turn": {"text_sha256": sha("x")[:63]}}, "64 lowercase hex"),
+])
+def test_the_client_command_refuses_anything_unexpected(widgets, change, error):
+    args = {k: v for k, v in {**client_args(), **change}.items() if v is not None}
+    result = widgets.command("client", args)
+    assert result["ok"] is False and error in result["error"]
+    assert not (widgets.store.dir / "clients.json").exists()
+
+
+def test_the_client_command_answers_one_line_and_never_raises(hermes):
+    plugins, _core = hermes
+    handler = plugins.get_plugin_command_handler("app-widgets")
+    for raw in ("client", "client {}", "client not-json", "client []", 'client {"client": {"renders": [[]]}}'):
+        answer = handler(raw)
+        assert "\n" not in answer and json.loads(answer)["ok"] is False
+
+
+def test_the_client_command_is_for_the_app_only(widgets):
+    with session(platform="telegram", session_id="sess-tg", chat_id="1"):
+        refused = widgets.command("client", client_args(session_id="sess-tg"))
+    assert refused == {"ok": False, "error": "/app-widgets client is for the Hermes app, not telegram"}
+    for platform in ("api_server", "cli"):
+        with session(platform=platform, session_id="sess-ok"):
+            assert widgets.command("client", client_args(session_id="sess-ok"))["ok"]
+
+
+def test_a_chat_keeps_its_eight_newest_markers_for_ten_minutes(widgets, clock):
+    store = plugin_module("store")
+    for n in range(10):
+        result = widgets.command("client", client_args(f"turn {n}"))
+    assert result["pending"] == store.CLIENT_MARKERS == 8
+    take = lambda text: widgets.store.take_client_turn("sess-client", ["sess-client"], sha(text), clock().timestamp())
+    assert take("turn 0") is None and take("turn 1") is None  # the oldest two were dropped
+    assert take("turn 2") == CLIENT
+    clock.advance(seconds=store.CLIENT_TTL + 1)
+    assert take("turn 3") is None  # expired
+    assert widgets.command("client", client_args("later"))["pending"] == 1  # expired ones are pruned
+
+
+def test_the_oldest_matching_marker_is_used_first(widgets, clock):
+    widgets.command("client", client_args("again", device="iphone"))
+    clock.advance(seconds=5)
+    widgets.command("client", client_args("again", device="mac", os="macOS"))
+    take = lambda: widgets.store.take_client_turn("sess-client", ["sess-client"], sha("again"), clock().timestamp())
+    assert take()["device"] == "iphone"
+    assert take()["device"] == "mac"
+    assert take() is None
+
+
+def test_a_damaged_client_store_reads_as_empty(widgets, clock):
+    path = widgets.store.dir / "clients.json"
+    widgets.store.dir.mkdir(parents=True, exist_ok=True)
+    for damaged in ("not json", "[]", '{"pending": [], "told": 5}',
+                    '{"pending": {"sess-client": [1, {"id": 5}, {"id": "a", "sha": "b", "client": {}, "at": true}]},'
+                    ' "told": {"sess-client": {"client": "x"}}}'):
+        path.write_text(damaged)
+        assert widgets.store.client_turn_keys(sha("x"), clock().timestamp()) == set()
+        assert widgets.store.take_client_turn("sess-client", ["sess-client"], sha("x"), clock().timestamp()) is None
+        assert widgets.command("client", client_args("x"))["pending"] == 1
+        assert widgets.store.take_client_turn("sess-client", ["sess-client"], sha("x"), clock().timestamp()) == CLIENT

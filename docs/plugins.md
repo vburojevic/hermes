@@ -359,6 +359,9 @@ with the same access; with an older copy the app reads such a payload as its wor
 [widgets.md](widgets.md) §2). 1.5.0, the pinned version, adds the source and slider glyphs,
 `unit_one` and `from_now` (design cbc510c) with the same access, so the app updates every profile
 to it quietly; it draws an older copy's cards as before, since every new field is optional.
+1.6.0 adds the `client` command, which tells a chat's model which Hermes app sent the turn and what
+it draws ([widgets.md](widgets.md) §11). It uses the `pre_llm_call` hook 1.5.0 already registers,
+so its access is the same; an older copy answers "unknown command 'client'".
 
 ### 6.1 What it uses in Hermes
 
@@ -367,11 +370,11 @@ to it quietly; it draws an older copy's cards as before, since every new field i
 | Tools | `widget` (`op` `create`, `update`, `resolve`, `claim`, `get`), `widget_examples`, toolset `widgets` | Agents make, change and answer widgets. On both servers' tool lists (`GET /v1/toolsets`, socket `tools.list`) |
 | Prompt section | `hermes-app-widgets`, ≤ 4,000 characters | The rules and one line per type, only in the app's sessions. Widgets are the default: Bots use the matching one unprompted |
 | Skill | `hermes-app-widgets:widgets` | The full guide (`agent-usage.md`) |
-| Hooks | `pre_llm_call` | Once per app chat whose system prompt predates its widgets (a long-lived Bot Chat), the same rule as turn context |
+| Hooks | `pre_llm_call` | Once per app chat whose system prompt predates its widgets (a long-lived Bot Chat), the same rule as turn context. Since 1.6.0, when a turn's text matches a `client` marker and the app that sent it differs from the one the chat's model was last told about, one line naming it (at most 300 characters, formatting only), in the same turn context |
 | | `transform_llm_output` | Before a reply is stored: widget fences become `json`; each widget line stays (the app), becomes an inline block (a scheduled task delivering to the app) or becomes the widget's plain text (everyone else). Since 1.4.0, in a scheduled task delivering to the app, a payload the agent typed (a `widget` fence, or a `json` fence holding one) is made by the tool and becomes an inline block, or its plain text when it can be answered, needs a signature or fails the checks |
 | | `pre_gateway_dispatch` | On messaging platforms, a plain answer to the one open widget ("check tomatoes") becomes its action |
 | | `subagent_start` | Helpers and sub-agents get no widgets |
-| Command | `/app-widgets <command> <json>` | The app marks its chats (`session`) and Bot group chats (`room`), refreshes payloads (`get`) and registers signing keys (`keys.register`); `status` |
+| Command | `/app-widgets <command> <json>` | The app marks its chats (`session`) and Bot group chats (`room`), says which app sends a turn (`client`, 1.6.0), refreshes payloads (`get`) and registers signing keys (`keys.register`); `status` |
 | Hermes code it reads | `gateway.session_context`, `cron.execution_identity`, `cron.jobs`, `agent.redact`, `agent.runtime_cwd`, `hermes_cli.profiles`, `tools.budget_config` | The session and sender, a task's delivery target, the redactor, the workspace, a Bot's name, and pinning widget results so they're stored whole |
 
 The app tells its chats apart with `/app-widgets session` before a chat's first prompt, because the
@@ -384,8 +387,10 @@ content and `/v1/runs` sends only a preview.
 
 In `~/.hermes/widgets/` (the root's, for every profile): `<id>.json` (every revision of one widget,
 where it was made, its warnings and claims), `index.json` (chats and scheduled tasks → widgets),
-`sessions.json` (the chats the app marked), `keys.json` (devices' public signing keys) and `media/`
-(only with `store_media`). Owner-only, written under an `fcntl` lock and replaced atomically.
+`sessions.json` (the chats the app marked), `keys.json` (devices' public signing keys),
+`clients.json` (`client` markers, at most 8 per chat for 10 minutes, and the app each chat's model
+was last told about) and `media/` (only with `store_media`). Owner-only, written under an `fcntl`
+lock and replaced atomically.
 
 ### 6.3 Configuration
 
@@ -410,6 +415,11 @@ messaging platforms).
   and push notices say "Hermes sent a widget."
 - Only the Bot that made a widget can change it, and a `bot:` icon or a handoff's sender must be that
   Bot.
+- `client` takes only known fields, each from a short list or pattern: the app's version, build,
+  OS and kind of device, what it draws, and a SHA-256 of the turn's text. No device name, no
+  identifier, nothing the person typed. The model's line says it is about formatting only and
+  grants nothing. Turns from other clients stay unattributed: Hermes doesn't say which client sent
+  a turn (upstream NousResearch/hermes-agent#155538).
 
 ### 6.5 Compatibility
 
@@ -427,7 +437,8 @@ HERMES_SOURCE=<hermes-agent> <its venv>/bin/python -m pytest Tools/hermes-app-wi
 They load the plugin through Hermes's plugin manager in a throwaway `HERMES_HOME` and drive Hermes's
 own transform caller, prompt sections, `pre_gateway_dispatch`, cron jobs and tool lists. They cover
 every parser, every example and invalid payload in the spec, the SSRF guard, the Telegram and CLI
-rewrite, fence neutralising, and claims.
+rewrite, fence neutralising, and claims, and the `client` command: its refusals, its limits, the
+hash vectors in `tests/client_vectors.json`, and the line in `pre_llm_call` across compaction.
 
 ## 7. Changing a plugin
 

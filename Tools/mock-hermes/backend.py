@@ -3141,6 +3141,8 @@ def main():
                              "a 199-event room (chats.py)")
     parser.add_argument("--no-widgets", action="store_true",
                         help="a gateway without the hermes-app-widgets plugin (widgets.py)")
+    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0"], default="1.6.0",
+                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
     CONFIG["hermes_version"] = args.hermes_version
@@ -3294,7 +3296,7 @@ def main():
                       chats_module=chats if args.gateway_port else None)
     if args.gateway_port:
         # Widgets (docs/widgets.md §13): last, so its turns and `/app-widgets` come before the others'.
-        widgets = gateway.install_widgets(gateway, enabled=not args.no_widgets)
+        widgets = gateway.install_widgets(gateway, enabled=not args.no_widgets, version=args.widgets_version)
         widgets.install_backend(globals(), chats, push=_push if args.push_relay != "none" else None)
         globals()["MOCK_WIDGETS"] = widgets
     if not args.quiet_world:

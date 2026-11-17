@@ -89,6 +89,15 @@ struct PluginRegistryTests {
         #expect(newer == older)
     }
 
+    /// Widgets 1.6.0 adds the `client` command, which uses the `pre_llm_call` hook 1.5.0 already has:
+    /// the same access, so its pin can move quietly.
+    @Test func widgets160KeepsTheSameAccess() throws {
+        let widgets = AppPlugin.widgets
+        let older = try #require(widgets.capabilities["1.5.0"]), newer = try #require(widgets.capabilities["1.6.0"])
+        #expect(!newer.widens(older))
+        #expect(newer == older)
+    }
+
     /// `docs/plugins.md` §12: every hook in a manifest is on the review.
     @Test func everyHookIsOnTheReview() {
         for plugin in AppPlugin.all {

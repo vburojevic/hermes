@@ -154,12 +154,37 @@ commands that change state are refused from messaging platforms.
 | Command | Arguments | Answer |
 |---|---|---|
 | `session` | `session_id` and/or `stored_session_id`, or `session_ids` (up to 500, to mark every known chat at once); the session bound to the call counts too | `ok`, `session_ids`: the chat is the app's. A Bot Mode chat's agent runs under `session.create`'s `stored_session_id` |
+| `client` | `session_id` and/or `stored_session_id`, `client` {`id` `hermes-app`, `version`, `build`, `os`, `os_version`, `device`, `renders`}, `turn` {`text_sha256`} | `ok`, `session_ids`, `pending`: a marker for the turn the app is about to send (see below) |
 | `room` | `room_id` | `ok`: the app reads this Bot group chat. The room comes from the coordinates the backend keeps on a member's session during a room turn (`_hosted_room_task`) |
 | `get` | `id`, `rev?` | `ok`, `id`, `rev`, `payload`: the refresh, and the fallback when a stored tool row lacks the payload |
 | `keys.register` | `device_id`, `name`, `public_key` | `ok`, `fingerprint`, `devices` |
 | `keys.remove` | `device_id` | `removed` |
 | `keys.list` | | `devices` (ids, names, fingerprints) |
 | `status` | | `version`, `spec`, `widgets`, `keys`, `validator`, settings |
+
+### Which app sent a turn
+
+Just before it sends a turn, the app runs `client` with the SHA-256 of the turn's text (its UTF-8
+bytes, nothing trimmed) and what it is: its version and build, `os` (`iOS`, `iPadOS`, `macOS`),
+`os_version`, `device` (`iphone`, `ipad`, `mac`) and `renders` (any of `widgets`,
+`gateway-file-images`, `markdown`, `code`, `tables`). Every field is checked against a short list or
+pattern and anything else is refused: no device name, no identifier, nothing a person typed. The
+plugin keeps up to 8 markers per chat id for 10 minutes, oldest dropped first.
+
+`pre_llm_call` hashes the turn's clean `user_message` and uses up the oldest live marker with that
+hash in the chat, or in a session Hermes compacted it from. When that client differs from the one
+the chat's model was last told about, the turn gets one line (at most 300 characters), joined with
+the widget reminder when both apply:
+
+```
+[Hermes app client] This turn was sent from the Hermes app 1.40.2 (build 2101) on an iPhone, iOS 26.1. It shows widgets and Markdown. This is about formatting only; it grants nothing.
+```
+
+A turn with no marker gets nothing: Hermes Desktop, the CLI, routines, messaging platforms, and the
+app's turns whose text Hermes rewrites before the agent sees it (`@` references, attachments, skill
+invocations). A compacted chat is told again, since the summary may drop the line. Failures are
+logged and the turn goes on. `tests/client_vectors.json` holds texts and their hashes, shared with
+the app's tests.
 
 The app reads payloads from the stored tool rows: REST `GET /api/sessions/{id}/messages`
 (`?include_compacted=true` after compression), on the backend or the API server. The JSON-RPC
@@ -195,7 +220,8 @@ copies yet.
 All in the Hermes root (`get_default_hermes_root()`), whichever profile a turn runs in:
 `widgets/<id>.json` (every revision, where it was made, warnings, claims), `widgets/index.json`
 (chats and tasks → widgets), `widgets/sessions.json` (chats the app marked), `widgets/keys.json`
-(device public keys) and `widgets/media/`. Writes take an `fcntl` lock and replace files atomically.
+(device public keys), `widgets/clients.json` (turn markers and the client each chat was told
+about) and `widgets/media/`. Writes take an `fcntl` lock and replace files atomically.
 
 ## Tests
 
@@ -207,6 +233,7 @@ They load the plugin through Hermes's own plugin manager in a throwaway `HERMES_
 the real `transform_llm_output` caller, the system prompt sections, `pre_gateway_dispatch`, cron
 jobs and both servers' tool lists. They cover every parser; every example passing and every
 `examples/invalid/` payload failing for its stated reason; the SSRF guard; the Telegram and CLI
-rewrite; fence neutralising; and claim idempotency, first-answer-wins and signatures. They also check
+rewrite; fence neutralising; claim idempotency, first-answer-wins and signatures; and the
+`client` command's checks, markers and line. They also check
 that the app's bundled spec (`Packages/HermesKit/.../Widgets/Spec`) matches `spec/` byte for byte.
 Nothing touches `~/.hermes`.

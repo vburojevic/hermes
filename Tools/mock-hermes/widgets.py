@@ -2,8 +2,8 @@
 
 The plugin's engine needs ``jsonschema`` and the mocks are stdlib only, so this mirrors its results
 instead of running it (Tools/hermes-app-widgets/core.py): ``widget`` create, update, resolve, claim
-and get with the same JSON, ids and messages, and ``/app-widgets`` session, get, keys.register,
-keys.remove, keys.list and status. Signed answers are checked for real (P-256 in pure Python below).
+and get with the same JSON, ids and messages, and ``/app-widgets`` session, client, get,
+keys.register, keys.remove, keys.list and status. Signed answers are checked for real (P-256 in pure Python below).
 
 Turns run over the API server's runs (server.py: the stored tool row has the whole result, the
 ``tool.completed`` event a 500-character preview) and over the socket (chats.py: ``tool.complete``
@@ -61,6 +61,9 @@ widget as an inline block, the way the plugin writes it for rooms; answers there
 the newest revision from "another device" (the newest widget without an id): a message in the
 widget's chat, as a phone would send it; ``hold`` keeps the agent that many seconds between its
 claim and its update, so the lock shows.
+``/app-widgets client`` files the app's turn markers as plugin 1.6.0 does (the same checks and
+refusals, at most 8 per chat for 10 minutes, kept in memory); the mock runs no model, so nothing reads them.
+``--widgets-version 1.5.0`` plays the plugin before it: ``client`` is an unknown command and status says 1.5.0.
 ``--no-widgets`` leaves the plugin out: no ``widgets`` toolset, no scenario, ``/app-widgets`` is 4018.
 """
 from __future__ import annotations
@@ -79,7 +82,17 @@ from datetime import date, datetime, timedelta
 
 HERE = pathlib.Path(__file__).resolve().parent
 EXAMPLES = HERE.parent.parent / "Packages/HermesKit/Sources/HermesKit/Widgets/Spec/examples"
-VERSION = "1.5.0"
+VERSION = "1.6.0"
+PLUGIN = {"version": VERSION}  # the installed plugin's version: "1.5.0" plays one without `client`
+# `/app-widgets client` (docs/widgets.md §11), as the plugin's core.py checks it.
+CLIENT_OS = ("iOS", "iPadOS", "macOS")
+CLIENT_DEVICES = ("iphone", "ipad", "mac")
+CLIENT_RENDERS = ("widgets", "gateway-file-images", "markdown", "code", "tables")
+CLIENT_FIELDS = {"id": r"hermes-app", "version": r"[0-9][0-9A-Za-z.+-]{0,19}", "build": r"[0-9A-Za-z.]{1,20}",
+                 "os": "|".join(CLIENT_OS), "os_version": r"[0-9]{1,3}(\.[0-9]{1,3}){0,2}",
+                 "device": "|".join(CLIENT_DEVICES)}
+CLIENT_MARKERS = 8
+CLIENT_TTL = 600
 ID_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 RESOLUTIONS = ("done", "failed", "rejected", "cancelled", "expired", "elsewhere")
 BUILT_IN = {"choice": {"answer"}, "form": {"submit", "cancel"}, "checklist": {"check"}, "control": {"set"},
@@ -95,6 +108,7 @@ WIDGETS = {}  # id -> record: {"revisions", "claims", "answered", "children", "p
 KEYS = {}     # device_id -> {"public_key", "name", "fingerprint", "registered_at"}
 MARKED = {}   # session id -> time marked
 ROOMS = {}    # room id -> time marked
+CLIENTS = {}  # session id -> pending turn markers, oldest first: {"sha", "client", "at"}
 SILENT = set()
 HOLD = {}     # mid -> seconds the agent waits after claiming, before it acts (the lock shows)
 C = None      # chats.py, when the backend runs
@@ -596,7 +610,8 @@ def check_signature(widget_id, rev, action, values, mid, sig):
 def command(raw):
     """``/app-widgets <command> <json>`` → one line of JSON, never raising (the plugin's handle_command)."""
     name, _, body = (raw or "").strip().partition(" ")
-    if name not in ("session", "room", "get", "keys.register", "keys.remove", "keys.list", "status"):
+    known = ("session", "room", "get", "keys.register", "keys.remove", "keys.list", "status")
+    if name not in known + (("client",) if PLUGIN["version"] != "1.5.0" else ()):
         return dump({"ok": False, "error": f"unknown command {name!r}"})
     try:
         args = json.loads(body) if body.strip() else {}
@@ -616,6 +631,17 @@ def command(raw):
                 MARKED[session_id] = time.time()
             print(f"[mock-widgets] marked {len(ids)} chat(s) as the app's", flush=True)
             return dump({"ok": True, "session_ids": ids})
+        if name == "client":
+            checked = client_args(args)
+            if isinstance(checked, str):
+                return dump({"ok": False, "error": checked})
+            ids, client, sha = checked
+            now = time.time()
+            for session_id in ids:
+                live = [m for m in CLIENTS.get(session_id, []) if now - m["at"] <= CLIENT_TTL]
+                CLIENTS[session_id] = (live + [{"sha": sha, "client": client, "at": now}])[-CLIENT_MARKERS:]
+            print(f"[mock-widgets] {client['device']} app {client['version']} sent a turn", flush=True)
+            return dump({"ok": True, "session_ids": ids, "pending": len(CLIENTS[ids[0]])})
         if name == "room":
             room_id = str(args.get("room_id") or "")
             if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", room_id):
@@ -649,8 +675,49 @@ def command(raw):
         if name == "keys.list":
             return dump({"ok": True, "devices": [{"device_id": k, "name": v.get("name"), "fingerprint": v.get("fingerprint"),
                                                   "registered_at": v.get("registered_at")} for k, v in KEYS.items()]})
-        return dump({"ok": True, "version": VERSION, "spec": "1.0", "widgets": len(WIDGETS), "keys": len(KEYS),
+        return dump({"ok": True, "version": PLUGIN["version"], "spec": "1.0", "widgets": len(WIDGETS), "keys": len(KEYS),
                      "validator": True, "app_platforms": [], "store_media": False, "text_answers": True})
+
+
+def client_args(args):
+    """``client``'s arguments, checked as the plugin's ``_client_args``: (ids, client, hash) or what is wrong."""
+    extra = set(args) - {"session_id", "stored_session_id", "client", "turn"}
+    if extra:
+        return f"unknown argument {sorted(extra)[0]!r}"
+    ids = []
+    for key in ("session_id", "stored_session_id"):
+        value = args.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", value):
+            return f"{key} must be a session id"
+        ids.append(value)
+    if not ids:
+        return "session_id is required"
+    client = args.get("client")
+    if not isinstance(client, dict):
+        return "client is required"
+    extra = set(client) - {*CLIENT_FIELDS, "renders"}
+    if extra:
+        return f"unknown client field {sorted(extra)[0]!r}"
+    checked = {}
+    for key, pattern in CLIENT_FIELDS.items():
+        value = client.get(key)
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            return f"client.{key} is missing or not allowed"
+        checked[key] = value
+    renders = client.get("renders")
+    if (not isinstance(renders, list) or not all(isinstance(r, str) and r in CLIENT_RENDERS for r in renders)
+            or len(set(renders)) != len(renders)):
+        return f"client.renders must list distinct values from {', '.join(CLIENT_RENDERS)}"
+    checked["renders"] = list(renders)
+    turn = args.get("turn")
+    if not isinstance(turn, dict) or set(turn) != {"text_sha256"}:
+        return "turn must be {\"text_sha256\": ...}"
+    sha = turn["text_sha256"]
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        return "turn.text_sha256 must be 64 lowercase hex characters"
+    return list(dict.fromkeys(ids)), checked, sha
 
 
 # ---------------------------------------------------------------- scripts

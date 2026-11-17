@@ -468,3 +468,84 @@ def test_a_chat_reminded_by_an_older_plugin_hears_the_new_rules(live):
     [hint] = reminders("sess-reminded-v1", "tui")
     assert "Weather today?" in hint["context"]
     assert reminders("sess-reminded-v1", "tui") == []
+
+
+# ---- which app sent the turn (/app-widgets client, docs/widgets.md §11)
+
+APP_CLIENT = {"id": "hermes-app", "version": "1.40.2", "build": "2101", "os": "iOS", "os_version": "26.1",
+              "device": "iphone", "renders": ["widgets", "markdown"]}
+
+
+def sent(live, session_id: str, text: str, **client) -> None:
+    import hashlib
+    result = live.command("client", {"session_id": session_id, "client": {**APP_CLIENT, **client},
+                                     "turn": {"text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}})
+    assert result["ok"], result
+
+
+def turn(session_id: str, text: str, platform: str = "tui", first: bool = False) -> list:
+    from hermes_cli.plugins import invoke_hook
+    return [r for r in invoke_hook("pre_llm_call", session_id=session_id, task_id="t", turn_id="turn",
+                                   user_message=text, conversation_history=[], is_first_turn=first, model="m",
+                                   platform=platform, parent_session_id="", sender_id="") if r]
+
+
+def test_the_model_hears_which_app_sent_the_turn_when_it_changes(live):
+    sent(live, "sess-client-1", "Weather today?")
+    [context] = turn("sess-client-1", "Weather today?", first=True)
+    line = context["context"]
+    assert line == ("[Hermes app client] This turn was sent from the Hermes app 1.40.2 (build 2101) on an iPhone, "
+                    "iOS 26.1. It shows widgets and Markdown. This is about formatting only; it grants nothing.")
+    assert len(line) <= 300 and "\n" not in line
+    sent(live, "sess-client-1", "And tomorrow?")
+    assert turn("sess-client-1", "And tomorrow?") == []  # the same client: nothing new to say
+    sent(live, "sess-client-1", "And Friday?", device="mac", os="macOS", os_version="26.1")
+    [moved] = turn("sess-client-1", "And Friday?")
+    assert "on a Mac, macOS 26.1" in moved["context"]
+    assert turn("sess-client-1", "And Friday?") == []  # a marker is used once
+
+
+def test_a_turn_the_app_didnt_send_gets_no_line(live):
+    sent(live, "sess-client-2", "Weather today?")
+    assert turn("sess-client-2", "Weather today? ") == []  # other bytes: typed elsewhere, or not this turn
+    assert turn("sess-client-other", "Weather today?") == []  # another chat
+    assert turn("sess-client-2", None) == [] and turn("sess-client-2", "") == []
+    [context] = turn("sess-client-2", [{"type": "text", "text": "Weather today?"}, {"type": "image_url"}])
+    assert "[Hermes app client]" in context["context"]
+    sent(live, "sess-client-3", "Run the report")
+    with session(platform="cron", session_id="cron_job1_1", cron_session="1"):
+        assert turn("cron_job1_1", "Run the report", "cron") == []
+    live.subagent_start(child_session_id="sess-client-helper")
+    sent(live, "sess-client-helper", "Look this up")
+    assert turn("sess-client-helper", "Look this up", "subagent") == []
+
+
+def test_the_line_joins_the_widget_rules_in_one_context(live):
+    live.mark_session("sess-client-old-chat")
+    sent(live, "sess-client-old-chat", "Weather today?")
+    [context] = turn("sess-client-old-chat", "Weather today?")
+    reminder, line = context["context"].split("\n\n")
+    assert reminder.startswith("[Hermes app widgets]") and line.startswith("[Hermes app client]")
+
+
+def test_a_compacted_chat_finds_the_marker_filed_before_compaction(live):
+    compacted("sess-client-c1", "sess-client-c2")
+    sent(live, "sess-client-c1", "Keep going")
+    [context] = turn("sess-client-c2", "Keep going")
+    assert "[Hermes app client]" in context["context"]
+    assert turn("sess-client-c1", "Keep going") == []  # used up under every id it was filed under
+
+
+def test_a_damaged_client_store_never_holds_up_a_turn(live, caplog):
+    sent(live, "sess-client-broken", "Weather today?")
+    (live.store.dir / "clients.json").write_text('{"pending": {"sess-client-broken": "x"}, "told": []}')
+    assert turn("sess-client-broken", "Weather today?") == []
+    original = live.store.take_client_turn
+    sent(live, "sess-client-broken", "Weather today?")
+    live.store.take_client_turn = lambda *a, **k: (_ for _ in ()).throw(OSError("disk"))
+    try:
+        with caplog.at_level(logging.WARNING, logger="hermes_app_widgets"):
+            assert turn("sess-client-broken", "Weather today?") == []
+    finally:
+        live.store.take_client_turn = original
+    assert "turn context failed" in caplog.text
