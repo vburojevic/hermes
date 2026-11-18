@@ -95,9 +95,12 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
 - `device_id` is this installation's id (survives updates, not reinstalls). The gateway's relay
   installation id names it in notices; the app keeps the mapping in its App Group.
 - Preference changes go to every gateway with push on, 0.6 s after the last change.
-- While the app is in front it reports `presence foreground` with the chat on screen every 50 s or
-  when the chat changes (the plugin forgets a report after 75 s), and `away` as it leaves, naming
-  the chats to keep current meanwhile (`sync`, §2).
+- While the app is in front it reports `presence foreground` to each gateway with the chat open on
+  that gateway in a visible scene (none when no visible scene shows it), every 50 s or when that
+  chat changes (the plugin forgets a report after 75 s), and `away` as it leaves, naming the chats
+  to keep current meanwhile (`sync`, §2). Each iPad scene keeps its own gateway, so two scenes on
+  two gateways each tell theirs; scenes on the same gateway share its open chat (`VisibleChats`,
+  `WindowGateways.visibleGateways`). A scene in the background shows nothing.
 - Removing a gateway from the app, or Stop Notifications on its detail page, sends `unregister`.
 - Reading a chat, a Bot or a group chat in the app (opening it, or Mark as Read) sends `read` to
   that gateway, at most once a second with everything read meanwhile (§2, Reading). Until the
@@ -184,13 +187,14 @@ notification keeps the relay's kind-only text, never content.
 
 ### 1.6 Mac
 
-The Mac app hears its chats over its own connections and posts local notifications
-(`MacNotifier`, `UNUserNotificationCenter`) only while it runs, and only when Hermes isn't in front or
-the chat isn't the one on screen. Answers go straight back through the chat. The Mac checks that
-the plugin is there (`status`) but doesn't register, so the relay never pushes to it. It remembers the
-gateway's installation from that answer and asks `status` again every 30 s for the open requests,
-which its Dock badge counts as the iPhone's icon does (§2 Badge). A click opens where a push's tap
-does, by the same rules (§3).
+The Mac app hears its chats over its own connections and posts local notifications (`MacNotifier`,
+`UNUserNotificationCenter`) only while it runs, and only when Hermes isn't in front or the chat
+isn't on screen. A chat open in any visible window counts, on that window's own gateway: two windows
+on two gateways each keep their chat quiet, and a minimized window's chat notifies again. Answers go
+straight back through the chat. The Mac checks that the plugin is there (`status`) but doesn't
+register, so the relay never pushes to it. It remembers the gateway's installation from that answer
+and asks `status` again every 30 s for the open requests, which its Dock badge counts as the
+iPhone's icon does (§2 Badge). A click opens where a push's tap does, by the same rules (§3).
 
 Not built yet: notifications on the Mac while its app is closed (the plugin already understands a
 `running` presence with the chats the Mac notifies about itself, `live`).
@@ -276,7 +280,8 @@ Rules:
   1.0. The expanded view says how long is left ("It expires in 4 minutes if no one answers").
 - **Not in the open chat.** The plugin sends nothing for the chat a device shows; a request held
   back that way goes out when the person leaves. In the app (`userNotificationCenter(_:willPresent:)`,
-  `PushCenter.presentation(for:)`), a notice for the chat on screen doesn't banner: its card docks
+  `PushCenter.presentation(for:)`), a notice for a chat on screen (open in any visible window or
+  scene, on the notice's own gateway) doesn't banner: its card docks
   above the composer, and a request goes quietly into Notification Center in case the person walks
   away. Other chats banner (`bannerInApp`); task results and tidies only go into the list.
 - **Reading.** A chat read anywhere leaves no notifications behind for it.
@@ -594,6 +599,10 @@ Rules:
 - With Show Previews at When Unlocked, the locked screen shows only the kind and the gateway; with
   Show Message Text off, so does every notification.
 - No banner for the chat on screen; banners for other chats.
+- With two iPad scenes or two Mac windows on two gateways, each with a chat open, a reply or an
+  approval in either chat posts no banner (for the iPad the mock sends nothing, and logs
+  `held … (chat on screen)` for a request); a chat on a gateway no visible window shows still
+  notifies, and so does a chat in a minimized window or a scene in the background.
 - Opening a reply's notification shows the reply within a second or two of the chat opening, even
   when it was stored after the notice (`-HERMES_PUSH_OPEN botreply:ops` against the mock, with
   `POST /api/mock/message-agent` just before it opens).

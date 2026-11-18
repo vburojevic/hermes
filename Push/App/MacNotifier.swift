@@ -105,6 +105,10 @@ final class MacNotifier {
     }
 
     private func post(_ notice: PushNotice, posted entry: Posted) {
+        #if DEBUG
+        // Logged before the permission check, so a Dev build with notifications off still shows the decision.
+        ConnectionLog.logger.notice("mac-notify: \(notice.kind.rawValue, privacy: .public) in \(notice.sessionID ?? "", privacy: .private) \(self.center.isShowing(notice) ? "on screen, not posted" : "would post", privacy: .public)")
+        #endif
         guard center.canNotify, !center.isShowing(notice) else { return }
         let presentation = NoticePresentation(notice, gatewayName: entry.conversation.flatMap { _ in notice.gateway?.name },
                                               slot: nil, showDetails: .always)

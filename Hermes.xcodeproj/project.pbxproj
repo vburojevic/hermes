@@ -46,6 +46,7 @@
 		23B57873A2D3008FDE703B31 /* UnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88CB26D81243C7B77D55505 /* UnreadStore.swift */; };
 		24302566B9AD1E8A39D913A1 /* PairingCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF762D074CAEA5B49F439C4 /* PairingCode.swift */; };
 		2554CD8997E25DBB6AF34F52 /* WelcomeProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = C990B1A446436F0374BF951D /* WelcomeProgress.swift */; };
+		265D7F5872AD165575C72E15 /* WindowMiniaturize.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFD0B0B2832EFE9469121EE5 /* WindowMiniaturize.swift */; };
 		26B2F9C1CF1EFD0CC091ED2C /* InspectorPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B9564D89AC2C89465B2578 /* InspectorPresentation.swift */; };
 		272FAD243753B4895A349322 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 49A26C4633CBC4FA0472A87C /* ActivityKit.framework */; };
 		2781B9569789A85414C563C4 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDCAA78C61AB4467E72E5E0F /* Motion.swift */; };
@@ -652,6 +653,7 @@
 		DDCAA78C61AB4467E72E5E0F /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
 		DE480A0097C12F38535C11E8 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCatalog.swift; sourceTree = "<group>"; };
+		DFD0B0B2832EFE9469121EE5 /* WindowMiniaturize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMiniaturize.swift; sourceTree = "<group>"; };
 		DFF762D074CAEA5B49F439C4 /* PairingCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCode.swift; sourceTree = "<group>"; };
 		E410606B63F05F4A327E8382 /* PluginsAskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginsAskView.swift; sourceTree = "<group>"; };
 		E47BA9AF3C026D6EEF719EF1 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -1329,6 +1331,7 @@
 				D8DCE68A5C048D3E37F570BD /* RouteWatcher.swift */,
 				933DF3C59199DA5AA7CD64D7 /* ScreenLock.swift */,
 				FFD9CCD2676A19F67EE33509 /* ScrollRun.swift */,
+				DFD0B0B2832EFE9469121EE5 /* WindowMiniaturize.swift */,
 				5EADF971DE202997F6C978CF /* WindowOnScreen.swift */,
 			);
 			path = Support;
@@ -2003,6 +2006,7 @@
 				99C1715B99B223138B8F9B72 /* WidgetStore.swift in Sources */,
 				64643004D312EC1013CB8903 /* WidgetStyle.swift in Sources */,
 				2BC8D4A47D5F4B9E5C861875 /* WidgetView.swift in Sources */,
+				265D7F5872AD165575C72E15 /* WindowMiniaturize.swift in Sources */,
 				68B2D31358DEAFEE704C5223 /* WindowOnScreen.swift in Sources */,
 				6C68940B53D9FC3FB44AB75E /* WindowRouter.swift in Sources */,
 			);

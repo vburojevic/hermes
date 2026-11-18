@@ -18,6 +18,8 @@ struct RootView: View {
     @State private var router = WindowRouter()
     /// The gateway this window showed, so it comes back on it (`docs/connecting-and-voice.md` §8).
     @SceneStorage("window.gateway") private var storedGateway: String?
+    /// The Mac window is minimized: off screen, though its scene phase never reaches background.
+    @State private var isMinimized = false
 
     /// This window's gateway: its own once the window is open, until then the one it restores.
     private var gatewayID: UUID? {
@@ -152,6 +154,10 @@ struct RootView: View {
         .background(WindowAppearance(style: appearance.interfaceStyle))
         #else
         .preferredColorScheme(appearance.colorScheme)
+        .background(WindowMiniaturizeProbe { minimized in
+            isMinimized = minimized
+            app.window(router.windowID, isVisible: !minimized)
+        })
         #endif
         // Each window keeps its own gateway; the one in front is the last used, and every one on
         // screen keeps connected (`docs/connecting-and-voice.md` §8). A window opens visible: its
@@ -176,7 +182,7 @@ struct RootView: View {
             storedGateway = gatewayID?.uuidString
         }
         .onChange(of: scenePhase) { _, phase in
-            app.window(router.windowID, isVisible: phase != .background)
+            app.window(router.windowID, isVisible: phase != .background && !isMinimized)
             if phase == .active { app.didBecomeActive() }
         }
         .sheet(item: $router.sheet, onDismiss: router.sheetDidDismiss) { sheet in

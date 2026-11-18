@@ -40,12 +40,17 @@ public struct WindowGateways: Equatable, Sendable {
 
     public var windowCount: Int { windows.count }
 
+    /// The gateways open, visible windows show: a chat open on one of them is on screen
+    /// (`docs/notifications.md` §1.2). A minimized window or a scene in the background shows none.
+    public var visibleGateways: Set<UUID> {
+        Set(windows.values.filter(\.isVisible).compactMap { $0.gateway ?? lastUsed })
+    }
+
     /// Every gateway an open, visible window shows keeps checking its connection, and so does the
     /// last-used one, whatever the windows show: the app-wide places (the menu bar extra, Talk)
     /// show its state even with every window minimized or closed.
     public var keptConnected: Set<UUID> {
-        let shown = windows.values.filter(\.isVisible).compactMap { $0.gateway ?? lastUsed }
-        return Set(shown + [lastUsed].compactMap(\.self))
+        visibleGateways.union([lastUsed].compactMap(\.self))
     }
 
     /// A window opened: on the gateway it showed before (restored with the window), or nil to
