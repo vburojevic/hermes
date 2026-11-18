@@ -699,7 +699,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   once; the first tap goes to the first of them, the next to the end), else the round arrow back
   to the latest (`newMessagesPill`, `docs/inbox.md` §4). Otherwise, while the reader is within
   72 pt of the end, the chat follows any growth; scrolling up stops following and the pill
-  resumes it.
+  resumes it. Settings → Chat → Keep chat at bottom when sending (off by default) turns the page
+  off: the message lands at the bottom with the earlier messages above it and no blank room, and
+  the reply grows from the bottom, followed while you're at the end (`SendScroll`). With Reduce
+  Motion on, that follow goes at once instead of easing.
 - **Sending on a busy or away gateway.** Send never waits on the gateway, and is never greyed out
   for it. The message shows at once; a quick gateway takes it before anything else shows. After
   half a second it says "Sending…" under it (a big upload to a healthy Mac stays there;

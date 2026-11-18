@@ -15,7 +15,8 @@ import SwiftUI
 /// Sending reads like a new page: your message glides up to just under the top bar and the reply
 /// fills in below it, from its first line. Nothing chases the reply down the screen; when it runs
 /// past the bottom, the arrow says there's more. Until the reply fills the screen, blank room
-/// after it (`runway`) is what lets the message sit at the top.
+/// after it (`runway`) is what lets the message sit at the top. With Keep chat at bottom when
+/// sending on, the chat stays at its end instead and follows the reply (`SendScroll`).
 struct TranscriptView: View {
     let conversation: ConversationModel
     let workspace: BotWorkspace
@@ -101,6 +102,7 @@ struct TranscriptView: View {
     /// Taps on the pill (a light tap of haptics each).
     @State private var jumps = 0
     @AppStorage(PreferenceKey.openChatsAt) private var openChatsAt = OpenChatsAt.firstUnread
+    @AppStorage(PreferenceKey.keepChatAtBottom) private var keepsAtBottom = SendScroll.keepsAtBottomByDefault
     @AppStorage(TalkPreferences.Key.replies) private var voiceReplies = VoiceReplies.Setting.whenISpeak.rawValue
     @Environment(\.scenePhase) private var scenePhase
     #if os(macOS)
@@ -415,7 +417,7 @@ struct TranscriptView: View {
             now.disablesAnimations = true
             withTransaction(now) { scrollToLatest() }
             #else
-            if abs(distance) < 600 {
+            if abs(distance) < 600, !followsAtOnce {
                 withAnimation(.easeOut(duration: 0.24)) { scrollToLatest() }
             } else {
                 scrollToLatest()
@@ -451,7 +453,8 @@ struct TranscriptView: View {
                 trimWindow()
             }
         }
-        // Sending turns the page: the message glides up to the top.
+        // Sending turns the page: the message glides up to the top (unless the chat is kept at
+        // the bottom, `beginLanding`).
         .onChange(of: conversation.sentTurns) { beginLanding() }
         .overlay(alignment: .bottom) {
             if !isFollowing && settled && pillFits {
@@ -1250,11 +1253,13 @@ struct TranscriptView: View {
 
     /// A message was sent: it becomes the turn the chat holds at the top. The glide waits a frame
     /// or two for the message's place and the room after it to be measured (`updateRunway`).
+    /// With Keep chat at bottom when sending on, the chat goes to its end instead and follows the
+    /// reply from there (`SendScroll`).
     private func beginLanding() {
-        guard let entry = conversation.pendingUser else {
-            isFollowing = true
-            withAnimation(Self.rowsAnimation) { scrollToLatest() }
-            return
+        let entry = conversation.pendingUser
+        let scroll = SendScroll.onSend(keepsAtBottom: keepsAtBottom, messageShown: entry != nil)
+        guard scroll == .turnPage, let entry else {
+            return followSentMessage()
         }
         #if DEBUG && os(iOS)
         FrameMonitor.shared.mark("send: landing begins")
@@ -1284,6 +1289,45 @@ struct TranscriptView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, edge.landing else { return }
             land()
+        }
+    }
+
+    /// Sending with nothing to turn the page to, or with Keep chat at bottom when sending on: the
+    /// chat goes to its end and follows what comes. A turn held at the top before the setting was
+    /// turned on lets go, and its blank room goes with it.
+    private func followSentMessage() {
+        if keepsAtBottom {
+            abandonGlide()
+            edge.pinned = false
+            edge.anchorTop = nil
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                anchorKey = nil
+                holdsTurn = false
+            }
+            updateRunway()
+            // Sent from far back in the chat: the end's page, at its end.
+            if lastShownKey != nil {
+                isFollowing = true
+                return showEndPage()
+            }
+        }
+        isFollowing = true
+        // Kept at the bottom, the Mac goes to the end at once, as its follow does: an eased
+        // scroll there would be under way as the reply's first lines arrive, and the Mac's scroll
+        // view doesn't blend one scroll animation into the next.
+        #if os(macOS)
+        let atOnce = keepsAtBottom
+        #else
+        let atOnce = followsAtOnce
+        #endif
+        if atOnce {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { scrollToLatest() }
+        } else {
+            withAnimation(Self.rowsAnimation) { scrollToLatest() }
         }
     }
 
@@ -1392,9 +1436,13 @@ struct TranscriptView: View {
         edge.settle = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, isFollowing, !isScrolledByHand, !keepsTop, !holdsTurn, !edge.landing, abs(edge.distance) > 1 else { return }
-            withAnimation(.easeOut(duration: 0.24)) { scrollToLatest() }
+            withAnimation(followsAtOnce ? nil : .easeOut(duration: 0.24)) { scrollToLatest() }
         }
     }
+
+    /// With Keep chat at bottom when sending on, the chat follows every send and every line of a
+    /// reply. With Reduce Motion on as well, that follow goes at once rather than easing each time.
+    private var followsAtOnce: Bool { keepsAtBottom && reduceMotion }
 
     private func scrollToLatest() {
         #if os(macOS)

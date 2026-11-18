@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKey.showUsage) private var showUsage = false
     @AppStorage(PreferenceKey.openChatsAt) private var openChatsAt = OpenChatsAt.firstUnread
     @AppStorage(PreferenceKey.chatSounds) private var chatSounds = false
+    @AppStorage(PreferenceKey.keepChatAtBottom) private var keepChatAtBottom = SendScroll.keepsAtBottomByDefault
     @State private var editing: BotConfiguration?
     @State private var isAddingBot = false
     /// `-HERMES_APPS_TOOLS <tab>[:<item>]` opens Apps and Tools (screenshots).
@@ -78,6 +79,7 @@ struct SettingsView: View {
                             Text(option.title).tag(option)
                         }
                     }
+                    Toggle("Keep chat at bottom when sending", isOn: $keepChatAtBottom)
                     #if os(iOS)
                     Toggle("Haptics", isOn: $haptics)
                     #endif
@@ -85,7 +87,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Chat")
                 } footer: {
-                    Text("A chat with new messages opens at the first one, or at the latest. With Send with Return on, Shift-Return starts a new line on a hardware keyboard.")
+                    Text("A chat with new messages opens at the first one, or at the latest. With Keep chat at bottom when sending on, the message you send stays at the bottom and the reply fills in below it. With Send with Return on, Shift-Return starts a new line on a hardware keyboard.")
                 }
 
                 // Talk, voice messages, Listen and dictation (`docs/voice.md` §6).
