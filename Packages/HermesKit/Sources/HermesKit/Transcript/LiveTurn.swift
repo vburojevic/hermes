@@ -188,6 +188,7 @@ public struct LiveTurn: Sendable, Equatable {
         case .completed(let output, let usage, let runtime):
             if let output, !output.isEmpty {
                 pendingText = output
+                dropNarrationKeptAsReply(output)
             }
             self.usage = usage
             self.runtime = runtime
@@ -463,6 +464,26 @@ public struct LiveTurn: Sendable, Equatable {
         }
         turn.state = state
         turn.finishedAt = now
+    }
+
+    /// Hermes keeps the words written beside only its housekeeping calls as the turn's reply when
+    /// the follow-up comes back empty (`fallback_prior_turn_content`), and the run's output names
+    /// them. They became narration when the call started; they show once, as the reply
+    /// (`docs/chat.md` §1, 8).
+    private mutating func dropNarrationKeptAsReply(_ output: String) {
+        let reply = TranscriptBuilder.cleanAssistantText(AgentAudio.split(output).text)
+        guard let index = turn.steps.lastIndex(where: { if case .narration = $0 { true } else { false } }),
+              case .narration(_, let text) = turn.steps[index], text == reply else { return }
+        let after = turn.steps[(index + 1)...]
+        let calledTools = after.contains { if case .tool = $0 { true } else { false } }
+        let onlyHousekeeping = after.allSatisfy { step in
+            switch step {
+            case .tool(let tool): TranscriptBuilder.lineIsReplyTools.contains(tool.name)
+            case .reasoning: true
+            case .narration, .subagent: false
+            }
+        }
+        if calledTools, onlyHousekeeping { turn.steps.remove(at: index) }
     }
 
     private mutating func flushNarration() {

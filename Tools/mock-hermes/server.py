@@ -676,6 +676,8 @@ def agent_turn(run):
             clarify_turn(run, lowered)
         elif "heartbeat" in lowered:
             heartbeat_turn(run)
+        elif "aside" in lowered:
+            aside_turn(run)
         elif "approve" in lowered:
             narration = "I'll clean the build folder first. "
             stream_text(run, narration)
@@ -863,6 +865,33 @@ def heartbeat_turn(run):
                     f"Output:\nAll 412 tests passed]\n\n{INTERNAL_NOTIFICATION_FOOTER}", display_kind="internal_notification")
         add_message(sid, "assistant", "All 412 tests passed.", finish_reason="stop", timestamp=time.time() + 0.5)
     threading.Thread(target=wakes, daemon=True).start()
+
+
+ASIDE_REPLY = ("Your flight leaves Zagreb at 07:40 on Friday, so plan to be at the airport by 06:10. "
+               "I've noted that you prefer aisle seats.")
+
+
+def aside_turn(run):
+    """"aside": the reply written in the same message as a memory save, and an empty follow-up.
+    Hermes then keeps that message's words as the reply (agent/turn_tool_round.py,
+    `take_housekeeping_reply_line`; `fallback_prior_turn_content`): the empty follow-up is never
+    stored, so the reply's only row is the one that called `memory`, and `run.completed` carries it
+    as its output. Live it streams, is announced as already streamed (`message.interim`), then the
+    tool runs (gateway/platforms/api_server_runs.py)."""
+    sid = run.session_id
+    out, ok = stream_text(run, ASIDE_REPLY)
+    if not ok:
+        return
+    run.emit("message.interim", text=out, already_streamed=True)
+    args = {"action": "add", "target": "user", "content": "Prefers aisle seats."}
+    add_message(sid, "assistant", out, finish_reason="tool_calls",
+                tool_calls=[{"id": "call_aside", "type": "function",
+                             "function": {"name": "memory", "arguments": json.dumps(args)}}])
+    result = json.dumps({"success": True, "message": "Entry added."})
+    if not tool(run, "memory", "Prefers aisle seats.", result, 0.6):
+        return
+    add_message(sid, "tool", result, tool_call_id="call_aside", tool_name="memory")
+    run.output = out
 
 
 def clarify_turn(run, lowered):

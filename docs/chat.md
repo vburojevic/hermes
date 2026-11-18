@@ -53,7 +53,12 @@ The assistant side has no bubble and takes the full reading width. Top to bottom
    between steps stays here, muted, until it says more. That narration is the turn's progress, never
    a reply of its own: once the turn finishes its reply takes the place, a turn that finished with no
    reply but what it said along the way reads as those words, and one that died keeps them muted
-   (`AssistantTurn.reading`).
+   (`AssistantTurn.reading`). Words written beside only Hermes's housekeeping calls (`memory`,
+   `todo_list`, `skill_manage`, `session_search`, `setup_beat`) with nothing written after them are
+   the reply: Hermes keeps them as the turn's reply when the follow-up comes back empty
+   (`fallback_prior_turn_content`) and stores no row after the tool's. They show once, here, live
+   and reopened, never as narration in the steps, and the reopened turn settles instead of
+   showing as working (§2).
 9. Steers still waiting, at the end where they were sent.
 10. Artifact and preview cards that open in the Inspector (`Inspector.artifactCard`,
     [inspector.md](inspector.md)).
@@ -127,7 +132,7 @@ marked missed while Hermes answered it ([follow-ups.md](follow-ups.md) §2).
 |---|---|---|
 | `message.start` | Starts a turn this device didn't send; the Bot's face starts thinking | `turnHeader` |
 | `message.delta` (`text`) | Reply text streams in as Markdown | `MarkdownView` |
-| `message.interim` (`text`, `already_streamed`) | Narration between tool calls, skipped when it already arrived as deltas; text written before a tool call also becomes narration | narration row on the rail |
+| `message.interim` (`text`, `already_streamed`) | Narration between tool calls, skipped when it already arrived as deltas; text written before a tool call also becomes narration, except a reply Hermes kept from beside its housekeeping calls (§1, 8): the turn's `output` names it, and it shows only as the reply | narration row on the rail |
 | `reasoning.delta`, `reasoning.available` | A "Thought" step on the rail with a one-line preview; it opens to the full text. `reasoning.available` replaces the block so far | reasoning row |
 | `thinking.delta` | Only provider waits ("⏳ waiting on…", "rate limited") become the header's label; spinner text is ignored | `turnHeader` |
 | `status.update`, kinds `status`, `lifecycle`, `compacting`, `process` | The header's label ("Compacting context…") | `turnHeader` |
@@ -279,7 +284,10 @@ by one, and `sessions.changed` brings each in. That turn shows as working
   (`TranscriptBuilder.stoppedMark`): a relaunch drew those rows as working too. A row stored after
   that makes it a turn going on again, and the mark goes. Over the API server alone, the run the app
   started says whether it runs (§2, over the API server); a turn started elsewhere there, or one
-  with a picture, shows as working until its last row is 20 minutes old.
+  with a picture, shows as working until its last row is 20 minutes old. Rows that end on a reply
+  Hermes kept from beside its housekeeping calls (§1, 8) are how it stores a finished turn, so they
+  read as working for 90 s at most (`TranscriptBuilder.replyLineSettlesAfter`): a relaunch showed
+  "Thinking…" over that reply for the whole 20 minutes.
 - **Everywhere the Bot shows.** The roster reads a Bot Chat's last rows when its count or last
   activity moves (`BotRoster.runningElsewhere`): the Bot's row gets its activity line ("Running a
   command", else thinking), its tile says what it runs ("Working: Running a command"), else
@@ -1156,6 +1164,8 @@ Not built yet:
 - Over the API server, back after the run's events were swept (`--run-stream-ttl`), the turn says
   "Still working · its steps show when it's done", never "Reconnecting…", and its stored reply
   shows when it ends.
+- "aside" (server.py) replays a reply written beside a memory save with an empty follow-up: the
+  words show as the reply, live and reopened, never in the steps.
 - Light, dark and Increase Contrast match the design, on iPhone, iPad and Mac.
 
 ## 8. Setup

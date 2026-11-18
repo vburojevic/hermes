@@ -46,4 +46,51 @@ struct TurnReviewAndNarrationTests {
         let died = AssistantTurn(id: "t", steps: [.narration(id: "n", text: Self.narration)], state: .failed(LostTurn.unreachable.line))
         #expect(died.reading(stepsOpen: false)?.isInterim == true)
     }
+
+    // MARK: A reply written beside a memory save
+
+    private static let aside = "Your flight leaves at 07:40 on Friday. I've noted that you prefer aisle seats."
+
+    private static func play(_ events: [TurnEvent]) -> AssistantTurn {
+        var live = LiveTurn(id: "t", sessionID: "s")
+        for (seq, event) in events.enumerated() { live.apply(SequencedTurnEvent(seq: seq + 1, event: event)) }
+        return live.snapshot
+    }
+
+    /// The model wrote its reply in the message that saved a memory, and its follow-up was empty:
+    /// Hermes keeps those words as the reply (`fallback_prior_turn_content`) and `run.completed`
+    /// says so. The words show once, as the reply, never also as narration in the thinking section.
+    @Test func aReplyBesideAMemorySaveIsTheReply() {
+        let turn = Self.play([
+            .textDelta(Self.aside),
+            .commentary(Self.aside, alreadyStreamed: true),
+            .toolStarted(id: nil, name: "memory", preview: "Prefers aisle seats.", at: nil),
+            .toolFinished(id: nil, name: "memory", failed: false, duration: 0.6, resultPreview: "Entry added.", at: nil),
+            .completed(output: Self.aside, usage: nil, runtime: nil),
+        ])
+        #expect(turn.answer == Self.aside)
+        #expect(!turn.steps.contains { if case .narration = $0 { true } else { false } })
+        #expect(turn.reading(stepsOpen: true)?.text == Self.aside)
+        // The socket ends the same turn with `message.complete`, read as its final text first.
+        let socket = Self.play([
+            .textDelta(Self.aside),
+            .toolStarted(id: "c1", name: "memory", preview: nil, at: nil),
+            .toolFinished(id: "c1", name: "memory", failed: false, duration: 0.6, resultPreview: nil, at: nil),
+            .finalText(Self.aside),
+            .completed(output: Self.aside, usage: nil, runtime: nil),
+        ])
+        #expect(socket.answer == Self.aside)
+        #expect(socket.steps.count == 1)
+    }
+
+    /// Words before a call that does work are narration, even when the reply repeats them.
+    @Test func wordsBeforeRealWorkStayNarration() {
+        let turn = Self.play([
+            .textDelta(Self.narration),
+            .toolStarted(id: nil, name: "terminal", preview: "brew upgrade argus", at: nil),
+            .toolFinished(id: nil, name: "terminal", failed: false, duration: 1, resultPreview: "ok", at: nil),
+            .completed(output: Self.narration, usage: nil, runtime: nil),
+        ])
+        #expect(turn.steps.first == .narration(id: "t-s0", text: Self.narration))
+    }
 }

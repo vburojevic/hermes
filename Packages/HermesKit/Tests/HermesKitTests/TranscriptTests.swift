@@ -413,4 +413,82 @@ struct TranscriptTests {
         #expect(job.repeatCompleted == 3)
         #expect(!job.isPaused)
     }
+
+    // MARK: A reply written beside a memory save
+
+    private static let aside = "Your flight leaves at 07:40 on Friday. I've noted that you prefer aisle seats."
+
+    private static func asideRows(_ tool: String, then reply: String? = nil) -> [SessionMessage] {
+        var rows = [
+            SessionMessage(id: 1, role: "user", content: .text("When do I fly?")),
+            SessionMessage(id: 2, role: "assistant", content: .text(aside),
+                           toolCalls: [ToolCall(id: "c1", name: tool, arguments: #"{"action": "add"}"#)]),
+            SessionMessage(id: 3, role: "tool", content: .text("Entry added."), toolCallID: "c1", toolName: tool),
+        ]
+        if let reply { rows.append(SessionMessage(id: 4, role: "assistant", content: .text(reply))) }
+        return rows
+    }
+
+    private func onlyTurn(_ rows: [SessionMessage]) -> AssistantTurn? {
+        TranscriptBuilder.build(rows).compactMap { item -> AssistantTurn? in
+            if case .assistant(let turn) = item { turn } else { nil }
+        }.first
+    }
+
+    /// The reply was written beside a memory save and the follow-up came back empty: Hermes made
+    /// those words the reply (`take_housekeeping_reply_line`) and stored no row after the tool's.
+    /// Reopened, they are the reply, not narration in the thinking section (`docs/chat.md` §2).
+    @Test func aReplyBesideOnlyHousekeepingIsTheReply() {
+        for tool in ["memory", "todo_list", "skill_manage", "session_search", "setup_beat"] {
+            let turn = onlyTurn(Self.asideRows(tool))
+            #expect(turn?.answer == Self.aside, "\(tool)")
+            #expect(turn?.steps.contains { if case .narration = $0 { true } else { false } } == false, "\(tool)")
+        }
+    }
+
+    /// With a reply after it, or beside a call that does work, the words are narration.
+    @Test func wordsBesideHousekeepingWithALaterReplyOrRealWorkStayNarration() {
+        let later = onlyTurn(Self.asideRows("memory", then: "Safe travels."))
+        #expect(later?.answer == "Safe travels.")
+        #expect(later?.steps.first == .narration(id: "tm2-n0", text: Self.aside))
+        let work = onlyTurn(Self.asideRows("terminal"))
+        #expect(work?.answer == "")
+        #expect(work?.steps.first == .narration(id: "tm2-n0", text: Self.aside))
+    }
+
+    /// Stored rows that end on the reply line are a finished turn: reopened after a moment, it
+    /// isn't "Thinking…" for 20 minutes. Rows that end on real work still count as working.
+    @Test func rowsEndingOnTheReplyLineSettle() {
+        let toolAt = Date(timeIntervalSince1970: 1_792_000_000)
+        func stamped(_ rows: [SessionMessage]) -> [SessionMessage] {
+            rows.map { row in
+                var row = row
+                row.timestamp = toolAt
+                return row
+            }
+        }
+        let aside = stamped(Self.asideRows("memory"))
+        #expect(TranscriptBuilder.endsMidTurn(aside, now: toolAt.addingTimeInterval(10)))
+        #expect(!TranscriptBuilder.endsMidTurn(aside, now: toolAt.addingTimeInterval(120)))
+        var items = TranscriptBuilder.build(aside)
+        #expect(!TranscriptBuilder.markMidTurn(&items, messages: aside, now: toolAt.addingTimeInterval(120)))
+        let work = stamped(Self.asideRows("terminal"))
+        #expect(TranscriptBuilder.endsMidTurn(work, now: toolAt.addingTimeInterval(120)))
+
+        // A housekeeping round with no words after the reply line keeps it, in the reply and here.
+        let quietRound = stamped(Self.asideRows("memory") + [
+            SessionMessage(id: 4, role: "assistant", content: .text(""),
+                           toolCalls: [ToolCall(id: "c2", name: "todo_list", arguments: "{}")]),
+            SessionMessage(id: 5, role: "tool", content: .text("Saved."), toolCallID: "c2", toolName: "todo_list"),
+        ])
+        #expect(onlyTurn(quietRound)?.answer == Self.aside)
+        #expect(!TranscriptBuilder.endsMidTurn(quietRound, now: toolAt.addingTimeInterval(120)))
+        // A quiet round of real work after it means the turn goes on.
+        let quietWork = stamped(Self.asideRows("memory") + [
+            SessionMessage(id: 4, role: "assistant", content: .text(""),
+                           toolCalls: [ToolCall(id: "c2", name: "terminal", arguments: "{}")]),
+            SessionMessage(id: 5, role: "tool", content: .text("ok"), toolCallID: "c2", toolName: "terminal"),
+        ])
+        #expect(TranscriptBuilder.endsMidTurn(quietWork, now: toolAt.addingTimeInterval(120)))
+    }
 }
