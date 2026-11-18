@@ -105,7 +105,8 @@ final class PushCenter {
     @ObservationIgnored private var sharedBotChats: [UUID: [String: String]] = [:]
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var preferenceSync: Task<Void, Never>?
-    @ObservationIgnored private var lastPresence: (chat: String?, at: Date)?
+    /// Per gateway, the chat its last `presence foreground` named and when.
+    @ObservationIgnored private var lastPresence: [UUID: (chat: String?, at: Date)] = [:]
     #if os(macOS)
     @ObservationIgnored private var openAskedAt = Date.distantPast
     #endif
@@ -212,7 +213,7 @@ final class PushCenter {
                 #if os(iOS)
                 // Its open requests now, not at the next presence 50 s on: a quick look shouldn't leave a
                 // count from hours ago on the icon.
-                lastPresence = nil
+                lastPresence[workspace.id] = nil
                 #endif
             }
             wasOnline[workspace.id] = online
@@ -227,11 +228,16 @@ final class PushCenter {
             }
         }
         #if os(iOS)
-        let chat = visibleChatIDs.first
-        if lastPresence == nil || lastPresence?.chat != chat || Date.now.timeIntervalSince(lastPresence?.at ?? .distantPast) > 50 {
-            lastPresence = (chat, .now)
-            await reportPresence(chat: chat)
+        // Each gateway hears the chat open on it in a visible scene, or none: two scenes on two
+        // gateways each have theirs on screen.
+        let visible = visibleChats
+        var due: [UUID: String?] = [:]
+        for id in model.workspaces.keys where gatewayStates[id]?.isOn == true {
+            let chat = visible.ids(on: id).first
+            if let last = lastPresence[id], last.chat == chat, Date.now.timeIntervalSince(last.at) <= 50 { continue }
+            due[id] = .some(chat)
         }
+        if !due.isEmpty { await reportPresence(due) }
         #else
         // The Mac reports no presence, so it asks for the open requests itself: the Dock badge counts
         // them, and a request answered on the iPhone comes off it within the minute.
@@ -545,29 +551,41 @@ final class PushCenter {
 
     // MARK: - Where the person is
 
-    /// The chat on screen, as every id a notice might name it by.
-    var visibleChatIDs: [String] {
-        guard isActive, let workspace = model?.currentWorkspace else { return [] }
-        if case .group(let room)? = workspace.selection { return [room] }
-        let conversation = workspace.currentConversation
-        return [conversation.sessionID, conversation.stableKey].compactMap { $0 }
+    /// The chats on screen: the one open on each gateway a visible window or scene shows, not only
+    /// the last-used gateway's (`VisibleChats`).
+    var visibleChats: VisibleChats {
+        guard let model else { return .none }
+        return VisibleChats(isActive: isActive, gateways: model.windows.visibleGateways) { id in
+            guard let workspace = model.workspaces[id] else { return [] }
+            if case .group(let room)? = workspace.selection { return [room] }
+            let conversation = workspace.currentConversation
+            return [conversation.sessionID, conversation.stableKey].compactMap { $0 }
+        }
     }
 
+    /// The app's gateway a notice is about: a push names its gateway's installation, the Mac's own
+    /// notices the gateway itself. Nil when the app doesn't know it.
+    private func gatewayID(of notice: PushNotice) -> UUID? {
+        guard let id = notice.gateway?.id else { return nil }
+        if let gateway = shared.gateway(id) { return gateway.appID }
+        return UUID(uuidString: id).flatMap { model?.workspaces[$0] == nil ? nil : $0 }
+    }
+
+    /// The chat a notice is about is open in a visible window, on the notice's own gateway.
     func isShowing(_ notice: PushNotice) -> Bool {
-        guard isActive, let model, let workspace = model.currentWorkspace else { return false }
-        if let gateway = shared.gateway(notice.gateway?.id), gateway.appID != workspace.id { return false }
-        let ids = Set(visibleChatIDs)
-        return [notice.chatID, notice.roomID, notice.thread].contains { $0.map(ids.contains) ?? false }
+        visibleChats.isShowing(notice, on: gatewayID(of: notice))
     }
 
     #if os(iOS)
-    private func reportPresence(chat: String?) async {
+    /// Tells each gateway the chat open on it (nil for none), and records what it was told.
+    private func reportPresence(_ chats: [UUID: String?]) async {
         guard let model, deviceToken != nil else { return }
         let deviceID = shared.deviceID
-        for workspace in model.workspaces.values where gatewayStates[workspace.id]?.isOn == true {
-            guard let roster = workspace.roster, roster.state.isOnline else { continue }
+        for (id, chat) in chats {
+            guard let workspace = model.workspaces[id], let roster = workspace.roster, roster.state.isOnline else { continue }
+            lastPresence[id] = (chat, .now)
             let answer = try? await AppPushClient { try await roster.request($0, $1) }.setPresence(
-                .foreground, deviceID: deviceID, visibleChat: workspace.id == model.currentWorkspace?.id ? chat : nil
+                .foreground, deviceID: deviceID, visibleChat: chat
             )
             if let answer, let installation = installationID(for: workspace.id) {
                 shared.recordOpen(answer.open, gateway: installation)
@@ -581,7 +599,7 @@ final class PushCenter {
     /// the chats the person is likely to come back to current while the app is away (`sync`).
     private func reportAway() {
         guard let model, deviceToken != nil else { return }
-        lastPresence = nil
+        lastPresence = [:]
         let deviceID = shared.deviceID
         let countsUnread = shared.badgeMode == .unreadChats
         // Away, the gateways' counts stand alone, less what a plugin before 1.4.8 counted that the app
@@ -750,8 +768,9 @@ final class PushCenter {
     func presentation(for notice: PushNotice?) -> UNNotificationPresentationOptions {
         guard let notice else { return [.banner, .list, .sound] }
         if notice.kind == .withdraw || notice.kind == .sync || notice.kind == .read { return [] }
-        if isShowing(notice) {
-            if let workspace = model?.currentWorkspace { catchUp(notice, in: workspace) }
+        // The window showing it is on the notice's own gateway: that's where the reply is fetched.
+        if let id = visibleChats.gateway(showing: notice, on: gatewayID(of: notice)) {
+            if let workspace = model?.workspaces[id] { catchUp(notice, in: workspace) }
             return notice.kind.needsYou ? [.list] : []
         }
         return notice.kind == .task || notice.kind == .background || notice.kind == .tidied ? [.list] : [.banner, .list, .sound]

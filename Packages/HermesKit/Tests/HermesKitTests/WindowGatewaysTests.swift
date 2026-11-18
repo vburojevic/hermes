@@ -80,6 +80,47 @@ struct WindowGatewaysTests {
         #expect(WindowGateways().keptConnected.isEmpty)
     }
 
+    // MARK: Visible gateways (`docs/notifications.md` §1.2): what's on screen, for notifications.
+
+    @Test func visibleGatewaysAreTheOnesVisibleWindowsShow() {
+        var windows = WindowGateways(lastUsed: home)
+        windows.open(first, showing: home)
+        windows.open(second, showing: work)
+        #expect(windows.visibleGateways == [home, work])
+    }
+
+    @Test func aHiddenWindowsGatewayIsNotVisible() {
+        var windows = WindowGateways(lastUsed: home)
+        windows.open(first, showing: home)
+        windows.open(second, showing: work)
+        windows.setVisible(false, window: second)
+        #expect(windows.visibleGateways == [home])
+        windows.setVisible(true, window: second)
+        #expect(windows.visibleGateways == [home, work])
+    }
+
+    @Test func theLastUsedGatewayIsNotVisibleWithEveryWindowHidden() {
+        // It keeps its connection for the app-wide places, but no window shows its chat.
+        var windows = WindowGateways(lastUsed: home)
+        windows.open(first, showing: home)
+        windows.setVisible(false, window: first)
+        #expect(windows.visibleGateways.isEmpty)
+        #expect(windows.keptConnected == [home])
+    }
+
+    @Test func aWindowWithoutItsOwnGatewayShowsTheLastUsedOne() {
+        var windows = WindowGateways(lastUsed: home)
+        windows.open(first, showing: nil)
+        #expect(windows.visibleGateways == [home])
+        windows.show(work, in: nil)
+        #expect(windows.visibleGateways == [work])
+    }
+
+    @Test func noOpenWindowShowsNoGateway() {
+        #expect(WindowGateways(lastUsed: home).visibleGateways.isEmpty)
+        #expect(WindowGateways().visibleGateways.isEmpty)
+    }
+
     @Test func aNewWindowShowsTheLastUsedGateway() {
         var windows = WindowGateways(lastUsed: home)
         windows.open(first, showing: home)
