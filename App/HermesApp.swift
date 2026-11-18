@@ -410,6 +410,15 @@ struct HermesCommands: Commands {
             .keyboardShortcut("z", modifiers: [.command, .option])
             .disabled(conversation?.usesGateway != true || conversation?.checkpoints.latestEditingTurnID == nil)
 
+            #if os(macOS)
+            // Words selected in a finished reply quote into the composer (`docs/inbox.md` §4).
+            Button("Reply to Selection") {
+                conversation?.selectedWords.reply()
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(conversation?.selectedWords.canReply != true)
+            #endif
+
             // Unread (`docs/inbox.md` §4, §5).
             Button("Jump to Latest") {
                 workspace?.currentConversation.jumpToLatestRequests += 1

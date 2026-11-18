@@ -469,6 +469,10 @@ struct TranscriptView: View {
                     .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .scale(scale: 0.9)).combined(with: .opacity))
             }
         }
+        #if os(macOS)
+        .overlay { SelectionReplyOverlay(words: conversation.selectedWords) }
+        .onChange(of: conversation.isWorking, initial: true) { _, working in conversation.selectedWords.streaming = working }
+        #endif
         .modifier(InboxBehaviour(view: self, rowCount: all.count,
                                  rowsChange: RowsChange(count: all.count, lastRowID: all.last?.id, completedTurns: conversation.completedTurns,
                                                         isWorking: conversation.isWorking, runsElsewhere: conversation.runsElsewhere)))
@@ -602,6 +606,10 @@ struct TranscriptView: View {
     }
 
     private func scrollPhaseChanged(to phase: ScrollPhase) {
+        #if os(macOS)
+        // Reply beside selected words steps aside while the chat moves (`docs/inbox.md` §4).
+        conversation.selectedWords.scrolling = phase != .idle
+        #endif
         switch phase {
         case .tracking, .interacting, .decelerating:
             if !isScrolledByHand { isScrolledByHand = true }
@@ -1763,6 +1771,9 @@ extension TranscriptView {
                 guard let item = conversation.rows.first(where: { $0.id == rowID }) else { return }
                 Task { await land(on: item) }
             }, assistantName: botTitle ?? "Hermes", chat: conversation.inboxKey))
+            #if os(macOS)
+            .environment(\.selectedReplyWords, conversation.selectedWords)
+            #endif
             .sheet(item: $choosingQuote) { choice in
                 ChooseQuoteSheet(author: choice.author, text: choice.text) { passage in
                     conversation.reply(to: choice.item.id, author: choice.author, passage: passage)

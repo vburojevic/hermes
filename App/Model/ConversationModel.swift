@@ -203,6 +203,11 @@ final class ConversationModel: Identifiable {
     /// Reply with a quote (`replyBar`, `docs/inbox.md` §4): the passage and who said it, until
     /// the message goes or the bar is closed.
     var replyingTo: ReplyTarget?
+    #if os(macOS)
+    /// Words selected in one of this chat's finished replies, for Reply beside them and Chat →
+    /// Reply to Selection (`docs/inbox.md` §4).
+    let selectedWords = SelectedReplyWords()
+    #endif
     /// A row to flash in the transcript (the passage just quoted, or a quote's source): bumped
     /// each time.
     private(set) var flashRequest: FlashRequest?

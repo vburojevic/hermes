@@ -922,4 +922,61 @@ struct InboxTests {
         #expect(QuotedReply.Flash.shown.scrolls(rowOnScreen: false))
         #expect(!QuotedReply.Flash.shown.scrolls(rowOnScreen: true))
     }
+
+    // MARK: Reply to selected words (Mac)
+
+    @Test func onlyASelectionWithWordsCanBeQuoted() {
+        #expect(QuotedReply.quotes("  back off\n"))
+        #expect(!QuotedReply.quotes(" \n\t \n"))
+        #expect(!QuotedReply.quotes(""))
+    }
+
+    @Test func selectionLinesComeFromTheTextsSegments() throws {
+        let column: ClosedRange<CGFloat> = 0...720
+        // Two lines: the second line's words end at 220.
+        let two = try #require(QuotedReply.SelectionPlacement(segments: [
+            CGRect(x: 300, y: 0, width: 420, height: 20),
+            CGRect(x: 0, y: 24, width: 220, height: 20),
+        ], column: column))
+        #expect(two.firstLine == CGRect(x: 300, y: 0, width: 420, height: 20))
+        #expect(two.lastLine == CGRect(x: 0, y: 24, width: 220, height: 20))
+        #expect(two.end == 220)
+        // Pieces of one line (a link, a code span) make one line.
+        let one = try #require(QuotedReply.SelectionPlacement(segments: [
+            CGRect(x: 10, y: 0, width: 50, height: 20),
+            CGRect(x: 60, y: 1, width: 40, height: 18),
+        ], column: column))
+        #expect(one.firstLine == one.lastLine && one.lastLine.maxX == 100 && one.end == 100)
+        // A selection past a paragraph's end: the empty segment on the next line is not the end.
+        let paragraph = try #require(QuotedReply.SelectionPlacement(segments: [
+            CGRect(x: 0, y: 0, width: 400, height: 20),
+            CGRect(x: 0, y: 30, width: 0, height: 20),
+        ], column: column))
+        #expect(paragraph.lastLine.minY == 0 && paragraph.end == 400)
+        #expect(QuotedReply.SelectionPlacement(segments: [], column: column) == nil)
+    }
+
+    @Test func replySitsUnderTheSelectionsEndOrAboveItsFirstLine() throws {
+        let button = CGSize(width: 70, height: 28)
+        let selection = QuotedReply.SelectionPlacement(
+            firstLine: CGRect(x: 100, y: 200, width: 500, height: 20),
+            lastLine: CGRect(x: 0, y: 248, width: 300, height: 20),
+            end: 300,
+            column: 40...760
+        )
+        // Below the last line, 6 pt down, its leading edge at the end of the words.
+        #expect(selection.origin(for: button, visible: 0...800) == CGPoint(x: 300, y: 274))
+        // Near the column's right edge it is pulled back inside; past its left edge, pushed in.
+        var right = selection
+        right.end = 740
+        #expect(right.origin(for: button, visible: 0...800)?.x == 690)
+        var left = selection
+        left.end = 10
+        #expect(left.origin(for: button, visible: 0...800)?.x == 40)
+        // Below would reach the composer's fade: 6 pt above the first line instead.
+        #expect(selection.origin(for: button, visible: 0...300) == CGPoint(x: 300, y: 166))
+        // Neither fits (the words are scrolled away): no button.
+        #expect(selection.origin(for: button, visible: 190...300) == nil)
+        #expect(selection.origin(for: button, visible: 400...800) == nil)
+    }
 }
