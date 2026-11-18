@@ -192,6 +192,117 @@ public struct BackendLink: Hashable, Codable, Sendable {
     }
 }
 
+/// What an address answers when Bot Mode checks it before signing in (`GET /api/status`,
+/// `docs/setup.md` §4.1): the sign-ins Edit Gateway offers there, or why it offers none.
+public enum BackendCheck: Hashable, Sendable {
+    /// A Hermes backend, with the sign-ins Bot Mode can use on it, in the order they're shown.
+    case backend(signIns: [BackendLink.SignIn], version: String?)
+    /// Hermes's API server (the gateway) answered, not the backend: no sign-in can work here.
+    case apiServer
+    /// A Hermes backend whose only sign-ins (Nous, single sign-on) Bot Mode can't use.
+    case unsupported(providers: [String])
+    /// Something other than Hermes answered.
+    case notHermes
+    /// Nothing answered, or not in time. The reason is the network's, in words.
+    case unreachable(String)
+
+    /// The sign-ins a backend that reported `status` accepts from Bot Mode. An ungated backend
+    /// (Hermes binds one only to loopback) hands out its session token: Automatic, or a pasted
+    /// token. A gated one takes a token with `session-token` and a password with `basic`, and
+    /// none when it signs in only with Nous or single sign-on.
+    public static func signIns(for status: BackendStatus) -> [BackendLink.SignIn] {
+        guard status.authRequired else { return [.automatic, .token] }
+        var signIns: [BackendLink.SignIn] = []
+        if status.authProviders.contains("session-token") { signIns.append(.token) }
+        if status.supportsPassword { signIns.append(.password) }
+        return signIns
+    }
+
+    /// What a backend that reported `status` is to Bot Mode.
+    public static func classify(_ status: BackendStatus) -> BackendCheck {
+        let signIns = signIns(for: status)
+        return signIns.isEmpty ? .unsupported(providers: status.authProviders) : .backend(signIns: signIns, version: status.version)
+    }
+
+    /// The sign-ins Edit Gateway offers. An address that didn't answer keeps every one on offer,
+    /// as before the check; one that can't take Bot Mode offers none.
+    public var offeredSignIns: [BackendLink.SignIn] {
+        switch self {
+        case .backend(let signIns, _): signIns
+        case .unreachable: BackendLink.SignIn.allCases
+        case .apiServer, .unsupported, .notHermes: []
+        }
+    }
+
+    /// The sign-in Edit Gateway selects: the current one while it's offered, otherwise
+    /// Automatic, then a password, then a token. Password is selected only where the backend
+    /// said it has one, never on an address that didn't answer.
+    public func preferredSignIn(current: BackendLink.SignIn?) -> BackendLink.SignIn? {
+        let offered = offeredSignIns
+        if let current, offered.contains(current) { return current }
+        if offered.contains(.automatic) { return .automatic }
+        if case .backend = self, offered.contains(.password) { return .password }
+        return offered.contains(.token) ? .token : nil
+    }
+
+    /// Bot Mode can sign in here (or the address didn't answer, so it may yet).
+    public var acceptsBotMode: Bool {
+        switch self {
+        case .backend, .unreachable: true
+        case .apiServer, .unsupported, .notHermes: false
+        }
+    }
+}
+
+/// Why Bot Mode stopped trying to connect (`docs/setup.md` §4.1): no retry can get past it, so
+/// it waits for the sign-in, the address or Bot Mode to change, or for Check Again.
+public enum BotModeStop: Hashable, Sendable {
+    /// The backend refused the sign-in, or takes none Bot Mode can use.
+    case refused
+    /// The address is Hermes's API server (the gateway), not its backend.
+    case wrongServer
+
+    /// What a failed connect means once the address was checked. `signInRefused` when the
+    /// backend answered 401 to Bot Mode's credential. An address that didn't answer, or a
+    /// backend that only failed some other way, is retried as before. An address that isn't
+    /// Hermes at all keeps its own error, which already stops the retries.
+    public static func after(_ check: BackendCheck, signInRefused: Bool) -> BotModeStop? {
+        switch check {
+        case .apiServer: .wrongServer
+        case .notHermes: nil
+        case .unsupported: .refused
+        case .backend: signInRefused ? .refused : nil
+        case .unreachable: nil
+        }
+    }
+}
+
+/// What Edit Gateway's Save keeps of Bot Mode when its address or sign-in can't work yet
+/// (`docs/setup.md` §4.1). Save never waits on Bot Mode: the gateway's edits and Bot Mode's
+/// fields are saved as typed, and Bot Mode starts stopped instead of asking the backend again.
+public struct BotModeSave: Equatable, Sendable {
+    /// Bot Mode's address and sign-in, as typed.
+    public var link: BackendLink
+    /// The typed session token, so the sign-in that was refused is the one shown and tried
+    /// after Check Again; nil for the other sign-ins and when none was typed.
+    public var credential: BackendCredential?
+    /// Where Bot Mode starts; nil when the fields may yet work, so it connects as usual.
+    public var stop: BotModeStop?
+
+    /// `check` is what the address answered on Save (nil when the answer is stale),
+    /// `signInRefused` when the backend refused the typed sign-in.
+    public init(link: BackendLink, typedToken: String, check: BackendCheck?, signInRefused: Bool) {
+        self.link = link
+        let token = typedToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        credential = link.signIn == .token && !token.isEmpty ? .sessionToken(token) : nil
+        var stop = check.flatMap { BotModeStop.after($0, signInRefused: signInRefused) }
+        if stop == nil, signInRefused { stop = .refused }
+        // A sign-in the backend doesn't take is refused before it's sent.
+        if stop == nil, case .backend(let signIns, _)? = check, !signIns.contains(link.signIn) { stop = .refused }
+        self.stop = stop
+    }
+}
+
 /// Persists bot configurations to a JSON file and their keys to the Keychain.
 public struct BotStore: Sendable {
     public let fileURL: URL

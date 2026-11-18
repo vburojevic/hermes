@@ -572,12 +572,12 @@ final class BotWorkspace: Identifiable {
     /// §11.1).
     func update(
         bot: BotConfiguration, apiKey: String?, keyChanged: Bool, backendSignInChanged: Bool = false,
-        accessChanged: Bool = false
+        accessChanged: Bool = false, botModeStop: BotModeStop? = nil
     ) {
         let endpointChanged = bot.baseURL != self.bot.baseURL || keyChanged
         // First, so Bot Mode reads its sign-in for the addresses it's now saved for.
         self.bot = bot
-        updateBackend(bot.backend, signInChanged: backendSignInChanged || accessChanged)
+        updateBackend(bot.backend, signInChanged: backendSignInChanged || accessChanged, stopped: botModeStop)
         guard endpointChanged else {
             // Same gateway: a sign-in or a token fixed in Edit Gateway wakes the replies that
             // waited for it, the same as the chat's Sign In… (§11.10).
@@ -600,22 +600,28 @@ final class BotWorkspace: Identifiable {
         Task { await connect() }
     }
 
-    private func updateBackend(_ link: BackendLink?, signInChanged: Bool) {
+    /// `stopped` when Edit Gateway saved a Bot Mode address or sign-in that can't work: the
+    /// roster starts stopped, rather than asking again (`docs/setup.md` §4.1).
+    private func updateBackend(_ link: BackendLink?, signInChanged: Bool, stopped: BotModeStop? = nil) {
         switch (roster, link) {
         case (nil, let link?):
             let roster = BotRoster(botID: id, link: link, credential: app?.backendCredential(for: bot), store: store)
             roster.workspace = self
             self.roster = roster
             sidebarMode = .bots
-            roster.connectIfNeeded()
+            if let stopped {
+                roster.stayStopped(stopped)
+            } else {
+                roster.connectIfNeeded()
+            }
         case (let roster?, nil):
             roster.tearDown()
             self.roster = nil
             sidebarMode = .chats
             if case .bot = selection { closeSelection() }
         case (let roster?, let link?):
-            if link != roster.link {
-                roster.update(link: link)
+            if link != roster.link || stopped != nil {
+                roster.update(link: link, stopped: stopped)
             } else if signInChanged {
                 Task { await roster.reconnectNow() }
             }

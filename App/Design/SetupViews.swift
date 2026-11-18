@@ -131,6 +131,8 @@ struct SetupCommand: View {
 struct SetupCheckButton: View {
     let check: () async -> Void
     var style = Style.row
+    /// Shares a row of equal-width capsules.
+    var fillsWidth = false
     @State private var isChecking = false
 
     enum Style {
@@ -138,6 +140,8 @@ struct SetupCheckButton: View {
         case row
         /// A capsule, in cards and full-area messages.
         case card
+        /// An ink capsule, where Check Again is the card's main action (`BotModeWarningCard`).
+        case ink
     }
 
     var body: some View {
@@ -160,12 +164,14 @@ struct SetupCheckButton: View {
                     if isChecking { Spinner() }
                     Text(isChecking ? "Checking…" : "Check Again")
                 }
+                .frame(maxWidth: fillsWidth ? .infinity : nil)
             }
         }
         .disabled(isChecking)
         switch style {
         case .row: button
         case .card: button.cardButton()
+        case .ink: button.inkFilledButton()
         }
     }
 }
@@ -400,6 +406,79 @@ struct SetupCard<Controls: View>: View {
 extension SetupCard where Controls == EmptyView {
     init(_ status: SetupStatus, check: (() async -> Void)? = nil, fix: (() -> Void)? = nil) {
         self.init(status, check: check, fix: fix) { EmptyView() }
+    }
+}
+
+/// Why Bot Mode can't sign in at its address (`docs/setup.md` §4.1): a warm card with what
+/// answered there, what to do on the computer running Hermes, and Check Again. A Form row in
+/// Settings → Setup and inside Edit Gateway's Bots section.
+struct BotModeWarningCard: View {
+    let problem: BotModeWarning
+    /// A tinted block inside a section (Edit Gateway), rather than a whole tinted row (Setup).
+    var inset = false
+    var check: (() async -> Void)?
+    var fix: (() -> Void)?
+
+    private var checkStyle: SetupCheckButton.Style {
+        #if os(macOS)
+        inset ? .card : .ink
+        #else
+        .ink
+        #endif
+    }
+
+    private var steps: AttributedString? {
+        problem.steps.flatMap {
+            try? AttributedString(markdown: $0, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Not set up", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.warning)
+                Text(problem.title)
+                    .font(.headline)
+                    .foregroundStyle(Theme.primaryText)
+                Text(problem.body)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                if let steps {
+                    Text(steps)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                Label(problem.source, systemImage: "server.rack")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+
+            if fix != nil || check != nil {
+                HStack(spacing: 8) {
+                    let paired = fix != nil && problem.fix != nil && check != nil
+                    if let fix, let title = problem.fix?.title {
+                        Button(action: fix) {
+                            Text(title).frame(maxWidth: paired ? .infinity : nil)
+                        }
+                        .cardButton()
+                    }
+                    if let check {
+                        SetupCheckButton(check: check, style: checkStyle, fillsWidth: paired)
+                    }
+                }
+            }
+        }
+        .padding(inset ? 16 : 0)
+        .background {
+            if inset {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.warningTint)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 

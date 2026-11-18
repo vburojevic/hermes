@@ -42,8 +42,9 @@ the app speaks to both:
 
 Bot Mode signs in to the backend in one of three ways: **Automatic** reads the token a local,
 ungated backend puts in its start page (Hermes Desktop's way), **Session token** takes a pasted
-token, and **Username & password** keeps a gated backend's session cookies in the Keychain and
-refreshes them.
+token, and **Password** (Username & password on the Mac) keeps a gated backend's session cookies
+in the Keychain and refreshes them. Edit Gateway offers only the ones the backend's
+`/api/status` lists (`BackendCheck`).
 
 ## Pairing another device
 

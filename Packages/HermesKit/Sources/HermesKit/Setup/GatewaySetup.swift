@@ -11,6 +11,11 @@ public struct GatewaySetupFacts: Sendable, Equatable {
         case connecting
         /// Linked, but the backend wants a (fresh) sign-in.
         case signInNeeded
+        /// The backend at `address` refused Bot Mode's sign-in, and Bot Mode stopped trying.
+        case refused(address: String)
+        /// Hermes's API server (the gateway) answered at `address`, not its backend, and Bot
+        /// Mode stopped trying.
+        case wrongServer(address: String)
         /// Linked, and it isn't answering; the reason as the roster has it.
         case unreachable(String)
         case online
@@ -238,6 +243,29 @@ public enum GatewaySetup {
                 detail: String(localized: "Bot Mode on \(facts.gatewayName) needs you to sign in again."),
                 fix: .signIn,
                 docs: Docs.remoteBackend
+            )
+        // The Mac's wider row has room to say why; the iPhone's keeps it short.
+        case .refused:
+            #if os(macOS)
+            let detail = String(localized: "Not set up · sign-in refused, so Bot Mode stopped trying")
+            #else
+            let detail = String(localized: "Not set up · sign-in refused")
+            #endif
+            return SetupStatus(
+                id: ID.botMode, state: .notSetUp, title: title, detail: detail,
+                fix: SetupFix(title: String(localized: "Edit Sign-In…"), action: .signIn),
+                docs: Docs.remoteBackend
+            )
+        case .wrongServer:
+            #if os(macOS)
+            let detail = String(localized: "Not set up · the address is the gateway, not its backend")
+            #else
+            let detail = String(localized: "Not set up · wrong address")
+            #endif
+            return SetupStatus(
+                id: ID.botMode, state: .notSetUp, title: title, detail: detail,
+                fix: SetupFix(title: String(localized: "Edit Backend…"), action: .linkBotMode),
+                steps: botModeSteps(facts), docs: Docs.botMode
             )
         case .unreachable(let reason):
             return SetupStatus(
@@ -591,9 +619,11 @@ public enum GatewaySetup {
         switch facts.botMode {
         case .connecting:
             return .checking(id: id, title: title)
-        case .unreachable:
+        // A stopped Bot Mode reads as the nearest state these rows already have; Bot Mode's own
+        // row and card say why it stopped.
+        case .unreachable, .wrongServer:
             return .unknown(id: id, title: title, reason: String(localized: "Bot Mode on \(facts.gatewayName) isn't answering."))
-        case .signInNeeded:
+        case .signInNeeded, .refused:
             return SetupStatus(
                 id: id, state: .notSetUp, title: title,
                 detail: String(localized: "Needs Bot Mode, which needs you to sign in again."),
@@ -613,6 +643,8 @@ public enum GatewaySetup {
         switch facts.botMode {
         case .notLinked: .linkBotMode
         case .signInNeeded: .signIn
+        case .refused: SetupFix(title: String(localized: "Edit Sign-In…"), action: .signIn)
+        case .wrongServer: SetupFix(title: String(localized: "Edit Backend…"), action: .linkBotMode)
         default: nil
         }
     }

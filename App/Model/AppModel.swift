@@ -354,12 +354,14 @@ final class AppModel {
     /// Saves edits. Pass `apiKey` only when the key changed, `backendCredential` only after a
     /// fresh Bot Mode sign-in, `accessSecret` only when the service token's secret changed,
     /// `certificate`, the identity of the access's client certificate, when one was imported,
-    /// `accessSession` when the sign-in changed, and `original`, the Bot as an editor showed it,
-    /// when there is one.
+    /// `accessSession` when the sign-in changed, `original`, the Bot as an editor showed it,
+    /// when there is one, and `botModeStop` when Edit Gateway already knows Bot Mode can't work
+    /// there, so it starts stopped instead of trying (`docs/setup.md` §4.1).
     func updateBot(
         _ bot: BotConfiguration, apiKey: String?, backendCredential: BackendCredential? = nil,
         accessSecret: String? = nil, certificate identity: ClientIdentity? = nil,
-        accessSession: SessionChange = .keep, editing original: BotConfiguration? = nil
+        accessSession: SessionChange = .keep, editing original: BotConfiguration? = nil,
+        botModeStop: BotModeStop? = nil
     ) throws {
         guard let index = bots.firstIndex(where: { $0.id == bot.id }) else { return }
         // The edit moves where the Bot's secrets may go, so it starts from addresses they were
@@ -413,9 +415,13 @@ final class AppModel {
         bots = updated
         if previousCertificate != bot.access?.clientCertificate?.fingerprint { releaseCertificate(previousCertificate) }
         registerAccess(bot)
+        // A Save that found Bot Mode able to work lifts an earlier stop, even with the sign-in
+        // unchanged: the backend may have been fixed since (`docs/setup.md` §4.1).
+        let liftsStop = bot.backend != nil && botModeStop == nil && workspaces[bot.id]?.roster?.stop != nil
         workspaces[bot.id]?.update(
             bot: bot, apiKey: apiKey ?? self.apiKey(for: bot), keyChanged: apiKey != nil,
-            backendSignInChanged: backendCredential != nil, accessChanged: accessChanged
+            backendSignInChanged: backendCredential != nil || liftsStop, accessChanged: accessChanged,
+            botModeStop: botModeStop
         )
     }
 

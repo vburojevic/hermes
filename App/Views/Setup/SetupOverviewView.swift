@@ -9,6 +9,7 @@ struct SetupOverviewView: View {
     @State private var device = DeviceSetup.shared
     /// `-HERMES_SETTINGS_SETUP <id>` opens one feature (screenshots).
     @State private var opened: String? = DebugFlags.setupFeature
+    @State private var editing: BotConfiguration?
 
     private var setup: SetupCenter { workspace.setup }
 
@@ -31,6 +32,13 @@ struct SetupOverviewView: View {
                 Text("Hermes on \(workspace.bot.name)")
             }
             Section("Features") {
+                // Bot Mode stopped trying (`botModeRefused`, `botModeWrongServer`): why, above its row.
+                if let problem = BotModeWarning.stopped(setup.facts.botMode) {
+                    BotModeWarningCard(problem: problem, check: checkBotMode) {
+                        editing = workspace.bot
+                    }
+                    .listRowBackground(Theme.warningTint)
+                }
                 ForEach(setup.featureStatuses) { row($0) }
             }
             Section {
@@ -73,6 +81,14 @@ struct SetupOverviewView: View {
             device.refresh()
         }
         #endif
+        .sheet(item: $editing) { bot in
+            NavigationStack {
+                BotEditorView(mode: .edit(bot)) { editing = nil }
+            }
+            #if os(macOS)
+            .frame(width: 520).frame(minHeight: 420, idealHeight: 540)
+            #endif
+        }
         .navigationDestination(item: $opened) { id in
             // Its back button even while the row isn't there (yet, or any more): the system one
             // would squeeze the Mac's Settings tabs. Not an empty Group, which takes no modifiers.
@@ -84,6 +100,12 @@ struct SetupOverviewView: View {
             }
             .settingsPage(back: String(localized: "Setup"))
         }
+    }
+
+    /// Check Again on a stopped Bot Mode: one more try, which lifts the stop, then the rows.
+    private func checkBotMode() async {
+        await workspace.roster?.reconnectNow()
+        await setup.check()
     }
 
     private func row(_ status: SetupStatus) -> some View {

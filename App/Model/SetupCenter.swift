@@ -106,6 +106,12 @@ final class SetupCenter {
 
     private var botMode: GatewaySetupFacts.BotMode {
         guard let workspace, workspace.bot.backend != nil, let roster = workspace.roster else { return .notLinked }
+        // Bot Mode stopped trying (`docs/setup.md` §4.1): say why, whatever the socket's last state.
+        switch roster.stop {
+        case .refused?: return .refused(address: roster.link.displayAddress)
+        case .wrongServer?: return .wrongServer(address: roster.link.displayAddress)
+        case nil: break
+        }
         switch roster.state {
         case .online: return .online
         case .idle, .connecting: return .connecting

@@ -29,6 +29,13 @@ struct BotEditorView: View {
     @State private var backendToken = ""
     @State private var backendUsername = ""
     @State private var backendPassword = ""
+    @State private var revealsBackendSecret = false
+    /// What the backend address answered (`docs/setup.md` §4.1), nil until it has.
+    @State private var backendCheck: BackendCheck?
+    /// The address being checked right now, for the Checking row.
+    @State private var checkingBackend: URL?
+    /// Bumped by every check, so one that wakes to a newer address or a toggle gives up.
+    @State private var backendCheckGeneration = 0
     /// Access settings on screen (`docs/connecting-and-voice.md` §11.1), and what checking them found.
     @State private var access = GatewayAccessDraft()
     @State private var importsCertificate = false
@@ -289,6 +296,10 @@ struct BotEditorView: View {
         Section {
             Toggle("Bot Mode", isOn: $botMode.animation(Theme.spring))
             if botMode {
+                if let problem = backendProblem {
+                    BotModeWarningCard(problem: problem, inset: true, check: { await checkBackend(debounce: false) })
+                        .listRowSeparator(.hidden)
+                }
                 TextField("Backend", text: $backendAddress, prompt: Text("127.0.0.1:9119"))
                     .focused($focusedField, equals: .backend)
                     .textContentType(.URL)
@@ -297,53 +308,29 @@ struct BotEditorView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     #endif
-                Picker("Sign in", selection: $signIn) {
-                    #if os(macOS)
-                    Text("Automatic (this Mac)").tag(BackendLink.SignIn.automatic)
-                    #else
-                    Text("Automatic").tag(BackendLink.SignIn.automatic)
-                    #endif
-                    Text("Session token").tag(BackendLink.SignIn.token)
-                    Text("Username & password").tag(BackendLink.SignIn.password)
-                }
-                switch signIn {
-                case .automatic:
-                    EmptyView()
-                case .token:
-                    SecureField("Session token", text: $backendToken, prompt: Text(keepsBackendCredentialPrompt))
-                        .focused($focusedField, equals: .backendSecret)
-                        .autocorrectionDisabled()
-                case .password:
-                    TextField("Username", text: $backendUsername, prompt: Text("admin"))
-                        .textContentType(.username)
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                    SecureField("Password", text: $backendPassword, prompt: Text(keepsBackendCredentialPrompt))
-                        .focused($focusedField, equals: .backendSecret)
-                        .textContentType(.password)
-                        .onSubmit(submit)
+                if let checking = checkingBackend {
+                    HStack(spacing: 10) {
+                        Spinner()
+                        Text("Checking \(BackendLink(url: checking, signIn: .automatic).displayAddress)…")
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                } else if showsSignIn {
+                    signInChoice
+                    signInFields
                 }
             }
         } header: {
             Text("Bots")
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Bot Mode shows the Bots on your Hermes backend (`hermes serve`, the server Hermes Desktop uses): each with a face, one forever chat, @mentions and routines.")
-                if botMode {
-                    switch signIn {
-                    case .automatic:
-                        Text("Reads the session token from a backend on the same machine, like Hermes Desktop does. For another computer, use a token or a password.")
-                    case .token:
-                        Text("The token the backend was started with: `HERMES_DASHBOARD_SESSION_TOKEN=<token> hermes serve`. Without it, the token changes every time it starts.")
-                    case .password:
-                        Text("The dashboard login of a backend started with a password: `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`, `…_PASSWORD` and `…_SECRET` in `~/.hermes/.env`.")
-                    }
-                    if let url = backendURL, url.scheme == "http", !BotConfiguration.looksLocal(url.host() ?? "") {
-                        Label("Plain HTTP over the internet sends your sign-in unencrypted. Use HTTPS or a private network.", systemImage: "exclamationmark.shield")
-                            .foregroundStyle(Theme.warning)
-                    }
+                if let footer = signInFooter {
+                    Text(footer)
+                } else {
+                    Text("Bot Mode shows the Bots on your Hermes backend (`hermes serve`, the server Hermes Desktop uses): each with a face, one forever chat, @mentions and routines.")
+                }
+                if botMode, let url = backendURL, url.scheme == "http", !BotConfiguration.looksLocal(url.host() ?? "") {
+                    Label("Plain HTTP over the internet sends your sign-in unencrypted. Use HTTPS or a private network.", systemImage: "exclamationmark.shield")
+                        .foregroundStyle(Theme.warning)
                 }
             }
         }
@@ -351,9 +338,189 @@ struct BotEditorView: View {
             guard enabled, backendAddress.isEmpty, let gateway = normalizedURL,
                   let suggested = BackendLink.suggestedURL(forGateway: gateway)
             else { return }
+            // The sign-in waits for the check: a password only where the backend has one.
             backendAddress = Self.shortAddress(suggested)
-            let link = BackendLink(url: suggested, signIn: .automatic)
-            signIn = link.isLoopback ? .automatic : .password
+            signIn = .automatic
+        }
+        // On the toggle and on every new address, a moment after typing stops.
+        .task(id: botMode ? backendURL : nil) { await checkBackend(debounce: true) }
+    }
+
+    /// The sign-ins on offer: every one until the address answered, then only those it takes.
+    private var offeredSignIns: [BackendLink.SignIn] {
+        backendCheck?.offeredSignIns ?? BackendLink.SignIn.allCases
+    }
+
+    private var showsSignIn: Bool { !offeredSignIns.isEmpty }
+
+    /// Why Bot Mode can't use the address on screen (`botModeNotBackend`, `botModeUnsupported`).
+    private var backendProblem: BotModeWarning? {
+        guard checkingBackend == nil, let backendCheck, let url = backendURL else { return nil }
+        return BotModeWarning.check(backendCheck, address: BackendLink(url: url, signIn: .automatic).displayAddress)
+    }
+
+    /// The backend answered, needs a sign-in and has no password one.
+    private var hasNoPassword: Bool {
+        if case .backend(let signIns, _)? = backendCheck {
+            return !signIns.contains(.password) && !signIns.contains(.automatic)
+        }
+        return false
+    }
+
+    private func signInTitle(_ option: BackendLink.SignIn) -> String {
+        switch option {
+        #if os(macOS)
+        case .automatic: String(localized: "Automatic (this Mac)")
+        case .password: String(localized: "Username & password")
+        #else
+        case .automatic: String(localized: "Automatic")
+        case .password: String(localized: "Password")
+        #endif
+        case .token: String(localized: "Session token")
+        }
+    }
+
+    @ViewBuilder
+    private var signInChoice: some View {
+        let offered = offeredSignIns
+        #if os(macOS)
+        Picker("Sign in", selection: $signIn) {
+            ForEach(offered, id: \.self) { Text(signInTitle($0)).tag($0) }
+        }
+        if hasNoPassword {
+            Text("This backend has no password sign-in.")
+                .font(.footnote)
+                .foregroundStyle(Theme.secondaryText)
+        }
+        #else
+        if offered.count == 1, let only = offered.first {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(only == .token ? String(localized: "Signs in with a session token") : signInTitle(only))
+                if hasNoPassword {
+                    Text("This backend has no password sign-in.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else if offered.count == 2 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Sign in")
+                Picker("Sign in", selection: $signIn) {
+                    ForEach(offered, id: \.self) { Text(signInTitle($0)).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+        } else {
+            Picker("Sign in", selection: $signIn) {
+                ForEach(offered, id: \.self) { Text(signInTitle($0)).tag($0) }
+            }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var signInFields: some View {
+        switch signIn {
+        case .automatic:
+            EmptyView()
+        case .token:
+            secretField(String(localized: "Session token"))
+        case .password:
+            TextField("Username", text: $backendUsername, prompt: Text("admin"))
+                .textContentType(.username)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+            secretField(String(localized: "Password"))
+        }
+    }
+
+    /// The session token or password, with its eye.
+    private func secretField(_ title: String) -> some View {
+        let text = signIn == .token ? $backendToken : $backendPassword
+        return HStack {
+            Group {
+                if revealsBackendSecret {
+                    TextField(title, text: text, prompt: Text(keepsBackendCredentialPrompt))
+                } else {
+                    SecureField(title, text: text, prompt: Text(keepsBackendCredentialPrompt))
+                }
+            }
+            .focused($focusedField, equals: .backendSecret)
+            .textContentType(signIn == .password ? .password : nil)
+            .autocorrectionDisabled()
+            #if os(iOS)
+            .textInputAutocapitalization(.never)
+            #endif
+            .onSubmit(submit)
+            Button {
+                revealsBackendSecret.toggle()
+            } label: {
+                Image(systemName: revealsBackendSecret ? "eye.slash" : "eye")
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(revealsBackendSecret ? String(localized: "Hide \(title)") : String(localized: "Show \(title)"))
+        }
+    }
+
+    /// What the chosen sign-in needs, while the sign-in is on screen.
+    private var signInFooter: LocalizedStringKey? {
+        guard botMode, checkingBackend == nil, showsSignIn else { return nil }
+        switch signIn {
+        case .automatic:
+            return "Reads the session token from a backend on the same machine, like Hermes Desktop does. For another computer, use a token or a password."
+        case .token where hasNoPassword:
+            return "Bot Mode uses this backend's session token, the value of `HERMES_DASHBOARD_SESSION_TOKEN` on the computer running it."
+        case .token:
+            return "The token the backend was started with: `HERMES_DASHBOARD_SESSION_TOKEN=<token> hermes serve`. Without it, the token changes every time it starts."
+        case .password:
+            return "The dashboard login of a backend started with a password: `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`, `…_PASSWORD` and `…_SECRET` in `~/.hermes/.env`."
+        }
+    }
+
+    /// Reads what the backend address is (`GET /api/status`) and offers only the sign-ins it
+    /// takes. Through the Access settings on screen, like the connection check.
+    private func checkBackend(debounce: Bool) async {
+        backendCheckGeneration += 1
+        let generation = backendCheckGeneration
+        guard botMode, let url = backendURL else {
+            backendCheck = nil
+            checkingBackend = nil
+            return
+        }
+        // Says Checking at once, so the sign-ins of the last address never stand for this one.
+        checkingBackend = url
+        if debounce {
+            do { try await Task.sleep(for: .milliseconds(600)) } catch { return }
+        }
+        guard generation == backendCheckGeneration else { return }
+        if let result = await readBackend(url) {
+            guard generation == backendCheckGeneration else { return }
+            apply(result)
+        }
+        if generation == backendCheckGeneration { checkingBackend = nil }
+    }
+
+    /// The check itself, nil when cancelled.
+    private func readBackend(_ url: URL) async -> BackendCheck? {
+        let trial = normalizedURL.map(accessTrial(gateway:))
+        do {
+            return try await GatewayAccessRegistry.shared.trying(trial?.credentials, at: trial?.addresses ?? [url]) {
+                try await BackendClient(baseURL: url, credential: nil).check()
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    private func apply(_ result: BackendCheck) {
+        withAnimation(Theme.spring) {
+            backendCheck = result
+            if let preferred = result.preferredSignIn(current: signIn) { signIn = preferred }
         }
     }
 
@@ -505,25 +672,45 @@ struct BotEditorView: View {
 
                 var link: BackendLink?
                 var credential: BackendCredential?
+                var botModeStop: BotModeStop?
                 if botMode, let backendURL {
-                    let candidate = BackendLink(url: backendURL, signIn: signIn, username: signIn == .password ? backendUsername : nil)
-                    let existing = keepsBackendCredential ? editingBot.flatMap { app.backendCredential(for: $0) } : nil
-                    do {
-                        let probe = try await registry.trying(trial.credentials, at: trial.addresses) {
-                            try await AppModel.probeBackend(
-                                url: backendURL, signIn: signIn, token: backendToken.trimmingCharacters(in: .whitespacesAndNewlines),
-                                username: backendUsername, password: backendPassword, existing: existing
+                    // Read again on Save: the address may have changed since. Save never waits on
+                    // Bot Mode: an address or sign-in that can't work is saved as typed, and Bot
+                    // Mode starts stopped instead of asking again (`docs/setup.md` §4.1).
+                    backendCheckGeneration += 1
+                    let generation = backendCheckGeneration
+                    let typed = BackendLink(url: backendURL, signIn: signIn, username: signIn == .password ? backendUsername : nil)
+                    let answer = await readBackend(backendURL)
+                    guard !Task.isCancelled else { return }
+                    let check = generation == backendCheckGeneration ? answer : nil
+                    if let check { withAnimation(Theme.spring) { backendCheck = check } }
+                    var save = BotModeSave(link: typed, typedToken: backendToken, check: check, signInRefused: false)
+                    if save.stop == nil, check?.acceptsBotMode != false {
+                        let existing = keepsBackendCredential ? editingBot.flatMap { app.backendCredential(for: $0) } : nil
+                        do {
+                            let probe = try await registry.trying(trial.credentials, at: trial.addresses) {
+                                try await AppModel.probeBackend(
+                                    url: backendURL, signIn: signIn, token: backendToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                                    username: backendUsername, password: backendPassword, existing: existing
+                                )
+                            }
+                            link = typed
+                            credential = keepsBackendCredential ? nil : probe.credential
+                            detail += probe.botCount == 1 ? " · 1 Bot" : " · \(probe.botCount) Bots"
+                        } catch where Self.refusesSignIn(error) {
+                            save = BotModeSave(link: typed, typedToken: backendToken, check: check, signInRefused: true)
+                        } catch {
+                            phase = .failed(
+                                String(localized: "Bot Mode: \(BotRoster.describe(error))"),
+                                suggestion: String(localized: "Check that `hermes serve` (or Hermes Desktop) is running and reachable at \(backendURL.absoluteString).")
                             )
+                            return
                         }
-                        link = candidate
-                        credential = keepsBackendCredential ? nil : probe.credential
-                        detail += probe.botCount == 1 ? " · 1 Bot" : " · \(probe.botCount) Bots"
-                    } catch {
-                        phase = .failed(
-                            String(localized: "Bot Mode: \(BotRoster.describe(error))"),
-                            suggestion: String(localized: "Check that `hermes serve` (or Hermes Desktop) is running and reachable at \(backendURL.absoluteString).")
-                        )
-                        return
+                    }
+                    if link == nil {
+                        link = save.link
+                        credential = keepsBackendCredential ? nil : save.credential
+                        botModeStop = save.stop
                     }
                 }
                 // Cancelled while checking: the person backed out, so nothing is saved.
@@ -539,7 +726,7 @@ struct BotEditorView: View {
                     try app.updateBot(
                         bot, apiKey: typedKey.isEmpty ? nil : typedKey, backendCredential: credential,
                         accessSecret: access.typedSecret, certificate: access.identity,
-                        accessSession: .set(access.savedSession), editing: editingBot
+                        accessSession: .set(access.savedSession), editing: editingBot, botModeStop: botModeStop
                     )
                 } else {
                     added = try app.addBot(
@@ -547,6 +734,7 @@ struct BotEditorView: View {
                         access: access.access, accessSecret: access.typedSecret, certificate: access.identity,
                         accessSession: access.savedSession
                     )
+                    if let botModeStop, let added { app.workspaces[added.id]?.roster?.stayStopped(botModeStop) }
                 }
                 try? await Task.sleep(for: .milliseconds(450))
                 if let added, let onAdded {
@@ -564,6 +752,13 @@ struct BotEditorView: View {
                 phase = .failed(error.localizedDescription, suggestion: nil)
             }
         }
+    }
+
+    /// The backend turned down the sign-in itself, rather than failing to answer.
+    private static func refusesSignIn(_ error: any Error) -> Bool {
+        if let failure = error as? BackendClient.Failure { return failure == .signInRequired || failure == .invalidCredentials }
+        if case GatewaySocket.Failure.closed(let reason)? = error as? GatewaySocket.Failure { return reason.contains("sign-in") }
+        return false
     }
 
     /// `hermes-agent` → `Hermes`, `research` → `Research`.

@@ -259,9 +259,12 @@ private struct GatewaysPane: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(bot.name)
                                 .foregroundStyle(Theme.primaryText)
-                            Text(subtitle(for: bot))
+                            // Bot Mode's sign-in was refused: that, after the address, until it's
+                            // fixed (`docs/setup.md` §4.1).
+                            let stopped = app.workspaces[bot.id]?.botModeStopLine
+                            Text(stopped.map { "\(bot.displayAddress) · \($0)" } ?? subtitle(for: bot))
                                 .font(.caption)
-                                .foregroundStyle(Theme.secondaryText)
+                                .foregroundStyle(stopped == nil ? Theme.secondaryText : Theme.warning)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }

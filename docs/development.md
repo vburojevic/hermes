@@ -260,7 +260,20 @@ an active worker and a routine that posts every couple of minutes):
 ```bash
 python3 Tools/mock-hermes/backend.py --port 19119            # ungated: Automatic sign-in
 python3 Tools/mock-hermes/backend.py --port 19119 --password pw   # gated: admin / pw
+python3 Tools/mock-hermes/backend.py --port 19119 --auth-providers session-token
+python3 Tools/mock-hermes/backend.py --port 19119 --api-server-only
 ```
+
+`--auth-providers` sets the sign-ins `/api/status` lists, comma-separated: `session-token` alone
+gates the backend behind `--token` with no password (Edit Gateway offers only Session token),
+`nous` alone offers none Bot Mode can use. `--api-server-only` answers like the gateway's API
+server at the backend's address: `/health` and nothing Bot Mode needs, each refusal logged, to
+count what the app sends to the wrong address (`docs/setup.md` §4.1). To count what a refused
+sign-in costs, start it gated (`--auth-providers session-token --token <token>`), save a different
+token in Edit Gateway, and count the log's `401` lines and `socket refused` lines: after the first
+one or two, a stopped Bot Mode sends nothing until something changes. The same holds when the
+address stops being a backend mid-session: sign in to a `--password` backend, then restart it on
+the same port with `--api-server-only`, and the refused lines stop after the first one or two.
 
 and turn on **Bot Mode** for the gateway with `127.0.0.1:19119`, or add
 `HERMES_BOOTSTRAP_BACKEND=http://127.0.0.1:19119` to the Debug launch environment. "approve",

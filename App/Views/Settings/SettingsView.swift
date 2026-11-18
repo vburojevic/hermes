@@ -206,7 +206,12 @@ private struct GatewayRow: View {
                     let addressLine = ([bot.displayAddress] + [status?.detail].compactMap(\.self))
                         .joined(separator: " · ")
                     Group {
-                        if stacks {
+                        if let stopped = workspace?.botModeStopLine {
+                            // Bot Mode's sign-in was refused: that, in place of the address,
+                            // until it's fixed (`docs/setup.md` §4.1).
+                            Text(stopped)
+                                .foregroundStyle(Theme.warning)
+                        } else if stacks {
                             Text(addressLine)
                         } else {
                             // The address and version share a line when they fit; otherwise the

@@ -317,3 +317,76 @@ private struct KeychainFixture {
         try? FileManager.default.removeItem(at: directory)
     }
 }
+
+@Suite("Bot Mode's address check")
+struct BackendCheckTests {
+    private func status(_ json: String) throws -> BackendStatus {
+        BackendStatus(json: try #require(JSONValue.parse(json)))
+    }
+
+    @Test func offersOnlyTheSignInsTheBackendTakes() throws {
+        let open = try status(#"{"version":"0.21.6","auth_required":false,"auth_providers":[]}"#)
+        #expect(BackendCheck.classify(open) == .backend(signIns: [.automatic, .token], version: "0.21.6"))
+
+        let both = try status(#"{"auth_required":true,"auth_providers":["session-token","basic"]}"#)
+        #expect(BackendCheck.signIns(for: both) == [.token, .password])
+
+        let tokenOnly = try status(#"{"auth_required":true,"auth_providers":["session-token"]}"#)
+        #expect(BackendCheck.classify(tokenOnly).offeredSignIns == [.token])
+
+        let passwordOnly = try status(#"{"auth_required":true,"auth_providers":[{"name":"basic"}]}"#)
+        #expect(BackendCheck.classify(passwordOnly).offeredSignIns == [.password])
+
+        let nousOnly = try status(#"{"auth_required":true,"auth_providers":["nous","oidc"]}"#)
+        #expect(BackendCheck.classify(nousOnly) == .unsupported(providers: ["nous", "oidc"]))
+        #expect(BackendCheck.classify(nousOnly).offeredSignIns.isEmpty)
+    }
+
+    @Test func anAddressThatDidNotAnswerKeepsEverySignInOnOffer() {
+        let check = BackendCheck.unreachable("Couldn't connect.")
+        #expect(check.offeredSignIns == BackendLink.SignIn.allCases)
+        #expect(check.acceptsBotMode)
+        // A password is never preselected on an address that didn't say it has one.
+        #expect(check.preferredSignIn(current: nil) == .automatic)
+    }
+
+    @Test func addressesBotModeCannotUseOfferNothing() {
+        for check in [BackendCheck.apiServer, .notHermes, .unsupported(providers: ["nous"])] {
+            #expect(check.offeredSignIns.isEmpty)
+            #expect(!check.acceptsBotMode)
+            #expect(check.preferredSignIn(current: .password) == nil)
+        }
+    }
+
+    @Test func keepsTheChosenSignInWhileItIsOffered() {
+        let both = BackendCheck.backend(signIns: [.token, .password], version: nil)
+        #expect(both.preferredSignIn(current: .token) == .token)
+        #expect(both.preferredSignIn(current: .password) == .password)
+        // Automatic isn't offered on a gated backend: the password it has comes first.
+        #expect(both.preferredSignIn(current: .automatic) == .password)
+
+        let tokenOnly = BackendCheck.backend(signIns: [.token], version: nil)
+        #expect(tokenOnly.preferredSignIn(current: .password) == .token)
+
+        let open = BackendCheck.backend(signIns: [.automatic, .token], version: nil)
+        #expect(open.preferredSignIn(current: .password) == .automatic)
+    }
+
+    @Test func whenBotModeStopsTrying() {
+        #expect(BotModeStop.after(.apiServer, signInRefused: false) == .wrongServer)
+        // Something other than Hermes keeps its own error, which already stops the retries.
+        #expect(BotModeStop.after(.notHermes, signInRefused: true) == nil)
+        #expect(BotModeStop.after(.unsupported(providers: ["nous"]), signInRefused: false) == .refused)
+        #expect(BotModeStop.after(.backend(signIns: [.password], version: nil), signInRefused: true) == .refused)
+        // A backend that failed some other way, or an address that didn't answer, is retried.
+        #expect(BotModeStop.after(.backend(signIns: [.password], version: nil), signInRefused: false) == nil)
+        #expect(BotModeStop.after(.unreachable("Timed out."), signInRefused: true) == nil)
+    }
+
+    @Test func showsTheBackendAddressAsTyped() throws {
+        let link = BackendLink(url: try #require(URL(string: "http://studio.local:9119")), signIn: .token)
+        #expect(link.displayAddress == "studio.local:9119")
+        let https = BackendLink(url: try #require(URL(string: "https://hermes.example.com")), signIn: .password)
+        #expect(https.displayAddress == "hermes.example.com")
+    }
+}
