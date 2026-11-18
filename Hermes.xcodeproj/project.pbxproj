@@ -178,6 +178,7 @@
 		89BBF2D076CAF94E7DCAF569 /* TurnActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B44702411639E8D97E9C1E82 /* TurnActivityController.swift */; };
 		89BD93FD7DE3226482F9F0AF /* UserNotificationsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 09D79A2D0DD71C89124CB886 /* UserNotificationsUI.framework */; };
 		8A115017ABCA5F77E39E3272 /* VoiceOverFocusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FD5A4F9BCB3E9CEFDF9CBA /* VoiceOverFocusUITests.swift */; };
+		8A6743F902B872D50A4D42EE /* SidebarOverChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481C32606FBCEC04CDD75100 /* SidebarOverChat.swift */; };
 		8B53CD80CF53A85D7090AA7D /* ReplyBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA37B05C9FBD7C0BDC8CE5EB /* ReplyBody.swift */; };
 		8BBC2CDCCADE5C5B087E0A7A /* BrowserTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47DA1B46CB416DB576111EB8 /* BrowserTabView.swift */; };
 		8C4BFFEC4BA9A84198EBBE53 /* WhatsNew.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D28D9031C970E1F1CF601E1 /* WhatsNew.swift */; };
@@ -466,6 +467,7 @@
 		4253B4FEA70130FBFFE796F8 /* GetHermesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetHermesView.swift; sourceTree = "<group>"; };
 		4592DD87397620D7427C349D /* AppsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppsViews.swift; sourceTree = "<group>"; };
 		47DA1B46CB416DB576111EB8 /* BrowserTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTabView.swift; sourceTree = "<group>"; };
+		481C32606FBCEC04CDD75100 /* SidebarOverChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarOverChat.swift; sourceTree = "<group>"; };
 		482C95B9926E755A073D07C3 /* TalkPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkPreferences.swift; sourceTree = "<group>"; };
 		482FA8388891E6768541ABD4 /* NewChatComposerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatComposerUITests.swift; sourceTree = "<group>"; };
 		48A9032046947526C76D5936 /* RoutinesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutinesModel.swift; sourceTree = "<group>"; };
@@ -1394,6 +1396,7 @@
 				C525BD3D40E9B9708B9886AA /* QuickOpenView.swift */,
 				7AB786670227F23BE604A7E7 /* SidebarChrome.swift */,
 				B65F86E4FDC5733C8ABF5605 /* SidebarModeSwitcher.swift */,
+				481C32606FBCEC04CDD75100 /* SidebarOverChat.swift */,
 				8784642FF3F7763D4A1B0D46 /* SidebarView.swift */,
 			);
 			path = Sidebar;
@@ -1956,6 +1959,7 @@
 				CA4A498E7CA4364CCCDA4EE7 /* Shaders.metal in Sources */,
 				201AF65BA7D28F4AD433BF12 /* SidebarChrome.swift in Sources */,
 				57CDC820425F29E6ECBEB8B4 /* SidebarModeSwitcher.swift in Sources */,
+				8A6743F902B872D50A4D42EE /* SidebarOverChat.swift in Sources */,
 				E9BCC14B6F50E69A0C26043A /* SidebarView.swift in Sources */,
 				AB458D35ADAE9277CB17A5FB /* SkillsView.swift in Sources */,
 				D7D72F02DE8256F23E1D558B /* SlashCatalog.swift in Sources */,

@@ -314,6 +314,9 @@ struct MemorySaveAsk: View {
     var asker: String = "Hermes"
     let onChoice: (ApprovalChoice) -> Void
 
+    /// A panel over the chat takes Esc while it shows.
+    @Environment(\.panelOverChat) private var panelOverChat
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             RequestHeader(
@@ -336,7 +339,7 @@ struct MemorySaveAsk: View {
                     ActionTile(symbol: "xmark", title: String(localized: "Don't Save"), detail: String(localized: "\(asker) carries on"), style: .danger) {
                         onChoice(.deny)
                     }
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(panelOverChat ? nil : .cancelAction)
                     ActionTile(symbol: "checkmark", title: String(localized: "Save"), detail: String(localized: "Just this one"), style: .primary) {
                         onChoice(.once)
                     }

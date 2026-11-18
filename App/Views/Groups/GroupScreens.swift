@@ -29,6 +29,8 @@ struct GroupChatScreen: View {
     /// Where the top bar ends: the members menu above the composer stops there.
     @State private var ceiling: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The sidebar is over the chat: the centered title steps aside so it never draws on the glass.
+    @Environment(\.sidebarShowsOverChat) private var sidebarShowsOverChat
 
     private var roster: BotRoster? { workspace.roster }
 
@@ -358,6 +360,9 @@ struct GroupChatScreen: View {
         ToolbarItem(placement: .principal) {
             GroupTitle(chat: chat, roster: roster)
         }
+        #if os(macOS)
+        .hidden(sidebarShowsOverChat)
+        #endif
         ToolbarItem(placement: .primaryAction) {
             Button { showsActivity = true } label: { Image(systemName: "person.3") }
                 .accessibilityLabel("Activity")

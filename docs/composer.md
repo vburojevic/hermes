@@ -171,6 +171,8 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
 - **Mac:** ⌥Return sends next and ⌘Return redirects while a turn runs; ⌘. (Chat → Stop
   Responding) stops; ⌥⌘V starts Talk, and ends it while a call runs. Dictate is the button only; it has no shortcut of
   its own.
+- **A narrow Mac window** (under 700 pt, `macNarrow480`): the processes chip shows only its
+  count and the project chip drops its branch, so Send keeps its place (`docs/chat.md` §4).
 - The slash and `@` menus follow the arrow keys, Tab and Escape, with key hints on iPad and Mac.
 - **Paste** (⌘V, Edit ▸ Paste, the field's edit menu): files copied in the Finder or the Files
   app attach as files (pictures among them as pictures); a copied picture attaches as a picture,

@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The composer's project chip (`projectChip` in `composerProject`): the project a chat runs in.
 /// On a new chat it opens Run In; on a chat that's running in a project it opens a menu with Open
-/// Project and Move to Project…. The branch shows on iPad and Mac (no room on iPhone).
+/// Project and Move to Project…. The branch shows on iPad and Mac (no room on iPhone or in a
+/// narrow Mac window).
 struct ProjectChip: View {
     let conversation: ConversationModel
     let workspace: BotWorkspace
@@ -11,6 +12,7 @@ struct ProjectChip: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The composer's sizes at the current text size (docs/composer.md §1).
     @Environment(\.composerChipSizing) private var composerSizing
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
 
     private var projects: ProjectsModel { workspace.projects }
 
@@ -29,7 +31,7 @@ struct ProjectChip: View {
 
     private var showsBranch: Bool {
         #if os(macOS)
-        true
+        !windowIsNarrow
         #else
         horizontalSizeClass == .regular
         #endif

@@ -31,6 +31,8 @@ struct ApprovalCard: View {
     @State private var writingNote = false
     @State private var note = ""
     @State private var reviewingEach = false
+    /// A panel over the chat takes Esc while it shows, so Esc never denies by surprise.
+    @Environment(\.panelOverChat) private var panelOverChat
 
     /// One answer for all only when each command shows whole on the card, and none is flagged or
     /// a memory save: those are read and answered one at a time.
@@ -150,7 +152,7 @@ struct ApprovalCard: View {
                 ActionTile(symbol: "xmark", title: String(localized: "Deny"), detail: String(localized: "Don't run it"), style: .danger) {
                     onChoice(.deny)
                 }
-                .keyboardShortcut(.cancelAction)
+                .keyboardShortcut(panelOverChat ? nil : .cancelAction)
                 ActionTile(symbol: "checkmark", title: String(localized: "Allow Once"), detail: String(localized: "Only this command"), style: .primary) {
                     onChoice(.once)
                 }
@@ -244,7 +246,7 @@ struct ApprovalCard: View {
                     ActionTile(symbol: "xmark", title: String(localized: "Deny All"), detail: String(localized: "None of them run"), style: .danger) {
                         onChoiceForAll?(.deny, all.map(\.id))
                     }
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(panelOverChat ? nil : .cancelAction)
                     ActionTile(symbol: "checkmark", title: String(localized: "Allow All Once"), detail: String(localized: "Only these \(all.count)"), style: .primary) {
                         onChoiceForAll?(.once, all.map(\.id))
                     }

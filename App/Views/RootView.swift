@@ -239,7 +239,7 @@ struct RootView: View {
         // launch (`LaunchFlags`): a new window doesn't run the steps again.
         .task {
             guard LaunchFlags.take("HERMES_MAC_DRIVE") != nil else { return }
-            await MacDebugDriver.runIfAsked()
+            await MacDebugDriver.runIfAsked(router: router)
         }
         #endif
         #endif
@@ -755,6 +755,9 @@ struct MainView: View {
             }
             // Another chat, Bot or page: the composer it typed into is gone.
             .onChange(of: workspace.selection) {
+                #if os(macOS)
+                router?.layout.closeSidebarOver()
+                #endif
                 storedSelectionGateway = workspace.id.uuidString
                 storedSelection = workspace.selection?.storedValue
                 Keyboard.dismiss()
@@ -781,6 +784,18 @@ struct MainView: View {
                 .frame(minHeight: 0, maxHeight: .infinity)
                 #endif
                 .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 380)
+                #if os(macOS)
+                // Below the cutoff the window's own sidebar button would dock the sidebar and
+                // squeeze the chat; `NarrowWindow`'s button brings it over the chat instead. The
+                // system button is removed from the sidebar column: from around it, it stays. Only
+                // while narrow, and from a view behind the list: on the column itself, even
+                // removing nothing, it sent the sidebar's Filter into the toolbar's » overflow.
+                .background {
+                    if router?.layout.isNarrow == true {
+                        Color.clear.toolbar(removing: .sidebarToggle)
+                    }
+                }
+                #endif
         } detail: {
             NavigationStack {
                 DetailView(workspace: workspace)
@@ -798,12 +813,23 @@ struct MainView: View {
         // Measured around the columns, not inside one: a column's limits taken from its own width
         // kept the Mac's split view resizing it in a loop until AppKit gave up and crashed.
         .environment(\.windowWidth, windowWidth)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            windowWidth = width
+            #if os(macOS)
+            router?.layout.resize(to: Double(width))
+            #endif
+        }
+        #if os(macOS)
+        .modifier(NarrowWindow(workspace: workspace, columnVisibility: $columnVisibility))
+        #endif
         // Something was picked (a row, a link, a notification, New Chat): a collapsed window
         // pushes it; in portrait the sidebar the system button brought back steps aside.
         .onChange(of: workspace.navigation.pushes) {
             // Over a project's home the split view's column is left alone (`homeUnderList`).
             if workspace.navigation.homeUnderList == nil { compactColumn = .detail }
+            #if os(macOS)
+            router?.layout.closeSidebarOver()
+            #endif
             #if os(iOS)
             if horizontalSizeClass != .compact, isPortraitLike, !boardHidesSidebar, columnVisibility != .detailOnly {
                 withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
@@ -815,19 +841,6 @@ struct MainView: View {
         .onChange(of: workspace.navigation.pops) {
             compactColumn = .sidebar
         }
-        #if os(macOS)
-        // Mac: opening the Inspector in a window under 1,400 pt collapses the sidebar
-        // (`docs/inspector.md` §1); closing it brings the sidebar back.
-        .onChange(of: router?.inspectorIsOpen ?? false) { _, isOpen in
-            if isOpen, windowWidth < 1400, columnVisibility != .detailOnly {
-                teamHidesSidebar = true
-                withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
-            } else if !isOpen, teamHidesSidebar {
-                teamHidesSidebar = false
-                withAnimation(Theme.snappy) { columnVisibility = .all }
-            }
-        }
-        #endif
         #if os(iOS)
         // Back on the list (iPhone), the chat under it isn't open: its replies count as unread.
         // A project's home under a split view that says the list is shows the project
@@ -879,6 +892,76 @@ struct MainView: View {
         isPortraitLike ? .detailOnly : .all
     }
 }
+
+#if os(macOS)
+/// A Mac window's width decides where the sidebar sits (`docs/chat.md` §4, `WindowLayout`): beside
+/// the chat from 700 pt, put away below it, and brought back over the chat by its button, ⌃⌘S or
+/// View > Show Sidebar. Opening the Inspector beside the chat under 1,400 pt collapses the sidebar
+/// (`docs/inspector.md` §1); closing it brings the sidebar back.
+private struct NarrowWindow: ViewModifier {
+    let workspace: BotWorkspace
+    @Binding var columnVisibility: NavigationSplitViewVisibility
+
+    @Environment(WindowRouter.self) private var router: WindowRouter?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AccessibilityFocusState private var voiceOverOnButton: Bool
+
+    private var layout: WindowLayout { router?.layout ?? WindowLayout() }
+
+    func body(content: Content) -> some View {
+        let layout = layout
+        let over = layout.isNarrow && layout.showsSidebarOver
+        content
+            .environment(\.windowIsNarrow, layout.isNarrow)
+            .environment(\.sidebarShowsOverChat, over)
+            .environment(\.panelOverChat, over)
+            .toolbar(removing: over ? .title : nil)
+            .toolbar {
+                if layout.isNarrow {
+                    ToolbarItem(placement: .navigation) {
+                        Button {
+                            router?.toggleSidebar()
+                        } label: {
+                            Image(systemName: "sidebar.left")
+                        }
+                        .accessibilityLabel("Show Sidebar")
+                        .help("Show Sidebar (⌃⌘S)")
+                        .accessibilityFocused($voiceOverOnButton)
+                    }
+                    .hidden(over)
+                }
+            }
+            .overlay {
+                if over, let router {
+                    SidebarOverChat(workspace: workspace, router: router)
+                        .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            .animation(reduceMotion ? nil : Theme.snappy, value: over)
+            .onChange(of: over) { _, shows in
+                // VoiceOver goes back to the button that brought the sidebar.
+                if !shows { voiceOverOnButton = true }
+            }
+            .onChange(of: layout.docksSidebar, initial: true) { _, docks in
+                let visibility: NavigationSplitViewVisibility = docks ? .all : .detailOnly
+                guard columnVisibility != visibility else { return }
+                withAnimation(reduceMotion ? nil : Theme.snappy) { columnVisibility = visibility }
+            }
+            .onChange(of: columnVisibility) { _, visibility in
+                let shown = visibility != .detailOnly
+                if router?.layout.isNarrow == true {
+                    // Nothing docks the sidebar in a narrow window; its button brings it over.
+                    if shown { columnVisibility = .detailOnly }
+                } else {
+                    router?.layout.sidebarChanged(shown: shown)
+                }
+            }
+            .onChange(of: router?.inspectorIsOpen ?? false) { _, isOpen in
+                router?.layout.inspectorChanged(open: isOpen)
+            }
+    }
+}
+#endif
 
 /// New Bot, Edit Bot and Routines, presented for the whole window.
 private struct BotSheets: ViewModifier {
