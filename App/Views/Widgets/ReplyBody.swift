@@ -20,12 +20,12 @@ struct ReplyBody: View, Equatable {
     var body: some View {
         let segments = ReplySplitter.split(text, inlineWidgets: inlineWidgets, streaming: streaming, typedAsText: typedAsText)
         if segments.count == 1, case .markdown(let markdown) = segments[0] {
-            MarkdownView(text: markdown, caches: caches, highlight: highlight)
+            MarkdownView(text: markdown, caches: caches, highlight: highlight, selectsWhole: true)
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     switch segment {
-                    case .markdown(let markdown): MarkdownView(text: markdown, caches: caches)
+                    case .markdown(let markdown): MarkdownView(text: markdown, caches: caches, selectsWhole: true)
                     case .widget(let directive): WidgetSlot(directive: directive)
                     case .inline(let json): InlineWidgetSlot(json: json)
                     case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json))

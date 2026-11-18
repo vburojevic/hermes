@@ -285,6 +285,7 @@
 		D067DCFC1B318C37EFE3C03A /* AnswerFromActivityIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A526CB3D525BDF1E197EEFBC /* AnswerFromActivityIntent.swift */; };
 		D09B73680678CAC041EEF8F6 /* WidgetBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF0B379533853643EB37ECD /* WidgetBodyView.swift */; };
 		D26A0D659D895D1E0D3C7BAC /* DynamicColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9A04B5C1D40414750FC712E /* DynamicColor.swift */; };
+		D371DD5DD9F4006A25DD0D1E /* ReplyTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D0CA7A8235C4B72F2D1585 /* ReplyTextView.swift */; };
 		D456CC48B7297D0F3E7E80ED /* GatewaySwitcherUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0BDA8AE672244126A2D971 /* GatewaySwitcherUITests.swift */; };
 		D4BCCDD0BBD1A880DA1F9418 /* ScreenController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4075AD831B58AF230A738A85 /* ScreenController.swift */; };
 		D7B104DB46D5B2D360EED23E /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64F1CA13067D78A8E375D18 /* SetupViews.swift */; };
@@ -655,6 +656,7 @@
 		DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCatalog.swift; sourceTree = "<group>"; };
 		DFD0B0B2832EFE9469121EE5 /* WindowMiniaturize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMiniaturize.swift; sourceTree = "<group>"; };
 		DFF762D074CAEA5B49F439C4 /* PairingCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingCode.swift; sourceTree = "<group>"; };
+		E3D0CA7A8235C4B72F2D1585 /* ReplyTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyTextView.swift; sourceTree = "<group>"; };
 		E410606B63F05F4A327E8382 /* PluginsAskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginsAskView.swift; sourceTree = "<group>"; };
 		E47BA9AF3C026D6EEF719EF1 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		E4AC7B02CFA9FE0E6B8A90D7 /* LearningMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningMapView.swift; sourceTree = "<group>"; };
@@ -1245,6 +1247,7 @@
 				BC8933EA0ADEC930A6EC2949 /* CodeBlockView.swift */,
 				9A3335030C10A5603C9C2486 /* MarkdownCache.swift */,
 				64008DDC964C1C69C8B394C9 /* MarkdownView.swift */,
+				E3D0CA7A8235C4B72F2D1585 /* ReplyTextView.swift */,
 			);
 			path = Markdown;
 			sourceTree = "<group>";
@@ -1928,6 +1931,7 @@
 				8E240DD6A2C1A481E9CF2A73 /* ReferencePreview.swift in Sources */,
 				1E46D1B7FD920F998788F4B1 /* RemoteImage.swift in Sources */,
 				8B53CD80CF53A85D7090AA7D /* ReplyBody.swift in Sources */,
+				D371DD5DD9F4006A25DD0D1E /* ReplyTextView.swift in Sources */,
 				E9DA6571561C7E24A2597A2C /* RequestCard.swift in Sources */,
 				8DEB1664C6DA466AEC5F8A48 /* RequestDock.swift in Sources */,
 				E6F685CDCB30D7E5DAFBA413 /* RequestParts.swift in Sources */,

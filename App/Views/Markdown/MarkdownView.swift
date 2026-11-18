@@ -14,16 +14,23 @@ struct MarkdownView: View, Equatable {
     var caches = true
     /// Listen (`docs/voice.md` §3): the sentence being read is ink, the rest of the reply lighter.
     var highlight: SpokenSentence?
+    /// A finished reply on the Mac selects as one text, across its blocks (`docs/chat.md` §3).
+    var selectsWhole = false
     @Environment(\.references) private var references
+    @Environment(\.markdownBodyFont) private var bodyFont
+    #if os(macOS)
+    @Environment(\.displayScale) private var displayScale
+    #endif
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.text == rhs.text && lhs.tone == rhs.tone && lhs.caches == rhs.caches && lhs.highlight == rhs.highlight
+            && lhs.selectsWhole == rhs.selectsWhole
     }
 
     enum Tone { case primary, secondary }
 
     var body: some View {
-        MarkdownBlocksView(blocks: caches ? MarkdownCache.document(for: text).blocks : MarkdownCache.streamingBlocks(for: text), highlight: highlight)
+        content
             .foregroundStyle(tone == .primary ? Theme.primaryText : Theme.secondaryText)
             .modifier(SelectableText(isOn: selectsText))
             .environment(\.markdownCaches, caches)
@@ -37,6 +44,66 @@ struct MarkdownView: View, Equatable {
                 return WebLink.opensFromChat(url) ? .systemAction : .discarded
             })
     }
+
+    @ViewBuilder
+    private var content: some View {
+        #if os(macOS)
+        if let reply = wholeReply {
+            ReplyTextView(reply: reply, highlight: highlight)
+        } else {
+            blocks
+        }
+        #else
+        blocks
+        #endif
+    }
+
+    private var blocks: some View {
+        MarkdownBlocksView(blocks: caches ? MarkdownCache.document(for: text).blocks : MarkdownCache.streamingBlocks(for: text), highlight: highlight)
+    }
+
+    #if os(macOS)
+    /// The reply as one text, once it has finished: while it streams, and where its words aren't
+    /// selectable or aren't the reply's own type, it stays a block at a time.
+    private var wholeReply: ReplyText? {
+        guard selectsWhole, caches, selectsText, tone == .primary else { return nil }
+        let compact: Bool
+        switch bodyFont {
+        case Theme.Typography.message: compact = false
+        case Theme.Typography.compactMessage: compact = true
+        default: return nil
+        }
+        guard let reply = MarkdownCache.reply(for: text, compact: compact, scale: displayScale) else { return nil }
+        // Paragraphs that name a Bot or a file the chat knows draw it as a pill, in their own view.
+        let named = Set(reply.units.indices.filter { index in
+            guard case .paragraph(let inlines) = reply.units[index].content, InlineRenderer.mayName(inlines) else { return false }
+            return InlineRenderer.attributed(inlines, vocabulary: references.vocabulary).runs
+                .contains { $0[MessageReferenceAttribute.self] != nil }
+        })
+        return named.isEmpty ? reply : MarkdownCache.reply(for: text, compact: compact, scale: displayScale, named: named)
+    }
+    #endif
+}
+
+/// The spaces a reply's blocks keep. The Mac's one-text reply (`ReplyText`) lays its paragraphs out
+/// with the same numbers, so both draw a reply alike (`docs/chat.md` §3).
+nonisolated enum MarkdownSpacing {
+    /// Between blocks, and between a list's items.
+    static let block: CGFloat = 14
+    static let item: CGFloat = 8
+    /// A quote's bar, and the space after it.
+    static let quoteBar: CGFloat = 3
+    static let quoteGap: CGFloat = 12
+    /// A list's leading padding, and the space between a marker and its words.
+    static let listLeading: CGFloat = 2
+    static let marker: CGFloat = 10
+    /// A bullet's column, and a number's narrowest.
+    static let bulletWidth: CGFloat = 12
+    static let numberWidth: CGFloat = 18
+    /// The space above and below a rule's line.
+    static let rulePadding: CGFloat = 6
+
+    static func headingTop(_ level: Int) -> CGFloat { level <= 2 ? 6 : 2 }
 }
 
 struct MarkdownBlocksView: View {
@@ -45,7 +112,7 @@ struct MarkdownBlocksView: View {
     var highlight: SpokenSentence?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: MarkdownSpacing.block) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 // Equatable: while a reply streams only the block still arriving redraws.
                 MarkdownBlockView(block: block, sentence: highlight?.block == index ? highlight : nil)
@@ -78,7 +145,7 @@ private struct SpokenTone: ViewModifier {
     }
 }
 
-private struct MarkdownBlockView: View, Equatable {
+struct MarkdownBlockView: View, Equatable {
     let block: MarkdownBlock
     /// The sentence of this block being read aloud: in a paragraph, it's ink and the rest lighter.
     var sentence: SpokenSentence?
@@ -130,7 +197,7 @@ private struct MarkdownBlockView: View, Equatable {
             let text = InlineRenderer.attributed(inlines)
             Text(text)
                 .font(Theme.Typography.heading(level))
-                .padding(.top, level <= 2 ? 6 : 2)
+                .padding(.top, MarkdownSpacing.headingTop(level))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .modifier(StreamingReveal(length: text.characters.count))
@@ -140,10 +207,10 @@ private struct MarkdownBlockView: View, Equatable {
                 .modifier(StreamingAppear())
 
         case .blockQuote(let blocks):
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: MarkdownSpacing.quoteGap) {
                 Capsule()
                     .fill(Theme.hairline)
-                    .frame(width: 3)
+                    .frame(width: MarkdownSpacing.quoteBar)
                     .modifier(StreamingAppear())
                 AnyView(MarkdownBlocksView(blocks: blocks))
                     .foregroundStyle(Theme.secondaryText)
@@ -161,7 +228,7 @@ private struct MarkdownBlockView: View, Equatable {
             Rectangle()
                 .fill(Theme.hairline)
                 .frame(height: 1)
-                .padding(.vertical, 6)
+                .padding(.vertical, MarkdownSpacing.rulePadding)
                 .modifier(StreamingAppear())
 
         case .html(let raw):
@@ -312,16 +379,16 @@ private struct MarkdownListView: View {
     @Environment(\.markdownBodyFont) private var bodyFont
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: MarkdownSpacing.item) {
             ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: MarkdownSpacing.marker) {
                     marker(index: index, item: item)
                         .modifier(StreamingAppear())
                     AnyView(MarkdownBlocksView(blocks: item.blocks))
                 }
             }
         }
-        .padding(.leading, 2)
+        .padding(.leading, MarkdownSpacing.listLeading)
     }
 
     @ViewBuilder
@@ -335,12 +402,12 @@ private struct MarkdownListView: View {
             Text("\(list.startIndex + index).")
                 .font(bodyFont.monospacedDigit())
                 .foregroundStyle(Theme.secondaryText)
-                .frame(minWidth: 18, alignment: .trailing)
+                .frame(minWidth: MarkdownSpacing.numberWidth, alignment: .trailing)
         } else {
             Text("•")
                 .font(bodyFont.weight(.bold))
                 .foregroundStyle(Theme.secondaryText)
-                .frame(width: 12)
+                .frame(width: MarkdownSpacing.bulletWidth)
         }
     }
 }

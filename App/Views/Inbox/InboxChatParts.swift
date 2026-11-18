@@ -397,6 +397,7 @@ struct SwipeToReply: ViewModifier {
                 #else
                 .simultaneousGesture(drag)
                 .background(SidewaysScrollReader(follow: follow, release: release))
+                .environment(\.replySwipe, ReplySwipe(follow: follow, release: release))
                 .onChange(of: isDragging) { _, dragging in
                     guard !dragging, isHorizontal != nil else { return }
                     isHorizontal = nil
@@ -444,6 +445,17 @@ struct SwipeToReply: ViewModifier {
 }
 
 #if os(macOS)
+/// A message's swipe to reply, for the words of a reply: their text view keeps the mouse's drags to
+/// itself, so it hands a drag to the left on through these, as `SidewaysScrollReader` does a scroll.
+struct ReplySwipe {
+    let follow: (CGFloat) -> Void
+    let release: (CGFloat) -> Void
+}
+
+extension EnvironmentValues {
+    @Entry var replySwipe: ReplySwipe? = nil
+}
+
 /// A sideways scroll on a message (a trackpad's or a Magic Mouse's swipe, a mouse that scrolls
 /// sideways) moves it as a drag does: SwiftUI has no scroll-wheel events, so this reads them from
 /// the window before the chat does (`SidewaysScroll`, `docs/inbox.md` §4). It never takes a click.
