@@ -428,6 +428,13 @@ public struct SubagentActivity: Identifiable, Hashable, Sendable {
 // MARK: - Folding stored messages
 
 public enum TranscriptBuilder {
+    /// Hermes's post-reply housekeeping tools (agent/turn_tool_round.py `_HOUSEKEEPING_TOOLS`,
+    /// with the checklist's older `todo` name).
+    static let housekeepingTools: Set<String> = ["memory", "todo_list", "todo", "skill_manage", "session_search"]
+    /// Calls whose words are the turn's reply when the follow-up comes back empty
+    /// (`_LINE_IS_REPLY_TOOLS`): housekeeping, and `setup_beat`, whose card already waited for an answer.
+    static let lineIsReplyTools = housekeepingTools.union(["setup_beat"])
+
     static let noticeKinds: Set<String> = [
         "model_switch", "personality_switch", "auto_continue", "async_delegation_complete",
         "process_complete", "internal_notification", "failed_turn", "skill_invocation",
@@ -445,6 +452,9 @@ public enum TranscriptBuilder {
         var turn: AssistantTurn?
         var pendingText: [String] = []
         var planCallIDs: Set<String> = []
+        // The narration step holding words written beside only housekeeping calls: the turn's
+        // reply if nothing is written after them, as Hermes decides (`take_housekeeping_reply_line`).
+        var replyLine: Int?
         // A turn starts when the message it answers does, as the live turn does (`docs/chat.md` §4a).
         var askedAt: Date?
 
@@ -463,6 +473,13 @@ public enum TranscriptBuilder {
 
         func closeTurn() {
             flushText(asAnswer: true)
+            if var current = turn, current.answer.isEmpty, !current.keptQuiet, let line = replyLine,
+               case .narration(_, let text) = current.steps[line] {
+                current.steps.remove(at: line)
+                current.answer = text
+                turn = current
+            }
+            replyLine = nil
             if var current = turn, !(hidesSilence && current.answer.isEmpty && current.steps.isEmpty) {
                 current.relateRewrites()
                 items.append(.assistant(current))
@@ -570,6 +587,11 @@ public enum TranscriptBuilder {
                 let onlyCards = message.toolCalls.allSatisfy { WidgetToolResult.toolNames.contains($0.name) }
                 if !message.toolCalls.isEmpty {
                     if !onlyCards { flushText(asAnswer: false) }
+                    let names = message.toolCalls.map(\.name)
+                    if !names.allSatisfy(housekeepingTools.contains) { replyLine = nil }
+                    if !text.isEmpty, case .narration = turn?.steps.last {
+                        replyLine = names.allSatisfy(lineIsReplyTools.contains) ? (turn?.steps.count).map { $0 - 1 } : nil
+                    }
                     for (callIndex, call) in message.toolCalls.enumerated() {
                         let arguments = call.parsedArguments
                         if ToolDescriptor.isPlanTool(call.name) {
@@ -873,15 +895,43 @@ public enum TranscriptBuilder {
     /// How long a turn whose stored rows stop mid-work still counts as working.
     public static let midTurnStaleAfter: TimeInterval = 20 * 60
 
+    /// How long a turn whose stored rows end on its reply line (`endsOnReplyLine`) still counts as
+    /// working: Hermes's follow-up after its housekeeping calls, which usually comes back empty.
+    public static let replyLineSettlesAfter: TimeInterval = 90
+
     /// The stored chat's last turn hasn't ended: its last row is a tool call or a tool's result,
     /// so Hermes is still on it somewhere the app hears nothing from (a Bot's one-shot `hermes
-    /// chat`, a routine), unless its last row is older than `staleAfter` (a turn that died).
+    /// chat`, a routine), unless its last row is older than `staleAfter` (a turn that died). Rows
+    /// that end on the turn's reply line are how Hermes stores a finished turn, so they count as
+    /// working only for `replyLineSettlesAfter` (`docs/chat.md` §1, 8).
     public static func endsMidTurn(_ messages: [SessionMessage], now: Date = .now,
                                    staleAfter: TimeInterval = midTurnStaleAfter) -> Bool {
         guard let last = lastTurnRow(messages),
               last.role == "tool" || (last.role == "assistant" && !last.toolCalls.isEmpty),
               let at = last.timestamp else { return false }
-        return now.timeIntervalSince(at) < staleAfter
+        let window = endsOnReplyLine(messages) ? min(staleAfter, replyLineSettlesAfter) : staleAfter
+        return now.timeIntervalSince(at) < window
+    }
+
+    /// The stored rows end with words written beside only Hermes's housekeeping calls and those
+    /// calls' results: the turn's reply when its follow-up came back empty, which Hermes doesn't store.
+    /// Housekeeping rounds with no words after it keep that line, as they do in `build`.
+    static func endsOnReplyLine(_ messages: [SessionMessage]) -> Bool {
+        guard lastTurnRow(messages)?.role == "tool" else { return false }
+        for message in messages.reversed() {
+            switch message.role {
+            case "assistant":
+                let names = message.toolCalls.map(\.name)
+                guard !names.isEmpty else { return false }
+                if !cleanAssistantText(AgentAudio.split(message.content.text).text).isEmpty {
+                    return names.allSatisfy(lineIsReplyTools.contains)
+                }
+                guard names.allSatisfy(housekeepingTools.contains) else { return false }
+            case "user": return false
+            default: continue
+            }
+        }
+        return false
     }
 
     /// How long another Bot's message (or a routine's output) with nothing after it still counts as
