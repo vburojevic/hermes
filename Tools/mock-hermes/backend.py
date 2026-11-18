@@ -95,6 +95,7 @@ LOSE_ANSWER = {}   # method -> taken or "freeze": the next such request loses it
 # stalled N s (GIL pressure suspected)"). Requests, socket frames and pings wait, then all answer;
 # the API-server mock (the gateway, another process) keeps answering meanwhile.
 STALL = {"until": 0.0}
+REFUSED = [0]  # --api-server-only: requests the API server refused
 
 
 def wait_out_stall():
@@ -2531,8 +2532,33 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "HermesMock/0.21.6"
 
     def log_message(self, fmt, *args):
-        if "/api/status" not in (args[0] if args else ""):
+        if CONFIG.get("api_server_only") or "/api/status" not in (args[0] if args else ""):
             print("[backend]", fmt % args, flush=True)
+
+    def answer_as_api_server(self, url):
+        """--api-server-only: this address is the gateway's API server, not `hermes serve`, as when
+        the backend suggested for a gateway is the gateway itself (docs/setup.md §4.1). It answers
+        only what the real one does: /health, and /api/sessions with the gateway key. Every other
+        path gets aiohttp's own 404, and every refusal is counted in the log."""
+        if url.path == "/health" and self.command == "GET":
+            return self.send_json(200, {"status": "ok", "platform": "hermes-agent",
+                                        "version": CONFIG["hermes_version"]})
+        if url.path == "/api/sessions" and self.command == "GET":
+            if self.headers.get("Authorization") == f"Bearer {CONFIG['gateway_key']}":
+                return self.send_json(200, {"object": "list", "data": [], "limit": 50, "offset": 0,
+                                            "has_more": False})
+            REFUSED[0] += 1
+            print(f"[backend] refused {REFUSED[0]}: {self.command} {self.path}", flush=True)
+            return self.send_json(401, {"error": {"message": "Invalid gateway API key (API_SERVER_KEY)",
+                                                  "type": "gateway_auth_error", "code": "gateway_auth_failed"}})
+        REFUSED[0] += 1
+        print(f"[backend] refused {REFUSED[0]}: {self.command} {self.path}", flush=True)
+        data = b"404: Not Found"
+        self.send_response(404)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def send_json(self, status, body, headers=None):
         data = json.dumps(body).encode()
@@ -2567,6 +2593,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        if CONFIG.get("api_server_only"):
+            return self.answer_as_api_server(url)
         query = parse_qs(url.query)
         wait_out_stall()
         if url.path == "/api/ws":
@@ -2585,8 +2613,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     return self.wfile.write(data)
-            return self.send_json(200, {"version": CONFIG["hermes_version"], "auth_required": bool(CONFIG["password"]),
-                                        "auth_providers": ["basic"] if CONFIG["password"] else [],
+            providers = CONFIG.get("auth_providers") or (["basic"] if CONFIG["password"] else [])
+            return self.send_json(200, {"version": CONFIG["hermes_version"], "auth_required": bool(providers),
+                                        "auth_providers": providers,
                                         "install_id": "mock-install-0001", "gateway_running": True, **STATUS_EXTRA})
         if url.path == "/api/health":
             return self.send_json(200, {"ok": True})
@@ -2599,7 +2628,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return self.wfile.write(data)
         if url.path == "/":
-            html = INDEX.format(token=json.dumps("" if CONFIG["password"] else CONFIG["token"])).encode()
+            gated = CONFIG["password"] or CONFIG.get("auth_providers")
+            html = INDEX.format(token=json.dumps("" if gated else CONFIG["token"])).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
@@ -2675,6 +2705,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         url = urlparse(self.path)
+        if CONFIG.get("api_server_only"):
+            return self.answer_as_api_server(url)
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}") if length else {}
         if not self.authorized():
@@ -2688,6 +2720,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         url = urlparse(self.path)
+        if CONFIG.get("api_server_only"):
+            return self.answer_as_api_server(url)
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}") if length else {}
         if not self.authorized():
@@ -2701,6 +2735,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         url = urlparse(self.path)
+        if CONFIG.get("api_server_only"):
+            return self.answer_as_api_server(url)
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}") if length else {}
         if not self.authorized():
@@ -2751,6 +2787,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
+        if CONFIG.get("api_server_only"):
+            return self.answer_as_api_server(url)
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}") if length else {}
         if url.path == "/api/mock/stall":
@@ -2984,6 +3022,8 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         peer = Peer(self)
         if not authorized:
+            # The upgrade itself is never logged; a refused one is, so a sign-in's cost can be counted.
+            print("[backend] socket refused 4401", flush=True)
             return peer.close(4401, "unauthorized")
         if time.time() < DROP["refuse_until"]:
             return peer.cut()
@@ -3075,6 +3115,12 @@ def main():
     parser.add_argument("--port", type=int, default=19119)
     parser.add_argument("--password", help="gate the backend behind username/password sign-in (user: admin)")
     parser.add_argument("--token", help="fixed session token for the ungated mode")
+    parser.add_argument("--auth-providers", metavar="NAMES",
+                        help="the sign-ins /api/status offers, comma-separated (basic, session-token, "
+                             "self-hosted…); any but basic gates the backend behind --token")
+    parser.add_argument("--api-server-only", action="store_true",
+                        help="answer like the gateway's API server, not a backend: /health, "
+                             "/api/sessions with --gateway-key, 404 elsewhere (refusals logged)")
     parser.add_argument("--hermes-version", default="0.21.6",
                         help="the version /api/status reports; before 0.23.1 the socket closes on a message over 16 MiB")
     parser.add_argument("--quiet-world", action="store_true", help="no background activity")
@@ -3156,6 +3202,10 @@ def main():
                         help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
+    CONFIG["api_server_only"] = args.api_server_only
+    CONFIG["gateway_key"] = args.gateway_key
+    if args.auth_providers:
+        CONFIG["auth_providers"] = [name.strip() for name in args.auth_providers.split(",") if name.strip()]
     CONFIG["hermes_version"] = args.hermes_version
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
@@ -3319,6 +3369,10 @@ def main():
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
     mode = f"gated (admin / {args.password})" if args.password else f"ungated (token {CONFIG['token']})"
+    if args.api_server_only:
+        mode = f"the gateway's API server only (key {args.gateway_key})"
+    elif args.auth_providers:
+        mode = f"gated by {args.auth_providers} (token {CONFIG['token']})"
     print(f"[mock-backend] listening on http://{args.host}:{args.port} — {mode}", flush=True)
     server.serve_forever()
 

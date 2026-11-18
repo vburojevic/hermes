@@ -33,6 +33,10 @@ final class BotRoster {
     }
 
     private(set) var link: BackendLink
+    /// Why Bot Mode stopped trying, when it did: the backend refused its sign-in, or the address
+    /// is the gateway's rather than the backend's (`docs/setup.md` §4.1). No retry, poll or network change sends
+    /// anything until the person signs in, changes the address or asks again (`reconnectNow`).
+    private(set) var stop: BotModeStop?
     private(set) var state: State = .idle {
         didSet {
             guard state != oldValue else { return }
@@ -400,9 +404,13 @@ final class BotRoster {
 
     // MARK: - Connection
 
-    /// Swaps in a new address or sign-in method.
-    func update(link: BackendLink) {
-        guard link != self.link else { return }
+    /// Swaps in a new address or sign-in method. `stopped` when Edit Gateway saved one that can't
+    /// work: Bot Mode starts stopped instead of connecting (`docs/setup.md` §4.1).
+    func update(link: BackendLink, stopped: BotModeStop? = nil) {
+        guard link != self.link else {
+            if let stopped { stayStopped(stopped) }
+            return
+        }
         self.link = link
         disconnect()
         client = Self.makeClient(botID: botID, link: link, credential: savedCredential(), store: store)
@@ -418,13 +426,25 @@ final class BotRoster {
         cachedRows = []
         turnBook = BotTurnBook()
         RosterCache.remove(botID)
-        connectIfNeeded()
+        stop = nil // a new address or sign-in, with a new client
+        if let stopped {
+            stayStopped(stopped)
+        } else {
+            connectIfNeeded()
+        }
+    }
+
+    /// Edit Gateway saved an address or sign-in that the backend already turned down: nothing
+    /// is sent until the sign-in, the address or Bot Mode changes, or Check Again.
+    func stayStopped(_ stop: BotModeStop) {
+        disconnect()
+        stopTrying(stop)
     }
 
     /// - Parameter quietly: a retry in the background: Bots that are offline stay "offline" until
     ///   they're back, rather than flickering to "Connecting…" on every attempt.
     func connectIfNeeded(quietly: Bool = false) {
-        guard !isTornDown, socket == nil, connectTask == nil else { return }
+        guard !isTornDown, stop == nil, socket == nil, connectTask == nil else { return }
         watchNetwork()
         startConnect(quietly: quietly)
     }
@@ -432,7 +452,7 @@ final class BotRoster {
     /// Connect now, skipping any backoff wait: the person asked (Retry, Reload), or the
     /// network just came back.
     func retryNow() {
-        guard !isTornDown, !isAwayOnPhone, socket == nil else { return }
+        guard !isTornDown, !isAwayOnPhone, stop == nil, socket == nil else { return }
         reconnectAttempts = 0
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -450,7 +470,7 @@ final class BotRoster {
     /// works: a socket opened over the old route usually dies without a close and would look
     /// healthy until the heartbeat gives up on it.
     private func routeChanged(cameBack: Bool) {
-        guard !isTornDown, !isAwayOnPhone else { return }
+        guard !isTornDown, !isAwayOnPhone, stop == nil else { return }
         reconnectAttempts = 0
         if let socket {
             verify(socket, heardWithin: 0)
@@ -563,13 +583,25 @@ final class BotRoster {
         } catch is CancellationError {
         } catch {
             guard isCurrent() else { return }
-            // Linked to sign in by itself, but the backend has a password: that's a sign-in to
-            // choose, not an offline backend (`docs/setup.md` §4.1).
+            // Linked to sign in by itself, but the backend is gated: it refuses Bot Mode until a
+            // token or a password is chosen in Edit Gateway, so stop here (`docs/setup.md` §4.1).
             if link.signIn == .automatic, Self.mayNeedPassword(error), await backendAsksForSignIn() {
                 guard isCurrent() else { return }
                 endPause()
-                state = .signInRequired(String(localized: "Bot Mode on \(workspace?.bot.name ?? "this gateway") asks for a sign-in. Choose Username & password in Edit Gateway."))
+                stopTrying(.refused)
                 return
+            }
+            // The gateway's API server refuses every Bot Mode request alike: one look at what
+            // answers there, then say so and stop, rather than retry it every 15 seconds. Another
+            // server keeps the usual retry, with its error (`docs/setup.md` §4.1).
+            if Self.mayBeWrongServer(error) {
+                let check = try? await client.check()
+                guard isCurrent() else { return }
+                if let check, let stop = BotModeStop.after(check, signInRefused: false) {
+                    endPause()
+                    stopTrying(stop)
+                    return
+                }
             }
             handleConnectFailure(error)
         }
@@ -582,6 +614,36 @@ final class BotRoster {
         }
         if case GatewaySocket.Failure.closed(let reason)? = error as? GatewaySocket.Failure { return reason.contains("sign-in") }
         return false
+    }
+
+    /// A refusal that an address other than Hermes's backend gives: a route it doesn't have, a
+    /// page that isn't Hermes's.
+    private static func mayBeWrongServer(_ error: any Error) -> Bool {
+        switch error as? BackendClient.Failure {
+        case .notHermes?, .tokenNotFound?: true
+        case .http(let status, _)?: status == 404 || status == 405
+        default: false
+        }
+    }
+
+    /// Bot Mode stops trying (`stop`): nothing more goes to the backend, and no Bot Chat says
+    /// it's reconnecting, until the person acts.
+    private func stopTrying(_ stop: BotModeStop) {
+        self.stop = stop
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        let client = client
+        Task { await client.refuse() }
+        let address = link.displayAddress
+        switch stop {
+        case .refused:
+            state = .signInRequired(BackendClient.Failure.signInRequired.errorDescription)
+        case .wrongServer:
+            state = .failed(BotModeWarning.stopped(.wrongServer(address: address))?.body ?? "")
+        }
+        for conversation in allConversations {
+            conversation.botChatWaitsForSignIn()
+        }
     }
 
     /// `/api/status.auth_required`, which answers before any sign-in.
@@ -656,7 +718,8 @@ final class BotRoster {
             switch failure {
             case .signInRequired, .invalidCredentials:
                 if link.signIn != .automatic {
-                    state = .signInRequired(failure.errorDescription)
+                    // A sign-in that was refused once is refused every time.
+                    stopTrying(.refused)
                     return
                 }
             case .tokenNotFound, .notHermes:
@@ -667,7 +730,7 @@ final class BotRoster {
             }
         }
         if case GatewaySocket.Failure.closed(let reason)? = error as? GatewaySocket.Failure, reason.contains("sign-in"), link.signIn != .automatic {
-            state = .signInRequired(reason)
+            stopTrying(.refused)
             return
         }
         // The access gateway in front wants a sign-in or a token: retrying can't get through.
@@ -777,7 +840,7 @@ final class BotRoster {
     }
 
     private func scheduleReconnect() {
-        guard !isTornDown, !isAwayOnPhone else { return }
+        guard !isTornDown, !isAwayOnPhone, stop == nil else { return }
         reconnectTask?.cancel()
         reconnectTask = nil
         // No route at all: nothing to try until there is one (`routeChanged` connects then).
@@ -813,7 +876,12 @@ final class BotRoster {
         await reconnectNow()
     }
 
+    /// Connect again now. Also lifts a `stop`: this is Check Again, Retry and a new sign-in.
     func reconnectNow() async {
+        if stop != nil {
+            stop = nil
+            await client.allowRequests()
+        }
         disconnect()
         reconnectAttempts = 0
         startConnect()
@@ -1340,10 +1408,10 @@ final class BotRoster {
         }
         guard !isTornDown else { return }
         workspace?.checkConnectionNow()
-        // A rejected sign-in needs the person, not a retry loop.
+        // A rejected sign-in needs the person, not a retry loop: stop until something changes.
         if case GatewaySocket.Failure.closed(let reason)? = error as? GatewaySocket.Failure,
            reason.contains("sign-in"), link.signIn != .automatic {
-            state = .signInRequired(reason)
+            stopTrying(.refused)
             return
         }
         if let refusal = error as? HermesError, refusal.waitsForAccess {

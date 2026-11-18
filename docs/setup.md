@@ -120,19 +120,74 @@ it; chats, Tasks, Skills and models work without it.
 |---|---|---|
 | Not set up | no link (`bot.backend == nil`) | What Bot Mode adds, Link Bot Mode… (Edit Gateway), the steps below |
 | Not set up | `BotRoster.State.signInRequired`: a REST 401, socket close 4401 | Sign In… (Edit Gateway) |
+| Not set up · sign-in refused | `BotRoster.stop == .refused`: the backend refused a token or password, or takes none Bot Mode can use | `botModeRefused`: why, Edit Sign-In… and Check Again |
+| Not set up · wrong address | `BotRoster.stop == .wrongServer`: the address answered as the gateway's API server | `botModeWrongServer`: why, Edit Backend… and Check Again |
 | Can't check | `BotRoster.State.failed(reason)` | The roster's reason, "Chats still work.", Edit Gateway… and `hermes serve` |
 | Ready | roster online | "Linked · 5 Bots" |
 
 Set up: `hermes serve` on the gateway's computer. From another device the backend needs a
-sign-in: `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`, `…_PASSWORD` and `…_SECRET` in `~/.hermes/.env`,
-then `hermes serve --host 0.0.0.0`, and Username & password in Edit Gateway. Docs:
-`user-guide/bot-mode`, `user-guide/features/web-dashboard`.
+sign-in: a session token (`HERMES_DASHBOARD_SESSION_TOKEN=<token> hermes serve --host 0.0.0.0`)
+or a password (`HERMES_DASHBOARD_BASIC_AUTH_USERNAME`, `…_PASSWORD` and `…_SECRET` in
+`~/.hermes/.env`), and the same sign-in in Edit Gateway. Docs: `user-guide/bot-mode`,
+`user-guide/features/web-dashboard`.
 
-When signing in by itself fails and `/api/status.auth_required` is true, Bot Mode asks for a
-sign-in (Username & password) instead of retrying as offline. The sidebar's "Bots are offline"
-shows the roster's reason. Pages that run on Bot Mode show its setup where they'd be empty
-(`BotModeSetupMessage`: the Board, Learned, Projects) or a Link Bot Mode… button in their note
-(`BotModeLinkButton`: Memory, Apps and Tools, Set Up Push).
+**Edit Gateway checks the address.** When Bot Mode turns on, 0.6 s after the address stops
+changing, on Check Again and on Save, it reads `GET /api/status` (no sign-in, through the Access
+settings on screen) and offers only the sign-ins the answer allows (`BackendCheck`, HermesKit):
+
+| `/api/status` says | Sign-ins offered | The app shows |
+|---|---|---|
+| `auth_required: false` (a loopback backend) | Automatic, Session token | the sign-in picker |
+| `auth_required: true`, `auth_providers` has `session-token` and `basic` | Session token, Password | the sign-in picker |
+| only `session-token` | Session token | "Signs in with a session token", "This backend has no password sign-in." |
+| only `basic` | Password | the username and password fields |
+| no `session-token` or `basic` (Nous, single sign-on) | none | `botModeUnsupported`: why, the steps, Check Again |
+| no `/api/status`, and `/health` says `"platform": "hermes-agent"` | none | `botModeNotBackend`: "This is the gateway, not Bot Mode's backend" |
+| no `/api/status`, and not the gateway | none | no card (the design has none): the field's usual footer, and Bot Mode connects as usual, with its error |
+| no answer | all, as before | the sign-in picker; Save tries to connect |
+
+Password is selected only where the backend said it has one. While the check runs, a Checking
+row stands where the sign-in goes.
+
+**Save never waits on Bot Mode.** It stays enabled whatever the check says, checks again, and
+saves the gateway's edits and Bot Mode's fields as typed (`BotModeSave`, HermesKit). Where Bot
+Mode can't work there, it starts stopped (below) instead of trying: the address answered as the
+gateway (`.wrongServer`), the backend takes no sign-in Bot Mode can use or not the one chosen, or
+the typed token or password was tried once on Save and refused (`.refused`). The sheet closes,
+and Settings carries the state. Save still waits when the gateway itself doesn't answer, as it
+always did.
+
+**After a refused sign-in Bot Mode stops trying.** A 401 to a token or password, a socket closed
+for its sign-in (at connect or mid-session, 4401), a gated backend refusing Automatic, a connect
+that failed on an address that turned out (`BackendClient.check()`) to be the gateway's, or Save
+(above) sets `BotRoster.stop`. Then no retry, poll or network change sends anything:
+`BackendClient` itself fails signed-in requests without sending them while `isRefused`, so the
+backend hears about two requests and then nothing. The stop lifts when the address, the sign-in
+or Bot Mode changes, when Save in Edit Gateway signs in with the same sign-in (the backend may
+have been fixed since), or when the person asks again (Check Again in Settings → Setup, Retry, a
+reconnect). Before, a refused sign-in was asked again every few seconds for as long as the app
+ran.
+
+Where the stop shows, as drawn:
+
+- Settings → Setup: Bot Mode's row ("Not set up · sign-in refused" with Edit Sign-In…, or "Not
+  set up · wrong address" with Edit Backend…; on the Mac "…, so Bot Mode stopped trying" and
+  "… · the address is the gateway, not its backend"), and a warm card at the top of Features
+  (`botModeRefused`, `botModeWrongServer`, `BotModeWarning.stopped`).
+- Settings' gateway list, after a refused sign-in: "Bot Mode can't sign in" in place of the
+  address on iPhone and iPad, after it on the Mac.
+- Features that need Bot Mode keep the nearest state they already have: a refused sign-in reads
+  as "needs you to sign in again", the gateway's address as "isn't answering". Their pages
+  (`BotModeSetupMessage`) take the card's headline and its fix button.
+- The sidebar, Search and the connection line add nothing: the design doesn't draw a stop
+  there.
+
+When signing in by itself (Automatic) fails and `/api/status.auth_required` is true, Bot Mode
+stops (`.refused`), as above: Settings shows "Bot Mode can't sign in to this backend", whose
+Edit Sign-In… offers the sign-ins the backend takes. The sidebar's
+"Bots are offline" shows the roster's reason. Pages that run on Bot Mode show its setup where
+they'd be empty (`BotModeSetupMessage`: the Board, Learned, Projects) or a Link Bot Mode… button
+in their note (`BotModeLinkButton`: Memory, Apps and Tools, Set Up Push).
 
 ### 4.2 Hermes Agent
 

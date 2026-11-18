@@ -64,8 +64,8 @@ struct SearchResultsSection: View {
         case .titlesOnly:
             // Why there's no full text, and what brings it (`docs/setup.md` §4.7).
             switch workspace.setup.facts.botMode {
-            case .signInNeeded: String(localized: "Searching titles only. Sign in to Bot Mode to search what was said.")
-            case .connecting, .unreachable: String(localized: "Searching titles only until Bot Mode answers.")
+            case .signInNeeded, .refused: String(localized: "Searching titles only. Sign in to Bot Mode to search what was said.")
+            case .connecting, .unreachable, .wrongServer: String(localized: "Searching titles only until Bot Mode answers.")
             case .notLinked, .online: String(localized: "Searching titles only. Bot Mode searches what was said.")
             }
         case .titlesFirst: String(localized: "Titles that match · searching what was said…")

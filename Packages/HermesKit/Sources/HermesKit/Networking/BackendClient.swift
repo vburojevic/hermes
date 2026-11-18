@@ -49,7 +49,7 @@ public actor BackendClient {
             switch self {
             case .notHermes: "That address isn't a Hermes backend (`hermes serve`)."
             case .tokenNotFound: "Couldn't read the session token. Is `hermes serve` running on this Mac?"
-            case .signInRequired: "Sign in to the Hermes backend again."
+            case .signInRequired: "The backend refused Bot Mode's sign-in. Check the username and password, or the session token."
             case .invalidCredentials: "The username or password is wrong."
             case .rateLimited: "Too many sign-in attempts. Wait a minute and try again."
             case .http(404, let message?) where HermesVersionGap.isMissingRoute(message):
@@ -87,6 +87,10 @@ public actor BackendClient {
 
     public nonisolated let baseURL: URL
     public private(set) var credential: BackendCredential?
+    /// The backend refused this credential. Until the credential changes or `allowRequests()`,
+    /// signed-in requests fail here without reaching the backend: a refused sign-in never turns
+    /// into a request every few seconds (`docs/setup.md` §4.1).
+    public private(set) var isRefused = false
     private let session: URLSession
     private let onCredentialChange: (@Sendable (BackendCredential) -> Void)?
 
@@ -120,7 +124,47 @@ public actor BackendClient {
         await session.flush()
     }
 
+    /// Lets signed-in requests through again after a refusal: Check Again, a reconnect the
+    /// person asked for.
+    public func allowRequests() {
+        isRefused = false
+    }
+
+    /// Holds signed-in requests back as a refusal would: the address turned out not to be a
+    /// backend, so nothing sent there can work until the person changes it.
+    public func refuse() {
+        isRefused = true
+    }
+
     // MARK: - Discovery
+
+    /// What this address is to Bot Mode (`docs/setup.md` §4.1): a backend and the sign-ins it
+    /// takes, or, when `/api/status` isn't there, whether Hermes's API server (the gateway)
+    /// answered instead (`GET /health`, `"platform": "hermes-agent"`). Throws only when cancelled.
+    public func check() async throws -> BackendCheck {
+        do {
+            return BackendCheck.classify(try await status())
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch Failure.notHermes {
+            return try await answersAsAPIServer() ? .apiServer : .notHermes
+        } catch Failure.http(let status, _) where !Failure.busyStatuses.contains(status) {
+            return try await answersAsAPIServer() ? .apiServer : .notHermes
+        } catch {
+            return .unreachable(error.localizedDescription)
+        }
+    }
+
+    private func answersAsAPIServer() async throws -> Bool {
+        do {
+            let (data, _) = try await send(path: "health", authenticated: false)
+            return JSONValue.parse(data)?["platform"]?.stringValue == "hermes-agent"
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return false
+        }
+    }
 
     public func status() async throws -> BackendStatus {
         let (data, _) = try await send(path: "api/status", authenticated: false)
@@ -582,6 +626,7 @@ public actor BackendClient {
             request.httpBody = try JSONEncoder().encode(body)
         }
         if authenticated {
+            if isRefused { throw Failure.signInRequired }
             switch credential {
             case .sessionToken(let token):
                 request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
@@ -613,6 +658,8 @@ public actor BackendClient {
             return (data, http)
         case 401:
             if path == "auth/password-login" { throw Failure.invalidCredentials }
+            // After `absorbCookies`, whose cleared cookies would otherwise lift the stop at once.
+            if authenticated { isRefused = true }
             throw Failure.signInRequired
         case 429:
             throw Failure.rateLimited
@@ -647,6 +694,7 @@ public actor BackendClient {
     private func updateCredential(_ new: BackendCredential) {
         guard new != credential else { return }
         credential = new
+        isRefused = false
         onCredentialChange?(new)
     }
 }

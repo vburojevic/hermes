@@ -617,3 +617,195 @@ struct RosterLoadTests {
         #expect(load.source == .cache)
     }
 }
+
+@Suite("Bot Mode's wrong address and refused sign-in")
+struct BotModeWarningTests {
+    @Test func editGatewaySaysWhatTheAddressIs() throws {
+        let gateway = try #require(BotModeWarning.check(.apiServer, address: "studio.local:8642"))
+        #expect(gateway.title == "This is the gateway, not Bot Mode's backend")
+        #expect(gateway.body.hasPrefix("studio.local:8642 answered as Hermes's API server."))
+        #expect(gateway.steps?.contains("`hermes serve --host 0.0.0.0`") == true)
+        #expect(gateway.source == "From studio.local:8642")
+        // Edit Gateway has the fields themselves, so its card offers only Check Again.
+        #expect(gateway.fix == nil)
+
+        // Something other than Hermes has no card: the field's footer says so.
+        #expect(BotModeWarning.check(.notHermes, address: "studio.local") == nil)
+
+        let unsupported = try #require(BotModeWarning.check(.unsupported(providers: ["nous"]), address: "studio.local:9119"))
+        #expect(unsupported.title == "Bot Mode can't sign in to this backend")
+        #expect(unsupported.source == "From the backend at studio.local:9119")
+
+        #expect(BotModeWarning.check(.backend(signIns: [.token], version: nil), address: "studio.local:9119") == nil)
+        #expect(BotModeWarning.check(.unreachable("Timed out."), address: "studio.local:9119") == nil)
+    }
+
+    @Test func setupSaysWhyBotModeStoppedTrying() throws {
+        let refused = try #require(BotModeWarning.stopped(.refused(address: "studio.local:9119")))
+        #expect(refused.title == "The backend refused Bot Mode's sign-in")
+        #expect(refused.body.contains("Bot Mode stopped trying until you do. Chats still work."))
+        #expect(refused.fix?.title == "Edit Sign-In…")
+        #expect(refused.fix?.action == .signIn)
+
+        let gateway = try #require(BotModeWarning.stopped(.wrongServer(address: "studio.local")))
+        #expect(gateway.title == "Bot Mode's address is the gateway, not its backend")
+        #expect(gateway.body == "studio.local answered as Hermes's API server, so the sign-in could never work. Bot Mode stopped trying. Chats still work.")
+        #expect(gateway.fix?.title == "Edit Backend…")
+        #expect(gateway.fix?.action == .linkBotMode)
+
+        #expect(BotModeWarning.stopped(.online) == nil)
+        #expect(BotModeWarning.stopped(.signInNeeded) == nil)
+    }
+
+    @Test func setupListsTheStoppedState() {
+        let refused = GatewaySetup.botMode(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .refused(address: "studio.local:9119")))
+        #expect(refused.state == .notSetUp)
+        #if os(macOS)
+        #expect(refused.detail == "Not set up · sign-in refused, so Bot Mode stopped trying")
+        #else
+        #expect(refused.detail == "Not set up · sign-in refused")
+        #endif
+        #expect(refused.fix?.title == "Edit Sign-In…")
+
+        let wrong = GatewaySetup.botMode(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .wrongServer(address: "studio.local")))
+        #expect(wrong.state == .notSetUp)
+        #if os(macOS)
+        #expect(wrong.detail == "Not set up · the address is the gateway, not its backend")
+        #else
+        #expect(wrong.detail == "Not set up · wrong address")
+        #endif
+        #expect(wrong.fix?.action == .linkBotMode)
+
+        // Features that need Bot Mode read as the nearest state they already have; Bot Mode's
+        // own row says why it stopped.
+        let board = GatewaySetup.board(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .refused(address: "studio.local:9119")))
+        #expect(board.state == .notSetUp)
+        #expect(board.detail == "Needs Bot Mode, which needs you to sign in again.")
+        #expect(board.fix?.action == .signIn)
+        let boardOnGateway = GatewaySetup.board(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .wrongServer(address: "studio.local")))
+        #expect(boardOnGateway == GatewaySetup.board(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .unreachable("Timed out."))))
+    }
+}
+
+@Suite("Bot Mode's backend check against a server")
+struct BackendCheckServerTests {
+    private static func json(_ status: Int, _ text: String) -> LoopbackServer.Answer {
+        .page(status, "application/json", Data(text.utf8))
+    }
+
+    @Test func aBackendSaysWhichSignInsItTakes() async throws {
+        let server = try await LoopbackServer.start { line, _ in
+            line.hasPrefix("GET /api/status ")
+                ? Self.json(200, #"{"version":"0.21.6","auth_required":true,"auth_providers":["session-token"]}"#)
+                : Self.json(404, #"{"detail":"Not Found"}"#)
+        }
+        defer { server.stop() }
+        let check = try await BackendClient(baseURL: server.baseURL, credential: nil).check()
+        #expect(check == .backend(signIns: [.token], version: "0.21.6"))
+        #expect(server.requests == ["GET /api/status HTTP/1.1"])
+    }
+
+    @Test func theGatewayAnswersAsHermessAPIServer() async throws {
+        let server = try await LoopbackServer.start { line, _ in
+            line.hasPrefix("GET /health ")
+                ? Self.json(200, #"{"status":"ok","platform":"hermes-agent"}"#)
+                : Self.json(404, #"{"error":{"message":"Not found"}}"#)
+        }
+        defer { server.stop() }
+        #expect(try await BackendClient(baseURL: server.baseURL, credential: nil).check() == .apiServer)
+    }
+
+    @Test func somethingElseIsNotHermes() async throws {
+        let server = try await LoopbackServer.start { _, _ in
+            .page(200, "text/html", Data("<html>router</html>".utf8))
+        }
+        defer { server.stop() }
+        #expect(try await BackendClient(baseURL: server.baseURL, credential: nil).check() == .notHermes)
+    }
+
+    @Test func aRefusedSignInIsNotSentAgainUntilSomethingChanges() async throws {
+        let server = try await LoopbackServer.start { line, _ in
+            line.hasPrefix("GET /api/sessions") ? Self.json(401, #"{"detail":"Unauthorized"}"#) : Self.json(404, "{}")
+        }
+        defer { server.stop() }
+        let client = BackendClient(baseURL: server.baseURL, credential: .sessionToken("wrong"))
+        let asked = { server.requests.filter { $0.hasPrefix("GET /api/sessions") }.count }
+
+        await #expect(throws: BackendClient.Failure.signInRequired) { try await client.recentSessions(profile: nil) }
+        #expect(await client.isRefused)
+        for _ in 0..<3 {
+            await #expect(throws: BackendClient.Failure.signInRequired) { try await client.recentSessions(profile: nil) }
+        }
+        #expect(asked() == 1)
+
+        // Check Again lets one more through.
+        await client.allowRequests()
+        _ = try? await client.recentSessions(profile: nil)
+        #expect(asked() == 2)
+
+        // So does a new sign-in.
+        await client.useSessionToken("another")
+        #expect(await !client.isRefused)
+        _ = try? await client.recentSessions(profile: nil)
+        #expect(asked() == 3)
+
+        // A wrong address holds requests back the same way.
+        await client.refuse()
+        _ = try? await client.recentSessions(profile: nil)
+        #expect(asked() == 3)
+    }
+
+    /// Edit Gateway's Save never waits on Bot Mode (`docs/setup.md` §4.1): with a refused
+    /// sign-in or the gateway's address, the edits are saved as typed and Bot Mode starts
+    /// stopped, so the backend hears nothing more until something changes.
+    @Test func saveWithARefusedSignInOrTheGatewaysAddressKeepsTheEditsAndStaysStopped() async throws {
+        // The gateway's own address, typed as Bot Mode's.
+        let gateway = try await LoopbackServer.start { line, _ in
+            line.hasPrefix("GET /health ")
+                ? Self.json(200, #"{"status":"ok","platform":"hermes-agent"}"#)
+                : Self.json(404, #"{"error":{"message":"Not found"}}"#)
+        }
+        defer { gateway.stop() }
+        let onGateway = BackendLink(url: gateway.baseURL, signIn: .token)
+        let check = try await BackendClient(baseURL: gateway.baseURL, credential: nil).check()
+        let wrong = BotModeSave(link: onGateway, typedToken: " typed ", check: check, signInRefused: false)
+        #expect(wrong.stop == .wrongServer)
+        #expect(wrong.link == onGateway)
+        #expect(wrong.credential == .sessionToken("typed"))
+        let askedGateway = gateway.requests.count
+        let held = BackendClient(baseURL: gateway.baseURL, credential: wrong.credential)
+        await held.refuse()
+        _ = try? await held.recentSessions(profile: nil)
+        #expect(gateway.requests.count == askedGateway)
+
+        // A backend that refuses the typed token.
+        let backend = try await LoopbackServer.start { line, _ in
+            if line.hasPrefix("GET /api/status ") {
+                return Self.json(200, #"{"version":"0.21.6","auth_required":true,"auth_providers":["session-token"]}"#)
+            }
+            return Self.json(401, #"{"detail":"Unauthorized"}"#)
+        }
+        defer { backend.stop() }
+        let typed = BackendLink(url: backend.baseURL, signIn: .token)
+        let status = try await BackendClient(baseURL: backend.baseURL, credential: nil).check()
+        // The token is offered, so Save tries it once.
+        #expect(BotModeSave(link: typed, typedToken: "wrong", check: status, signInRefused: false).stop == nil)
+        let refused = BotModeSave(link: typed, typedToken: "wrong", check: status, signInRefused: true)
+        #expect(refused.stop == .refused)
+        #expect(refused.link == typed)
+        #expect(refused.credential == .sessionToken("wrong"))
+        let client = BackendClient(baseURL: backend.baseURL, credential: refused.credential)
+        await client.refuse()
+        for _ in 0..<3 { _ = try? await client.recentSessions(profile: nil) }
+        #expect(await client.isRefused)
+        #expect(backend.requests.filter { !$0.hasPrefix("GET /api/status ") }.isEmpty)
+
+        // A password on a backend that has none is refused before it's sent.
+        let password = BackendLink(url: backend.baseURL, signIn: .password, username: "admin")
+        let unoffered = BotModeSave(link: password, typedToken: "", check: status, signInRefused: false)
+        #expect(unoffered.stop == .refused)
+        #expect(unoffered.credential == nil)
+        // An address that didn't answer may yet work: Bot Mode connects as usual.
+        #expect(BotModeSave(link: typed, typedToken: "t", check: .unreachable("Timed out."), signInRefused: false).stop == nil)
+    }
+}

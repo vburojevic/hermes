@@ -35,15 +35,21 @@ second.
    | Sign-in | How | REST | Socket |
    |---|---|---|---|
    | Automatic | Reads `window.__HERMES_SESSION_TOKEN__` from the backend's start page, as Hermes Desktop does. Only an ungated backend on the same machine hands it out; a refused socket reads it again once (the token changes when the backend restarts) | `X-Hermes-Session-Token` header | `?token=` |
-   | Session token | A pasted token (`hermes serve` prints it) | `X-Hermes-Session-Token` | `?token=` |
-   | Username & password | `POST /auth/password-login {provider: "basic", username, password}`; the app keeps the `hermes_session_at` / `_rt` cookies itself and takes refreshed ones from every response | `Cookie` | a one-time ticket: `POST /api/auth/ws-ticket` (30 s, single use), then `?ticket=` |
+   | Session token | A pasted token: the backend's `HERMES_DASHBOARD_SESSION_TOKEN`, which `hermes serve` prints. Offered on an ungated backend and where `auth_providers` has `session-token` | `X-Hermes-Session-Token` | `?token=` |
+   | Password ("Username & password" on the Mac) | Offered only where `auth_providers` has `basic`. `POST /auth/password-login {provider: "basic", username, password}`; the app keeps the `hermes_session_at` / `_rt` cookies itself and takes refreshed ones from every response | `Cookie` | a one-time ticket: `POST /api/auth/ws-ticket` (30 s, single use), then `?ticket=` |
 
-   `GET /api/status` (no sign-in) says whether the address is a Hermes backend and whether it
-   needs a sign-in. A socket closed with 4401 means the sign-in was refused; 4403 means the host
-   or origin isn't allowed. Connecting never waits for `/api/status`: on a busy Mac it's the
-   dashboard's slowest call (it asks the gateway, every profile, memory and disk), and a proxy in
-   front of it answers 502 after its own timeout. The roster reads it once the socket is open, for
-   the version, and again only after the backend restarts (a new `replay_epoch`).
+   `GET /api/status` (no sign-in) says whether the address is a Hermes backend, whether it
+   needs a sign-in and which (`auth_providers`). Edit Gateway reads it before offering a sign-in,
+   and `/health` when it's missing, to tell the gateway's own address from the backend's
+   (`docs/setup.md` §4.1). Save never waits on it: the edits are saved as typed, and an address
+   or sign-in that can't work starts Bot Mode stopped. A refused sign-in, at connect or
+   mid-session, stops Bot Mode until the sign-in, the address or Bot Mode changes, Save signs in
+   again, or the person checks again; until then the app sends the backend nothing. A socket
+   closed with 4401 means the sign-in was refused; 4403 means the host or origin isn't allowed.
+   Connecting never waits for `/api/status`: on a busy Mac it's the dashboard's slowest call (it
+   asks the gateway, every profile, memory and disk), and a proxy in front of it answers 502
+   after its own timeout. The roster reads it once the socket is open, for the version, and again
+   only after the backend restarts (a new `replay_epoch`).
 
 After the socket opens, the app waits for the `gateway.ready` event (up to 60 s; a busy Mac can
 take most of a minute), notes its `replay_epoch` and `heartbeat`, then sends
