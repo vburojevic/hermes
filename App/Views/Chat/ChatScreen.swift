@@ -14,6 +14,11 @@ struct ChatScreen: View {
     /// The bottom bar's glass: the approval card and error banner grow out of the composer's.
     @Namespace private var bottomGlass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A Mac window under 700 pt: the Bot's toolbar drops Routines, still in its ··· menu
+    /// (`docs/chat.md` §4).
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
+    /// The sidebar is over the chat: the centered title steps aside so it never draws on the glass.
+    @Environment(\.sidebarShowsOverChat) private var sidebarShowsOverChat
     // Heights for lifting the composer to the middle of an empty chat. Content plus bar is the
     // same however high the composer sits, so the lift never feeds back into itself.
     @State private var contentHeight: CGFloat = 0
@@ -591,15 +596,20 @@ struct ChatScreen: View {
         ToolbarItem(placement: .principal) {
             BotChatTitle(roster: roster, botName: name, conversation: conversation)
         }
+        #if os(macOS)
+        .hidden(sidebarShowsOverChat)
+        #endif
         inspectorToolbarItem
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                roster.routinesBot = name
-            } label: {
-                Image(systemName: "alarm")
+        if !windowIsNarrow {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    roster.routinesBot = name
+                } label: {
+                    Image(systemName: "alarm")
+                }
+                .accessibilityLabel("Routines")
+                .help("Routines")
             }
-            .accessibilityLabel("Routines")
-            .help("Routines")
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
@@ -639,6 +649,9 @@ struct ChatScreen: View {
         ToolbarItem(placement: .principal) {
             ModelPickerButton(conversation: conversation, workspace: workspace)
         }
+        #if os(macOS)
+        .hidden(sidebarShowsOverChat)
+        #endif
         inspectorToolbarItem
         ToolbarItem(placement: .primaryAction) {
             Button {

@@ -9,6 +9,9 @@ struct ProjectHomeView: View {
     let projectID: String
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// A narrow Mac window (`docs/chat.md` §4): one column at the usual 20 pt margins, with the
+    /// folders under the facts.
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
     @State private var composerFocused = false
     /// Where the top bar ends: the composer's menus stop there.
     @State private var ceiling: CGFloat?
@@ -148,9 +151,15 @@ struct ProjectHomeView: View {
                             lanes
                             factsCard
                                 .padding(.top, 16)
+                            #if os(macOS)
+                            if windowIsNarrow {
+                                foldersCard
+                                    .padding(.top, 16)
+                            }
+                            #endif
                         }
                         .frame(maxWidth: 640)
-                        .padding(.horizontal, isWide ? 32 : 20)
+                        .padding(.horizontal, isWide && !windowIsNarrow ? 32 : 20)
                     }
                 }
                 .padding(.top, isWide ? 24 : 8)

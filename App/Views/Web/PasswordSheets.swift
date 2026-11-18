@@ -410,6 +410,8 @@ struct VaultUnlockSheet: View {
                        primary: String(localized: "Unlock"), primaryEnabled: !password.isEmpty && !isUnlocking, onPrimary: unlock)
         }
         .padding(20)
+        // A sheet is its own window: its Esc is its own, whatever is over the chat behind it.
+        .environment(\.panelOverChat, false)
         #if os(iOS)
         .presentationDetents([.height(400), .large])
         .presentationDragIndicator(.visible)

@@ -350,6 +350,8 @@ struct BrowserProfileConsentSheet: View {
             }
         }
         .padding(22)
+        // A sheet is its own window: its Esc is its own, whatever is over the chat behind it.
+        .environment(\.panelOverChat, false)
         #if os(iOS)
         .presentationDetents([.height(440), .large])
         .presentationDragIndicator(.visible)

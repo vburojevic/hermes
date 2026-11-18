@@ -53,8 +53,18 @@ follows its behaviour where this doc is silent.
 - **Mac** (`InspectorPresentation`, SwiftUI's `.inspector`):
   - The panel is inset 8 pt with radius 18 and a hairline. It opens about 600 pt wide and resizes
     from 380 pt to 60% of the window.
-  - Opening it collapses the sidebar when the window is narrower than 1,400 pt; closing it brings
-    the sidebar back (`RootView`, `WindowRouter.inspectorIsOpen`).
+  - Opening it collapses the sidebar when the window is narrower than 1,400 pt, and so does an
+    open panel moving beside the chat as the window crosses 840 pt or 1,400 pt; closing it brings
+    the sidebar back (`RootView`, `WindowLayout.inspectorChanged`). A sidebar the person brings
+    back beside it stays through a resize.
+  - In a window under 840 pt it opens over the chat instead (`macNarrowInspector600`,
+    `macNarrowInspector480`): the same panel, inset 8 pt under the toolbar, with radius 18, a
+    hairline and a shadow. The chat stays where it is underneath and a sidebar beside it stays. One
+    panel covers the chat at a time: the panel puts away a sidebar over the chat, and bringing the
+    sidebar over the chat puts the panel away. Narrowing the window past 840 pt moves an open panel
+    over the chat, and resizing never brings back the sidebar it collapsed: closing it does. The
+    Inspector button, ⌥⌘I or Esc closes it; while it shows, Esc is its own, so an approval's Deny
+    waits for the panel to go. VoiceOver moves into it as it opens.
   - In the Chat menu, Show Inspector (⌥⌘I) shows and hides it, Open Address… (⌘L) asks for an
     address and shows the panel, and Inspector Tabs (⌥⌘1–9) switches tabs. ⌘W closes the selected
     tab while the panel has focus, instead of the window.
@@ -404,6 +414,8 @@ rebinding) isn't caught.
   Screen out of the menu.
 - Tabs come back with the chat; pinned tabs stay across chats; a tab dragged out on the Mac returns
   when its window closes.
+- In a Mac window under 840 pt the panel opens over the chat; ⌥⌘I, Esc and the toolbar button
+  close it, ⌘L and ⌥⌘1–9 still work, and widening the window puts it back beside the chat.
 - Light, dark and Increase Contrast match the design.
 
 ## 7. Setup

@@ -498,6 +498,9 @@ struct CardFooter: View {
     var primaryEnabled = true
     let onPrimary: () -> Void
 
+    /// A panel over the chat takes Esc while it shows.
+    @Environment(\.panelOverChat) private var panelOverChat
+
     var body: some View {
         HStack(spacing: 10) {
             Button(action: onSecondary) {
@@ -509,7 +512,7 @@ struct CardFooter: View {
                     .contentShape(Capsule())
             }
             .buttonStyle(PressableStyle())
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(panelOverChat ? nil : .cancelAction)
             Button(action: onPrimary) {
                 Text(primary)
                     .font(.subheadline.weight(.semibold))

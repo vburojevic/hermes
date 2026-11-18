@@ -15,6 +15,11 @@ struct InspectorPresentation: ViewModifier {
     /// would then size itself from its own width, around and around.
     @Environment(\.windowWidth) private var windowWidth
     @State private var shownInspector: InspectorModel?
+    /// Where the panel is: over the chat or beside it. It follows `opensOverChat` a turn later, so
+    /// the column never goes in the middle of the window's own resize: AppKit left it docked past
+    /// the window's edge, with the panel over the chat beside it.
+    @State private var overChat = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var inspector: InspectorModel { conversation.inspector }
 
@@ -22,12 +27,40 @@ struct InspectorPresentation: ViewModifier {
         max(380, windowWidth > 0 ? windowWidth * 0.6 : 720)
     }
 
+    /// A Mac window under 840 pt has no room for the panel beside the chat, so it opens over the
+    /// chat, under the toolbar (`docs/inspector.md` §1, `macNarrowInspector600`).
+    private var opensOverChat: Bool {
+        #if os(macOS)
+        usesPanel && (router?.layout.inspectorOverlays ?? false)
+        #else
+        false
+        #endif
+    }
+
     func body(content: Content) -> some View {
         let inspector = inspector
+        let isOverChat = overChat
         content
+            #if os(macOS)
+            .environment(\.panelOverChat, isOverChat && inspector.isPresented)
+            .overlay {
+                if isOverChat, inspector.isPresented {
+                    InspectorOverChat(inspector: inspector, conversation: conversation, workspace: workspace)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                }
+            }
+            .animation(reduceMotion ? nil : Theme.snappy, value: isOverChat && inspector.isPresented)
+            // One panel covers the chat at a time: the sidebar coming over it puts this one away
+            // (`WindowLayout.inspectorChanged` does the reverse).
+            .onChange(of: router?.layout.showsSidebarOver ?? false) { _, shows in
+                if shows, overChat { inspector.isPresented = false }
+            }
+            #endif
             .inspector(isPresented: Binding(
-                get: { usesPanel && inspector.isPresented },
-                set: { if !$0, usesPanel { inspector.isPresented = false } }
+                get: { usesPanel && !isOverChat && inspector.isPresented },
+                // The column going because the window narrowed isn't the person closing it: the
+                // panel moves over the chat. The width is read now, not when the body ran.
+                set: { if !$0, usesPanel, !opensOverChat { inspector.isPresented = false } }
             )) {
                 InspectorPanel(inspector: inspector, conversation: conversation, workspace: workspace, style: .panel)
                     .modifier(PanelChrome())
@@ -43,6 +76,14 @@ struct InspectorPresentation: ViewModifier {
             #endif
             .onChange(of: usesPanel, initial: true) { _, panel in inspector.prefersPanel = panel }
             .onChange(of: inspector.isPresented, initial: true) { _, _ in syncPlacement() }
+            .onChange(of: opensOverChat, initial: true) { old, over in
+                // The first reading is taken at once (`old == over` only then).
+                if old == over {
+                    overChat = over
+                } else {
+                    Task { overChat = over }
+                }
+            }
             .onChange(of: ObjectIdentifier(conversation), initial: true) { _, _ in
                 // Another chat in the same screen: the last one's Inspector is off screen now.
                 if let shownInspector, shownInspector !== inspector { shownInspector.placement = .hidden }
@@ -72,7 +113,44 @@ struct InspectorPresentation: ViewModifier {
 extension EnvironmentValues {
     /// The window's width, measured around the split view's columns (`MainView`); 0 where unknown.
     @Entry var windowWidth: CGFloat = 0
+    /// A panel shows over the chat (a narrow Mac window's sidebar or Inspector) and answers Esc,
+    /// so the chat's own Esc (an approval's Deny) steps aside while it does.
+    @Entry var panelOverChat = false
 }
+
+#if os(macOS)
+/// The Inspector over a narrow window's chat (`macNarrowInspector600`): the same panel as beside
+/// it, inset 8 pt under the toolbar with 18 pt corners and a shadow. The Inspector button, ⌥⌘I or
+/// Esc closes it, and the chat is where it was.
+private struct InspectorOverChat: View {
+    let inspector: InspectorModel
+    let conversation: ConversationModel
+    let workspace: BotWorkspace
+
+    @AccessibilityFocusState private var voiceOverInPanel: Bool
+
+    var body: some View {
+        InspectorPanel(inspector: inspector, conversation: conversation, workspace: workspace, style: .panel)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+            .shadow(color: Theme.shadow, radius: 15, y: 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+            .accessibilityLabel("Inspector")
+            .accessibilityFocused($voiceOverInPanel)
+            .background {
+                // Esc closes it from anywhere in the window; the chat's own Esc (an approval's
+                // Deny) steps aside while it shows (`panelOverChat`).
+                Button("Hide Inspector") { inspector.isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+            }
+            .padding([.horizontal, .bottom], 8)
+            .onAppear { voiceOverInPanel = true }
+    }
+}
+#endif
 
 /// The Mac's panel: inset 8 pt, radius 18, a hairline; content is solid.
 private struct PanelChrome: ViewModifier {

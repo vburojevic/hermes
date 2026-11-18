@@ -48,6 +48,8 @@ struct ProcessChipView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The composer's sizes at the current text size (docs/composer.md §1).
     @Environment(\.composerChipSizing) private var composerSizing
+    /// A narrow Mac window keeps only the count, so Send keeps its place (`docs/composer.md` §5).
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
 
     private var sizing: ComposerSizing { composerSizing ?? .large }
 
@@ -139,10 +141,13 @@ struct ProcessChipView: View {
         }
     }
 
-    /// "Docs site · 3 min", "2 running", "Release build", "1 failed".
+    /// "Docs site · 3 min", "2 running", "Release build", "1 failed"; in a narrow Mac window
+    /// "1", "2" and "1" beside the glyph.
     private func title(now: Date) -> String {
         switch chip {
         case .hidden: ""
+        case .one where windowIsNarrow: "1"
+        case .several(let count) where windowIsNarrow, .failed(let count) where windowIsNarrow: "\(count)"
         case .one(_, let name, let startedAt):
             startedAt.map { "\(name) · \(BackgroundProcess.durationText(now.timeIntervalSince($0)))" } ?? name
         case .several(let count): String(localized: "\(count) running")

@@ -50,6 +50,15 @@ final class WindowRouter {
     private(set) var sidebarSearchFocus = 0
 
     func focusSidebarSearch() {
+        #if os(macOS)
+        // A narrow window's sidebar comes over the chat first, and its field takes the focus once
+        // it's on screen (`SidebarOverChat`).
+        if layout.isNarrow, !layout.showsSidebarOver {
+            layout.toggleSidebar()
+            searchesWhenSidebarShows = true
+            return
+        }
+        #endif
         sidebarSearchFocus += 1
     }
 
@@ -75,11 +84,25 @@ final class WindowRouter {
     /// Settings opens on Apps and Tools (Skills' Tools and Apps row).
     var opensAppsAndTools = false
 
-    /// The Inspector is open beside the chat: on iPad it takes the sidebar's room; on a Mac
-    /// window under 1,400 pt the sidebar collapses (`docs/inspector.md` §1).
+    /// The Inspector is open: on iPad it takes the sidebar's room; on a Mac window under 1,400 pt
+    /// opening it beside the chat collapses the sidebar, and opening it over the chat, under
+    /// 840 pt, doesn't (`docs/inspector.md` §1, `WindowLayout.inspectorChanged`).
     var inspectorIsOpen = false
 
     #if os(macOS)
+    /// What the window shows at its width (`docs/chat.md` §4): the sidebar beside the chat, over
+    /// it or put away, and the Inspector beside the chat or over it. `MainView` measures the
+    /// window; the sidebar button and View > Show/Hide Sidebar go through `toggleSidebar()`.
+    var layout = WindowLayout()
+
+    /// ⌃⌘S and the sidebar button: beside the chat in a wide window, over it in a narrow one.
+    func toggleSidebar() {
+        layout.toggleSidebar()
+    }
+
+    /// ⌥⌘F brought the sidebar over the chat: its search field takes the focus as it appears.
+    @ObservationIgnored var searchesWhenSidebarShows = false
+
     /// Bumped to open the Settings window: the Mac has no Settings sheet, and only a view can
     /// call `openSettings` (RootView does).
     private(set) var settingsWindowRequest = 0
@@ -135,4 +158,12 @@ final class WindowRouter {
 extension FocusedValues {
     /// The key window's router, for menu commands.
     @Entry var windowRouter: WindowRouter?
+}
+
+extension EnvironmentValues {
+    /// A Mac window under 700 pt (`docs/chat.md` §4): toolbars keep only what fits.
+    @Entry var windowIsNarrow = false
+    /// The sidebar is over a narrow window's chat: the toolbar's centered item steps aside, so
+    /// the window's toolbar never draws over its glass.
+    @Entry var sidebarShowsOverChat = false
 }

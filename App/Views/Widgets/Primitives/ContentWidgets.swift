@@ -855,6 +855,7 @@ struct StackBody: View {
     @Environment(\.widgetHost) private var host
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
 
     /// Children draw compact in a stack of four or more.
     private var density: WidgetDensity { model.children.count >= 4 ? .compact : context.density }
@@ -871,12 +872,15 @@ struct StackBody: View {
         .environment(\.widgetDensity, density)
     }
 
-    /// A carousel holds one type, or it draws as a list; a grid is one column on a phone.
+    /// A carousel holds one type, or it draws as a list; a grid is one column on a phone and in
+    /// a narrow Mac window (`docs/chat.md` §4).
     private var layout: StackWidget.Layout {
         if typeSize.isAccessibilitySize, model.layout != .collapsed { return .list }
         if model.layout == .carousel, Set(model.children.compactMap { $0.payload?.type }).count > 1 { return .list }
         #if os(iOS)
         if model.layout == .grid, sizeClass == .compact { return .list }
+        #else
+        if model.layout == .grid, windowIsNarrow { return .list }
         #endif
         return model.layout
     }

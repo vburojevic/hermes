@@ -16,6 +16,8 @@ struct SidebarView: View {
     #if os(iOS)
     @Environment(\.sidebarIsCompact) private var windowIsCompact
     @FocusState private var searchFocused: Bool
+    #else
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
     #endif
     @State private var renaming: HermesSession?
     @State private var renameText = ""
@@ -198,7 +200,9 @@ struct SidebarView: View {
             ToolbarItem(placement: .topBarTrailing) { InboxFilterButton(workspace: workspace) }
         }
         #else
-        if botRoster == nil {
+        // In a narrow window the filter sits in the top row of the sidebar over the chat; in the
+        // toolbar it would only wait in the » overflow while the sidebar is put away.
+        if botRoster == nil, !windowIsNarrow {
             ToolbarItem(placement: .automatic) { InboxFilterButton(workspace: workspace) }
         }
         #endif

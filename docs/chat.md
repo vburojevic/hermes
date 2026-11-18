@@ -872,6 +872,25 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   finishes, and a warning tap when an approval arrives; none per token.
 - **Sizes.** The transcript is at most 760 pt wide (`Theme.readableWidth`), centred on iPad and
   Mac, with 20 pt side margins; the person's bubbles keep a 56 pt leading inset.
+- **A narrow Mac window** (`WindowLayout`, `screens/mac/narrow-window.elyx`). The window can be
+  made as narrow as 480 pt (and 520 pt high). At 700 pt and wider everything is as above.
+  - Under 700 pt the sidebar steps aside on its own; the window never resizes for it. The toolbar's
+    sidebar button, View → Show Sidebar and ⌃⌘S bring it back over the chat (`macNarrow600Sidebar`):
+    the same 240 pt glass panel with a deeper shadow, its own top row holding the filter and the
+    button. It puts away an Inspector over the chat, and that panel puts it away in turn. Picking a
+    chat, clicking the chat, Esc or the button puts it away. VoiceOver moves into it as it shows,
+    and the chat's centred title steps aside so no toolbar draws over its glass. Growing the window
+    past 700 pt brings the sidebar back beside the chat, unless the person hid it there.
+  - Under 840 pt the Inspector opens over the chat, under the toolbar (`docs/inspector.md` §1).
+  - The toolbar keeps what fits (`macNarrowToolbar`): a Bot Chat drops Routines, which stays in
+    its ··· menu.
+  - The transcript keeps its 20 pt margins; code blocks and tables scroll sideways inside
+    themselves. Question picks are full-width rows whose words wrap, and an approval's command
+    wraps inside its box, so Allow stays on offer with its answers two by two.
+  - A widget's grid stack draws as a list. The composer keeps only the count on the processes
+    chip and drops the branch from the project chip (`docs/composer.md` §5).
+  - The Bots home halves its margins to 20 pt, so two tiles still share a row; a project's home
+    goes to one column with 20 pt margins and its folders below the facts.
 
 ## 4a. Live and loading indicators: one moving thing per place
 

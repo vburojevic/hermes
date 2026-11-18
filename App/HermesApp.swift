@@ -92,7 +92,7 @@ struct HermesApp: App {
             }
                 .environment(model)
                 #if os(macOS)
-                .frame(minWidth: 760, minHeight: 520)
+                .frame(minWidth: 480, minHeight: 520)
                 #endif
         }
         #if os(iOS)
@@ -114,7 +114,9 @@ struct HermesApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         #endif
         .commands {
+            #if os(iOS)
             SidebarCommands()
+            #endif
             HermesCommands(model: model)
             #if os(macOS)
             if updater.isAvailable {
@@ -289,6 +291,17 @@ struct HermesCommands: Commands {
             }
             Divider()
         }
+        #if os(macOS)
+        // The system's Show Sidebar would dock the sidebar in a narrow window and squeeze the chat;
+        // this one brings it over the chat there (`docs/chat.md` §4).
+        CommandGroup(replacing: .sidebar) {
+            Button(router?.layout.showsSidebar == false ? "Show Sidebar" : "Hide Sidebar") {
+                router?.toggleSidebar()
+            }
+            .keyboardShortcut("s", modifiers: [.control, .command])
+            .disabled(router == nil)
+        }
+        #endif
         // Chat (macMenuChat): the turn, the conversation, then the gateways.
         CommandMenu("Chat") {
             // ⌘. stops the turn; with none running, the process the Terminal shows (after a

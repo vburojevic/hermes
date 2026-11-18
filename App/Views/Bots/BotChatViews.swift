@@ -450,6 +450,8 @@ struct BotsHomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(WindowRouter.self) private var router: WindowRouter?
+    /// A narrow Mac window halves the margins, so two tiles still share a row (`docs/chat.md` §4).
+    @Environment(\.windowIsNarrow) private var windowIsNarrow
 
     private var columns: [GridItem] {
         #if os(macOS)
@@ -533,7 +535,7 @@ struct BotsHomeView: View {
                         }
                     }
                     #if os(macOS)
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, windowIsNarrow ? 20 : 40)
                     .padding(.vertical, 28)
                     .frame(maxWidth: 1000, alignment: .leading)
                     #else

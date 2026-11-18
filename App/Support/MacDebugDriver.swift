@@ -9,17 +9,19 @@ import AppKit
 /// `-HERMES_MAC_DRIVE "wait 9; press Developer; wait 3; tap 150 190; wait 3; click top-button"`.
 /// Steps: `wait <seconds>`; `press <label>` (a toolbar item); `tap <x> <y>` (points from the
 /// Settings window's top left: a screenshot's pixels halved; `maintap <x> <y>` the same in the
-/// main window); `click top-button` (the topmost
-/// AppKit button, which on a pushed page is its back button); `key cmd+[`, `key return` (a sheet's
-/// default button); `tabs` (Settings tabs
-/// shown and clipped); `frame <width> <height>` (resizes the chats window, top left kept, which a
-/// locked screen refuses from outside); `menu <title>` (a menu bar menu's items and shortcuts, which a locked or
-/// off-Space screen can't capture); `dump`, `views` and `toolbar` (the accessibility, content and
-/// toolbar view trees, with frames). Each step logs `HERMES_MAC_DRIVE` with
-/// its result and the Settings window's title, which is the page it shows.
+/// main window); `click top-button` (the topmost AppKit button, which on a pushed page is its
+/// back button); `key cmd+[`, `key return` (a sheet's default button); `tabs` (Settings tabs
+/// shown and clipped; `maintabs` the chats window's toolbar items); `frame <width> <height>`
+/// (resizes the chats window, top left kept, which a locked screen refuses from outside);
+/// `menu <title>` (a menu bar menu's items and shortcuts, which a locked or off-Space screen
+/// can't capture); `item <menu> > <item>` (chooses a menu bar item, as a click on it would);
+/// `mainkey esc` (Esc in the chats window); `sidebar` (the sidebar button's action); `dump`,
+/// `views` and `toolbar` (the accessibility, content and toolbar view trees, with frames). Each
+/// step logs `HERMES_MAC_DRIVE` with its result and the Settings window's title, which is the
+/// page it shows.
 @MainActor
 enum MacDebugDriver {
-    static func runIfAsked() async {
+    static func runIfAsked(router: WindowRouter) async {
         guard let script = UserDefaults.standard.string(forKey: "HERMES_MAC_DRIVE") else { return }
         for step in script.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) }) where !step.isEmpty {
             let parts = step.split(separator: " ", maxSplits: 1).map(String.init)
@@ -46,6 +48,17 @@ enum MacDebugDriver {
                 result = frame(argument)
             case "menu":
                 result = menu(argument)
+            case "item":
+                result = item(argument)
+            case "mainkey":
+                result = mainKey(argument)
+            case "sidebar":
+                // What the sidebar button, ⌃⌘S and View > Show Sidebar call: a locked screen
+                // leaves no key window, so the menu item is disabled and a click is swallowed.
+                router.toggleSidebar()
+                result = router.layout.showsSidebar ? "shown" : "put away"
+            case "maintabs":
+                result = mainToolbarItems()
             case "toolbar":
                 if let frame = settingsWindow?.contentView?.superview { dumpToolbar(frame, depth: 0) }
             case "views":
@@ -99,7 +112,7 @@ enum MacDebugDriver {
 
     /// The largest visible window that isn't Settings: the chats.
     private static var mainWindow: NSWindow? {
-        NSApp.windows.filter { $0.isVisible && $0 !== settingsWindow && $0.frame.width > 600 }.max { $0.frame.width < $1.frame.width }
+        NSApp.windows.filter { $0.isVisible && $0 !== settingsWindow && $0.frame.width >= 480 }.max { $0.frame.width < $1.frame.width }
     }
 
     private static func tap(_ point: String, in window: NSWindow?) -> String {
@@ -128,7 +141,9 @@ enum MacDebugDriver {
 
     private static func find(_ label: String, in element: any NSAccessibilityProtocol, depth: Int) -> (any NSAccessibilityProtocol)? {
         guard depth < 40 else { return nil }
-        if let own = element.accessibilityLabel(), own == label || own.hasPrefix(label + ",") {
+        // A toolbar item's group carries its button's label too; only the button is pressed.
+        if let own = element.accessibilityLabel(), own == label || own.hasPrefix(label + ","),
+           element.accessibilityRole() == .button {
             return element
         }
         for child in element.accessibilityChildren() ?? [] {
@@ -206,6 +221,47 @@ enum MacDebugDriver {
         let clipped = toolbar.items.filter { item in !visible.contains { $0 === item } }.map(\.label)
         return "\(visible.count) of \(toolbar.items.count) tabs at \(Int(window.frame.width)) pt"
             + (clipped.isEmpty ? "" : ", clipped: " + clipped.joined(separator: ", "))
+    }
+
+    /// `maintabs`: the chats window's toolbar items by identifier and label, and which of them
+    /// went into the » overflow.
+    private static func mainToolbarItems() -> String {
+        guard let window = mainWindow, let toolbar = window.toolbar else { return "no chats toolbar" }
+        let visible = toolbar.visibleItems ?? []
+        for item in toolbar.items {
+            let shown = visible.contains { $0 === item } ? "shown" : "clipped"
+            let label = item.label.isEmpty ? (item.view?.accessibilityLabel() ?? "") : item.label
+            log("  \(item.itemIdentifier.rawValue) \"\(label)\" \(shown)")
+        }
+        return "\(visible.count) of \(toolbar.items.count) items at \(Int(window.frame.width)) pt"
+    }
+
+    /// `item View > Show Sidebar`: the item whose title starts with the words given, chosen as
+    /// a click would, so its title can change with the state ("Show Sidebar", "Hide Sidebar").
+    private static func item(_ path: String) -> String {
+        let names = path.split(separator: ">").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard names.count == 2,
+              let menu = NSApp.mainMenu?.items.first(where: { $0.title == names[0] })?.submenu
+        else { return "item needs <menu> > <item>" }
+        menu.update()
+        guard let index = menu.items.firstIndex(where: { $0.title.hasPrefix(names[1]) }) else { return "no \(names[1])" }
+        guard menu.items[index].isEnabled else { return "\(menu.items[index].title) is disabled" }
+        let title = menu.items[index].title
+        menu.performActionForItem(at: index)
+        return "chose \(title)"
+    }
+
+    /// `mainkey esc`: Esc handed to the chats window, which a locked screen can't send.
+    private static func mainKey(_ combo: String) -> String {
+        guard combo == "esc" else { return "only esc is supported" }
+        guard let window = mainWindow,
+              let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53
+              )
+        else { return "no chats window" }
+        return window.performKeyEquivalent(with: event) ? "handled" : "not handled"
     }
 
     private static func key(_ combo: String) -> String {

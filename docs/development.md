@@ -844,11 +844,14 @@ bringing the app forward would take over the screen). `-HERMES_MAC_DRIVE "<steps
 Debug app from inside instead: `wait <s>`, `press <toolbar item>` (a Settings tab), `tap <x> <y>`
 (points from the Settings window's top left, a screenshot's pixels halved), `click top-button` (a
 pushed page's back button), `key cmd+[`, `menu <title>` (a menu bar menu's items and shortcuts,
-which a locked or off-Space screen can't capture), and `dump` / `views` to see what's there. Each
-step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked without a
-screenshot (`App/Support/MacDebugDriver.swift`); `tabs` logs how many Settings tabs show, of how
-many. Capture with `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts
-the Settings tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR
+which a locked or off-Space screen can't capture), `frame <width> <height>` (resizes the chats
+window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in the chats
+window), `sidebar` (the sidebar button's action), and `dump` / `views` to see what's there. Each
+step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked
+without a screenshot (`App/Support/MacDebugDriver.swift`); `tabs` logs how many Settings tabs
+show, of how many, and `maintabs` which of the chats window's toolbar items show. Capture with
+`screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts the Settings
+tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR
 <folder>` points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only
 logs its `launchctl` calls (`HERMES_LAUNCHCTL …`); the mock's `throttled-here` and `priority-here`
 states use `build/mock-launch-agents`. The main window's bars (the sidebar's footer, the composer)
