@@ -676,7 +676,25 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   once.
 - **Caching**: finished replies are parsed off the main thread when a transcript arrives
   (`MarkdownCache`), so opening a chat or scrolling back doesn't parse on the main thread.
-- **Selection**: on the Mac, reply text is selectable in place. On iPhone and iPad it isn't
+- **Selection**: on the Mac, a finished reply is one text (`ReplyTextView`): one drag selects
+  across its paragraphs, headings, lists, checklists and quotes, over its code blocks, tables,
+  images and rules, and Cmd-A inside it selects that reply and nothing else. Clicking elsewhere
+  clears it. Copy, the text menu's Speech and Services get the selection as plain text
+  (`ReplyPlainText`): blocks a blank line apart, list items with their bullets, numbers or boxes,
+  table rows with tabs between cells, code as written. It looks exactly as the blocks did: what
+  only the SwiftUI views draw (code, tables, images, rules, a checklist's boxes, an empty item,
+  html in an item, a paragraph that names a Bot or a file) is those same views, drawn inside the
+  text and copied whole, an empty fence keeps the space it had, and the sentence Listen reads is
+  lit the same way. Links open through the same rules as the rest of the chat. It is built from
+  the parsed blocks once and kept (`MarkdownCache.reply`), off the main thread when a chat's
+  replies are prewarmed. A reply stays a block at a time, selectable a paragraph at a time, while
+  it streams, and where it is drawn in the lighter secondary tone, isn't selectable or isn't set
+  at the message or compact message size. A drag that starts inside a code block or a table
+  selects in there. A drag to the left on the words still replies (`docs/inbox.md` §4): the text
+  waits until the mouse has moved 16 points, hands a drag heading left to the message's swipe
+  and selects on any other.
+  VoiceOver reads the reply as one text, moves by its headings, and reaches the code blocks' Copy
+  and the tables' cells where they stand. On iPhone and iPad reply text isn't selectable in place
   (selectable text made laying out a chat a fifth heavier as it opened and scrolled): the reply's
   menu (long press, or …) has **Select Text**, a sheet with the reply's words to select any part
   of and copy (Copy, or Copy All). The person's bubbles aren't selectable; their long press opens
@@ -1080,7 +1098,8 @@ once when the chat's stored rows show the other turn ending.
 - Diff lines are read as "Added" or "Removed" plus the line (and its number in the Changes
   sheet); the + and − stay visible, so colour is never the only signal. The Changes row reads
   "Changed 3 files, 106 lines added, 1 removed" with the hint "Shows the changes". Task list items read "Done" or "Not done". Headings and time
-  separators carry the header trait.
+  separators carry the header trait (on the Mac, a finished reply's headings are part of its one
+  text, §3).
 - Reduce Motion: no shimmer on the working header, no streaming fade (text appears as it
   arrives), and folds and title changes cross-fade instead of sliding. Turned off mid-reply,
   the blocks it drew (bullets, code, tables) stay drawn: none dims, vanishes or fades in again.

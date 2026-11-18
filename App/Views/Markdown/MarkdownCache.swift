@@ -148,6 +148,36 @@ nonisolated enum MarkdownCache {
         return result
     }
 
+    #if os(macOS)
+    private final class ReplyBox {
+        let reply: ReplyText?
+        init(_ reply: ReplyText?) { self.reply = reply }
+    }
+
+    nonisolated(unsafe) private static let replies: NSCache<NSString, ReplyBox> = {
+        let cache = NSCache<NSString, ReplyBox>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    /// The screen scale replies last drew at, which `prewarm(_:)` builds them for: a window on a
+    /// non-Retina screen would otherwise build every reply again on the main thread.
+    private static let shownScale = OSAllocatedUnfairLock<CGFloat>(initialState: 2)
+
+    /// A finished reply as one selectable text on the Mac (`ReplyTextView`), for a screen of
+    /// `scale` pixels per point, with the `named` paragraphs drawn by their own view. Built from the
+    /// parsed blocks once and kept, like them; `prewarm(_:)` builds it off the main thread.
+    static func reply(for text: String, compact: Bool, scale: CGFloat, named: Set<Int> = []) -> ReplyText? {
+        shownScale.withLock { $0 = scale }
+        let names = named.sorted().map(String.init).joined(separator: ",")
+        let key = "\(compact ? 1 : 0)\u{0}\(scale)\u{0}\(names)\u{0}\(text)" as NSString
+        if let hit = replies.object(forKey: key) { return hit.reply }
+        let reply = ReplyText.build(document(for: text).blocks, compact: compact, scale: scale, named: named)
+        replies.setObject(ReplyBox(reply), forKey: key)
+        return reply
+    }
+    #endif
+
     /// Parses these texts (and tokenizes their code) off the main thread.
     static func prewarm(_ texts: [String]) async {
         guard !texts.isEmpty else { return }
@@ -161,6 +191,12 @@ nonisolated enum MarkdownCache {
                         _ = highlighted(CodeBlockLayout.shown(code).text, language: language, build: CodeBlockView.attributed)
                     }
                 }
+                #if os(macOS)
+                // The reply as one text, as the transcript draws a finished reply: at the message
+                // size (the compact size is a Bot's delivery, which is never prewarmed), on the
+                // screen replies last drew on.
+                _ = reply(for: text, compact: false, scale: shownScale.withLock { $0 })
+                #endif
             }
         }.value
     }
