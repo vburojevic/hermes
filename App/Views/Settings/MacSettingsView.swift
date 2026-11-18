@@ -385,6 +385,7 @@ private struct ChatPane: View {
     @AppStorage(PreferenceKey.showUsage) private var showUsage = false
     @AppStorage(PreferenceKey.openChatsAt) private var openChatsAt = OpenChatsAt.firstUnread
     @AppStorage(PreferenceKey.chatSounds) private var chatSounds = false
+    @AppStorage(PreferenceKey.keepChatAtBottom) private var keepChatAtBottom = SendScroll.keepsAtBottomByDefault
 
     var body: some View {
         Form {
@@ -396,6 +397,10 @@ private struct ChatPane: View {
                 } label: {
                     Text("Open chats at")
                     Text("A chat with new messages opens at the first one, or at the latest.")
+                }
+                Toggle(isOn: $keepChatAtBottom) {
+                    Text("Keep chat at bottom when sending")
+                    Text("The message you send stays at the bottom and the reply fills in below it, instead of moving to the top.")
                 }
                 Toggle(isOn: $chatSounds) {
                     Text("Sounds")

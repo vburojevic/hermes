@@ -240,6 +240,8 @@ search).
   end with the line in view. If the rows on the device stop short, it waits up to 1.2 s for the
   gateway's.
 - Settings → Chat → Open chats at: First Unread (default) or Latest (the line is still drawn).
+- Settings → Chat → Keep chat at bottom when sending: off (default), sending turns the page; on,
+  the message you send stays at the bottom and the reply fills in below it (`docs/chat.md` §4).
 - The line stays until the chat closes, and never appears for messages that arrive while it's
   open.
 - Nothing new: where it was left scrolled up, else at the end.

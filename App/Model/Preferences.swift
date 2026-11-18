@@ -16,6 +16,10 @@ enum PreferenceKey {
     static let openChatsAt = "openChatsAt"
     /// Settings → Chat → Sounds: soft "sent" and "received" sounds, off until turned on.
     static let chatSounds = "chatSounds"
+    /// Settings → Chat → Keep chat at bottom when sending: the message you send stays at the
+    /// bottom and the reply fills in below it, instead of the page turning (`docs/chat.md` §4).
+    /// Off until turned on (`SendScroll.keepsAtBottomByDefault`).
+    static let keepChatAtBottom = "keepChatAtBottom"
     /// A turn's diffs wrap their lines instead of scrolling sideways (`docs/chat.md` §1).
     static let wrapsDiffLines = "wrapsDiffLines"
 }
