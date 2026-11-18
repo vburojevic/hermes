@@ -41,3 +41,8 @@ bbf8c45 Chat: a long approval card scrolls under the top bar so the composer sta
 8ef4439 Connections: Edit Gateway keeps a sign-in made on the Access page on iPhone and iPad
 8ef4439 Connections: a Bot chat no longer says Reconnecting while it waits for the access sign-in
 19fa5d5 Chat: a Reply swipe on a message follows your finger from where it touched down
+570464a Plugins: the app updates the widgets plugin by itself, asking for no new access, so Hermes knows which app and device sent each turn
+6d897a2 Chat: a message sent with a photo shows only your words, not the notes Hermes adds for the model
+6d897a2 Chat: a chat started with a photo lists your words, however Hermes cut its preview
+95c5d72 Notifications: tapping a reply opens the chat it came from, not the Bot
+95c5d72 Notifications: replying to or opening a notice goes by its chat, never by the profile that ran it
