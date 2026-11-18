@@ -78,7 +78,7 @@ reached Hermes yet offers only Copy and Share.
 | Menu | Items |
 |---|---|
 | Your message | Reply, Copy (the plain form: `@writer`, `@file:path`, `/skill` prefixes), Edit and Resend, Send Again, Branch from Here, Share |
-| A reply | Reply, Reply to Words…, Copy, Listen (the Bot's voice), Share…, Try Again and Try Again with… (newest reply only), Branch from Here, Undo File Changes… (`docs/checkpoints.md`), Show Usage. Reply with a quote: `docs/inbox.md` §4 |
+| A reply | Reply, Reply to Words…, Copy, Listen (the Bot's voice), Share…, Try Again and Try Again with… (newest reply only), Branch from Here, Undo File Changes… (`docs/checkpoints.md`), Show Usage. Reply with a quote: `docs/inbox.md` §4. On the Mac, right-click on selected words opens the selection's menu instead, with Reply above the system's items |
 
 | Action | Call | Notes |
 |---|---|---|

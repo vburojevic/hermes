@@ -301,6 +301,10 @@ struct ComposerView: View {
         .onChange(of: conversation.replyingTo?.rowID) { _, id in
             if id != nil { focused.wrappedValue = true }
         }
+        #if os(macOS)
+        // Reply to Selection puts the cursor here every time, the same words quoted again too.
+        .onChange(of: conversation.selectedWords.replies) { focused.wrappedValue = true }
+        #endif
         .onChange(of: conversation.draft) { peek = nil }
         .onChange(of: conversation.id) {
             // Another chat in the same composer: the last one's menus, previews and dictation go.

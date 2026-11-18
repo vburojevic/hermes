@@ -43,6 +43,9 @@ struct AssistantTurnView: View, Equatable {
 
     @Environment(\.helperStore) private var helperStore
     @Environment(\.quoteActions) private var quoteActions
+    #if os(macOS)
+    @Environment(\.selectedReplyWords) private var selectedReplyWords
+    #endif
     @Environment(\.checkpoints) private var checkpoints
     /// Artifacts and pages open in the chat's Inspector (`docs/inspector.md`).
     @Environment(\.inspectorModel) private var inspector
@@ -160,6 +163,9 @@ struct AssistantTurnView: View, Equatable {
                     // Only the tone eases; the words switch at once, never drawn over each other.
                     .animation(.smooth(duration: 0.3)) { $0.opacity(shown.isInterim ? 0.55 : 1) }
                     .contextMenu { replyMenu }
+                    #if os(macOS)
+                    .environment(\.selectionReply, selectionReply)
+                    #endif
                     // Code and tables scroll sideways themselves: those replies take Reply from the menu.
                     .modifier(SwipeToReply(isEnabled: canQuote && !Self.scrollsSideways(turn.answer)) {
                         quoteActions.reply(.assistant(turn), quoteActions.assistantName, turn.copyableText)
@@ -236,6 +242,18 @@ struct AssistantTurnView: View, Equatable {
     private var canQuote: Bool {
         quoteActions.isEnabled && !turn.isWorking && !turn.copyableText.isEmpty
     }
+
+    #if os(macOS)
+    /// Words selected in a finished reply quote into the composer from Reply beside them
+    /// (`docs/inbox.md` §4).
+    private var selectionReply: SelectionReply? {
+        guard canQuote, let words = selectedReplyWords else { return nil }
+        let quoteActions = quoteActions, turn = turn
+        return SelectionReply(words: words) { passage in
+            quoteActions.reply(.assistant(turn), quoteActions.assistantName, passage)
+        }
+    }
+    #endif
 
     /// Code blocks and tables scroll sideways: a swipe there is theirs.
     static func scrollsSideways(_ text: String) -> Bool {

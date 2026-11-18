@@ -531,6 +531,7 @@ final class ReplyNSTextView: NSTextView {
     private var checkboxViews: [Int: NSView] = [:]
     private var headings: [Int: ReplyHeadingElement] = [:]
     private var clickMonitor: Any?
+    private let menuWatch = SelectionMenuWatch()
     /// A press that hasn't yet moved far enough to tell a selection from a swipe to reply.
     private var pendingPress: NSEvent?
     /// The press that became a swipe to reply, and the message's swipe that follows the rest of it.
@@ -643,6 +644,7 @@ final class ReplyNSTextView: NSTextView {
         super.setFrameSize(newSize)
         measureBars()
         placeBlocks()
+        if selectedRange().length > 0 { environment.values.selectionReply?.words.relocate() }
     }
 
     // MARK: Quotes
@@ -875,6 +877,49 @@ final class ReplyNSTextView: NSTextView {
             if attachment.state.isSelected != isSelected { attachment.state.isSelected = isSelected }
         }
         watchClicks(!selected.isEmpty)
+        publishSelection(stillSelecting: stillSelecting)
+    }
+
+    /// Words that can be quoted get Reply beside them once the drag that selects them ends
+    /// (`docs/inbox.md` §4).
+    private func publishSelection(stillSelecting: Bool) {
+        guard let selectionReply = environment.values.selectionReply else { return }
+        let text = selectionText
+        if QuotedReply.quotes(text) {
+            selectionReply.words.select(text, in: self, quote: selectionReply.quote, rests: !stillSelecting)
+        } else {
+            selectionReply.words.drop(from: self)
+        }
+    }
+
+    /// The selection's lines and the part of the chat shown, in `canvas`'s space: the chat's
+    /// scroll view less its bars and `margin` at each end.
+    func selectionLines(in canvas: NSView, margin: CGFloat) -> (lines: QuotedReply.SelectionPlacement, visible: ClosedRange<CGFloat>)? {
+        let selection = selectedRange()
+        guard selection.length > 0, let scroll = enclosingScrollView,
+              let start = contentStorage.location(contentStorage.documentRange.location, offsetBy: selection.location),
+              let end = contentStorage.location(start, offsetBy: selection.length),
+              let range = NSTextRange(location: start, end: end) else { return nil }
+        layout.ensureLayout(for: range)
+        let origin = textContainerOrigin
+        var segments: [CGRect] = []
+        layout.enumerateTextSegments(in: range, type: .selection, options: [.rangeNotRequired]) { _, frame, _, _ in
+            segments.append(convert(frame.offsetBy(dx: origin.x, dy: origin.y), to: canvas))
+            return true
+        }
+        let column = convert(bounds, to: canvas)
+        // The clip runs under the toolbar and the composer, and the overlay stops at them: the
+        // bars come off the clip, and whatever is left counts only where the overlay is too.
+        let clip = scroll.contentView
+        let insets = scroll.contentInsets
+        var clipped = clip.convert(clip.bounds, to: canvas)
+        clipped.origin.y += insets.top
+        clipped.size.height -= insets.top + insets.bottom
+        let shown = clipped.intersection(canvas.bounds)
+        let top = shown.minY + margin
+        let bottom = shown.maxY - margin
+        guard top < bottom, let lines = QuotedReply.SelectionPlacement(segments: segments, column: column.minX...column.maxX) else { return nil }
+        return (lines, top...bottom)
     }
 
     /// While something is selected, a click anywhere else in the window clears it, as it does in
@@ -884,7 +929,9 @@ final class ReplyNSTextView: NSTextView {
             clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 guard let self, event.window === self.window else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
-                if !NSMouseInRect(point, self.bounds, self.isFlipped) { self.setSelectedRange(NSRange(location: 0, length: 0)) }
+                // Reply beside the selection takes it, so a click there leaves it.
+                let onReply = self.environment.values.selectionReply?.words.isOnButton(event) ?? false
+                if !NSMouseInRect(point, self.bounds, self.isFlipped), !onReply { self.setSelectedRange(NSRange(location: 0, length: 0)) }
                 return event
             }
         } else if !on, let monitor = clickMonitor {
@@ -913,7 +960,8 @@ final class ReplyNSTextView: NSTextView {
         placeBlocks()
     }
 
-    /// The text's own menu (Copy, Speech, Services) inside a selection; anywhere else, the reply's.
+    /// The text's own menu (Copy, Speech, Services) inside a selection, with Reply first when the
+    /// words can be quoted (`docs/inbox.md` §4); anywhere else, the reply's.
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         let index = characterIndexForInsertion(at: point)
@@ -921,7 +969,23 @@ final class ReplyNSTextView: NSTextView {
         guard selection.length > 0, index >= selection.location, index <= NSMaxRange(selection) else { return nil }
         guard let menu = super.menu(for: event) else { return nil }
         Self.disableEditing(in: menu)
+        if let words = environment.values.selectionReply?.words, words.canReply {
+            // The shortcut is shown, not handled here: Chat → Reply to Selection owns ⇧⌘R.
+            let reply = NSMenuItem(title: "Reply", action: #selector(replyToSelection(_:)), keyEquivalent: "r")
+            reply.keyEquivalentModifierMask = [.command, .shift]
+            reply.target = self
+            menu.insertItem(.separator(), at: 0)
+            menu.insertItem(reply, at: 0)
+            // Reply beside the selection steps aside while the menu is open.
+            menuWatch.closed = { [weak words] in words?.menuOpened(false) }
+            menu.delegate = menuWatch
+            words.menuOpened(true)
+        }
         return menu
+    }
+
+    @objc private func replyToSelection(_ sender: Any?) {
+        environment.values.selectionReply?.words.reply()
     }
 
     /// The reply can't be changed, so the text menu's font, substitution and checking commands
@@ -1480,5 +1544,208 @@ nonisolated final class ReplyHeadingElement: NSAccessibilityElement {
     }
 
     override func isAccessibilityElement() -> Bool { true }
+}
+
+// MARK: - Reply to selected words
+
+/// How a finished reply's words reach Reply beside them (`selectionReplyButton`, `docs/inbox.md`
+/// §4): the chat's selected words, and the reply's own way to quote a passage of itself.
+struct SelectionReply {
+    let words: SelectedReplyWords
+    let quote: @MainActor (String) -> Void
+}
+
+extension EnvironmentValues {
+    @Entry var selectionReply: SelectionReply? = nil
+    /// The chat's selected words, for its replies to publish theirs to.
+    @Entry var selectedReplyWords: SelectedReplyWords? = nil
+}
+
+/// Words selected in one of a chat's finished replies (`docs/inbox.md` §4): what Reply beside
+/// them and Chat → Reply to Selection quote, and where Reply floats.
+@Observable
+final class SelectedReplyWords {
+    /// Words that can be quoted are selected.
+    private(set) var canReply = false
+    /// The drag that selects them is over.
+    private(set) var rests = false
+    /// The selection's first and last lines, and the part of the chat Reply may sit in, in the
+    /// overlay's space.
+    private(set) var lines: QuotedReply.SelectionPlacement?
+    private(set) var visible: ClosedRange<CGFloat>?
+    /// Reply's own size, as it draws.
+    var buttonSize = CGSize(width: 76, height: 28)
+    /// The selection's menu is open.
+    private(set) var menuOpen = false
+    /// Counts Reply to Selection, so the composer takes the cursor every time, even when the
+    /// same words of the same message are quoted again and the quote itself doesn't change.
+    private(set) var replies = 0
+    /// The chat is scrolling, or a reply is streaming: Reply steps aside until it settles.
+    var scrolling = false { didSet { if scrolling != oldValue, !scrolling { relocate() } } }
+    var streaming = false { didSet { if streaming != oldValue, !streaming { relocate() } } }
+
+    @ObservationIgnored private weak var owner: ReplyNSTextView?
+    @ObservationIgnored private var quote: (@MainActor (String) -> Void)?
+    @ObservationIgnored private var passage = ""
+    /// The overlay Reply floats in, flipped, over the whole chat.
+    @ObservationIgnored weak var canvas: NSView?
+    @ObservationIgnored private var scrollWatch: (any NSObjectProtocol)?
+    @ObservationIgnored private var relocating = false
+
+    /// The chat is far enough back that the soft edges fade the words: Reply keeps clear of them.
+    static let fadeMargin: CGFloat = 16
+
+    /// Where Reply is drawn, in the overlay's space, while it shows.
+    var buttonFrame: CGRect? {
+        guard canReply, rests, !menuOpen, !scrolling, !streaming, let lines, let visible,
+              let origin = lines.origin(for: buttonSize, visible: visible) else { return nil }
+        return CGRect(origin: origin, size: buttonSize)
+    }
+
+    /// Reply to Selection: quotes the selected words into the composer and clears the selection.
+    func reply() {
+        guard canReply, let owner, let quote else { return }
+        let passage = self.passage
+        owner.setSelectedRange(NSRange(location: 0, length: 0))
+        quote(passage)
+        replies += 1
+    }
+
+    /// A click on Reply itself, which mustn't clear the selection before Reply takes it.
+    func isOnButton(_ event: NSEvent) -> Bool {
+        guard let frame = buttonFrame, let canvas, event.window === canvas.window else { return false }
+        return frame.contains(canvas.convert(event.locationInWindow, from: nil))
+    }
+
+    // MARK: From the reply
+
+    func select(_ passage: String, in owner: ReplyNSTextView, quote: @escaping @MainActor (String) -> Void, rests: Bool) {
+        if self.owner !== owner {
+            self.owner?.setSelectedRange(NSRange(location: 0, length: 0))
+            self.owner = owner
+            watchScrolling(owner.enclosingScrollView?.contentView)
+        }
+        self.passage = passage
+        self.quote = quote
+        if !canReply { canReply = true }
+        if self.rests != rests { self.rests = rests }
+        if rests { relocate() }
+    }
+
+    func drop(from owner: ReplyNSTextView) {
+        guard self.owner === owner else { return }
+        self.owner = nil
+        quote = nil
+        passage = ""
+        watchScrolling(nil)
+        canReply = false
+        rests = false
+        lines = nil
+        visible = nil
+    }
+
+    func menuOpened(_ open: Bool) {
+        if menuOpen != open { menuOpen = open }
+    }
+
+    /// Follows the words after the chat moved or the window changed, once its layout is done.
+    func relocate() {
+        guard canReply, !relocating else { return }
+        relocating = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            relocating = false
+            place()
+        }
+    }
+
+    private func place() {
+        guard canReply, !scrolling, let owner, let canvas,
+              let found = owner.selectionLines(in: canvas, margin: Self.fadeMargin) else {
+            if lines != nil { lines = nil }
+            return
+        }
+        if lines != found.lines { lines = found.lines }
+        if visible != found.visible { visible = found.visible }
+    }
+
+    /// The chat moving under the selection (the end of a scroll, a reply settling at the bottom).
+    private func watchScrolling(_ clip: NSClipView?) {
+        if let scrollWatch { NotificationCenter.default.removeObserver(scrollWatch) }
+        scrollWatch = clip.map { clip in
+            NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.scrolling else { return }
+                    self.relocate()
+                }
+            }
+        }
+    }
+}
+
+/// Reply beside words selected in a finished reply (`selectionReplyButton`), over the chat.
+struct SelectionReplyOverlay: View {
+    let words: SelectedReplyWords
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Where Reply last showed, so it fades out where it was.
+    @State private var lastOrigin = CGPoint.zero
+
+    var body: some View {
+        let frame = words.buttonFrame
+        let origin = frame?.origin ?? lastOrigin
+        ZStack(alignment: .topLeading) {
+            SelectionCanvas(words: words)
+            Button { words.reply() } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .glassButton()
+            .help("Reply (⇧⌘R)")
+            .accessibilityHint("Quotes the selected words in your reply")
+            .fixedSize()
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { words.buttonSize = $0 }
+            .offset(x: origin.x, y: origin.y)
+            .allowsHitTesting(frame != nil)
+            .accessibilityHidden(frame == nil)
+            // Only the tone eases: Reply never slides from where it was.
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15)) { $0.opacity(frame == nil ? 0 : 1) }
+        }
+        .onChange(of: frame?.origin) { _, origin in
+            if let origin { lastOrigin = origin }
+        }
+    }
+}
+
+/// The overlay's own space, for the selection's lines to be measured in.
+private struct SelectionCanvas: NSViewRepresentable {
+    let words: SelectedReplyWords
+
+    func makeNSView(context: Context) -> Canvas {
+        let view = Canvas()
+        view.words = words
+        words.canvas = view
+        return view
+    }
+
+    func updateNSView(_ view: Canvas, context: Context) {
+        view.words = words
+        words.canvas = view
+    }
+
+    final class Canvas: NSView {
+        weak var words: SelectedReplyWords?
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            words?.relocate()
+        }
+    }
+}
+
+/// Watches the selection's menu, so Reply steps aside while it is open.
+private final class SelectionMenuWatch: NSObject, NSMenuDelegate {
+    var closed: () -> Void = {}
+    func menuDidClose(_ menu: NSMenu) { closed() }
 }
 #endif

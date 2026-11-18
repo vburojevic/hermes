@@ -315,7 +315,17 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
 - **Start:** the message menu's Reply (on replies and your messages), Reply to Words… (a sheet
   where you select the words), or a swipe left on a message. Replies with code blocks or tables
   scroll sideways themselves, so they take Reply from the menu.
-  - SwiftUI has no way to add Reply to the text selection menu itself; Reply to Words… stands in.
+  - On the Mac, words selected in a finished reply quote in one step (`selectionReplyButton`).
+    Reply floats 6 points under the selection's end, kept inside the reply's column, or 6 points
+    above its first line when below would reach the composer or the chat's faded edges
+    (`QuotedReply.SelectionPlacement`). It shows once the drag that selects ends, and steps aside
+    while the selection is empty or only spaces, while the chat scrolls, while a reply streams and
+    while the selection's menu is open. The selection's own menu puts Reply above the system's
+    items (macOS may still add Ask Siri at the very top), and Chat → Reply to Selection (⇧⌘R)
+    does the same from the keyboard; it is dimmed when no words in a finished reply are selected.
+    Reply clears the selection and puts the cursor in the composer. Right-click outside the
+    selection still opens the message menu. Reply to Words… stays, for iPhone and iPad and for
+    picking words from the whole reply.
   - On iPhone and iPad the swipe is a UIKit pan that begins only on a drag to the left
     (`SidewaysSwipe`): a SwiftUI drag on each reply took the chat's vertical drags, and the chat
     stopped scrolling under a finger that started on a reply. A drag to the right from the
@@ -340,7 +350,8 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
 
 ### Mac
 
-⌘↓ Jump to Latest, ⌥⌘↓ / ⌥⌘↑ Next / Previous Unread Chat, ⇧⌘U Mark as Read / Unread (Chat menu).
+⌘↓ Jump to Latest, ⌥⌘↓ / ⌥⌘↑ Next / Previous Unread Chat, ⇧⌘U Mark as Read / Unread, ⇧⌘R Reply to
+Selection (Chat menu).
 The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pill does that.
 
 ## 5. Lists: filters, menus, swipes, counts
