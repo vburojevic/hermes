@@ -67,6 +67,7 @@
 		30EB674218A48778D4DAF5E7 /* ProjectEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 052812AB04960140C29154F8 /* ProjectEditorSheet.swift */; };
 		311AB6F4A50E56160025D86F /* HermesMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = 527C6D441C3EA0A14E2C4CC6 /* HermesMarkdown */; };
 		311D242525B41371CA130E1B /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE480A0097C12F38535C11E8 /* TasksView.swift */; };
+		31732BA14C1E5B3557E919BC /* MacSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C404D06CBD743C3C1E43B970 /* MacSearchField.swift */; };
 		3241BB9CEA1800598102453E /* BotSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B1E4D3BD50D20E271564D85 /* BotSheet.swift */; };
 		32DC69F32D2EB37200FA2D8B /* HermesNotificationContent.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79980A0B9CF4CE8153EC2AA6 /* HermesNotificationContent.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		32FE8785EF7D65B4A0B19CB4 /* HermesNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6F35C3E95146A39E4F0969E3 /* HermesNotificationService.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -636,6 +637,7 @@
 		C2BB989CC92F6409C559C8DA /* GroupScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupScreens.swift; sourceTree = "<group>"; };
 		C302CBEF687D8075AB273EBB /* GatewayVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayVoice.swift; sourceTree = "<group>"; };
 		C345608D385B87D80B70485E /* WidgetsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetsUITests.swift; sourceTree = "<group>"; };
+		C404D06CBD743C3C1E43B970 /* MacSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchField.swift; sourceTree = "<group>"; };
 		C525BD3D40E9B9708B9886AA /* QuickOpenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenView.swift; sourceTree = "<group>"; };
 		C542600A88454B154E05BE3E /* TurnChangesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnChangesViews.swift; sourceTree = "<group>"; };
 		C7B7B8F42380EB1FB57518F8 /* GraphAudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphAudioDevice.swift; sourceTree = "<group>"; };
@@ -973,6 +975,7 @@
 		23B2AC7AF33BE3280BF28EA8 /* Search */ = {
 			isa = PBXGroup;
 			children = (
+				C404D06CBD743C3C1E43B970 /* MacSearchField.swift */,
 				62249440A00899D4CBDCB679 /* SearchPalette.swift */,
 				8BE62AA56C7273A33AAF03D0 /* SearchViews.swift */,
 			);
@@ -1892,6 +1895,7 @@
 				BEB0E3A3CF5FDAFC19D55613 /* MacNotifier.swift in Sources */,
 				57E63CC55E6D8CE95264561A /* MacPasswordsPane.swift in Sources */,
 				0B24EEABFD3965DB2967F7D2 /* MacPluginsPane.swift in Sources */,
+				31732BA14C1E5B3557E919BC /* MacSearchField.swift in Sources */,
 				68C181FF81413ABCCCB03A54 /* MacSettingsView.swift in Sources */,
 				4E1956C0D2998F3D874B8884 /* MacWelcome.swift in Sources */,
 				AF156F8DB082EB1BF454B059 /* MachineMessageViews.swift in Sources */,

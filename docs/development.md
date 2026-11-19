@@ -887,22 +887,32 @@ Debug app from inside instead: `wait <s>`, `press <toolbar item>` (a Settings ta
 (points from the Settings window's top left, a screenshot's pixels halved), `click top-button` (a
 pushed page's back button), `key cmd+[`, `menu <title>` (a menu bar menu's items and shortcuts,
 which a locked or off-Space screen can't capture), `frame <width> <height>` (resizes the chats
-window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in the chats
-window), `sidebar` (the sidebar button's action), and `dump` / `views` to see what's there. Each
+window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in the chats window),
+`sidebar` (the sidebar button's action), and `dump` / `views` to see what's there. For the ⌘K
+palette (`-HERMES_PALETTE <text>` opens it in each chats window once connected, and fills its field
+with that text each time it opens): `paletteopen` (⌘K in the first window),
+`palettekey up|down|return|esc|space|cmd+return|cmd+1` (any digit; a ⌘ key goes to the window's key
+equivalents, then the menus, as the app routes one), `palettetype <text>` (one key per character,
+so it goes through the field editor as typing does; `palettekey space` types a space),
+`paletteblur` (takes the field out of editing, as a click elsewhere does) and `palette` (logs the
+field's text, whether it's being edited, its field editor's text replacement, spelling correction
+and spell checking, and the chats windows with their titles, which name what each shows; the rows
+and the selection aren't in it, so read them from a screenshot or the accessibility tree). Each
 step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked
-without a screenshot (`App/Support/MacDebugDriver.swift`); `tabs` logs how many Settings tabs
-show, of how many, and `maintabs` which of the chats window's toolbar items show. Capture with
+without a screenshot (`App/Support/MacDebugDriver.swift`), on standard output and in
+`-HERMES_MAC_DRIVE_LOG <file>` when it's given; `tabs` logs how many Settings tabs show, of how
+many, and `maintabs` which of the chats window's toolbar items show. Capture with
 `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts the Settings
-tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR
-<folder>` points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only
-logs its `launchctl` calls (`HERMES_LAUNCHCTL …`); the mock's `throttled-here` and `priority-here`
-states use `build/mock-launch-agents`. The main window's bars (the sidebar's footer, the composer)
-don't draw in an off-Space capture, so `-HERMES_GALLERY priority` shows the footer with its priority
+tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR <folder>`
+points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only logs its
+`launchctl` calls (`HERMES_LAUNCHCTL …`); the mock's `throttled-here` and `priority-here` states
+use `build/mock-launch-agents`. The main window's bars (the sidebar's footer, the composer) don't
+draw in an off-Space capture, so `-HERMES_GALLERY priority` shows the footer with its priority
 notice (at the sidebar's narrowest and usual widths, and with large text where SwiftUI scales it)
-and the update's result for the connected gateway; `priority:update` updates Hermes first,
-and `priority:update:fix` then runs Run at Full Priority (docs/setup.md §4.17). With
-`priority-here`, `priority:update` shows the app putting the gateway back at full priority by
-itself, and `priority:restart` does the same after Plugins' Restart Gateway (the mock's plist in
+and the update's result for the connected gateway; `priority:update` updates Hermes first, and
+`priority:update:fix` then runs Run at Full Priority (docs/setup.md §4.17). With `priority-here`,
+`priority:update` shows the app putting the gateway back at full priority by itself, and
+`priority:restart` does the same after Plugins' Restart Gateway (the mock's plist in
 `build/mock-launch-agents` says Interactive again; pointed at another folder, it stays without).
 `-appearance light` or `dark` picks the gallery's look.
 

@@ -11,7 +11,6 @@ struct SearchPalette: View {
 
     @State private var search: ChatSearch
     @State private var selected = 0
-    @FocusState private var fieldFocused: Bool
     @Environment(\.openWindow) private var openWindow
 
     init(workspace: BotWorkspace, router: WindowRouter) {
@@ -102,7 +101,6 @@ struct SearchPalette: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Theme.shadow, radius: 30, y: 12)
         .onAppear {
-            fieldFocused = true
             #if DEBUG
             if let text = UserDefaults.standard.string(forKey: "HERMES_PALETTE"), !text.isEmpty { search.query = text }
             #endif
@@ -121,25 +119,10 @@ struct SearchPalette: View {
                 .font(.title3)
                 .foregroundStyle(Theme.secondaryText)
                 .accessibilityHidden(true)
-            TextField("Search chats, projects and actions", text: $search.query)
-                .textFieldStyle(.plain)
-                .font(.title3)
-                .focused($fieldFocused)
-                .onKeyPress(.downArrow) { move(1, count: items.count); return .handled }
-                .onKeyPress(.upArrow) { move(-1, count: items.count); return .handled }
-                .onKeyPress(.escape) { close(); return .handled }
-                .onKeyPress(.return, phases: .down) { press in
-                    guard items.indices.contains(selected) else { return .handled }
-                    open(items[selected], newWindow: press.modifiers.contains(.command))
-                    return .handled
-                }
-                .onKeyPress(characters: CharacterSet(charactersIn: "123"), phases: .down) { press in
-                    guard press.modifiers.contains(.command), let digit = Int(press.characters) else { return .ignored }
-                    let projects = items.compactMap { item -> Item? in if case .project = item { item } else { nil } }
-                    guard projects.indices.contains(digit - 1) else { return .ignored }
-                    open(projects[digit - 1], newWindow: false)
-                    return .handled
-                }
+            MacSearchField(text: $search.query, prompt: String(localized: "Search chats, projects and actions"),
+                           font: .preferredFont(forTextStyle: .title3), focusesOnAppear: true) { key in
+                handle(key, items: items)
+            }
             if search.isLoading { Spinner() }
             Text("esc")
                 .font(.caption.weight(.medium))
@@ -148,6 +131,26 @@ struct SearchPalette: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 54)
+    }
+
+    /// The field is an `NSTextField` (`MacSearchField`, `docs/search.md` §3), so the palette's keys
+    /// come from it rather than from SwiftUI.
+    private func handle(_ key: MacSearchField.Key, items: [Item]) -> Bool {
+        switch key {
+        case .down:
+            move(1, count: items.count)
+        case .up:
+            move(-1, count: items.count)
+        case .escape:
+            close()
+        case .open(let newWindow):
+            if items.indices.contains(selected) { open(items[selected], newWindow: newWindow) }
+        case .command(let digit):
+            let projects = items.compactMap { item -> Item? in if case .project = item { item } else { nil } }
+            guard digit <= 3, projects.indices.contains(digit - 1) else { return false }
+            open(projects[digit - 1], newWindow: false)
+        }
+        return true
     }
 
     private func move(_ step: Int, count: Int) {
