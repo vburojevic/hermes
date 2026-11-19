@@ -18,6 +18,7 @@ struct NewCardSheet: View {
     @State private var worksIn: NewBoardCard.WorksIn = .worktree
     @State private var estimate: BoardEstimate?
     @State private var isAdding = false
+    @ScaledMetric(relativeTo: .footnote) private var chevronSize = 12
     @State private var configured = false
     @FocusState private var titleFocused: Bool
 
@@ -98,7 +99,9 @@ struct NewCardSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         #else
-        .frame(width: 480, height: 600)
+        .frame(minWidth: 440, idealWidth: 480, maxWidth: .infinity, minHeight: 440, idealHeight: 600, maxHeight: .infinity)
+        // Fitted, so the sheet opens at its ideal size rather than the system default width.
+        .presentationSizing(.fitted)
         #endif
     }
 
@@ -192,7 +195,7 @@ struct NewCardSheet: View {
             Spacer()
             Text(value).foregroundStyle(Theme.secondaryText)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: chevronSize, weight: .semibold))
                 .foregroundStyle(Theme.tertiaryText)
         }
         .padding(.horizontal, 16)
@@ -280,6 +283,8 @@ struct AssignCardSheet: View {
     let card: BoardCard
 
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric(relativeTo: .body) private var faceSize = 24
+    @ScaledMetric(relativeTo: .body) private var glyphSize = 18
 
     var body: some View {
         NavigationStack {
@@ -308,7 +313,8 @@ struct AssignCardSheet: View {
         #if os(iOS)
         .presentationDetents([.medium, .large])
         #else
-        .frame(width: 380, height: 420)
+        .frame(minWidth: 380, idealWidth: 380, maxWidth: .infinity, minHeight: 420, idealHeight: 420, maxHeight: .infinity)
+        .presentationSizing(.fitted)
         #endif
     }
 
@@ -319,12 +325,12 @@ struct AssignCardSheet: View {
         } label: {
             HStack(spacing: 12) {
                 if profile != nil {
-                    BoardFace(model: model, profile: profile, size: 24)
+                    BoardFace(model: model, profile: profile, size: faceSize)
                 } else {
                     Image(systemName: "person.crop.circle.badge.xmark")
-                        .font(.system(size: 18))
+                        .font(.system(size: glyphSize))
                         .foregroundStyle(Theme.secondaryText)
-                        .frame(width: 24)
+                        .frame(width: faceSize)
                 }
                 Text(profile == nil ? String(localized: "Nobody") : model.name(of: profile))
                     .foregroundStyle(Theme.primaryText)
@@ -397,7 +403,8 @@ struct ReopenCardSheet: View {
         #if os(iOS)
         .presentationDetents([.medium, .large])
         #else
-        .frame(width: 440, height: 320)
+        .frame(minWidth: 440, idealWidth: 440, maxWidth: .infinity, minHeight: 320, idealHeight: 320, maxHeight: .infinity)
+        .presentationSizing(.fitted)
         #endif
     }
 }
@@ -473,7 +480,8 @@ struct EditCardSheet: View {
         #if os(iOS)
         .presentationDetents([.large])
         #else
-        .frame(width: 480, height: 460)
+        .frame(minWidth: 480, idealWidth: 480, maxWidth: .infinity, minHeight: 460, idealHeight: 460, maxHeight: .infinity)
+        .presentationSizing(.fitted)
         #endif
     }
 }
@@ -549,7 +557,8 @@ struct WatchRunSheet: View {
         #if os(iOS)
         .presentationDetents([.large])
         #else
-        .frame(width: 560, height: 640)
+        .frame(minWidth: 440, idealWidth: 560, maxWidth: .infinity, minHeight: 440, idealHeight: 640, maxHeight: .infinity)
+        .presentationSizing(.fitted)
         #endif
     }
 

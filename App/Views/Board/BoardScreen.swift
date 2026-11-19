@@ -16,8 +16,11 @@ struct BoardScreen: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @State private var size: CGSize = .zero
     @State private var targetedColumn: String?
+    @State private var edgeFades = BoardEdgeFades(leading: false, trailing: false)
 
     private var model: BoardModel { workspace.board(for: projectID) }
     private var projects: ProjectsModel { workspace.projects }
@@ -30,38 +33,40 @@ struct BoardScreen: View {
         #endif
     }
 
-    /// Columns beside an inspector (iPad landscape, Mac); iPad portrait opens a card as a sheet.
-    private var usesInspector: Bool {
-        #if os(macOS)
-        true
-        #else
-        !isCompact && size.width > size.height && size.width >= 900
-        #endif
+    /// Phone, two columns across with a card as a sheet, or columns beside an inspector
+    /// (`docs/board.md` §6). The rule lives in HermesKit, where it's tested.
+    private var layout: BoardLayout {
+        BoardLayout.choose(isMac: isMac, isCompact: isCompact, width: size.width, height: size.height,
+                           isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
     }
 
-    /// The Mac's and iPad landscape's columns are fixed; iPad portrait fits two across.
     private var columnWidth: CGFloat {
-        #if os(macOS)
-        222
-        #else
-        usesInspector || size.width == 0 ? 255 : max(255, (size.width - 52) / 2)
-        #endif
+        layout.columnWidth(isMac: isMac, width: size.width)
     }
+
+    /// The board has its workflow, so its columns can be drawn.
+    private var isReady: Bool { model.workflow != nil }
+
+    /// A board with no cards at all gets one note instead of an empty line in every column.
+    private var isEmpty: Bool { isReady && model.allCards.isEmpty }
 
     var body: some View {
         @Bindable var model = model
         Group {
-            if model.workflow == nil {
-                placeholder
-            } else if isCompact {
+            if isCompact {
                 phoneBoard
             } else {
-                columnsBoard
+                // The size is read from the space the board is given, never from what it
+                // draws: the columns are as wide as that space says, so measuring them looped
+                // at the accessibility sizes, where the header's height also follows its width.
+                Color.clear
+                    .overlay { columnsBoard }
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
             }
         }
         .background(background.ignoresSafeArea())
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-        .modifier(BoardCardPresentation(model: model, isCompact: isCompact, usesInspector: usesInspector))
+        .modifier(BoardCardPresentation(model: model, layout: layout,
+                                        inspectorIdealWidth: BoardLayout.inspectorIdealWidth(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)))
         .toolbar { toolbar }
         #if os(macOS)
         .navigationTitle(String(localized: "\(model.projectName) Board"))
@@ -79,10 +84,10 @@ struct BoardScreen: View {
         .sheet(item: $model.reopening) { card in ReopenCardSheet(model: model, card: card) }
         .sheet(item: $model.editing) { card in EditCardSheet(model: model, card: card) }
         .sheet(item: $model.watching) { card in WatchRunSheet(model: model, card: card) }
-        .confirmationDialog(
+        // An alert, not a sheet of choices: it's one destructive answer to one question (§2).
+        .alert(
             String(localized: "Delete “\(model.deleting?.title ?? "")”?"),
             isPresented: Binding(get: { model.deleting != nil }, set: { if !$0 { model.deleting = nil } }),
-            titleVisibility: .visible,
             presenting: model.deleting
         ) { card in
             Button("Delete Card", role: .destructive) { Task { await model.delete(card) } }
@@ -93,6 +98,7 @@ struct BoardScreen: View {
         .onChange(of: model.phase) { pickOpeningColumn() }
         .onChange(of: model.snapshot.cards.count) { pickOpeningColumn() }
         #if os(macOS)
+        .background { keyboardShortcuts }
         .onKeyPress(.escape) {
             guard !model.selection.isEmpty || model.openCardID != nil else { return .ignored }
             model.selection = []
@@ -116,13 +122,37 @@ struct BoardScreen: View {
         model.visibleColumn = model.urgentColumn
     }
 
+    #if os(macOS)
+    /// Return opens the selected card and ⌘⌫ deletes the open one (`docs/board.md` §2). They wait
+    /// while a field has the keyboard, where both keys edit the text.
+    private var keyboardShortcuts: some View {
+        Group {
+            Button("Open Card") {
+                if let id = model.selection.first { model.selection = []; model.openCardID = id }
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .disabled(model.isTyping || model.selection.count != 1)
+            Button("Delete Card") {
+                if let card = (model.openCardID ?? (model.selection.count == 1 ? model.selection.first : nil)).flatMap(model.card) {
+                    model.deleting = card
+                }
+            }
+            .keyboardShortcut(.delete, modifiers: .command)
+            .disabled(model.isTyping || (model.openCardID == nil && model.selection.count != 1))
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+    #endif
+
+    /// What stands in for the cards until the board is in (`docs/board.md` §6): the board's own
+    /// title stays above it on every layout.
     @ViewBuilder
     private var placeholder: some View {
         switch model.phase {
         case .loading:
-            // Columns, not a list: centred on the empty page.
-            Spinner(size: .regular)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            EmptyView()
         case .needsBotMode:
             if let workspace = model.owner {
                 BotModeSetupMessage(workspace: workspace, feature: GatewaySetup.ID.board, title: String(localized: "The Board"), symbol: "square.grid.2x2")
@@ -144,9 +174,14 @@ struct BoardScreen: View {
 
     /// "Hermes App · 19 cards · Hermes and 3 Bots working".
     private var phoneSubtitle: String {
-        var parts = [model.projectName, BoardCopy.cards(model.allCards.count)].filter { !$0.isEmpty }
+        var parts = [model.projectName, cardsLine].filter { !$0.isEmpty }
         if let working = workingLine { parts.append(working) }
         return parts.joined(separator: " · ")
+    }
+
+    /// "19 cards", or "No cards yet" on a new board.
+    private var cardsLine: String {
+        model.allCards.isEmpty ? String(localized: "No cards yet") : BoardCopy.cards(model.allCards.count)
     }
 
     private var workingLine: String? {
@@ -165,7 +200,7 @@ struct BoardScreen: View {
 
     /// "19 cards · 2 running · 1 needs you".
     private var columnsSubtitle: String {
-        var parts = [BoardCopy.cards(model.allCards.count)]
+        var parts = [cardsLine]
         if model.runningCount > 0 { parts.append(String(localized: "\(model.runningCount) running")) }
         if model.needsYouCount > 0 { parts.append(String(localized: "\(model.needsYouCount) needs you")) }
         return parts.joined(separator: " · ")
@@ -184,29 +219,43 @@ struct BoardScreen: View {
                     .font(.largeTitle.bold())
                     .foregroundStyle(Theme.primaryText)
                     .accessibilityAddTraits(.isHeader)
-                HStack(spacing: 8) {
-                    ProjectTile(appearance: projects.appearance(projectID), size: 20)
-                    // One line until the accessibility sizes, where it wraps instead of stopping
-                    // at the project's name (`docs/board.md` §6).
-                    Text(phoneSubtitle)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                if isReady {
+                    // The tile stays beside the first line when the summary wraps.
+                    HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 8) {
+                        ProjectTile(appearance: projects.appearance(projectID), size: 20)
+                        // One line until the accessibility sizes, where it wraps instead of stopping
+                        // at the project's name (`docs/board.md` §6).
+                        Text(phoneSubtitle)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondaryText)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
-            columnChips
-            TabView(selection: Binding(get: { currentColumn }, set: { key in withAnimation(Theme.snappy) { model.visibleColumn = key } })) {
-                ForEach(model.columns) { column in
-                    phoneColumn(column)
-                        .tag(column.key)
+            if isReady {
+                columnChips
+                TabView(selection: Binding(get: { currentColumn }, set: { key in withAnimation(Theme.snappy) { model.visibleColumn = key } })) {
+                    ForEach(model.columns) { column in
+                        phoneColumn(column)
+                            .tag(column.key)
+                    }
                 }
+                #if os(iOS)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                #endif
+            } else if model.phase == .loading {
+                BoardLoadingSkeleton {
+                    BoardPhoneSkeleton()
+                }
+                .padding(.horizontal, 16)
+                .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                placeholder
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            #if os(iOS)
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            #endif
         }
     }
 
@@ -254,7 +303,12 @@ struct BoardScreen: View {
                 ForEach(cards) { card in
                     cardButton(card)
                 }
-                if cards.isEmpty { emptyColumn(column) }
+                if isEmpty {
+                    BoardEmptyNote()
+                        .padding(.top, 24)
+                } else if cards.isEmpty {
+                    emptyColumn(column)
+                }
                 columnFootnote(column)
             }
             .padding(.horizontal, 16)
@@ -341,33 +395,105 @@ struct BoardScreen: View {
 
     private var columnsBoard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                ProjectTile(appearance: projects.appearance(projectID), size: isMac ? 24 : 26)
-                Text("\(model.projectName) Board")
-                    .font(isMac ? .title3.weight(.semibold) : .title2.weight(.semibold))
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-                Text(columnsSubtitle)
-                    .font(isMac ? .caption : .subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 20)
+            columnsHeader
+                .padding(.horizontal, 20)
             if model.selection.count > 1 { bulkBar }
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(model.columns) { column in
-                        columnPanel(column)
+            if isReady {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(model.columns) { column in
+                                columnPanel(column)
+                                    .id(column.key)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
+                    }
+                    .scrollIndicators(.automatic)
+                    .modifier(BoardEdgeFadeMask(isOn: isMac, fades: $edgeFades))
+                    // The open card's column comes into view: after ⌘→ / ⌘← it follows the card.
+                    .onChange(of: model.openCardID.flatMap(model.card)?.column) { _, key in
+                        guard let key else { return }
+                        withAnimation(Theme.snappy) { proxy.scrollTo(key) }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
+                .overlay {
+                    if isEmpty {
+                        BoardEmptyNote(floats: true)
+                            .padding(20)
+                            .allowsHitTesting(false)
+                    }
+                }
+            } else if model.phase == .loading {
+                BoardLoadingSkeleton {
+                    // Takes only the space it's offered; the columns past the edge are cut off.
+                    Color.clear
+                        .overlay(alignment: .topLeading) {
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(Array((isMac ? [3, 2, 3, 1] : [3, 2, 3, 1, 2]).enumerated()), id: \.offset) { _, cards in
+                                    BoardColumnSkeleton(width: columnWidth, cards: cards)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 16)
+                            .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .clipped()
+                }
+            } else {
+                placeholder
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .scrollIndicators(.automatic)
         }
         .padding(.top, isMac ? 12 : 4)
+    }
+
+    /// The project, the board's name and its summary: in a line on the iPad, stacked on the Mac
+    /// (`ipadBoard`, `macBoard`). At the accessibility sizes the iPad's summary moves under the
+    /// name and both wrap (`ipadBoardAx5`). The summary waits for the cards.
+    private var columnsHeader: some View {
+        let wraps = !isMac && dynamicTypeSize.isAccessibilitySize
+        let tile = ProjectTile(appearance: projects.appearance(projectID), size: isMac ? 24 : 26)
+        let title = Text("\(model.projectName) Board")
+            .font(isMac ? .title3.weight(.semibold) : .title2.weight(.semibold))
+            .foregroundStyle(Theme.primaryText)
+            .lineLimit(wraps ? nil : 1)
+            .accessibilityAddTraits(.isHeader)
+        let subtitle = Text(columnsSubtitle)
+            .font(isMac ? .caption : .subheadline)
+            .foregroundStyle(Theme.secondaryText)
+            .lineLimit(wraps ? nil : 1)
+        return Group {
+            if wraps {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 10) {
+                        tile
+                        title
+                    }
+                    if isReady { subtitle }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                columnsHeaderLine(tile: tile, title: title, subtitle: subtitle)
+            }
+        }
+    }
+
+    private func columnsHeaderLine(tile: some View, title: some View, subtitle: some View) -> some View {
+        HStack(spacing: 10) {
+            tile
+            if isMac {
+                VStack(alignment: .leading, spacing: 1) {
+                    title
+                    if isReady { subtitle }
+                }
+            } else {
+                title
+                if isReady { subtitle }
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private var isMac: Bool {
@@ -396,7 +522,8 @@ struct BoardScreen: View {
                             .draggable(card.id)
                             .modifier(DragSessionTracker(model: model, cardID: card.id))
                     }
-                    if cards.isEmpty { emptyColumn(column) }
+                    // An empty board gets one note over the columns instead (§2).
+                    if cards.isEmpty && !isEmpty { emptyColumn(column) }
                     columnFootnote(column)
                 }
                 .padding(.bottom, 8)
@@ -483,72 +610,75 @@ struct BoardScreen: View {
                         }
                     }
                 } label: {
+                    #if os(macOS)
+                    // The Mac names whose cards it shows (`macBoard`); the iPad keeps the glyph.
+                    Label(filterName, systemImage: "line.3.horizontal.decrease")
+                        .labelStyle(.titleAndIcon)
+                    #else
                     Image(systemName: "line.3.horizontal.decrease")
                         .symbolVariant(model.assigneeFilter == nil ? .none : .circle.fill)
+                    #endif
                 }
                 .accessibilityLabel("Show cards for")
+                .accessibilityValue(filterName)
                 .help("Show cards for")
+                .disabled(!isReady)
             }
         }
         ToolbarItem(placement: .primaryAction) {
             #if os(macOS)
-            Button("New Card") { model.newCard = BoardModel.NewCardTarget() }
+            Button("New Card", systemImage: "plus") { model.newCard = BoardModel.NewCardTarget() }
+                .labelStyle(.titleAndIcon)
                 .inkDefaultButton()
                 .help("New Card (⌘N)")
-                .disabled(!model.isOnline || model.workflow == nil)
+                .disabled(!model.isOnline || !isReady)
             #else
             Button("New Card", systemImage: "plus") { model.newCard = BoardModel.NewCardTarget() }
-                .disabled(!model.isOnline || model.workflow == nil)
+                .disabled(!model.isOnline || !isReady)
             #endif
         }
     }
 
+    private var filterName: String {
+        model.assigneeFilter.map(model.name(of:)) ?? String(localized: "Everyone's Cards")
+    }
+
+    /// A refused move, over the board on glass (`boardNotice`, §2). It's read out when it comes,
+    /// goes after 6 s, and stays until it's dismissed while VoiceOver runs. Under Reduce Motion it
+    /// fades instead of sliding.
     @ViewBuilder
     private var noticeView: some View {
         if let notice = model.notice {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(Theme.danger)
-                Text(notice)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.primaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button("Dismiss", systemImage: "xmark") { withAnimation(Theme.snappy) { model.notice = nil } }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.secondaryText)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: 520)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .task(id: notice) {
-                try? await Task.sleep(for: .seconds(6))
-                withAnimation(Theme.snappy) { model.notice = nil }
-            }
-            .accessibilityElement(children: .combine)
+            BoardNoticeBanner(notice: notice) { withAnimation(Theme.snappy) { model.notice = nil } }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .task(id: notice) {
+                    AccessibilityNotification.Announcement(notice).post()
+                    guard let timeout = BoardNotice.timeout(voiceOverRunning: voiceOverEnabled) else { return }
+                    try? await Task.sleep(for: timeout)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(Theme.snappy) { model.notice = nil }
+                }
         }
     }
 }
 
-/// How a card opens: pushed on iPhone, in the inspector on iPad landscape and the Mac, as a sheet
-/// on iPad portrait.
+/// How a card opens (`docs/board.md` §6): pushed on iPhone, in the inspector on iPad landscape
+/// and the Mac, as a sheet on iPad portrait and at the accessibility sizes.
 private struct BoardCardPresentation: ViewModifier {
     @Bindable var model: BoardModel
-    let isCompact: Bool
-    let usesInspector: Bool
+    let layout: BoardLayout
+    let inspectorIdealWidth: Double
 
     func body(content: Content) -> some View {
-        if isCompact {
+        switch layout {
+        case .phone:
             content
                 .navigationDestination(item: $model.openCardID) { id in
                     BoardCardDetailView(model: model, cardID: id)
                 }
-        } else if usesInspector {
+        case .inspector:
             content
                 .inspector(isPresented: Binding(get: { model.openCardID != nil }, set: { if !$0 { model.openCardID = nil } })) {
                     Group {
@@ -557,9 +687,9 @@ private struct BoardCardPresentation: ViewModifier {
                                 .id(id)
                         }
                     }
-                    .inspectorColumnWidth(min: 320, ideal: 380, max: 460)
+                    .inspectorColumnWidth(min: 320, ideal: inspectorIdealWidth, max: 460)
                 }
-        } else {
+        case .pages:
             content
                 .sheet(item: Binding(get: { model.openCardID.map(OpenCard.init) }, set: { model.openCardID = $0?.id })) { open in
                     NavigationStack {
@@ -577,6 +707,49 @@ private struct BoardCardPresentation: ViewModifier {
 
     private struct OpenCard: Identifiable {
         let id: String
+    }
+}
+
+/// The notice's card: a danger glyph, the words, and a close target that grows with the text.
+private struct BoardNoticeBanner: View {
+    let notice: String
+    let dismiss: () -> Void
+
+    @ScaledMetric(relativeTo: .subheadline) private var target: CGFloat = 28
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(Theme.danger)
+                .accessibilityHidden(true)
+            Text(notice)
+                .font(.subheadline)
+                .foregroundStyle(Theme.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Dismiss", systemImage: "xmark", action: dismiss)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .frame(width: hitTarget, height: hitTarget)
+                .contentShape(Rectangle())
+                .padding(.vertical, -(hitTarget - 20) / 2)
+                .padding(.trailing, -(hitTarget - 20) / 2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 520)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var hitTarget: CGFloat {
+        #if os(macOS)
+        target
+        #else
+        max(44, target)
+        #endif
     }
 }
 
@@ -600,5 +773,46 @@ private struct DragSessionTracker: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// The Mac board's columns fade out at each window edge that has more columns past it (`macBoard`
+/// `leadingFade` / `trailingFade`, `docs/board.md` §2). A mask, so the fade lands on whatever the
+/// window shows in every appearance.
+private struct BoardEdgeFadeMask: ViewModifier {
+    let isOn: Bool
+    @Binding var fades: BoardEdgeFades
+
+    func body(content: Content) -> some View {
+        if isOn {
+            content
+                .onScrollGeometryChange(for: BoardEdgeFades.self) { geometry in
+                    BoardEdgeFades(offset: geometry.contentOffset.x + geometry.contentInsets.leading,
+                                   visibleWidth: geometry.containerSize.width,
+                                   contentWidth: geometry.contentSize.width)
+                } action: { _, new in
+                    fades = new
+                }
+                .mask {
+                    HStack(spacing: 0) {
+                        edge(.leading, isOn: fades.leading)
+                        Rectangle()
+                        edge(.trailing, isOn: fades.trailing)
+                    }
+                }
+        } else {
+            content
+        }
+    }
+
+    /// Clear at the window's edge for the outer 30 %, then up to full over the rest.
+    private func edge(_ side: HorizontalEdge, isOn: Bool) -> some View {
+        LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .clear, location: 0.3),
+                               .init(color: .black, location: 1)],
+                       startPoint: side == .leading ? .leading : .trailing,
+                       endPoint: side == .leading ? .trailing : .leading)
+            .opacity(isOn ? 1 : 0)
+            .background(Rectangle().opacity(isOn ? 0 : 1))
+            .frame(width: BoardEdgeFades.width)
     }
 }

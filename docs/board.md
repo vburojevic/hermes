@@ -121,15 +121,25 @@ tries the socket again. The socket stays open while any board or card view is on
   - + on a column header adds a card there (Triage starts it in triage); only drop-target columns
     have +.
   - Cards push their detail. Pull to refresh.
-- **iPad:** columns side by side, scrolling sideways. In landscape (900 pt and wider) the selected
-  card opens in an inspector on the right; in portrait two columns fit across and the card opens
-  as a sheet.
+- **iPad:** columns side by side, scrolling sideways. In landscape (900 pt and wider) columns are
+  255 pt and the selected card opens in an inspector on the right, with its own … and Close (✕,
+  ⌘.). In portrait two columns fit across (each max(255, (width − 52) / 2) pt) and the card opens
+  as a large sheet. At the accessibility text sizes the iPad keeps the portrait layout in both
+  orientations, so a card never squeezes beside the inspector, and the counts move under the
+  board's name and wrap (`ipadBoardAx5`).
 - **Mac** (`macBoard`):
   - All columns side by side, scrolling sideways; the inspector on the right when a card is
     selected.
   - ⌘-click selects several; a bar then offers Move To, Assign To and Archive in bulk
     (`POST /tasks/bulk`).
-  - New Card (⌘N) in the toolbar. On a board, File → New Card replaces New Chat.
+  - New Card (⌘N) in the toolbar, with Show (one Bot's cards or everyone's) beside it, named by
+    what it shows. On a board, File → New Card replaces New Chat.
+  - Keyboard: ⇧⌘B opens the Board, Return opens the selected card, Esc closes it, ⌘⌫ asks to
+    delete it and ⌘→ / ⌘← move it (§6). Hovering a card lifts it with a shadow and an outline; it
+    never moves.
+  - Columns stay 222 pt at every text size and scroll sideways under a 64 pt fade at each window
+    edge that has more columns past it (`BoardEdgeFades`); the inspector opens 380 pt wide, 460 pt
+    at the largest text sizes.
 - **iPad and Mac:** drag and drop between columns, limited by the move matrix; a drop the
   workflow doesn't allow snaps back. Columns a card can't go to dim during the drag (iOS 27 and
   macOS 26 and later, which report drag sessions). A filter menu shows one Bot's cards or
@@ -158,7 +168,15 @@ tries the socket again. The socket stays open while any board or card view is on
   - Assign To…, Raise Priority, Open Chat (when the card came from a chat, its `session_id`),
     Archive, Delete….
 - A card the gateway warned about ("nothing will pick it up") shows the warning under it.
-- An action the gateway refuses shows a dismissible notice over the board, in the app's words.
+- An action the gateway refuses shows a dismissible glass notice over the board, in the app's
+  words. It leaves after 6 s, or stays until it's dismissed while VoiceOver runs; VoiceOver
+  announces it, and with Reduce Motion it fades instead of sliding (`BoardNotice`).
+- Delete… asks in an alert ("Delete Card" or Cancel) before anything is sent.
+- **States:** while the board loads, its title and header stay and the columns show skeleton
+  cards under "Loading cards"; on iPhone the title stays large. A board with no cards keeps its
+  columns and says "No cards yet" once, over them. Not set up, Bot Mode off and a failed load show
+  their message in place of the columns (§8). Once the board has loaded, a lost connection keeps
+  the cards and polling brings them back when the gateway answers again.
 
 ## 3. A card
 
@@ -212,7 +230,8 @@ an id it doesn't know opens nothing.
 
 ## 4. Adding cards
 
-- **New Card** (`newCard`, a large sheet on iOS, a 480 × 600 window sheet on the Mac):
+- **New Card** (`newCard`, a large sheet on iOS; on the Mac a sheet at least 440 pt wide, ideally
+  480 × 600, that grows with its text):
   - Title ("What needs doing") and description.
   - "Who works on it": the Bots' faces, Hermes first. The default comes from
     `GET /orchestration` (`default_assignee`). Tapping the picked face again leaves it unassigned.
@@ -252,11 +271,16 @@ so new card titles must be added there too (`Relay/convex/validate.ts`).
 ## 6. Accessibility
 
 - A card reads: title, state ("Running for 6 minutes", "Running, no word for 9 minutes", "Needs
-  you"), assignee, then "2 of 5 sub-cards done, 3 comments".
+  you", or "2 of 5 sub-cards done" for a split card, said once), assignee, then "3 comments".
 - On iPhone, the column switcher is a tab bar to VoiceOver ("Running, 2 cards, tab 4 of 7"), with
   "N needs you" where it applies.
 - At the accessibility text sizes on iPhone the column chips grow with their text, and the
-  Board's subtitle wraps instead of cutting off.
+  Board's subtitle wraps instead of cutting off. An open card puts its badge above the state line,
+  and Watch and Stop (or Approve and Reopen with Note…) stack full width, the primary on top.
+- Text uses text styles and glyphs scale with it; no text has a fixed point size. On the Mac the
+  sheets have minimum and ideal sizes (New Card 480 × 600, Assign To… 380 × 420, Reopen with
+  Note… 440 × 320, Edit Card… 480 × 460, Watch Run 560 × 640), never fixed ones.
+  Each opens at its ideal size, with the system's button bar below it.
 - On Mac, drag and drop has a keyboard path: ⌘→ / ⌘← (View → Move Card Right / Left) move the open
   card to the next allowed column. They are off while typing in the card's reply or comment field,
   where the arrows move the cursor.
