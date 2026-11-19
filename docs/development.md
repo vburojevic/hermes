@@ -635,30 +635,35 @@ flashcard with one, then the reply's own Markdown image of the first file at a h
 backend's `/api/fs/download` serves them as PNGs drawn in `inspector.py`, answers 404 "File not
 found" for a missing file and 403 "Path is outside the managed read boundary" outside the
 project), "widget private image" (the same, private), "widget missing image" (a media card whose
-file isn't there), "widget fence" (an agent-typed block, shown as code), "widget refused" (a
-refused create whose reply names the widget anyway, with a comma between the directive's
-attributes) and "widget refused inline" (that reply in one message with the call), "widget
-routine" in a Bot Chat (the Bot's Daily plan routine runs now and its report arrives with the
-widget; "widget routine json" when its agent typed the payload as a json block, as plugin 1.4.0
-delivers it, "widget routine json old" as 1.3.0 left it, "widget routine broken" when the payload
-stops halfway, "widget routine directive" and "widget routine missing" when the Bot's reply names a
-stored widget or one never stored), "widget unknown",
-"widget invalid", "widget suggestions" and "widget wide" (everything long in one reply: a long
-inline code path and name, a wide code block, a details card with long labels, values and a long
-state tag, a snippet and an output with lines of over 200 characters; nothing in it may widen the
-reply, [chat.md](chat.md) §3) and "widget wide table" (a table with long headings, text and mono
-values and a long state tag).
-"Weather today?" (any message with "weather" or "forecast") is what an agent told about widgets
-does: it looks the forecast up, reads the weather examples and answers one sentence and the
-weather card. Over the socket, a chat the app didn't mark gets each widget's plain text instead,
-as on a real gateway. In a Bot group chat the app marked, the same words make Ops answer with an inline block. `POST
-/api/mock/widget-answer {id?, action, device?, hold?}` answers the newest widget from another
-device; `--no-widgets` leaves the plugin out. `/app-widgets client` (which app sent a turn,
-[widgets.md](widgets.md) §11) answers as plugin 1.6.0 does, refusals included; `--widgets-version
-1.5.0` (either server) plays the plugin before it, where `client` is an unknown command and
-`status` says 1.5.0. On a simulator, enrol Face ID with `xcrun simctl spawn <udid> notifyutil -s
-com.apple.BiometricKit.enrollmentChanged 1` (then `-p` the same name) and pass a check with
-`notifyutil -p com.apple.BiometricKit_Sim.pearl.match`.
+file isn't there), "widget media" (a gateway video with its poster and a grid of twelve
+screenshots, each with Open; the backend's `/api/files/stream` serves `media/walkthrough.mp4` with
+Range reads and checks `profile`), "widget media refused" (the "Old recordings" grid: a video and a
+picture that are gone, a picture over 50 MB, a video and a picture that are private, a broken
+video, and an https video on another host that asks first), "widget media web <port>" (a card whose
+video is on an https site that isn't the gateway, at `https://localhost:<port>/clips/launch.mp4`,
+with no poster; the site is `Tools/mock-hermes/media_site.py`, below), "widget fence" (an
+agent-typed block, shown as code), "widget refused" (a refused create whose reply names the widget
+anyway, with a comma between the directive's attributes) and "widget refused inline" (that reply in
+one message with the call), "widget routine" in a Bot Chat (the Bot's Daily plan routine runs now
+and its report arrives with the widget; "widget routine json" when its agent typed the payload as a
+json block, as plugin 1.4.0 delivers it, "widget routine json old" as 1.3.0 left it, "widget
+routine broken" when the payload stops halfway, "widget routine directive" and "widget routine
+missing" when the Bot's reply names a stored widget or one never stored), "widget unknown", "widget
+invalid", "widget suggestions" and "widget wide" (everything long in one reply: a long inline code
+path and name, a wide code block, a details card with long labels, values and a long state tag, a
+snippet and an output with lines of over 200 characters; nothing in it may widen the reply,
+[chat.md](chat.md) §3) and "widget wide table" (a table with long headings, text and mono values
+and a long state tag). "Weather today?" (any message with "weather" or "forecast") is what an agent
+told about widgets does: it looks the forecast up, reads the weather examples and answers one
+sentence and the weather card. Over the socket, a chat the app didn't mark gets each widget's plain
+text instead, as on a real gateway. In a Bot group chat the app marked, the same words make Ops
+answer with an inline block. `POST /api/mock/widget-answer {id?, action, device?, hold?}` answers
+the newest widget from another device; `--no-widgets` leaves the plugin out. `/app-widgets client`
+(which app sent a turn, [widgets.md](widgets.md) §11) answers as plugin 1.6.0 does, refusals
+included; `--widgets-version 1.5.0` (either server) plays the plugin before it, where `client` is
+an unknown command and `status` says 1.5.0. On a simulator, enrol Face ID with `xcrun simctl spawn
+<udid> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1` (then `-p` the same name) and pass
+a check with `notifyutil -p com.apple.BiometricKit_Sim.pearl.match`.
 
 UI tests (`HermesUITests`, `UITests/`) run against the mock: start it first, then
 `xcodebuild test -scheme HermesUITests -destination 'platform=iOS Simulator,name=…'`
@@ -842,6 +847,18 @@ instead of the Keychain. `-HERMES_BOOTSTRAP_CERTIFICATE <path to client.p12>
 starts with the certificate set. Put `access_gateway.py` behind the proxy to need a token and a
 certificate both. Its tests: `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p
 test_mtls_proxy.py`.
+
+A press site for "widget media web <port>" (`Tools/mock-hermes/media_site.py`,
+[widgets.md](widgets.md) §9.3): it serves one video over https with Range reads, using the
+proxy's server certificate from the same `--certs` folder. `--rate <bytes a second>` slows each
+answer, so a seek lands while a read is still coming in, and the log says how far each read got
+before the app let it go. `--ignore-ranges` answers every read with the whole file (200), which
+the app refuses. A Debug build on the Mac trusts the site with `-HERMES_TRUST_CA <certs>/ca.pem`:
+
+```bash
+python3 -I Tools/mock-hermes/media_site.py --port 24443 --certs "$TMPDIR/mtls" \
+    --file Tools/mock-hermes/media/sample-clip.mp4
+```
 
 Features that aren't set up (`Tools/mock-hermes/setup.py`, [setup.md](setup.md) §5): `--setup
 board-off,tidying-off,turn-isolation,…` starts the backend with them, and `POST /api/mock/setup

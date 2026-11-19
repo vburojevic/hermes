@@ -33,6 +33,24 @@ extension BackendClient {
         try await restData("api/fs/download", query: Self.query(["path": path, "profile": profile]))
     }
 
+    /// A picture to show whole (`GET /api/fs/download`), held in memory only. A file over
+    /// `MediaViewing.maxBytes` throws `MediaTooBig` before its bytes are read: by `knownSize` (the
+    /// listing's size) when the caller has it, otherwise by a `HEAD`'s `Content-Length`
+    /// (docs/widgets.md §9.2).
+    public func downloadPicture(_ path: String, profile: String? = nil, knownSize: Int64? = nil) async throws -> (Data, String?) {
+        let query = Self.query(["path": path, "profile": profile])
+        var size = knownSize
+        if size == nil {
+            let (_, head) = try await restResponse("api/fs/download", method: "HEAD", query: query)
+            size = head.value(forHTTPHeaderField: "Content-Length").flatMap { Int64($0) }
+        }
+        if let size, size > MediaViewing.maxBytes { throw MediaTooBig(bytes: size) }
+        let (data, type) = try await restData("api/fs/download", query: query)
+        // A server that gave no size is still held to the limit once it has answered.
+        if Int64(data.count) > MediaViewing.maxBytes { throw MediaTooBig(bytes: Int64(data.count)) }
+        return (data, type)
+    }
+
     /// The repository a path is in (`GET /api/fs/git-root`); nil outside one.
     public func gitRoot(of path: String, profile: String? = nil) async throws -> String? {
         try await rest("api/fs/git-root", query: Self.query(["path": path, "profile": profile]))["root"]?.stringValue

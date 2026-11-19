@@ -195,7 +195,7 @@ struct InspectorTabChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: tab.kind.symbol)
+            Image(systemName: tab.symbol)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isSelected ? Theme.primaryText : Theme.secondaryText)
                 .frame(width: 14)

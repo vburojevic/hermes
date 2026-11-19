@@ -27,6 +27,12 @@ Words in a message:
                                Markdown image naming the first file
   widget private image         the same widgets, private: the pictures never reach the disk
   widget missing image         a media widget whose gateway picture isn't there (404)
+  widget media                 a gateway video with its poster and a grid of twelve screenshots, each with an
+                               Open action naming a file: every item opens full screen (inspector.py `MEDIA`)
+  widget media refused         a grid of what doesn't open: gone, a picture over 50 MB, not allowed, not a video, and a
+                               video on another host (asks first)
+  widget media web <port>      a video on an https site that isn't the gateway (media_site.py on that port):
+                               it asks first, then streams with Range reads
   widget links                 a metric whose note has an https address (a link, asks first) and an http one (text)
   widget fence                 an agent-typed ```widget fence in a normal reply (it must stay code)
   widget routine               in a Bot Chat: the Bot runs its Daily plan routine now, and its report arrives a
@@ -829,6 +835,16 @@ def script(text, session="", producer=None):
         raw["items"][0]["note"] = "Details at https://example.com/revenue (the old page was http://example.com/old)."
         payload = create(raw)
         return steps + [("text", "Revenue, with where it comes from.\n\n" + directive(payload))]
+    web = re.search(r"\bwidget media web (\d{2,5})\b", lower)
+    if web:
+        payload = create(web_video_widget(int(web.group(1))))
+        return steps + [("text", "Here is the launch video from the press site.\n\n" + directive(payload))]
+    if re.search(r"\bwidget media refused\b", lower):
+        payload = create(refused_media_widget())
+        return steps + [("text", "Here is what I could find of the old recordings.\n\n" + directive(payload))]
+    if re.search(r"\bwidget media\b", lower):
+        payloads = [create(raw) for raw in media_widgets()]
+        return steps + [("text", "\n\n".join(["Here is the walkthrough and the screenshots."] + [directive(p) for p in payloads]))]
     if re.search(r"\bwidget missing image\b", lower):
         payload = create(missing_image_widget())
         return steps + [("text", "Here is the chart I meant to save.\n\n" + directive(payload))]
@@ -901,6 +917,73 @@ def gateway_image_widgets(private):
     card["cards"][0]["media"] = {"src": "hermes-file:Code/hermes-site/diagrams/orbit-card.png",
                                  "alt": "A white square in the middle of an orange to pink square, with two small squares at its corners"}
     return [{**raw, **extra} for raw in (media, guide, card)]
+
+
+def media_widgets():
+    """"widget media" (docs/widgets.md §9.1): a video the Bot keeps on its gateway, with its poster
+    and an Open action naming the file, and a grid of twelve screenshots with an Open action naming
+    the first one. Each opens full screen; the files are inspector.py's `MEDIA` and `SHOTS`
+    (published as `MEDIA_SHOTS`)."""
+    site = "hermes-file:Code/hermes-site/"
+    video = {
+        "type": "media", "v": 1, "title": "Site walkthrough", "as_of": rfc3339(now()), "layout": "single",
+        "items": [{"id": "walkthrough", "caption": "A six-second pass over the new homepage.",
+                   "media": {"src": site + "media/walkthrough.mp4", "kind": "video", "width": 480, "height": 270,
+                             "duration": 6, "thumb": site + "photos/home-hero.png",
+                             "alt": "A screen recording that scrolls down the new homepage"}}],
+        "actions": [{"id": "open-video", "label": "Open Video", "kind": "open", "url": site + "media/walkthrough.mp4"}],
+        "fallback_text": "The site walkthrough (Code/hermes-site/media/walkthrough.mp4), six seconds.",
+    }
+    shots = (B or {}).get("MEDIA_SHOTS") or []
+    if not shots:
+        return [video]   # gateway only: the screenshots live in the mock backend's project
+    grid = {
+        "type": "media", "v": 1, "title": "Site screenshots", "as_of": rfc3339(now()), "layout": "grid",
+        "items": [{"id": f"shot-{index + 1}", "caption": alt + ".",
+                   "media": {"src": site + path, "width": 640, "height": 480, "alt": alt}}
+                  for index, (path, alt) in enumerate(shots)],
+        "actions": [{"id": "open-first", "label": "Open Original", "kind": "open", "url": site + shots[0][0]}],
+        "fallback_text": "Twelve screenshots of the site (Code/hermes-site/photos/).",
+    }
+    return [video, grid]
+
+
+def refused_media_widget():
+    """"widget media refused": a grid of every way a picture or video doesn't open (docs/widgets.md
+    §9.1): gone (404), a picture over 50 MB (videos have no cap), not allowed (Hermes's
+    sensitive-file 403), a file that isn't a video and a video on another host (asks first). Plain http can't be sent: the widget schema
+    takes only https and `hermes-file:` addresses."""
+    site = "hermes-file:Code/hermes-site/"
+
+    def item(ident, src, alt, kind="image", **extra):
+        return {"id": ident, "caption": alt + ".", "media": {"src": src, "alt": alt, "kind": kind, **extra}}
+
+    return {
+        "type": "media", "v": 1, "title": "Old recordings", "as_of": rfc3339(now()), "layout": "grid",
+        "items": [
+            item("gone-video", site + "media/old-demo.mp4", "The first demo, since deleted", "video", duration=42),
+            item("private-video", site + "pairing/screen.mp4", "The pairing screen recording", "video", duration=12),
+            item("broken-video", site + "media/broken.mp4", "A recording that didn't finish saving", "video", duration=8),
+            item("gone-picture", site + "photos/old-hero.png", "The old homepage hero, since deleted"),
+            item("big-picture", site + "photos/print-scan.png", "The print scan, 60 MB"),
+            item("private-picture", site + "pairing/code.png", "The pairing code"),
+            item("web-video", "https://media.example.com/clips/launch.mp4", "The launch video on the press site", "video", duration=30),
+        ],
+        "fallback_text": "Old recordings: seven files, most of them gone, private or too big to open.",
+    }
+
+
+def web_video_widget(port):
+    """"widget media web <port>": a video on an https site that isn't the gateway (media_site.py
+    on that port), which the card asks before loading and the app streams with Range reads
+    (docs/widgets.md §9.3)."""
+    return {
+        "type": "media", "v": 1, "title": "Launch video", "as_of": rfc3339(now()), "layout": "single",
+        "items": [{"id": "launch", "caption": "The launch video, from the press site.",
+                   "media": {"src": f"https://localhost:{port}/clips/launch.mp4", "kind": "video",
+                             "width": 640, "height": 360, "alt": "The launch video on the press site"}}],
+        "fallback_text": f"The launch video: https://localhost:{port}/clips/launch.mp4",
+    }
 
 
 def missing_image_widget():

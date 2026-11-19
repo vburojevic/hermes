@@ -293,7 +293,7 @@ struct InspectorPill: View {
             Button {
                 inspector.isPresented = true
             } label: {
-                InspectorPillLabel(symbol: tab.kind.symbol, title: tab.title, isUsedByHermes: inspector.isUsedByHermes(tab), others: inspector.tabs.count - 1)
+                InspectorPillLabel(symbol: tab.symbol, title: tab.title, isUsedByHermes: inspector.isUsedByHermes(tab), others: inspector.tabs.count - 1)
             }
             .hermesTip(InspectorTip(), arrowEdge: .bottom)
             .buttonStyle(.plain)

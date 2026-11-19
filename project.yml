@@ -109,6 +109,7 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Dictate messages and talk with Hermes in Voice mode. What you say is turned into text on this device."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Turn what you say into text on this device, for dictation and Voice mode."
         INFOPLIST_KEY_NSFaceIDUsageDescription: "Confirm it’s you before approving a payment or anything that can’t be undone."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Save pictures Hermes sends you to Photos."
         # hermesapp://connect links (pairing QR codes). Debug uses its own scheme so it never
         # takes links meant for the real app.
         HERMES_URL_SCHEME: hermesapp

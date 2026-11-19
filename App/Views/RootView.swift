@@ -707,6 +707,8 @@ struct MainView: View {
             .environment(\.gatewayHosts, workspace.bot.hosts)
             .modifier(BotSheets(workspace: workspace))
             .modifier(ProjectSheets(workspace: workspace))
+            // A media card's pictures and videos open full screen over the whole window.
+            .mediaViewerHost()
             #if os(macOS)
             // ⌘K: the search palette over the window; a click outside closes it.
             .overlay(alignment: .top) {

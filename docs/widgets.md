@@ -276,6 +276,12 @@ widget is private) follow contract §9:
   never written to a temporary file, the picture cache (`RemotePictures`) or the widget cache,
   which keeps the payload and its address only. This holds for every widget, so a private one's
   picture never reaches the disk.
+- **Videos** (§9.3) stream into memory a stretch at a time, with no size cap, and are let go
+  when the viewer or the File tab closes: never a file, a URL cache or the widget cache, on the
+  gateway or on the web. A video on the gateway carries the gateway's headers; an https video
+  carries no key on any host, only an access gateway's own headers on the gateway's host, and one
+  on another server waits for the card's tap, as a picture does. The full-screen viewer neither
+  saves nor shares a private widget's pictures.
 - **Never indexed:** nothing from widgets goes to Spotlight, Siri suggestions or the Home Screen.
 - **Group chats:** the plugin refuses private widgets there.
 
@@ -307,10 +313,12 @@ widgets.
   Bot group chat a widget has no chat of its own: a relative path is in the gateway's default
   folder and is read without a profile, and Open on its link shows that same file. It's decoded
   off the main thread at the size it's drawn at (`GatewayFileImage`) and the read stops when the
-  card leaves the screen. A video's own file is never read, only its `thumb`. While it loads the
-  well is `controlFill`; when the file is missing or the gateway refuses it, the description
-  with "Couldn't load this image"; without Bot Mode, the description with "Turn on Bot Mode to
-  load this image". VoiceOver reads the `alt` either way.
+  card leaves the screen. A card draws a video's `thumb`; the video itself is read only once it
+  is opened and played (§9.3). A tap on a picture or a video opens the viewer (§9.1); a
+  picture still waiting for its tap loads first. While it loads the well is `controlFill`; when
+  the file is missing or the gateway refuses it, the description with "Couldn't load this
+  image"; without Bot Mode, the description with "Turn on Bot Mode to load this image".
+  VoiceOver reads the `alt` either way.
 - **Loading:** a skeleton in the type's shape while a payload is on its way; "Couldn't load this
   widget" with Try Again when it never comes; text with "Shown as text" for an unknown type, a
   newer version or an invalid payload (the widget menu says why).
@@ -348,6 +356,93 @@ widgets.
   scrolls over it, and VoiceOver adjusts it as a slider. A form's date reads as words ("Fri 30
   Oct") with a calendar glyph and opens a calendar over the field; a menu fills its well, with
   up-down chevrons at the end.
+
+### 9.1 The viewer
+
+A tap on a picture or a video in a `media` card opens the viewer over the whole window (design
+`mediaViewer`, `macMediaViewer`): the card's pictures and videos in its order, one screen each, on
+the canvas, starting at the one tapped (the "+8" tile opens on its own picture). Audio stays in
+the card.
+
+- **iPhone and iPad:** it grows from the tile and shrinks back to it (Reduce Motion: it appears and
+  goes without the zoom). Close, the position ("4 of 12", not shown for one item), Save and Share
+  sit at the top on glass, the caption and credit at the bottom, and the picture fits between
+  them; with large text the position moves aside to stay clear of the buttons. A tap on the
+  picture hides and shows them with the status bar. A swipe sideways pages, a swipe down on a
+  picture that isn't zoomed closes it.
+- **Mac:** it fills the window and hides its toolbar, crossfading in. The top bar has Close after
+  the window's buttons, the file's name and position in the middle, then Zoom Out, Zoom In, Share
+  and Save; previous and next sit at the window's edges. Escape closes, the arrow keys page,
+  ⌘+ and ⌘− zoom, ⌘0 fits.
+- **Zoom:** a pinch, a double tap (at the point tapped) or ⌘+ zooms up to 5×; a zoomed picture
+  pans and doesn't page or close until it's back at its fit. Pictures are decoded off the main
+  thread at most 3,072 px on the long side, so a large photo doesn't take hundreds of megabytes.
+- **Memory:** only the page shown and its neighbours hold their bytes; the rest are let go, and
+  everything goes when the viewer closes.
+- **Save and Share:** Save adds the picture to Photos with add-only access on iPhone and iPad
+  (`NSPhotoLibraryAddUsageDescription`) and asks where to save it on the Mac; Share is the system
+  sheet. Neither is offered for a private widget, a video, or a page that isn't showing a
+  picture.
+- **Where pictures come from:** the card's rule (§9). A picture on the gateway is read again
+  through the backend at full size (`/api/fs/download`, the chat's Bot profile); an https one on
+  the gateway's host loads, one elsewhere shows "Tap to load from <host>" until the card's tap,
+  which lets in every picture and video on that card; plain http and other schemes show the
+  unloadable state below.
+- **VoiceOver** reads each page's `alt`, then its caption; the tiles say "video" and the length
+  for a video, and "8 more photos" on the "+8" tile.
+
+### 9.2 When it doesn't open
+
+Each page that can't show its picture or video says why (`MediaStateView`), in the viewer and in
+the File tab alike:
+
+- **Gone** (404): "This picture is gone" or "This video is gone", "<name> isn't on the gateway
+  anymore. Ask Hermes to send it again."
+- **Too big:** "This picture is too big to open", "It's 72 MB, and the app opens pictures up to
+  50 MB. Ask Hermes for a smaller copy." The 50 MB cap (`MediaViewing.maxBytes`) is the app's,
+  for pictures only, since a picture is held whole: a gateway picture's size is asked with a HEAD
+  first (`downloadPicture`), and an https picture stops reading past it (`RemoteMedia`). A video
+  has no size cap (§9.3).
+- **Not allowed** (403): "Hermes doesn't share this file", "The gateway keeps files like this one
+  private, so the app can't open it."
+- **Couldn't load:** "Couldn't load this picture", "Can't reach Hermes at <host>.", with Try
+  Again; a video that stops coming reads "Couldn't play this video", with Try Again, which
+  carries on from where it stopped. A web picture or video names its own server instead of
+  Hermes: "Can't reach <host>. Try again later." and "Couldn't stream it from <host>. Try again
+  later." The gateway has no part in fetching them.
+- **Bot Mode isn't linked:** a file on the gateway needs Bot Mode (docs/setup.md §4.1); the state
+  links it in Edit Gateway and has Check Again.
+- **Unloadable:** an address the app doesn't read (plain http, another scheme) shows the
+  picture's description, as on the card.
+
+While a picture reads, the page shows the canvas with a `Spinner` after half a second.
+
+### 9.3 Videos
+
+A video plays only after a tap: the card's play button opens the viewer and plays it, the
+viewer's poster plays on its own button, and the File tab waits in the system player. The system
+player has its controls, AirPlay and captions; Picture in Picture is off, since the video lives
+only as long as the view that streams it.
+
+- **One route:** AVPlayer is given a `hermes-media://video/<uuid>.mp4` address that names neither
+  the file nor the server, so it can't fetch, cache or write anything itself. Every byte comes
+  through the app's resource loader (`MediaStreamLoader`) as 1 MB Range reads, held only until
+  the player takes them. A video is never held whole, so it has no size cap, on the gateway or
+  on the web.
+- **On the gateway** (`hermes-file:`): `GET /api/files/stream?path=…&profile=…` through the
+  backend with a `Range` header, the key in the request's headers and never in a URL, the chat's
+  Bot profile as for pictures. MP4 and MOV play; other types say they can't play.
+- **On the web** (https): the same loader reads it through `RemoteMedia`, an ephemeral session
+  with no cache or cookies whose redirects stay on the same server (`SameOriginRedirects`).
+  It never carries the API key; on the gateway's own host it carries only an access gateway's
+  headers (`GatewayAccessRegistry`), and anywhere else nothing. A video on the gateway's host
+  plays on tap; one on another server first shows "Tap to load from <host>" in the poster's
+  well, once per card. A web video with no `thumb` shows a plain well under its play button; the
+  app never fetches the video's own address as a picture. Plain http and other schemes don't
+  play. A server that answers a Range read with the whole file (200 instead of 206) reads
+  "Couldn't play this video": the app never slices that answer or reads it again.
+- **Nothing on disk:** no temporary file, no URL cache, no download; paging away or closing stops
+  the player and lets every read in flight go.
 
 ## 10. Accessibility and motion
 
@@ -472,6 +567,8 @@ widgets.
 - `WidgetMisfireTests`: a directive written with commas, a payload typed into a routine's delivery,
   and a reply in the same message as its widget call (§2).
 - `WidgetAnswerTests`: the answer message, defusing, the round trip and batches.
+- `WidgetMediaTests`: the viewer's items and start page, the position, the File tab's summary,
+  media types by path and MIME type, Range and Content-Range, and which problem an error shows.
 - `WidgetPrivacyTests`: when a signature is needed, the signing input against the plugin's,
   previews, what the transcript cache keeps, and the `/app-widgets` client.
 
@@ -483,6 +580,8 @@ and messages, signatures checked for real. Its words are in its docstring and
 "widget publish" (an approval without Face ID), "widget lunch" (with it), "widget expiring",
 "widget silent" (Try Again), "widget private", "widget gateway image", "widget private
 image" (pictures kept on the gateway, §9) and "widget missing image" (one that isn't there),
+"widget media" (a gateway video with its poster and a grid of twelve screenshots, each opening
+full screen, §9.1) and "widget media refused" (everything that doesn't open, §9.2),
 "widget fence", "widget unknown", "widget invalid", "widget suggestions", "widget wide" and
 "widget wide table" (one of everything long, §9), "widget refused" (a refused create whose reply
 names the widget anyway, the directive's attributes split by a comma) and "widget refused inline"
@@ -537,6 +636,16 @@ light, dark and Increase Contrast:
 - "widget missing image": "Sign-ups" reads its description with "Couldn't load this image".
 - "widget private image": the same pictures, covered in the app switcher; nothing of them in the
   app's container (search it for the pictures' hashes after they've shown).
+- "widget media": a tap on a screenshot opens the viewer at it; pinch and double tap zoom, a
+  swipe (or the arrows and chevrons on the Mac) goes to the next, "4 of 12" follows, a swipe down
+  or Escape closes and the tile takes it back; the "+8" tile opens on the fifth. The video's play
+  button opens it playing, streamed (the backend's log shows Range reads of
+  `/api/files/stream` with the chat's profile). Open Video and Open Original open the files in
+  the Inspector's File tab, as media (docs/inspector.md §2.8). Nothing of either is in the app's
+  container afterwards.
+- "widget media refused": each page says its state (§9.2); Try Again on the broken video tries
+  once more; the press-site video asks "Tap to load from media.example.com". Without Bot Mode
+  the gateway pages read "Bot Mode isn't linked".
 - "widget suggestions": rows under the newest reply only; tapping one sends its words.
 - Which app sent the turn: in the backend's log every message, a held one and one with a skill or a
   file included, has a `client:` line just before its `prompt.submit` line, and the submit's hash

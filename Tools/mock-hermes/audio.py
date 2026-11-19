@@ -33,8 +33,11 @@ tools/voice_client_config.py, tools/tts_streaming.py):
     /api/env), like Hermes; otherwise {"error", "no live STT for the configured provider"}.
     {"stt_live_fail": "…"} answers eos with that error instead (a provider that dropped).
   - GET /api/audio/elevenlabs/voices: {available, voices: [{voice_id, name, label}]}.
-  - GET|HEAD /api/files/stream?path=: files attached with file.attach (voice messages) and the
-    seeded Bot audio, with Range; 415 "Unsupported media type" for other extensions.
+  - GET|HEAD /api/files/stream?path=&profile=: files attached with file.attach (voice messages),
+    the seeded Bot audio and the project's pictures and videos (inspector.py `MEDIA`: mp4 as
+    video/mp4, mov as video/quicktime), with Range. Hermes's refusals in its order: 404 for an
+    unknown profile, 400 for a relative path or "..", 404 "File not found", 403 "Access to
+    sensitive files is not allowed", then 415 "Unsupported media type" for other extensions.
   - prompt.submit keeps voice_turn, surface, voice_context and interrupted, and answers
     user_row_id. GET /api/mock/audio/turns lists them, and what speak-stream was asked to say.
 
@@ -590,22 +593,44 @@ def mock_turns(query, body):
 
 
 def files_stream(handler, query, head=False):
+    """As Hermes's stream_managed_file: the profile, the path, the file, the read guard, then the
+    suffix (media only), with Range. A project's pictures and videos (inspector.py `MEDIA`) are
+    served alongside the attached files."""
+    refusal = profile_or_404(query)
+    if refusal:
+        return handler.send_json(*refusal)
     path = (query.get("path") or [""])[0]
-    if not path.startswith("/") or ".." in path.split("/"):
+    # Hermes expands a home path first (`Path.expanduser`).
+    if path == "~" or path.startswith("~/"):
+        path = "/Users/studio" + path[1:]
+    if not path.startswith("/"):
         return handler.send_json(400, {"detail": "Path must be absolute"})
-    if not path.lower().endswith(MEDIA_EXTENSIONS):
-        return handler.send_json(415, {"detail": "Unsupported media type"})
+    if ".." in path.split("/"):
+        return handler.send_json(400, {"detail": "Path cannot contain '..'"})
     with LOCK:
         data = FILES.get(path)
+    if data is None and B.get("PROJECT_MEDIA"):
+        data = B["PROJECT_MEDIA"](path)
     if data is None:
         return handler.send_json(404, {"detail": "File not found"})
-    content_type = {"m4a": "audio/mp4", "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg"}.get(path.rsplit(".", 1)[-1].lower(), "application/octet-stream")
+    if B.get("SENSITIVE_PATH") and B["SENSITIVE_PATH"](path):
+        return handler.send_json(403, {"detail": "Access to sensitive files is not allowed"})
+    if not path.lower().endswith(MEDIA_EXTENSIONS):
+        return handler.send_json(415, {"detail": "Unsupported media type"})
+    content_type = {"m4a": "audio/mp4", "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg",
+                    "mp4": "video/mp4", "mov": "video/quicktime"}.get(path.rsplit(".", 1)[-1].lower(), "application/octet-stream")
     start, end, status = 0, len(data) - 1, 200
     ranged = handler.headers.get("Range") or ""
     if ranged.startswith("bytes="):
         first, _, last = ranged[6:].partition("-")
         start = int(first) if first else max(0, len(data) - int(last or 0))
         end = min(len(data) - 1, int(last)) if first and last else len(data) - 1
+        if start >= len(data):
+            handler.send_response(416)
+            handler.send_header("Content-Range", f"bytes */{len(data)}")
+            handler.send_header("Content-Length", "0")
+            handler.end_headers()
+            return
         status = 206
     chunk = data[start:end + 1]
     handler.send_response(status)

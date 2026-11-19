@@ -117,7 +117,7 @@ follows its behaviour where this doc is silent.
 |---|---|---|
 | **Preview** (web page, localhost, gateway file: HTML, PDF, image) | `preview.open {url, label}` from Hermes; a page card in the reply (Hermes's `desktop_preview` open); Open Address… (⌘L) and the URL bar | The app's own `WKWebView` (`PreviewController`). Gateway files load through the `hermes-fs` scheme from `GET /api/fs/download` (§2.4). Links in replies open in the browser, not here |
 | **Artifact** (HTML, SVG, code) | `artifactCard` in the reply | Found in the reply by the app (§4). Rendered offline in a sandboxed web view; Allow Network is a toggle per artifact |
-| **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine |
+| **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine. A picture or video file, and Open on a media card ([widgets.md](widgets.md) §9), open as media instead: `GET /api/fs/download` for a picture, Range reads of `GET /api/files/stream` for a video (§2.8) |
 | **Files** | + menu | `GET /api/fs/list?path&profile`, folders loaded as they open; the app also hides `node_modules`, `.git` and `.DS_Store`. Git letters from `GET /api/fs/git-root` and `GET /api/git/status` |
 | **Changes** | Review on the latest file-changing turn's `turnCheckpoint` (iPad and Mac; elsewhere Review is its own sheet, [checkpoints.md](checkpoints.md)), Show in Changes on a diff card, + menu, `pane.reveal review` | `GET /api/git/review/list?path&scope&base` with scope `lastTurn` (This Turn), `branch` or `uncommitted`; `GET /api/git/review/diff?path&file&scope&base&staged`; `POST /api/git/review/stage` / `unstage {path, file}`; `commit {path, message, push}`; `create-pr {path}`. `GET /api/git/review/ship-info` finds the branch's open pull request; `GET /api/git/gh-auth` says whether Create Pull Request can work (§2.5) |
 | **Changed Files** | A turn's Changes row in the chat, on the Mac and iPad landscape (iPhone and iPad portrait open the Changes sheet instead, [chat.md](chat.md) §2), + menu (the latest turn's) | None: the turn's own edits (`TurnChanges`), so it works without Bot Mode (§2.7) |
@@ -287,6 +287,29 @@ edits did, not what's uncommitted.
   closes the tab, and the tab is in Inspector Tabs (⌥⌘1–9) like any other.
 - Open opens the file in a File tab, read through the gateway; a deleted file has no Open.
 
+### 2.8 Pictures and videos in the File tab
+
+A picture (JPEG, PNG, GIF, HEIC, WebP, TIFF) or a video (MP4, MOV) opens in its File tab as media
+(`inspectorPicture`, `inspectorVideo`), never as "This file isn't text". It opens from anywhere a
+File tab does, and from a media card's Open action (`references.openWidgetFile`).
+
+- The path on top, as for any file; the picture fitted in the middle with rounded corners, or
+  the video's first frame with a play button and its length in a corner; a footer that says
+  what it is once it has answered: "JPEG · 4,032 × 3,024 · 3.1 MB", "MPEG-4 video · 1,280 × 720
+  · 0:12 · 2.4 MB".
+- A pinch or a double tap zooms the picture, and it pans once zoomed; VoiceOver has a Zoom
+  action. Play starts the video in the system player, with its own controls from then on.
+- The tab's glyph is a photo or a film instead of the page.
+- A picture is read whole through `GET /api/fs/download?path&profile` (`downloadPicture`): a
+  `HEAD` first for its size, then the bytes. A video plays through the same loader as the
+  viewer's ([widgets.md](widgets.md) §9.3): Range reads of `GET /api/files/stream?path&profile`,
+  a megabyte at a time, with the key in headers. Both go through the chat's Bot profile.
+- Nothing is written to disk: the picture and the video's reads are let go when the tab closes,
+  and read again when it opens.
+- The states are the viewer's ([widgets.md](widgets.md) §9.2): gone, too big (a picture over
+  50 MB; videos have no cap), not allowed (a file the gateway keeps private), couldn't load or
+  play with Try Again, and Bot Mode isn't linked with its fix.
+
 ## 3. Reaching localhost
 
 `preview.open localhost:5173` means the gateway machine's localhost (`localhost`, `127.0.0.1`,
@@ -380,6 +403,8 @@ rebinding) isn't caught.
 - Code and terminal text support text selection; code follows Dynamic Type on iPhone and iPad.
 - The Screen view reads "Hermes's screen, live", and Take Control / Hand Back is its own button.
 - The URL bar reads as one "Address" button until it's being edited.
+- A picture in the File tab reads as its file name, an image; a video's player reads as its file
+  name with the system player's own controls. The footer reads as text.
 - The pill reads "Inspector, localhost:5173, Hermes is using this, 2 more tabs", hint "Opens the
   Inspector".
 
@@ -399,6 +424,11 @@ rebinding) isn't caught.
 - An HTML artifact in a reply shows a card; opening it renders it with no network; a later version
   adds to the stepper.
 - Editing and saving a file writes it, and a change made on the gateway meanwhile is caught.
+- In the mock, `photos/home-hero.png` opens as a picture with its footer and
+  `media/walkthrough.mp4` plays from the Files tree; `photos/print-scan.png` says it's too big.
+  Open on a "widget media" card opens the same tabs; from "widget media refused", the private
+  video says Hermes doesn't share it and the missing one that it's gone. Without Bot Mode the tab
+  says Bot Mode isn't linked.
 - Changes stages files, commits with the message, pushes and creates a pull request, with errors
   shown inline.
 - Terminal streams live output and Stop ends the process.

@@ -3,6 +3,7 @@ import HermesKit
 import LocalAuthentication
 import Observation
 #if os(iOS)
+import Photos
 import UIKit
 #else
 import AppKit
@@ -19,17 +20,22 @@ final class DeviceSetup {
     enum ID {
         static let microphone = "device.microphone"
         static let camera = "device.camera"
+        static let photos = "device.photos"
         static let deviceOwner = "device.faceID"
         static let hiddenSuggestions = HiddenSuggestionsSync.id
     }
 
     /// A pane of System Settings: this app's own on iPhone and iPad, the privacy pane on the Mac.
     enum Pane {
-        case microphone, camera, app, localNetwork
+        case microphone, camera, photos, app, localNetwork
     }
 
     private(set) var microphone = AVAudioApplication.shared.recordPermission
     private(set) var camera = AVCaptureDevice.authorizationStatus(for: .video)
+    #if os(iOS)
+    /// Add-only: the viewer saves pictures to Photos and never reads the library.
+    private(set) var photos = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+    #endif
     private(set) var biometry = LABiometryType.none
     private(set) var biometryError: LAError.Code?
     /// A passcode (or a Mac's password) is set, so approvals can be confirmed at all.
@@ -40,6 +46,9 @@ final class DeviceSetup {
     func refresh() {
         microphone = AVAudioApplication.shared.recordPermission
         camera = AVCaptureDevice.authorizationStatus(for: .video)
+        #if os(iOS)
+        photos = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        #endif
         let context = LAContext()
         var error: NSError?
         let biometric = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
@@ -54,6 +63,7 @@ final class DeviceSetup {
         var all = [microphoneStatus]
         #if os(iOS)
         all.append(cameraStatus)
+        all.append(photosStatus)
         #endif
         all.append(deviceOwnerStatus)
         all.append(hiddenSuggestionsStatus)
@@ -103,6 +113,27 @@ final class DeviceSetup {
         }
     }
 
+    #if os(iOS)
+    var photosStatus: SetupStatus {
+        let title = String(localized: "Photos")
+        switch photos {
+        case .denied, .restricted:
+            return SetupStatus(
+                id: ID.photos, state: .notSetUp, title: title,
+                detail: String(localized: "You can't save pictures from a chat to Photos."),
+                fallback: String(localized: "You can still share them."),
+                fix: photos == .denied ? .openSettings : nil,
+                steps: [SetupStep(Self.settingsPath(for: .photos))]
+            )
+        case .authorized, .limited:
+            return SetupStatus(id: ID.photos, state: .ready, title: title, detail: String(localized: "Allowed to add"))
+        default:
+            return SetupStatus(id: ID.photos, state: .ready, title: title,
+                               detail: String(localized: "Hermes asks the first time you save a picture."))
+        }
+    }
+    #endif
+
     /// Face ID, Touch ID or the passcode: what confirms a widget's approval is you.
     var deviceOwnerStatus: SetupStatus {
         let title = biometryTitle ?? String(localized: "Passcode")
@@ -143,6 +174,7 @@ final class DeviceSetup {
         switch pane {
         case .microphone: String(localized: "In Settings → Apps → Hermes, turn on Microphone.")
         case .camera: String(localized: "In Settings → Apps → Hermes, turn on Camera.")
+        case .photos: String(localized: "In Settings → Apps → Hermes → Photos, choose Add Photos Only.")
         case .app: String(localized: "In Settings → Apps → Hermes, turn on Face ID.")
         case .localNetwork: String(localized: "In Settings → Apps → Hermes, turn on Local Network.")
         }
@@ -150,6 +182,7 @@ final class DeviceSetup {
         switch pane {
         case .microphone: String(localized: "In System Settings → Privacy & Security → Microphone, turn on Hermes.")
         case .camera: String(localized: "In System Settings → Privacy & Security → Camera, turn on Hermes.")
+        case .photos: String(localized: "In System Settings → Privacy & Security → Photos, turn on Hermes.")
         case .app: String(localized: "In System Settings → Touch ID & Password, check Touch ID is set up.")
         case .localNetwork: String(localized: "In System Settings → Privacy & Security → Local Network, turn on Hermes.")
         }
@@ -171,6 +204,7 @@ final class DeviceSetup {
         let anchor = switch pane {
         case .microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
         case .camera: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+        case .photos: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos"
         case .app: "x-apple.systempreferences:com.apple.Touch-ID-Settings.extension"
         case .localNetwork: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork"
         }
@@ -183,6 +217,7 @@ final class DeviceSetup {
         switch id {
         case ID.microphone: { Self.openSettings(.microphone) }
         case ID.camera: { Self.openSettings(.camera) }
+        case ID.photos: { Self.openSettings(.photos) }
         case ID.deviceOwner: { Self.openSettings(.app) }
         default: nil
         }

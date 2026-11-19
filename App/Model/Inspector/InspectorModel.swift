@@ -57,6 +57,12 @@ struct InspectorTab: Identifiable, Hashable, Codable {
 
     var id: String { "\(kind.rawValue):\(key)" }
 
+    /// The tab's glyph: a picture or video file shows a photo or a film (docs/inspector.md §2.8).
+    var symbol: String {
+        guard kind == .file, let type = MediaFileType(path: key) else { return kind.symbol }
+        return type.kind == .video ? "film" : "photo"
+    }
+
     /// The one Changed Files tab: the turn it shows is the Inspector's `changesTurn`.
     static let turnChangesKey = "turn"
 
