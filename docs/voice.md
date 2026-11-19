@@ -416,13 +416,50 @@ long press on the microphone records a voice message instead). Group chats have 
 
 ## 6. Voices and settings
 
-**Settings → Voice & Audio** (`voiceSettings`, `VoiceSettingsView`; a pane on the Mac), stored
-on the device: Talk engine (Realtime when the gateway offers it, else Hermes Voice: the footer
-says which), Hermes's voice (the Bot voice picker for the gateway's own profile), Answer after
-a pause of (Short/Normal/Long), Voice replies, Raise to Listen (iPhone), AirPods studio-quality
-mic, Listen speed (1–2×), Code and tables (Describe them/Skip), Transcribe on (This iPhone, or
-The Gateway for calls, §4.2), the transcription language, Hey Hermes (§4.6), and Sounds and
-haptics.
+**Settings → Voice & Audio** (`voiceSettings`, `VoiceSettingsView`; a pane on the Mac), pushed
+from Settings with a back button. What the gateway has comes first (§6.1): Talk, Listen, Voice
+messages, Transcribe on the gateway (only while it's chosen) and Hey Hermes, each a status word
+with its symbol and a detail line, and a row that isn't Ready carries its fix, its steps, Check
+Again and Learn More. The design draws them as one Setup section; the app keeps one section per
+feature, each headed with its name. Then the settings. Talk voice, Hey Hermes, Transcription and Sounds and
+haptics have a footer that says what the choice does; Voice Messages and Listen have none.
+Pickers are menus.
+
+| Section | Row | Stored | Values |
+|---|---|---|---|
+| Talk voice | Talk engine | device | Realtime / Hermes Voice (the choice is kept when Realtime is missing; the footer says Hermes Voice answers instead) |
+| Talk voice | Hermes’s voice | gateway profile | the Bot voice picker for the gateway's own profile |
+| Talk voice | Answer after a pause of | device | Short / Normal / Long |
+| Hey Hermes | Hey Hermes | device | Mac; iPhone and iPad while charging with Hermes open (§4.6) |
+| Voice Messages | Voice replies | device | When I Speak / Always / Never |
+| Voice Messages | Raise to Listen | device | on (iPhone) |
+| Voice Messages | AirPods studio-quality mic | device | on (voice messages only) |
+| Listen | Speed | device | 1–2× |
+| Listen | Code and tables | device | Describe them / Skip |
+| Transcription | Transcribe on | device | This iPhone / The Gateway (calls, §4.2) |
+| Transcription | Language | device | Device Language, or an installed on-device model |
+| Sounds and haptics | Sounds and haptics | device | on |
+
+The settings section is "Talk voice" so it doesn't repeat the "Talk" status above it. The states
+are drawn in `screens/iphone/voice-settings-states.elyx`:
+
+- **No Realtime** (`voiceRealtimeUnavailable`): Talk is Partly set up, "Hermes Voice · ElevenLabs
+  · Adam", with Add OpenAI Key…, `hermes config set OPENAI_API_KEY <your key>`, Check Again and
+  Learn More. Talk engine still reads Realtime.
+- **Gateway transcription** (`voiceGatewayTranscription`): Transcribe on is The Gateway and
+  "Transcribe on the gateway" joins the statuses ("OpenAI, as you speak"). With live
+  transcription off on the gateway (`voiceGatewayTranscriptionOff`) it is Partly set up, "On this
+  iPhone instead", with Turn On and `hermes config set stt.streaming true`.
+- **Largest text** (`voiceSettingsAX5`): status words go under their titles, pickers put their
+  value under the title, footers wrap.
+
+A voice row (`botVoicePicker`, `VoiceChoiceRow`) is a radio, the voice's name and its description
+with its kind, and a preview button. The radio, the play and stop glyphs and the button grow with
+the text (`.title2`, `.caption2` bold, 34 pt at the default size) up to the first accessibility
+size, then stop, so at the largest sizes the name keeps its room and never breaks inside a word.
+VoiceOver reads the row as
+"Marin, Warm and unhurried, realtime", selected or not, and the button as "Preview Marin", or
+"Stop preview" while it plays.
 
 **A Bot's voice** (`botVoicePicker`, `BotVoiceView`, `BotVoiceModel`; Edit Bot → Voice): read with
 `GET /api/config?profile=` and saved with `PUT /api/config?profile=` (Hermes deep-merges the
