@@ -26,6 +26,72 @@ struct SetupStatusTests {
         #expect(!SetupStatus(id: "x", state: .notSetUp, title: "X").showsSteps)
     }
 
+    @Test func everyStateIsAWordAndASymbol() {
+        let expected: [(SetupStatus.State, String, String?)] = [
+            (.ready, "Ready", "checkmark.circle.fill"),
+            (.limited, "Partly set up", "exclamationmark.circle.fill"),
+            (.notSetUp, "Not set up", "circle.dashed"),
+            (.unknown, "Can't check", "questionmark.circle"),
+            // A spinner stands in for the symbol while checking.
+            (.checking, "Checking…", nil),
+        ]
+        for (state, word, symbol) in expected {
+            #expect(state.word == word)
+            #expect(state.symbol == symbol)
+        }
+    }
+
+    @Test func aRowReadsItsNameStateAndLine() {
+        let memory = SetupStatus(id: "memory", state: .limited, title: "Memory",
+                                 detail: "Honcho isn't set up on Studio Mac.", fallback: "Built-in memory until it is.")
+        #expect(memory.line == "Honcho isn't set up on Studio Mac.")
+        #expect(memory.spokenLabel == "Memory, Partly set up, Honcho isn't set up on Studio Mac.")
+
+        let fallbackOnly = SetupStatus(id: "talk", state: .limited, title: "Talk", fallback: "Uses this iPhone's voice.")
+        #expect(fallbackOnly.line == "Uses this iPhone's voice.")
+
+        let checking = SetupStatus.checking(id: "models", title: "Models")
+        #expect(checking.line == nil)
+        #expect(checking.spokenLabel == "Models, Checking…")
+    }
+
+    @Test func aRowOffersItsFixOnlyWhileThereIsSomethingToFix() {
+        let fix = SetupFix(title: "Turn On")
+        #expect(SetupStatus(id: "x", state: .notSetUp, title: "X", fix: fix).offersFix)
+        #expect(SetupStatus(id: "x", state: .limited, title: "X", fix: fix).offersFix)
+        #expect(SetupStatus(id: "x", state: .unknown, title: "X", fix: fix).offersFix)
+        #expect(!SetupStatus(id: "x", state: .ready, title: "X", fix: fix).offersFix)
+        #expect(!SetupStatus(id: "x", state: .checking, title: "X", fix: fix).offersFix)
+        #expect(!SetupStatus(id: "x", state: .notSetUp, title: "X").offersFix)
+    }
+
+    @Test func theCountComesFromOneListAndWaitsForTheFirstCheck() {
+        let ready = SetupStatus(id: "a", state: .ready, title: "A")
+        let missing = SetupStatus(id: "b", state: .notSetUp, title: "B")
+        let partly = SetupStatus(id: "c", state: .limited, title: "C")
+        let unknown = SetupStatus(id: "d", state: .unknown, title: "D")
+        #expect(SetupSummary.text([missing, partly], hasChecked: false) == "Checking…")
+        #expect(SetupSummary.text([ready, unknown], hasChecked: true) == "Everything is set up")
+        #expect(SetupSummary.text([ready, missing, unknown], hasChecked: true) == "1 thing to set up")
+        #expect(SetupSummary.text([ready, missing, partly], hasChecked: true) == "2 things to set up")
+    }
+
+    @Test func checkAgainDimsOnTheFirstCheckAndSpinsOnLaterOnes() {
+        let first = SetupCheckPhase(hasChecked: false, isChecking: true)
+        #expect(first == .firstCheck)
+        #expect(!first.canCheck && !first.showsSpinner)
+        // Before the first check has started, it's still the first check.
+        #expect(SetupCheckPhase(hasChecked: false, isChecking: false) == .firstCheck)
+
+        let again = SetupCheckPhase(hasChecked: true, isChecking: true)
+        #expect(again == .checkingAgain)
+        #expect(!again.canCheck && again.showsSpinner)
+
+        let idle = SetupCheckPhase(hasChecked: true, isChecking: false)
+        #expect(idle == .idle)
+        #expect(idle.canCheck && !idle.showsSpinner)
+    }
+
     @Test func docsPagesLiveUnderTheDocsRoot() {
         #expect(HermesDocs.page("user-guide/bot-mode").absoluteString
             == "https://hermes-agent.nousresearch.com/docs/user-guide/bot-mode")

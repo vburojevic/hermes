@@ -21,6 +21,29 @@ public struct SetupStatus: Identifiable, Hashable, Sendable {
         /// The feature needs the person: something to set up, or a fallback they may not want.
         public var needsAttention: Bool { self == .notSetUp || self == .limited }
 
+        /// The word every view shows for the state, beside `symbol` (`docs/setup.md` §2).
+        public var word: String {
+            switch self {
+            case .checking: String(localized: "Checking…")
+            case .ready: String(localized: "Ready")
+            case .limited: String(localized: "Partly set up")
+            case .notSetUp: String(localized: "Not set up")
+            case .unknown: String(localized: "Can't check")
+            }
+        }
+
+        /// The SF Symbol beside the word. None while checking: a spinner stands in for it, so
+        /// "Checking…" never looks like an answer.
+        public var symbol: String? {
+            switch self {
+            case .checking: nil
+            case .ready: "checkmark.circle.fill"
+            case .limited: "exclamationmark.circle.fill"
+            case .notSetUp: "circle.dashed"
+            case .unknown: "questionmark.circle"
+            }
+        }
+
         /// Lists show what needs setting up first and what's ready last.
         public var order: Int {
             switch self {
@@ -88,6 +111,55 @@ public struct SetupStatus: Identifiable, Hashable, Sendable {
 
     /// Learn More, beside the steps or while the feature isn't ready.
     public var showsDocs: Bool { docs != nil && (showsSteps || (state != .ready && state != .checking)) }
+
+    /// The row's second line: what's in use when ready, otherwise what's missing; what still
+    /// works when that's all there is.
+    public var line: String? { detail ?? fallback }
+
+    /// A row offers its fix (the Mac's row button, VoiceOver's action on iPhone and iPad) only
+    /// while there's something to fix, never while checking or once ready.
+    public var offersFix: Bool { fix != nil && state != .checking && state != .ready }
+
+    /// What VoiceOver reads for a row: the name, the state's word, then the line. The symbol is
+    /// never read; the word says the same.
+    public var spokenLabel: String {
+        [title, state.word, line].compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
+/// Settings → Setup's count (`docs/setup.md` §3): one list of statuses gives both the overview's
+/// summary and the row that opens it, so the two never disagree.
+public enum SetupSummary {
+    /// "Checking…" until the first check has answered; then "Everything is set up", "1 thing to
+    /// set up" or "3 things to set up".
+    public static func text(_ statuses: [SetupStatus], hasChecked: Bool) -> String {
+        guard hasChecked else { return String(localized: "Checking…") }
+        let count = statuses.needingAttention
+        switch count {
+        case 0: return String(localized: "Everything is set up")
+        case 1: return String(localized: "1 thing to set up")
+        default: return String(localized: "\(count) things to set up")
+        }
+    }
+}
+
+/// Where Setup's Check Again stands (`docs/setup.md` §3). The first check dims the button and
+/// shows no spinner, because every row already says "Checking…"; a later check, which the person
+/// started, shows the spinner where the button was.
+public enum SetupCheckPhase: Hashable, Sendable {
+    case idle
+    case firstCheck
+    case checkingAgain
+
+    public init(hasChecked: Bool, isChecking: Bool) {
+        self = if !hasChecked { .firstCheck } else if isChecking { .checkingAgain } else { .idle }
+    }
+
+    /// Check Again can be pressed.
+    public var canCheck: Bool { self == .idle }
+
+    /// The spinner stands where Check Again was.
+    public var showsSpinner: Bool { self == .checkingAgain }
 }
 
 /// A fix the app can make itself (`docs/setup.md` §1.2): "Turn On", "Install…", "Add Key…".

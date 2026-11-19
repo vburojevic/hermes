@@ -244,26 +244,18 @@ public enum GatewaySetup {
                 fix: .signIn,
                 docs: Docs.remoteBackend
             )
-        // The Mac's wider row has room to say why; the iPhone's keeps it short.
+        // The row's state already says Not set up, so the line says only why.
         case .refused:
-            #if os(macOS)
-            let detail = String(localized: "Not set up · sign-in refused, so Bot Mode stopped trying")
-            #else
-            let detail = String(localized: "Not set up · sign-in refused")
-            #endif
             return SetupStatus(
-                id: ID.botMode, state: .notSetUp, title: title, detail: detail,
+                id: ID.botMode, state: .notSetUp, title: title,
+                detail: String(localized: "Sign-in refused, so Bot Mode stopped trying."),
                 fix: SetupFix(title: String(localized: "Edit Sign-In…"), action: .signIn),
                 docs: Docs.remoteBackend
             )
         case .wrongServer:
-            #if os(macOS)
-            let detail = String(localized: "Not set up · the address is the gateway, not its backend")
-            #else
-            let detail = String(localized: "Not set up · wrong address")
-            #endif
             return SetupStatus(
-                id: ID.botMode, state: .notSetUp, title: title, detail: detail,
+                id: ID.botMode, state: .notSetUp, title: title,
+                detail: String(localized: "The address is the gateway, not its backend."),
                 fix: SetupFix(title: String(localized: "Edit Backend…"), action: .linkBotMode),
                 steps: botModeSteps(facts), docs: Docs.botMode
             )

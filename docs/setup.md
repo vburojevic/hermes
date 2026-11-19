@@ -77,9 +77,9 @@ Buttons are verbs in title case: Turn On, Install…, Check Again, Learn More.
 
 | View | Where |
 |---|---|
-| `SetupStateLabel` | The state as a glyph and a word, in rows and cards |
+| `SetupStateLabel` | The state as a word and a symbol, in rows and cards: Ready `checkmark.circle.fill` (green), Partly set up `exclamationmark.circle.fill` (orange), Not set up `circle.dashed` (secondary), Can't check `questionmark.circle`, Checking… a `Spinner` after 0.5 s. `SetupStatus.State.word` and `.symbol` hold them |
 | `SetupSection` | A Form section on a Settings page: state and meaning, fallback, the fix (a button, or the feature's own controls), steps, Check Again, Learn More |
-| `SetupRow` | A Settings row opening the feature's page; Settings → Setup is a list of them |
+| `SetupRow` | A Settings row opening the feature's page; Settings → Setup is a list of them. It reads the name, the state and its line (`SetupStatus.spokenLabel`), and offers the fix while there is something to fix (`offersFix`): a VoiceOver action on iPhone and iPad, a button before the chevron on the Mac |
 | `FeatureSetupPage` | The page a `SetupRow` opens when the feature has no page of its own |
 | `SetupCard` | The same as `SetupSection` outside a Form: the top of a list, a panel, the Inspector |
 | `SetupMessage` | A full-area message for a panel whose feature can't work at all |
@@ -91,11 +91,16 @@ Buttons are verbs in title case: Turn On, Install…, Check Again, Learn More.
 - **Settings → Setup** (iPhone and iPad: Settings → Hermes on <gateway> → Setup; Mac: the Setup
   tab) lists every feature in this doc with its state, in fixed groups (Hermes on the gateway,
   Features, Reaching You, Voice & Audio, On This Device) so rows don't jump while it checks. Each
-  row opens the feature's own page, or its `FeatureSetupPage` with the fix and the steps. The
-  Settings row says how many things need setting up. `SetupCenter` (one per gateway,
-  `workspace.setup`) reads everything when the page or the row appears and again when Bot Mode
-  connects or drops; each read lands as it comes back and gives up after 20 s, and a status
-  waiting on a read says Checking… the first time round.
+  row opens the feature's own page, or its `FeatureSetupPage` with the fix and the steps.
+  Transcription shows its steps and no fix. The Settings row and the top of the list say how
+  many things need setting up, both counted from the one list (`SetupSummary`). `SetupCenter`
+  (one per gateway, `workspace.setup`) reads everything when the page or the row appears and
+  again when Bot Mode connects or drops; each read lands as it comes back and gives up after
+  20 s, and a status waiting on a read says Checking… the first time round.
+- **Check Again** reads everything again: a toolbar button on iPhone and iPad, a button beside
+  the count on the Mac, with ⌘R. During the first check it is dimmed with no spinner and the
+  count says Checking…; on later checks a `Spinner` takes its place (`SetupCheckPhase`). On the
+  Mac ⌘[ goes back from a feature's page to the list.
 - **The feature's own page** puts its setup first while it isn't ready (`SetupSection` or
   `SetupCard`), and keeps the rest of the page usable where it can.
 - **Where it's used**, a feature that can't run says so in place: a `SetupMessage` instead of an
@@ -121,8 +126,8 @@ it, and so do pictures and videos kept on the gateway, in a card's viewer and th
 |---|---|---|
 | Not set up | no link (`bot.backend == nil`) | What Bot Mode adds, Link Bot Mode… (Edit Gateway), the steps below |
 | Not set up | `BotRoster.State.signInRequired`: a REST 401, socket close 4401 | Sign In… (Edit Gateway) |
-| Not set up · sign-in refused | `BotRoster.stop == .refused`: the backend refused a token or password, or takes none Bot Mode can use | `botModeRefused`: why, Edit Sign-In… and Check Again |
-| Not set up · wrong address | `BotRoster.stop == .wrongServer`: the address answered as the gateway's API server | `botModeWrongServer`: why, Edit Backend… and Check Again |
+| Not set up | `BotRoster.stop == .refused`: the backend refused a token or password, or takes none Bot Mode can use | "Sign-in refused, so Bot Mode stopped trying." `botModeRefused`: why, Edit Sign-In… and Check Again |
+| Not set up | `BotRoster.stop == .wrongServer`: the address answered as the gateway's API server | "The address is the gateway, not its backend." `botModeWrongServer`: why, Edit Backend… and Check Again |
 | Can't check | `BotRoster.State.failed(reason)` | The roster's reason, "Chats still work.", Edit Gateway… and `hermes serve` |
 | Ready | roster online | "Linked · 5 Bots" |
 
@@ -171,10 +176,10 @@ ran.
 
 Where the stop shows, as drawn:
 
-- Settings → Setup: Bot Mode's row ("Not set up · sign-in refused" with Edit Sign-In…, or "Not
-  set up · wrong address" with Edit Backend…; on the Mac "…, so Bot Mode stopped trying" and
-  "… · the address is the gateway, not its backend"), and a warm card at the top of Features
-  (`botModeRefused`, `botModeWrongServer`, `BotModeWarning.stopped`).
+- Settings → Setup: Bot Mode's row, Not set up with "Sign-in refused, so Bot Mode stopped
+  trying." and Edit Sign-In…, or "The address is the gateway, not its backend." and Edit
+  Backend…, the same on every device, and a warm card at the top of Features (`botModeRefused`,
+  `botModeWrongServer`, `BotModeWarning.stopped`).
 - Settings' gateway list, after a refused sign-in: "Bot Mode can't sign in" in place of the
   address on iPhone and iPad, after it on the Mac.
 - Features that need Bot Mode keep the nearest state they already have: a refused sign-in reads
