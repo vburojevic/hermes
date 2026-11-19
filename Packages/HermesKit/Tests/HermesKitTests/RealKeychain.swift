@@ -1,14 +1,16 @@
 import Foundation
 import Security
 import Testing
+@testable import HermesKit
 
 /// Whether the tests that store real secrets can use this Mac's Keychain without a prompt.
 ///
 /// The first use turns Keychain prompts off for the whole test process, so a keychain that is
 /// locked answers `errSecInteractionNotAllowed` at once instead of waiting for a password nobody
-/// types (a release on a build Mac). It then looks once for an item that doesn't exist, the way
-/// `KeychainStore` reads: the data-protection keychain first, then the login keychain when the
-/// test process isn't entitled to that one. Only "not found" means the tests can go ahead.
+/// types (a release on a build Mac). It then looks once for an item that doesn't exist in the
+/// data-protection keychain, and never in the login keychain, which a Debug `KeychainStore`
+/// doesn't use either. Only "not found" means the tests can go ahead; a store that is then refused
+/// a write keeps the secret in memory (`KeychainStore.MacFallback`).
 enum RealKeychain {
     /// Why the real Keychain can't be used, or nil when it can.
     static let unusableReason: String? = probe()
@@ -17,7 +19,14 @@ enum RealKeychain {
 
     /// What the lookup for a missing item answered, read as the tests' verdict.
     static func reason(forLookup status: OSStatus) -> String? {
-        status == errSecItemNotFound ? nil : "The Keychain answered \(describe(status)) without a prompt"
+        switch status {
+        case errSecItemNotFound:
+            nil
+        case errSecMissingEntitlement:
+            "This test process isn't entitled to the data-protection keychain, and the tests never use the login keychain"
+        default:
+            "The Keychain answered \(describe(status)) without a prompt"
+        }
     }
 
     #if os(macOS)
@@ -31,6 +40,9 @@ enum RealKeychain {
 
     private static func probe() -> String? {
         #if os(macOS)
+        guard KeychainStore.MacFallback.standard == .processMemory else {
+            return "A Release test build's Keychain store falls back to the login keychain, which the tests never use"
+        }
         // SecKeychain is deprecated; reaching it through a protocol keeps the warning out of the
         // build without silencing it anywhere else.
         let legacy: any LegacyKeychain = LegacyKeychainCalls()
@@ -39,16 +51,10 @@ enum RealKeychain {
         let keychain = legacy.defaultKeychainState()
         if let reason = reason(forDefaultKeychain: keychain.status, state: keychain.state) { return reason }
         #endif
-        let service = "co.caffeinatedcode.hermes.tests.probe.\(UUID().uuidString)"
-        #if os(macOS)
-        let status = lookUp(service: service, useDataProtection: true)
-        return reason(forLookup: status == errSecMissingEntitlement ? lookUp(service: service, useDataProtection: false) : status)
-        #else
-        return reason(forLookup: lookUp(service: service, useDataProtection: true))
-        #endif
+        return reason(forLookup: lookUp(service: "co.caffeinatedcode.hermes.tests.probe.\(UUID().uuidString)"))
     }
 
-    private static func lookUp(service: String, useDataProtection: Bool) -> OSStatus {
+    private static func lookUp(service: String) -> OSStatus {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -57,7 +63,7 @@ enum RealKeychain {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         #if os(macOS)
-        if useDataProtection { query[kSecUseDataProtectionKeychain as String] = true }
+        query[kSecUseDataProtectionKeychain as String] = true
         #endif
         var result: CFTypeRef?
         return SecItemCopyMatching(query as CFDictionary, &result)
@@ -95,7 +101,7 @@ extension Trait where Self == ConditionTrait {
     /// Runs a test that reaches the real Keychain only where it answers without a prompt, and
     /// says why it was skipped otherwise.
     static var realKeychain: Self {
-        .enabled(if: RealKeychain.isUsable, Comment(rawValue: RealKeychain.unusableReason ?? ""))
+        .enabled(if: RealKeychain.isUsable, RealKeychain.unusableReason.map { Comment(rawValue: $0) })
     }
 }
 
@@ -103,10 +109,11 @@ extension Trait where Self == ConditionTrait {
 struct RealKeychainTests {
     @Test func onlyAMissingItemMeansTheKeychainIsUsable() {
         #expect(RealKeychain.reason(forLookup: errSecItemNotFound) == nil)
-        for status in [errSecInteractionNotAllowed, errSecNoDefaultKeychain, errSecAuthFailed, errSecMissingEntitlement] {
+        for status in [errSecInteractionNotAllowed, errSecNoDefaultKeychain, errSecAuthFailed] {
             let reason = RealKeychain.reason(forLookup: status)
             #expect(reason?.contains("OSStatus \(status)") == true, "\(status) should not be usable")
         }
+        #expect(RealKeychain.reason(forLookup: errSecMissingEntitlement)?.contains("never use the login keychain") == true)
     }
 
     #if os(macOS)

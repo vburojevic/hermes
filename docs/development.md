@@ -851,7 +851,10 @@ Pair with `https://127.0.0.1:25642` (Bot Mode at `https://127.0.0.1:25119`). A s
 the CA with `xcrun simctl keychain <UDID> add-root-cert "$TMPDIR/mtls/ca.pem"`. Never add it to a
 keychain on the Mac: a Debug build there trusts it with `-HERMES_TRUST_CA <path to ca.pem>`, for
 that process alone, and `-HERMES_MEMORY_CERTIFICATES YES` keeps imported certificates in memory
-instead of the Keychain. `-HERMES_BOOTSTRAP_CERTIFICATE <path to client.p12>
+instead of the Keychain. API keys and the other secrets need no flag: a Mac Debug build without a
+keychain entitlement keeps them in memory for that run and never reads or writes the login
+keychain, so a keychain password dialog means something is wrong. Quit the app by its PID and
+leave the dialog unanswered. `-HERMES_BOOTSTRAP_CERTIFICATE <path to client.p12>
 -HERMES_BOOTSTRAP_CERTIFICATE_PASSWORD hermes-mock` next to the other `-HERMES_BOOTSTRAP_*` flags
 starts with the certificate set. Put `access_gateway.py` behind the proxy to need a token and a
 certificate both. Its tests: `python3 -I -m unittest discover -s Tools/mock-hermes/tests -p

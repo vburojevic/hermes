@@ -66,6 +66,9 @@ launch flags open any screen in any state: both are listed in [docs/development.
 - Every new gateway call gets a mock in `Tools/mock-hermes` in the same change, shaped like the real
   one, refusals included.
 - Shut simulators down when you're done checking; long-running ones slow the machine and the mocks.
+- A Mac Debug build without a keychain entitlement keeps API keys and other secrets in memory for
+  that run and never touches the login keychain. A keychain password dialog is a stop: quit the
+  app by its PID, never answer the dialog, and report it.
 - A simulator without a window (no Simulator.app) doesn't always draw sheets and glass. When a
   screenshot looks empty, check the accessibility tree (`axe describe-ui`) before blaming the app.
 
