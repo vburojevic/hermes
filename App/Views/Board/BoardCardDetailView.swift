@@ -16,6 +16,9 @@ struct BoardCardDetailView: View {
     @State private var isApproving = false
     @State private var copiedLink = false
     @FocusState private var commentFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .footnote) private var chevronSize = 12
+    @ScaledMetric(relativeTo: .body) private var inspectorButtonSize = 32
 
     private var card: BoardCard? { model.card(cardID) ?? model.details[cardID]?.card }
     private var detail: BoardCardDetail? { model.details[cardID] }
@@ -101,19 +104,60 @@ struct BoardCardDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                if inInspector { moreMenu(card) }
-            }
-            HStack(spacing: 8) {
-                if let badge = stateBadge(state) {
-                    TagLabel(title: badge.title, symbol: badge.symbol, style: badge.style)
+                if inInspector {
+                    moreMenu(card)
+                    #if os(iOS)
+                    closeButton
+                    #endif
                 }
-                Text(stateLine(card, state: state))
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(2)
+            }
+            // At the accessibility sizes the badge sits above the state line, so neither is cut
+            // (`cardRunningAx5`, docs/board.md §6).
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let badge = stateBadge(state) {
+                        TagLabel(title: badge.title, symbol: badge.symbol, style: badge.style)
+                    }
+                    stateText(card, state: state)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    if let badge = stateBadge(state) {
+                        TagLabel(title: badge.title, symbol: badge.symbol, style: badge.style)
+                    }
+                    stateText(card, state: state)
+                        .lineLimit(2)
+                }
             }
         }
     }
+
+    private func stateText(_ card: BoardCard, state: BoardCardState) -> some View {
+        Text(stateLine(card, state: state))
+            .font(.footnote)
+            .foregroundStyle(Theme.secondaryText)
+    }
+
+    #if os(iOS)
+    /// The iPad inspector's own Close (`ipadBoard`); ⌘. closes it from a keyboard. The Mac closes
+    /// it with Esc, and ⌘. there is Stop Responding.
+    private var closeButton: some View {
+        Button {
+            model.openCardID = nil
+        } label: {
+            Image(systemName: "xmark")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .frame(width: inspectorButtonSize, height: inspectorButtonSize)
+                .background(Theme.controlFill, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressableStyle())
+        .keyboardShortcut(".", modifiers: .command)
+        .accessibilityLabel(String(localized: "Close"))
+        .help(String(localized: "Close"))
+    }
+    #endif
 
     private func stateBadge(_ state: BoardCardState) -> BoardCopy.Badge? {
         if case .review = state, let checks = detail?.checks {
@@ -202,7 +246,7 @@ struct BoardCardDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: chevronSize, weight: .semibold))
                     .foregroundStyle(Theme.tertiaryText)
             }
             .padding(.horizontal, 16)
@@ -533,8 +577,31 @@ struct BoardCardDetailView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         #else
-        PairedSheetButtons(secondary: secondary, onSecondary: onSecondary, secondarySymbol: secondarySymbol,
-                           primary: primary, symbol: symbol, primaryEnabled: primaryEnabled, minimumScale: 0.7, onPrimary: onPrimary)
+        if dynamicTypeSize.isAccessibilitySize {
+            // At the accessibility sizes the two stack full width, the primary on top, and their
+            // words wrap instead of shrinking (`cardRunningAx5`).
+            VStack(spacing: 10) {
+                Button(action: onPrimary) {
+                    Label(primary, systemImage: symbol)
+                        .frame(maxWidth: .infinity)
+                }
+                .prominentGlassButton()
+                .disabled(!primaryEnabled)
+                Button(action: onSecondary) {
+                    Label(secondary, systemImage: secondarySymbol)
+                        .frame(maxWidth: .infinity)
+                }
+                .glassButton()
+            }
+            .font(.body.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .controlSize(.extraLarge)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        } else {
+            PairedSheetButtons(secondary: secondary, onSecondary: onSecondary, secondarySymbol: secondarySymbol,
+                               primary: primary, symbol: symbol, primaryEnabled: primaryEnabled, minimumScale: 0.7, onPrimary: onPrimary)
+        }
         #endif
     }
 
@@ -558,7 +625,11 @@ struct BoardCardDetailView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(inInspector ? .body.weight(.semibold) : .body)
-                .frame(width: inInspector ? 28 : nil, height: inInspector ? 28 : nil)
+                .frame(width: inInspector ? inspectorButtonSize : nil, height: inInspector ? inspectorButtonSize : nil)
+                #if os(iOS)
+                .foregroundStyle(inInspector ? AnyShapeStyle(Theme.secondaryText) : AnyShapeStyle(.tint))
+                .background(inInspector ? Theme.controlFill : .clear, in: Circle())
+                #endif
                 .contentShape(Rectangle())
         }
         #if os(macOS)

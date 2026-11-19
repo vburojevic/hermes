@@ -336,3 +336,64 @@ struct BoardTests {
         }
     }
 }
+
+@Suite("Board layout")
+struct BoardLayoutTests {
+    @Test func theMacAlwaysUsesTheInspector() {
+        #expect(BoardLayout.choose(isMac: true, isCompact: false, width: 700, height: 900, isAccessibilitySize: false) == .inspector)
+        #expect(BoardLayout.choose(isMac: true, isCompact: false, width: 1400, height: 900, isAccessibilitySize: true) == .inspector)
+    }
+
+    @Test func iPhoneShowsOneColumnAtATime() {
+        #expect(BoardLayout.choose(isMac: false, isCompact: true, width: 402, height: 874, isAccessibilitySize: false) == .phone)
+        #expect(BoardLayout.choose(isMac: false, isCompact: true, width: 874, height: 402, isAccessibilitySize: true) == .phone)
+    }
+
+    @Test func iPadLandscapeUsesTheInspectorFrom900Points() {
+        #expect(BoardLayout.choose(isMac: false, isCompact: false, width: 1376, height: 1032, isAccessibilitySize: false) == .inspector)
+        #expect(BoardLayout.choose(isMac: false, isCompact: false, width: 900, height: 700, isAccessibilitySize: false) == .inspector)
+        #expect(BoardLayout.choose(isMac: false, isCompact: false, width: 899, height: 700, isAccessibilitySize: false) == .pages)
+    }
+
+    @Test func iPadPortraitOpensCardsAsSheets() {
+        #expect(BoardLayout.choose(isMac: false, isCompact: false, width: 1032, height: 1376, isAccessibilitySize: false) == .pages)
+    }
+
+    @Test func iPadAtAccessibilitySizesKeepsThePortraitLayoutInLandscape() {
+        #expect(BoardLayout.choose(isMac: false, isCompact: false, width: 1376, height: 1032, isAccessibilitySize: true) == .pages)
+        #expect(BoardLayout.choose(isMac: false, isCompact: false, width: 1032, height: 1376, isAccessibilitySize: true) == .pages)
+    }
+
+    @Test func columnWidths() {
+        #expect(BoardLayout.inspector.columnWidth(isMac: true, width: 1400) == 222)
+        #expect(BoardLayout.inspector.columnWidth(isMac: false, width: 1376) == 255)
+        // Portrait fits two across: (1032 − 52) / 2.
+        #expect(BoardLayout.pages.columnWidth(isMac: false, width: 1032) == 490)
+        // Landscape at an accessibility size: two across the wider window.
+        #expect(BoardLayout.pages.columnWidth(isMac: false, width: 1376) == 662)
+        // Never narrower than 255, and 255 before the window is measured.
+        #expect(BoardLayout.pages.columnWidth(isMac: false, width: 500) == 255)
+        #expect(BoardLayout.pages.columnWidth(isMac: false, width: 0) == 255)
+    }
+
+    @Test func theInspectorOpensAtItsWidestAtTheLargestText() {
+        #expect(BoardLayout.inspectorIdealWidth(isAccessibilitySize: false) == 380)
+        #expect(BoardLayout.inspectorIdealWidth(isAccessibilitySize: true) == 460)
+    }
+
+    @Test func theMacFadesOnlyTheSidesWithMoreColumns() {
+        // At the start: more columns to the right only.
+        #expect(BoardEdgeFades(offset: 0, visibleWidth: 800, contentWidth: 1400) == BoardEdgeFades(leading: false, trailing: true))
+        // In the middle: both sides.
+        #expect(BoardEdgeFades(offset: 300, visibleWidth: 800, contentWidth: 1400) == BoardEdgeFades(leading: true, trailing: true))
+        // At the end: the left only.
+        #expect(BoardEdgeFades(offset: 600, visibleWidth: 800, contentWidth: 1400) == BoardEdgeFades(leading: true, trailing: false))
+        // Every column fits: no fades.
+        #expect(BoardEdgeFades(offset: 0, visibleWidth: 1400, contentWidth: 1200) == BoardEdgeFades(leading: false, trailing: false))
+    }
+
+    @Test func theNoticeStaysWhileVoiceOverRuns() {
+        #expect(BoardNotice.timeout(voiceOverRunning: false) == .seconds(6))
+        #expect(BoardNotice.timeout(voiceOverRunning: true) == nil)
+    }
+}
