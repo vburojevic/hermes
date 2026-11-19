@@ -293,23 +293,54 @@ struct EntityBody: View {
 struct WidgetImage: View {
     let media: WidgetMedia
     var maxHeight: CGFloat = 220
+    /// The card's own tap to load, so one tap lets in every picture and video on it.
+    var webAllowed: Binding<Bool>?
+    /// Opens the picture full screen; nil where it doesn't open (docs/widgets.md §9.1).
+    var open: (() -> Void)?
+    /// What VoiceOver says for it when it opens: its alt text unless the tile adds to it.
+    var openLabel: String?
+    /// The card draws its play button over it, so a video with no poster shows only the well.
+    var playsOver = false
 
     @Environment(\.gatewayHosts) private var gatewayHosts
     @State private var fetches = false
 
     var body: some View {
+        if let open, !asks {
+            Button(action: open) { picture }
+                .buttonStyle(.plain)
+                .accessibilityLabel(openLabel ?? media.alt)
+                .accessibilityAddTraits(.isImage)
+                .accessibilityHint(String(localized: "Opens full screen"))
+        } else {
+            picture
+        }
+    }
+
+    private var allowed: Bool { fetches || webAllowed?.wrappedValue == true }
+
+    /// It waits for the tap that names its server, and that tap loads it rather than opening it.
+    private var asks: Bool {
+        guard let url = URL(string: media.src), url.scheme?.lowercased() == "https" else { return false }
+        return !allowed && !WebLink.isOnGateway(url, gatewayHosts: gatewayHosts)
+    }
+
+    private var picture: some View {
         Group {
             if let url = URL(string: media.src), url.scheme?.lowercased() == "https",
-               fetches || WebLink.isOnGateway(url, gatewayHosts: gatewayHosts) {
-                RemoteImage(url: url, transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
-                    switch phase {
-                    case .success(let image): image.resizable().scaledToFill()
-                    case .failure: placeholder(String(localized: "Couldn't load this image"))
-                    case .empty: Theme.controlFill
-                    }
+               allowed || WebLink.isOnGateway(url, gatewayHosts: gatewayHosts) {
+                if media.kind == .video, media.src != media.thumb {
+                    // A video with no poster of its own: the viewer streams it, it's never
+                    // fetched whole as a picture.
+                    placeholder(nil)
+                } else {
+                    remote(url)
                 }
             } else if let url = URL(string: media.src), url.scheme?.lowercased() == "https" {
-                Button { fetches = true } label: {
+                Button {
+                    fetches = true
+                    webAllowed?.wrappedValue = true
+                } label: {
                     placeholder(String(localized: "Tap to load from \(url.host(percentEncoded: true) ?? "")"))
                 }
                 .buttonStyle(.plain)
@@ -334,13 +365,32 @@ struct WidgetImage: View {
         .accessibilityAddTraits(.isImage)
     }
 
+    private func remote(_ url: URL) -> some View {
+        RemoteImage(url: url, transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+            switch phase {
+            case .success(let image): image.resizable().scaledToFill()
+            case .failure: placeholder(String(localized: "Couldn't load this image"))
+            case .empty: Theme.controlFill
+            }
+        }
+    }
+
     private var height: CGFloat {
         guard let width = media.width, let height = media.height, width > 0 else { return min(maxHeight, 180) }
         let ratio = min(max(Double(height) / Double(width), 0.5), 4.0 / 3.0)
         return min(maxHeight, 330 * ratio)
     }
 
+    @ViewBuilder
     private func placeholder(_ note: String?) -> some View {
+        if note == nil, playsOver, media.kind == .video {
+            Theme.controlFill
+        } else {
+            labelledPlaceholder(note)
+        }
+    }
+
+    private func labelledPlaceholder(_ note: String?) -> some View {
         VStack(spacing: 6) {
             Image(systemName: media.kind == .video ? "video" : "photo").font(.system(size: 20)).foregroundStyle(Theme.tertiaryText)
             Text(media.alt).font(WidgetFont.caption).foregroundStyle(Theme.secondaryText).multilineTextAlignment(.center).lineLimit(3)
@@ -436,13 +486,20 @@ struct WidgetMapSnapshot: View {
 // MARK: - media
 
 /// Images, a video or a voice note (`Things.media`, `mediaGrid`, `mediaAudio`). Nothing plays by
-/// itself.
+/// itself: a tap on a picture or a video opens it full screen (docs/widgets.md §9.1).
 struct MediaBody: View {
     let model: MediaWidget
     let context: WidgetContext
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.mediaViewer) private var viewer
+    @Environment(\.mediaViewerNamespace) private var namespace
+    @Environment(\.references) private var references
+    @Environment(\.gatewayHosts) private var gatewayHosts
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
+    /// The card's tap to load: it lets in every https picture and video on the card at once.
+    @State private var webAllowed = false
 
     var body: some View {
         let audio = model.items.filter { $0.media.kind == .audio }
@@ -461,19 +518,76 @@ struct MediaBody: View {
 
     private func single(_ item: MediaWidget.Item) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .bottomLeading) {
-                WidgetImage(media: item.media.kind == .video ? posterMedia(item.media) : item.media)
-                if item.media.kind == .video {
-                    Label(item.media.duration.map { WidgetFormatter().duration($0) } ?? "—:—", systemImage: "play.fill")
-                        .font(WidgetFont.caption.weight(.semibold))
+            tile(item, index: 0)
+            caption(item)
+        }
+    }
+
+    /// One picture or video, as the card shows it. A video is its poster with a play button and
+    /// its length (design `mediaChat`).
+    private func tile(_ item: MediaWidget.Item, index: Int, maxHeight: CGFloat = 220, more: Int = 0) -> some View {
+        let video = item.media.kind == .video
+        var label = item.media.alt
+        if video {
+            label += ", " + String(localized: "video")
+            if let duration = item.media.duration { label += ", " + MediaViewing.clock(duration) }
+        }
+        if more > 0 { label += ", " + String(localized: "\(more) more photos") }
+        return ZStack {
+            WidgetImage(media: video ? posterMedia(item.media) : item.media, maxHeight: maxHeight,
+                        webAllowed: $webAllowed,
+                        open: viewer == nil ? nil : { open(index, moreTile: more > 0) },
+                        openLabel: label,
+                        playsOver: video && more == 0)
+            // While it asks to load from another server, the ask is the only thing on it.
+            if video, more == 0, !asksFirst(posterMedia(item.media)) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .glassEffect(.regular, in: Circle())
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                if let duration = item.media.duration {
+                    Text(MediaViewing.clock(duration))
+                        .font(WidgetFont.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(.black.opacity(0.55), in: Capsule())
                         .padding(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
             }
-            caption(item)
+            if more > 0 {
+                Text("+\(more)")
+                    .font(WidgetFont.value)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: WidgetDensity.wellRadius, style: .continuous))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
+        .modifier(MediaTransitionSource(id: MediaViewerPresenter.transitionID(payload: context.payload.id, tile: index),
+                                        namespace: namespace))
+    }
+
+    private func open(_ index: Int, moreTile: Bool) {
+        guard let viewer else { return }
+        let allow = $webAllowed
+        let request = MediaViewerRequest(widget: model, tapping: index, moreTile: moreTile, payload: context.payload,
+                                         webAllowed: webAllowed, allowWeb: { allow.wrappedValue = true },
+                                         references: references, gatewayHosts: gatewayHosts)
+        viewer.open(request, reducesMotion: reduceMotion)
+    }
+
+    /// Whether the tile waits for a tap that names an https server off the gateway.
+    private func asksFirst(_ media: WidgetMedia) -> Bool {
+        guard let url = URL(string: media.src), url.scheme?.lowercased() == "https" else { return false }
+        return !webAllowed && !WebLink.isOnGateway(url, gatewayHosts: gatewayHosts)
     }
 
     private func posterMedia(_ media: WidgetMedia) -> WidgetMedia {
@@ -485,22 +599,12 @@ struct MediaBody: View {
 
     private var grid: some View {
         let columns = typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)]
-        let shown = Array(model.items.prefix(4))
+        let shown = Array(model.items.prefix(MediaViewing.gridShows))
         return LazyVGrid(columns: columns, spacing: 4) {
             ForEach(Array(shown.enumerated()), id: \.offset) { index, item in
-                ZStack {
-                    WidgetImage(media: item.media, maxHeight: 140)
-                    if index == 3, model.items.count > 4 {
-                        Text("+\(model.items.count - 4)")
-                            .font(WidgetFont.value)
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.black.opacity(0.45))
-                            .clipShape(RoundedRectangle(cornerRadius: WidgetDensity.wellRadius, style: .continuous))
-                            .accessibilityLabel(String(localized: "\(model.items.count - 4) more photos"))
-                    }
-                }
-                .frame(height: 140)
+                let more = index == MediaViewing.gridShows - 1 ? model.items.count - MediaViewing.gridShows : 0
+                tile(item, index: index, maxHeight: 140, more: max(more, 0))
+                    .frame(height: 140)
             }
         }
     }
@@ -509,7 +613,7 @@ struct MediaBody: View {
         VStack(alignment: .leading, spacing: 6) {
             TabView(selection: $page) {
                 ForEach(Array(model.items.enumerated()), id: \.offset) { index, item in
-                    WidgetImage(media: item.media).tag(index)
+                    tile(item, index: index).tag(index)
                 }
             }
             #if os(iOS)
@@ -526,6 +630,24 @@ struct MediaBody: View {
         if !parts.isEmpty {
             Text(parts.joined(separator: " · ")).font(WidgetFont.caption).foregroundStyle(Theme.secondaryText)
         }
+    }
+}
+
+/// The tile a picture's viewer grows from on iPhone and iPad; the Mac crossfades instead.
+private struct MediaTransitionSource: ViewModifier {
+    let id: String
+    let namespace: Namespace.ID?
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if let namespace {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }
 

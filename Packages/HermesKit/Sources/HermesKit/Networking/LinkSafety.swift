@@ -249,3 +249,77 @@ public enum RemotePicture {
         return image
     }
 }
+
+/// Streams a video at an https address for the player, a stretch at a time and in memory only
+/// (docs/widgets.md §8): no URL cache, no cookies, no key, and redirects kept on the server it
+/// was asked of. One on the gateway's host carries only its access gateway's headers.
+public enum RemoteMedia {
+    public static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 60
+        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
+    }()
+
+    /// A picture to show whole in the viewer, read without the picture cache: it stops reading
+    /// once it passes `MediaViewing.maxBytes` (docs/widgets.md §9.2).
+    public static func picture(at url: URL, in session: URLSession = RemoteMedia.session) async throws -> Data {
+        guard WebLink.isWeb(url) else { throw RemotePicture.Failure.notWeb }
+        do {
+            let (bytes, response) = try await session.bytes(for: GatewayAccessRegistry.shared.prepared(URLRequest(url: url)))
+            guard let http = response as? HTTPURLResponse else { throw RemotePicture.Failure.notAPicture }
+            guard (200..<300).contains(http.statusCode) else { throw RemotePicture.Failure.status(http.statusCode) }
+            if http.expectedContentLength > MediaViewing.maxBytes { throw MediaTooBig(bytes: http.expectedContentLength) }
+            var data = Data()
+            data.reserveCapacity(Int(max(http.expectedContentLength, 0)))
+            for try await byte in bytes {
+                data.append(byte)
+                if Int64(data.count) > MediaViewing.maxBytes { throw MediaTooBig(bytes: Int64(data.count)) }
+            }
+            return data
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        }
+    }
+
+    /// One stretch of the video. A server that ignores Range (a 200) is refused before its body
+    /// is read: the player needs byte ranges, and reading the whole file for every stretch would
+    /// fetch it again on each one. A read the player let go of throws `CancellationError`.
+    public static func range(at url: URL, range: ByteRange, in session: URLSession = RemoteMedia.session) async throws -> GatewayFileRange {
+        guard url.scheme?.lowercased() == "https" else { throw RemotePicture.Failure.notWeb }
+        var request = URLRequest(url: url)
+        request.setValue(range.header, forHTTPHeaderField: "Range")
+        do {
+            let (bytes, response) = try await session.bytes(for: GatewayAccessRegistry.shared.prepared(request))
+            guard let http = response as? HTTPURLResponse else { throw RemotePicture.Failure.notAPicture }
+            guard (200..<300).contains(http.statusCode) else { throw RemotePicture.Failure.status(http.statusCode) }
+            guard http.statusCode == 206 else { throw RangesIgnored() }
+            var data = Data()
+            data.reserveCapacity(Int(min(max(http.expectedContentLength, 0), range.length)))
+            for try await byte in bytes {
+                data.append(byte)
+                if Int64(data.count) > range.length { throw RangesIgnored() }
+            }
+            return GatewayFileRange(asked: range, data: data, response: http)
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        }
+    }
+
+    /// The server sent more than the stretch asked, or the whole file: it can't stream.
+    public struct RangesIgnored: Error, Equatable {}
+
+    /// Whether a read ended because the player let it go (a seek, or the viewer closing), which
+    /// is no failure to show.
+    public static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if let error = error as? URLError, error.code == .cancelled { return true }
+        return false
+    }
+}

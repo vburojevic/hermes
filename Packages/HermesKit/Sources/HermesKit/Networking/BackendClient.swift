@@ -576,6 +576,13 @@ public actor BackendClient {
         return (data, response.value(forHTTPHeaderField: "Content-Type"))
     }
 
+    /// Raw bytes and the whole answer, for a read that needs its headers: a Range read, a HEAD.
+    func restResponse(
+        _ path: String, method: String = "GET", query: [URLQueryItem] = [], headers: [String: String] = [:]
+    ) async throws -> (Data, HTTPURLResponse) {
+        try await send(path: path, method: method, query: query, accept: "*/*", headers: headers)
+    }
+
     /// A call to the kanban plugin (`/api/plugins/kanban/<path>`); the Board's calls are in
     /// `BoardAPI.swift`.
     func kanban(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: JSONValue? = nil) async throws -> JSONValue {
@@ -596,24 +603,25 @@ public actor BackendClient {
     private func send(
         path: String, method: String = "GET", query: [URLQueryItem] = [], body: JSONValue? = nil,
         authenticated: Bool = true, accept: String = "application/json", captureCookies: Bool = false,
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil, headers: [String: String] = [:]
     ) async throws -> (Data, HTTPURLResponse) {
         let rereadable = method == "GET" || method == "HEAD"
         for wait in rereadable ? [2.0, 5.0] : [] {
             do {
                 return try await sendOnce(path: path, method: method, query: query, body: body, authenticated: authenticated,
-                                          accept: accept, captureCookies: captureCookies, timeout: timeout)
+                                          accept: accept, captureCookies: captureCookies, timeout: timeout, headers: headers)
             } catch Failure.http(let status, _) where Failure.busyStatuses.contains(status) {
                 try await Task.sleep(for: .seconds(wait))
             }
         }
         return try await sendOnce(path: path, method: method, query: query, body: body, authenticated: authenticated,
-                                  accept: accept, captureCookies: captureCookies, timeout: timeout)
+                                  accept: accept, captureCookies: captureCookies, timeout: timeout, headers: headers)
     }
 
     private func sendOnce(
         path: String, method: String, query: [URLQueryItem], body: JSONValue?,
-        authenticated: Bool, accept: String, captureCookies: Bool, timeout: TimeInterval? = nil
+        authenticated: Bool, accept: String, captureCookies: Bool, timeout: TimeInterval? = nil,
+        headers: [String: String] = [:]
     ) async throws -> (Data, HTTPURLResponse) {
         var url = endpoint(path)
         if !query.isEmpty { url.append(queryItems: query) }
@@ -621,6 +629,7 @@ public actor BackendClient {
         request.httpMethod = method
         if let timeout { request.timeoutInterval = timeout }
         request.setValue(accept, forHTTPHeaderField: "Accept")
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(body)

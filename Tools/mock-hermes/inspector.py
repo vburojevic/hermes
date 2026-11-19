@@ -2,7 +2,9 @@
 
 - Files: `/api/fs/list`, `read-text`, `write-text`, `download`, `git-root`, `default-cwd` over an
   in-memory project, "hermes-site" (`/Users/studio/Code/hermes-site`, project "Hermes Site").
-  `download` also serves the project's pictures (`PICTURES`, PNGs drawn here, no real image), 404
+  `download` also serves the project's pictures (`PICTURES`, PNGs drawn here, no real image) and
+  media (`MEDIA`: a short real clip, a 60 MB picture, a "video" that isn't one and a recording
+  under `pairing/`), which `/api/files/stream` (audio.py) streams too; 404
   `File not found` for a missing file and 403 `Path is outside the managed read boundary` outside
   the project, as a locked deployment answers.
 - Git: `/api/git/status`, `/api/git/review/{list,diff,rev-parse,stage,unstage,commit,push,create-pr,
@@ -46,6 +48,7 @@ import base64
 import difflib
 import hashlib
 import json
+import pathlib
 import re
 import secrets
 import struct
@@ -156,6 +159,9 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
     routes[("GET", "/api/fs/git-root")] = fs_git_root
     routes[("GET", "/api/fs/default-cwd")] = lambda q, b: (200, {"cwd": ROOT})
     raw[("GET", "/api/fs/download")] = fs_download
+    B["PROJECT_MEDIA"] = project_media
+    B["MEDIA_SHOTS"] = [(path, alt) for path, alt, _top, _bottom in SHOTS]
+    B["SENSITIVE_PATH"] = sensitive
     routes[("GET", "/api/git/status")] = git_status
     routes[("GET", "/api/git/review/list")] = review_list
     routes[("GET", "/api/git/review/diff")] = review_diff
@@ -275,7 +281,7 @@ def mime_of(path):
     ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     return {"html": "text/html", "css": "text/css", "js": "text/javascript", "json": "application/json",
             "md": "text/markdown", "ts": "text/typescript", "tsx": "text/typescript", "svg": "image/svg+xml",
-            "png": "image/png"}.get(ext, "text/plain")
+            "png": "image/png", "mp4": "video/mp4", "mov": "video/quicktime"}.get(ext, "text/plain")
 
 
 def q(query, name, default=""):
@@ -289,9 +295,9 @@ def fs_list(query, body):
     prefix = base + "/" if base else ""
     folders, files = set(), set()
     with LOCK:
-        for path in STATE["work"]:
-            if not path.startswith(prefix):
-                continue
+        for path in list(STATE["work"]) + list(PICTURES) + list(MEDIA):
+            if not path.startswith(prefix) or sensitive(path):
+                continue   # Hermes leaves sensitive files out of a listing too
             rest = path[len(prefix):]
             if "/" in rest:
                 folders.add(rest.split("/", 1)[0])
@@ -375,6 +381,60 @@ PICTURES = {
 }
 
 
+# Pictures for the media scenario ("widget media" in widgets.py): twelve shots of the site.
+SHOTS = [
+    ("photos/home-hero.png", "The homepage hero in light mode", (96, 165, 250), (37, 99, 235)),
+    ("photos/home-hero-dark.png", "The homepage hero in dark mode", (30, 41, 59), (15, 23, 42)),
+    ("photos/pricing.png", "The pricing table with three plans", (52, 211, 153), (5, 150, 105)),
+    ("photos/sign-up.png", "The beta sign-up form", (251, 191, 36), (217, 119, 6)),
+    ("photos/changelog.png", "The changelog page", (244, 114, 182), (219, 39, 119)),
+    ("photos/docs.png", "The docs landing page", (167, 139, 250), (124, 58, 237)),
+    ("photos/footer.png", "The footer with the newsletter field", (148, 163, 184), (71, 85, 105)),
+    ("photos/mobile-nav.png", "The navigation menu on a phone", (45, 212, 191), (13, 148, 136)),
+    ("photos/404.png", "The page-not-found screen", (248, 113, 113), (220, 38, 38)),
+    ("photos/blog.png", "The blog index", (163, 230, 53), (101, 163, 13)),
+    ("photos/team.png", "The team page", (251, 146, 60), (234, 88, 12)),
+    ("photos/press-kit.png", "The press kit download page", (129, 140, 248), (79, 70, 229)),
+]
+for _index, (_path, _alt, _top, _bottom) in enumerate(SHOTS):
+    PICTURES[_path] = png(640, 480, _top, _bottom,
+                          [(0.08, 0.10, 0.84, 0.10), (0.08, 0.30, 0.40 + 0.04 * (_index % 4), 0.30), (0.56, 0.30, 0.36, 0.08),
+                           (0.56, 0.44, 0.30, 0.08), (0.08, 0.72, 0.84, 0.12)])
+
+# The project's videos and the oversized files (relative path -> a function giving the bytes),
+# made on first use: a picture over the app's 50 MB limit for pictures, and a ".mp4" that isn't
+# one. `audio.py`'s /api/files/stream serves them too.
+_MADE = {}
+
+
+def _clip():
+    return (pathlib.Path(__file__).parent / "media" / "sample-clip.mp4").read_bytes()
+
+
+MEDIA = {
+    "media/walkthrough.mp4": _clip,
+    "media/broken.mp4": lambda: b"This is not a video. " * 200,
+    "pairing/screen.mp4": _clip,   # refused as sensitive, once found
+    "photos/print-scan.png": lambda: PICTURES["diagrams/orbit-card.png"] + bytes(60_000_000),
+}
+
+
+def media_bytes(key):
+    """The bytes of one of `MEDIA`, made once."""
+    with LOCK:
+        if key not in _MADE:
+            _MADE[key] = MEDIA[key]()
+        return _MADE[key]
+
+
+def project_media(path):
+    """A picture or video file in the project, for /api/files/stream; None when there's none."""
+    key = rel(path)
+    if key in MEDIA:
+        return media_bytes(key)
+    return PICTURES.get(key)
+
+
 def fs_download(query):
     path = q(query, "path")
     if not path:
@@ -390,6 +450,8 @@ def fs_download(query):
         return 200, mime_of(key), text.encode()
     if key in PICTURES:
         return 200, mime_of(key), PICTURES[key]
+    if key in MEDIA:
+        return 200, mime_of(key), media_bytes(key)
     return 404, "application/json", b'{"detail": "File not found"}'
 
 

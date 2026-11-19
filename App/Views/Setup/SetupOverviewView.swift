@@ -162,6 +162,7 @@ struct SetupOverviewView: View {
         case VoiceSetupRules.id("wake", profile: nil): "ear"
         case DeviceSetup.ID.microphone: "mic"
         case DeviceSetup.ID.camera: "camera"
+        case DeviceSetup.ID.photos: "photo.on.rectangle"
         case DeviceSetup.ID.deviceOwner: "faceid"
         case DeviceSetup.ID.hiddenSuggestions: "icloud"
         default: "gearshape"

@@ -199,14 +199,23 @@ extension BackendClient {
     }
 
     /// The URL and headers to play a gateway file (`GET /api/files/stream?path=`; Range works,
-    /// no profile, header auth only).
-    public func fileStreamRequest(path: String) -> URLRequest {
+    /// header auth only). `profile` scopes it to a Bot.
+    public func fileStreamRequest(path: String, profile: String? = nil) -> URLRequest {
         var url = baseURL.appending(path: "api/files/stream")
-        url.append(queryItems: [URLQueryItem(name: "path", value: path)])
+        url.append(queryItems: [URLQueryItem(name: "path", value: path)] + Self.profileItems(profile))
         var request = URLRequest(url: url)
         for (name, value) in authorizationHeaders() { request.setValue(value, forHTTPHeaderField: name) }
         GatewayAccessRegistry.shared.prepare(&request)
         return request
+    }
+
+    /// One stretch of a gateway video (`GET /api/files/stream?path=&profile=` with `Range`), held
+    /// in memory for the player (docs/widgets.md §9.3). A server that ignores Range and answers
+    /// 200 with the whole file is sliced here, so the caller always gets the stretch it asked for.
+    public func fileStreamRange(path: String, profile: String?, range: ByteRange) async throws -> GatewayFileRange {
+        let query = [URLQueryItem(name: "path", value: path)] + Self.profileItems(profile)
+        let (data, response) = try await restResponse("api/files/stream", query: query, headers: ["Range": range.header])
+        return GatewayFileRange(asked: range, data: data, response: response)
     }
 
     /// Downloads a gateway file for playing (voice messages and agent audio are small enough to
@@ -214,6 +223,35 @@ extension BackendClient {
     public func downloadFile(path: String) async throws -> Data {
         let (data, _) = try await restData("api/files/stream", query: [URLQueryItem(name: "path", value: path)])
         return data
+    }
+}
+
+/// What a Range read of a media file answered: the bytes from `start`, the file's type and its
+/// whole size when the server said.
+public struct GatewayFileRange: Sendable {
+    public let data: Data
+    public let contentType: String?
+    public let start: Int64
+    public let total: Int64?
+
+    public init(data: Data, contentType: String?, start: Int64, total: Int64?) {
+        self.data = data
+        self.contentType = contentType
+        self.start = start
+        self.total = total
+    }
+
+    /// Reads a 206 by its `Content-Range`, and slices a 200 (the whole file) to the stretch asked.
+    public init(asked range: ByteRange, data: Data, response: HTTPURLResponse) {
+        let type = response.value(forHTTPHeaderField: "Content-Type")
+        if response.statusCode == 206, let header = response.value(forHTTPHeaderField: "Content-Range"),
+           let answered = ContentRange(header: header) {
+            self.init(data: data, contentType: type, start: answered.start, total: answered.total)
+            return
+        }
+        let total = Int64(data.count)
+        let start = min(range.start, total), end = min(range.end + 1, total)
+        self.init(data: data.subdata(in: Int(start)..<Int(end)), contentType: type, start: start, total: total)
     }
 }
 

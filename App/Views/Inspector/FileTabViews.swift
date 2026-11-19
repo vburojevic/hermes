@@ -119,8 +119,8 @@ enum GitLetter {
 
 // MARK: - File
 
-/// A File tab (`macInspectorFiles`): the path, Edited and Save, then the code with line numbers.
-/// Wide panels keep the project tree beside it.
+/// A File tab (`macInspectorFiles`): the path, Edited and Save, then the code with line numbers;
+/// a picture or video shows as media. Wide panels keep the project tree beside it.
 struct FileTabView: View {
     let inspector: InspectorModel
     let editor: FileEditorModel
@@ -135,7 +135,13 @@ struct FileTabView: View {
                     .task { await inspector.tree(root: root).reveal(editor.path) }
                 Divider().overlay(Theme.hairline)
             }
-            FileEditorView(inspector: inspector, editor: editor)
+            // A picture or video opens as media, never read as text (docs/inspector.md §2.8).
+            if let type = MediaFileType(path: editor.path) {
+                FileMediaView(inspector: inspector, path: editor.path, type: type)
+                    .id(editor.path)
+            } else {
+                FileEditorView(inspector: inspector, editor: editor)
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }

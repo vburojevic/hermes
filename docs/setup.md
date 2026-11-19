@@ -114,7 +114,8 @@ tested in `SetupTests.swift`), `DeviceSetup` and `SetupCenter`.
 Needs Hermes's backend (`hermes serve`, or Hermes Desktop, which starts it) linked in Add or Edit
 Gateway. Everything in Bot Mode, projects, the Board, memory, Apps and Tools, Learned, the app's
 plugins, "/" commands, sending files, searching what was said, Talk's voices and read sync need
-it; chats, Tasks, Skills and models work without it.
+it, and so do pictures and videos kept on the gateway, in a card's viewer and the File tab
+([widgets.md](widgets.md) §9.2); chats, Tasks, Skills and models work without it.
 
 | State | Told by | The app shows |
 |---|---|---|
@@ -456,7 +457,8 @@ shows its consent card there. [widgets.md](widgets.md) has the rest.
 ### 4.15 Permissions on this device
 
 `DeviceSetup`: the microphone (`AVAudioApplication.recordPermission`), the camera on iPhone and
-iPad (`AVCaptureDevice.authorizationStatus`), and Face ID, Touch ID or the passcode
+iPad (`AVCaptureDevice.authorizationStatus`), adding to Photos on iPhone and iPad
+(`PHPhotoLibrary.authorizationStatus(for: .addOnly)`), and Face ID, Touch ID or the passcode
 (`LAContext`), which confirms widget approvals. Not asked yet is Ready ("Hermes asks the first
 time…"): the app asks where the feature starts, never from Setup. Denied: Not set up, what it
 stops and what still works, Open Settings (the app's page on iPhone and iPad, the privacy pane on
@@ -466,7 +468,8 @@ set up.
 Where they're used: the microphone alert has Open Settings on every platform and covers voice
 messages; the attachment camera checks access first and says how to turn it on; the connection
 banner offers Open Settings when Local Network, Wi-Fi or Mobile Data is off for Hermes; Photos
-and Camera say when the model can't read pictures. Widget approvals without Face ID, Touch ID or
+and Camera say when the model can't read pictures; the viewer's Save says when Photos is off for
+Hermes, with Open Settings, and Share still works. Widget approvals without Face ID, Touch ID or
 a passcode: [widgets.md](widgets.md).
 
 ### 4.16 Voice and audio

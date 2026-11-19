@@ -2570,7 +2570,8 @@ class Handler(BaseHTTPRequestHandler):
         for key, value in (headers or []):
             self.send_header(key, value)
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":
+            self.wfile.write(data)
 
     def cookies(self):
         jar = {}
@@ -2590,6 +2591,24 @@ class Handler(BaseHTTPRequestHandler):
             return expiry is not None and expiry > time.time()
         token = self.headers.get("X-Hermes-Session-Token") or (query or {}).get("token", [None])[0]
         return token == CONFIG["token"]
+
+    def do_HEAD(self):
+        # Hermes's file routes answer HEAD as GET without the body (`/api/files/stream`,
+        # `/api/fs/download`): the app reads a picture's size before reading it.
+        url = urlparse(self.path)
+        query = parse_qs(url.query)
+        if not self.authorized():
+            return self.send_json(401, {"detail": "Unauthorized"})
+        if url.path == "/api/files/stream" and "FILE_STREAM" in globals():
+            return FILE_STREAM(self, query, head=True)
+        raw = RAW_ROUTES.get(("GET", url.path))
+        if raw is None:
+            return self.send_json(405, {"detail": "Method Not Allowed"})
+        status, content_type, data = raw(query)
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
 
     def do_GET(self):
         url = urlparse(self.path)
