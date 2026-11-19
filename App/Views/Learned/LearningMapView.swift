@@ -129,12 +129,9 @@ struct LearningMapView: View {
             let r = radius(node)
             let rect = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
             if node.id == selected {
-                // The ring: a halo of the canvas colour, then a hairline.
+                // The ring: a halo of the canvas colour, then a hairline. No shadow (docs/learned.md §7).
                 let halo = rect.insetBy(dx: -5, dy: -5)
-                context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: Theme.shadow.opacity(0.35), radius: 6, y: 2))
-                    layer.fill(Path(ellipseIn: halo), with: .color(Theme.groupedCell))
-                }
+                context.fill(Path(ellipseIn: halo), with: .color(Theme.groupedCell))
                 context.stroke(Path(ellipseIn: halo), with: .color(Theme.separator), lineWidth: 1)
             }
             context.opacity = alpha(node.id)
@@ -198,8 +195,11 @@ struct LearningMapView: View {
 
     private func labelText(_ node: LearningNode, selected: Bool) -> some View {
         Text(node.label)
-            .font(isPreview ? .system(size: 10) : .caption)
+            .font(isPreview ? .caption2 : .caption)
             .fontWeight(selected ? .semibold : .regular)
+            // The labels sit at fixed points on the map; past this size they'd cover each other,
+            // and the list alternative carries the map for larger text (docs/learned.md §7).
+            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             .foregroundStyle(selected ? Theme.primaryText : Theme.secondaryText)
             .fixedSize()
     }

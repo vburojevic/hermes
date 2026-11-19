@@ -11,6 +11,7 @@ struct SkillsView: View {
     /// The window's skill filter, kept with the window.
     @SceneStorage("skills.query") private var query = ""
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(WindowRouter.self) private var router: WindowRouter?
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
@@ -20,6 +21,12 @@ struct SkillsView: View {
 
     private var groupedSkills: [SkillCatalog.Group] {
         catalog.groups(matching: query, generalTitle: String(localized: "General"))
+    }
+
+    /// What shows where the skills go: them, placeholders, or why there are none.
+    private var shown: SkillCatalog.Shown {
+        catalog.shown(for: workspace.bot.baseURL, isLoading: workspace.isLoadingSkills,
+                      isUnreachable: workspace.connection.isFailed)
     }
 
     /// iPad (regular width) and Mac: the grid of cards.
@@ -117,7 +124,13 @@ struct SkillsView: View {
                     Text("Skills teach Hermes how to do things; tools and apps are what it can reach. Manage those in Settings → Apps and Tools.")
                 }
             }
-            loadingAndErrors
+            if shown != .list {
+                Section {
+                    listState
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            }
             ForEach(groupedSkills) { group in
                 Section(group.title) {
                     ForEach(group.skills) { skill in
@@ -154,7 +167,9 @@ struct SkillsView: View {
                     ToolsAndAppsRow(model: workspace.appsAndTools, isWide: true, action: openAppsAndTools)
                         .padding(.bottom, 8)
                 }
-                loadingAndErrors
+                if shown != .list {
+                    gridState
+                }
                 ForEach(groupedSkills) { group in
                     Text(group.title)
                         .font(.footnote.weight(.semibold))
@@ -162,7 +177,7 @@ struct SkillsView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                         .accessibilityAddTraits(.isHeader)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 360), spacing: 14)], alignment: .leading, spacing: 14) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                         ForEach(group.skills) { skill in
                             SkillCard(skill: skill) { workspace.use(skill) }
                         }
@@ -181,20 +196,83 @@ struct SkillsView: View {
         #endif
     }
 
+    /// Adaptive cards 230 to 360 pt wide, three a row on an iPad and the Mac; at the accessibility
+    /// sizes at least 420 pt wide, so usually two a row, each as tall as its words (`ipadSkillsAx5`).
+    private var columns: [GridItem] {
+        typeSize.isAccessibilitySize
+            ? [GridItem(.adaptive(minimum: 420), spacing: 14)]
+            : [GridItem(.adaptive(minimum: 230, maximum: 360), spacing: 14)]
+    }
+
+    // MARK: States
+
+    // Placeholders until the first answer, never an empty page; then why there are no skills
+    // (`docs/bots-groups-skills.md` §3).
+
+    /// iPhone: a card of placeholder rows, or the notice.
     @ViewBuilder
-    private var loadingAndErrors: some View {
-        // Placeholders until the first answer, never an empty page, unless the gateway can't be
-        // reached (`docs/bots-groups-skills.md` §3).
-        if catalog.skills.isEmpty, workspace.isLoadingSkills
-            || (catalog.isWaiting(for: workspace.bot.baseURL) && !workspace.connection.isFailed) {
+    private var listState: some View {
+        switch shown {
+        case .placeholders:
             SkeletonRows()
-                .listRowBackground(Color.clear)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .accessibilityElement()
+                .accessibilityLabel("Loading skills")
+        case .empty:
+            emptyMessage
+                .padding(.top, 60)
+        case .failed(let failure):
+            failedNotice(failure)
+        case .offline:
+            offlineNotice
+        case .list:
+            EmptyView()
         }
-        if let failure = catalog.failure, catalog.skills.isEmpty, !workspace.isLoadingSkills {
-            Text("This Hermes version couldn't list its skills. \(failure.errorDescription ?? "")")
-                .font(.footnote)
-                .foregroundStyle(Theme.secondaryText)
+    }
+
+    /// iPad and Mac: placeholder cards, or the notice.
+    @ViewBuilder
+    private var gridState: some View {
+        switch shown {
+        case .placeholders:
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                ForEach(0..<6, id: \.self) { _ in
+                    SkillCardPlaceholder()
+                }
+            }
+            .padding(.top, 8)
+            .accessibilityElement()
+            .accessibilityLabel("Loading skills")
+        case .empty:
+            emptyMessage
+                .padding(.top, 120)
+        case .failed(let failure):
+            failedNotice(failure)
+        case .offline:
+            offlineNotice
+        case .list:
+            EmptyView()
         }
+    }
+
+    private var emptyMessage: some View {
+        StateMessage(symbol: "book.closed", title: "No skills yet",
+                     message: "Install skills with hermes skills on the gateway, or teach Hermes one with /learn in a chat.")
+            .frame(maxWidth: .infinity)
+    }
+
+    private func failedNotice(_ failure: HermesError) -> some View {
+        MemoryNotice(symbol: "exclamationmark.triangle", title: String(localized: "Couldn't list skills"),
+                     detail: String(localized: "This Hermes version couldn't list its skills. \(failure.errorDescription ?? "")")) {
+            Task { await workspace.loadSkills(force: true) }
+        }
+    }
+
+    private var offlineNotice: some View {
+        MemoryNotice(symbol: "wifi.slash", title: String(localized: "\(workspace.bot.name) is offline"),
+                     detail: String(localized: "Skills show when it's back."))
     }
 
     /// What reads the list again: another workspace, a new address, the gateway coming online, a
@@ -285,7 +363,9 @@ private struct ToolsAndAppsRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: "wrench.and.screwdriver")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.subheadline.weight(.medium))
+                    // The tile keeps its size at every text size, so the glyph does too.
+                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
                     .foregroundStyle(Theme.inkForeground)
                     .frame(width: 34, height: 34)
                     .background(Theme.ink, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -305,7 +385,7 @@ private struct ToolsAndAppsRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.tertiaryText)
                     .accessibilityHidden(true)
             }
@@ -323,10 +403,17 @@ private struct SkillRow: View {
     let skill: Skill
     let onUse: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        // At the accessibility sizes the glyph, the words and Use stack (`skillsAx5`).
+        let stacks = typeSize.isAccessibilitySize
+        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+        return layout {
             Image(systemName: SkillGlyph.symbol(for: skill))
-                .font(.system(size: 14, weight: .medium))
+                .font(.subheadline.weight(.medium))
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
                 .foregroundStyle(Theme.primaryText)
                 .frame(width: 34, height: 34)
                 .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -339,10 +426,10 @@ private struct SkillRow: View {
                     Text(description)
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(3)
+                        .lineLimit(stacks ? nil : 3)
                 }
             }
-            Spacer(minLength: 8)
+            if !stacks { Spacer(minLength: 8) }
             Button("Use", action: onUse)
                 .font(.subheadline.weight(.semibold))
                 .cardButton()
@@ -358,11 +445,15 @@ private struct SkillCard: View {
     let skill: Skill
     let onUse: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var hovering = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 Image(systemName: SkillGlyph.symbol(for: skill))
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.subheadline.weight(.medium))
+                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
                     .foregroundStyle(Theme.primaryText)
                     .frame(width: 34, height: 34)
                     .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -377,12 +468,45 @@ private struct SkillCard: View {
             Text(skill.name)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(Theme.primaryText)
-                .lineLimit(1)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 .padding(.top, 4)
             Text(skill.description ?? "")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
-                .lineLimit(2, reservesSpace: true)
+                // At accessibility sizes the description wraps in full and reserves nothing.
+                .lineLimit(typeSize.isAccessibilitySize ? Int.max : 2, reservesSpace: !typeSize.isAccessibilitySize)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(macOS)
+        .frame(minHeight: 118, alignment: .top)
+        #else
+        .frame(minHeight: 150, alignment: .top)
+        #endif
+        .background(hovering ? Theme.controlFill : Theme.groupedCell, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .contain)
+        #if os(macOS)
+        // The Mac card: a hover fill, what it does on hover, and its menu (`macSkills`).
+        .onHover { hovering = $0 }
+        .help(skill.description ?? skill.name)
+        .contextMenu {
+            Button("Use in a Chat", systemImage: "text.bubble", action: onUse)
+            Button("Copy Name", systemImage: "doc.on.doc") { Pasteboard.copy(skill.name) }
+        }
+        #endif
+    }
+}
+
+/// A card while the skills load: the glyph tile and two lines, in the placeholder fill.
+private struct SkillCardPlaceholder: View {
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Theme.primaryText.opacity(contrast == .increased ? 0.16 : 0.08))
+                .frame(width: 34, height: 34)
+            SkeletonRows(count: 1)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -392,6 +516,6 @@ private struct SkillCard: View {
         .frame(minHeight: 150, alignment: .top)
         #endif
         .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .accessibilityElement(children: .contain)
+        .accessibilityHidden(true)
     }
 }

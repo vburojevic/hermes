@@ -888,20 +888,21 @@ Debug app from inside instead: `wait <s>`, `press <toolbar item>` (a Settings ta
 pushed page's back button), `key cmd+[`, `menu <title>` (a menu bar menu's items and shortcuts,
 which a locked or off-Space screen can't capture), `frame <width> <height>` (resizes the chats
 window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in the chats window),
-`sidebar` (the sidebar button's action), and `dump` / `views` to see what's there. For the ⌘K
-palette (`-HERMES_PALETTE <text>` opens it in each chats window once connected, and fills its field
-with that text each time it opens): `paletteopen` (⌘K in the first window),
-`palettekey up|down|return|esc|space|cmd+return|cmd+1` (any digit; a ⌘ key goes to the window's key
-equivalents, then the menus, as the app routes one), `palettetype <text>` (one key per character,
-so it goes through the field editor as typing does; `palettekey space` types a space),
-`paletteblur` (takes the field out of editing, as a click elsewhere does) and `palette` (logs the
-field's text, whether it's being edited, its field editor's text replacement, spelling correction
-and spell checking, and the chats windows with their titles, which name what each shows; the rows
-and the selection aren't in it, so read them from a screenshot or the accessibility tree). Each
-step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked
-without a screenshot (`App/Support/MacDebugDriver.swift`), on standard output and in
-`-HERMES_MAC_DRIVE_LOG <file>` when it's given; `tabs` logs how many Settings tabs show, of how
-many, and `maintabs` which of the chats window's toolbar items show. Capture with
+`mainkey cmd+r` (⌘R there, then the menus, which answer from the key window's focused values),
+`sidebar` (the sidebar button's action), and `dump` / `views` to see what's there (`maindump` the
+chats window's accessibility tree). For the ⌘K palette (`-HERMES_PALETTE <text>` opens it in each
+chats window once connected, and fills its field with that text each time it opens): `paletteopen`
+(⌘K in the first window), `palettekey up|down|return|esc|space|cmd+return|cmd+1` (any digit; a ⌘
+key goes to the window's key equivalents, then the menus, as the app routes one), `palettetype
+<text>` (one key per character, so it goes through the field editor as typing does; `palettekey
+space` types a space), `paletteblur` (takes the field out of editing, as a click elsewhere does)
+and `palette` (logs the field's text, whether it's being edited, its field editor's text
+replacement, spelling correction and spell checking, and the chats windows with their titles, which
+name what each shows; the rows and the selection aren't in it, so read them from a screenshot or
+the accessibility tree). Each step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the
+page shown can be checked without a screenshot (`App/Support/MacDebugDriver.swift`), on standard
+output and in `-HERMES_MAC_DRIVE_LOG <file>` when it's given; `tabs` logs how many Settings tabs
+show, of how many, and `maintabs` which of the chats window's toolbar items show. Capture with
 `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts the Settings
 tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR <folder>`
 points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only logs its
@@ -966,9 +967,11 @@ three months, three archived skills and a last tidy two days ago that merged two
 ios-testing. `/curator pin|unpin|restore|list-archived|usage` answers through `slash.exec` with the
 CLI's words, Tidy Up Now takes 6 s and merges the least-used skill that isn't kept as is (and sends
 the tidy's notification), and a chat message with "skill" writes commit-message-style with
-`skill_manage`. `POST /api/mock/learned/reset` puts it back. Debug flags: `-HERMES_OPEN learned`
-with `-HERMES_LEARNED map|tidying|skill:<id>|select:<id>|mapselect:<id>`, and
-`-HERMES_PUSH_OPEN tidied` (a tapped tidy notification).
+`skill_manage`. `POST /api/mock/learned/reset` puts it back, and `POST /api/mock/learned/graph
+{mode}` gives the graph another shape: `used-only` (only skills Hermes used, none it wrote, no
+memories), `empty` (Nothing learned yet), `fail` (the read refused with 500, Settings → Memory's
+too) or `full`. Debug flags: `-HERMES_PUSH_OPEN tidied` (a tapped tidy notification), and
+`-HERMES_OPEN learned` with `-HERMES_LEARNED map|tidying|skill:<id>|select:<id>|mapselect:<id>`.
 
 And full-text search (`Tools/mock-hermes/search.py`), shaped like `hermes serve`'s
 `/api/sessions/search`: "reconnect" matches seven chats across Hermes App's lanes, a task run of

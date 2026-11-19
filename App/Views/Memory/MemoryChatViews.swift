@@ -38,7 +38,7 @@ struct MemorySheetPage: View {
                 }
         }
         #if os(macOS)
-        .frame(width: 560, height: 640)
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 480, idealHeight: 640)
         #endif
     }
 }
@@ -135,6 +135,7 @@ struct MemoryNoteSheet: View {
     #if os(iOS)
     @State private var detent: PresentationDetent = .medium
     #endif
+    @ScaledMetric(relativeTo: .subheadline) private var menuSize: CGFloat = 22
     @Environment(\.dismiss) private var dismiss
 
     init(changes: [MemoryChange], context: MemoryNoteContext) {
@@ -227,7 +228,7 @@ struct MemoryNoteSheet: View {
         .presentationDetents([.medium, .large], selection: $detent)
         .onChange(of: showsMemory) { if showsMemory { detent = .large } }
         #else
-        .frame(width: 440, height: 380)
+        .frame(minWidth: 400, idealWidth: 440, minHeight: 320, idealHeight: 380)
         #endif
     }
 
@@ -247,12 +248,12 @@ struct MemoryNoteSheet: View {
                     Button("Edit…", systemImage: "pencil") { editing = MemoryEditTarget(entry: entry, index: index(of: entry)) }
                     Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.text) }
                     Divider()
-                    Button("Forget", systemImage: "trash", role: .destructive) { forgetting = entry }
+                    Button("Forget…", systemImage: "trash", role: .destructive) { forgetting = entry }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.tertiaryText)
-                        .frame(width: 22, height: 22)
+                        .frame(width: menuSize, height: menuSize)
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)

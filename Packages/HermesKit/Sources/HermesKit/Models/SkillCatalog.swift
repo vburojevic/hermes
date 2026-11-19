@@ -51,6 +51,30 @@ public struct SkillCatalog: Sendable, Equatable {
         source = address
     }
 
+    /// What the Skills page shows where the skills go (`docs/bots-groups-skills.md` §3).
+    public enum Shown: Sendable, Equatable {
+        /// Skeleton cards: the first read is on its way, or the gateway is still connecting.
+        case placeholders
+        case list
+        /// The gateway answered with no skills.
+        case empty
+        /// The read failed and there's nothing to show: why, and Try Again.
+        case failed(HermesError)
+        /// The gateway can't be reached and nothing was read: "Skills show when it's back."
+        case offline
+    }
+
+    /// A list already read stays on screen through a reload, a failure or the gateway going away;
+    /// otherwise the page says why it has none.
+    public func shown(for address: URL, isLoading: Bool, isUnreachable: Bool) -> Shown {
+        if !skills.isEmpty, source == address { return .list }
+        if isLoading { return .placeholders }
+        if isUnreachable { return .offline }
+        if source == address, let failure { return .failed(failure) }
+        if isWaiting(for: address) { return .placeholders }
+        return .empty
+    }
+
     /// The skills whose name or description contains `query`, by category (sorted by title), with
     /// uncategorised skills under `generalTitle`.
     public func groups(matching query: String, generalTitle: String) -> [Group] {
