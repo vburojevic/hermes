@@ -260,11 +260,21 @@ enum FollowUpQueueStore {
     private static let queues = "FollowUpQueues"
     private static let outboxes = "Outbox"
 
-    private static func folder(for key: String, in root: String) -> URL? {
+    private static func path(for key: String, in root: String) -> String {
         let safe = key.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" ? String($0) : "_" }.joined()
-        return (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
-            .appending(path: root, directoryHint: .isDirectory)
-            .appending(path: safe, directoryHint: .isDirectory)
+        return "\(root)/\(safe)"
+    }
+
+    private static func folder(for key: String, in root: String) -> URL {
+        HermesStorage.supportRoot.appending(path: path(for: key, in: root), directoryHint: .isDirectory)
+    }
+
+    /// The folder to read, with the release Mac app's own one from the shared folder carried over
+    /// (`StorageLayout.itemToRead`).
+    private static func folderToRead(for key: String, in root: String) -> URL {
+        HermesStorage.supportItemToRead(path(for: key, in: root), isDirectory: true) { legacy in
+            (try? Data(contentsOf: legacy.appending(path: "queue.json"))).flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } != nil
+        }
     }
 
     static func load(key: String) -> [QueuedFollowUp] {
@@ -284,8 +294,8 @@ enum FollowUpQueueStore {
     }
 
     private static func read(key: String, in root: String) -> [OutboxItem] {
-        guard let folder = folder(for: key, in: root),
-              let data = try? Data(contentsOf: folder.appending(path: "queue.json")),
+        let folder = folderToRead(for: key, in: root)
+        guard let data = try? Data(contentsOf: folder.appending(path: "queue.json")),
               let entries = try? JSONDecoder().decode([Entry].self, from: data) else { return [] }
         return entries.map { entry in
             let message = QueuedFollowUp(
@@ -307,7 +317,7 @@ enum FollowUpQueueStore {
     }
 
     private static func write(_ items: [OutboxItem], key: String, in root: String) {
-        guard let folder = folder(for: key, in: root) else { return }
+        let folder = folder(for: key, in: root)
         let manager = FileManager.default
         if items.isEmpty {
             try? manager.removeItem(at: folder)
@@ -349,19 +359,21 @@ enum FollowUpQueueStore {
 /// Keeps each gateway's waiting new chats (`WaitingChat`) on the device, in Application Support
 /// beside their messages (the outbox), so they survive a restart.
 enum WaitingChatStore {
-    private static func file(for gateway: UUID) -> URL? {
-        (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
-            .appending(path: "WaitingChats", directoryHint: .isDirectory)
-            .appending(path: "\(gateway.uuidString).json")
+    private static func path(for gateway: UUID) -> String {
+        "WaitingChats/\(gateway.uuidString).json"
     }
 
     static func load(gateway: UUID) -> [WaitingChat] {
-        guard let file = file(for: gateway), let data = try? Data(contentsOf: file) else { return [] }
+        // The release Mac app's own file from the shared folder is carried over (`StorageLayout.itemToRead`).
+        let file = HermesStorage.supportItemToRead(path(for: gateway), isDirectory: false) { legacy in
+            (try? Data(contentsOf: legacy)).flatMap { try? JSONDecoder().decode([WaitingChat].self, from: $0) } != nil
+        }
+        guard let data = try? Data(contentsOf: file) else { return [] }
         return (try? JSONDecoder().decode([WaitingChat].self, from: data)) ?? []
     }
 
     static func save(_ chats: [WaitingChat], gateway: UUID) {
-        guard let file = file(for: gateway) else { return }
+        let file = HermesStorage.supportRoot.appending(path: path(for: gateway))
         guard !chats.isEmpty else {
             try? FileManager.default.removeItem(at: file)
             return

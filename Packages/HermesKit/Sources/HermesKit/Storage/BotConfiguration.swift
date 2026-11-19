@@ -604,6 +604,29 @@ public struct BotStore: Sendable {
 public enum HermesStorage {
     public static let releaseBundleIdentifier = "co.caffeinatedcode.hermes"
 
+    /// This build's layout (`StorageLayout`).
+    public static let layout: StorageLayout = {
+        #if os(macOS)
+        let isMac = true
+        #else
+        let isMac = false
+        #endif
+        return StorageLayout(applicationSupport: .applicationSupportDirectory, caches: .cachesDirectory,
+                             bundleIdentifier: Bundle.main.bundleIdentifier, isMac: isMac)
+    }()
+
+    /// Where the app's queues, outbox, waiting chats and group posts live: the system folder on iOS,
+    /// this build's own folder in it on the Mac.
+    public static var supportRoot: URL { layout.supportRoot }
+
+    /// Where the app's caches live, the same way.
+    public static var cachesRoot: URL { layout.cachesRoot }
+
+    /// An item under `supportRoot`, about to be read (`StorageLayout.itemToRead`).
+    public static func supportItemToRead(_ relativePath: String, isDirectory: Bool, isOurs: (URL) -> Bool) -> URL {
+        layout.itemToRead(relativePath, isDirectory: isDirectory, isOurs: isOurs)
+    }
+
     public static var applicationSupport: URL {
         #if os(macOS)
         let bundle = Bundle.main.bundleIdentifier ?? releaseBundleIdentifier
@@ -638,4 +661,59 @@ public enum HermesStorage {
         }
     }
     #endif
+}
+
+/// Where the app's queues and caches go under the system's Application Support and Caches folders.
+///
+/// On iOS every app has its own container, so they sit straight in the system folders. The Mac app
+/// isn't sandboxed, so there they sit in a folder named by bundle id, and Hermes and Hermes Dev
+/// never read each other's outbox or Up Next. Up to Hermes 1.0 beta (2611190410) the Mac app kept
+/// them straight in the shared folders; the release app carries its own queued items over one at a
+/// time, as it reads them (`itemToRead`). Caches aren't carried over: they fill again from the
+/// gateway.
+public struct StorageLayout: Sendable {
+    public var applicationSupport: URL
+    public var caches: URL
+    public var bundleIdentifier: String?
+    public var isMac: Bool
+
+    public init(applicationSupport: URL, caches: URL, bundleIdentifier: String?, isMac: Bool) {
+        self.applicationSupport = applicationSupport
+        self.caches = caches
+        self.bundleIdentifier = bundleIdentifier
+        self.isMac = isMac
+    }
+
+    public var supportRoot: URL { ownFolder(in: applicationSupport) }
+    public var cachesRoot: URL { ownFolder(in: caches) }
+
+    /// Only the release app carries items over: what Hermes Dev left in the shared folder stays
+    /// there for the person to clear.
+    public var carriesLegacyItemsOver: Bool {
+        isMac && bundleIdentifier == HermesStorage.releaseBundleIdentifier
+    }
+
+    private func ownFolder(in root: URL) -> URL {
+        guard isMac else { return root }
+        return root.appending(path: bundleIdentifier ?? HermesStorage.releaseBundleIdentifier, directoryHint: .isDirectory)
+    }
+
+    /// The item at `relativePath` under `supportRoot`, about to be read. When it isn't there but the
+    /// shared folder has one that `isOurs` accepts, the release app moves that one item (a folder
+    /// with its attachments, or a file) over first. Nothing else in the shared folder is read,
+    /// listed or changed.
+    public func itemToRead(_ relativePath: String, isDirectory: Bool, isOurs: (URL) -> Bool) -> URL {
+        let hint: URL.DirectoryHint = isDirectory ? .isDirectory : .notDirectory
+        let item = supportRoot.appending(path: relativePath, directoryHint: hint)
+        guard carriesLegacyItemsOver else { return item }
+        let fileManager = FileManager.default
+        let legacy = applicationSupport.appending(path: relativePath, directoryHint: hint)
+        guard !fileManager.fileExists(atPath: item.path(percentEncoded: false)),
+              fileManager.fileExists(atPath: legacy.path(percentEncoded: false)),
+              isOurs(legacy)
+        else { return item }
+        try? fileManager.createDirectory(at: item.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? fileManager.moveItem(at: legacy, to: item)
+        return item
+    }
 }

@@ -593,7 +593,7 @@ nonisolated struct LevelWindow {
 /// play. A message's file is named `voice-<uuid>.m4a` everywhere, so one name finds it.
 nonisolated enum VoiceMessageStore {
     static var directory: URL {
-        let url = URL.cachesDirectory.appending(path: "VoiceMessages", directoryHint: .isDirectory)
+        let url = HermesStorage.cachesRoot.appending(path: "VoiceMessages", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
