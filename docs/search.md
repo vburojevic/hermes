@@ -63,7 +63,8 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
   full text, a search the gateway hasn't answered in 0.4 s shows the chats whose title matches,
   from the list on the device ("Titles that match · searching what was said…"), and the gateway's
   results replace them when they come: a busy Mac takes its time over a search. On the Mac, the
-  sidebar's field searches what was typed, never correcting its spelling or replacing it first.
+  sidebar's field and the ⌘K palette's each search the text as typed, never correcting its
+  spelling or replacing words in it first.
 - **Filter chips** (All / Chats / Projects / Bots / Tasks). Projects shows only with projects (Bot
   Mode), Bots only with Bot Mode linked.
 
@@ -123,8 +124,9 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
 - The count line (or "No chats mention “…”") is announced when results change, at most once a
   second (`AccessibilityNotification.Announcement`).
 - Text set in the search field by an accessibility client (Voice Control, VoiceOver, automation)
-  searches like typed text, also on the Mac when the field isn't being edited, so the results,
-  the count line and "No chats mention “…”" always name what the field shows.
+  searches like typed text, also on the Mac when the field isn't being edited (the sidebar's field
+  and the ⌘K palette's), so the results, the count line (the palette's "Chats · *n*" heading) and,
+  outside the palette, "No chats mention “…”" always name what the field shows.
 - Selected chips carry the selected trait. The palette is a modal container labelled "Search" with
   its section titles as headers.
 

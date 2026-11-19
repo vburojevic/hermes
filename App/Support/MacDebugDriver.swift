@@ -16,9 +16,12 @@ import AppKit
 /// `menu <title>` (a menu bar menu's items and shortcuts, which a locked or off-Space screen
 /// can't capture); `item <menu> > <item>` (chooses a menu bar item, as a click on it would);
 /// `mainkey esc` (Esc in the chats window); `sidebar` (the sidebar button's action); `dump`,
-/// `views` and `toolbar` (the accessibility, content and toolbar view trees, with frames). Each
-/// step logs `HERMES_MAC_DRIVE` with its result and the Settings window's title, which is the
-/// page it shows.
+/// `views` and `toolbar` (the accessibility, content and toolbar view trees, with frames). The ⌘K
+/// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
+/// `palettetype <text>` (typed into its field as keys, one per character), `paletteblur` (takes
+/// the field out of editing) and `palette` (the field's text, the field editor's corrections and
+/// the chats windows' titles). Each step logs `HERMES_MAC_DRIVE` with its result and the Settings
+/// window's title, which is the page it shows, to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
 @MainActor
 enum MacDebugDriver {
     static func runIfAsked(router: WindowRouter) async {
@@ -63,6 +66,18 @@ enum MacDebugDriver {
                 if let frame = settingsWindow?.contentView?.superview { dumpToolbar(frame, depth: 0) }
             case "views":
                 if let view = settingsWindow?.contentView { dumpViews(view, depth: 0) }
+            case "palettekey":
+                result = paletteKey(argument)
+            case "palettetype":
+                result = paletteType(argument)
+            case "paletteopen":
+                // What ⌘K does in the first window, whose menu item an off-Space app leaves
+                // disabled.
+                router.showsSearchPalette = true
+            case "paletteblur":
+                result = paletteField.map { $0.window?.makeFirstResponder(nil) == true ? "blurred" : "refused" } ?? "no palette"
+            case "palette":
+                result = paletteDump()
             default:
                 result = "unknown step"
             }
@@ -279,9 +294,109 @@ enum MacDebugDriver {
         return window.performKeyEquivalent(with: event) ? "handled" : "not handled"
     }
 
+    // MARK: The ⌘K palette
+
+    /// The palette's field, found by its placeholder in any window, so it's found whether or not
+    /// it's being edited.
+    private static var paletteField: NSTextField? {
+        let prompt = String(localized: "Search chats, projects and actions")
+        func find(_ view: NSView) -> NSTextField? {
+            // SwiftUI's own field may name its prompt to accessibility only.
+            if let field = view as? NSTextField,
+               field.placeholderString == prompt || field.placeholderAttributedString?.string == prompt
+                || field.accessibilityPlaceholderValue() == prompt {
+                return field
+            }
+            for subview in view.subviews {
+                if let field = find(subview) { return field }
+            }
+            return nil
+        }
+        for window in NSApp.windows {
+            if let content = window.contentView, let field = find(content) { return field }
+        }
+        return nil
+    }
+
+    /// The chats windows, by their window group's identifier. A copy launched in the background
+    /// never shows its windows on the person's Space, where AppKit counts them as not visible.
+    private static var chatsWindows: [NSWindow] {
+        NSApp.windows.filter { $0.identifier?.rawValue.hasPrefix("\(HermesApp.mainWindow)-") == true && $0.windowNumber > 0 }
+    }
+
+    /// A key sent the way the app routes one: a ⌘ key to the window's key equivalents, then the
+    /// menus, then as a keyDown to the first responder (the field editor) like every other key.
+    private static func paletteKey(_ combo: String) -> String {
+        guard let window = paletteField?.window else { return "no palette" }
+        let named: [String: (String, UInt16)] = [
+            "up": (String(UnicodeScalar(NSUpArrowFunctionKey)!), 126), "down": (String(UnicodeScalar(NSDownArrowFunctionKey)!), 125),
+            "return": ("\r", 36), "esc": ("\u{1b}", 53), "space": (" ", 49),
+        ]
+        let digitCodes: [Character: UInt16] = ["1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25]
+        let command = combo.hasPrefix("cmd+")
+        let name = command ? String(combo.dropFirst(4)) : combo
+        guard let (characters, code) = named[name] ?? name.first.flatMap({ digit in digitCodes[digit].map { (name, $0) } }) else {
+            return "unknown key"
+        }
+        var flags: NSEvent.ModifierFlags = command ? .command : []
+        if name == "up" || name == "down" { flags.formUnion([.function, .numericPad]) }
+        guard let event = keyEvent(characters, code: code, flags: flags, in: window) else { return "no event" }
+        if command {
+            if window.performKeyEquivalent(with: event) { return "handled by the window" }
+            if NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return "handled by the menu" }
+        }
+        window.sendEvent(event)
+        return "sent"
+    }
+
+    /// One keyDown per character, so the text goes through the field editor as typing does.
+    private static func paletteType(_ text: String) -> String {
+        guard let window = paletteField?.window else { return "no palette" }
+        for character in text {
+            guard let event = keyEvent(String(character), code: character == " " ? 49 : 0, flags: [], in: window) else { return "no event" }
+            window.sendEvent(event)
+        }
+        return "typed \(text.count) keys"
+    }
+
+    private static func keyEvent(_ characters: String, code: UInt16, flags: NSEvent.ModifierFlags, in window: NSWindow) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+        )
+    }
+
+    /// `palette`: the field's text, whether it's being edited, its field editor's corrections, and
+    /// the chats windows with their titles, which name what each one shows. The palette's rows
+    /// aren't listed: SwiftUI doesn't hand them to the app's own accessibility walk.
+    private static func paletteDump() -> String {
+        let windows = chatsWindows.map { "\"\($0.title)\"" }
+        let chats = "chats windows: \(windows.count) (\(windows.joined(separator: ", ")))"
+        guard let field = paletteField, let window = field.window else {
+            return "palette closed · \(chats)"
+        }
+        let editor = (field.currentEditor() ?? window.fieldEditor(false, for: field)) as? NSTextView
+        let corrections = editor.map {
+            "replacement \($0.isAutomaticTextReplacementEnabled), spelling correction \($0.isAutomaticSpellingCorrectionEnabled), "
+                + "spell checking \($0.isContinuousSpellCheckingEnabled)"
+        } ?? "no field editor"
+        return "field \"\(field.stringValue)\" (\(field.currentEditor() == nil ? "not editing" : "editing")) · \(corrections) · \(chats)"
+    }
+
     private static func log(_ line: String) {
         print("HERMES_MAC_DRIVE \(line)")
         fflush(stdout)
+        guard let path = UserDefaults.standard.string(forKey: "HERMES_MAC_DRIVE_LOG"),
+              let data = "HERMES_MAC_DRIVE \(line)\n".data(using: .utf8)
+        else { return }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            FileManager.default.createFile(atPath: path, contents: data)
+        }
     }
 }
 #endif
