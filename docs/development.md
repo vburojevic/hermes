@@ -181,7 +181,10 @@ Messages containing "approve" ask for permission, "slow" runs a long multi-tool 
 "marathon" runs six steps of 12 s each, "heartbeat" makes four tool calls with narration between
 them and starts a background process that wakes the chat twice with a heartbeat (each answered
 with `[SILENT]`) and once when it ends (answered with a reply), 6 s apart, as Hermes stores them
-(two unread messages, `docs/inbox.md` §1 Counting), and "fail" fails. Hermes sweeps a run's events 300 s after
+(two unread messages, `docs/inbox.md` §1 Counting), "aside" writes its reply in the same message as
+a memory save and leaves the follow-up empty, as Hermes does beside only housekeeping calls, so the
+reply has to show as the chat message and never in the steps (`docs/chat.md` §1), and "fail"
+fails. Hermes sweeps a run's events 300 s after
 the run was created when nothing listens, even while it runs (its status stays, its events answer
 404); `--run-stream-ttl <s>` shortens that. A simulator keeps a suspended app's connections open,
 so `POST /api/mock/drop-run-streams` closes every open run stream, as a phone's suspended app loses
