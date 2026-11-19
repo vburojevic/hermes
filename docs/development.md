@@ -41,13 +41,19 @@ need the APNs entitlement and the relay, so expect them to stay quiet on a perso
 | App | **Hermes Dev** (amber icon) | **Hermes** |
 | Bundle id | `co.caffeinatedcode.hermes.dev` | `co.caffeinatedcode.hermes` |
 | Mac data folder | `Application Support/co.caffeinatedcode.hermes.dev` | `Application Support/co.caffeinatedcode.hermes` |
+| Mac caches folder | `Caches/co.caffeinatedcode.hermes.dev` | `Caches/co.caffeinatedcode.hermes` |
 | Keychain, settings | its own | its own |
 | Demo bootstrap and `-HERMES_*` launch flags | yes | compiled out |
 | Mac updates | off | Sparkle |
 
-Dev builds can point at the mocks freely; they never touch the real app's gateways or keys, and both
-run at the same time on one Mac. (`Application Support/Hermes` belongs to Hermes Desktop; the app
-never writes there.)
+Dev builds can point at the mocks freely; they never touch the real app's gateways, keys, outbox,
+Up Next or caches, and both run at the same time on one Mac. (`Application Support/Hermes` belongs
+to Hermes Desktop; the app never writes there.) Up to Hermes 1.0 beta (2611190410) both kept their
+outbox, Up Next, waiting new chats, group posts and caches straight under the shared Application
+Support and Caches folders. The release app carries its own queued items over from there, one
+at a time as it opens them; Hermes Dev leaves what it kept there alone, and the old caches stay
+where they are until you delete them. Removing a gateway or a chat clears only the app's own
+folder, so a queued item it hasn't opened since stays in the shared folders too.
 
 ### Releases
 
@@ -772,9 +778,9 @@ simulator build, `--mac-bundle <id>` and `--mac-home <dir>` for a Mac build with
 run under `CFFIXED_USER_HOME`). The values are read from the file only, never put on a command line,
 and looked for as typed, JSON-escaped, percent-encoded, as bare digits and in UTF-16. It searches
 the simulator's and this Mac's unified logs (info and debug too), the app's data, group containers,
-preferences, caches, web data and saved state, the folders an unsandboxed Mac build keeps straight
-under `~/Library/Caches` and `Application Support` (Transcripts, Sessions, Outbox…), crash reports
-and the mock's output. It prints where a value turned up (by line number, never the value) and
+preferences, caches, web data and saved state, the folders older Mac builds kept straight under
+`~/Library/Caches` and `Application Support` (Transcripts, Sessions, Outbox…), crash reports and
+the mock's output. It prints where a value turned up (by line number, never the value) and
 exits 1; it exits 2 when anything couldn't be searched or no place was given; "Nothing found" and 0
 is the pass.
 

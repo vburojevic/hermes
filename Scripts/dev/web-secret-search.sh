@@ -145,10 +145,12 @@ if env["WSS_MAC"] == "1":
         f"Preferences/{mac_bundle}.plist", f"Caches/{mac_bundle}", f"Containers/{mac_bundle}",
         f"Application Support/{mac_bundle}", f"HTTPStorages/{mac_bundle}", f"WebKit/{mac_bundle}",
         f"Saved Application State/{mac_bundle}.savedState",
-        # An unsandboxed build's caches and queues sit straight under Caches and Application Support.
-        "Caches/Transcripts", "Caches/LastLines", "Caches/Sessions", "Caches/Rosters", "Caches/Widgets",
-        "Caches/Models", "Caches/VoiceMessages", "Application Support/Outbox", "Application Support/FollowUpQueues",
     ]
+    # Older Mac builds kept their caches and queues straight under Caches and Application Support,
+    # shared by every build; newer ones keep them in the bundle's own folders, searched above.
+    places += [f"Caches/{name}" for name in ("Transcripts", "LastLines", "Sessions", "Rosters", "Widgets",
+                                             "Models", "VoiceMessages", "plugin-catalog.json", "plugin-catalog-debug.json")]
+    places += [f"Application Support/{name}" for name in ("Outbox", "FollowUpQueues", "WaitingChats", "GroupPosts")]
     for place in places:
         scan_tree(place, os.path.join(library, place))
     for group in glob.glob(os.path.join(library, "Group Containers", "*caffeinatedcode*")):

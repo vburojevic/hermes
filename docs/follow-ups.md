@@ -171,21 +171,21 @@ design's component names, used in code comments.
   server Stop ends only that run: other runs Hermes queued still run. The tray stays, and Send with an
   empty field sends the first item. The next turn that starts resumes draining. A message sent
   with Send while the turn is still stopping goes to Up Next, and the queue drains when it ends.
-- **Survives:** the queue is kept per chat on the device (Application Support,
-  `FollowUpQueues/<chat>/`, attachments included) and survives app restarts. It waits while the
-  gateway is unreachable. It sends by itself whenever the chat becomes idle and reachable, not
-  only when a turn ends here (`UpNext.next`): once the chat has loaded after a relaunch (and
-  attached, with nothing running), on a reconnect with nothing running (or after a resumed turn
-  ends), once a turn recovered as over, and once what held it clears (a refusal's wait, a turn
-  open on the gateway, the gateway's own held message). Each time the first message that doesn't
-  wait for a Send goes, one per turn, in order; Not sent and Maybe sent messages go only with a
-  Send. After a relaunch, a chat's queue sends once that chat is opened, never in the background:
-  nothing goes out from a chat the person hasn't looked at, including one the app loads by itself
-  (a new chat kept from before the relaunch, even once its message went again,
-  `UpNext.Chat.opened`). A held message at the top stays there,
-  its line still saying why, while the ones behind it go. Before, after a
-  relaunch or an idle reconnect it said "Send sends the first" and waited for a Send that
-  nothing asked for. Removing the gateway removes its chats' queues.
+- **Survives:** the queue is kept per chat on the device (Application Support, in the app's own
+  folder on the Mac, `FollowUpQueues/<chat>/`, attachments included) and survives app restarts. It
+  waits while the gateway is unreachable. It sends by itself whenever the chat becomes idle and
+  reachable, not only when a turn ends here (`UpNext.next`): once the chat has loaded after a
+  relaunch (and attached, with nothing running), on a reconnect with nothing running (or after a
+  resumed turn ends), once a turn recovered as over, and once what held it clears (a refusal's wait,
+  a turn open on the gateway, the gateway's own held message). Each time the first message that
+  doesn't wait for a Send goes, one per turn, in order; Not sent and Maybe sent messages go only
+  with a Send. After a relaunch, a chat's queue sends once that chat is opened, never in the
+  background: nothing goes out from a chat the person hasn't looked at, including one the app loads
+  by itself (a new chat kept from before the relaunch, even once its message went again,
+  `UpNext.Chat.opened`). A held message at the top stays there, its line still saying why, while the
+  ones behind it go. Before, after a relaunch or an idle reconnect it said "Send sends the first"
+  and waited for a Send that nothing asked for. Removing the gateway removes its chats' queues
+  (on the Mac, not one an older build left in the shared folder, `docs/development.md`).
 - **The gateway's own queue.** A message Hermes holds itself (attachments or a fall-back, §1, a
   steer while it compacts, or one it queued behind a turn this device hadn't seen) shows first in
   the tray, read-only, marked "on <gateway name>" (`queueItemOnGateway`). After a reconnect the app

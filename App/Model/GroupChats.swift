@@ -706,20 +706,22 @@ extension GroupChatModel: WidgetAnswerSender {}
 /// Each group chat's messages on their way, on the device (Application Support), until Hermes
 /// takes them (`KeptPost`).
 enum GroupPostStore {
-    private static func file(room: String) -> URL? {
+    private static func path(room: String) -> String {
         let safe = room.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" ? String($0) : "_" }.joined()
-        return (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
-            .appending(path: "GroupPosts", directoryHint: .isDirectory)
-            .appending(path: "\(safe).json")
+        return "GroupPosts/\(safe).json"
     }
 
     static func load(room: String) -> [KeptPost] {
-        guard let file = file(room: room), let data = try? Data(contentsOf: file) else { return [] }
+        // The release Mac app's own file from the shared folder is carried over (`StorageLayout.itemToRead`).
+        let file = HermesStorage.supportItemToRead(path(room: room), isDirectory: false) { legacy in
+            (try? Data(contentsOf: legacy)).map { !KeptPost.decode($0).isEmpty } ?? false
+        }
+        guard let data = try? Data(contentsOf: file) else { return [] }
         return KeptPost.decode(data)
     }
 
     static func save(_ posts: [KeptPost], room: String) {
-        guard let file = file(room: room) else { return }
+        let file = HermesStorage.supportRoot.appending(path: path(room: room))
         guard !posts.isEmpty, let data = KeptPost.encode(posts) else {
             try? FileManager.default.removeItem(at: file)
             return

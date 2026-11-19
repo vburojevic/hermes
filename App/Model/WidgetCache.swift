@@ -11,7 +11,7 @@ nonisolated enum WidgetCache {
     private static let keychain = KeychainStore(service: "\(Bundle.main.bundleIdentifier ?? "co.caffeinatedcode.hermes").widgets")
 
     private static func folder(_ gateway: UUID) -> URL? {
-        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        HermesStorage.cachesRoot
             .appending(path: "Widgets", directoryHint: .isDirectory)
             .appending(path: gateway.uuidString, directoryHint: .isDirectory)
     }

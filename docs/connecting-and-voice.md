@@ -203,6 +203,9 @@ The sheet also explains how to turn the API server on: a snippet for `~/.hermes/
   can't, fall back to the login keychain.
 - The list of gateways (names, addresses, Bot Mode links, no secrets) is `bots.json` in the app's
   Application Support folder, written with complete-until-first-authentication protection.
+- On the Mac the app's Application Support and Caches folders are named by bundle id
+  (`co.caffeinatedcode.hermes`, and `….dev` for Hermes Dev), so the two builds never share a
+  gateway list, an outbox, Up Next, waiting new chats or caches (`StorageLayout`).
 - A gateway's key and Bot Mode sign-in are read only for the addresses saved with them
   (`<gateway id>.destinations`), checked at each read: other addresses in `bots.json` go back to
   the saved ones. While the Keychain can't be read yet, nothing is read and the gateway says

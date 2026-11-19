@@ -19,7 +19,7 @@ nonisolated enum TranscriptCache {
     private static let maxBytes = 8 * 1024 * 1024
 
     private static var root: URL? {
-        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        HermesStorage.cachesRoot
             .appending(path: "Transcripts", directoryHint: .isDirectory)
     }
 
@@ -80,7 +80,7 @@ nonisolated enum TranscriptCache {
 /// Bots…" for as long as a busy Mac takes to answer.
 nonisolated enum RosterCache {
     private static var root: URL? {
-        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        HermesStorage.cachesRoot
             .appending(path: "Rosters", directoryHint: .isDirectory)
     }
 
@@ -117,7 +117,7 @@ nonisolated enum RosterCache {
 /// launch while the gateway's Mac is too busy to answer opens on its chats, not an empty sidebar.
 nonisolated enum SessionsCache {
     private static var root: URL? {
-        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        HermesStorage.cachesRoot
             .appending(path: "Sessions", directoryHint: .isDirectory)
     }
 
@@ -153,7 +153,7 @@ nonisolated enum SessionsCache {
 /// way: the model picker opens on it while a busy Mac takes its time over the providers.
 nonisolated enum ModelOptionsCache {
     private static func file(_ gateway: UUID) -> URL? {
-        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        HermesStorage.cachesRoot
             .appending(path: "Models", directoryHint: .isDirectory)
             .appending(path: "\(gateway.uuidString).json")
     }
@@ -184,7 +184,7 @@ nonisolated enum ModelOptionsCache {
 /// first) until the newest rows of each are read again.
 nonisolated enum LastLinesCache {
     private static func file(_ gateway: UUID) -> URL? {
-        try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        HermesStorage.cachesRoot
             .appending(path: "LastLines", directoryHint: .isDirectory)
             .appending(path: "\(gateway.uuidString).json")
     }
