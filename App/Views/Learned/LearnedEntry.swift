@@ -32,7 +32,9 @@ struct LearnedSkillsRow: View {
             HStack(spacing: 12) {
                 // Ink, like Tools and Apps under it (`skills`).
                 Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.subheadline.weight(.medium))
+                    // The tile keeps its size at every text size, so the glyph does too.
+                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
                     .foregroundStyle(Theme.inkForeground)
                     .frame(width: 34, height: 34)
                     .background(Theme.ink, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -48,7 +50,7 @@ struct LearnedSkillsRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.tertiaryText)
                     .accessibilityHidden(true)
             }
@@ -131,7 +133,7 @@ struct LearnedSkillSheet: View {
         }
         .onAppear { model.onLeave = { dismiss() } }
         #if os(macOS)
-        .frame(width: 560, height: 680)
+        .frame(minWidth: 480, idealWidth: 560, minHeight: 520, idealHeight: 680)
         #endif
     }
 }

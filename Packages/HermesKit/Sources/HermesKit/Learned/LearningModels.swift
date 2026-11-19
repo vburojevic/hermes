@@ -132,6 +132,10 @@ public struct LearningGraph: Sendable, Hashable {
         skills.filter { $0.createdBy == "agent" || $0.createdBy == "learn" }
     }
 
+    /// No skill and no memory at all: the page shows "Nothing learned yet" rather than an empty
+    /// map (`docs/learned.md` §2). A skill Hermes only used still shows the map and Tidying.
+    public var hasNothingLearned: Bool { skills.isEmpty && memories.isEmpty }
+
     public func node(_ id: String) -> LearningNode? { nodes.first { $0.id == id } }
 
     /// The nodes a node is joined to, skills first, most used first.

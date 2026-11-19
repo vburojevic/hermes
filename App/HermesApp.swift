@@ -176,6 +176,8 @@ struct HermesCommands: Commands {
     let model: AppModel
     /// The key window's sheets.
     @FocusedValue(\.windowRouter) private var router
+    /// A failed read's Try Again in the key window, which ⌘R runs in place of Reload Conversation.
+    @FocusedValue(\.tryAgain) private var tryAgain
     @Environment(\.openWindow) private var openWindow
 
     /// The key window's gateway; with no window in front, the last-used one
@@ -334,11 +336,15 @@ struct HermesCommands: Commands {
             .keyboardShortcut("r", modifiers: [.command, .option])
             .disabled(!isShowingBotChat)
 
-            Button("Reload Conversation") {
-                workspace?.currentConversation.reload()
+            Button(tryAgain == nil ? "Reload Conversation" : "Try Again") {
+                if let tryAgain {
+                    tryAgain.run()
+                } else {
+                    workspace?.currentConversation.reload()
+                }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(workspace?.currentConversation.sessionID == nil && !isShowingBotChat)
+            .disabled(tryAgain == nil && workspace?.currentConversation.sessionID == nil && !isShowingBotChat)
 
             // The chat's helpers (`docs/helpers.md`): the Team inspector, or the Team page.
             let helpers = workspace?.currentConversation.helpers
