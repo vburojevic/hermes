@@ -537,8 +537,11 @@ Rules:
   - Needs you: Approvals and questions (on), Passwords and sign-ins (on).
   - While you're away: Replies (on, turns over 30 s), Scheduled tasks (All / Failures Only / Off;
     default All), Bots and group chats (All / Mentions / Off; default Mentions).
-  - Lock Screen (iPhone and iPad): Show Message Text (on) and Live Activity (on), with a link to the
-    system's notification settings. "When Unlocked" is left to iOS's Show Previews.
+  - Lock Screen (iPhone and iPad): Show Message Text (on) and Live Activity (on). The footer
+    explains Face ID with Show Previews and ends in the Notification Settings link (ink), which opens
+    Hermes's page in iOS Settings. "When Unlocked" is left to iOS's Show Previews.
+  - App Icon Badge (Dock Badge on the Mac): a menu, Unread Chats or Needs You, with a footer that
+    says what each counts.
   - Gateways: each gateway's state ("Push on", "Needs the Hermes app plugin…" with Set Up…, "Needs
     Bot Mode…" with Set Up…, Offline, or the error, with Check Again). A plugin that answers while
     this iPhone isn't on its list (`status.registered` false: no permission, or no push address
@@ -546,12 +549,23 @@ Rules:
     Mac, a gateway without the plugin says the Mac is notified while Hermes is open and the plugin
     reaches iPhone and iPad (§1.6). A gateway with push on opens its detail page: status, the
     relay's gateway id, Send a Test Notification, and Stop Notifications from it.
-  - Footers say when Time Sensitive is off for Hermes (a Focus holds approvals back) and when Live
-    Activities are off in iOS Settings, or the last one failed to start.
   - The Settings row sums it up: "Approvals, replies, tasks · 2 of 3 gateways".
-- **Denied** in the system settings: `settingsNotificationsOff` says Hermes can't reach the person
-  when it needs an answer and opens the system's settings for Hermes
-  (`UIApplication.openNotificationSettingsURLString` on iPhone and iPad).
+- **Not asked yet** (`notificationsNotDetermined`): a card at the top with Turn On Notifications
+  (ink) and the footer "Hermes asks when it first needs you. You can also turn notifications on
+  here." The rows keep their places below it.
+- **Partly off** in iOS Settings (`notificationsSystemOff`): Time Sensitive off adds "Time
+  Sensitive is off for Hermes in iOS Settings, so a Focus holds them back." to the Needs you
+  footer; Live Activities off adds "Live Activities are off for Hermes in iOS Settings, so none
+  show." above the link, or says the last one failed to start.
+- **Denied** in the system settings (`settingsNotificationsOff`): a card at the top, a bell on
+  orange, says Hermes can't reach the person when it needs an answer, and Open iOS Settings (ink;
+  Open System Settings on the Mac) opens the system's settings for Hermes
+  (`UIApplication.openNotificationSettingsURLString` on iPhone and iPad). The preferences below
+  stay in place, dimmed.
+- **Largest text** (`settingsNotificationsAX5`): titles wrap, pickers put their value under the
+  title, gateway rows wrap with the chevron trailing, and the link and Set Up… wrap rather than
+  truncate. The frames are in `screens/iphone/notifications.elyx`, the states in
+  `screens/iphone/voice-settings-states.elyx`.
 - The system's "Hermes Notification Settings" link opens Settings → Notifications in the app.
 - **Set Up Push** (`pushSetup`, which is push's review `pluginReviewPush`, [plugins.md](plugins.md)
   §2.1): shown for a gateway without the plugin (`plugins.manage list` has no `hermes-app-push`, or

@@ -42,7 +42,7 @@ struct VoiceSettingsView: View {
                         BotVoiceView(model: hermesVoice)
                             .settingsPage(back: String(localized: "Voice & Audio"))
                     } label: {
-                        LabeledContent("Hermes's voice", value: hermesVoice.isLoading ? "" : hermesVoice.realtimeTitle)
+                        LabeledContent("Hermes’s voice", value: hermesVoice.isLoading ? "" : hermesVoice.realtimeTitle)
                     }
                 }
                 Picker("Answer after a pause of", selection: $pause) {
@@ -51,12 +51,13 @@ struct VoiceSettingsView: View {
                     Text("Long").tag(Endpointer.Pause.long.rawValue)
                 }
             } header: {
-                Text("Talk")
+                // The setup section above is "Talk" already.
+                Text("Talk voice")
             } footer: {
                 if realtimeAvailable == false {
-                    Text("This gateway has no Realtime voice, so Talk uses Hermes Voice: it transcribes on this device and answers in Hermes's voice.")
+                    Text("This gateway has no Realtime voice, so Talk uses Hermes Voice: it transcribes on this device and answers in Hermes’s voice.")
                 } else {
-                    Text("Realtime answers fastest and handles interruptions best; your voice goes to OpenAI through Hermes's key. Hermes Voice transcribes on this device.")
+                    Text("Realtime answers fastest and handles interruptions best; your voice goes to OpenAI through Hermes’s key. Hermes Voice transcribes on this device.")
                 }
             }
 
@@ -69,9 +70,9 @@ struct VoiceSettingsView: View {
                     }
             } footer: {
                 #if os(iOS)
-                Text("Say “Hey Hermes” to start a call while this \(VoiceSetup.device) is charging and Hermes is open. The microphone streams to the gateway while it listens, and the gateway's wake word engine hears the words; Hermes may install that engine the first time.")
+                Text("Say “Hey Hermes” to start a call while this \(VoiceSetup.device) is charging and Hermes is open. The microphone streams to the gateway while it listens, and the gateway’s wake word engine hears the words; Hermes may install that engine the first time.")
                 #else
-                Text("Say “Hey Hermes” to start a call while Hermes is open. The microphone streams to the gateway while it listens, and the gateway's wake word engine hears the words; Hermes may install that engine the first time.")
+                Text("Say “Hey Hermes” to start a call while Hermes is open. The microphone streams to the gateway while it listens, and the gateway’s wake word engine hears the words; Hermes may install that engine the first time.")
                 #endif
             }
 
@@ -231,7 +232,7 @@ struct BotVoiceView: View {
                     } else {
                         NavigationLink {
                             ProviderVoicesView(model: model)
-                                .settingsPage(back: String(localized: "\(model.title)'s Voice"))
+                                .settingsPage(back: String(localized: "\(model.title)’s Voice"))
                         } label: {
                             LabeledContent("Voice", value: model.voiceTitle)
                         }
@@ -245,12 +246,12 @@ struct BotVoiceView: View {
             } header: {
                 Text("Replies and Voice Messages")
             } footer: {
-                Text("Saved to \(model.title)'s profile on the gateway (tts.provider, tts.\(model.providerID).\(model.provider.voiceKey ?? "voice")).")
+                Text("Saved to \(model.title)’s profile on the gateway (tts.provider, tts.\(model.providerID).\(model.provider.voiceKey ?? "voice")).")
             }
         }
         .formStyle(.grouped)
         .voiceSetup(setup, profile: model.profile, keyEntry: $keyEntry)
-        .navigationTitle("\(model.title)'s Voice")
+        .navigationTitle("\(model.title)’s Voice")
         .overlay {
             if model.isLoading { Spinner(size: .regular) }
         }
@@ -293,8 +294,9 @@ private struct VoiceChoiceRow: View {
             Button(action: onSelect) {
                 HStack(spacing: 12) {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
+                        .font(.title2)
                         .foregroundStyle(isSelected ? Theme.ink : Theme.tertiaryText)
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(voice.name)
                             .font(.body.weight(.semibold))
@@ -308,19 +310,38 @@ private struct VoiceChoiceRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // "Marin, Warm and unhurried, realtime" (`docs/voice.md` §6).
+            .accessibilityLabel([voice.name, voice.detail, kind].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             if canPreview {
-                Button(action: onPreview) {
-                    Image(systemName: isPreviewing ? "stop.fill" : "play.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(isPreviewing ? Theme.inkForeground : Theme.primaryText)
-                        .frame(width: 34, height: 34)
-                        .background(isPreviewing ? Theme.ink : Theme.controlFill, in: Circle())
-                }
-                .buttonStyle(PressableStyle())
-                .accessibilityLabel(isPreviewing ? "Stop preview" : "Preview \(voice.name)")
+                VoicePreviewButton(name: voice.name, isPreviewing: isPreviewing, action: onPreview)
+                    // The radio and this button stop growing at the first accessibility size, so
+                    // the name keeps its room and never breaks inside a word.
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
+    }
+}
+
+/// A voice row's play or stop button. Its own view, so its size follows the capped text size.
+private struct VoicePreviewButton: View {
+    let name: String
+    let isPreviewing: Bool
+    let action: () -> Void
+
+    /// Grows with the text, from 34 pt at the default size.
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 34
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isPreviewing ? "stop.fill" : "play.fill")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(isPreviewing ? Theme.inkForeground : Theme.primaryText)
+                .frame(width: size, height: size)
+                .background(isPreviewing ? Theme.ink : Theme.controlFill, in: Circle())
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel(isPreviewing ? "Stop preview" : "Preview \(name)")
     }
 }
 

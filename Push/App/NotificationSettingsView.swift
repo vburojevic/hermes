@@ -108,6 +108,7 @@ struct NotificationSettingsView: View {
                     if let settings = URL(string: UIApplication.openNotificationSettingsURLString) {
                         Link("Notification Settings", destination: settings)
                             .font(.footnote.weight(.medium))
+                            .foregroundStyle(Theme.ink)
                     }
                 }
             }
@@ -184,7 +185,7 @@ struct NotificationSettingsView: View {
             }
             Divider()
             Button("Open \(Self.systemSettingsName)") { push.openSystemSettings() }
-                .foregroundStyle(Theme.link)
+                .foregroundStyle(Theme.ink)
         }
         .padding(.vertical, 4)
     }

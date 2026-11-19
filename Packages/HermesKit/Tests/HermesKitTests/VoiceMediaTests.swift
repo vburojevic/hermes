@@ -291,6 +291,43 @@ struct VoiceSetupRulesTests {
         #expect(failed.state == .limited)
         #expect(failed.fallback == "Talk transcribes on this iPhone: live transcription failed: 401.")
     }
+
+    /// Voice & Audio's drawn states (`docs/voice.md` §6): the gateway's facts behind each frame
+    /// read as the frame does.
+    @Test func theDrawnSettingsStates() {
+        let drawn = VoiceFacts(speechProvider: "elevenlabs", speechVoice: "Adam", transcriptionProvider: "openai",
+                               keysSet: ["ELEVENLABS_API_KEY", "OPENAI_API_KEY"], realtimeAvailable: true)
+        let ready = VoiceSetupRules.statuses(drawn, device: "iPhone")
+        #expect(ready.map(\.title) == ["Talk", "Listen", "Voice messages"])
+        #expect(ready.map(\.detail) == ["Realtime · Marin", "ElevenLabs · Adam", "On this iPhone, with OpenAI on the gateway as a backup"])
+
+        // voiceRealtimeUnavailable: Hermes Voice answers in the gateway's voice; the fix is Realtime's key.
+        var noRealtime = drawn
+        noRealtime.realtimeAvailable = false
+        let talk = VoiceSetupRules.statuses(noRealtime, device: "iPhone")[0]
+        #expect(talk.state == .limited)
+        #expect(talk.detail == "Hermes Voice · ElevenLabs · Adam")
+        #expect(talk.fix?.title == "Add OpenAI Key…")
+        #expect(talk.steps.map(\.command) == ["hermes config set OPENAI_API_KEY <your key>"])
+
+        // voiceGatewayTranscription, and its Off state.
+        var gateway = drawn
+        gateway.wantsLiveTranscription = true
+        gateway.liveTranscriptionOn = true
+        gateway.liveTranscriptionAvailable = true
+        let live = VoiceSetupRules.statuses(gateway, device: "iPhone")[3]
+        #expect(live.title == "Transcribe on the gateway")
+        #expect(live.state == .ready)
+        #expect(live.detail == "OpenAI, as you speak")
+        // Off in the config, so the gateway no longer says it can transcribe as you speak.
+        gateway.liveTranscriptionOn = false
+        gateway.liveTranscriptionAvailable = false
+        let off = VoiceSetupRules.statuses(gateway, device: "iPhone")[3]
+        #expect(off.state == .limited)
+        #expect(off.detail == "On this iPhone instead")
+        #expect(off.fix?.title == "Turn On")
+        #expect(off.steps.map(\.command) == ["hermes config set stt.streaming true"])
+    }
 }
 
 struct TranscribeStreamTests {
