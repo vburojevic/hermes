@@ -196,6 +196,57 @@ struct HermesCommands: Commands {
         return workspace.unread.readMark(for: key) == .markedUnread
     }
 
+    /// The View menu's own items (macMenuView): Chats, Bots; Tasks, Skills, Board, the card moves
+    /// and Filter.
+    @ViewBuilder private var viewItems: some View {
+        Button("Chats") { workspace?.sidebarMode = .chats }
+            .keyboardShortcut("1", modifiers: .command)
+            .disabled(workspace?.roster == nil)
+        Button("Bots") { workspace?.sidebarMode = .bots }
+            .keyboardShortcut("2", modifiers: .command)
+            .disabled(workspace?.roster == nil)
+        Divider()
+        Button("Tasks") {
+            workspace?.selection = .tasks
+        }
+        .keyboardShortcut("1", modifiers: [.command, .shift])
+        .disabled(workspace == nil)
+        Button("Skills") {
+            workspace?.selection = .skills
+        }
+        .keyboardShortcut("2", modifiers: [.command, .shift])
+        .disabled(workspace == nil)
+        // The project's Board: from its home, one of its chats, or the Board itself (back home).
+        Button("Board") {
+            guard let workspace, let projectID = workspace.currentProjectID else { return }
+            workspace.sidebarMode = .chats
+            if case .board = workspace.selection {
+                workspace.selection = .project(projectID)
+            } else {
+                workspace.selection = .board(projectID)
+            }
+        }
+        .keyboardShortcut("b", modifiers: [.command, .shift])
+        .disabled(workspace?.currentProjectID == nil || workspace?.roster == nil)
+        // Drag and drop's keyboard path (`docs/board.md` §6): the selected card to the next
+        // column it may go to. Off while typing in the card, where ⌘→ moves the cursor.
+        let board = workspace?.shownBoard
+        let canMove = board.map { $0.openCardID != nil && !$0.isTyping } ?? false
+        Button("Move Card Right") { Task { await board?.moveOpenCard(forward: true) } }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .disabled(!canMove)
+        Button("Move Card Left") { Task { await board?.moveOpenCard(forward: false) } }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .disabled(!canMove)
+        // The chat list's filter, as the sidebar's filter button has it (`docs/inbox.md` §5).
+        if let workspace {
+            Menu("Filter") { InboxFilterMenuContent(workspace: workspace) }
+        } else {
+            Menu("Filter") {}.disabled(true)
+        }
+        Divider()
+    }
+
     var body: some Commands {
         // File (Elyx macMenuFile): New Chat, New Bot…, New Window; Pair a Device…; Close Window.
         CommandGroup(replacing: .newItem) {
@@ -242,64 +293,22 @@ struct HermesCommands: Commands {
             }
             .disabled(workspace == nil || router == nil)
         }
-        // View (macMenuView): Chats, Bots; Tasks, Skills, Board, Filter; then the system's sidebar items.
-        CommandGroup(before: .sidebar) {
-            Button("Chats") { workspace?.sidebarMode = .chats }
-                .keyboardShortcut("1", modifiers: .command)
-                .disabled(workspace?.roster == nil)
-            Button("Bots") { workspace?.sidebarMode = .bots }
-                .keyboardShortcut("2", modifiers: .command)
-                .disabled(workspace?.roster == nil)
-            Divider()
-            Button("Tasks") {
-                workspace?.selection = .tasks
-            }
-            .keyboardShortcut("1", modifiers: [.command, .shift])
-            .disabled(workspace == nil)
-            Button("Skills") {
-                workspace?.selection = .skills
-            }
-            .keyboardShortcut("2", modifiers: [.command, .shift])
-            .disabled(workspace == nil)
-            // The project's Board: from its home, one of its chats, or the Board itself (back home).
-            Button("Board") {
-                guard let workspace, let projectID = workspace.currentProjectID else { return }
-                workspace.sidebarMode = .chats
-                if case .board = workspace.selection {
-                    workspace.selection = .project(projectID)
-                } else {
-                    workspace.selection = .board(projectID)
-                }
-            }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-            .disabled(workspace?.currentProjectID == nil || workspace?.roster == nil)
-            // Drag and drop's keyboard path (`docs/board.md` §6): the selected card to the next
-            // column it may go to. Off while typing in the card, where ⌘→ moves the cursor.
-            let board = workspace?.shownBoard
-            let canMove = board.map { $0.openCardID != nil && !$0.isTyping } ?? false
-            Button("Move Card Right") { Task { await board?.moveOpenCard(forward: true) } }
-                .keyboardShortcut(.rightArrow, modifiers: .command)
-                .disabled(!canMove)
-            Button("Move Card Left") { Task { await board?.moveOpenCard(forward: false) } }
-                .keyboardShortcut(.leftArrow, modifiers: .command)
-                .disabled(!canMove)
-            // The chat list's filter, as the sidebar's filter button has it (`docs/inbox.md` §5).
-            if let workspace {
-                Menu("Filter") { InboxFilterMenuContent(workspace: workspace) }
-            } else {
-                Menu("Filter") {}.disabled(true)
-            }
-            Divider()
-        }
+        // View (macMenuView): Chats, Bots; Tasks, Skills, Board, Filter; then the sidebar items.
         #if os(macOS)
         // The system's Show Sidebar would dock the sidebar in a narrow window and squeeze the chat;
-        // this one brings it over the chat there (`docs/chat.md` §4).
+        // this one brings it over the chat there (`docs/chat.md` §4). Replacing the sidebar group
+        // also drops whatever is placed before it, so the View items live in the same group.
         CommandGroup(replacing: .sidebar) {
+            viewItems
             Button(router?.layout.showsSidebar == false ? "Show Sidebar" : "Hide Sidebar") {
                 router?.toggleSidebar()
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
             .disabled(router == nil)
+        }
+        #else
+        CommandGroup(before: .sidebar) {
+            viewItems
         }
         #endif
         // Chat (macMenuChat): the turn, the conversation, then the gateways.
