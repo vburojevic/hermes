@@ -161,15 +161,12 @@ final class SetupCenter {
         hermesStatuses + featureStatuses + deviceReachStatuses + (workspace?.voiceSetup.setupStatuses ?? []) + DeviceSetup.shared.statuses
     }
 
-    /// "2 to set up", or what's in use when everything is.
-    var summary: String {
-        let count = allStatuses.needingAttention
-        switch count {
-        case 0: return String(localized: "Everything is set up")
-        case 1: return String(localized: "1 thing to set up")
-        default: return String(localized: "\(count) things to set up")
-        }
-    }
+    /// "2 things to set up", from the same list as the page's rows, so the overview and the
+    /// Settings row that opens it read the same count (`docs/setup.md` §3).
+    var summary: String { SetupSummary.text(allStatuses, hasChecked: hasChecked) }
+
+    /// Check Again's state: dimmed through the first check, a spinner through a later one.
+    var checkPhase: SetupCheckPhase { SetupCheckPhase(hasChecked: hasChecked, isChecking: isChecking) }
 
     // MARK: Notifications and widgets
 

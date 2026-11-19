@@ -660,20 +660,12 @@ struct BotModeWarningTests {
     @Test func setupListsTheStoppedState() {
         let refused = GatewaySetup.botMode(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .refused(address: "studio.local:9119")))
         #expect(refused.state == .notSetUp)
-        #if os(macOS)
-        #expect(refused.detail == "Not set up · sign-in refused, so Bot Mode stopped trying")
-        #else
-        #expect(refused.detail == "Not set up · sign-in refused")
-        #endif
+        #expect(refused.detail == "Sign-in refused, so Bot Mode stopped trying.")
         #expect(refused.fix?.title == "Edit Sign-In…")
 
         let wrong = GatewaySetup.botMode(GatewaySetupFacts(gatewayName: "Studio Mac", gatewayOnline: true, botMode: .wrongServer(address: "studio.local")))
         #expect(wrong.state == .notSetUp)
-        #if os(macOS)
-        #expect(wrong.detail == "Not set up · the address is the gateway, not its backend")
-        #else
-        #expect(wrong.detail == "Not set up · wrong address")
-        #endif
+        #expect(wrong.detail == "The address is the gateway, not its backend.")
         #expect(wrong.fix?.action == .linkBotMode)
 
         // Features that need Bot Mode read as the nearest state they already have; Bot Mode's

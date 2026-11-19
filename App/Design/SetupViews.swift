@@ -6,45 +6,28 @@ import SwiftUI
 // elsewhere and what still works, drawn the same way for every feature. Each view takes a
 // `SetupStatus` from the feature's producer; the actions stay with the feature.
 
-/// "Ready", "Partly set up", "Not set up", "Checking…", "Can't check".
+/// "Ready", "Partly set up", "Not set up", "Checking…", "Can't check": always a word and a
+/// symbol (`docs/setup.md` §2), so the state never rests on colour alone. VoiceOver reads the word.
 struct SetupStateLabel: View {
     let state: SetupStatus.State
 
     var body: some View {
         HStack(spacing: 5) {
-            if state == .checking {
-                Spinner()
-            } else {
+            if let symbol = state.symbol {
                 Image(systemName: symbol)
                     .foregroundStyle(color)
                     .imageScale(.medium)
+                    .accessibilityHidden(true)
+            } else {
+                Spinner()
             }
-            Text(Self.title(state))
+            Text(state.word)
                 .foregroundStyle(Theme.secondaryText)
         }
         .font(.caption)
         .lineLimit(1)
         .fixedSize()
         .accessibilityElement(children: .combine)
-    }
-
-    static func title(_ state: SetupStatus.State) -> String {
-        switch state {
-        case .checking: String(localized: "Checking…")
-        case .ready: String(localized: "Ready")
-        case .limited: String(localized: "Partly set up")
-        case .notSetUp: String(localized: "Not set up")
-        case .unknown: String(localized: "Can't check")
-        }
-    }
-
-    private var symbol: String {
-        switch state {
-        case .ready: "checkmark.circle.fill"
-        case .limited: "exclamationmark.circle.fill"
-        case .notSetUp: "circle.dashed"
-        case .unknown, .checking: "questionmark.circle"
-        }
     }
 
     private var color: Color {
@@ -296,51 +279,123 @@ struct FeatureSetupPage: View {
     }
 }
 
-/// A Settings row for a feature: its name, what its state means and the state, opening its page.
+/// A Settings row for a feature: its name, what its state means and the state, opening its page
+/// (`docs/setup.md` §3). Its fix, where it offers one, is a button on the Mac's row and
+/// VoiceOver's action on iPhone and iPad, whose rows keep to the name, the line and the state.
 struct SetupRow<Destination: View>: View {
     let status: SetupStatus
     let symbol: String
+    var fix: (() -> Void)?
+    var confirm: SetupConfirmation?
+    /// Opens the page on the Mac, where a button can't sit inside a NavigationLink's label.
+    var open: () -> Void
     @ViewBuilder var destination: Destination
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var confirming = false
 
-    init(_ status: SetupStatus, symbol: String, @ViewBuilder destination: () -> Destination) {
+    init(
+        _ status: SetupStatus,
+        symbol: String,
+        fix: (() -> Void)? = nil,
+        confirm: SetupConfirmation? = nil,
+        open: @escaping () -> Void,
+        @ViewBuilder destination: () -> Destination
+    ) {
         self.status = status
         self.symbol = symbol
+        self.fix = status.offersFix ? fix : nil
+        self.confirm = confirm
+        self.open = open
         self.destination = destination()
     }
 
     var body: some View {
-        NavigationLink {
-            destination
-        } label: {
-            HStack(spacing: 12) {
-                GlyphTile(symbol: symbol, size: 30)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(status.title)
-                        .foregroundStyle(Theme.primaryText)
-                    if let line = Self.line(status) {
-                        Text(line)
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondaryText)
-                            .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                    }
-                    // Large text: the state under the name, so neither is squeezed.
-                    if typeSize.isAccessibilitySize {
+        #if os(macOS)
+        HStack(spacing: 10) {
+            Button(action: open) {
+                HStack(spacing: 12) {
+                    content
+                    Spacer(minLength: 8)
+                    if !typeSize.isAccessibilitySize {
                         SetupStateLabel(state: status.state)
                     }
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(status.spokenLabel)
+            .accessibilityAddTraits(.isLink)
+            if let fix, let title = status.fix?.title {
+                fixButton(title, fix)
+                    .controlSize(.small)
+            }
+            Image(systemName: "chevron.forward")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.tertiaryText)
+                .accessibilityHidden(true)
+        }
+        #else
+        let link = NavigationLink {
+            destination
+        } label: {
+            HStack(spacing: 12) {
+                content
                 Spacer(minLength: 8)
                 if !typeSize.isAccessibilitySize {
                     SetupStateLabel(state: status.state)
                 }
             }
         }
+        .accessibilityLabel(status.spokenLabel)
+        if let fix, let title = status.fix?.title {
+            link
+                .accessibilityAction(named: Text(title)) {
+                    if confirm == nil { fix() } else { confirming = true }
+                }
+                .confirmationDialog(confirm?.title ?? "", isPresented: $confirming, titleVisibility: .visible) {
+                    Button(confirm?.action ?? title, action: fix)
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text(confirm?.message ?? "")
+                }
+        } else {
+            link
+        }
+        #endif
     }
 
-    /// What's in use when ready, otherwise what's missing; what still works when that's all
-    /// there is.
-    static func line(_ status: SetupStatus) -> String? {
-        status.detail ?? status.fallback
+    private var content: some View {
+        HStack(spacing: 12) {
+            GlyphTile(symbol: symbol, size: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.title)
+                    .foregroundStyle(Theme.primaryText)
+                if let line = status.line {
+                    Text(line)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                }
+                // Large text: the state under the name, so neither is squeezed.
+                if typeSize.isAccessibilitySize {
+                    SetupStateLabel(state: status.state)
+                }
+            }
+        }
+    }
+
+    /// The fix as the row's capsule. A fix that asks first hangs its dialog off the button.
+    private func fixButton(_ title: String, _ fix: @escaping () -> Void) -> some View {
+        Button(title) {
+            if confirm == nil { fix() } else { confirming = true }
+        }
+        .cardButton()
+        .confirmationDialog(confirm?.title ?? "", isPresented: $confirming, titleVisibility: .visible) {
+            Button(confirm?.action ?? title, action: fix)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirm?.message ?? "")
+        }
     }
 }
 
