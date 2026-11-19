@@ -68,8 +68,8 @@ struct SidebarView: View {
         reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.85)
     }
 
-    private var searchPrompt: LocalizedStringKey {
-        botRoster == nil ? "Search chats" : "Search Bots"
+    private var searchPrompt: String {
+        botRoster == nil ? String(localized: "Search chats") : String(localized: "Search Bots")
     }
 
     var body: some View {
@@ -711,7 +711,7 @@ private struct CompactListChrome: ViewModifier {
     @Bindable var workspace: BotWorkspace
     let isCompact: Bool
     let statusPlacement: ConnectionStatusPlacement
-    let prompt: LocalizedStringKey
+    let prompt: String
     var searchFocused: FocusState<Bool>.Binding
 
     func body(content: Content) -> some View {
@@ -1069,16 +1069,21 @@ struct ConnectionStatus {
 /// The search field at the top of the sidebar (iPad, Mac).
 struct SearchField: View {
     @Binding var text: String
-    var prompt: LocalizedStringKey = "Search chats"
+    var prompt = String(localized: "Search chats")
     /// Bumped to put the field in focus (⌥⌘F, Show All Results).
     var focusRequest = 0
 
+    #if !os(macOS)
     @FocusState private var focused: Bool
+    #endif
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Theme.tertiaryText)
+            #if os(macOS)
+            SearchTextBox(text: $text, prompt: prompt, focusRequest: focusRequest)
+            #else
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
@@ -1089,6 +1094,7 @@ struct SearchField: View {
                     text = ""
                     return .handled
                 }
+            #endif
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -1113,3 +1119,128 @@ struct SearchField: View {
         #endif
     }
 }
+
+#if os(macOS)
+/// The Mac's sidebar field, an `NSTextField` of its own (`docs/search.md` §3). A SwiftUI `TextField`
+/// there hears only what's typed through the field editor, so text an accessibility client set
+/// while the field wasn't being edited (Voice Control, VoiceOver, automation) showed in the field
+/// and never reached the search, which kept showing the results for the text before it.
+private struct SearchTextBox: NSViewRepresentable {
+    @Binding var text: String
+    let prompt: String
+    let focusRequest: Int
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, focusRequest: focusRequest)
+    }
+
+    func makeNSView(context: Context) -> Field {
+        let field = Field()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13)
+        field.usesSingleLineMode = true
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.stringValue = text
+        field.delegate = context.coordinator
+        let coordinator = context.coordinator
+        field.onSet = { [weak coordinator] value in coordinator?.take(value) }
+        return field
+    }
+
+    func updateNSView(_ field: Field, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.text = $text
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+        // The placeholder names the field, as it did for the SwiftUI field, with no label beside
+        // it that VoiceOver could read out a second time.
+        if field.placeholderString != prompt {
+            field.placeholderString = prompt
+        }
+        if coordinator.focusRequest != focusRequest {
+            coordinator.focusRequest = focusRequest
+            field.window?.makeFirstResponder(field)
+        }
+    }
+
+    /// Hands every change on to the search: typed ones through the delegate, set ones through
+    /// `onSet`.
+    final class Field: NSTextField {
+        override class var cellClass: AnyClass? {
+            get { Cell.self }
+            set {}
+        }
+
+        var onSet: ((String) -> Void)? {
+            get { (cell as? Cell)?.onSet }
+            set { (cell as? Cell)?.onSet = newValue }
+        }
+    }
+
+    /// An accessibility client's write lands in the cell, not in `NSTextField`'s own setters, so
+    /// the cell is where a set value is heard. Overriding the field's `setAccessibilityValue`
+    /// instead takes the write away from AppKit, and nothing is set at all. While the field is
+    /// edited the delegate hears every change, and reading the cell's value then sets it again
+    /// from the field editor, which would land back here, so the cell stays out of it.
+    final class Cell: NSTextFieldCell {
+        var onSet: ((String) -> Void)?
+
+        /// Its own field editor, so the window's shared one keeps its settings: a search term is
+        /// searched as typed, never corrected, replaced or completed first.
+        private lazy var editor: NSTextView = {
+            let editor = NSTextView()
+            editor.isFieldEditor = true
+            editor.isAutomaticSpellingCorrectionEnabled = false
+            editor.isAutomaticTextReplacementEnabled = false
+            editor.inlinePredictionType = .no
+            return editor
+        }()
+
+        override func fieldEditor(for controlView: NSView) -> NSTextView? {
+            editor
+        }
+
+        override var objectValue: Any? {
+            didSet {
+                guard (controlView as? NSControl)?.currentEditor() == nil else { return }
+                onSet?(stringValue)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        var focusRequest: Int
+
+        init(text: Binding<String>, focusRequest: Int) {
+            self.text = text
+            self.focusRequest = focusRequest
+        }
+
+        func take(_ value: String) {
+            if text.wrappedValue != value {
+                text.wrappedValue = value
+            }
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            take(field.stringValue)
+        }
+
+        /// Esc clears the field when it has text.
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.cancelOperation(_:)), !text.wrappedValue.isEmpty else { return false }
+            text.wrappedValue = ""
+            return true
+        }
+    }
+}
+#endif
