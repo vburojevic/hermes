@@ -31,6 +31,27 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611190410 (November 19, 2026)
+
+- **Chat:** each message tells Hermes which app and device sent it, so replies fit the screen
+- **Chat:** a message sent with a photo shows only your words, not the notes Hermes adds for the model
+- **Chat:** a chat started with a photo lists your words, however Hermes cut its preview
+- **Chat:** a setting keeps the chat at the bottom when you send
+- **Chat:** a reply always shows as a chat message, never inside the thinking section
+- **Plugins:** the app updates the widgets plugin by itself, asking for no new access, so Hermes knows which app and device sent each turn
+- **Notifications:** tapping a reply opens the chat it came from, not the Bot
+- **Notifications:** replying to or opening a notice goes by its chat, never by the profile that ran it
+- **Notifications:** a chat open in any window counts as seen
+- **Mac:** words on question and approval cards can be selected and copied
+- **Mac:** each window keeps its own gateway, so two windows can show two gateways
+- **Mac:** one drag selects across a whole reply, and Cmd-A selects all of it
+- **Mac:** the window can be made narrow, and the sidebar and inspector step aside when it is
+- **Mac:** select words in a reply and Reply quotes them in one step
+- **Mac:** the View menu has Chats, Bots, Tasks, Skills, Board and Filter again
+- **Bot Mode:** Edit Gateway checks the address and offers only the sign-ins it accepts
+- **Search:** the empty state names what the field shows, also after VoiceOver or Voice Control sets it on the Mac
+- **Widgets:** pictures and videos in a card open full screen
+
 ### Build 2611170727 (November 17, 2026)
 
 - **Bots:** a group chat's row shows its newest message and when it came
