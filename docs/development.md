@@ -915,7 +915,11 @@ and the update's result for the connected gateway; `priority:update` updates Her
 `priority:update` shows the app putting the gateway back at full priority by itself, and
 `priority:restart` does the same after Plugins' Restart Gateway (the mock's plist in
 `build/mock-launch-agents` says Interactive again; pointed at another folder, it stays without).
-`-appearance light` or `dark` picks the gallery's look.
+`priority:states` draws each of the Mac line's states (`macPriorityNotice`, its next start,
+restarting and restored variants, and the connection alone) at the same widths and sizes from
+sample reads, with no Bot Mode. `-appearance light` or `dark` picks the gallery's look,
+`-HERMES_GALLERY_LOOK light+contrast` or `dark+contrast` adds Increase Contrast, and
+`+reducemotion` (`light+reducemotion`) Reduce Motion, which holds the restarting spinner still.
 
 A Mac window that isn't on screen (the screen locked, another Space, behind other windows) lays
 out differently: AppKit solves its split view's constraints from each column's minimum size, and a

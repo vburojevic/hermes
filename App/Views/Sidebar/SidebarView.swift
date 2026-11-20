@@ -958,9 +958,19 @@ struct ConnectionStatusLabel: View {
     let workspace: BotWorkspace
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    // The Mac's footer line is `.subheadline` (11 pt there, `.footnote` is 10), as the priority
+    // notice above it (`docs/setup.md` §4.17); iPhone and iPad keep `.footnote`.
+    #if os(macOS)
+    private static let font = Font.subheadline
+    /// How far the middle of the line sits above its baseline (0.355 em of SF at 11 pt), so the
+    /// dot centres on the first line when the line wraps.
+    @ScaledMetric(relativeTo: .subheadline) private var firstLineMiddle: CGFloat = 3.9
+    #else
+    private static let font = Font.footnote
     /// How far the middle of a footnote line sits above its baseline (0.355 em of SF at 13 pt), so
     /// the dot centres on the first line when the line wraps.
     @ScaledMetric(relativeTo: .footnote) private var firstLineMiddle: CGFloat = 4.6
+    #endif
 
     var body: some View {
         let status = ConnectionStatus(workspace)
@@ -985,7 +995,7 @@ struct ConnectionStatusLabel: View {
                 .lineLimit(1)
             }
         }
-        .font(.footnote)
+        .font(Self.font)
         .foregroundStyle(Theme.secondaryText)
         .accessibilityElement(children: .combine)
     }
