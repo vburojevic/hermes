@@ -22,7 +22,7 @@ public struct LaneSelection: Hashable, Sendable {
         self.rowID = rowID
     }
 
-    /// Selects a row, as a click on it does, or clears the selection.
+    /// Selects a row, or clears the selection. A click opens its chat and leaves this alone.
     public mutating func select(_ id: String?) {
         rowID = id
     }
