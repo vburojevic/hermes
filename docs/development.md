@@ -892,6 +892,8 @@ pushed page's back button), `key cmd+[`, `menu <title>` (a menu bar menu's items
 which a locked or off-Space screen can't capture), `frame <width> <height>` (resizes the chats
 window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in the chats window),
 `mainkey cmd+r` (⌘R there, then the menus, which answer from the key window's focused values),
+`mainkey tab|up|down|left|right|return` (typed into the chats window, as the project home's lanes
+read them), `key cmd+r` (⌘R in the Settings window, then the menus, as Setup's Check Again answers),
 `sidebar` (the sidebar button's action), and `dump` / `views` to see what's there (`maindump` the
 chats window's accessibility tree). For the ⌘K palette (`-HERMES_PALETTE <text>` opens it in each
 chats window once connected, and fills its field with that text each time it opens): `paletteopen`
