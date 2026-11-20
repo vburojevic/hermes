@@ -101,10 +101,11 @@ Buttons are verbs in title case: Turn On, Install…, Check Again, Learn More.
   round.
 - **Check Again** reads everything again: a toolbar button on iPhone and iPad (glass, beside Done on
   iPad), a button beside the count on the Mac, with ⌘R. ⌘R is the Chat menu's Reload Conversation,
-  so while the list is in front that item reads Check Again and runs it (the `tryAgain` focused
-  value), and ⌘R never reloads the chat behind the Settings window; the item is dimmed while a check
-  runs. During the first check the button is dimmed with no spinner and the count says Checking…;
-  on later checks a `Spinner` takes its place (`SetupCheckPhase`). On the Mac ⌘[ goes back from a feature's page to the list.
+  so while Setup is the Settings tab shown, the list or a feature's page, that item reads Check
+  Again and runs it (the `tryAgain` focused value), and ⌘R never reloads the chat behind the
+  Settings window; the item is dimmed while a check runs. During the first check the button is
+  dimmed with no spinner and the count says Checking…; on later checks a `Spinner` takes its place
+  (`SetupCheckPhase`). On the Mac ⌘[ goes back from a feature's page to the list.
 - **The feature's own page** puts its setup first while it isn't ready (`SetupSection` or
   `SetupCard`), and keeps the rest of the page usable where it can.
 - **Where it's used**, a feature that can't run says so in place: a `SetupMessage` instead of an
