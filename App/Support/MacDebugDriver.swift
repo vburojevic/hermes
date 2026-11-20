@@ -15,7 +15,8 @@ import AppKit
 /// (resizes the chats window, top left kept, which a locked screen refuses from outside);
 /// `menu <title>` (a menu bar menu's items and shortcuts, which a locked or off-Space screen
 /// can't capture); `item <menu> > <item>` (chooses a menu bar item, as a click on it would);
-/// `mainkey esc` (Esc in the chats window; `mainkey cmd+r` ⌘R there, then the menus); `sidebar`
+/// `mainkey esc` (Esc in the chats window; `mainkey cmd+r` ⌘R there, then the menus; `mainkey
+/// tab|up|down|left|right|return` typed there; `key cmd+r` ⌘R in Settings, then the menus); `sidebar`
 /// (the sidebar button's action); `dump`, `views` and `toolbar` (the accessibility, content and
 /// toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
 /// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
@@ -273,7 +274,17 @@ enum MacDebugDriver {
     /// `mainkey cmd+r`: ⌘R routed as the app routes it, to the window's key equivalents, then the
     /// menus, which answer from the key window's focused values.
     private static func mainKey(_ combo: String) -> String {
-        guard combo == "esc" || combo == "cmd+r" else { return "only esc and cmd+r are supported" }
+        // Tab, the arrows and Return go to the first responder as typed keys do, so `.onKeyPress`
+        // and the key view loop see them (the project home's lanes, `docs/projects.md` §2).
+        if let (characters, code) = typedKeys[combo] {
+            guard let window = mainWindow else { return "no chats window" }
+            var flags: NSEvent.ModifierFlags = []
+            if code >= 123 { flags.formUnion([.function, .numericPad]) }
+            guard let event = keyEvent(characters, code: code, flags: flags, in: window) else { return "no event" }
+            window.sendEvent(event)
+            return "sent"
+        }
+        guard combo == "esc" || combo == "cmd+r" else { return "only esc, cmd+r, tab, up, down, left, right and return are supported" }
         let (flags, characters, code): (NSEvent.ModifierFlags, String, UInt16) =
             combo == "esc" ? ([], "\u{1b}", 53) : (.command, "r", 15)
         guard let window = mainWindow, let event = keyEvent(characters, code: code, flags: flags, in: window) else {
@@ -284,8 +295,15 @@ enum MacDebugDriver {
         return NSApp.mainMenu?.performKeyEquivalent(with: event) == true ? "handled by the menu" : "not handled"
     }
 
+    private static let typedKeys: [String: (String, UInt16)] = [
+        "tab": ("\t", 48), "return": ("\r", 36),
+        "left": (String(UnicodeScalar(NSLeftArrowFunctionKey)!), 123), "right": (String(UnicodeScalar(NSRightArrowFunctionKey)!), 124),
+        "down": (String(UnicodeScalar(NSDownArrowFunctionKey)!), 125), "up": (String(UnicodeScalar(NSUpArrowFunctionKey)!), 126),
+    ]
+
     private static func key(_ combo: String) -> String {
-        guard combo == "cmd+[" || combo == "return" else { return "only cmd+[ and return are supported" }
+        if combo == "cmd+r" { return settingsCommandR() }
+        guard combo == "cmd+[" || combo == "return" else { return "only cmd+[, cmd+r and return are supported" }
         // Return goes to a sheet over Settings when there is one: its default button.
         guard let settings = settingsWindow else { return "no Settings window" }
         let window = combo == "return" ? (settings.attachedSheet ?? settings) : settings
@@ -297,6 +315,16 @@ enum MacDebugDriver {
               )
         else { return "no event" }
         return window.performKeyEquivalent(with: event) ? "handled" : "not handled"
+    }
+
+    /// ⌘R with the Settings window in front: its key equivalents, then the menus, which answer
+    /// from the Settings scene's focused values (Setup's Check Again, `docs/setup.md` §3).
+    private static func settingsCommandR() -> String {
+        guard let settings = settingsWindow, let event = keyEvent("r", code: 15, flags: .command, in: settings) else {
+            return "no Settings window"
+        }
+        if settings.performKeyEquivalent(with: event) { return "handled by the Settings window" }
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) == true ? "handled by the menu" : "not handled"
     }
 
     // MARK: The ⌘K palette
