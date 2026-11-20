@@ -24,6 +24,12 @@ struct ProjectHomeView: View {
     @State private var actionError: HermesError?
     /// The lane row whose swipe actions show; a tap or a scroll shuts it.
     @State private var swipedRow: String?
+    #if os(macOS)
+    /// The chat the arrow keys have selected (`docs/projects.md` §2), drawn while the lanes have
+    /// the keyboard.
+    @State private var laneSelection = LaneSelection()
+    @FocusState private var lanesFocused: Bool
+    #endif
 
     private var projects: ProjectsModel { workspace.projects }
     private var node: ProjectNode? { projects.node(projectID) }
@@ -209,6 +215,13 @@ struct ProjectHomeView: View {
                     withAnimation(reduceMotion ? nil : Theme.snappy) { proxy.scrollTo(lane, anchor: .top) }
                 }
             }
+            #if os(macOS)
+            // The selected chat stays in view as the arrow keys move it.
+            .onChange(of: laneSelection.rowID) { _, id in
+                guard let id, lanesFocused else { return }
+                withAnimation(reduceMotion ? nil : Theme.snappy) { proxy.scrollTo(id) }
+            }
+            #endif
         }
     }
 
@@ -315,10 +328,17 @@ struct ProjectHomeView: View {
             if shown.isEmpty {
                 emptyLanes
             } else {
-                ForEach(shown) { lane in
-                    laneSection(lane)
-                        .id(lane.id)
+                let lanes = VStack(alignment: .leading, spacing: 0) {
+                    ForEach(shown) { lane in
+                        laneSection(lane)
+                            .id(lane.id)
+                    }
                 }
+                #if os(macOS)
+                laneKeys(lanes, shown: shown)
+                #else
+                lanes
+                #endif
             }
         } else if node?.sessionCount == 0 {
             emptyLanes
@@ -343,19 +363,27 @@ struct ProjectHomeView: View {
         .padding(.horizontal, 12)
     }
 
-    private func laneSection(_ lane: ProjectLane) -> some View {
+    /// A lane's chats newest first, its times, and the rows it shows: three until Show All.
+    private func laneRows(_ lane: ProjectLane) -> (sorted: [ProjectSessionRow], shown: [ProjectSessionRow], times: [String: Date]) {
         let times = Dictionary(lane.sessions.compactMap { row in workspace.rowTime(row).map { (row.id, $0) } }, uniquingKeysWith: { a, _ in a })
         let sorted = RowTime.ordered(lane.sessions, pinned: { _ in false }, time: { times[$0.id] })
+        let shown = expandedLanes.contains(lane.id) ? sorted : Array(sorted.prefix(3))
+        return (sorted, shown, times)
+    }
+
+    private func laneSection(_ lane: ProjectLane) -> some View {
+        let (sorted, rows, times) = laneRows(lane)
         let isExpanded = expandedLanes.contains(lane.id)
-        let rows = isExpanded ? sorted : Array(sorted.prefix(3))
         return VStack(alignment: .leading, spacing: 8) {
             LaneHeader(lane: lane, count: lane.sessions.count)
             ForEach(rows) { row in
                 LaneChatRow(row: row, time: times[row.id], muted: isMuted(row),
-                            isWorking: projects.isRunning(sessionID: row.id) || projects.isRunning(sessionID: row.stableID)) {
+                            isWorking: projects.isRunning(sessionID: row.id) || projects.isRunning(sessionID: row.stableID),
+                            isSelected: isSelected(row)) {
                     // A tap while a row shows its swipe actions shuts them, as in the chat list.
                     if swipedRow != nil { swipedRow = nil } else { open(row) }
                 }
+                .id(row.id)
                 .contextMenu { chatMenu(row) }
                 .modifier(rowActions(row))
                 .onAppear { workspace.unread.needsLastLine(row.session) }
@@ -378,6 +406,44 @@ struct ProjectHomeView: View {
         }
         .padding(.top, 6)
     }
+
+    private func isSelected(_ row: ProjectSessionRow) -> Bool {
+        #if os(macOS)
+        lanesFocused && laneSelection.rowID == row.id
+        #else
+        false
+        #endif
+    }
+
+    #if os(macOS)
+    /// The arrow keys on the Mac (`docs/projects.md` §2): Up and Down within a lane, Left and Right
+    /// between lanes, Return opens the chat. The lanes take the keyboard with Tab, and the first
+    /// chat is selected as they do.
+    private func laneKeys(_ lanes: some View, shown: [ProjectLane]) -> some View {
+        let order = shown.map { laneRows($0).shown }
+        let ids = order.map { $0.map(\.id) }
+        return lanes
+            .focusable()
+            .focused($lanesFocused)
+            .focusEffectDisabled()
+            .onKeyPress(.upArrow) { move(.up, in: ids) }
+            .onKeyPress(.downArrow) { move(.down, in: ids) }
+            .onKeyPress(.leftArrow) { move(.left, in: ids) }
+            .onKeyPress(.rightArrow) { move(.right, in: ids) }
+            .onKeyPress(.return) {
+                guard let id = laneSelection.rowID, let row = order.joined().first(where: { $0.id == id }) else { return .ignored }
+                open(row)
+                return .handled
+            }
+            .onChange(of: lanesFocused) { _, focused in
+                if focused, laneSelection.position(in: ids) == nil { laneSelection.move(.down, in: ids) }
+            }
+    }
+
+    private func move(_ move: LaneSelection.Move, in ids: [[String]]) -> KeyPress.Result {
+        laneSelection.move(move, in: ids) ? .handled : .ignored
+    }
+    #endif
 
     @ViewBuilder
     private func chatMenu(_ row: ProjectSessionRow) -> some View {
@@ -669,6 +735,8 @@ struct LaneChatRow: View {
     /// The chat list's slashed bell before the time (`docs/inbox.md` §5).
     let muted: Bool
     let isWorking: Bool
+    /// The arrow keys' chat on the Mac (`macLaneChatRowSelected`).
+    var isSelected = false
     let action: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -699,7 +767,8 @@ struct LaneChatRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-            .background(isHovered ? Theme.controlFill : .clear, in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+            .background(isSelected ? Theme.surfaceRaised : isHovered ? Theme.controlFill : .clear,
+                        in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             #else
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -714,7 +783,7 @@ struct LaneChatRow: View {
         #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private var preview: String? {
