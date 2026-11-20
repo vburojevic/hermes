@@ -538,8 +538,11 @@ Rules:
   - While you're away: Replies (on, turns over 30 s), Scheduled tasks (All / Failures Only / Off;
     default All), Bots and group chats (All / Mentions / Off; default Mentions).
   - Lock Screen (iPhone and iPad): Show Message Text (on) and Live Activity (on). The footer
-    explains Face ID with Show Previews and ends in the Notification Settings link (ink), which opens
-    Hermes's page in iOS Settings. "When Unlocked" is left to iOS's Show Previews.
+    explains Show Previews' When Unlocked and ends in the Notification Settings link (ink), which
+    opens Hermes's page in iOS Settings. "When Unlocked" is left to iOS's Show Previews. The words
+    fit the device (`LockScreenWording`): iPad says iPad and leaves out the Dynamic Island, and the
+    footer names Face ID or Touch ID only on a device that unlocks with it (hardware with no face
+    or finger enrolled doesn't count), otherwise the text waits until the device is unlocked.
   - App Icon Badge (Dock Badge on the Mac): a menu, Unread Chats or Needs You, with a footer that
     says what each counts.
   - Gateways: each gateway's state ("Push on", "Needs the Hermes app plugin…" with Set Up…, "Needs

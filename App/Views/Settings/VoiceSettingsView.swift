@@ -177,7 +177,7 @@ struct VoiceSettingsRow: View {
         NavigationLink {
             VoiceSettingsView(workspace: workspace)
         } label: {
-            Label("Voice & Audio", systemImage: "waveform")
+            SettingsRowLabel(symbol: "waveform", title: "Voice & Audio")
         }
     }
 }

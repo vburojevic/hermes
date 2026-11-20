@@ -113,6 +113,21 @@ public struct BotConfiguration: Identifiable, Hashable, Codable, Sendable {
         if !path.isEmpty, path != "/" { text += path }
         return text
     }
+
+    /// `displayAddress` for text that wraps at the largest sizes (`docs/settings.md` §2): lines
+    /// may break after a dot or hyphen in the host or before a slash in the path, but the port
+    /// stays whole, on the line with the end of the host.
+    public var wrappingDisplayAddress: String {
+        let breakable = "\u{200B}", joiner = "\u{2060}"
+        let host = baseURL.host() ?? baseURL.absoluteString
+        var text = host.replacing(".", with: "." + breakable).replacing("-", with: "-" + breakable)
+        if let port = baseURL.port {
+            text += joiner + (":" + String(port)).map(String.init).joined(separator: joiner)
+        }
+        let path = baseURL.path(percentEncoded: false)
+        if !path.isEmpty, path != "/" { text += path.replacing("/", with: breakable + "/") }
+        return text
+    }
 }
 
 /// Where Bot Mode lives: the Hermes backend (`hermes serve`, the dashboard and

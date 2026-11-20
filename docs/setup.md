@@ -88,19 +88,21 @@ Buttons are verbs in title case: Turn On, Install…, Check Again, Learn More.
 
 ## 3. Where it shows
 
-- **Settings → Setup** (iPhone and iPad: Settings → Hermes on <gateway> → Setup; Mac: the Setup
-  tab) lists every feature in this doc with its state, in fixed groups (Hermes on the gateway,
-  Features, Reaching You, Voice & Audio, On This Device) so rows don't jump while it checks. Each
-  row opens the feature's own page, or its `FeatureSetupPage` with the fix and the steps.
-  Transcription shows its steps and no fix. The Settings row and the top of the list say how
-  many things need setting up, both counted from the one list (`SetupSummary`). `SetupCenter`
-  (one per gateway, `workspace.setup`) reads everything when the page or the row appears and
-  again when Bot Mode connects or drops; each read lands as it comes back and gives up after
-  20 s, and a status waiting on a read says Checking… the first time round.
-- **Check Again** reads everything again: a toolbar button on iPhone and iPad, a button beside
-  the count on the Mac, with ⌘R. During the first check it is dimmed with no spinner and the
-  count says Checking…; on later checks a `Spinner` takes its place (`SetupCheckPhase`). On the
-  Mac ⌘[ goes back from a feature's page to the list.
+- **Settings → Setup** (iPhone: Settings → Hermes on <gateway> → Setup; iPad: the Setup row in the
+  Settings sidebar, under Hermes on <gateway>, with the list in the detail column; Mac: the Setup
+  tab, third of the window's ten, 680 pt wide like the panes beside it) lists every feature in this
+  doc with its state, in fixed groups (Hermes on the gateway, Features, Reaching You, Voice & Audio,
+  On This Device) so rows don't jump while it checks. Each row opens the feature's own page, or its
+  `FeatureSetupPage` with the fix and the steps. Transcription shows its steps and no fix. The
+  Settings row and the top of the list say how many things need setting up, both counted from the
+  one list (`SetupSummary`). `SetupCenter` (one per gateway, `workspace.setup`) reads everything
+  when the page or the row appears and again when Bot Mode connects or drops; each read lands as it
+  comes back and gives up after 20 s, and a status waiting on a read says Checking… the first time
+  round.
+- **Check Again** reads everything again: a toolbar button on iPhone and iPad (glass, beside Done on
+  iPad), a button beside the count on the Mac, with ⌘R. During the first check it is dimmed with no
+  spinner and the count says Checking…; on later checks a `Spinner` takes its place
+  (`SetupCheckPhase`). On the Mac ⌘[ goes back from a feature's page to the list.
 - **The feature's own page** puts its setup first while it isn't ready (`SetupSection` or
   `SetupCard`), and keeps the rest of the page usable where it can.
 - **Where it's used**, a feature that can't run says so in place: a `SetupMessage` instead of an
