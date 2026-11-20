@@ -116,6 +116,13 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
     row is open at a time; a tap on it, a scroll or another row's swipe shuts it. The Mac has no
     swipe and keeps Archive in the menu. VoiceOver offers Mute / Unmute and Archive as actions
     on the row on every platform.
+  - On the Mac the lanes take the keyboard with Tab, which selects the first chat
+    (`macLaneChatRowSelected`). Up and Down move the selection within its lane, Left and Right to
+    the lane before or after it, at the same place or that lane's last row, and Return opens the
+    chat. Only the rows shown count, so a lane collapsed to three offers three. The selection
+    shows while the lanes have the keyboard, VoiceOver reads the row as selected, and the rows
+    keep their order and labels. `LaneSelection` (HermesKit) holds the moves. iPhone and iPad
+    have no selection.
   - Archive works as it does in the chat list (`docs/inbox.md` §5): the row leaves its lane at
     once and "Archived “title” Undo" shows above the composer for 5 s; Undo puts the row back in
     its lane at once, the lane too if it went with its last chat. The toast shows where the chat
@@ -295,6 +302,10 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
 - A lane chat's swipe matches the chat list's on iPhone and iPad: the same buttons, tints, order
   and full swipe, the row sliding back, and Undo; a drag up or down mid-lane still scrolls, and
   the back swipe still goes back on iPhone. The Mac's menu has Archive.
+- On the Mac, Tab into a project home's lanes selects its first chat; Down and Up stop at the
+  lane's ends, Right and Left move to the next and previous lane, and Return opens the selected
+  chat. The selection scrolls into view, draws as `macLaneChatRowSelected` in light and dark, and
+  clicking a row still opens it. iPhone and iPad are unchanged.
 - A muted lane chat shows the chat list's slashed bell before its time, on iPhone, iPad and Mac,
   at every text size, and VoiceOver reads "muted" after its title. A full swipe shows it at once;
   Unmute from the swipe or the menu takes it away.

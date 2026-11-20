@@ -405,3 +405,67 @@ struct ProjectsTests {
         #expect(ProjectPath.lastComponent("/a/b/") == "b")
     }
 }
+
+/// The Mac project home's arrow keys (`docs/projects.md` §2).
+@Suite("Lane selection")
+struct LaneSelectionTests {
+    // Main checkout, an empty lane the home doesn't show, a worktree, card worktrees.
+    private let lanes = [["m1", "m2", "m3"], [], ["w1"], ["c1", "c2"]]
+
+    @Test func firstKeySelectsTheFirstChat() {
+        for move in [LaneSelection.Move.up, .down, .left, .right] {
+            var selection = LaneSelection()
+            #expect(selection.move(move, in: lanes))
+            #expect(selection.rowID == "m1")
+        }
+    }
+
+    @Test func upAndDownStayInTheLane() {
+        var selection = LaneSelection(rowID: "m1")
+        selection.move(.down, in: lanes)
+        selection.move(.down, in: lanes)
+        #expect(selection.rowID == "m3")
+        // The lane's last row: Down stays, never into the next lane.
+        selection.move(.down, in: lanes)
+        #expect(selection.rowID == "m3")
+        selection.move(.up, in: lanes)
+        #expect(selection.rowID == "m2")
+        selection.select("m1")
+        selection.move(.up, in: lanes)
+        #expect(selection.rowID == "m1")
+    }
+
+    @Test func leftAndRightMoveBetweenLanesKeepingThePlace() {
+        var selection = LaneSelection(rowID: "m2")
+        // The empty lane is skipped; a shorter lane takes its last row.
+        selection.move(.right, in: lanes)
+        #expect(selection.rowID == "w1")
+        selection.move(.right, in: lanes)
+        #expect(selection.rowID == "c1")
+        selection.move(.right, in: lanes)
+        #expect(selection.rowID == "c1")
+        selection.move(.down, in: lanes)
+        selection.move(.left, in: lanes)
+        #expect(selection.rowID == "w1")
+        selection.move(.left, in: lanes)
+        #expect(selection.rowID == "m1")
+        selection.move(.left, in: lanes)
+        #expect(selection.rowID == "m1")
+        #expect(selection.position(in: lanes) == LaneSelection.Position(lane: 0, row: 0))
+    }
+
+    @Test func aRowThatLeftStartsAgainAtTheTop() {
+        // Archived, or hidden behind Show Less.
+        var selection = LaneSelection(rowID: "m3")
+        let shown = [["m1", "m2"], ["w1"]]
+        #expect(selection.position(in: shown) == nil)
+        selection.move(.down, in: shown)
+        #expect(selection.rowID == "m1")
+    }
+
+    @Test func noChatsNoSelection() {
+        var selection = LaneSelection(rowID: "m1")
+        #expect(!selection.move(.down, in: [[], []]))
+        #expect(selection.rowID == nil)
+    }
+}
