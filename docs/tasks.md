@@ -8,8 +8,9 @@ Both are Hermes **cron jobs**: a prompt Hermes runs on a schedule, each run in a
   into its Bot Chat. They need Bot Mode and go over the backend's socket.
 
 This document covers the calls behind each, the schedules and delivery targets Hermes understands,
-and the iPad and Mac layouts. Design components: `Tasks.taskRow`, `Tasks.runRow`, `runRowFailed`,
-`ipadTasks`, `macTasks` and the Mac's `macRoutines` sheet.
+and the layouts on each device. Design components: `Tasks.taskRow`, `Tasks.runRow`, `runRowFailed`,
+`runRowRunning`, `tasks`, `taskDetail`, `newTask`, `ipadTasks`, `macTasks`, `macNewTask` and the
+Mac's `macRoutines` sheet.
 
 ## 1. Calls
 
@@ -20,8 +21,9 @@ and the iPad and Mac layouts. Design components: `Tasks.taskRow`, `Tasks.runRow`
 | Tasks list | `GET /api/jobs?include_disabled=true` | Paused jobs only appear with `include_disabled`. Sorted active first by next run, paused last. Loaded when Tasks opens, again whenever the gateway comes online (Tasks opened before it connected, a reconnect, a new address), and on pull to refresh or Try Again. One read at a time: a new one replaces the read on its way, so the newest answer stands. Offline with nothing loaded, the list says why it couldn't load |
 | New Task | `POST /api/jobs {name, schedule, prompt}` | Name, prompt and schedule are required. Hermes allows a name up to 200 characters and a prompt up to 5000, and sets `deliver: local` when none is given. Create closes the sheet at once; the task shows in the list, tagged "Adding…", until the gateway's job replaces it. A refusal (an invalid schedule) takes the row away and says why, with Edit Task to open New Task again with what was typed |
 | Pause / Resume | `POST /api/jobs/{id}/pause`, `…/resume` | The row moves at once (Paused, or back among the active ones) and the job in the answer settles it, next run included. A refusal puts it back and says so |
-| Run Now | `POST /api/jobs/{id}/run` | The row says "Starting…" until the gateway has the run, and VoiceOver hears "<task> started" |
-| Delete | `DELETE /api/jobs/{id}` | Removed from the list at once and put back if the call fails. No confirmation |
+| Run Now | `POST /api/jobs/{id}/run` | Hermes only marks the task due (`trigger_job` sets `next_run_at` and `manual_run_at` to now); its scheduler starts the run at its next tick, within a minute. VoiceOver hears "<task> started" once the gateway takes it, and the row says "Starting…" until the list shows the run: Tasks reads the list every 5 s until the run is under way, has finished, or couldn't start (`last_fire_error`), for up to 75 s |
+| Running now | `live_execution` on the job (`status` `claimed` or `running`, `started_at`, else `claimed_at`) | Hermes has no running state for a job: a run in progress is a live execution row. The row says "Running now · 24 s" in a line that shimmers and counts up, and the detail's Recent runs leads with it ("Running now", a clock). While any task runs, the list is read every 10 s, so the line ends when the run does. A recurring task counts the run when it finishes, a finite one when it starts (`claim_dispatch`), so the run going on is counted once |
+| Delete | `DELETE /api/jobs/{id}` | Asks first, in one alert ("Delete “<task>”?", "Hermes won't run it again."), from every place that deletes: swipe, the row's menu, the … menu and VoiceOver. Then removed from the list at once, and put back if the call fails |
 | Recent runs | `GET /api/cron/jobs/{id}/runs?limit=100&profile?` | On the backend, so only with Bot Mode connected, in the task's detail on every device (§4). Each agent run is a chat with id `cron_<jobId>_<timestamp>` and source `cron`; script-only runs have output but no chat. Hermes's most (100), because most runs of a frequent task say nothing: runs with no messages, no output and no error are left out, and the rest show newest first (`ScheduledRuns.shown`, §5) |
 | Open a run | `GET /api/sessions/{id}/messages` | The run opens in Chats like any other chat, and can be continued. It isn't listed among the chats: a run is found under Show → Scheduled Tasks, here, and Search's Tasks filter ([inbox.md](inbox.md) §5) |
 | Last run failed | `state: error`, or `last_status` `error` or `blocked_config`, and `last_error` | A red tag in the list, the error in the detail |
@@ -31,7 +33,8 @@ and the iPad and Mac layouts. Design components: `Tasks.taskRow`, `Tasks.runRow`
 Fields the app reads from a job (`CronJob`): `id`, `name`, `prompt`, `schedule_display` (else
 `schedule.display`), `skills`, `enabled`, `state`, `paused_reason`, `created_at`, `next_run_at`,
 `last_run_at`, `last_status`, `last_error`, `last_delivery_error`, `last_fire_error.detail`,
-`deliver`, and `repeat.times` / `repeat.completed`.
+`deliver`, `model` (blank or absent means the gateway's default), `live_execution` (above), and
+`repeat.times` / `repeat.completed`.
 
 **Routines** (`BotRoster`, over the socket with `profile: <bot>`):
 
@@ -106,7 +109,16 @@ it was made" for `origin`, else the target's platform name.
 - A failed run shows "Last run failed" in the list and its error in the detail.
 - Open Tasks with the gateway stopped ("Couldn't load tasks"), then start it: the list fills in
   by itself once the gateway connects, with no pull to refresh.
-- On iPad and Mac, a run row opens that run's chat in Chats.
+- On every device, a run row opens that run's chat in Chats.
+- Run Now (or the mock's `--running-task`): the row says "Starting…" until the mock's scheduler
+  starts the run (8 s on), then "Running now", counting up; the detail's Recent runs leads with
+  the run, and both end by themselves when the run does. Nothing else on
+  the screen moves; with Reduce Motion the line is still.
+- Delete asks first, from swipe, both menus and VoiceOver's actions; Cancel leaves the task.
+- At the largest accessibility text size the rows drop the icon tile and wrap, the detail's labels
+  sit above their values, and Pause and Run Now stack full width.
+- On the Mac, ⌘N opens New Task while Tasks is showing (File → New Task); Return in New Task
+  creates the task and Escape cancels it.
 - A Bot's Routines → Past runs (mock backend: Research Buddy) lists the digest, the MLX watch and the failed
   reading list newest first, with no empty run and no chevron; tapping the digest expands its whole
   reply, and the context menu copies it.
@@ -115,23 +127,39 @@ it was made" for `origin`, else the target's platform name.
 
 - **iPad** (regular width, `ipadTasks`): the task list (`Tasks.taskRow` with its status tags)
   beside the selected task's detail: prompt, schedule (runs, next run or Paused, where results
-  go), skills, last error, then recent runs (`Tasks.runRow`, `runRowFailed`: when, how long, and
-  what it said or why it failed). Pause and Run Now float in a bottom glass bar over the
-  scroll-edge fade. + adds a task; the … menu deletes the selected one. With the sidebar hidden
-  (portrait), the sidebar button sits top left, as in a chat, and the page's actions top right.
+  go, and the model when the task names one), skills, last error, then recent runs
+  (`Tasks.runRow`, `runRowFailed`, `runRowRunning`: when, how long, and what it said or why it
+  failed). Pause and Run Now float in a bottom glass bar over the scroll-edge fade. + adds a task
+  and sits over the list, after the sidebar button; the … menu deletes the selected one. With the
+  sidebar hidden (portrait), the sidebar button sits top left, as in a chat, and the page's
+  actions top right.
 - The list takes half the room, between 240 and 360 pt, so the detail keeps its share in a narrow
-  window (the Mac's smallest, the iPad with its sidebar beside it).
-- **Mac** (`macTasks`): the same list and detail in the window. Pause (or Resume) and Run Now move
-  to the toolbar, Run Now as the default button (Return); the … menu holds New Task… and Delete
-  Task.
+  window (the iPad with its sidebar beside it). The rows select; they have no chevron.
+- **Mac** (`macTasks`): the list, 340 pt wide (down to 240 pt in a narrow window, so the detail
+  keeps its share), beside the detail. Rows select, light up under the
+  pointer, and have no chevron. + (New Task, ⌘N) leads the toolbar, with no tasks too (loading,
+  empty or not loaded, `macTasksEmpty`); Pause (or Resume), Run Now
+  (the default button, Return) and the … menu (New Task…, Delete Task) follow it at the trailing
+  end. New Task (`macNewTask`) is a form with its labels on the left, Name, Prompt and Schedule
+  with its presets, Cancel and Create (Return) at the bottom, 460 to 520 pt wide and as tall as
+  what it holds.
+- On the Mac the first read draws the split already: skeleton rows in the list, the detail empty
+  beside it (`macTasksLoading`).
+- Each row has a menu (right-click, or touch and hold): Run Now, Pause or Resume, Delete. VoiceOver
+  offers the same as actions on the row.
 - A run row opens that run's chat. Runs without a chat can't be opened. Runs that said nothing
   aren't listed (§5).
 - The selected task is restored per window (`SceneStorage("tasks.selected")`).
 - Calls are the same as §1.
 
-On iPhone, Tasks is a list; a tap opens the detail as a sheet (prompt, schedule, skills, last error,
-Run Now and Pause, then Recent runs as on iPad and Mac), swipe left for Delete and Pause, and a
-context menu adds Run Now. A run tapped there closes the sheet and opens in Chats.
+On iPhone (`tasks`, `taskDetail`), Tasks is a list; a tap pushes the task's detail (prompt,
+schedule with runs, next run, last run and completed runs, skills, last error, then Recent runs as
+on iPad and Mac), with Pause and Run Now in a bottom glass bar and Delete Task in the … menu. Swipe
+left for Delete and Pause; the row's menu has Run Now, Pause and Delete. A run tapped there opens in
+Chats. New Task (`newTask`) is a sheet with Cancel (×) and Create.
+
+At accessibility text sizes (`tasksAx5`, `taskDetailAx5`) the rows drop their icon tile and wrap,
+the detail's labels sit above their values, and Pause and Run Now stack full width.
 
 ## 5. Routines on screen
 

@@ -259,6 +259,12 @@ struct HermesCommands: Commands {
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(!board.isOnline || board.workflow == nil)
+            } else if let workspace, workspace.detailRoute(compact: false) == .tasks {
+                // In Tasks, ⌘N opens New Task, as + does (`docs/tasks.md` §4).
+                Button("New Task") {
+                    workspace.pendingNewTask = .empty
+                }
+                .keyboardShortcut("n", modifiers: .command)
             } else {
                 Button("New Chat") {
                     guard let workspace else { return }
