@@ -286,7 +286,7 @@ struct ProjectMenuItems: View {
         }
         Divider()
         Button("Archive", systemImage: "archivebox") {
-            Task { try? await projects.archive(projectID) }
+            Task { await projects.attempt { try await projects.archive(projectID) } }
         }
         Button("Delete Project…", systemImage: "trash", role: .destructive) {
             projects.deleting = projectID

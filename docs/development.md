@@ -687,6 +687,9 @@ Building Hermes for iPhone (Blog) was compacted 25 minutes ago; search for "zsh"
 their results' times, and All Projects to see dotfiles stay last. Debug flags: `-HERMES_OPEN projects`,
 `-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
 `-HERMES_OPEN project-chat:<id>`, and `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin`.
+A project with "readonly" in its name can be renamed but not changed: Archive, Restore, Delete
+and Add Folder answer 5061 "attempt to write a readonly database", as Hermes does when it can't
+write its projects.db.
 
 Unread and live activity (`Tools/mock-hermes/inbox.py`, `docs/inbox.md`): the gateway's chats keep
 Hermes' read mark (`last_read_at`); seeded, Release prep has 3 replies since it was read, Morning

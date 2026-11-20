@@ -61,6 +61,9 @@ final class ProjectsModel {
     var addingFolder: String?
     /// Delete Project… waiting for its confirmation.
     var deleting: String?
+    /// Why the last Archive, Restore, Delete or Add Folder from a menu, the Archived list or a
+    /// confirmation failed, shown in `ProjectSheets`' alert (`docs/projects.md` §4).
+    var failure: String?
 
     /// Chats this device just started in a project, before the tree has caught up.
     @ObservationIgnored private var placedSessions: [String: String] = [:]
@@ -518,6 +521,17 @@ final class ProjectsModel {
         expandedIDs.remove(id)
         leaveProjectHome(id)
         await refresh()
+    }
+
+    /// Runs a project action started from a menu or a confirmation, keeping why it failed for
+    /// the alert. A cancelled one says nothing.
+    func attempt(_ action: () async throws -> Void) async {
+        do {
+            try await action()
+        } catch is CancellationError {
+        } catch {
+            failure = error.localizedDescription
+        }
     }
 
     private func leaveProjectHome(_ id: String) {

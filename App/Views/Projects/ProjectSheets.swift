@@ -29,7 +29,7 @@ struct ProjectSheets: ViewModifier {
                 FolderPickerSheet(workspace: workspace, title: String(localized: "Add Folder")) { path in
                     projects.addingFolder = nil
                     guard let path, let project = projects.project(target.id) else { return }
-                    Task { try? await projects.addFolder(path, to: project) }
+                    Task { await projects.attempt { try await projects.addFolder(path, to: project) } }
                 }
             }
             .sheet(item: $projects.movingSession) { session in
@@ -51,10 +51,19 @@ struct ProjectSheets: ViewModifier {
             ) { id in
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) {
-                    Task { try? await projects.delete(id) }
+                    Task { await projects.attempt { try await projects.delete(id) } }
                 }
             } message: { _ in
                 Text("The chats stay in Chats.")
+            }
+            .alert(
+                "Something went wrong",
+                isPresented: Binding(get: { projects.failure != nil }, set: { if !$0 { projects.failure = nil } }),
+                presenting: projects.failure
+            ) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { failure in
+                Text(failure)
             }
             .onChange(of: projects.editing != nil || projects.movingSession != nil || projects.runInConversation != nil) { _, presenting in
                 if presenting { Keyboard.dismiss() }

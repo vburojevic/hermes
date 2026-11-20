@@ -593,7 +593,7 @@ struct ArchivedProjectsView: View {
                     }
                     Spacer(minLength: 8)
                     Button("Restore") {
-                        Task { try? await projects.archive(project.id, restore: true) }
+                        restore(project)
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
@@ -601,7 +601,7 @@ struct ArchivedProjectsView: View {
                 }
                 .contextMenu {
                     Button("Restore", systemImage: "arrow.uturn.backward") {
-                        Task { try? await projects.archive(project.id, restore: true) }
+                        restore(project)
                     }
                     Button("Delete Project…", systemImage: "trash", role: .destructive) {
                         projects.deleting = project.id
@@ -620,6 +620,10 @@ struct ArchivedProjectsView: View {
                 ContentUnavailableView("No Archived Projects", systemImage: "archivebox")
             }
         }
+    }
+
+    private func restore(_ project: HermesProject) {
+        Task { await projects.attempt { try await projects.archive(project.id, restore: true) } }
     }
 }
 

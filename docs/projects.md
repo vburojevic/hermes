@@ -216,6 +216,10 @@ first message is sent: a new worktree is made then, and the folder goes to `sess
   - Add Folder…
   - Archive and Delete…, paired. Delete confirms with an alert ("The chats stay in Chats.").
   - Folder changes apply together on ✓: additions, then the new primary, then removals.
+- **When an action fails:** Archive, Restore, Delete and Add Folder, from a project's menu, the
+  Archived list, Delete's confirmation or the editor, show "Something went wrong" with Hermes's own
+  words (5061 is the gateway's generic failure). The editor stays open behind it, and nothing
+  moves in the sidebar or the lists.
 - Validation: a name is required. When the gateway refuses a primary folder that is already a
   project's (5063, "folder already belongs to project …"), the sheet says "That folder is already a
   project's primary folder. Open that project, or pick another folder." Other 5063 messages show as
@@ -294,6 +298,9 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
   Opening another chat, or the Board, from the home after that Back keeps it open. A chat opened
   from the chat list still goes back to the list, and iPad and Mac are unchanged.
 - Deleting a project never deletes chats.
+- A refused Archive, Restore, Delete or Add Folder (the mock's "readonly" project) says "Something
+  went wrong" with the gateway's message, from the menu, the Archived list and the editor, on
+  iPhone, iPad and Mac, and the project stays where it was.
 - Archiving a chat from a lane takes its row away at once, and it stays gone after a refresh; Undo
   brings it back at once, in its lane and still out of the flat history. One Undo toast shows, in
   the project home, on iPhone, iPad (both orientations) and Mac.

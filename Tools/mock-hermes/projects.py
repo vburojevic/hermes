@@ -409,10 +409,18 @@ def projects_update(params):
     return result
 
 
+def refuse_readonly(pid):
+    """A project with "readonly" in its name is one Hermes can't write: its projects.db refuses,
+    and the gateway answers 5061 with sqlite's own words, as on a read-only or full disk."""
+    if "readonly" in PROJECTS[pid]["name"].lower():
+        raise RPCError(5061, "attempt to write a readonly database")
+
+
 def projects_add_folder(params):
     path = norm(params.get("path"))
     with LOCK:
         pid = find(params.get("id"))
+        refuse_readonly(pid)
         p = PROJECTS[pid]
         existing = next((f for f in p["folders"] if f["path"] == path), None)
         if existing:
@@ -461,6 +469,7 @@ def projects_set_primary(params):
 def projects_archive(params):
     with LOCK:
         pid = find(params.get("id"))
+        refuse_readonly(pid)
         PROJECTS[pid]["archived"] = not params.get("restore")
         result = listing()
     changed()
@@ -470,6 +479,7 @@ def projects_archive(params):
 def projects_delete(params):
     with LOCK:
         pid = find(params.get("id"))
+        refuse_readonly(pid)
         del PROJECTS[pid]
         ORDER.remove(pid)
         result = listing()
