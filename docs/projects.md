@@ -132,11 +132,11 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
     holds `projectMenu`.
   - On iPhone a chat opened from the project home (a lane row, Show All, or a chat sent from its
     composer, also one waiting for the gateway) pushes over the home, and so does Talk's new chat,
-    as soon as Talk starts: Back, or the swipe from the screen's edge, returns to the project,
-    which the back button names, and a second Back goes to the chat list. A chat or the Board
-    opened again from the home after a Back stays open; the Board's back button names the
-    project too. The chat you went back from is no longer open, so its
-    replies count as unread (`docs/inbox.md`). A chat opened any other way (the chat list, a
+    its draft, which is pushed right away, before anything is sent. Back, or the swipe from the
+    screen's edge, returns to the project, which the back button names, and a second Back goes to
+    the chat list. A chat or the Board opened again from the home after a Back stays open; the
+    Board's back button names the project too. The chat you went back from is no longer open, so
+    its replies count as unread (`docs/inbox.md`). A chat opened any other way (the chat list, a
     notification, search, Quick Open, a link) goes back to the chat list, and archiving or
     deleting the chat on screen goes back to the chat list too. On iPad and Mac the chat replaces
     the project home in the detail column, as before.
@@ -147,12 +147,15 @@ The eight glyphs are `chevron.left.forwardslash.chevron.right` (Code), `server.r
   running turn lifting it until the reply ends), over the chats the app has for it: the tree's
   newest three, its lanes once opened and its chats in the history. The tree's `lastActive` is
   Hermes' activity for its chats, which a heartbeat or a compaction moves, so it stands in only
-  while none of its chats is known. A project with no chats uses its creation time.
+  while none of its chats is known. A project with no chats takes its place by its creation time,
+  but shows no time: its card and row say "0 chats" alone (`RowTime.shownForProject`).
 - **All Projects** (`allProjects`): projects by their time, newest first, then "Found on <gateway>"
   (`repoSuggestionRow`: Add creates a project from that folder, named after it, with a colour picked
   from the name, without making it active), then Archived (Restore, Delete). Pull to refresh. On
-  the Mac (`macAllProjects`) it is a grid of project cards (tile, name, folder in mono, chats, its
-  time), the found folders, and New Project… in the toolbar.
+  the Mac (`macAllProjects`) and iPad it is a grid of project cards (tile, name, folder in mono,
+  chats, its time), the found folders, and New Project… in the toolbar; Archived is a link on the
+  Mac and a row on iPad. While the list loads, card skeletons (Mac and iPad) or four row skeletons
+  (iPhone) stand in, each read as one "Loading".
 - Chats mode has no home row; a project home is reached from its row or the chip (§3).
 
 ## 3. Starting and moving chats
@@ -177,7 +180,8 @@ first message is sent: a new worktree is made then, and the folder goes to `sess
   - On a chat that has started, the chip appears only when the chat is in a project, and opens a
     menu: Open Project, Move to Project….
 - **New Chat from the sidebar** starts in the active project, if one is set and not archived, else
-  No Project. The chip shows which.
+  No Project. The chip shows which. On a project home, its New Chat button and ⌘N start the chat
+  in that project.
 - **Move to Project…** (`moveToProject`, from the chip, a lane chat's menu or a chat's menu in the
   sidebar):
   lists the projects and New Project…, says "Hermes moves its workspace; a running turn follows.",
@@ -245,6 +249,27 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
   `Image(systemName:)`. The gradient starts part-way to the deep stop so the white glyph clears
   3.2:1 on every accent (the lighter design stops for gold, mint and dark-mode graphite didn't).
 - Run In and Move to Project use `.presentationDetents([.medium, .large])`.
+- Sizes on the Mac: New and Edit Project open 520 wide and grow with the text; the folder picker
+  opens at 460×520. The editor's colour and glyph rows stay one row at every text size (the
+  glyphs stop growing at xxLarge). On iPad, New and Edit Project keep their form layout.
+- Two columns on the project home only where there's room (860 pt or more), and on iPad never at
+  the accessibility text sizes, where the lanes need the whole width; the Mac keeps its columns
+  and All Projects its grid at every size. The right column is 300 pt with
+  a 28 pt gap inside 40 pt margins on the Mac, and 280, 24 and 32 on iPad, so iPad landscape keeps
+  both columns.
+- At the accessibility text sizes rows stack rather than truncate: an All Projects row puts its
+  tile above and its working dot below the wrapped details; a found folder puts its glyph above
+  and Add below; the home's header wraps the path without glyphs and gives the branch its own
+  line; a lane header stacks; a lane chat (`laneChatRowLarge`) wraps its title and line and puts
+  its marks and time below; the facts card gives each chip a line; a folder row drops its glyph
+  and wraps the path; the Board row puts its tile above, what needs you under the counts, and
+  drops the chevron. All Projects on iPad is then one column of readable width, and the new-chat
+  hero scrolls, its chips stacked (they stop growing at accessibility1).
+- Lane chats are cards on iPhone and iPad and plain rows on the Mac (body title, subheadline
+  line); project cards and Mac rows lift to the hover surface under the pointer. Show All is ink
+  on the Mac and grey on iPhone and iPad. Every text style is a Dynamic Type style.
+- Reduce Motion: a lane chosen in the sidebar is jumped to rather than scrolled to, and the
+  new-chat hero fades in without growing; with decorative motion paused it appears at once.
 - One `ProjectsModel` per gateway holds the tree, the project list, loaded lanes, facts and
   branches, refreshed on `projects.changed` / `sessions.changed`. Pins and Mac expansion are stored
   per gateway and profile, keyed by project id (the desktop keys its own by these ids, so they stay
@@ -279,7 +304,13 @@ chats (and goes back home from the Board). The "Card worktrees" lane lists the c
 - Project colours render in light, dark and Increase Contrast, with the white glyph at 3:1 or
   better.
 - VoiceOver reads a project row as "Hermes App, project, 9 chats" (or "working"), and a Mac lane
-  row as "main, branch, 4 chats".
+  row as "main, branch, 4 chats". A lane header reads "main, main checkout, 3 chats", a lane chat
+  "Fix the build, muted, working, 2 hours ago" and then its last line, and a folder in the picker
+  "hermes-app, folder" or "hermes-app, folder, in Hermes App".
+- At the largest accessibility text size, All Projects, a project home, its lanes and Board row,
+  the editor, the folder, Move and Run In pickers and the new-chat hero show every word with
+  nothing clipped or overlapping, on iPhone, iPad (both orientations) and Mac. iPad landscape
+  keeps two columns at the default size, and the Mac at every size.
 - A project with a colour or glyph written by the desktop draws as graphite / code and keeps its
   stored values after the name is edited.
 

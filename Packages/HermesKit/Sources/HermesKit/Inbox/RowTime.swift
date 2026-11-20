@@ -30,6 +30,12 @@ public enum RowTime {
         return chatCount > 0 ? activity ?? created : created
     }
 
+    /// The time a project's card or row shows: none for a project with no chats, which sorts by
+    /// when it was made but says only "0 chats" (`docs/projects.md` §2).
+    public static func shownForProject(_ time: Date?, chatCount: Int) -> Date? {
+        chatCount > 0 ? time : nil
+    }
+
     /// A list's order: pinned first, then newest first by `time`; rows without one go last, and
     /// ties keep the order they came in.
     public static func ordered<Row>(_ rows: [Row], pinned: (Row) -> Bool, time: (Row) -> Date?) -> [Row] {

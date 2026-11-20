@@ -10,27 +10,45 @@ struct ProjectNewChatHero: View {
     var composerFocused: Binding<Bool>
 
     @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.pausesDecorativeMotion) private var pausesDecorativeMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var projects: ProjectsModel { workspace.projects }
     private var placement: ChatPlacement { conversation.placement ?? projects.defaultPlacement }
     private var name: String { projects.project(projectID)?.name ?? "" }
 
     var body: some View {
+        // At the accessibility sizes the hero is taller than the space above the composer, so it
+        // scrolls rather than cutting its title short.
+        if dynamicTypeSize.isAccessibilitySize {
+            ScrollView {
+                hero.padding(.vertical, 8)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        } else {
+            hero
+        }
+    }
+
+    private var hero: some View {
         VStack(spacing: 14) {
             ProjectTile(appearance: projects.appearance(projectID), size: 56)
-                .scaleEffect(appeared ? 1 : 0.85)
+                .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
             VStack(spacing: 6) {
                 Text("New chat in \(name)")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
                     .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
                 Text(runsIn)
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
                     .multilineTextAlignment(.center)
             }
             .opacity(appeared ? 1 : 0)
-            CenteredFlowLayout(spacing: 8) {
+            // At the accessibility sizes a chip can be wider than the screen, so they stack.
+            chipLayout {
                 ForEach(suggestions, id: \.title) { suggestion in
                     Button {
                         conversation.draft = suggestion.prompt
@@ -39,6 +57,9 @@ struct ProjectNewChatHero: View {
                         ChipLabel(title: suggestion.title, symbol: suggestion.symbol, isActive: true)
                     }
                     .buttonStyle(PressableStyle())
+                    // A chip is one line; past the first accessibility size it no longer fits the
+                    // phone's width.
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 }
             }
             .frame(maxWidth: 420)
@@ -53,8 +74,19 @@ struct ProjectNewChatHero: View {
             }
         }
         .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.05)) { appeared = true }
+            // Reduce Motion fades without the grow; paused motion shows it at once.
+            if pausesDecorativeMotion {
+                appeared = true
+            } else if reduceMotion {
+                withAnimation(.easeOut(duration: 0.25)) { appeared = true }
+            } else {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.05)) { appeared = true }
+            }
         }
+    }
+
+    private var chipLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(CenteredFlowLayout(spacing: 8))
     }
 
     /// "Runs in ~/Code/hermes-app on main".

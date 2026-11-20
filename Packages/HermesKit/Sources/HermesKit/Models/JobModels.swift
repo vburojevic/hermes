@@ -24,9 +24,15 @@ public struct CronJob: Decodable, Sendable, Hashable, Identifiable {
     public var deliver: String?
     public var repeatTimes: Int?
     public var repeatCompleted: Int?
+    /// The model the task runs on, when the job names one (`model`); `nil` means the gateway's default.
+    public var model: String?
+    /// When the run going on now started (`live_execution`), or `nil` when none is. Hermes has no
+    /// running state for a job: a run in progress is a claimed or running execution row.
+    public var runningSince: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, prompt, skills, enabled, state, schedule, deliver
+        case id, name, prompt, skills, enabled, state, schedule, deliver, model
+        case liveExecution = "live_execution"
         case repeatInfo = "repeat"
         case scheduleDisplay = "schedule_display"
         case pausedReason = "paused_reason"
@@ -64,6 +70,17 @@ public struct CronJob: Decodable, Sendable, Hashable, Identifiable {
         let repeatInfo = try? c.decodeIfPresent(JSONValue.self, forKey: .repeatInfo)
         repeatTimes = repeatInfo?["times"]?.truncatedIntValue
         repeatCompleted = repeatInfo?["completed"]?.truncatedIntValue
+        model = (try? c.decodeIfPresent(String.self, forKey: .model))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+        runningSince = Self.liveStart(try? c.decodeIfPresent(JSONValue.self, forKey: .liveExecution))
+    }
+
+    /// The start of a live run: `started_at` once it runs, `claimed_at` while it is being handed to
+    /// the runner. Any other status (or none) is no live run.
+    static func liveStart(_ live: JSONValue?) -> Date? {
+        guard let live, let status = live["status"]?.stringValue?.lowercased(),
+              status == "running" || status == "claimed" else { return nil }
+        return HermesDate.fromISO(live["started_at"]?.stringValue) ?? HermesDate.fromISO(live["claimed_at"]?.stringValue)
     }
 
     /// Dates are ISO strings in the job store, but tolerate epoch numbers too.
@@ -98,12 +115,33 @@ public struct CronJob: Decodable, Sendable, Hashable, Identifiable {
     }
 
     public var isPaused: Bool { state == "paused" || !enabled }
+    /// A run is going on now (`docs/tasks.md` §1).
+    public var isRunning: Bool { runningSince != nil }
     /// The last run failed, or Hermes wouldn't start it for want of setup (`blocked_config`).
     public var hasFailed: Bool { state == "error" || lastStatus == "error" || lastStatus == "blocked_config" }
     /// The last run worked, but its results didn't arrive where they go (`docs/setup.md` §4.11).
     public var deliveryFailed: Bool { !hasFailed && (lastStatus == "delivery_failed" || lastDeliveryError != nil) }
     /// A scheduled run couldn't be handed to the runner; cleared by the next run that works.
     public var missedRun: Bool { lastFireError?.isEmpty == false }
+    /// How many times it has run, for Recent runs (`docs/tasks.md` §4): what Hermes counts
+    /// (`repeat.completed`), and the run going on now when Hermes hasn't counted it yet. A task
+    /// that runs a set number of times is counted as its run starts (`cron/jobs.py`
+    /// `claim_dispatch`), a recurring one as its run ends. Nil when Hermes doesn't count.
+    public var runsCounted: Int? {
+        guard let repeatCompleted else { return nil }
+        return isRunning && repeatTimes == nil ? repeatCompleted + 1 : repeatCompleted
+    }
+
+    /// After Run Now, whether this read of the task shows the run it asked for. Hermes only marks
+    /// the task due (`trigger_job`); its scheduler starts the run at its next tick, up to a minute
+    /// later (`docs/tasks.md` §1). So the run shows once it is under way, as finished when it ran
+    /// between two reads, or as a run the scheduler couldn't start. `before` is the task as it
+    /// was when Run Now was sent.
+    public func showsRun(askedOf before: CronJob) -> Bool {
+        isRunning || lastRunAt != before.lastRunAt || repeatCompleted != before.repeatCompleted
+            || lastStatus != before.lastStatus || lastFireError != before.lastFireError
+    }
+
     /// What went wrong last, in Hermes's words.
     public var problem: String? {
         [lastFireError, lastDeliveryError, lastError].compactMap { $0 }.first { !$0.isEmpty }
@@ -165,6 +203,28 @@ public struct CronRun: Identifiable, Hashable, Sendable {
     public var duration: TimeInterval? {
         guard let startedAt, let endedAt, endedAt >= startedAt else { return nil }
         return endedAt.timeIntervalSince(startedAt)
+    }
+
+    /// The run going on now, as the task's list reports it (`live_execution`). Set only by
+    /// `withLiveRun`: a run with no end in the runs list alone can be one that never closed.
+    public var isLive = false
+
+    /// The task's recent runs with the run going on now at the top (`docs/tasks.md` §4). The
+    /// runs list may already carry it (its chat started within a few minutes of the live run, with
+    /// no end yet); otherwise it is added, so the list and the task's row agree that a run is
+    /// under way. Finished runs keep their order.
+    public static func withLiveRun(_ runs: [CronRun], runningSince: Date?) -> [CronRun] {
+        guard let runningSince else { return runs }
+        var runs = runs
+        var live = CronRun(sessionID: nil, startedAt: runningSince)
+        if let index = runs.firstIndex(where: { run in
+            guard run.endedAt == nil, !run.failed, let started = run.startedAt else { return false }
+            return abs(started.timeIntervalSince(runningSince)) < 300
+        }) {
+            live = runs.remove(at: index)
+        }
+        live.isLive = true
+        return [live] + runs
     }
 
     public init(sessionID: String?, startedAt: Date?, endedAt: Date? = nil, summary: String? = nil, failed: Bool = false, error: String? = nil,

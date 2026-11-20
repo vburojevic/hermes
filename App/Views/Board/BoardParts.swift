@@ -21,7 +21,9 @@ struct BoardFace: View {
                 .frame(width: size, height: size)
                 .overlay {
                     Image(systemName: profile == nil ? "person.fill.questionmark" : "person.fill")
-                        .font(.system(size: size * 0.5))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: size * 0.5, height: size * 0.5)
                         .foregroundStyle(Theme.secondaryText)
                 }
                 .accessibilityHidden(true)
@@ -37,6 +39,8 @@ struct BoardCardView: View {
     var isSelected = false
     var isDimmed = false
 
+    @State private var isHovered = false
+
     private var state: BoardCardState { model.state(of: card) }
     private var extras: BoardCardExtras? { model.extras[card.id] }
 
@@ -44,7 +48,7 @@ struct BoardCardView: View {
         switch state {
         case .running: (Theme.ink, 1.5)
         case .stale: (Theme.warning, 1.5)
-        default: isSelected ? (Theme.ink, 1.5) : (Theme.hairline, 0.5)
+        default: isSelected ? (Theme.ink, 1.5) : (isHovered ? Theme.separator : Theme.hairline, isHovered ? 1 : 0.5)
         }
     }
 
@@ -93,8 +97,14 @@ struct BoardCardView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(outline.color, lineWidth: outline.width)
         }
+        // Hover lifts the card with a stronger edge and a soft shadow; it never moves, so it
+        // holds under Reduce Motion too (`docs/board.md` §6).
+        .shadow(color: .black.opacity(isHovered && !isDimmed ? 0.08 : 0), radius: 6, y: 2)
         .opacity(isDimmed ? 0.4 : 1)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -102,6 +112,8 @@ struct BoardCardView: View {
     private var isDone: Bool {
         if case .done = state { true } else { false }
     }
+
+    @ScaledMetric(relativeTo: .caption) private var glyphSize: CGFloat = 11
 
     private var footer: some View {
         HStack(spacing: 6) {
@@ -113,7 +125,7 @@ struct BoardCardView: View {
             Spacer(minLength: 4)
             if case .parent(let done, let total) = state {
                 Image(systemName: "checklist")
-                    .font(.system(size: 11))
+                    .font(.system(size: glyphSize))
                     .foregroundStyle(Theme.tertiaryText)
                 Text("\(done)/\(total)")
                     .font(.caption)
@@ -122,7 +134,7 @@ struct BoardCardView: View {
             }
             if card.commentCount > 0 {
                 Image(systemName: "bubble.left")
-                    .font(.system(size: 11))
+                    .font(.system(size: glyphSize))
                     .foregroundStyle(Theme.tertiaryText)
                 Text("\(card.commentCount)")
                     .font(.caption)
@@ -139,17 +151,15 @@ struct BoardCardView: View {
         if case .running = state { true } else { false }
     }
 
-    /// Title, state, assignee, then sub-cards and comments (`docs/board.md` §6).
+    /// Title, state, assignee, then comments (`docs/board.md` §6). A split card's state is its
+    /// sub-card progress, so it's said once, in the state's place.
     private var accessibilityText: String {
         var parts = [card.title]
         if let spoken = BoardCopy.spoken(state, checks: extras?.checks, now: model.now) { parts.append(spoken) }
         parts.append(who)
-        var counts: [String] = []
-        if case .parent(let done, let total) = state { counts.append(String(localized: "\(done) of \(total) sub-cards done")) }
         if card.commentCount > 0 {
-            counts.append(card.commentCount == 1 ? String(localized: "1 comment") : String(localized: "\(card.commentCount) comments"))
+            parts.append(card.commentCount == 1 ? String(localized: "1 comment") : String(localized: "\(card.commentCount) comments"))
         }
-        if !counts.isEmpty { parts.append(counts.joined(separator: ", ")) }
         return parts.joined(separator: ", ")
     }
 }
@@ -159,6 +169,9 @@ struct BoardColumnHeader: View {
     let title: String
     let count: Int
     var onAdd: (() -> Void)?
+
+    @ScaledMetric(relativeTo: .subheadline) private var plusSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .subheadline) private var target: CGFloat = 28
 
     var body: some View {
         HStack(spacing: 8) {
@@ -173,9 +186,9 @@ struct BoardColumnHeader: View {
             if let onAdd {
                 Button(action: onAdd) {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .regular))
+                        .font(.system(size: plusSize, weight: .regular))
                         .foregroundStyle(Theme.secondaryText)
-                        .frame(width: 28, height: 28)
+                        .frame(width: target, height: target)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -233,6 +246,8 @@ struct BoardChecksCard: View {
     var branch: String?
 
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .subheadline) private var glyphSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .subheadline) private var arrowSize: CGFloat = 12
 
     private var title: String {
         let pr = checks.prNumber.map { "PR #\($0)" } ?? String(localized: "The PR")
@@ -250,7 +265,7 @@ struct BoardChecksCard: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 13))
+                        .font(.system(size: glyphSize))
                         .foregroundStyle(Theme.secondaryText)
                     Text(title)
                         .font(.subheadline.weight(.semibold))
@@ -258,7 +273,7 @@ struct BoardChecksCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if checks.prURL != nil {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 12))
+                            .font(.system(size: arrowSize))
                             .foregroundStyle(Theme.secondaryText)
                     }
                 }
@@ -305,7 +320,7 @@ struct BoardChecksCard: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: symbol(check))
-                    .font(.system(size: 13))
+                    .font(.system(size: glyphSize))
                     .foregroundStyle(color(check))
                 Text(check.name)
                     .font(.system(.footnote, design: .monospaced))
@@ -416,6 +431,9 @@ struct BoardEventRow: View {
     let line: BoardActivityLine
     let date: Date?
 
+    @ScaledMetric(relativeTo: .footnote) private var glyphSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .footnote) private var glyphWidth: CGFloat = 14
+
     private var color: Color {
         switch line.tone {
         case .plain: Theme.tertiaryText
@@ -428,9 +446,9 @@ struct BoardEventRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: line.symbol)
-                .font(.system(size: 11))
+                .font(.system(size: glyphSize))
                 .foregroundStyle(color)
-                .frame(width: 14)
+                .frame(width: glyphWidth)
             Text(line.text)
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryText)
@@ -524,6 +542,8 @@ struct BoardSummaryRow: View {
     let model: BoardModel
     let action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var detail: String {
         guard model.phase == .ready, !model.boardMissing else { return String(localized: "Cards Hermes and its Bots work through") }
         if model.allCards.isEmpty { return String(localized: "No cards yet") }
@@ -536,33 +556,38 @@ struct BoardSummaryRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.ink)
-                    .frame(width: 34, height: 34)
-                    .overlay {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Theme.inkForeground)
+            Group {
+                // At the accessibility sizes the tile sits above, what needs you drops under the
+                // counts and the chevron goes, so every word shows (`docs/projects.md` §5).
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        tile
+                        title
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if model.needsYouCount > 0 { needsYou }
                     }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Board")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.primaryText)
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(spacing: 12) {
+                        tile
+                        VStack(alignment: .leading, spacing: 1) {
+                            title
+                            Text(detail)
+                                .font(.footnote)
+                                .foregroundStyle(Theme.secondaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        if model.needsYouCount > 0 { needsYou.fixedSize() }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.tertiaryText)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if model.needsYouCount > 0 {
-                    TagLabel(title: String(localized: "\(model.needsYouCount) needs you"), style: .warning)
-                        .fixedSize()
-                }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.tertiaryText)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -576,5 +601,219 @@ struct BoardSummaryRow: View {
         // Counts stay live while the home is on screen; visiting the home makes no board.
         .onAppear { model.appear(creating: false) }
         .onDisappear { model.disappear() }
+    }
+
+    private var tile: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Theme.ink)
+            .frame(width: 34, height: 34)
+            .overlay {
+                // The tile keeps its size, so its glyph does too.
+                Image(systemName: "square.grid.2x2")
+                    .resizable()
+                    .scaledToFit()
+                    .fontWeight(.medium)
+                    .frame(width: 15, height: 15)
+                    .foregroundStyle(Theme.inkForeground)
+            }
+    }
+
+    private var title: some View {
+        Text("Board")
+            .font(.body.weight(.semibold))
+            .foregroundStyle(Theme.primaryText)
+    }
+
+    private var needsYou: some View {
+        TagLabel(title: String(localized: "\(model.needsYouCount) needs you"), style: .warning)
+    }
+}
+
+// MARK: - Loading and empty (`docs/board.md` §6)
+
+/// A card that's loading (`kanbanCardSkeleton`): a title, two lines and who has it.
+struct BoardCardSkeleton: View {
+    @ScaledMetric(relativeTo: .subheadline) private var titleHeight: CGFloat = 12
+    @ScaledMetric(relativeTo: .footnote) private var lineHeight: CGFloat = 9
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    /// Control fill, a little stronger with Increase Contrast.
+    private var fill: Color { contrast == .increased ? Theme.primaryText.opacity(0.16) : Theme.controlFill }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            GeometryReader { proxy in
+                VStack(alignment: .leading, spacing: 9) {
+                    bar(proxy.size.width * 0.7, titleHeight)
+                    bar(proxy.size.width, lineHeight)
+                    bar(proxy.size.width * 0.55, lineHeight)
+                }
+            }
+            .frame(height: titleHeight + lineHeight * 2 + 18)
+            HStack(spacing: 6) {
+                Circle().fill(fill).frame(width: 16, height: 16)
+                bar(52, lineHeight)
+            }
+            .padding(.top, 3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Theme.hairline, lineWidth: 0.5)
+        }
+    }
+
+    private func bar(_ width: CGFloat, _ height: CGFloat) -> some View {
+        Capsule().fill(fill).frame(width: max(0, width), height: height)
+    }
+}
+
+/// A column that's loading (`kanbanColumnSkeleton`): its head and a few cards.
+struct BoardColumnSkeleton: View {
+    var width: CGFloat?
+    let cards: Int
+
+    @ScaledMetric(relativeTo: .subheadline) private var headHeight: CGFloat = 32
+    @ScaledMetric(relativeTo: .subheadline) private var nameHeight: CGFloat = 11
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            BoardSkeletonHead(height: headHeight, barHeight: nameHeight)
+            ForEach(0..<cards, id: \.self) { _ in
+                BoardCardSkeleton()
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(width: width)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.controlFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+/// A column head that's loading: a name and a count.
+private struct BoardSkeletonHead: View {
+    let height: CGFloat
+    let barHeight: CGFloat
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    private var fill: Color { contrast == .increased ? Theme.primaryText.opacity(0.16) : Theme.controlFill }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Capsule().fill(fill).frame(width: 64, height: barHeight)
+            Capsule().fill(fill).frame(width: 14, height: barHeight)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
+        .frame(height: height)
+    }
+}
+
+/// The iPhone board while it loads: the summary line, the switcher's chips, the first column's
+/// head and three cards.
+struct BoardPhoneSkeleton: View {
+    @ScaledMetric(relativeTo: .footnote) private var tileSize: CGFloat = 20
+    @ScaledMetric(relativeTo: .footnote) private var summaryHeight: CGFloat = 9
+    @ScaledMetric(relativeTo: .subheadline) private var chipHeight: CGFloat = 32
+    @ScaledMetric(relativeTo: .subheadline) private var headHeight: CGFloat = 32
+    @ScaledMetric(relativeTo: .subheadline) private var nameHeight: CGFloat = 11
+    @Environment(\.colorSchemeContrast) private var contrast
+    private var fill: Color { contrast == .increased ? Theme.primaryText.opacity(0.16) : Theme.controlFill }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(fill).frame(width: tileSize, height: tileSize)
+                Capsule().fill(fill).frame(width: 230, height: summaryHeight)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .padding(.bottom, 6)
+            HStack(spacing: 8) {
+                Capsule().fill(fill).frame(width: 76, height: chipHeight)
+                Capsule().fill(fill).frame(width: 84, height: chipHeight)
+                Capsule().fill(fill).frame(width: 70, height: chipHeight)
+                Capsule().fill(fill).frame(width: 92, height: chipHeight)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            BoardSkeletonHead(height: headHeight, barHeight: nameHeight)
+            BoardCardSkeleton()
+            BoardCardSkeleton()
+            BoardCardSkeleton()
+        }
+    }
+}
+
+/// The loading board's pulse. It runs only while it can be seen and holds still with Reduce
+/// Motion or when decorative motion is paused; VoiceOver hears "Loading cards" once for the whole
+/// skeleton (`docs/board.md` §6).
+struct BoardLoadingSkeleton<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        DecorativeLoop { runs in
+            if runs {
+                content.modifier(BoardSkeletonPulse())
+            } else {
+                content
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Loading cards"))
+    }
+}
+
+/// Fades the skeleton between full and 55% once a second. It's a separate view so that taking it
+/// away (Reduce Motion, off screen) ends the repeating animation.
+private struct BoardSkeletonPulse: ViewModifier {
+    @State private var dimmed = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(dimmed ? 0.55 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { dimmed = true }
+            }
+    }
+}
+
+/// The one note on a board with no cards at all (`stateMessage`): where cards come from. On the
+/// iPad and the Mac it floats over the columns as a card.
+struct BoardEmptyNote: View {
+    var floats = false
+
+    @ScaledMetric(relativeTo: .headline) private var glyphSize: CGFloat = 30
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: glyphSize, weight: .light))
+                .foregroundStyle(Theme.tertiaryText)
+                .padding(.bottom, 4)
+                .accessibilityHidden(true)
+            Text("No cards yet")
+                .font(.headline)
+                .foregroundStyle(Theme.primaryText)
+            Text("Add one with New Card or a column's +, or ask Hermes in a chat to plan the work.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .frame(maxWidth: floats ? 400 : .infinity)
+        .background {
+            if floats {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.sheetBackground)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

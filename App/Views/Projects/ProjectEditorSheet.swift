@@ -100,7 +100,9 @@ struct ProjectEditorSheet: View {
                                 appearance.glyph = glyph
                             } label: {
                                 Image(systemName: glyph.rawValue)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(.body.weight(.medium))
+                                    // The symbol buttons stay one row at every size (`docs/projects.md` §5).
+                                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                                     .foregroundStyle(appearance.glyph == glyph ? Theme.primaryText : Theme.secondaryText)
                                     .frame(width: 28, height: 28)
                                     .background(appearance.glyph == glyph ? Theme.surfaceRaised : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -154,7 +156,9 @@ struct ProjectEditorSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 520)
+        // 520 wide, growing with the text; as tall as its content.
+        .frame(minWidth: 520, idealWidth: 520)
+        .fixedSize(horizontal: false, vertical: true)
         .task {
             await populate()
             if picked == nil, let first = projects.suggestedRepos.first { pick(first.root) }
@@ -171,7 +175,7 @@ struct ProjectEditorSheet: View {
     private func macRow<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: 12) {
             Text(title)
-                .frame(width: 120, alignment: .leading)
+                .frame(minWidth: 120, alignment: .leading)
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -274,7 +278,9 @@ struct ProjectEditorSheet: View {
                         appearance.glyph = glyph
                     } label: {
                         Image(systemName: glyph.rawValue)
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.callout.weight(.medium))
+                            // The symbol buttons stay one row at every size (`docs/projects.md` §5).
+                            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                             .foregroundStyle(appearance.glyph == glyph ? Theme.primaryText : Theme.secondaryText)
                             .frame(maxWidth: .infinity, minHeight: 38)
                             .background(appearance.glyph == glyph ? Theme.surfaceRaised : Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

@@ -12,6 +12,8 @@ struct ProjectHomeView: View {
     /// A narrow Mac window (`docs/chat.md` §4): one column at the usual 20 pt margins, with the
     /// folders under the facts.
     @Environment(\.windowIsNarrow) private var windowIsNarrow
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var composerFocused = false
     /// Where the top bar ends: the composer's menus stop there.
     @State private var ceiling: CGFloat?
@@ -36,6 +38,30 @@ struct ProjectHomeView: View {
         horizontalSizeClass == .regular
         #endif
     }
+
+    // The right column (`macProjectHome`, `ipadProjectHome`): 300 pt at 28 from the lanes inside
+    // 40 pt margins on the Mac, 280 at 24 inside 32 on iPad, so landscape iPad keeps two columns.
+    #if os(macOS)
+    private static let sideColumnWidth: CGFloat = 300
+    private static let columnGap: CGFloat = 28
+    private static let wideMargin: CGFloat = 40
+    #else
+    private static let sideColumnWidth: CGFloat = 280
+    private static let columnGap: CGFloat = 24
+    private static let wideMargin: CGFloat = 32
+    #endif
+
+    /// Two columns where there's room. On iPad never at the accessibility text sizes, where the
+    /// lanes need the whole width; the Mac keeps its columns (`docs/projects.md` §5).
+    private var showsTwoColumns: Bool {
+        #if os(macOS)
+        isWide && width >= 860
+        #else
+        isWide && !dynamicTypeSize.isAccessibilitySize && width >= 860
+        #endif
+    }
+
+    private var hasProject: Bool { node != nil || project != nil }
 
     private var errorBinding: Binding<Bool> {
         Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
@@ -125,8 +151,8 @@ struct ProjectHomeView: View {
                 Group {
                     // Two columns where there's room (iPad landscape, Mac); one on iPhone and
                     // narrower iPad layouts, with the facts at the end.
-                    if isWide, width >= 860 {
-                        HStack(alignment: .top, spacing: 28) {
+                    if showsTwoColumns {
+                        HStack(alignment: .top, spacing: Self.columnGap) {
                             VStack(alignment: .leading, spacing: 0) {
                                 header
                                 boardRow
@@ -139,11 +165,11 @@ struct ProjectHomeView: View {
                                 foldersCard
                                 #endif
                             }
-                            .frame(width: 300)
+                            .frame(width: Self.sideColumnWidth)
                             .padding(.top, 92)
                         }
                         .frame(maxWidth: 900)
-                        .padding(.horizontal, 40)
+                        .padding(.horizontal, Self.wideMargin)
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
                             header
@@ -179,7 +205,8 @@ struct ProjectHomeView: View {
                 guard let lane else { return }
                 Task {
                     try? await Task.sleep(for: .milliseconds(150))
-                    withAnimation(Theme.snappy) { proxy.scrollTo(lane, anchor: .top) }
+                    // Reduce Motion jumps to the lane instead of gliding there.
+                    withAnimation(reduceMotion ? nil : Theme.snappy) { proxy.scrollTo(lane, anchor: .top) }
                 }
             }
         }
@@ -207,24 +234,10 @@ struct ProjectHomeView: View {
                     .foregroundStyle(Theme.primaryText)
                     .accessibilityAddTraits(.isHeader)
                 if let primaryPath {
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder")
-                            .accessibilityHidden(true)
-                        Text(projects.displayPath(primaryPath))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        if let branch = projects.branch(of: primaryPath) {
-                            Image(systemName: "arrow.triangle.branch")
-                                .padding(.leading, 2)
-                                .accessibilityHidden(true)
-                            Text(branch)
-                                .lineLimit(1)
-                                .accessibilityLabel(String(localized: "on \(branch)"))
-                        }
-                    }
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(Theme.secondaryText)
-                    .accessibilityElement(children: .combine)
+                    pathLine(primaryPath)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(Theme.secondaryText)
+                        .accessibilityElement(children: .combine)
                 }
                 Text(summary)
                     .font(.footnote)
@@ -234,6 +247,39 @@ struct ProjectHomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 8)
+    }
+
+    /// The folder and branch on one line, the path shortened in its middle. At the accessibility
+    /// sizes the whole path wraps, without glyphs, and the branch takes its own line
+    /// (`projectHomeLarge`).
+    @ViewBuilder
+    private func pathLine(_ primaryPath: String) -> some View {
+        let branch = projects.branch(of: primaryPath)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(projects.displayPath(primaryPath))
+                if let branch {
+                    Text(branch)
+                        .accessibilityLabel(String(localized: "on \(branch)"))
+                }
+            }
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .accessibilityHidden(true)
+                Text(projects.displayPath(primaryPath))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let branch {
+                    Image(systemName: "arrow.triangle.branch")
+                        .padding(.leading, 2)
+                        .accessibilityHidden(true)
+                    Text(branch)
+                        .lineLimit(1)
+                        .accessibilityLabel(String(localized: "on \(branch)"))
+                }
+            }
+        }
     }
 
     /// "9 chats · 2 branches · 3 tasks · Studio Mac".
@@ -322,7 +368,7 @@ struct ProjectHomeView: View {
                 } label: {
                     Text(isExpanded ? String(localized: "Show Less") : String(localized: "Show All \(sorted.count)"))
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Theme.secondaryText)
+                        .foregroundStyle(Self.showAllColor)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 32)
                         .contentShape(Rectangle())
@@ -439,6 +485,15 @@ struct ProjectHomeView: View {
     }
     #endif
 
+    /// Show All sits in ink on the Mac (`macProjectHome`), grey on iPhone and iPad.
+    private static var showAllColor: Color {
+        #if os(macOS)
+        Theme.primaryText
+        #else
+        Theme.secondaryText
+        #endif
+    }
+
     // MARK: Toolbar
 
     /// Top right, as in the design (the Mac puts `.primaryAction` at the leading edge).
@@ -456,62 +511,128 @@ struct ProjectHomeView: View {
         // Without a centred item the Mac lines items up from the leading edge.
         ToolbarSpacer(.flexible)
         #endif
-        ToolbarItem(placement: Self.menuPlacement) {
-            Menu {
-                ProjectMenuItems(workspace: workspace, projectID: projectID)
-            } label: {
-                Image(systemName: "ellipsis")
+        // A project that isn't there has nothing to act on: only the sidebar button stays
+        // (`projectNotFound`).
+        if hasProject {
+            #if os(macOS)
+            // New Chat before the menu (`macProjectHome`): a chat in this project, as the composer
+            // below starts one.
+            ToolbarItem(placement: Self.menuPlacement) {
+                Button {
+                    workspace.startNewChat(inProject: projectID, fromHome: true)
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityLabel("New chat")
+                .help(String(localized: "New chat in \(name)"))
             }
-            .accessibilityLabel("Project actions")
-            .help("Project actions")
+            #endif
+            ToolbarItem(placement: Self.menuPlacement) {
+                Menu {
+                    ProjectMenuItems(workspace: workspace, projectID: projectID)
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .accessibilityLabel("Project actions")
+                .help("Project actions")
+            }
         }
     }
 }
 
 /// A lane's title (`laneHeader*`): branch or worktree in monospace with a tag, or "Card worktrees".
+/// At the accessibility sizes the name, its tag and the count stack (`laneHeaderLarge`).
 struct LaneHeader: View {
     let lane: ProjectLane
     let count: Int
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: lane.kind == .tasks ? "checklist" : "arrow.triangle.branch")
-                .font(.footnote)
-                .foregroundStyle(Theme.secondaryText)
-                .accessibilityHidden(true)
-            if lane.kind == .tasks {
-                Text(lane.displayName)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.primaryText)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        glyph
+                        name
+                    }
+                    if lane.kind != .tasks { tag }
+                    countText
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(lane.displayName)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .truncationMode(.middle)
-                    .layoutPriority(1)
-                Text(lane.kind == .main ? String(localized: "Main checkout") : String(localized: "Worktree"))
-                    .font(.caption2.weight(.medium))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .foregroundStyle(Theme.secondaryText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                HStack(spacing: 7) {
+                    glyph
+                    name
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
+                    if lane.kind != .tasks { tag }
+                    Spacer(minLength: 8)
+                    countText
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
-            Spacer(minLength: 8)
-            Text(lane.kind == .tasks ? ProjectCount.cards(count) : ProjectCount.chats(count))
-                .font(.footnote)
-                .foregroundStyle(Theme.tertiaryText)
-                .lineLimit(1)
-                .fixedSize()
         }
         .padding(.top, 14)
         .padding(.bottom, 2)
         .padding(.horizontal, 4)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var glyph: some View {
+        Image(systemName: lane.kind == .tasks ? "checklist" : "arrow.triangle.branch")
+            .font(.footnote)
+            .foregroundStyle(Theme.secondaryText)
+    }
+
+    @ViewBuilder
+    private var name: some View {
+        if lane.kind == .tasks {
+            Text(lane.displayName)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.primaryText)
+        } else {
+            Text(lane.displayName)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Theme.primaryText)
+        }
+    }
+
+    private var kindName: String {
+        lane.kind == .main ? String(localized: "Main checkout") : String(localized: "Worktree")
+    }
+
+    private var tag: some View {
+        Text(kindName)
+            .font(.caption2.weight(.medium))
+            .lineLimit(1)
+            .fixedSize()
+            .foregroundStyle(Theme.secondaryText)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+
+    private var countLabel: String {
+        lane.kind == .tasks ? ProjectCount.cards(count) : ProjectCount.chats(count)
+    }
+
+    private var countText: some View {
+        Text(countLabel)
+            .font(.footnote)
+            .foregroundStyle(Theme.tertiaryText)
+    }
+
+    /// "main, main checkout, 3 chats", "Card worktrees, 2 cards".
+    private var accessibilityText: String {
+        lane.kind == .tasks
+            ? String(localized: "\(lane.displayName), \(countLabel)")
+            : String(localized: "\(lane.displayName), \(kindName.lowercased()), \(countLabel)")
     }
 }
 
@@ -537,7 +658,10 @@ struct LaneRowActions: ViewModifier {
     }
 }
 
-/// A chat in a lane (`laneChatRow`): title, its first line, the time and a working dot.
+/// A chat in a lane (`laneChatRow`, `macLaneChatRow`): title, its first line, the time and a
+/// working dot. iPhone and iPad draw it as a card; the Mac as a plain row that greys on hover. At
+/// the accessibility sizes the title and line wrap and the marks and time go below
+/// (`laneChatRowLarge`).
 struct LaneChatRow: View {
     let row: ProjectSessionRow
     /// The row's time (`RowTime`): its last message's, as in the chat list.
@@ -547,51 +671,104 @@ struct LaneChatRow: View {
     let isWorking: Bool
     let action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(macOS)
+    @State private var isHovered = false
+    private static let radius: CGFloat = 8
+    #else
+    private static let radius: CGFloat = 16
+    #endif
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.displayTitle)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(Theme.primaryText)
-                        .lineLimit(1)
-                    if let preview = row.listPreview, !preview.isEmpty, preview != row.title {
-                        Text(preview)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondaryText)
-                            .lineLimit(1)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 6) {
+                        texts(lineLimit: nil)
+                        HStack(spacing: 8) { marks }
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        texts(lineLimit: 1)
+                        Spacer(minLength: 8)
+                        marks
                     }
                 }
-                Spacer(minLength: 8)
-                if isWorking {
-                    StatusDot(color: Theme.warning)
-                }
-                if muted {
-                    RowMark("bell.slash.fill")
-                }
-                if let date = time {
-                    Text(Self.time(date))
-                        .font(.footnote)
-                        .foregroundStyle(Theme.tertiaryText)
-                }
             }
+            #if os(macOS)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+            .background(isHovered ? Theme.controlFill : .clear, in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+            #else
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+            #endif
+            .contentShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
         }
         .buttonStyle(PressableStyle())
+        #if os(macOS)
+        .onHover { isHovered = $0 }
+        #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
         .accessibilityAddTraits(.isButton)
     }
 
+    private var preview: String? {
+        guard let preview = row.listPreview, !preview.isEmpty, preview != row.title else { return nil }
+        return preview
+    }
+
+    private func texts(lineLimit: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(row.displayTitle)
+                .font(Self.titleFont)
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(lineLimit)
+            if let preview {
+                Text(preview)
+                    .font(Self.previewFont)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(lineLimit)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var marks: some View {
+        if isWorking {
+            StatusDot(color: Theme.warning)
+        }
+        if muted {
+            RowMark("bell.slash.fill")
+        }
+        if let date = time {
+            Text(Self.time(date))
+                .font(.footnote)
+                .foregroundStyle(Theme.tertiaryText)
+        }
+    }
+
+    // The Mac row's title is body and its line subheadline; the card's callout and footnote.
+    #if os(macOS)
+    private static let titleFont = Font.body.weight(.medium)
+    private static let previewFont = Font.subheadline
+    #else
+    private static let titleFont = Font.callout.weight(.medium)
+    private static let previewFont = Font.footnote
+    #endif
+
+    /// "Fix the build, muted, working, 2 hours ago, its last line": the state before the line.
     private var accessibilityText: String {
         var parts = [row.displayTitle]
         if muted { parts.append(String(localized: "muted")) }
         if isWorking { parts.append(String(localized: "working")) }
         if let date = time { parts.append(Formatting.relativePhrase(date)) }
+        if let preview { parts.append(preview) }
         return parts.joined(separator: ", ")
     }
 
@@ -605,6 +782,15 @@ struct LaneChatRow: View {
 struct FactsCard: View {
     let facts: ProjectFacts
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Chips wrap onto lines; at the accessibility sizes they take a line each (`factsCardLarge`).
+    private var chipLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(FlowLayout(spacing: 6))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("What Hermes knows about this project", systemImage: "sparkles")
@@ -614,7 +800,7 @@ struct FactsCard: View {
             let builtWith = facts.manifests.map(Self.manifest) + facts.packageManagers.map { ($0, "shippingbox") }
             if !builtWith.isEmpty {
                 section(String(localized: "Built with")) {
-                    FlowLayout(spacing: 6) {
+                    chipLayout {
                         ForEach(builtWith, id: \.0) { item in
                             chip(item.0, symbol: item.1, monospaced: false)
                         }
@@ -635,7 +821,7 @@ struct FactsCard: View {
             }
             if !facts.contextFiles.isEmpty {
                 section(String(localized: "Reads first")) {
-                    FlowLayout(spacing: 6) {
+                    chipLayout {
                         ForEach(facts.contextFiles, id: \.self) { file in
                             chip(file, symbol: "doc", monospaced: true)
                         }
@@ -707,36 +893,55 @@ private struct FactsTitleLabelStyle: LabelStyle {
     }
 }
 
-/// A project folder (`folderRow*`): its name, path, and a Primary tag.
+/// A project folder (`folderRow*`): its name, path, and a Primary tag. At the accessibility sizes
+/// the glyph goes, the path wraps and the tag sits below (`folderRowLarge`).
 struct FolderRow: View {
     let folder: HermesProject.Folder
     let displayPath: String
     let isPrimary: Bool
     var annotation: String?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isPrimary ? "folder.fill" : "folder")
-                .font(.body)
-                .foregroundStyle(isPrimary ? Theme.primaryText : Theme.secondaryText)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(annotation.map { "\(folder.name) · \($0)" } ?? folder.name)
-                    .font(.body)
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                Text(displayPath)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: 8)
-            if isPrimary {
-                TagLabel(title: String(localized: "Primary"), style: .ink)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    texts(lineLimit: nil)
+                    if isPrimary { primaryTag }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: isPrimary ? "folder.fill" : "folder")
+                        .font(.body)
+                        .foregroundStyle(isPrimary ? Theme.primaryText : Theme.secondaryText)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+                    texts(lineLimit: 1)
+                    Spacer(minLength: 8)
+                    if isPrimary { primaryTag }
+                }
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func texts(lineLimit: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(annotation.map { "\(folder.name) · \($0)" } ?? folder.name)
+                .font(.body)
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(lineLimit)
+            Text(displayPath)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Theme.secondaryText)
+                .lineLimit(lineLimit)
+                .truncationMode(.middle)
+        }
+    }
+
+    private var primaryTag: some View {
+        TagLabel(title: String(localized: "Primary"), style: .ink)
     }
 }

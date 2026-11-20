@@ -128,12 +128,12 @@ struct RunInSheet: View {
                     if let id { select(id) }
                 }
                 #if os(macOS)
-                .frame(width: 480).frame(minHeight: 560)
+                .frame(minWidth: 520, idealWidth: 520)
                 #endif
             }
         }
         #if os(macOS)
-        .frame(width: 440).frame(minHeight: 420)
+        .frame(minWidth: 440, idealWidth: 440, minHeight: 420)
         #endif
     }
 
@@ -271,12 +271,12 @@ struct MoveToProjectSheet: View {
                     if let id { target = id }
                 }
                 #if os(macOS)
-                .frame(width: 480).frame(minHeight: 560)
+                .frame(minWidth: 520, idealWidth: 520)
                 #endif
             }
         }
         #if os(macOS)
-        .frame(width: 440).frame(minHeight: 380)
+        .frame(minWidth: 440, idealWidth: 440, minHeight: 380)
         #endif
     }
 

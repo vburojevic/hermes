@@ -12,8 +12,14 @@ final class TasksModel {
     /// What the gateway last said.
     private var gatewayJobs: [CronJob] = []
     private var pending = PendingChanges<CronJob>()
-    /// Tasks whose Run Now the gateway hasn't answered yet.
+    /// Tasks whose Run Now hasn't shown its run yet: the gateway hasn't answered, or its
+    /// scheduler hasn't started the run (`docs/tasks.md` §1).
     private(set) var starting: Set<String> = []
+    /// Run Now the gateway took, each with the task as it was then, until a read shows the run or
+    /// `runWait` has passed.
+    private var askedRuns: [String: (before: CronJob, until: Date)] = [:]
+    /// Hermes's scheduler ticks every 60 s, so a run asked for shows within about that.
+    static let runWait: TimeInterval = 75
     /// New tasks the gateway made: the row's id while it was on its way, and the gateway's id, so
     /// a detail opened on the new row keeps working.
     private var madeIDs: [String: String] = [:]
@@ -58,6 +64,7 @@ final class TasksModel {
         case .failure(let error):
             loadError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
         }
+        settleAskedRuns()
     }
 
     /// New Task: the row shows now, and the gateway's job replaces it.
@@ -98,20 +105,45 @@ final class TasksModel {
         pending.settle(token, for: job.id)
     }
 
-    /// Run Now: the row says it's starting until the gateway has the run.
+    /// How often Tasks reads the list again: every 5 s while a Run Now waits for its run, every
+    /// 10 s while a run is going on, so "Running now" ends when the run does; otherwise never.
+    var refreshInterval: Duration? {
+        if !askedRuns.isEmpty { return .seconds(5) }
+        return jobs.contains(where: \.isRunning) ? .seconds(10) : nil
+    }
+
+    /// Run Now: the row says it's starting until the list shows the run. Hermes only marks the
+    /// task due, and its scheduler starts the run at its next tick (`docs/tasks.md` §1), so Tasks
+    /// reads the list until the run shows (`refreshInterval`) or `runWait` has passed.
     func runNow(_ job: CronJob, client: HermesClient?) async {
         guard let client, !isAdding(job), !starting.contains(job.id) else { return }
+        let before = gatewayJobs.first { $0.id == job.id } ?? job
         starting.insert(job.id)
-        defer { starting.remove(job.id) }
         do {
             try await client.runJobNow(id: job.id)
             AccessibilityNotification.Announcement(String(localized: "\(job.name) started")).post()
+            askedRuns[job.id] = (before, Date.now.addingTimeInterval(Self.runWait))
+            await load(client: client)
         } catch {
+            starting.remove(job.id)
             refusal = RefusedChange(String(localized: "Couldn't run “\(job.name)”"), error: error, undone: false)
         }
     }
 
-    /// Delete: the row goes now, and comes back if the gateway refuses. No confirmation (§1).
+    /// Ends "Starting…" for each Run Now whose run the list now shows, or that has waited long
+    /// enough. A task that's gone (a one-shot that ran) has nothing left to show.
+    private func settleAskedRuns() {
+        let now = Date.now
+        for (id, asked) in askedRuns {
+            let shown = gatewayJobs.first { $0.id == id }.map { $0.showsRun(askedOf: asked.before) } ?? true
+            if shown || now >= asked.until {
+                askedRuns[id] = nil
+                starting.remove(id)
+            }
+        }
+    }
+
+    /// Delete, once Tasks has asked: the row goes now, and comes back if the gateway refuses (§1).
     func remove(_ job: CronJob, client: HermesClient?) async {
         guard let client, !isAdding(job) else { return }
         let token = pending.begin(.remove, for: job.id)

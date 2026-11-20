@@ -276,11 +276,23 @@ struct HermesCommands: Commands {
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(!board.isOnline || board.workflow == nil)
+            } else if let workspace, workspace.detailRoute(compact: false) == .tasks {
+                // In Tasks, ⌘N opens New Task, as + does (`docs/tasks.md` §4).
+                Button("New Task") {
+                    workspace.pendingNewTask = .empty
+                }
+                .keyboardShortcut("n", modifiers: .command)
             } else {
                 Button("New Chat") {
                     guard let workspace else { return }
                     workspace.sidebarMode = .chats
-                    workspace.startNewChat()
+                    // On a project home ⌘N starts the chat in that project, as its New Chat button
+                    // does (`docs/projects.md` §3).
+                    if case .project(let projectID) = workspace.selection {
+                        workspace.startNewChat(inProject: projectID, fromHome: true)
+                    } else {
+                        workspace.startNewChat()
+                    }
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(workspace == nil)

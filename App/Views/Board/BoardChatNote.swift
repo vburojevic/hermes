@@ -27,7 +27,7 @@ struct CardsAddedNote: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
                 Text(title)
                     .font(.subheadline.weight(.semibold))

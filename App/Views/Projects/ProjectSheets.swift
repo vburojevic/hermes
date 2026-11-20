@@ -84,7 +84,7 @@ private struct MacEditorFrame: ViewModifier {
         if isNew {
             content
         } else {
-            content.frame(width: 480).frame(minHeight: 560, idealHeight: 680)
+            content.frame(minWidth: 520, idealWidth: 520, minHeight: 560, idealHeight: 680)
         }
     }
 }

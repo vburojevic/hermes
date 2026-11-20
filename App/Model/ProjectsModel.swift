@@ -134,6 +134,11 @@ final class ProjectsModel {
                                  created: projects[node.id]?.createdAt)
     }
 
+    /// The time a project's card or row shows: its `rowTime`, or none while it has no chats.
+    func shownTime(_ node: ProjectNode) -> Date? {
+        RowTime.shownForProject(rowTime(node), chatCount: node.sessionCount)
+    }
+
     /// The chats the app has for a project: its lanes' once they're loaded, and the tree's newest few.
     func chats(in projectID: String) -> [ProjectSessionRow] {
         (details[projectID]?.hydratedSessions ?? []) + (tree.node(id: projectID)?.previewSessions ?? [])

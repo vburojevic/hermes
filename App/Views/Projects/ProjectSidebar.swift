@@ -163,7 +163,7 @@ struct MacProjectRows: View {
                     toggle()
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(Theme.tertiaryText)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .frame(width: Self.disclosureWidth, height: SidebarMetrics.rowHeight)
@@ -196,16 +196,16 @@ struct MacProjectRows: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(Theme.tertiaryText)
                 Text("Board")
-                    .font(.system(size: 12))
+                    .font(.callout)
                     .foregroundStyle(Theme.secondaryText)
                 Spacer(minLength: 4)
                 let needsYou = workspace.board(for: node.id).needsYouCount
                 if needsYou > 0 {
                     Text(needsYou, format: .number)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.warning)
                 }
             }
@@ -228,17 +228,17 @@ struct MacProjectRows: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(Theme.tertiaryText)
                 Text(lane.displayName)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced))
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 4)
                 if !lane.sessions.isEmpty {
                     Text(lane.sessions.count, format: .number)
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(Theme.tertiaryText)
                 }
             }
