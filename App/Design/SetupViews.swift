@@ -70,9 +70,16 @@ struct SetupSteps: View {
     }
 }
 
+extension EnvironmentValues {
+    /// What a command's box is filled with: the surface, or the canvas inside a card that is
+    /// itself the surface (`GatewayJobCard`), so the box doesn't vanish into it.
+    @Entry var setupInsetFill: Color = Theme.surface
+}
+
 /// A command or config line, monospaced and selectable, with a Copy button.
 struct SetupCommand: View {
     let command: String
+    @Environment(\.setupInsetFill) private var fill
     @State private var copied = false
 
     var body: some View {
@@ -101,7 +108,11 @@ struct SetupCommand: View {
             .accessibilityHint(Text(command))
             .help("Copy")
         }
-        .surface(radius: 10)
+        .background(fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.hairline, lineWidth: 0.5)
+        }
         .task(id: copied) {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(2))

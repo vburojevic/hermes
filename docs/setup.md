@@ -197,6 +197,10 @@ Edit Sign-In… offers the sign-ins the backend takes. The sidebar's
 they'd be empty (`BotModeSetupMessage`: the Board, Learned, Projects) or a Link Bot Mode… button
 in their note (`BotModeLinkButton`: Memory, Apps and Tools, Set Up Push).
 
+While the app is still asking Bot Mode how it is, such a page shows the feature's glyph and name
+and one line, "Checking Bot Mode on <gateway>…", in the message's place, never a bare spinner.
+The words show at once; the spinner beside them waits its half second (`Spinner`).
+
 ### 4.2 Hermes Agent
 
 The version comes from `/api/status.version` (backend) or `/health` (gateway). A gateway too old
@@ -252,10 +256,19 @@ each after `=== <name> started <time> [<action id>] ===`. The app runs two of th
 
 - **What shows** (`GatewayJobView`): while it runs, the step running now in words that shimmer,
   the one moving thing there (`docs/chat.md` §4a), with its time counting up (the system's
-  timer text); the newest 6 lines below, mono, as they arrive; Show All Lines (up to 400; Copy
-  Lines copies all). Then how it ended, still: "Updated to 0.22.0", "The update stopped (exit
-  1)" with "The previous version is still running.", "Hermes doesn't update itself here" with
-  Hermes's words and command.
+  timer text); the newest 6 lines below, mono, as they arrive. Under them, Show All n Lines
+  (up to 400) or Show Fewer Lines, past 6 lines, and Copy Lines, which copies them all; side by
+  side, stacked at the accessibility text sizes. Then how it ended, still: "Updated to 0.22.0",
+  "The update stopped (exit 1)" with "The previous version is still running.", "Hermes doesn't
+  update itself here" with Hermes's words and command. The glyphs take the text's own styles
+  (`.subheadline`, `.footnote`), so they grow with it.
+- **Where it sits**: in a chat, a card at most 460 pt wide on the surface, its lines and command
+  boxes on the chat's background; in Settings → Setup, under the section, its boxes on the
+  surface. Under Hermes Agent a refused update keeps only its headline, because that section
+  already shows Hermes's words and "To update, on <gateway>:" with the command; under Bot-to-Bot
+  Replies, whose section shows neither, it keeps both.
+- **States drawn**: running, done, refused and failed, and under an ended job priority's three:
+  reset (Run at Full Priority… or the steps), restoring and restored (§4.17).
 - **Lines** (`ActionLog`): only this run's, after its header (the one with the start's
   `action_id` when there is one), up to the next header. Colour codes go, and a progress line
   redrawn with `\r` keeps its last state. Once a long run pushes its header out of the tail, new
@@ -302,6 +315,13 @@ profile}` over Bot Mode; the key goes to the gateway and isn't kept on the devic
 sign-in offers Sign In… or `hermes auth add <provider> --type oauth` (below), and no provider
 opens Choose a Provider…. Try Again stays. Mock: a message with "key expired" or "signed out"
 (OpenAI Codex, whose mock sign-in is approved on its second poll).
+
+**The key sheet** (`ProviderKeySheet`), "Key for <provider>": one secure field, then where the
+key goes, "Saved on <gateway> as <VARIABLE>, where Hermes keeps its keys. Not kept on this
+device.", without "as <VARIABLE>" when Hermes named none. Save is dimmed until a key is typed;
+while it saves a spinner takes its place, and a refusal shows Hermes's words under the field
+and keeps the key typed. On iPhone and iPad it's a medium-height sheet with ✕ to cancel and ✓ to
+save. On the Mac it's a 440 pt sheet with Cancel and Save, where Return saves and Escape cancels.
 
 The model picker lists providers Hermes reports without credentials (`authenticated: false`)
 under Needs a key, with Add Key…, instead of hiding them, and a list that didn't load says why
