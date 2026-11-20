@@ -243,6 +243,14 @@ notification, a link or a new gateway switches the window that was active last; 
 on the focused window's gateway (`WindowGateways`, `AppModel.select(_:in:)`). iPhone has one
 window, so it behaves as before.
 
+**The connection line** (`ConnectionStatusLabel`) says how the gateway is doing: the sidebar's
+footer on iPad and Mac, the list's subtitle on iPhone. On the Mac it's `.subheadline` (11 pt), so
+it grows with the text size as the priority notice above it does (`docs/setup.md` §4.17); iPhone
+and iPad keep `.footnote`. The Mac frames are `screens/mac/priority.elyx` (`macPriority`,
+`macPriorityNextStart`, `macPriorityConfirm`, `macPriorityRestarting`, `macPriorityRestored`) and
+their largest-text versions in `priority-largest.elyx` (`macPriorityLargest`,
+`macPriorityNextStartLargest`, `macPriorityRestartingLargest`, `macPriorityRestoredLargest`).
+
 **API server** (`BotWorkspace`). The last-used gateway always keeps checking, so the menu bar extra
 and Talk stay current with every window minimized or closed. Every other gateway shown in an
 open, visible window keeps checking too; one no visible window shows (only a minimized window, or

@@ -153,6 +153,10 @@ struct SidebarSectionTitle: View {
 /// On iPhone the list's subtitle and its gear say the same.
 struct SidebarFooter: View {
     let workspace: BotWorkspace
+    #if os(macOS) && DEBUG
+    /// The priority gallery draws each of the line's states without Bot Mode.
+    var galleryPriorityLine: MacPriorityLine?
+    #endif
 
     @Environment(WindowRouter.self) private var router: WindowRouter?
     #if os(macOS)
@@ -170,11 +174,14 @@ struct SidebarFooter: View {
             #if os(macOS)
             // Hermes at background priority on its Mac: one line above the connection
             // (`docs/setup.md` §4.17).
-            if let notice = workspace.setup.priorityNotice {
-                MacPriorityNotice(setup: workspace.setup, notice: notice)
-            } else if workspace.setup.priorityPutBack {
+            switch priorityLine {
+            case .notice(let notice, let isRestarting):
+                MacPriorityNotice(setup: workspace.setup, notice: notice, isRestarting: isRestarting)
+            case .restored:
                 MacPriorityPutBack()
                     .transition(.opacity)
+            case nil:
+                EmptyView()
             }
             #endif
             row
@@ -185,6 +192,15 @@ struct SidebarFooter: View {
                 .frame(height: 0.5)
         }
     }
+
+    #if os(macOS)
+    private var priorityLine: MacPriorityLine? {
+        #if DEBUG
+        if let galleryPriorityLine { return galleryPriorityLine }
+        #endif
+        return MacPriorityLine(workspace.setup)
+    }
+    #endif
 
     @ViewBuilder
     private var row: some View {

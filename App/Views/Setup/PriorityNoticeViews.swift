@@ -28,7 +28,7 @@ struct PriorityResetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 // Not a Label: in a Form row its icon takes the list's icon size.
                 Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.warning)
                     .accessibilityHidden(true)
                 Text(notice.headline)
@@ -67,7 +67,6 @@ struct PriorityRestoreView: View {
                 Text("Putting Hermes back at full priority")
             case .restored:
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.success)
                     .accessibilityHidden(true)
                 Text("Put Hermes back at full priority, as it was")
@@ -110,28 +109,54 @@ struct RunAtFullPriorityButton: View {
     }
 }
 
+/// What the line above the Mac's connection says, if anything (`docs/setup.md` §4.17).
+enum MacPriorityLine {
+    case notice(PriorityNotice, isRestarting: Bool)
+    /// Fix… just put Hermes back at full priority.
+    case restored
+
+    init?(_ setup: SetupCenter) {
+        if let notice = setup.priorityNotice {
+            self = .notice(notice, isRestarting: setup.isRaisingPriority)
+        } else if setup.priorityPutBack {
+            self = .restored
+        } else {
+            return nil
+        }
+    }
+}
+
 /// `macPriorityNotice`: one line in the sidebar's footer, above the connection, while Hermes runs
 /// at background priority on its Mac. It never wraps, so it can't change the window's layout at
 /// any width or text size: the words truncate, and what they mean is the help and the fix's
 /// confirmation. Fix… runs Run at Full Priority on this Mac and opens Settings → Setup's steps for
 /// another; × (Not Now) puts it away until the gateway has been seen at full priority again.
+/// Everything grows with the text size: the words and glyph are `.subheadline` (11 pt), × is
+/// `.caption2` in a 20 pt square (`docs/setup.md` §4.17).
 struct MacPriorityNotice: View {
     let setup: SetupCenter
     let notice: PriorityNotice
+    /// Run at Full Priority is restarting Hermes's services (`macPriorityNoticeRestarting`).
+    let isRestarting: Bool
     @State private var confirming = false
+    @State private var closeHovered = false
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .caption2) private var closeSide: CGFloat = 20
+    @ScaledMetric(relativeTo: .subheadline) private var spinnerSide: CGFloat = 13
 
     var body: some View {
         HStack(spacing: 6) {
-            if setup.isRaisingPriority {
-                Spinner()
-                    .accessibilityHidden(true)
+            if isRestarting {
+                restartingSpinner
                 Text("Restarting Hermes's services")
                     .foregroundStyle(Theme.secondaryText)
+                    .onAppear {
+                        AccessibilityNotification.Announcement(String(localized: "Restarting Hermes's services")).post()
+                    }
                 Spacer(minLength: 0)
             } else {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 13))
                     .foregroundStyle(Theme.warning)
                     .accessibilityHidden(true)
                 Text(notice.label)
@@ -160,22 +185,19 @@ struct MacPriorityNotice: View {
                     setup.dismissPriorityNotice()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(Theme.tertiaryText)
-                        .frame(width: 18, height: 18)
+                        .font(.caption2.bold())
+                        .foregroundStyle(closeHovered ? Theme.secondaryText : Theme.tertiaryText)
+                        .frame(width: closeSide, height: closeSide)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
+                .onHover { closeHovered = $0 }
                 .help("Not Now")
                 .accessibilityLabel("Not Now")
             }
         }
-        .font(.system(size: 11))
-        .lineLimit(1)
-        .padding(.leading, 18)
-        .padding(.trailing, 12)
-        .padding(.top, 9)
+        .modifier(MacPriorityLineStyle())
         .accessibilityElement(children: .contain)
         // `macPriorityConfirm`: Fix… asks first, as replies in progress stop.
         .confirmationDialog(SetupConfirmation.runAtFullPriority.title, isPresented: $confirming, titleVisibility: .visible) {
@@ -185,28 +207,72 @@ struct MacPriorityNotice: View {
             Text(SetupConfirmation.runAtFullPriority.message)
         }
     }
+
+    /// `macPriorityNoticeRestarting`: the app's own wait, which the person started, so the
+    /// `Spinner` (after 0.5 s), drawn 13 pt where the system's small one is 16. With Reduce Motion
+    /// it holds still, as drawn, and the words carry the state.
+    private var restartingSpinner: some View {
+        Group {
+            if reduceMotion {
+                MacPriorityStillSpinner(side: spinnerSide)
+            } else {
+                Spinner()
+                    .scaleEffect(spinnerSide / 16)
+            }
+        }
+        .frame(width: spinnerSide, height: spinnerSide)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The restarting line's spinner with Reduce Motion: the same glyph, still, after the same 0.5 s.
+/// Only here: elsewhere the design keeps the `Spinner` turning, as the system's does.
+private struct MacPriorityStillSpinner: View {
+    let side: CGFloat
+    @State private var shows = false
+
+    var body: some View {
+        Image(systemName: "progress.indicator")
+            .font(.system(size: side * 0.92, weight: .regular))
+            .foregroundStyle(Theme.secondaryText)
+            .opacity(shows ? 1 : 0)
+            .task {
+                try? await Task.sleep(for: .milliseconds(500))
+                shows = true
+            }
+    }
 }
 
 /// `macPriorityNoticeRestored`: for 4 s after Fix… put Hermes back at full priority, the notice's
-/// place says so, still, then goes.
+/// place says so, still, then goes. At large text sizes it truncates; its help is the sentence.
 struct MacPriorityPutBack: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13))
                 .foregroundStyle(Theme.success)
                 .accessibilityHidden(true)
             Text("Put Hermes back at full priority, as it was")
                 .foregroundStyle(Theme.secondaryText)
                 .truncationMode(.tail)
+                .help("Put Hermes back at full priority, as it was")
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11))
-        .lineLimit(1)
-        .padding(.leading, 18)
-        .padding(.trailing, 12)
-        .padding(.top, 9)
+        .modifier(MacPriorityLineStyle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The notice's one line: `.subheadline`, never wrapping, inset like the connection under it and
+/// 9 pt from the footer's hairline (`macPriorityNotice`).
+private struct MacPriorityLineStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.subheadline)
+            .lineLimit(1)
+            .padding(.leading, 18)
+            .padding(.trailing, 12)
+            .padding(.top, 9)
+            .padding(.bottom, 3)
     }
 }
 #endif
