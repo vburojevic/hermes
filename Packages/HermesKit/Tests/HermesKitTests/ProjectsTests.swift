@@ -415,7 +415,8 @@ struct LaneSelectionTests {
     @Test func firstKeySelectsTheFirstChat() {
         for move in [LaneSelection.Move.up, .down, .left, .right] {
             var selection = LaneSelection()
-            #expect(selection.move(move, in: lanes))
+            let handled = selection.move(move, in: lanes)
+            #expect(handled)
             #expect(selection.rowID == "m1")
         }
     }
@@ -465,7 +466,8 @@ struct LaneSelectionTests {
 
     @Test func noChatsNoSelection() {
         var selection = LaneSelection(rowID: "m1")
-        #expect(!selection.move(.down, in: [[], []]))
+        let handled = selection.move(.down, in: [[], []])
+        #expect(!handled)
         #expect(selection.rowID == nil)
     }
 }
