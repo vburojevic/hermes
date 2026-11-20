@@ -296,7 +296,8 @@ private struct SetupFeaturePage: View {
                     #endif
                     if status.id == GatewaySetup.ID.hermes || status.id == GatewaySetup.ID.botReplies,
                        let job = setup.currentJob(.update) {
-                        GatewayJobView(job: job, setup: setup)
+                        GatewayJobView(job: job, setup: setup,
+                                       sectionShowsRefusal: status.id == GatewaySetup.ID.hermes)
                     }
                 }
             }

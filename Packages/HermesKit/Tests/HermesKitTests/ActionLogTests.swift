@@ -101,6 +101,10 @@ struct GatewayJobTests {
         let refused = GatewayJob.update(.refused(message: "This Hermes runs in Docker.", command: "docker pull nousresearch/hermes"), log: ActionLog(), started: .now, gatewayName: "Studio")
         #expect(refused.tone == .attention)
         #expect(refused.command == "docker pull nousresearch/hermes")
+        #expect(refused.isRefusal)
+        // Hermes's own refusal names no separate command; it's still a refusal.
+        #expect(GatewayJob.update(.refused(message: "Manage updates from within the desktop app.", command: nil), log: ActionLog(), started: .now, gatewayName: "Studio").isRefusal)
+        #expect(!owes.isRefusal && !failed.isRefusal)
 
         #expect(GatewayJob.update(.lostTouch, log: log, started: .now, gatewayName: "Studio").headline == "Studio stopped answering while Hermes updated")
         #expect(GatewayJob.update(.couldNotStart(message: "Offline"), log: ActionLog(), started: .now, gatewayName: "Studio").tone == .failed)

@@ -33,6 +33,8 @@ public struct GatewayJob: Sendable, Equatable {
     public var detail: String?
     /// What to run on the gateway instead, when Hermes says.
     public var command: String?
+    /// Hermes refused to update here. Setup's section already shows its words and command then.
+    public var isRefusal = false
     public var log: ActionLog
     public var started: Date
     /// Once it's done: Hermes wrote the gateway's plist again on the way, and macOS runs it at
@@ -87,6 +89,7 @@ public struct GatewayJob: Sendable, Equatable {
         case .refused(let message, let command):
             var refused = job(.attention, String(localized: "Hermes doesn't update itself here"), message)
             refused.command = command
+            refused.isRefusal = true
             return refused
         case .couldNotStart(let message):
             return job(.failed, String(localized: "The update didn't start"), message)

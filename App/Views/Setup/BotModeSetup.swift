@@ -16,7 +16,7 @@ struct BotModeSetupMessage: View {
     var body: some View {
         let status = GatewaySetup.needsBotMode(id: feature, title: title, workspace.setup.facts)
         if status.state == .checking {
-            Spinner(size: .regular).frame(maxWidth: .infinity, maxHeight: .infinity)
+            checking
         } else {
             SetupMessage(
                 status: status, symbol: symbol, headline: headline(status),
@@ -24,6 +24,39 @@ struct BotModeSetupMessage: View {
                 fix: { router?.sheet = .editGateway(workspace.bot) }
             )
         }
+    }
+
+    /// While the app asks Bot Mode how it is: the feature's name and one Checking… line that says
+    /// where, in `SetupMessage`'s place, never a bare full-page spinner. The words show at once;
+    /// only the spinner waits its half second (`docs/setup.md` §4.1).
+    private var checking: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(Theme.tertiaryText)
+                    .padding(.bottom, 4)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(Theme.primaryText)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: 8) {
+                    Spinner()
+                        .accessibilityHidden(true)
+                    Text("Checking Bot Mode on \(workspace.bot.name)…")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: 440)
+            .padding(32)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .defaultScrollAnchor(.center, for: .alignment)
     }
 
     private func headline(_ status: SetupStatus) -> String {
