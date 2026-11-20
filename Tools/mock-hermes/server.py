@@ -32,9 +32,16 @@ Scripted behaviour by message content:
   anything else       -> searches, runs a command, then answers in rich Markdown
 
 A starved Mac (starve.py): `--starve 5-30`, or `POST /api/mock/starve {"seconds": 600}`.
+
+Tasks (/api/jobs): each job carries `model` (null for the gateway's default) and `live_execution`,
+the run under way, as cron/jobs.py list_jobs adds it. Run Now only marks the task due, as
+trigger_job does; the mock's scheduler claims it 8 s later (Hermes ticks every 60 s), runs it for
+30 s (`status: running`), then it finishes like a scheduled run. `--running-task` starts with the morning briefing
+running, for screenshots; that run doesn't finish.
 """
 
 import argparse
+import datetime
 import importlib.util
 import json
 import pathlib
@@ -320,7 +327,7 @@ def seed_routine_runs():
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(NOW - 10 * DAY)),
             "next_run_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(tick + 600 + offset)),
             "last_run_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(runs[0]["started_at"])),
-            "last_status": "ok", "last_error": None, "deliver": "local",
+            "last_status": "ok", "last_error": None, "deliver": "local", "model": None, "live_execution": None,
         }
 
 
@@ -461,6 +468,7 @@ def seed():
         "repeat": {"times": None, "completed": 41}, "enabled": True, "state": "scheduled",
         "created_at": "2026-09-01T07:30:00+02:00", "next_run_at": "2026-10-13T07:30:00+02:00",
         "last_run_at": "2026-10-12T07:30:04.120391+02:00", "last_status": "ok", "last_error": None, "deliver": "telegram",
+        "model": "anthropic/claude-sonnet-4.6", "live_execution": None,
     }
     JOBS["job_backup"] = {
         "id": "job_backup", "name": "Check NAS backups", "prompt": "Verify last night's backups finished and report failures.",
@@ -468,7 +476,63 @@ def seed():
         "repeat": {"times": None, "completed": 12}, "enabled": False, "state": "paused",
         "created_at": "2026-09-20T10:00:00+02:00", "next_run_at": None, "last_run_at": "2026-10-09T06:00:01+02:00",
         "last_status": "error", "last_error": "ssh: connect to host nas.local port 22: Connection refused", "deliver": "local",
+        "model": None, "live_execution": None,
     }
+
+
+def iso(seconds):
+    """A time as Hermes's job store writes it: local, with its offset."""
+    return datetime.datetime.fromtimestamp(seconds).astimezone().isoformat()
+
+
+CRON_TICK = 8.0
+
+
+def trigger_job(job):
+    """Run Now as cron/jobs.py trigger_job has it: the task is due now (`next_run_at`,
+    `manual_run_at`) and nothing runs yet. The scheduler's next tick claims it, CRON_TICK seconds
+    on here, and a finite task counts the run then (claim_dispatch); a recurring one counts it when
+    it finishes."""
+    if job.get("manual_run_at"):
+        return
+    now = time.time()
+    due = job.get("next_run_at")
+    job.update(next_run_at=iso(now), manual_run_at=iso(now))
+
+    def claim():
+        if JOBS.get(job["id"]) is not job or not job.get("manual_run_at") or job.get("live_execution"):
+            return
+        job.update(next_run_at=due, manual_run_at=None)
+        finite = job["repeat"].get("times") is not None
+        if finite:
+            job["repeat"]["completed"] = (job["repeat"].get("completed") or 0) + 1
+        start_job_run(job, counted=finite)
+
+    timer = threading.Timer(CRON_TICK, claim)
+    timer.daemon = True
+    timer.start()
+
+
+def start_job_run(job, seconds=30.0, started=None, counted=False):
+    """A run under way, as cron/executions.py keeps it and list_jobs reports it (`live_execution`).
+    With `seconds` it finishes then, like a scheduled run; None keeps it running. `counted` is a
+    run its claim already counted."""
+    started = time.time() if started is None else started
+    execution = {"id": uuid.uuid4().hex[:8], "job_id": job["id"], "status": "running", "claimed_at": iso(started - 1),
+                 "started_at": iso(started), "finished_at": None, "pid": 4242, "owner": "mock-hermes"}
+    job["live_execution"] = execution
+
+    def finish():
+        if job.get("live_execution") is not execution:
+            return
+        job.update(live_execution=None, last_run_at=iso(started), last_status="ok", last_error=None)
+        if not counted:
+            job["repeat"]["completed"] = (job["repeat"].get("completed") or 0) + 1
+
+    if seconds is not None:
+        timer = threading.Timer(seconds, finish)
+        timer.daemon = True
+        timer.start()
 
 
 def seed_read_marks():
@@ -1356,6 +1420,8 @@ class Handler(BaseHTTPRequestHandler):
                 job.update(enabled=False, state="paused", next_run_at=None)
             elif m.group(2) == "resume":
                 job.update(enabled=True, state="scheduled", next_run_at="2026-10-13T07:30:00+02:00")
+            elif not job.get("live_execution"):
+                trigger_job(job)
             return self.send_json(200, {"job": job})
         if path == "/api/jobs":
             if not body.get("name"):
@@ -1371,7 +1437,8 @@ class Handler(BaseHTTPRequestHandler):
                          "schedule": {"kind": "interval", "display": body["schedule"]}, "schedule_display": body["schedule"],
                          "repeat": {"times": None, "completed": 0}, "enabled": True, "state": "scheduled",
                          "created_at": "2026-10-12T09:00:00+02:00", "next_run_at": "2026-10-13T09:00:00+02:00",
-                         "last_run_at": None, "last_status": None, "last_error": None, "deliver": "local"}
+                         "last_run_at": None, "last_status": None, "last_error": None, "deliver": "local",
+                         "model": None, "live_execution": None}
             return self.send_json(200, {"job": JOBS[jid]})
         return self.send_json(404, {"error": {"message": "Not found", "type": "invalid_request_error", "param": None, "code": None}})
 
@@ -1552,6 +1619,8 @@ def main():
                         help="with --many-chats: mostly Telegram and Discord, a few of this app's chats and scheduled runs per page")
     parser.add_argument("--routine-runs", action="store_true",
                         help="two routines every ten minutes over the last day, most runs empty (seed_routine_runs)")
+    parser.add_argument("--running-task", action="store_true",
+                        help="the morning briefing has a run under way that doesn't finish (live_execution)")
     parser.add_argument("--photo-chats", action="store_true",
                         help="a chat whose photo turns Hermes stored with its notes for the model (seed_photo_chats)")
     args = parser.parse_args()
@@ -1567,6 +1636,8 @@ def main():
         seed_routine_runs()
     if args.photo_chats:
         seed_photo_chats()
+    if args.running_task:
+        start_job_run(JOBS["job_brief"], seconds=None, started=time.time() - 20)
     install_widgets(sys.modules[__name__], enabled=not args.no_widgets, version=args.widgets_version)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True

@@ -3159,6 +3159,9 @@ def main():
     parser.add_argument("--routine-runs", action="store_true",
                         help="with --gateway-port: two routines every ten minutes over the last day, most runs empty "
                              "(server.py seed_routine_runs)")
+    parser.add_argument("--running-task", action="store_true",
+                        help="with --gateway-port: the morning briefing has a run under way that doesn't finish "
+                             "(server.py start_job_run)")
     parser.add_argument("--photo-chats", action="store_true",
                         help="with --gateway-port: a chat whose photo turns Hermes stored with its notes for the model "
                              "(server.py seed_photo_chats)")
@@ -3339,6 +3342,8 @@ def main():
         setup = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(setup)
         setup.install(globals(), gateway, states=[s for s in (args.setup or "").split(",") if s])
+        if args.running_task:
+            gateway.start_job_run(gateway.JOBS["job_brief"], seconds=None, started=time.time() - 20)
         print(f"[mock-backend] API server on http://{args.host}:{args.gateway_port}, sharing chats with the socket", flush=True)
     import importlib.util as _util
     import pathlib as _pathlib
