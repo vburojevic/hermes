@@ -22,6 +22,8 @@ struct ProjectEditorSheet: View {
     @State private var error: String?
     @State private var choosingFolder = false
     @State private var confirmingDelete = false
+    /// Why Archive or Delete failed; the sheet stays open behind the alert.
+    @State private var actionFailure: String?
     @State private var populated = false
     @FocusState private var nameFocused: Bool
 
@@ -227,6 +229,15 @@ struct ProjectEditorSheet: View {
             } message: {
                 Text("The chats stay in Chats.")
             }
+            .alert(
+                "Something went wrong",
+                isPresented: Binding(get: { actionFailure != nil }, set: { if !$0 { actionFailure = nil } }),
+                presenting: actionFailure
+            ) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { failure in
+                Text(failure)
+            }
         }
         #if os(iOS)
         .presentationDragIndicator(.visible)
@@ -386,10 +397,7 @@ struct ProjectEditorSheet: View {
         Section {
             HStack(spacing: 12) {
                 Button {
-                    Task {
-                        try? await projects.archive(project.id)
-                        onDone(nil)
-                    }
+                    finish { try await projects.archive(project.id) }
                 } label: {
                     Text("Archive").frame(maxWidth: .infinity, minHeight: 34)
                 }
@@ -519,9 +527,19 @@ struct ProjectEditorSheet: View {
 
     private func delete() {
         guard let editing else { return }
+        finish { try await projects.delete(editing.id) }
+    }
+
+    /// Archive or Delete: closes the sheet once the gateway has done it, and otherwise says why.
+    private func finish(_ action: @escaping () async throws -> Void) {
         Task {
-            try? await projects.delete(editing.id)
-            onDone(nil)
+            do {
+                try await action()
+                onDone(nil)
+            } catch is CancellationError {
+            } catch {
+                actionFailure = error.localizedDescription
+            }
         }
     }
 }
