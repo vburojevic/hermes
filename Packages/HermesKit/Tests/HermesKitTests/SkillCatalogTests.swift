@@ -53,6 +53,33 @@ struct SkillCatalogTests {
         #expect(!catalog.needsLoad(from: home, isOnline: true))
     }
 
+    @Test func showsPlaceholdersUntilTheFirstAnswer() {
+        var catalog = SkillCatalog()
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: false) == .placeholders)
+        #expect(catalog.shown(for: home, isLoading: true, isUnreachable: false) == .placeholders)
+        catalog.received([], from: home)
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: false) == .empty)
+        // Pull to refresh on an empty list shows placeholders while it asks.
+        #expect(catalog.shown(for: home, isLoading: true, isUnreachable: false) == .placeholders)
+        catalog.received([Skill(name: "github-pr")], from: home)
+        #expect(catalog.shown(for: home, isLoading: true, isUnreachable: false) == .list)
+        // Another address has read nothing yet.
+        #expect(catalog.shown(for: other, isLoading: false, isUnreachable: false) == .placeholders)
+    }
+
+    @Test func saysWhyThereAreNoSkills() {
+        var catalog = SkillCatalog()
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: true) == .offline)
+        catalog.failed(.invalidResponse("timed out"), from: home)
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: false) == .failed(.invalidResponse("timed out")))
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: true) == .offline)
+        // A list read before the failure stays, also while the gateway is away.
+        catalog.received([Skill(name: "arxiv")], from: home)
+        catalog.failed(.invalidResponse("timed out"), from: home)
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: false) == .list)
+        #expect(catalog.shown(for: home, isLoading: false, isUnreachable: true) == .list)
+    }
+
     @Test func groupsByCategoryAndFilters() {
         var catalog = SkillCatalog()
         catalog.received([

@@ -108,8 +108,11 @@ at 1,200 characters. When the limits can't be read, the defaults above apply.
 
 - **Header:** "What Hermes on <gateway> remembers" beside the gateway's avatar, or the Bot's face
   and "What <Bot> remembers".
-- **Tabs:** About You · Hermes's Notes, with a badge for the saves to review in each. A record that
-  doesn't name its store counts as Hermes's Notes.
+- **Tabs:** About You · Hermes's Notes, the native segmented control, with the count of saves to
+  review in each ("Hermes's Notes · 2"). A record that doesn't name its store counts as Hermes's
+  Notes. At the accessibility text sizes the two tabs stack, full width (`memoryPageAx5`).
+  VoiceOver reads each tab as a button laid out where its segment is: the store, "2 to review"
+  and whether it's selected.
 - **Waiting for Review** (top of the tab it belongs to): one `memoryPendingRow` per staged save,
   labelled Add, Update or Forget, "Background review" or "While you were away", the text, then
   Discard / Save; for a removal, Keep / Forget.
@@ -129,7 +132,7 @@ at 1,200 characters. When the limits can't be read, the defaults above apply.
   - What <Hermes or the Bot> Learned (§3a).
   - Where Memory Lives: Memory Provider (Built-in, or a ready provider; others say "Needs setting
     up on the gateway", "Not found on the gateway" or "Unavailable").
-  - Reset Memory…, confirmed with an alert that counts what goes.
+  - Reset Memory…, in danger red, confirmed with an alert that counts what goes.
 - **Edit** (`memoryEdit`, a sheet at medium or large height):
   - A plain-text field, kept as typed, and the room left in that store ("room for N more
     characters", or "N characters over").
@@ -142,18 +145,26 @@ at 1,200 characters. When the limits can't be read, the defaults above apply.
     editor opens again in place.
 - **Empty** (`memoryEmpty`): what memory is, and Tell Hermes Something. **Off** (`memoryOff`, both
   stores off): Turn On Memory, which turns both on. One store off says so in its tab.
-- **Not available:** "Turn on Bot Mode for <gateway>", "<gateway> is offline", or "Couldn't read
-  memory" with the reason.
+- **Not available** (`memoryUnavailable`): "Turn on Bot Mode for <gateway>", "<gateway> is
+  offline", or "Couldn't read memory" with the reason and Try Again (⌘R on the Mac, from the
+  Chat menu). All three are the one warning card Learned and Skills use too; the options below
+  show dimmed.
+- **Notice** (`memoryNotice`): what a save replaced, or a reset, as one passing note of Liquid
+  Glass at the foot of the page. It stays 4 seconds, a tap dismisses it, and VoiceOver reads it.
 - **iPad:** in landscape (regular width, 900 pt and wider) both stores sit side by side and the
-  options move behind the … button. Portrait uses the iPhone layout.
+  options move behind the … button. Portrait uses the iPhone layout. At the accessibility text
+  sizes the stores stack, About You first (`ipadMemoryAx5`).
 - **Mac** (Settings → Memory, `macSettingsMemory`):
   - The current gateway's Hermes memory. Left: About You and Hermes's Notes. Right: Waiting for
     Review, the Saving switches, the provider picker and Reset Memory….
   - The arrow keys move the selection. Return or a double-click edits in place. Delete forgets the
-    selected entry after a confirmation. ⌘C copies it.
+    selected entry after a confirmation. ⌘C copies it. The selected entry's menu shows these keys.
+  - The left column is flexible (300 to 360 pt), so the entries keep their room in a narrow
+    window. Its sheets (edit, add, reset, provider setup) open at their natural size and can grow.
 
 The page loads entries, settings, provider and the review list together, and pulls to refresh;
-the stores show `SkeletonRows` until the entries arrive, on the Mac too. Every change shows at once
+the stores show `SkeletonRows` until the entries arrive, on the Mac too; a failed read shows only
+its warning card, with the rows back while Try Again runs. Every change shows at once
 and settles when the gateway answers ([chat.md](chat.md) §4a, `PendingChanges`): an edit's text, a
 forgotten entry gone, a review row gone (a saved addition already in its store), a switch or the
 provider's checkmark moved, Reset's empty stores. Then it re-reads what it touched. A refusal puts
@@ -184,6 +195,9 @@ entry's store.
 - A pending row reads its action ("Add to Hermes's notes"), the text, then the Save and Discard
   buttons.
 - The "Save to memory?" card reads "To remember: <text>".
+- At the accessibility text sizes the meter puts the count above how full it is, and a pending
+  row puts its tag above where the save came from, so nothing is cut off.
+- Under Reduce Motion the notice fades in place instead of rising from the edge.
 
 ## 6. Acceptance checks
 

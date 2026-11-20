@@ -115,9 +115,11 @@ struct LearnedHero: View {
 struct LearnedGlyph: View {
     let symbol: String
 
+    // The tile stays 32 pt so rows line up; its glyph follows the text size up to it.
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 14, weight: .medium))
+            .font(.subheadline.weight(.medium))
+            .imageScale(.small)
             .foregroundStyle(Theme.primaryText)
             .frame(width: 32, height: 32)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -154,7 +156,7 @@ struct LearnedSkillRow: View {
             case .none: EmptyView()
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
         }
@@ -179,7 +181,7 @@ struct CuratorChangeRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 15))
+                .font(.body)
                 .foregroundStyle(Theme.secondaryText)
                 .frame(width: 24)
                 .accessibilityHidden(true)
@@ -199,7 +201,9 @@ struct CuratorChangeRow: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.tertiaryText)
             } else if isBusy {
+                // Undo or Restore the person tapped, on its way (`Spinner`: the app's own waiting).
                 Spinner()
+                    .accessibilityLabel(Text("\(actionTitle) on its way"))
             } else {
                 Button(actionTitle, action: action)
                     .font(.footnote.weight(.semibold))
@@ -219,13 +223,16 @@ struct CuratorCard: View {
     let model: LearnedModel
     var showsCounts = true
 
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 36
+    @ScaledMetric(relativeTo: .subheadline) private var buttonHeight: CGFloat = 44
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "wand.and.sparkles")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(Theme.inkForeground)
-                    .frame(width: 36, height: 36)
+                    .frame(width: iconSize, height: iconSize)
                     .background(Theme.ink, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
@@ -273,20 +280,19 @@ struct CuratorCard: View {
             Button {
                 Task { await model.tidyUpNow() }
             } label: {
-                HStack(spacing: 7) {
+                Group {
                     if model.isTidying {
-                        Spinner()
-                        Text("Tidying…")
+                        // Hermes's work, not the app's: one shimmering line (`curatorCard`).
+                        ShimmerText(text: String(localized: "Tidying \(model.learnerName)'s skills…"), tone: .row)
                     } else {
-                        Image(systemName: "wand.and.sparkles")
-                        Text("Tidy Up Now")
+                        Label("Tidy Up Now", systemImage: "wand.and.sparkles")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Theme.primaryText)
                     }
                 }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Theme.primaryText)
                 .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(Theme.surface, in: Capsule())
+                .frame(minHeight: buttonHeight)
+                .background(model.isTidying ? Color.clear : Theme.surface, in: Capsule())
             }
             .buttonStyle(PressableStyle())
             .disabled(model.isTidying || !model.isOnline || model.tidyingIsOff)
@@ -377,5 +383,45 @@ struct LearnedSectionTitle: View {
             .padding(.horizontal, 16)
             .padding(.top, 6)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - The Mac's row actions
+
+extension View {
+    /// A skill row on the Mac: a hover fill, help, and a menu with what its page offers (Open
+    /// Skill, Keep As Is, Use in a Chat). Archive stays on the page, where it's confirmed.
+    func learnedSkillActions(model: LearnedModel, skill: LearningNode, open: @escaping () -> Void) -> some View {
+        modifier(LearnedSkillActions(model: model, skill: skill, open: open))
+    }
+}
+
+private struct LearnedSkillActions: ViewModifier {
+    let model: LearnedModel
+    let skill: LearningNode
+    let open: () -> Void
+
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content
+            .background(hovering ? Theme.controlFill : Color.clear)
+            .onHover { hovering = $0 }
+            .help(Text("Open \(skill.label)"))
+            .contextMenu {
+                Button("Open Skill", action: open)
+                // A checked item, as the page's switch is.
+                Toggle("Keep As Is", isOn: Binding(
+                    get: { model.isPinned(skill) },
+                    set: { pinned in Task { await model.setPinned(skill, pinned) } }
+                ))
+                .disabled(model.busy.contains(skill.id) || !model.isOnline)
+                Button("Use in a Chat") { model.useInChat(skill) }
+                    .disabled(skill.state == .archived)
+            }
+        #else
+        content
+        #endif
     }
 }

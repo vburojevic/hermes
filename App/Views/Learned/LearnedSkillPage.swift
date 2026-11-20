@@ -21,6 +21,11 @@ struct LearnedSkillPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// At the accessibility sizes labels sit above their values and the bottom buttons stack,
+    /// so nothing is cut off (`learnedSkillAx5`).
+    private var stacks: Bool { typeSize.isAccessibilitySize }
 
     private var skill: LearningNode? { model.node(skillID) }
 
@@ -94,17 +99,11 @@ struct LearnedSkillPage: View {
                     }
             }
         }
-        .confirmationDialog(String(localized: "Archive \(skill?.label ?? skillID)?"), isPresented: $confirmsArchive, titleVisibility: .visible) {
-            Button("Archive", role: .destructive) {
-                guard let skill else { return }
-                // The page closes at once; the map loses the skill when the gateway has archived it.
-                Task { await model.archive(skill) }
-                dismiss()
-            }
-        } message: {
-            Text("Hermes stops using it. You can restore it from Tidying.")
-        }
         .modifier(LearnedMessages(model: model))
+        // Outside the messages, so a notice sits above the bar rather than over it.
+        .safeAreaBar(edge: .bottom) {
+            if let skill { bottomBar(skill) }
+        }
     }
 
     private func content(_ skill: LearningNode) -> some View {
@@ -130,9 +129,6 @@ struct LearnedSkillPage: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
-        .safeAreaBar(edge: .bottom) {
-            bottomBar(skill)
-        }
     }
 
     // MARK: Facts
@@ -149,15 +145,19 @@ struct LearnedSkillPage: View {
     }
 
     private func fact(_ title: String, _ value: String) -> some View {
-        HStack {
+        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
             Text(title).foregroundStyle(Theme.primaryText)
-            Spacer(minLength: 12)
+            if !stacks { Spacer(minLength: 0) }
             Text(value)
                 .foregroundStyle(Theme.secondaryText)
-                .multilineTextAlignment(.trailing)
+                .multilineTextAlignment(stacks ? .leading : .trailing)
         }
         .font(.body)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
+        .padding(.vertical, stacks ? 12 : 0)
         .frame(minHeight: 52)
         .accessibilityElement(children: .combine)
     }
@@ -184,7 +184,7 @@ struct LearnedSkillPage: View {
 
     private func keepAsIs(_ skill: LearningNode) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
+            (stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 12))) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Keep As Is").font(.body).foregroundStyle(Theme.primaryText)
                     Text("Tidying won't merge, change or archive it")
@@ -201,6 +201,7 @@ struct LearnedSkillPage: View {
                 .disabled(!model.isOnline)
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, stacks ? 12 : 0)
             .frame(minHeight: 60)
             .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             Text("Pinned skills are left alone when Hermes tidies up.")
@@ -219,6 +220,7 @@ struct LearnedSkillPage: View {
                 LearnedSkillRow(skill: other, subtitle: other.useCount == 1 ? String(localized: "Related skill · used once") : String(localized: "Related skill · used \(other.useCount) times"))
             }
             .buttonStyle(.plain)
+            .learnedSkillActions(model: model, skill: other) { pushed = .skill(other.id) }
         } else {
             Button {
                 openedMemory = other
@@ -236,8 +238,9 @@ struct LearnedSkillPage: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.tertiaryText)
+                        .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
@@ -303,23 +306,33 @@ struct LearnedSkillPage: View {
     // MARK: Bottom bar
 
     private func bottomBar(_ skill: LearningNode) -> some View {
-        HStack(spacing: 10) {
+        (stacks ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))) {
             Button {
                 confirmsArchive = true
             } label: {
                 Label("Archive", systemImage: "archivebox")
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(minHeight: 50)
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.capsule)
             .disabled(skill.state == .archived || model.busy.contains(skill.id) || model.isPinned(skill))
+            // On the button, so on iPad the popover points at Archive rather than the page's edge.
+            .confirmationDialog(String(localized: "Archive \(skill.label)?"), isPresented: $confirmsArchive, titleVisibility: .visible) {
+                Button("Archive", role: .destructive) {
+                    // The page closes at once; the map loses the skill when the gateway has archived it.
+                    Task { await model.archive(skill) }
+                    dismiss()
+                }
+            } message: {
+                Text("Hermes stops using it. You can restore it from Tidying.")
+            }
             Button {
                 model.useInChat(skill)
             } label: {
                 Label("Use in a Chat", systemImage: "text.bubble")
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(minHeight: 50)
             }
             .prominentGlassButton()
             .buttonBorderShape(.capsule)
@@ -381,7 +394,7 @@ struct LearnedSkillEditor: View {
             error = refused?.error
         }
         #if os(macOS)
-        .frame(width: 640, height: 560)
+        .frame(minWidth: 520, idealWidth: 640, minHeight: 420, idealHeight: 560)
         #endif
     }
 

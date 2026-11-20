@@ -41,6 +41,13 @@ struct LearnedTests {
         #expect(graph.mostUsed.first?.id == "ios-testing")
     }
 
+    @Test func knowsWhenNothingWasLearned() throws {
+        #expect(LearningGraph().hasNothingLearned)
+        let usedOnly = LearningGraph(nodes: [LearningNode(id: "used-only", kind: .skill, label: "used-only", category: "home", useCount: 3)])
+        #expect(!usedOnly.hasNothingLearned)
+        #expect(try !graph().hasNothingLearned)
+    }
+
     @Test func bucketsWeeksAndFindsNewSkills() throws {
         let graph = try graph()
         let weeks = graph.weeks(endingAt: now, limit: 12)

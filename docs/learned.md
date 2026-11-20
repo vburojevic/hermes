@@ -54,7 +54,7 @@ Every call names the learner's `profile`.
 
 ## 2. The page (`learnedPage`)
 
-Until the graph arrives the page shows `SkeletonRows`.
+Until the graph arrives the page shows a card of placeholder rows (`SkeletonRows`).
 
 - **Story** (`learnedHero`): one sentence ("Since August, Hermes wrote 11 skills and learned 20
   things about you and your setup"), the two counts with their colour keys, and the weekly chart:
@@ -78,14 +78,22 @@ Until the graph arrives the page shows `SkeletonRows`.
 - **iPad and Mac** (`ipadLearned`, `macLearned`): the map fills the main space with its filters
   and the selected skill under it; the story, New This Week (with up to two stale skills) and the
   curator card sit beside it. On the Mac, pushed pages carry their own large title, since the main
-  window hides toolbar titles.
+  window hides toolbar titles. In iPad portrait (`ipadLearnedPortrait`) the page is one column:
+  the map first, the selected skill under it, then the story, New This Week and tidying.
 - On iPhone and iPad the … menu has Tidying, Tidy Up Now and Refresh.
 - A skill, the map or Tidying opens on top of the page, and back returns to it. Skills and Memory
   open this page with a push of their own, so the pages it opens are pushed one at a time by item,
   never by value: SwiftUI kept the page above value pushes, so a skill opened from it showed the
   page again.
-- Not available: "What <learner> learned isn't available" with the reason, and Try Again unless
-  Bot Mode is missing.
+- Not available (`learnedStates`), in the warning card Memory and Skills use (`MemoryNotice`):
+  - No Bot Mode: "Turn on Bot Mode for <gateway>", with the button that links it.
+  - Bot Mode linked but signed out, refused or not answering: the setup message that names which.
+  - A read that failed: "What <learner> learned isn't available" with the reason, and Try Again
+    (⌘R on the Mac, from the Chat menu).
+- Nothing learned yet (no skills and no memories at all): what shows here and how it gets there,
+  never an empty map. A skill Hermes only used still shows the map and Tidying.
+- A passing note (archived, restored) is the one Memory uses (`memoryNotice`): Liquid
+  Glass at the foot of the page, above a skill's bottom bar, never over it.
 
 ## 3. The map (`learnedMap`, iPad, Mac)
 
@@ -120,6 +128,10 @@ Until the graph arrives the page shows `SkeletonRows`.
   and **Use in a Chat**, which puts the skill in the composer's tray (`Slash.skillChip`): the Bot's
   chat for a Bot, else the chat that was open last, or a new chat.
 - A skill that's gone (merged or archived meanwhile) says so and points to Tidying.
+- On the Mac a connected skill fills on hover, says "Open <skill>" as help, and has a menu: Open
+  Skill, Keep As Is and Use in a Chat. The stale skills in Tidying have the same.
+- At the accessibility text sizes the facts and Keep As Is put the label above the value, and the
+  bottom bar's two buttons stack (`learnedSkillAx5`).
 
 ## 5. Tidying (`learnedTidying`)
 
@@ -128,7 +140,8 @@ Until the graph arrives the page shows `SkeletonRows`.
   - The schedule ("Every 7 days, when <gateway> has been idle 2 h").
   - The last tidy in one sentence ("Last tidy 2 days ago: merged 2 overlapping skills, archived 3
     unused ones and marked 4 as stale."), with counts for merged, archived and stale.
-  - **Tidy Up Now** ("Tidying…" while it runs).
+  - **Tidy Up Now**. While a tidy runs, the card says "Tidying <learner>'s skills…" in shimmering
+    words (`ShimmerText`), never a spinner; Reduce Motion stops the shimmer.
 - **Last Tidy · <date>:**
   - Each merge (`curatorMergeRow`), grouped by the skill it went into, with **Undo** (restore the
     originals).
@@ -162,6 +175,9 @@ Until the graph arrives the page shows `SkeletonRows`.
   used 12 times, 3 connections"), with their connections as custom actions ("Go to <skill>",
   "Memory: <text>"), and each cluster's memory count.
 - Map colours are ink and grey with a size difference, never colour alone.
+- The selected skill's halo is a plain fill, with no shadow.
+- Map labels grow with the text size up to xxLarge and stop there, since they sit at fixed points
+  on the map; at the larger sizes the list alternative reads every name.
 
 ## 8. Acceptance checks
 

@@ -15,7 +15,10 @@ On top of memory.py's graph (its memory cards stay the memories):
     gateway's own words.
 In a chat, "… skill" makes Hermes write one with `skill_manage` (action create).
 
-Mock-only: POST /api/mock/learned/reset.
+Mock-only: POST /api/mock/learned/reset, and POST /api/mock/learned/graph {"mode"} for the graph's
+other shapes: "used-only" (skills Hermes only used, none it wrote, and no memories), "empty" (no
+skills and no memories), "fail" (the read is refused with 500, so Memory's read fails too) and
+"full" (the seeded graph, as after a reset).
 """
 
 import base64
@@ -38,6 +41,8 @@ ARCHIVED = {}     # profile -> {name: skill}
 REPORTS = {}      # profile -> [(stamp, report)] oldest first
 CURATOR = {}      # profile -> {paused, last_run_at}
 RUN = {"running": False, "exit_code": None, "pid": None, "profile": None}
+GRAPH = {"mode": "full"}  # /api/mock/learned/graph
+GRAPH_MODES = ("full", "used-only", "empty", "fail")
 
 
 def skill(name, category, uses, days_ago, *, created_by="agent", state="active", related=(), text=None, created_days_ago=None):
@@ -51,6 +56,7 @@ def skill(name, category, uses, days_ago, *, created_by="agent", state="active",
 def seed():
     now = time.time()
     with LOCK:
+        GRAPH["mode"] = "full"
         SKILLS.clear(), ARCHIVED.clear(), REPORTS.clear(), CURATOR.clear()
         SKILLS["default"] = {s["name"]: s for s in [
             skill("ios-testing", "ios", 12, 1, related=["xcode-build", "swiftui-previews", "app-store-listing"],
@@ -127,6 +133,7 @@ def install(backend_globals, gateway_module, chats_module, memory_module):
     routes[("GET", "/api/files")] = files_list
     routes[("GET", "/api/files/read")] = files_read
     routes[("POST", "/api/mock/learned/reset")] = lambda q, b: (seed(), (200, {"ok": True}))[1]
+    routes[("POST", "/api/mock/learned/graph")] = graph_mode
     # The Inspector's File tab reads the SKILL.md through /api/fs/read-text and saves with write-text.
     fs_read, fs_write = routes.get(("GET", "/api/fs/read-text")), routes.get(("POST", "/api/fs/write-text"))
     routes[("GET", "/api/fs/read-text")] = lambda q, b: fs_skill_read(q) or (fs_read(q, b) if fs_read else (404, {"detail": "not found"}))
@@ -176,19 +183,38 @@ def tokens(text):
     return {t for t in re.split(r"[^a-z0-9]+", (text or "").lower()) if len(t) >= 3}
 
 
+def graph_mode(query, body):
+    """Mock-only: the shape the next graph reads have (see the module's docstring)."""
+    mode = (body or {}).get("mode") or "full"
+    if mode not in GRAPH_MODES:
+        return 400, {"detail": f"mode must be one of {', '.join(GRAPH_MODES)}"}
+    GRAPH["mode"] = mode
+    return 200, {"ok": True, "mode": mode}
+
+
 def graph(query, body, memory_graph):
     profile = profile_of(query)
+    mode = GRAPH["mode"]
+    if mode == "fail":
+        return 500, {"detail": "Internal Server Error"}
     status, base = memory_graph(query, body)
     if status != 200:
         return status, base
     memories = [n for n in base.get("nodes", []) if n.get("kind") == "memory"]
+    if mode != "full":
+        # The cards stay (Settings → Memory still lists the stores); the graph has no memory nodes.
+        base = dict(base, nodes=[n for n in base.get("nodes", []) if n.get("kind") != "memory"])
+        memories = []
     # Spread the memories over the last ten weeks, oldest first, for the story's chart.
     now = time.time()
     for index, node in enumerate(memories):
         node["timestamp"] = now - (len(memories) - index) * 3.3 * DAY
         node.update(useCount=0, state="active", createdBy="memory", pinned=False)
     with LOCK:
-        skills = list(SKILLS[profile].values())
+        skills = [] if mode == "empty" else list(SKILLS[profile].values())
+    if mode == "used-only":
+        # Bundled and hub skills Hermes used; none of them written by it (`docs/learned.md` §2).
+        skills = [dict(s, createdBy="bundled" if index % 2 else "hub") for index, s in enumerate(skills)]
     nodes = [{"id": s["name"], "label": s["name"], "kind": "skill", "timestamp": int(s["timestamp"]), "category": s["category"],
               "useCount": s["useCount"], "state": s["state"], "createdBy": s["createdBy"], "pinned": s["pinned"]} for s in skills]
     names = {s["name"] for s in skills}

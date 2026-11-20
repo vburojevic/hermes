@@ -79,6 +79,7 @@ struct LearnedTidyingPage: View {
                         LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
                     }
                     .buttonStyle(.plain)
+                    .learnedSkillActions(model: model, skill: skill) { pushed = .skill(skill.id) }
                 }
             }
         } else if !model.staleSkills.isEmpty {
@@ -89,6 +90,7 @@ struct LearnedTidyingPage: View {
                         LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
                     }
                     .buttonStyle(.plain)
+                    .learnedSkillActions(model: model, skill: skill) { pushed = .skill(skill.id) }
                 }
             }
         }

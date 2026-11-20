@@ -241,7 +241,8 @@ Rescan (`skills.reload`).
 
 - iPhone shows rows (`skillRow`: glyph, name, description, Use). iPad (regular width) and the Mac
   show a grid of `Skills.skillCard` (glyph tile, name, two-line description, Use), with search in
-  the toolbar.
+  the toolbar: three cards a row, in iPad portrait too, where the What Hermes Learned row is its
+  own card.
 - Skills starts with a "Tools and Apps" row that opens Settings → Apps and Tools
   ([connections.md](connections.md)). Toolsets are not switched from Skills. While the gateway's
   tools load, the row's second line is a placeholder line (`SkeletonRows`), never the word
@@ -252,7 +253,19 @@ Rescan (`skills.reload`).
   that writes a skill ("Learned a new skill" under the reply) marks the list stale: it is read
   again the next time Skills opens, or at once when Skills is on screen, keeping the old list
   shown meanwhile. That is how a new skill reaches the Mac, which has no pull to refresh. Until
-  the first answer the page shows placeholder rows (`SkeletonRows`), never an empty page.
+  the first answer the page shows placeholders, never an empty page: a card of placeholder rows
+  on iPhone (`SkeletonRows`), six placeholder cards in the grid on iPad and the Mac.
+- With no skills to show, the page says why (`SkillCatalog.shown`, `skillsStates`):
+  - No skills yet: where skills come from, `hermes skills` on the gateway or /learn in a chat.
+  - Couldn't list skills: the reason, with Try Again (⌘R on the Mac, from the Chat menu).
+  - The gateway is offline: "Skills show when it's back."
+  The failed and offline notices are the warning card Memory and Learned use (`MemoryNotice`).
+  A list that loaded stays shown through a later failure.
+- On the Mac a card fills on hover, shows its description as help, and has a menu: Use in a
+  Chat and Copy Name (`macSkills`).
+- At the accessibility text sizes iPhone rows stack the glyph, then the words, then Use
+  (`skillsAx5`); iPad and the Mac show two wider cards a row, each as tall as its words, with Use
+  at the top right (`ipadSkillsAx5`). Glyph tiles keep their size.
 - The top of Skills links to What Hermes Learned. On the Mac, Skills has a Library | Learned
   picker in the toolbar (`macLearned`).
 - The sidebar button sits at the top left on iPhone and iPad, as in Tasks; in iPad portrait the
