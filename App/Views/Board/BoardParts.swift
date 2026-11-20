@@ -542,6 +542,8 @@ struct BoardSummaryRow: View {
     let model: BoardModel
     let action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var detail: String {
         guard model.phase == .ready, !model.boardMissing else { return String(localized: "Cards Hermes and its Bots work through") }
         if model.allCards.isEmpty { return String(localized: "No cards yet") }
@@ -554,37 +556,38 @@ struct BoardSummaryRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.ink)
-                    .frame(width: 34, height: 34)
-                    .overlay {
-                        // The tile keeps its size, so its glyph does too.
-                        Image(systemName: "square.grid.2x2")
-                            .resizable()
-                            .scaledToFit()
-                            .fontWeight(.medium)
-                            .frame(width: 15, height: 15)
-                            .foregroundStyle(Theme.inkForeground)
+            Group {
+                // At the accessibility sizes the tile sits above, what needs you drops under the
+                // counts and the chevron goes, so every word shows (`docs/projects.md` §5).
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        tile
+                        title
+                        Text(detail)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if model.needsYouCount > 0 { needsYou }
                     }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Board")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.primaryText)
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(spacing: 12) {
+                        tile
+                        VStack(alignment: .leading, spacing: 1) {
+                            title
+                            Text(detail)
+                                .font(.footnote)
+                                .foregroundStyle(Theme.secondaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        if model.needsYouCount > 0 { needsYou.fixedSize() }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.tertiaryText)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if model.needsYouCount > 0 {
-                    TagLabel(title: String(localized: "\(model.needsYouCount) needs you"), style: .warning)
-                        .fixedSize()
-                }
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.tertiaryText)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -598,6 +601,31 @@ struct BoardSummaryRow: View {
         // Counts stay live while the home is on screen; visiting the home makes no board.
         .onAppear { model.appear(creating: false) }
         .onDisappear { model.disappear() }
+    }
+
+    private var tile: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Theme.ink)
+            .frame(width: 34, height: 34)
+            .overlay {
+                // The tile keeps its size, so its glyph does too.
+                Image(systemName: "square.grid.2x2")
+                    .resizable()
+                    .scaledToFit()
+                    .fontWeight(.medium)
+                    .frame(width: 15, height: 15)
+                    .foregroundStyle(Theme.inkForeground)
+            }
+    }
+
+    private var title: some View {
+        Text("Board")
+            .font(.body.weight(.semibold))
+            .foregroundStyle(Theme.primaryText)
+    }
+
+    private var needsYou: some View {
+        TagLabel(title: String(localized: "\(model.needsYouCount) needs you"), style: .warning)
     }
 }
 

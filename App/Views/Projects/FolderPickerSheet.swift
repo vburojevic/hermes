@@ -48,10 +48,15 @@ struct FolderPickerSheet: View {
                                 Image(systemName: "chevron.right")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.tertiaryText)
+                                    .accessibilityHidden(true)
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(folderLabel(entry))
+                        .accessibilityHint("Shows the folders inside")
+                        .accessibilityAddTraits(.isButton)
                     }
                 } header: {
                     HStack(spacing: 6) {
@@ -100,8 +105,17 @@ struct FolderPickerSheet: View {
             .task(id: path) { await load() }
         }
         #if os(macOS)
-        .frame(width: 460, height: 520)
+        .frame(minWidth: 460, idealWidth: 460, minHeight: 520, idealHeight: 520)
         #endif
+    }
+
+    /// "hermes-app, folder" or "hermes-app, folder, in Hermes App".
+    private func folderLabel(_ entry: String) -> String {
+        let name = ProjectPath.lastComponent(entry)
+        if let owner = projects.owner(ofFolder: projects.absolute(entry)) {
+            return String(localized: "\(name), folder, in \(owner.name)")
+        }
+        return String(localized: "\(name), folder")
     }
 
     private func load() async {
