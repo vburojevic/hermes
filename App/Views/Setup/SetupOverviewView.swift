@@ -73,13 +73,6 @@ struct SetupOverviewView: View {
         #endif
         .onAppear { inFront = true }
         .onDisappear { inFront = false }
-        #if os(macOS)
-        // ⌘R is the Chat menu's, and the Settings window would hand it to the chat behind, so the
-        // menu item becomes Check Again while this page is in front (`docs/setup.md` §2).
-        .focusedSceneValue(\.tryAgain, inFront ? TryAgainAction(title: String(localized: "Check Again"), isEnabled: setup.checkPhase.canCheck) {
-            Task { await setup.check() }
-        } : nil)
-        #endif
         // Again when Bot Mode connects or drops: most reads go through it.
         .task(id: workspace.roster?.isConnected) { await setup.check() }
         #if os(iOS)

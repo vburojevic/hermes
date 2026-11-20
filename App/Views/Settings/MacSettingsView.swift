@@ -174,6 +174,8 @@ private struct SettingsWindowProbe: NSViewRepresentable {
 /// Setup for the current gateway (`docs/setup.md` §3).
 private struct MacSetupPane: View {
     @Environment(AppModel.self) private var app
+    /// Whether the Setup tab is the one shown, so ⌘R is Check Again only there.
+    @State private var shown = false
 
     var body: some View {
         NavigationStack {
@@ -182,6 +184,19 @@ private struct MacSetupPane: View {
             } else {
                 ContentUnavailableView("No Gateway", systemImage: "server.rack", description: Text("Add a gateway to see what it has set up."))
             }
+        }
+        .onAppear { shown = true }
+        .onDisappear { shown = false }
+        // ⌘R is the Chat menu's, and the Settings window would hand it to the chat behind, so the
+        // menu item becomes Check Again while Setup is shown, the list or a feature's page pushed
+        // on it (`docs/setup.md` §2).
+        .focusedSceneValue(\.tryAgain, shown ? checkAgain : nil)
+    }
+
+    private var checkAgain: TryAgainAction? {
+        guard let setup = app.currentWorkspace?.setup else { return nil }
+        return TryAgainAction(title: String(localized: "Check Again"), isEnabled: setup.checkPhase.canCheck) {
+            Task { await setup.check() }
         }
     }
 }
