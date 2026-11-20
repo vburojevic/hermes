@@ -44,14 +44,22 @@ private struct MacMemoryContent: View {
         HStack(alignment: .top, spacing: 20) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if !model.isOnline || model.needsBotMode {
-                        MemoryNotice(symbol: model.needsBotMode ? "server.rack" : "wifi.slash",
-                                     title: model.needsBotMode ? String(localized: "Turn on Bot Mode for \(model.gatewayName)") : String(localized: "\(model.gatewayName) is offline"),
-                                     detail: String(localized: "Memory shows when Bot Mode is connected."))
+                    if model.needsBotMode {
+                        MemoryNotice(symbol: "server.rack", title: String(localized: "Turn on Bot Mode for \(model.gatewayName)"),
+                                     detail: String(localized: "Memory is read and edited over Bot Mode's connection."),
+                                     linksBotMode: model.workspace)
+                    } else if !model.isOnline {
+                        MemoryNotice(symbol: "wifi.slash", title: String(localized: "\(model.gatewayName) is offline"),
+                                     detail: String(localized: "Memory shows when it's back."))
+                    } else if let error = model.loadError, model.list == nil {
+                        // Never a blank pane: the reason, and Try Again (⌘R).
+                        MemoryNotice(symbol: "exclamationmark.triangle", title: String(localized: "Couldn't read memory"), detail: error) {
+                            Task { await model.load() }
+                        }
                     } else if model.settings?.isOff == true {
                         MemoryEmptyState(isOff: true) { Task { await model.turnOn() } }
                     }
-                    if model.list != nil || (model.isOnline && model.isLoading) {
+                    if model.list != nil || (model.isOnline && model.loadError == nil) {
                         store(.about)
                         store(.notes)
                     }
@@ -86,7 +94,8 @@ private struct MacMemoryContent: View {
                 .padding(.vertical, 16)
                 .padding(.trailing, 20)
             }
-            .frame(width: 330)
+            // Flexible, so the entries keep their room in a narrow window (`macSettingsMemory`).
+            .frame(minWidth: 300, idealWidth: 330, maxWidth: 360)
         }
         .background(Theme.groupedBackground)
         .task(id: model.isOnline) {
@@ -108,7 +117,7 @@ private struct MacMemoryContent: View {
         let entries = model.entries(in: store)
         VStack(alignment: .leading, spacing: 8) {
             Text(MemoryCopy.storeTitle(store))
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.primaryText)
                 .accessibilityAddTraits(.isHeader)
             if model.list != nil {
@@ -118,14 +127,14 @@ private struct MacMemoryContent: View {
                 SkeletonRows(count: 3)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .memoryPaneCard()
             } else if entries.isEmpty {
                 Text("Nothing here yet. Tell \(model.keeperName) “Remember that…” in any chat.")
                     .font(.callout)
                     .foregroundStyle(Theme.secondaryText)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .memoryPaneCard()
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
@@ -135,7 +144,7 @@ private struct MacMemoryContent: View {
                         row(entry, index: index)
                     }
                 }
-                .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .memoryPaneCard()
             }
         }
     }
@@ -207,10 +216,15 @@ private struct MacMemoryContent: View {
             listFocused = true
         }
         .contextMenu {
+            // The keys show here for the selected row; the list itself answers them
+            // (Return, ⌘C, Delete), so they never reach a row that isn't selected.
             Button("Edit…") { startEditing(entry) }
+                .keyboardShortcut(isSelected ? KeyboardShortcut(.return, modifiers: []) : nil)
             Button("Copy") { Pasteboard.copy(entry.text) }
+                .keyboardShortcut(isSelected ? KeyboardShortcut("c") : nil)
             Divider()
             Button("Forget…", role: .destructive) { forgetting = entry }
+                .keyboardShortcut(isSelected ? KeyboardShortcut(.delete, modifiers: []) : nil)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(MemoryCopy.spoken(entry)))
@@ -290,7 +304,7 @@ private struct MacMemoryContent: View {
         if !pending.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Waiting for Review · \(pending.count)")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
                 VStack(spacing: 0) {
                     ForEach(Array(pending.enumerated()), id: \.element.id) { index, item in
@@ -306,7 +320,7 @@ private struct MacMemoryContent: View {
                         .padding(14)
                     }
                 }
-                .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .memoryPaneCard()
             }
         }
     }
@@ -314,7 +328,7 @@ private struct MacMemoryContent: View {
     private var saving: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Saving")
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.primaryText)
             VStack(spacing: 0) {
                 toggle(String(localized: "Remember things about you"), detail: MemoryStoreKind.about.fileName, isOn: storeBinding(.about))
@@ -323,12 +337,13 @@ private struct MacMemoryContent: View {
                 Rectangle().fill(Theme.separator).frame(height: 0.5).padding(.leading, 12)
                 toggle(String(localized: "Ask before saving"), detail: String(localized: "Review each change first"), isOn: askBinding)
             }
-            .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .memoryPaneCard()
             .disabled(!model.isOnline || model.settings == nil)
             Text("\(model.keeperName) reads memory at the start of every chat, so changes apply from your next one.")
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            .opacity(model.isOnline ? 1 : 0.45)
             HStack {
                 Picker("Provider:", selection: providerBinding) {
                     Text("Built-in").tag("")
@@ -344,18 +359,14 @@ private struct MacMemoryContent: View {
                 .frame(maxWidth: 260, alignment: .leading)
                 .help("Other providers are set up on the gateway.")
                 Spacer()
-                Button {
+                // `macDestructiveButton`: the native push button, its label in danger red.
+                Button(role: .destructive) {
                     resetting = true
                 } label: {
-                    Text("Reset Memory…")
-                        .foregroundStyle(Theme.danger)
-                        .padding(.horizontal, 14)
-                        .frame(height: 28)
-                        .background(Theme.groupedCell, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.hairline))
-                        .contentShape(Capsule())
+                    // A set red would stay bright while the row is dimmed offline.
+                    Text("Reset Memory…").foregroundStyle(model.isOnline ? Theme.danger : Theme.tertiaryText)
                 }
-                .buttonStyle(PressableStyle())
+                .buttonStyle(.bordered)
                 .fixedSize()
             }
             .disabled(!model.isOnline)
@@ -435,6 +446,14 @@ private struct MacMemoryContent: View {
     private var providerBinding: Binding<String> {
         Binding(get: { model.status?.active ?? "" },
                 set: { value in Task { await model.setProvider(value) } })
+    }
+}
+private extension View {
+    /// A store or the switches on the pane (`sheet-cell`, a hairline edge, 12 pt corners).
+    func memoryPaneCard() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return background(Theme.sheetCell, in: shape)
+            .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 0.5))
     }
 }
 #endif

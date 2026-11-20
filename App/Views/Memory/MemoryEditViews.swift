@@ -139,7 +139,7 @@ struct MemoryEditSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         #else
-        .frame(width: 460, height: 360)
+        .frame(minWidth: 420, idealWidth: 460, minHeight: 300, idealHeight: 360)
         #endif
     }
 
@@ -331,7 +331,7 @@ struct MemoryProviderSetupSheet: View {
             }
         }
         #if os(macOS)
-        .frame(width: 480).frame(minHeight: 340)
+        .frame(minWidth: 440, idealWidth: 480, minHeight: 340, idealHeight: 420)
         #endif
     }
 
@@ -458,7 +458,7 @@ struct MemoryProviderInstallSheet: View {
             }
         }
         #if os(macOS)
-        .frame(width: 520).frame(minHeight: 360)
+        .frame(minWidth: 460, idealWidth: 520, minHeight: 360, idealHeight: 440)
         #endif
     }
 

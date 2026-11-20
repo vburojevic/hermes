@@ -22,6 +22,7 @@ struct LearnedPage: View {
     @State private var pushed: LearnedRoute?
     @State private var openedMemory: LearningNode?
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isWide: Bool {
         #if os(macOS)
@@ -33,16 +34,31 @@ struct LearnedPage: View {
 
     var body: some View {
         Group {
-            if model.graph == nil, model.workspace.botModeIsDown {
+            if model.graph == nil, model.needsBotMode {
+                // Not linked: the notice links it (`docs/learned.md` §7).
+                stateNotice(MemoryNotice(symbol: "server.rack", title: String(localized: "Turn on Bot Mode for \(model.gatewayName)"),
+                                         detail: String(localized: "What \(model.learnerName) learned is read over Bot Mode's connection."),
+                                         linksBotMode: model.workspace))
+            } else if model.graph == nil, model.workspace.botModeIsDown {
+                // Linked but signed out, refused or not answering: the setup message names which.
                 BotModeSetupMessage(workspace: model.workspace, feature: GatewaySetup.ID.learned,
                                     title: String(localized: "What \(model.learnerName) Learned"), symbol: "sparkles")
             } else if model.graph == nil, let error = model.loadError {
-                StateMessage(symbol: "sparkles", title: String(localized: "What \(model.learnerName) learned isn't available"), message: error,
-                             actionTitle: model.needsBotMode ? nil : String(localized: "Try Again")) { Task { await model.load() } }
+                stateNotice(MemoryNotice(symbol: "exclamationmark.triangle",
+                                         title: String(localized: "What \(model.learnerName) learned isn't available"), detail: error) {
+                    Task { await model.load() }
+                })
             } else if model.graph == nil {
-                SkeletonRows()
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                stateNotice(
+                    SkeletonRows()
+                        .padding(16)
+                        .background(Theme.groupedCell, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .accessibilityLabel(Text("Loading what \(model.learnerName) learned"))
+                )
+            } else if model.graph?.hasNothingLearned == true {
+                StateMessage(symbol: "sparkles", title: String(localized: "Nothing learned yet"),
+                             message: String(localized: "Skills \(model.learnerName) writes as it works, and ones you teach it with /learn, show here with what they connect to."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isWide {
                 wide
             } else {
@@ -85,6 +101,27 @@ struct LearnedPage: View {
             LearnedMemorySheet(model: model, memory: memory)
         }
         .modifier(LearnedMessages(model: model))
+    }
+
+    /// A state in place of the page: under the title, the width of the content.
+    private func stateNotice(_ content: some View) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                #if os(macOS)
+                if !embedded {
+                    Text("What \(model.learnerName) Learned")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(Theme.primaryText)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                #endif
+                content
+            }
+            .frame(maxWidth: Theme.readableWidth, alignment: .leading)
+            .padding(.horizontal, isWide ? 24 : 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     @ViewBuilder
@@ -146,7 +183,7 @@ struct LearnedPage: View {
                                 .foregroundStyle(Theme.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.tertiaryText)
                         }
                         .padding(.horizontal, 14)
@@ -186,8 +223,9 @@ struct LearnedPage: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.tertiaryText)
+                                .accessibilityHidden(true)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 11)
@@ -210,71 +248,119 @@ struct LearnedPage: View {
 
     // MARK: iPad and Mac
 
-    private var wide: some View {
-        GeometryReader { geometry in
-            let side = min(max(geometry.size.width * 0.36, 320), 460)
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 14) {
-                    #if os(macOS)
-                    // The Mac draws its own large title (`macLearned`).
-                    Text("What \(model.learnerName) Learned")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(Theme.primaryText)
-                        .accessibilityAddTraits(.isHeader)
-                    #else
-                    Text(model.mapIntro)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondaryText)
-                    #endif
-                    ZStack(alignment: .topTrailing) {
-                        LearningMapView(model: model) { openedMemory = $0 }
-                            .background(Theme.groupedCell)
-                            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                        LearnedMapFilters(model: model)
-                            .padding(12)
-                    }
-                    .frame(maxHeight: .infinity)
-                    if let id = model.selectedID, let skill = model.node(id) {
-                        LearnedCallout(model: model, skill: skill, wide: true) {
-                            pushed = .skill(id)
-                        }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        LearnedHero(model: model, compact: true)
-                        if !model.newThisWeek.isEmpty || !model.staleSkills.isEmpty {
-                            LearnedSectionTitle(title: String(localized: "New This Week"))
-                            LearnedCard {
-                                ForEach(model.newThisWeek) { skill in
-                                    Button { pushed = .skill(skill.id) } label: {
-                                        LearnedSkillRow(skill: skill, subtitle: newSubtitle(skill), badge: .new)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                ForEach(model.staleSkills.prefix(2)) { skill in
-                                    Button { pushed = .skill(skill.id) } label: {
-                                        LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        Button { pushed = .tidying } label: {
-                            CuratorCard(model: model, showsCounts: false)
+    /// The map with its filters (`ipadLearned`, `macLearned`).
+    private var mapCard: some View {
+        ZStack(alignment: .topTrailing) {
+            LearningMapView(model: model) { openedMemory = $0 }
+                .background(Theme.groupedCell)
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            LearnedMapFilters(model: model)
+                .padding(12)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedCallout: some View {
+        if let id = model.selectedID, let skill = model.node(id) {
+            LearnedCallout(model: model, skill: skill, wide: true) {
+                pushed = .skill(id)
+            }
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    /// The story, New This Week with the stale skills, and Tidying: beside the map, or under it.
+    private var story: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            LearnedHero(model: model, compact: true)
+            if !model.newThisWeek.isEmpty || !model.staleSkills.isEmpty {
+                LearnedSectionTitle(title: String(localized: "New This Week"))
+                LearnedCard {
+                    ForEach(model.newThisWeek) { skill in
+                        Button { pushed = .skill(skill.id) } label: {
+                            LearnedSkillRow(skill: skill, subtitle: newSubtitle(skill), badge: .new)
                         }
                         .buttonStyle(.plain)
+                        .learnedSkillActions(model: model, skill: skill) { pushed = .skill(skill.id) }
+                    }
+                    ForEach(model.staleSkills.prefix(2)) { skill in
+                        Button { pushed = .skill(skill.id) } label: {
+                            LearnedSkillRow(skill: skill, subtitle: staleSubtitle(skill), badge: .stale)
+                        }
+                        .buttonStyle(.plain)
+                        .learnedSkillActions(model: model, skill: skill) { pushed = .skill(skill.id) }
                     }
                 }
-                .scrollIndicators(.hidden)
-                .frame(width: side)
+            }
+            Button { pushed = .tidying } label: {
+                CuratorCard(model: model, showsCounts: false)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var wide: some View {
+        GeometryReader { geometry in
+            #if os(iOS)
+            // iPad portrait (`ipadLearnedPortrait`): one column, the map first.
+            if geometry.size.width < geometry.size.height {
+                column(height: geometry.size.height)
+            } else {
+                sideBySide(width: geometry.size.width)
+            }
+            #else
+            sideBySide(width: geometry.size.width)
+            #endif
+        }
+    }
+
+    private func column(height: CGFloat) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(model.mapIntro)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                mapCard
+                    .frame(height: min(max(height * 0.45, 360), 560))
+                selectedCallout
+                story
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
-            .animation(Theme.snappy, value: model.selectedID)
+            .animation(reduceMotion ? nil : Theme.snappy, value: model.selectedID)
         }
+    }
+
+    private func sideBySide(width: CGFloat) -> some View {
+        let side = min(max(width * 0.36, 320), 460)
+        return HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
+                #if os(macOS)
+                // The Mac draws its own large title (`macLearned`).
+                Text("What \(model.learnerName) Learned")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(Theme.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                #else
+                Text(model.mapIntro)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                #endif
+                mapCard
+                    .frame(maxHeight: .infinity)
+                selectedCallout
+            }
+            .frame(maxWidth: .infinity)
+            ScrollView {
+                story
+            }
+            .scrollIndicators(.hidden)
+            .frame(width: side)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .animation(reduceMotion ? nil : Theme.snappy, value: model.selectedID)
     }
 
     private func staleSubtitle(_ skill: LearningNode) -> String {
@@ -480,7 +566,9 @@ struct LearnedMemorySheet: View {
                 if let memoryModel {
                     MemoryView(model: memoryModel)
                 } else {
-                    Spinner(size: .regular)
+                    SkeletonRows()
+                        .padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
             .toolbar {
@@ -495,12 +583,12 @@ struct LearnedMemorySheet: View {
             memoryModel = model
         }
         #if os(macOS)
-        .frame(width: 560, height: 640)
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 480, idealHeight: 640)
         #endif
     }
 }
 
-/// Messages and toasts from the model, as alerts.
+/// Messages from the model, as alerts; its toasts, as a notice at the bottom.
 struct LearnedMessages: ViewModifier {
     let model: LearnedModel
 
@@ -509,23 +597,7 @@ struct LearnedMessages: ViewModifier {
             .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
                 Button("OK", role: .cancel) {}
             }
-            .overlay(alignment: .bottom) {
-                if let toast = model.toast {
-                    Text(toast)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.primaryText)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .glassEffect(.regular, in: Capsule())
-                        .padding(.bottom, 90)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .task(id: toast) {
-                            try? await Task.sleep(for: .seconds(2.5))
-                            withAnimation(Theme.snappy) { model.toast = nil }
-                        }
-                        .accessibilityAddTraits(.updatesFrequently)
-                }
-            }
-            .animation(Theme.snappy, value: model.toast)
+            // The same notice as Memory's (`memoryNotice`): glass, a check, read aloud, 4 s.
+            .modifier(MemoryToast(text: Binding(get: { model.toast }, set: { model.toast = $0 })))
     }
 }

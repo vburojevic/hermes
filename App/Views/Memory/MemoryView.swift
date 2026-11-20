@@ -9,6 +9,7 @@ struct MemoryView: View {
     @Bindable var model: MemoryModel
 
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var width: CGFloat = 0
     @State private var editing: MemoryEditTarget?
     @State private var forgetting: MemoryEntry?
@@ -113,6 +114,9 @@ struct MemoryView: View {
                 }
             }
             options
+                // Without Bot Mode, or while the gateway is away, the options show what they'd
+                // be, dimmed (`memoryUnavailable`).
+                .opacity(model.isOnline ? 1 : 0.45)
                 .padding(.top, 28)
                 .id("options")
         }
@@ -143,7 +147,11 @@ struct MemoryView: View {
             if model.settings?.isOff == true {
                 MemoryEmptyState(isOff: true) { Task { await model.turnOn() } }
             } else {
-                HStack(alignment: .top, spacing: 24) {
+                // At accessibility sizes the stores stack, About You first (`ipadMemoryAx5`).
+                let columns = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
+                    : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+                columns {
                     VStack(alignment: .leading, spacing: 12) {
                         columnTitle(.about)
                         storeContent(.about)
@@ -234,7 +242,8 @@ struct MemoryView: View {
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                } else if model.isLoading || model.list == nil, model.isOnline {
+                } else if model.list == nil, model.isOnline, model.loadError == nil || model.isLoading {
+                    // A failed read shows only its warning card; the rows come back while Try Again runs.
                     MemoryCard {
                         SkeletonRows(count: 3)
                             .padding(16)
@@ -407,7 +416,9 @@ struct MemoryView: View {
             MemoryNotice(symbol: "wifi.slash", title: String(localized: "\(model.gatewayName) is offline"),
                          detail: String(localized: "Memory shows when it's back."))
         } else if let error = model.loadError, model.list == nil {
-            MemoryNotice(symbol: "exclamationmark.triangle", title: String(localized: "Couldn't read memory"), detail: error)
+            MemoryNotice(symbol: "exclamationmark.triangle", title: String(localized: "Couldn't read memory"), detail: error) {
+                Task { await model.load() }
+            }
         }
     }
 }
@@ -483,13 +494,16 @@ struct MemoryToggleRow: View {
     }
 }
 
-/// Offline, no Bot Mode, or a read that failed.
+/// Offline, no Bot Mode, or a read that failed (`memoryUnavailable`).
 struct MemoryNotice: View {
     let symbol: String
     let title: String
     let detail: String
     /// The gateway whose Bot Mode a button links (`docs/setup.md` §4.1).
     var linksBotMode: BotWorkspace?
+    /// Read again, after a read that failed: Try Again. ⌘R reaches it through the Chat menu,
+    /// which offers it in place of Reload Conversation while this notice is on screen.
+    var tryAgain: (() -> Void)?
 
     var body: some View {
         Label {
@@ -504,6 +518,11 @@ struct MemoryNotice: View {
                 if let linksBotMode {
                     BotModeLinkButton(workspace: linksBotMode)
                         .padding(.top, 6)
+                } else if let tryAgain {
+                    Button("Try Again", action: tryAgain)
+                        .font(.footnote)
+                        .buttonStyle(.bordered)
+                        .padding(.top, 6)
                 }
             }
         } icon: {
@@ -512,5 +531,18 @@ struct MemoryNotice: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.warningTint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        // ⌘R already belongs to Reload Conversation, and UIKit refuses two commands with the same
+        // keys, so the menu item becomes Try Again rather than the button taking the shortcut.
+        .focusedSceneValue(\.tryAgain, linksBotMode == nil ? tryAgain.map(TryAgainAction.init) : nil)
     }
+}
+
+/// The Try Again a warning card offers, for the ⌘R menu item.
+struct TryAgainAction {
+    let run: () -> Void
+}
+
+extension FocusedValues {
+    /// The key window's Try Again, while a read that failed shows it.
+    @Entry var tryAgain: TryAgainAction?
 }

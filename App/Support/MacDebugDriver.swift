@@ -15,8 +15,9 @@ import AppKit
 /// (resizes the chats window, top left kept, which a locked screen refuses from outside);
 /// `menu <title>` (a menu bar menu's items and shortcuts, which a locked or off-Space screen
 /// can't capture); `item <menu> > <item>` (chooses a menu bar item, as a click on it would);
-/// `mainkey esc` (Esc in the chats window); `sidebar` (the sidebar button's action); `dump`,
-/// `views` and `toolbar` (the accessibility, content and toolbar view trees, with frames). The ⌘K
+/// `mainkey esc` (Esc in the chats window; `mainkey cmd+r` ⌘R there, then the menus); `sidebar`
+/// (the sidebar button's action); `dump`, `views` and `toolbar` (the accessibility, content and
+/// toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
 /// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
 /// `palettetype <text>` (typed into its field as keys, one per character), `paletteblur` (takes
 /// the field out of editing) and `palette` (the field's text, the field editor's corrections and
@@ -39,6 +40,8 @@ enum MacDebugDriver {
                 result = key(argument)
             case "dump":
                 if let window = settingsWindow { dump(window, depth: 0) }
+            case "maindump":
+                if let window = mainWindow { dump(window, depth: 0) } else { result = "no chats window" }
             case "click":
                 result = clickTopButton()
             case "tap":
@@ -267,16 +270,18 @@ enum MacDebugDriver {
     }
 
     /// `mainkey esc`: Esc handed to the chats window, which a locked screen can't send.
+    /// `mainkey cmd+r`: ⌘R routed as the app routes it, to the window's key equivalents, then the
+    /// menus, which answer from the key window's focused values.
     private static func mainKey(_ combo: String) -> String {
-        guard combo == "esc" else { return "only esc is supported" }
-        guard let window = mainWindow,
-              let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53
-              )
-        else { return "no chats window" }
-        return window.performKeyEquivalent(with: event) ? "handled" : "not handled"
+        guard combo == "esc" || combo == "cmd+r" else { return "only esc and cmd+r are supported" }
+        let (flags, characters, code): (NSEvent.ModifierFlags, String, UInt16) =
+            combo == "esc" ? ([], "\u{1b}", 53) : (.command, "r", 15)
+        guard let window = mainWindow, let event = keyEvent(characters, code: code, flags: flags, in: window) else {
+            return "no chats window"
+        }
+        if window.performKeyEquivalent(with: event) { return "handled" }
+        guard combo == "cmd+r" else { return "not handled" }
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) == true ? "handled by the menu" : "not handled"
     }
 
     private static func key(_ combo: String) -> String {

@@ -20,12 +20,19 @@ struct MemoryMeter: View {
         return nearlyFull ? String(localized: "\(counted) · nearly full, Hermes will merge older ones") : counted
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // At accessibility sizes the count goes above how full it is (`memoryPageAx5`).
+            let stacks = typeSize.isAccessibilitySize
+            let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+            layout {
                 Text(label)
                     .foregroundStyle(Theme.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: stacks ? nil : .infinity, alignment: .leading)
                 Text(nearlyFull ? "\(percent)%" : String(localized: "\(percent)% full"))
                     .foregroundStyle(nearlyFull ? Theme.warning : Theme.tertiaryText)
                     .monospacedDigit()
@@ -49,12 +56,14 @@ struct MemoryMeter: View {
 }
 
 /// One remembered thing (`memoryEntry`, `memoryEntryNew`): the text, "New in this chat", and
-/// its … menu (also on a long press): Edit…, Copy, Forget.
+/// its … menu (also on a long press): Edit…, Copy, Forget….
 struct MemoryEntryRow: View {
     let entry: MemoryEntry
     var isNew = false
     let edit: () -> Void
     let forget: () -> Void
+
+    @ScaledMetric(relativeTo: .subheadline) private var menuSize: CGFloat = 22
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -71,9 +80,9 @@ struct MemoryEntryRow: View {
                 actions
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.tertiaryText)
-                    .frame(width: 22, height: 22)
+                    .frame(width: menuSize, height: menuSize)
                     .contentShape(Rectangle().inset(by: -8))
             }
             .menuStyle(.button)
@@ -96,7 +105,7 @@ struct MemoryEntryRow: View {
         Button("Edit…", systemImage: "pencil", action: edit)
         Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.text) }
         Divider()
-        Button("Forget", systemImage: "trash", role: .destructive, action: forget)
+        Button("Forget…", systemImage: "trash", role: .destructive, action: forget)
     }
 }
 
@@ -107,6 +116,9 @@ struct MemoryPendingRow: View {
     var compact = false
     let save: () -> Void
     let discard: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .subheadline) private var buttonHeight: CGFloat = 36
 
     private var kind: (title: String, symbol: String) {
         switch item.action {
@@ -135,12 +147,15 @@ struct MemoryPendingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            // At accessibility sizes the tag goes above where the save came from (`ipadMemoryAx5`).
+            let stacks = typeSize.isAccessibilitySize
+            let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 6))
+            layout {
                 TagLabel(title: kind.title, symbol: kind.symbol)
                 Text(origin)
                     .font(.caption)
                     .foregroundStyle(Theme.tertiaryText)
-                    .lineLimit(1)
+                    .lineLimit(stacks ? nil : 1)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(spokenAction))
@@ -150,14 +165,14 @@ struct MemoryPendingRow: View {
             HStack(spacing: 8) {
                 Button(action: discard) {
                     Text(item.action == .remove ? String(localized: "Keep") : String(localized: "Discard"))
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity, minHeight: buttonHeight)
                         .background(Theme.controlFill, in: Capsule())
                         .contentShape(Capsule())
                 }
                 .foregroundStyle(Theme.primaryText)
                 Button(action: save) {
                     Text(item.action == .remove ? String(localized: "Forget") : String(localized: "Save"))
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity, minHeight: buttonHeight)
                         .background(Theme.ink, in: Capsule())
                         .contentShape(Capsule())
                 }
@@ -170,66 +185,66 @@ struct MemoryPendingRow: View {
     }
 }
 
-/// About You · Hermes's Notes: a full-width track with a raised pill on the chosen store, and
-/// a count of saves to review on each (`memoryPage` tabs).
+/// About You · Hermes's Notes: the native segmented control, with the count of saves to review
+/// on each store (`memoryPage` tabs). At accessibility sizes the two stack, full width, in the
+/// same track (`memoryPageAx5`): a segmented control can't wrap its titles.
 struct MemoryTabs: View {
     @Binding var selection: MemoryStoreKind
     var badges: [MemoryStoreKind: Int] = [:]
 
-    @Namespace private var pill
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .subheadline) private var height: CGFloat = 32
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(MemoryStoreKind.allCases) { store in
-                tab(store)
+        if typeSize.isAccessibilitySize {
+            tabs(stacked: true)
+        } else {
+            Picker("Memory", selection: $selection) {
+                ForEach(MemoryStoreKind.allCases) { store in
+                    Text(title(store)).tag(store)
+                }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            // A segment's value is whether it's selected, so VoiceOver gets the same tabs as
+            // buttons instead: the store as the label, the count to review as its value. They sit
+            // in one row of equal widths, like the segments, so touching a segment reads that one.
+            .accessibilityRepresentation { tabs(stacked: false) }
         }
-        .padding(3)
-        .background(Theme.surface, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
-        .animation(reduceMotion ? nil : Theme.snappy, value: selection)
-        .accessibilityElement(children: .contain)
     }
 
-    private func tab(_ store: MemoryStoreKind) -> some View {
-        let isSelected = selection == store
+    /// "Hermes's Notes · 2": a segment holds one line of text, so the count rides in it.
+    private func title(_ store: MemoryStoreKind) -> String {
         let badge = badges[store] ?? 0
-        return Button {
-            selection = store
-        } label: {
-            HStack(spacing: 6) {
-                Text(MemoryCopy.storeTitle(store))
-                    .font(.subheadline.weight(isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? Theme.primaryText : Theme.secondaryText)
-                    .lineLimit(1)
-                if badge > 0 {
-                    Text("\(badge)")
-                        .font(.caption2.weight(.bold))
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.inkForeground)
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 18, minHeight: 18)
-                        .background(Theme.ink, in: Capsule())
-                        .accessibilityHidden(true)
+        return badge > 0 ? "\(MemoryCopy.storeTitle(store)) · \(badge)" : MemoryCopy.storeTitle(store)
+    }
+
+    private func tabs(stacked: Bool) -> some View {
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
+        return layout {
+            ForEach(MemoryStoreKind.allCases) { store in
+                let isSelected = selection == store
+                let badge = badges[store] ?? 0
+                Button {
+                    selection = store
+                } label: {
+                    Text(title(store))
+                        .font(.subheadline.weight(isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? Theme.primaryText : Theme.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .background(isSelected ? Palette.segmentSelected : .clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(MemoryCopy.storeTitle(store)))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityValue(badge > 0 ? Text("\(badge) to review") : Text(""))
             }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: height)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(Palette.segmentSelected)
-                        .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-                        .matchedGeometryEffect(id: "pill", in: pill)
-                }
-            }
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityValue(badge > 0 ? Text("\(badge) to review") : Text(""))
+        .padding(2)
+        .background(Theme.controlFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 }
 
@@ -265,7 +280,7 @@ struct MemoryEmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "brain")
-                .font(.system(size: 34, weight: .regular))
+                .font(.largeTitle)
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
             Text(isOff ? String(localized: "Memory is off") : String(localized: "Nothing remembered yet"))
@@ -307,31 +322,45 @@ struct MemoryEmptyState: View {
     }
 }
 
-/// A passing note at the bottom of the page: what a save replaced, a reset.
+/// A passing note at the foot of the page (`memoryNotice`): what a save replaced, a reset. One
+/// layer of Liquid Glass with a checkmark, no stroke or shadow over it. It stays 4 s, a tap
+/// dismisses it, VoiceOver reads it out, and under Reduce Motion it fades in place instead of
+/// rising from the edge.
 struct MemoryToast: ViewModifier {
     @Binding var text: String?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
             if let text {
-                Text(text)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(3)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Theme.sheetCell, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline))
-                    .shadow(color: Theme.shadow, radius: 12, y: 4)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .task(id: text) {
-                        AccessibilityNotification.Announcement(text).post()
-                        try? await Task.sleep(for: .seconds(4))
-                        withAnimation(Theme.snappy) { self.text = nil }
-                    }
-                    .onTapGesture { withAnimation(Theme.snappy) { self.text = nil } }
+                Label {
+                    Text(text)
+                        .foregroundStyle(Theme.primaryText)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.success)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: 420)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .task(id: text) {
+                    AccessibilityNotification.Announcement(text).post()
+                    // A page that closes cancels its copy of a notice it shares with the page
+                    // below (an archived skill), and that page keeps showing it.
+                    guard (try? await Task.sleep(for: .seconds(4))) != nil else { return }
+                    withAnimation(Theme.snappy) { self.text = nil }
+                }
+                .onTapGesture { withAnimation(Theme.snappy) { self.text = nil } }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(Text("Dismisses the notice"))
             }
         }
         .animation(Theme.snappy, value: text)
