@@ -192,6 +192,15 @@ struct HermesCommands: Commands {
         return false
     }
 
+    /// Settings is up in the key window on iPhone or iPad, where ⌘. closes it
+    /// (`docs/setup.md` §3).
+    private var isShowingSettings: Bool {
+        #if os(iOS)
+        if case .settings? = router?.sheet { return true }
+        #endif
+        return false
+    }
+
     /// The open chat was marked unread (⇧⌘U flips it back).
     private var openChatIsUnread: Bool {
         guard let workspace, let key = workspace.unread.openKey else { return false }
@@ -251,6 +260,14 @@ struct HermesCommands: Commands {
 
     var body: some Commands {
         // File (Elyx macMenuFile): New Chat, New Bot…, New Window; Pair a Device…; Close Window.
+        #if os(iOS)
+        // ⌘, opens Settings over the key window (`ipadSettings`); the Mac has its Settings scene.
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { router?.sheet = .settings }
+                .keyboardShortcut(",", modifiers: .command)
+                .disabled(router == nil || router?.sheet != nil)
+        }
+        #endif
         CommandGroup(replacing: .newItem) {
             // On a Board, ⌘N adds a card (`docs/board.md` §2).
             if let board = workspace?.shownBoard {
@@ -316,18 +333,22 @@ struct HermesCommands: Commands {
         // Chat (macMenuChat): the turn, the conversation, then the gateways.
         CommandMenu("Chat") {
             // ⌘. stops the turn; with none running, the process the Terminal shows (after a
-            // confirmation). One command: UIKit refuses two with the same keys.
+            // confirmation); over Settings on iPhone and iPad, it closes Settings. One command:
+            // UIKit refuses two with the same keys.
             let current = workspace?.currentConversation
-            let stopsProcess = current?.isWorking != true && current?.inspector.selectedProcessID != nil
-            Button(stopsProcess ? "Stop Process…" : "Stop Responding") {
-                if stopsProcess {
+            let closesSettings = isShowingSettings
+            let stopsProcess = !closesSettings && current?.isWorking != true && current?.inspector.selectedProcessID != nil
+            Button(closesSettings ? "Close Settings" : stopsProcess ? "Stop Process…" : "Stop Responding") {
+                if closesSettings {
+                    router?.sheet = nil
+                } else if stopsProcess {
                     current?.inspector.confirmingStop = current?.inspector.selectedProcessID
                 } else {
                     current?.stop()
                 }
             }
             .keyboardShortcut(".", modifiers: .command)
-            .disabled(!(current?.isWorking ?? false) && !stopsProcess)
+            .disabled(!closesSettings && !(current?.isWorking ?? false) && !stopsProcess)
 
             Button("Routines…") {
                 guard let workspace, case .bot(let name) = workspace.selection else { return }

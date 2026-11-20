@@ -3,6 +3,7 @@ import HermesPush
 import SwiftUI
 #if os(iOS)
 import ActivityKit
+import LocalAuthentication
 #endif
 
 /// Settings → Notifications (`settingsNotifications`, `settingsNotificationsOff`,
@@ -93,13 +94,13 @@ struct NotificationSettingsView: View {
                 }
                 Toggle(isOn: $push.preferences.liveActivity) {
                     Text("Live Activity")
-                    Text("Progress on the Lock Screen and in the Dynamic Island.")
+                    Text(Self.lockScreen.liveActivity)
                 }
             } header: {
                 Text("Lock Screen")
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("While iPhone is locked, the text waits for Face ID when Show Previews is set to When Unlocked.")
+                    Text(Self.lockScreen.footer)
                     if push.preferences.liveActivity, !ActivityAuthorizationInfo().areActivitiesEnabled {
                         Text("Live Activities are off for Hermes in iOS Settings, so none show.")
                     } else if let error = push.activityError {
@@ -189,6 +190,22 @@ struct NotificationSettingsView: View {
         }
         .padding(.vertical, 4)
     }
+
+    #if os(iOS)
+    /// The Lock Screen section's words for this device: iPad or iPhone, and how it unlocks.
+    private static let lockScreen: LockScreenWording = {
+        let context = LAContext()
+        // biometryType names the hardware even when no face or finger is enrolled, so it counts
+        // only when biometrics can actually unlock this device.
+        let canUseBiometrics = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        let unlock: LockScreenWording.Unlock = switch canUseBiometrics ? context.biometryType : LABiometryType.none {
+        case .faceID: .faceID
+        case .touchID: .touchID
+        default: .passcode
+        }
+        return LockScreenWording(device: UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone, unlock: unlock)
+    }()
+    #endif
 
     static var systemSettingsName: String {
         #if os(macOS)
@@ -383,18 +400,7 @@ struct NotificationsSettingsRow: View {
         NavigationLink {
             NotificationSettingsView()
         } label: {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Notifications")
-                        .foregroundStyle(Theme.primaryText)
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-            } icon: {
-                Image(systemName: "bell")
-                    .foregroundStyle(Theme.primaryText)
-            }
+            SettingsRowLabel(symbol: "bell", title: "Notifications", summary: summary)
         }
     }
 

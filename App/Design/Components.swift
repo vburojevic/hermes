@@ -420,6 +420,23 @@ private struct ProminentGlassButton: ViewModifier {
     }
 }
 
+private struct InkFilledButton: ViewModifier {
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .tint(Theme.ink)
+            #if os(macOS)
+            .foregroundStyle(appearsActive && isEnabled ? Theme.inkForeground : Theme.primaryText)
+            #else
+            .foregroundStyle(Theme.inkForeground)
+            #endif
+    }
+}
+
 extension View {
     /// A quiet Liquid Glass button, only for controls that float over content or media.
     /// `.glass` fills itself with any tint around it while a Mac window is active, so the tint
@@ -444,11 +461,9 @@ extension View {
     }
 
     /// The prominent action inside a glass card: a solid ink capsule (glass on glass would haze).
+    /// An inactive Mac window drops the fill, so the label goes back to the text colour there.
     func inkFilledButton() -> some View {
-        buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .tint(Theme.ink)
-            .foregroundStyle(Theme.inkForeground)
+        modifier(InkFilledButton())
     }
 
     /// The secondary button (Elyx `borderedButton`): a grey capsule with a primary-text label,

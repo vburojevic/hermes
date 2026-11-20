@@ -22,6 +22,19 @@ struct BotConfigurationTests {
         #expect(BotConfiguration.normalizedURL(from: input)?.absoluteString.lowercased() == expected.lowercased())
     }
 
+    /// At the largest text sizes the address wraps in Settings: never inside the port, and never
+    /// with the port alone on a line.
+    @Test func theWrappingAddressKeepsThePortWhole() throws {
+        let bot = BotConfiguration(name: "Studio", baseURL: try #require(URL(string: "http://studio-mac.tail1234.ts.net:8642/p/research")), accent: "gold")
+        let wrapping = bot.wrappingDisplayAddress
+        #expect(wrapping.replacing("\u{200B}", with: "").replacing("\u{2060}", with: "") == bot.displayAddress)
+        #expect(wrapping.contains("net\u{2060}:\u{2060}8\u{2060}6\u{2060}4\u{2060}2"))
+        #expect(wrapping.hasPrefix("studio-\u{200B}mac.\u{200B}tail1234.\u{200B}ts.\u{200B}net"))
+        #expect(wrapping.hasSuffix("\u{200B}/p\u{200B}/research"))
+        let plain = BotConfiguration(name: "Box", baseURL: try #require(URL(string: "https://box.example.com")), accent: "gold")
+        #expect(plain.wrappingDisplayAddress == "box.\u{200B}example.\u{200B}com")
+    }
+
     @Test(arguments: ["", "   ", "ftp://x.y", "not a url", "http://"])
     func rejectsGarbage(_ input: String) {
         #expect(BotConfiguration.normalizedURL(from: input) == nil)
