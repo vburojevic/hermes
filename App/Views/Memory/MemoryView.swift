@@ -533,16 +533,20 @@ struct MemoryNotice: View {
         .background(Theme.warningTint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         // ⌘R already belongs to Reload Conversation, and UIKit refuses two commands with the same
         // keys, so the menu item becomes Try Again rather than the button taking the shortcut.
-        .focusedSceneValue(\.tryAgain, linksBotMode == nil ? tryAgain.map(TryAgainAction.init) : nil)
+        .focusedSceneValue(\.tryAgain, linksBotMode == nil ? tryAgain.map { TryAgainAction(run: $0) } : nil)
     }
 }
 
-/// The Try Again a warning card offers, for the ⌘R menu item.
+/// What ⌘R does in the key window in place of Reload Conversation: a failed read's Try Again, or
+/// Settings → Setup's Check Again on the Mac (`docs/setup.md` §2). The menu item takes its title.
 struct TryAgainAction {
+    var title = String(localized: "Try Again")
+    /// Dimmed while it can't run (Setup's first check), rather than handing ⌘R back to the chat.
+    var isEnabled = true
     let run: () -> Void
 }
 
 extension FocusedValues {
-    /// The key window's Try Again, while a read that failed shows it.
+    /// The key window's Try Again, while a read that failed shows it, or Check Again in Setup.
     @Entry var tryAgain: TryAgainAction?
 }
