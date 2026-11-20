@@ -269,7 +269,13 @@ struct HermesCommands: Commands {
                 Button("New Chat") {
                     guard let workspace else { return }
                     workspace.sidebarMode = .chats
-                    workspace.startNewChat()
+                    // On a project home ⌘N starts the chat in that project, as its New Chat button
+                    // does (`docs/projects.md` §3).
+                    if case .project(let projectID) = workspace.selection {
+                        workspace.startNewChat(inProject: projectID, fromHome: true)
+                    } else {
+                        workspace.startNewChat()
+                    }
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(workspace == nil)

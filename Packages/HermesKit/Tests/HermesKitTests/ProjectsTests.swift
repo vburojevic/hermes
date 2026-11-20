@@ -214,6 +214,16 @@ struct ProjectsTests {
         #expect(RowTime.ofProject(chats: [], chatCount: 0, activity: nil, created: ago(86_400)) == ago(86_400))
     }
 
+    @Test func aProjectWithNoChatsShowsNoTime() {
+        let made = Date(timeIntervalSince1970: 1_760_600_000)
+        // It still sorts by when it was made, but its card says "0 chats" alone.
+        let time = RowTime.ofProject(chats: [], chatCount: 0, activity: nil, created: made)
+        #expect(time == made)
+        #expect(RowTime.shownForProject(time, chatCount: 0) == nil)
+        #expect(RowTime.shownForProject(made, chatCount: 3) == made)
+        #expect(RowTime.shownForProject(nil, chatCount: 3) == nil)
+    }
+
     // MARK: Archiving a chat from a project
 
     private func hermesApp() throws -> ProjectNode {
