@@ -342,11 +342,24 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
   the chat counts a row as visible only once 40% of it shows, so a tall reply read near its top
   would otherwise count as off screen. At the end of the chat, the bar's own height lifts the last
   lines by that much.
-- **Sent:** `> quote` lines, a blank line, then your words (`QuotedReply`, at most 280 characters
-  of quote). Hermes needs nothing new.
-- **Shown:** a leading block quote is drawn as the quote block (`QuotedBlock`), never as ">". This
-  device remembers each quote's author and row by a hash of the quote (`QuoteMemory`); tapping it
-  goes back to the passage. Elsewhere the quote shows without an author.
+- **Several quotes:** each Reply adds a passage to the bar, up to three, in the order they were
+  picked (`QuotedReply.Draft`, `replyQuotes`). The same passage of the same message is added once
+  (it flashes again). Two or three show under "Replying with N quotes", each with its own ✕; on a
+  short iPhone screen the list stops at 120 points and scrolls, and iPhone landscape with the
+  keyboard up shows only the head. With three in the bar, Reply adds nothing and the bar says "You
+  can quote up to 3 passages. Remove one to add another." (`replyQuotesLimit`) until one is
+  removed.
+- **Sent:** each quote as its own `> quote` lines, in order, each followed by a blank line, then
+  your words (`QuotedReply`, at most 280 characters per quote). Quotes go only with words of
+  your own: without them they stay in the bar. Every way a message goes takes the bar's quotes
+  and empties it: Send, and while Hermes works Steer, Redirect, Send Next, Ask Aside and Run in
+  Background, and a queued message edited and sent again ([follow-ups.md](follow-ups.md) §1).
+  Hermes needs nothing new.
+- **Shown:** leading block quotes are drawn as quote blocks (`QuotedBlock`), one per quote, never
+  as ">". Up to three leading block quotes separated by blank lines are read as quotes, so a
+  message whose own words open with a block quote shows it as one more quote block. This device remembers each quote's author and row by a hash of the quote
+  (`QuoteMemory`); tapping one goes back to its passage. Elsewhere the quotes show without an
+  author.
 
 ### Mac
 
@@ -449,6 +462,13 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   the first tap "2 new messages. Jump to the latest.", for one message "1 new message. Jump to
   it.". The count rolls to its new value; with Reduce Motion it just changes.
 - The open chat's activity line is announced at most every 10 s, never the words as they stream.
+- The reply bar's head is a heading ("Replying with 2 quotes"). Each quote reads "Quote from
+  Hermes: the passage", and its ✕ reads "Remove the quote from Hermes: the passage". With two or
+  three each says where it sits, so the same words twice can be told apart: "Quote 2 of 3, from
+  Hermes: the passage" and "Remove quote 2 of 3, from Hermes: the passage". The limit
+  note reads as one line, and a Reply refused for the limit announces it. A sent bubble reads
+  every quote in order, with whose it was when this device knows: "You, quoting Hermes, “the
+  first passage” and “the second”: your words".
 - Never colour alone: needs you has the hand, failed the triangle, muted the slashed bell, unread
   the weight and the count.
 - At the accessibility text sizes on iPhone and iPad the list keeps everything and cuts nothing
@@ -504,6 +524,11 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
 - On the Mac, a sideways scroll to the left on a reply (trackpad, Magic Mouse, a mouse that
   scrolls sideways) quotes it in the composer, and a scroll up or down that starts on a reply
   scrolls the chat.
+- Reply to three messages: the bar says "Replying with 3 quotes"; a fourth Reply shows the limit
+  note, and ✕ on one removes only that one. Sent, the bubble shows the quotes in the order picked,
+  each jumping back to its own passage. While a turn runs ("approve", "slow"), quote and send
+  with each mode: the bar empties every time, and the queued row, the steer bubble, the aside and
+  the background bubble carry the quotes.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
   reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
   compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),

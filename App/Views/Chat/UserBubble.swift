@@ -18,16 +18,23 @@ struct UserBubble: View {
     @Environment(\.references) private var references
     @Environment(\.quoteActions) private var quoteActions
 
-    /// A reply with a quote (`quotedBubble`): the passage, drawn as a block, never as ">".
+    /// A reply with quotes (`quotedBubble`, `quotedBubbleTwo`): each passage drawn as its own
+    /// block, in order, never as ">".
     private var quoted: QuotedReply? {
         QuotedReply.parse(entry.parts?.body ?? entry.text)
+    }
+
+    /// Every quote, in order, with whose it was when this device remembers.
+    private func spokenQuotes(_ quoted: QuotedReply) -> String {
+        quoted.spokenQuotes { QuoteMemory.source(of: $0, chat: quoteActions.chat)?.author }
+            .formatted(.list(type: .and))
     }
 
     /// What the message is made of: kept from when this app sent it, or read from text that
     /// came from elsewhere (leading `/skill`s, known `@handles`, `@file:` paths).
     private var parts: MessageParts {
         var parts = wholeParts
-        // The quote is drawn above; the bubble's words are what came after it.
+        // The quotes are drawn above; the bubble's words are what came after them.
         if let quoted, parts.body.hasSuffix(quoted.message) {
             let cut = parts.body.utf16.count - quoted.message.utf16.count
             parts.body = quoted.message
@@ -105,9 +112,10 @@ struct UserBubble: View {
             } else if hasText || !parts.skills.isEmpty || !entry.fileNames.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     if let quoted {
-                        let source = QuoteMemory.source(of: quoted.quote, chat: quoteActions.chat)
-                        QuotedBlock(quote: quoted.quote, author: source?.author, onTap: source.map { source in { quoteActions.jump(source.rowID) } })
-                            .padding(.horizontal, -6)
+                        ForEach(Array(quoted.quotes.enumerated()), id: \.offset) { _, quote in
+                            QuotedBlock(quote: quote, chat: quoteActions.chat) { quoteActions.jump($0) }
+                                .padding(.horizontal, -6)
+                        }
                     }
                     if !parts.skills.isEmpty || !entry.fileNames.isEmpty {
                         // Skills, then files (`richBubble`): they apply to the whole message.
@@ -181,7 +189,7 @@ struct UserBubble: View {
         .modifier(MessageAccessibility(
             // A voice message speaks for itself: its length, its transcript, play and scrub.
             isVoice: entry.voicePath != nil,
-            label: quoted.map { Text("You, quoting “\(LastLine.flatten($0.quote))”: \(spokenText)") } ?? Text("You: \(spokenText)"),
+            label: quoted.map { Text("You, quoting \(spokenQuotes($0)): \(spokenText)") } ?? Text("You: \(spokenText)"),
             hint: entry.fileNames.isEmpty ? Text(verbatim: "") : Text("With \(entry.fileNames.formatted(.list(type: .and)))")
         ))
         // Where VoiceOver lands when reading back brings this message in (`docs/chat.md` §1).

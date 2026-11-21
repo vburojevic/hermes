@@ -1,24 +1,46 @@
 import Foundation
 
-/// A reply with a quote (`replyBar`, `quotedBubble`, `docs/inbox.md` §4): the passage as a
-/// Markdown block quote before the person's words. Hermes needs nothing new to read it; the app
-/// draws the quote as a block in the bubble, never as a raw ">".
+/// A reply with quotes (`replyBar`, `replyQuotes`, `quotedBubble`, `docs/inbox.md` §4): each
+/// passage as its own Markdown block quote, in the order they were picked, before the person's
+/// words. Hermes needs nothing new to read it; the app draws each quote as a block in the bubble,
+/// never as a raw ">".
 public struct QuotedReply: Hashable, Sendable {
-    public var quote: String
+    public var quotes: [String]
     public var message: String
 
-    public init(quote: String, message: String) {
-        self.quote = quote
+    public init(quotes: [String], message: String) {
+        self.quotes = quotes
         self.message = message
     }
+
+    public init(quote: String, message: String) {
+        self.init(quotes: [quote], message: message)
+    }
+
+    /// The first passage quoted.
+    public var quote: String { quotes.first ?? "" }
 
     /// The longest quote sent: a passage, not the whole reply.
     public static let maxQuote = 280
 
-    /// `> Two options: back off and retry…\n\nBack off and retry, up to 5 seconds.`
+    /// The most passages one reply quotes (`replyQuotesThree`).
+    public static let maxQuotes = 3
+
+    /// `> Two options: back off and retry…\n\n> After sleep…\n\nBack off and retry.`
     public var text: String {
-        let lines = Self.trimmed(quote).split(separator: "\n", omittingEmptySubsequences: false)
-        return lines.map { "> " + $0 }.joined(separator: "\n") + "\n\n" + message
+        let blocks = quotes.map { quote in
+            Self.trimmed(quote).split(separator: "\n", omittingEmptySubsequences: false).map { "> " + $0 }.joined(separator: "\n")
+        }
+        return (blocks + [message]).joined(separator: "\n\n")
+    }
+
+    /// What VoiceOver reads for each quote of a sent reply, in order: the passage on one line,
+    /// after whose it was when this device knows (`Hermes, “the passage”`).
+    public func spokenQuotes(author: (String) -> String?) -> [String] {
+        quotes.map { quote in
+            let words = "“\(LastLine.flatten(quote))”"
+            return author(quote).map { "\($0), \(words)" } ?? words
+        }
     }
 
     /// The quote sent for a passage: whitespace tidied, at most `maxQuote` characters, cut at a
@@ -32,22 +54,34 @@ public struct QuotedReply: Hashable, Sendable {
         return String(cut[..<end]) + "…"
     }
 
-    /// A message that starts with a block quote followed by words of its own; nil otherwise.
+    /// A message that starts with block quotes followed by words of its own; nil otherwise. Each
+    /// run of ">" lines is one quote, and blank lines separate one quote from the next, up to
+    /// `maxQuotes`: anything after that is the message.
     public static func parse(_ text: String) -> QuotedReply? {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         guard let first = lines.first, first.hasPrefix(">") else { return nil }
-        var quote: [String] = []
+        var quotes: [String] = []
         var index = 0
-        while index < lines.count, lines[index].hasPrefix(">") {
-            var line = lines[index].dropFirst()
-            if line.first == " " { line = line.dropFirst() }
-            quote.append(String(line))
-            index += 1
+        while index < lines.count, quotes.count < maxQuotes {
+            var quote: [String] = []
+            while index < lines.count, lines[index].hasPrefix(">") {
+                var line = lines[index].dropFirst()
+                if line.first == " " { line = line.dropFirst() }
+                quote.append(String(line))
+                index += 1
+            }
+            let joined = quote.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !joined.isEmpty else { return nil }
+            quotes.append(joined)
+            // Another quote only after blank lines; anything else starts the message.
+            var next = index
+            while next < lines.count, lines[next].trimmingCharacters(in: .whitespaces).isEmpty { next += 1 }
+            guard quotes.count < maxQuotes, next < lines.count, lines[next].hasPrefix(">") else { break }
+            index = next
         }
         let message = lines[index...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        let joined = quote.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !joined.isEmpty, !message.isEmpty else { return nil }
-        return QuotedReply(quote: joined, message: message)
+        guard !message.isEmpty else { return nil }
+        return QuotedReply(quotes: quotes, message: message)
     }
 
     /// A short stable key for a quote, so this device can remember where it came from without
@@ -59,6 +93,127 @@ public struct QuotedReply: Hashable, Sendable {
             hash = hash &* 0x100_0000_01b3
         }
         return String(hash, radix: 36)
+    }
+}
+
+extension QuotedReply {
+    /// One passage in the composer's reply bar: who said it and the row it is in.
+    public struct Passage: Hashable, Sendable, Identifiable {
+        public var author: String
+        /// Trimmed with `trimmed(_:)`.
+        public var quote: String
+        /// The transcript row the passage is in; empty when it isn't known (a queued message
+        /// opened to edit, quoting a row this device never saw).
+        public var rowID: String
+
+        public init(author: String, quote: String, rowID: String) {
+            self.author = author
+            self.quote = QuotedReply.trimmed(quote)
+            self.rowID = rowID
+        }
+
+        /// The same passage of the same row is one quote, whatever the bar shows of it.
+        public var id: String { rowID + "|" + QuotedReply.key(quote) }
+    }
+
+    /// The passages a message will quote, in the order they were picked (`replyQuotes`,
+    /// `docs/inbox.md` §4): Reply adds one, each removes on its own, and Send puts them in front
+    /// of the message, whichever way it goes (`docs/follow-ups.md` §1).
+    public struct Draft: Equatable, Sendable {
+        public private(set) var passages: [Passage]
+        /// Reply was chosen with the bar full: the bar says so until a quote goes or the message
+        /// does (`replyQuotesLimit`).
+        public private(set) var showsLimit = false
+
+        public init(_ passages: [Passage] = []) {
+            self.passages = Array(passages.filter { !$0.quote.isEmpty }.prefix(QuotedReply.maxQuotes))
+        }
+
+        /// What Reply did.
+        public enum Outcome: Equatable, Sendable {
+            case added
+            /// Only spaces and line breaks: nothing to quote.
+            case empty
+            /// That passage of that row is already in the bar.
+            case alreadyQuoted
+            /// The bar holds `maxQuotes`: nothing is added, and the bar says why.
+            case full
+        }
+
+        /// What the bar says when it is full and Reply is chosen again; VoiceOver reads it out.
+        public static var limitNote: String {
+            String(localized: "You can quote up to \(QuotedReply.maxQuotes) passages. Remove one to add another.")
+        }
+
+        public var isEmpty: Bool { passages.isEmpty }
+        public var count: Int { passages.count }
+        public var isFull: Bool { passages.count >= QuotedReply.maxQuotes }
+
+        /// Where a passage sits in the bar, counting from 1, so VoiceOver can tell two quotes
+        /// of the same words apart ("quote 2 of 3"). Nil when the bar holds only that one.
+        public func position(of id: Passage.ID) -> Int? {
+            guard passages.count > 1, let index = passages.firstIndex(where: { $0.id == id }) else { return nil }
+            return index + 1
+        }
+
+        @discardableResult
+        public mutating func add(author: String, quote: String, rowID: String) -> Outcome {
+            let passage = Passage(author: author, quote: quote, rowID: rowID)
+            guard !passage.quote.isEmpty else { return .empty }
+            guard !passages.contains(where: { $0.id == passage.id }) else { return .alreadyQuoted }
+            guard !isFull else {
+                showsLimit = true
+                return .full
+            }
+            passages.append(passage)
+            return .added
+        }
+
+        public mutating func remove(_ id: Passage.ID) {
+            passages.removeAll { $0.id == id }
+            showsLimit = false
+        }
+
+        public mutating func removeAll() {
+            passages = []
+            showsLimit = false
+        }
+
+        /// This bar's quotes first, then `other`'s that aren't in it yet, while there is room:
+        /// a draft set aside to edit a queued message comes back without pushing out quotes that
+        /// message left in the bar.
+        public func merging(_ other: Draft) -> Draft {
+            var merged = Draft(passages)
+            for passage in other.passages where !merged.isFull {
+                merged.add(author: passage.author, quote: passage.quote, rowID: passage.rowID)
+            }
+            return merged
+        }
+
+        /// The message with the quotes in front, each its own block quote, and how far the
+        /// message's own words moved (UTF-16), so its references can follow them. Nil with no
+        /// quotes, or with no words of its own: a message is never only quotes.
+        public func compose(_ message: String) -> (text: String, shift: Int)? {
+            guard !passages.isEmpty, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let text = QuotedReply(quotes: passages.map(\.quote), message: message).text
+            return (text, text.utf16.count - message.utf16.count)
+        }
+
+        /// A message opened to edit again, such as a queued follow-up: its quotes go back in the
+        /// bar, each with the author and row this device remembers for it (`source`), and its own
+        /// words go back in the composer. A message without quotes opens as it is.
+        public static func opening(
+            _ text: String,
+            fallbackAuthor: String,
+            source: (String) -> (author: String, rowID: String)?
+        ) -> (draft: Draft, message: String) {
+            guard let reply = QuotedReply.parse(text) else { return (Draft(), text) }
+            let passages = reply.quotes.map { quote in
+                let known = source(quote)
+                return Passage(author: known?.author ?? fallbackAuthor, quote: quote, rowID: known?.rowID ?? "")
+            }
+            return (Draft(passages), reply.message)
+        }
     }
 }
 

@@ -200,9 +200,10 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var sendOnLoad: String?
     /// Editing an earlier message (`composerEditing`): sending branches from just before it.
     var editing: UserEntry?
-    /// Reply with a quote (`replyBar`, `docs/inbox.md` §4): the passage and who said it, until
-    /// the message goes or the bar is closed.
-    var replyingTo: ReplyTarget?
+    /// Reply with quotes (`replyBar`, `replyQuotes`, `docs/inbox.md` §4): up to three passages and
+    /// who said each, until the message goes, by any Send (`docs/follow-ups.md` §1), or each is
+    /// removed.
+    var replyingTo = QuotedReply.Draft()
     #if os(macOS)
     /// Words selected in one of this chat's finished replies, for Reply beside them and Chat →
     /// Reply to Selection (`docs/inbox.md` §4).
@@ -211,13 +212,6 @@ final class ConversationModel: Identifiable {
     /// A row to flash in the transcript (the passage just quoted, or a quote's source): bumped
     /// each time.
     private(set) var flashRequest: FlashRequest?
-
-    struct ReplyTarget: Equatable {
-        var author: String
-        var quote: String
-        /// The transcript row the passage is in.
-        var rowID: String
-    }
 
     struct FlashRequest: Equatable {
         var rowID: String
@@ -467,7 +461,7 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var expectedFromGateway: [(text: String, caption: FollowUpCaption)] = []
     @ObservationIgnored private var carryOverTimeout: Task<Void, Never>?
     /// The draft set aside while a queued message is edited in the field.
-    @ObservationIgnored private var stashedDraft: (text: String, references: [MessageReference])?
+    @ObservationIgnored private var stashedDraft: (text: String, references: [MessageReference], quotes: QuotedReply.Draft)?
 
     /// Side answers (Ask Aside), shown apart from the turn and not part of the history.
     private(set) var asides: [Aside] = []
@@ -2047,13 +2041,60 @@ final class ConversationModel: Identifiable {
 
     // MARK: - Sending
 
-    /// Reply (swipe, menu, or chosen words): the bar goes in the composer and the passage
-    /// flashes for a moment where it is (`chatReplyQuote`).
+    /// Reply (swipe, menu, or chosen words): the passage joins the bar in the composer and
+    /// flashes for a moment where it is (`chatReplyQuote`). With three already there, nothing is
+    /// added and the bar says why (`replyQuotesLimit`).
     func reply(to rowID: String, author: String, passage: String) {
-        let quote = QuotedReply.trimmed(passage)
-        guard !quote.isEmpty else { return }
-        replyingTo = ReplyTarget(author: author, quote: quote, rowID: rowID)
-        flash(rowID, why: .quoted)
+        switch replyingTo.add(author: author, quote: passage, rowID: rowID) {
+        case .added, .alreadyQuoted: flash(rowID, why: .quoted)
+        case .full: AccessibilityNotification.Announcement(QuotedReply.Draft.limitNote).post()
+        case .empty: break
+        }
+    }
+
+    /// A quote's ✕ in the bar.
+    func removeQuote(_ id: QuotedReply.Passage.ID) {
+        replyingTo.remove(id)
+    }
+
+    /// Puts the bar's quotes in front of the message's own words, each its own block quote, and
+    /// empties the bar. Every way a message goes uses it (Send, Steer, Redirect, Send Next, Ask
+    /// Aside, Run in Background, a queued message edited), so no Send leaves its quotes behind
+    /// (`docs/follow-ups.md` §1). This device remembers where each came from, so the bubble can
+    /// say whose it was and jump back to it. A message with no words of its own keeps them in
+    /// the bar.
+    private func applyQuotes(to parts: inout MessageParts) {
+        guard let composed = replyingTo.compose(parts.body) else { return }
+        parts.references = parts.references.map { var moved = $0; moved.location += composed.shift; return moved }
+        parts.body = composed.text
+        if let chat = inboxKey {
+            for passage in replyingTo.passages {
+                QuoteMemory.remember(passage.quote, author: passage.author, rowID: passage.rowID, chat: chat)
+            }
+        }
+        replyingTo.removeAll()
+    }
+
+    /// A message that didn't go (an aside or a background task refused) comes back as it was:
+    /// its quotes in the bar, its words in the field. Quotes already in the bar stay; the
+    /// returning ones join them.
+    private func restoreUnsent(_ text: String) {
+        guard draft.isEmpty else { return }
+        let opened = openQuoted(text)
+        draft = opened.message
+        for passage in opened.draft.passages {
+            replyingTo.add(author: passage.author, quote: passage.quote, rowID: passage.rowID)
+        }
+    }
+
+    /// A message's quotes, each with the author and row this device remembers for it, and its
+    /// own words: to edit it again, or to show its quotes in the queue.
+    func openQuoted(_ text: String) -> (draft: QuotedReply.Draft, message: String) {
+        let chat = inboxKey
+        let fallback = botName.flatMap { botTitle($0) } ?? "Hermes"
+        return QuotedReply.Draft.opening(text, fallbackAuthor: fallback) { quote in
+            QuoteMemory.source(of: quote, chat: chat).map { (author: $0.author, rowID: $0.rowID) }
+        }
     }
 
     /// Flashes a row (a quote's source, or the passage just quoted).
@@ -2122,18 +2163,7 @@ final class ConversationModel: Identifiable {
             return
         }
         addTypedReferences(to: &parts)
-        if let target = replyingTo {
-            // The passage goes first, as a block quote (`QuotedReply`); this device remembers
-            // where it came from so the bubble can say whose it was and jump back to it.
-            let reply = QuotedReply(quote: QuotedReply.trimmed(target.quote), message: parts.body)
-            let shift = reply.text.utf16.count - parts.body.utf16.count
-            parts.references = parts.references.map { var moved = $0; moved.location += shift; return moved }
-            parts.body = reply.text
-            if let chat = stableKey ?? botName.map(UnreadStore.botKey) {
-                QuoteMemory.remember(reply.quote, author: target.author, rowID: target.rowID, chat: chat)
-            }
-            replyingTo = nil
-        }
+        applyQuotes(to: &parts)
         let images = attachments
         let documents = files
         draft = ""
@@ -2937,6 +2967,9 @@ final class ConversationModel: Identifiable {
         let images = attachments
         let documents = files
         guard !parts.body.isEmpty || !images.isEmpty || !documents.isEmpty else { return }
+        // The quotes go with it whichever way it goes; Steer and Redirect take text, so they
+        // carry them as block quotes in front of the words.
+        applyQuotes(to: &parts)
         var picked = mode.flatMap { availableFollowUpModes.contains($0) ? $0 : nil } ?? followUpMode
         if !isWorking { picked = .sendNext } // only a queued message being edited gets here idle
         // The message before it hasn't reached Hermes yet: there's no turn to steer, so it's next.
@@ -3273,7 +3306,7 @@ final class ConversationModel: Identifiable {
                 asides.append(Aside(id: id, question: text, answer: nil))
             } catch {
                 banner = HermesError.botMode(error)
-                if draft.isEmpty { draft = text }
+                restoreUnsent(text)
             }
         }
     }
@@ -3298,7 +3331,7 @@ final class ConversationModel: Identifiable {
             } catch {
                 followUps.removeAll { $0.id == record.id }
                 banner = HermesError.botMode(error)
-                if draft.isEmpty { draft = prompt }
+                restoreUnsent(prompt)
             }
         }
     }
@@ -3484,12 +3517,17 @@ final class ConversationModel: Identifiable {
     func editQueued(_ item: QueuedFollowUp) {
         if editingQueued != nil { cancelEditingQueued() }
         guard let index = queue.firstIndex(where: { $0.id == item.id }) else { return }
-        if hasDraftText { stashedDraft = (draft, draftReferences) }
+        if hasDraftText || !replyingTo.isEmpty { stashedDraft = (draft, draftReferences, replyingTo) }
         queue.remove(at: index)
         editingQueued = EditingQueued(original: item, index: index)
         draftCommand = nil
-        draft = item.text
-        draftReferences = MessageParts.valid(item.parts?.references ?? [], in: item.text)
+        // Its quotes go back in the bar and its own words in the field; Send puts them together
+        // again.
+        let opened = openQuoted(item.text)
+        let shift = item.text.utf16.count - opened.message.utf16.count
+        replyingTo = opened.draft
+        draft = opened.message
+        draftReferences = MessageParts.valid((item.parts?.references ?? []).map { var moved = $0; moved.location -= shift; return moved }, in: opened.message)
         attachments = item.images
         files = item.files
         skills = item.skills
@@ -3502,17 +3540,21 @@ final class ConversationModel: Identifiable {
         queue.insert(editing.original, at: min(editing.index, queue.count))
         draft = ""
         draftReferences = []
+        replyingTo.removeAll()
         attachments = []
         files = []
         skills = []
         restoreStashedDraft()
     }
 
+    /// The draft set aside by `editQueued` comes back. Quotes still in the bar stay first: an
+    /// edited message sent without words of its own leaves its quotes there.
     private func restoreStashedDraft() {
         guard let stashed = stashedDraft else { return }
         stashedDraft = nil
         draft = stashed.text
         draftReferences = MessageParts.valid(stashed.references, in: stashed.text)
+        replyingTo = replyingTo.merging(stashed.quotes)
     }
 
     /// Sends the last user message again after a failed turn, images included.
@@ -6047,7 +6089,7 @@ extension ConversationModel {
     /// Sends what's in the composer as the answer to `typedAnswerRequest`, the way the card's own
     /// field does. Pictures, files, commands and replies to a passage go as messages instead.
     private func sendTypedAnswer() -> Bool {
-        guard let request = typedAnswerRequest, attachments.isEmpty, files.isEmpty, replyingTo == nil,
+        guard let request = typedAnswerRequest, attachments.isEmpty, files.isEmpty, replyingTo.isEmpty,
               !draft.trimmingCharacters(in: .whitespaces).hasPrefix("/"),
               let result = RequestDock.typedAnswer(draft, to: request) else { return false }
         let said = draft.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -25,6 +25,7 @@ struct ComposerView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     #endif
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var showsPhotoPicker = false
@@ -298,7 +299,7 @@ struct ComposerView: View {
         .onChange(of: conversation.editingQueued?.original.id) { _, id in
             if id != nil { focused.wrappedValue = true }
         }
-        .onChange(of: conversation.replyingTo?.rowID) { _, id in
+        .onChange(of: conversation.replyingTo.passages.last?.id) { _, id in
             if id != nil { focused.wrappedValue = true }
         }
         #if os(macOS)
@@ -372,12 +373,18 @@ struct ComposerView: View {
                 .padding(.top, 10)
                 .transition(Self.rowAppears)
             }
-            if let target = conversation.replyingTo {
-                // Reply with a quote (`replyBar`, `docs/inbox.md` §4).
-                ReplyBar(author: target.author, quote: target.quote) { conversation.replyingTo = nil }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .transition(Self.rowAppears)
+            if !conversation.replyingTo.isEmpty {
+                // Reply with quotes (`replyBar`, `replyQuotes`, `docs/inbox.md` §4).
+                ReplyBar(
+                    draft: conversation.replyingTo,
+                    capped: quotesCapped,
+                    collapsed: quotesCollapsed,
+                    onExpand: { focused.wrappedValue = false },
+                    onRemove: { conversation.removeQuote($0) }
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .transition(Self.rowAppears)
             }
             if conversation.editing != nil {
                 ComposerStrip(symbol: "pencil", text: String(localized: "Editing · goes in a new chat; this one stays"), closeLabel: "Stop editing") {
@@ -511,6 +518,26 @@ struct ComposerView: View {
         .contentShape(RoundedRectangle(cornerRadius: sizing.cornerRadius, style: .continuous))
         .onTapGesture { if !recorder.isActive { focused.wrappedValue = true } }
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { panelWidth = $0 }
+    }
+
+    /// Short on room for the reply bar's quotes (`replyQuotesCapped`): an iPhone with the keyboard
+    /// up or the largest text sizes. The list stops at 120 pt and scrolls, so the field stays on
+    /// screen. The iPad's and the Mac's composers have room for all three.
+    private var quotesCapped: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact && (focused.wrappedValue || dynamicTypeSize.isAccessibilitySize)
+        #else
+        false
+        #endif
+    }
+
+    /// iPhone landscape with the keyboard up (`replyQuotesCollapsed`): only the bar's head shows.
+    private var quotesCollapsed: Bool {
+        #if os(iOS)
+        verticalSizeClass == .compact && focused.wrappedValue
+        #else
+        false
+        #endif
     }
 
     /// The buttons, chips and corners at this text size; the Mac keeps Large's.

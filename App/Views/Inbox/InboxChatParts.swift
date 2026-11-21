@@ -144,39 +144,194 @@ struct BotThinkingLine: View {
     }
 }
 
-/// Replying to a passage (`replyBar`): whose it is, the quote, and ✕. Sits in the composer.
+/// The passages a reply quotes, in the composer (`docs/inbox.md` §4). One quote is the
+/// `replyBar`: whose it is, the passage and ✕. Two or three are `replyQuotes`: a head that counts
+/// them, then one row each with its own ✕ (`replyQuote`), and the note when Reply found the bar
+/// full (`replyQuotesLimit`). Short on room, the list stops at 120 pt and scrolls
+/// (`replyQuotesCapped`); with the keyboard up in iPhone landscape only the head shows, and a tap
+/// on it hides the keyboard (`replyQuotesCollapsed`).
 struct ReplyBar: View {
-    let author: String
-    let quote: String
-    let onClose: () -> Void
+    let draft: QuotedReply.Draft
+    var capped = false
+    var collapsed = false
+    var onExpand: () -> Void = {}
+    let onRemove: (QuotedReply.Passage.ID) -> Void
+
+    /// The tallest the list gets when it is capped.
+    static let cap: CGFloat = 120
+
+    @State private var listHeight: CGFloat = 0
 
     var body: some View {
+        if draft.count == 1, let passage = draft.passages.first, !draft.showsLimit {
+            single(passage)
+        } else {
+            several
+        }
+    }
+
+    private func single(_ passage: QuotedReply.Passage) -> some View {
         HStack(spacing: 10) {
             Capsule()
                 .fill(Theme.ink)
                 .frame(width: 3, height: 34)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Replying to \(author)")
+                Text("Replying to \(passage.author)")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.primaryText)
-                Text(LastLine.flatten(quote))
+                Text(LastLine.flatten(passage.quote))
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
             }
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.secondaryText)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop replying")
+            closeButton(label: Text("Stop replying")) { onRemove(passage.id) }
         }
         .padding(.leading, 6)
         .accessibilityElement(children: .contain)
+    }
+
+    private var several: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            head
+            if !collapsed {
+                list
+                if draft.showsLimit { limit }
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, collapsed ? 6 : (overflows ? 10 : 2))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var head: some View {
+        HStack(spacing: 6) {
+            Text("Replying with \(draft.count) quotes")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if collapsed {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { if collapsed { onExpand() } }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(collapsed ? [.isHeader, .isButton] : .isHeader)
+        .accessibilityHint(collapsed ? Text("Hides the keyboard to show the quotes") : Text(""))
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(draft.passages) { passage in
+                row(passage)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+    }
+
+    /// Whether the capped list is taller than its cap, so it scrolls and its cut row fades.
+    private var overflows: Bool { capped && listHeight > Self.cap }
+
+    @ViewBuilder
+    private var list: some View {
+        if capped {
+            ScrollView {
+                rows
+            }
+            .frame(height: min(max(listHeight, 1), Self.cap))
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(overflows ? .visible : .hidden)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black
+                    if overflows {
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 24)
+                    }
+                }
+            }
+        } else {
+            rows
+        }
+    }
+
+    private func row(_ passage: QuotedReply.Passage) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Capsule()
+                .fill(Theme.ink)
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(passage.author)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
+                Text(LastLine.flatten(passage.quote))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(quoteLabel(passage))
+            closeButton(label: removeLabel(passage)) {
+                onRemove(passage.id)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, 6)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+    }
+
+    /// With several quotes each says where it sits, so two of the same words can be told apart.
+    private func quoteLabel(_ passage: QuotedReply.Passage) -> Text {
+        let words = LastLine.flatten(passage.quote)
+        guard let position = draft.position(of: passage.id) else {
+            return Text("Quote from \(passage.author): \(words)")
+        }
+        return Text("Quote \(position) of \(draft.count), from \(passage.author): \(words)")
+    }
+
+    private func removeLabel(_ passage: QuotedReply.Passage) -> Text {
+        let words = LastLine.flatten(passage.quote)
+        guard let position = draft.position(of: passage.id) else {
+            return Text("Remove the quote from \(passage.author): \(words)")
+        }
+        return Text("Remove quote \(position) of \(draft.count), from \(passage.author): \(words)")
+    }
+
+    private var limit: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.secondaryText)
+            Text(QuotedReply.Draft.limitNote)
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        // One element with the note's words, so VoiceOver doesn't read the glyph as "Info".
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(QuotedReply.Draft.limitNote))
+    }
+
+    private func closeButton(label: Text, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -186,6 +341,25 @@ struct QuotedBlock: View {
     let quote: String
     var author: String?
     var onTap: (() -> Void)?
+    /// A veil of the canvas on a bubble; the surface on a card that is the canvas itself
+    /// (`asideCardQuoted`).
+    var fill: Color
+
+    /// A sent quote: whose it was and the row it links back to, as this device remembers them
+    /// for the chat. One it doesn't remember shows only the words.
+    init(quote: String, chat: String?, fill: Color = Theme.canvas.opacity(0.7), jump: @escaping (String) -> Void) {
+        let source = QuoteMemory.source(of: quote, chat: chat)
+        self.init(quote: quote, author: source?.author, fill: fill, onTap: source.flatMap { source in
+            source.rowID.isEmpty ? nil : { jump(source.rowID) }
+        })
+    }
+
+    init(quote: String, author: String? = nil, fill: Color = Theme.canvas.opacity(0.7), onTap: (() -> Void)? = nil) {
+        self.quote = quote
+        self.author = author
+        self.fill = fill
+        self.onTap = onTap
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -210,7 +384,7 @@ struct QuotedBlock: View {
         .padding(.vertical, 6)
         .padding(.leading, 8)
         .padding(.trailing, 10)
-        .background(Theme.canvas.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
         .accessibilityElement(children: .ignore)

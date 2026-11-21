@@ -651,7 +651,11 @@ struct AsideCard: View {
     let aside: ConversationModel.Aside
     let dismiss: () -> Void
 
+    @Environment(\.quoteActions) private var quoteActions
+
     var body: some View {
+        // Asked with quotes (`asideCardQuoted`): each quote above the question it was asked with.
+        let quoted = QuotedReply.parse(aside.question)
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 TagLabel(title: String(localized: "Aside"), symbol: "questionmark.bubble")
@@ -667,7 +671,12 @@ struct AsideCard: View {
                 .padding(-8)
                 .accessibilityLabel("Dismiss")
             }
-            Text(aside.question)
+            if let quoted {
+                ForEach(Array(quoted.quotes.enumerated()), id: \.offset) { _, quote in
+                    QuotedBlock(quote: quote, chat: quoteActions.chat, fill: Theme.surface) { quoteActions.jump($0) }
+                }
+            }
+            Text(quoted?.message ?? aside.question)
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryText)
             if let answer = aside.answer {
@@ -773,6 +782,10 @@ struct BackgroundCard: View {
         return MarkdownDocument(parsing: line).spokenScript(detail: .skip).text
     }
 
+    /// Asked with quotes: the person's own words, with each quote above them in the answer.
+    private var quoted: QuotedReply? { QuotedReply.parse(prompt) }
+    private var message: String { quoted?.message ?? prompt }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.circle.fill")
@@ -784,7 +797,7 @@ struct BackgroundCard: View {
                 Text("Finished in the background")
                     .font(.headline)
                     .foregroundStyle(Theme.primaryText)
-                Text(summary.isEmpty ? prompt : summary)
+                Text(summary.isEmpty ? message : summary)
                     .font(.subheadline)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(2)
@@ -801,8 +814,13 @@ struct BackgroundCard: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        if !prompt.isEmpty {
-                            Text(prompt)
+                        if let quoted {
+                            ForEach(Array(quoted.quotes.enumerated()), id: \.offset) { _, quote in
+                                QuotedBlock(quote: quote, author: nil, fill: Theme.surface)
+                            }
+                        }
+                        if !message.isEmpty {
+                            Text(message)
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.secondaryText)
                         }

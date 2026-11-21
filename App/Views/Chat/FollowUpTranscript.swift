@@ -5,37 +5,51 @@ import SwiftUI
 // captioned bubbles, the redirect mark, a missed steer, a background run.
 
 /// The person's message with a line above it saying how it was sent and what happened to it
-/// (`followUpBubble*`). Dashed while a steer is still unread.
+/// (`followUpBubble*`). Dashed while a steer is still unread. A message sent with quotes draws
+/// each one as its own block above its words, linking back to its passage
+/// (`followUpBubbleQuoted`, `docs/follow-ups.md` §1).
 struct FollowUpBubble: View {
     let text: String
     let caption: FollowUpBubbleCaption
     var isPending = false
 
+    @Environment(\.quoteActions) private var quoteActions
+
     var body: some View {
+        let quoted = QuotedReply.parse(text)
+        let message = quoted?.message ?? text
         VStack(alignment: .trailing, spacing: 4) {
             FollowUpCaptionLine(caption: caption)
-            Text(text)
-                .font(Theme.Typography.message)
-                .lineSpacing(Theme.Typography.messageLineSpacing)
-                .foregroundStyle(Theme.primaryText)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous)
-                        .strokeBorder(Theme.placeholderText, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .opacity(isPending ? 1 : 0)
+            VStack(alignment: .leading, spacing: 6) {
+                if let quoted {
+                    ForEach(Array(quoted.quotes.enumerated()), id: \.offset) { _, quote in
+                        QuotedBlock(quote: quote, chat: quoteActions.chat) { quoteActions.jump($0) }
+                    }
                 }
-                .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(text) }
-                }
+                Text(message)
+                    .font(Theme.Typography.message)
+                    .lineSpacing(Theme.Typography.messageLineSpacing)
+                    .foregroundStyle(Theme.primaryText)
+                    .accessibilityLabel(Text(verbatim: "\(caption.spoken): \(message)"))
+            }
+            .padding(quoted == nil ? EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16) : EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 14))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous)
+                    .strokeBorder(Theme.placeholderText, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .opacity(isPending ? 1 : 0)
+            }
+            .contextMenu {
+                Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(text) }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 56)
         .animation(.smooth(duration: 0.32), value: isPending)
         .animation(.smooth(duration: 0.32), value: caption)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(caption.spoken): \(text)"))
+        // One element read as "Steer, read: …"; with quotes, each quote is its own element that
+        // goes back to its passage, then the message.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -124,6 +138,8 @@ struct SteerMissedCard: View {
     let onDiscard: () -> Void
     let onSend: () -> Void
 
+    @Environment(\.quoteActions) private var quoteActions
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -134,7 +150,12 @@ struct SteerMissedCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .foregroundStyle(Theme.secondaryText)
-            Text("“\(text)”")
+            if let quoted = QuotedReply.parse(text) {
+                ForEach(Array(quoted.quotes.enumerated()), id: \.offset) { _, quote in
+                    QuotedBlock(quote: quote, chat: quoteActions.chat) { quoteActions.jump($0) }
+                }
+            }
+            Text("“\(QuotedReply.parse(text)?.message ?? text)”")
                 .font(.subheadline)
                 .foregroundStyle(Theme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -180,7 +201,8 @@ struct BackgroundStartedLine: View {
     let prompt: String
 
     var body: some View {
-        ShimmerText(text: String(localized: "Working in the background: \(Self.lowercasedFirst(prompt))"), font: .footnote, tone: .row)
+        // The person's own words, without the quotes they went with.
+        ShimmerText(text: String(localized: "Working in the background: \(Self.lowercasedFirst(QuotedReply.parse(prompt)?.message ?? prompt))"), font: .footnote, tone: .row)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
     }

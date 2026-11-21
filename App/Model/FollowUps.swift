@@ -214,7 +214,8 @@ struct QueuedFollowUp: Identifiable, Equatable {
         if let answer = WidgetAnswer.parse(text) {
             return [ActionBubble.label(answer, payload: nil), answer.words].compactMap { $0 }.joined(separator: " · ")
         }
-        let collapsed = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        // Sent with quotes: the row shows them on a line of their own (`queueItemQuoted`).
+        let collapsed = (QuotedReply.parse(text)?.message ?? text).split(whereSeparator: \.isNewline).joined(separator: " ")
         if !collapsed.isEmpty { return collapsed }
         if let file = files.first {
             return VoiceMessageFile.isVoiceMessage(file.name) ? String(localized: "Voice message") : file.name

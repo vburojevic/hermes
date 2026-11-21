@@ -307,10 +307,43 @@ private struct QueueRow: View {
         item.note == .mayHaveArrived ? String(localized: "Maybe sent") : String(localized: "Not sent")
     }
 
+    /// The quotes it goes with, in the order they were picked.
+    private var quotes: [QuotedReply.Passage] { conversation.openQuoted(item.text).draft.passages }
+
+    /// "Quote from Hermes: Two options…, and 1 more. " A passage that already ends a
+    /// sentence gets no second period.
+    private var spokenQuotes: String {
+        let quotes = quotes
+        guard let first = quotes.first else { return "" }
+        let more = quotes.count > 1 ? String(localized: ", and \(quotes.count - 1) more") : ""
+        let spoken = String(localized: "Quote from \(first.author): \(LastLine.flatten(first.quote))\(more)")
+        return spoken.last.map { ".!?…".contains($0) } == true ? spoken + " " : spoken + ". "
+    }
+
     var body: some View {
+        let quotes = quotes
         HStack(spacing: 10) {
             OrderBadge(order: order)
             VStack(alignment: .leading, spacing: 2) {
+                if let first = quotes.first {
+                    // Its quotes, the first one's author and words and how many more
+                    // (`queueItemQuoted`).
+                    HStack(spacing: 5) {
+                        Capsule()
+                            .fill(Theme.ink)
+                            .frame(width: 2, height: 12)
+                        Text(verbatim: "\(first.author): \(LastLine.flatten(first.quote))")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
+                            .lineLimit(1)
+                        if quotes.count > 1 {
+                            Text(verbatim: "+\(quotes.count - 1)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Theme.tertiaryText)
+                                .fixedSize()
+                        }
+                    }
+                }
                 Text(item.line)
                     .font(.subheadline)
                     .foregroundStyle(Theme.primaryText)
@@ -377,7 +410,7 @@ private struct QueueRow: View {
             return true
         } isTargeted: { isTargeted = $0 }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(order). \(item.line)\(item.hasAttachments ? String(localized: ", with attachments") : "")\(item.isHeld ? ", " + heldLabel.lowercased() : "")\(note.map { ". " + $0 } ?? "")"))
+        .accessibilityLabel(Text("\(order). \(spokenQuotes)\(item.line)\(item.hasAttachments ? String(localized: ", with attachments") : "")\(item.isHeld ? ", " + heldLabel.lowercased() : "")\(note.map { ". " + $0 } ?? "")"))
         .accessibilityHint("Edits the message")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default) { conversation.editQueued(item) }
