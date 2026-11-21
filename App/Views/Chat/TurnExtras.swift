@@ -753,6 +753,8 @@ struct ContextNotice: View {
             Button("Compact", action: onCompact)
                 .font(.subheadline.weight(.semibold))
                 .cardButton()
+                // Can end the reply: where VoiceOver lands reading back (`docs/chat.md` §1).
+                .modifier(VoiceOverLandingTarget())
         }
         .padding(14)
         .frame(maxWidth: 460, alignment: .leading)

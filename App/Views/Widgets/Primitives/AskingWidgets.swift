@@ -320,6 +320,7 @@ struct SuggestionRows: View {
         if shows {
             VStack(alignment: .leading, spacing: 2) {
                 Text(payload.title).font(WidgetFont.caption).foregroundStyle(Theme.secondaryText)
+                    .modifier(VoiceOverLandingTarget())
                 ForEach(Array(model.options.prefix(3).enumerated()), id: \.offset) { _, option in
                     Button { host?.sendSuggestion(option.label) } label: {
                         HStack(spacing: 8) {

@@ -798,8 +798,23 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   the view down with it in the same pass, so nothing on screen moves even mid-scroll. Once the page
   is in, the next one follows if the view still sits near the top: a view resting there sends no
   scroll that would ask for it, and a page from the gateway that lands while it rests there goes
-  in the same way. Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone
-  went from waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
+  in the same way. With VoiceOver, reading upward onto the Loading row above the oldest message
+  brings the earlier page in, and VoiceOver goes on to that page's last row, the message just
+  above the one it came from (the first message, when nothing came before), so swiping on keeps
+  reading upward. VoiceOver moves there once it has finished reading the Loading row, and also
+  when the page that brings in the first message takes the Loading row away. It lands on
+  the end of that message, the element one swipe back from the row below would reach: the reply's
+  last action or the last note under it (usage, a learned skill, a memory, a review, cards added, a
+  full chat), else its last paragraph, heading or list item, else its work line; a question is one
+  element. Reading upward goes on from there, and the view doesn't move, unless the landing starts
+  above the screen (under the top bar): then it moves down at once by the hidden part and 12 points
+  more, since VoiceOver won't move to an element off screen. Every row has a landing
+  (`AssistantTurn.landing`): a reply that ends with code, a table or an image lands on its last
+  action too, a reply that is only a widget lands on the widget's title (or its one line while it
+  loads, can't load or shows as text), and a reply the app lost track of on the line that says so.
+  VoiceOver anywhere else, and a page a scroll by hand brings in, stay where they are.
+  Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone went from
+  waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
   message, to the first message in about 105 s, the time its height takes at that speed, with no
   wait and nothing on screen moving more than 1 point (`-HERMES_SCROLL_RUN`,
   `docs/development.md`). On a Mac it went from about 30 waits of up to 4 s and never reaching the
