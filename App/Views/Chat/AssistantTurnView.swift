@@ -87,37 +87,13 @@ struct AssistantTurnView: View, Equatable {
         turn.reading(stepsOpen: isExpanded)
     }
 
-    private var showsWork: Bool {
-        !turn.steps.isEmpty || !turn.plan.isEmpty || (turn.isWorking && turn.answer.isEmpty) || turn.lostTrack
-    }
+    private var showsWork: Bool { turn.showsWork }
 
-    /// The part of the turn its last element is in, where VoiceOver lands reading back
-    /// (`docs/chat.md` §1): the last note under the reply, else its actions, else its text, else
-    /// its work line. Each case mirrors what `footer` draws, from the bottom up.
-    private enum LandingEnd {
-        case header, reply, failure, actions, usage, learned, memory, review, cards, context
-    }
-
-    private var landingEnd: LandingEnd? {
-        let finished = !turn.isWorking
-        if let onBranch, onBranch.isLatest, finished, let percent = turn.usage?.contextPercent, percent >= 80 { return .context }
-        if finished, memoryContext != nil, !turn.addedCards.isEmpty { return .cards }
-        if finished, turn.review != nil { return .review }
-        if finished, !memoryChanges.isEmpty { return .memory }
-        if finished, !turn.createdSkills.isEmpty { return .learned }
-        switch turn.state {
-        case .complete:
-            if turn.usage != nil, alwaysShowsUsage || showsUsage { return .usage }
-            if !turn.copyableText.isEmpty { return .actions }
-        case .stopped:
-            if !turn.copyableText.isEmpty { return .actions }
-        case .failed where turn.lostTrack, .streaming, .waitingForApproval:
-            break
-        case .failed:
-            return .failure
-        }
-        if shownText != nil { return .reply }
-        return showsWork ? .header : nil
+    /// Where VoiceOver lands reading back onto this reply (`AssistantTurn.landing`, `docs/chat.md`
+    /// §1), with what only the view knows.
+    private var landingEnd: ReplyLanding? {
+        turn.landing(stepsOpen: isExpanded, showsUsage: alwaysShowsUsage || showsUsage,
+                     showsCards: memoryContext != nil, isLatestOnBranch: onBranch?.isLatest == true)
     }
 
     /// What the memory tool did during the turn (`memoryNote`).

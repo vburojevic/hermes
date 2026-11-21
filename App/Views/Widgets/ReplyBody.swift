@@ -24,17 +24,19 @@ struct ReplyBody: View, Equatable {
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                    switch segment {
-                    case .markdown(let markdown):
-                        // Text before a widget never ends its row (`docs/chat.md` §1).
-                        MarkdownView(text: markdown, caches: caches, selectsWhole: true)
-                            .modifier(VoiceOverLandingEnds(isLast: index == segments.count - 1))
-                    // A widget never ends it, nor does the text of its fallback.
-                    case .widget(let directive): WidgetSlot(directive: directive).environment(\.voiceOverLandingEnds, false)
-                    case .inline(let json): InlineWidgetSlot(json: json).environment(\.voiceOverLandingEnds, false)
-                    case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json)).environment(\.voiceOverLandingEnds, false)
-                    case .unreadable: WidgetFallbackView(fallback: Self.unreadableFallback).environment(\.voiceOverLandingEnds, false)
+                    // Only the last segment can end the row (`docs/chat.md` §1): text before a
+                    // widget never does, and a widget that ends a reply with no words lands on its
+                    // card (`WidgetSlot`).
+                    Group {
+                        switch segment {
+                        case .markdown(let markdown): MarkdownView(text: markdown, caches: caches, selectsWhole: true)
+                        case .widget(let directive): WidgetSlot(directive: directive)
+                        case .inline(let json): InlineWidgetSlot(json: json)
+                        case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json))
+                        case .unreadable: WidgetFallbackView(fallback: Self.unreadableFallback)
+                        }
                     }
+                    .modifier(VoiceOverLandingEnds(isLast: index == segments.count - 1))
                 }
             }
         }

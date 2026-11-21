@@ -665,6 +665,8 @@ struct TranscriptView: View {
 
     /// The loading row above the rows shown, and the room it takes with the stack's spacing.
     private static let loadingRowHeight: CGFloat = 20
+    /// The room above an element VoiceOver lands on that the view moves to show.
+    private static let voiceOverRevealGap: CGFloat = 12
     private static let loadingRoom: CGFloat = loadingRowHeight + 30
 
     /// `fillWindow` has rows to add and hasn't started on them.
@@ -898,7 +900,14 @@ struct TranscriptView: View {
     /// VoiceOver, not the reader leaving.
     private func voiceOverOnLoading(_ focused: Bool) {
         edge.voiceOverOnLoading = focused
+        edge.voiceOverLoadingWent = false
         guard focused else {
+            // The row went from under VoiceOver because the first message is in, not because the
+            // reader moved on: the landing still goes ahead (`landVoiceOver`).
+            if edge.voiceOverBelow != nil, !showsLoadingRow(first: firstShownIndex(in: conversation.rows)) {
+                edge.voiceOverLoadingWent = true
+                return
+            }
             if !isPrepending, !conversation.isLoadingEarlier { edge.voiceOverBelow = nil }
             return
         }
@@ -931,24 +940,43 @@ struct TranscriptView: View {
         guard let below = edge.voiceOverBelow else { return }
         let all = conversation.rows
         // A scroll while VoiceOver is still on the loading row is VoiceOver's, not the reader's.
-        guard !isScrolledByHand || edge.voiceOverOnLoading, let index = all.firstIndex(where: { conversation.displayID(for: $0) == below }) else {
+        guard !isScrolledByHand || voiceOverStillOnLoading, let index = all.firstIndex(where: { conversation.displayID(for: $0) == below }) else {
             edge.voiceOverBelow = nil
+            edge.voiceOverLoadingWent = false
             return
         }
         let first = firstShownIndex(in: all)
         guard first < index || !showsLoadingRow(first: first) else { return }
         edge.voiceOverBelow = nil
         let target = conversation.displayID(for: all[first < index ? index - 1 : index])
-        // The row's last element asks, once it's drawn (`VoiceOverLandingTarget`). A row that
-        // never asks (one with no such element) stops waiting after two seconds.
-        let cue = VoiceOverLandingCue(key: target, focus: $voiceOverOn, stillOnLoading: { edge.voiceOverOnLoading }, landed: voiceOverLanded)
+        // The row's last element asks, once it's drawn (`VoiceOverLandingTarget`); every row has
+        // one. The two seconds are a backstop for a row drawn with nothing in it.
+        let cue = VoiceOverLandingCue(key: target, focus: $voiceOverOn, stillOnLoading: { voiceOverStillOnLoading }, landed: voiceOverLanded,
+                                      reveal: revealVoiceOverLanding)
         voiceOverLanding = cue
         edge.voiceOverLandingWait?.cancel()
         edge.voiceOverLandingWait = Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, voiceOverLanding === cue else { return }
             voiceOverLanding = nil
+            edge.voiceOverLoadingWent = false
         }
+    }
+
+    /// VoiceOver is on the loading row, or was when the row went as the first message came in.
+    private var voiceOverStillOnLoading: Bool {
+        edge.voiceOverOnLoading || edge.voiceOverLoadingWent
+    }
+
+    /// The element VoiceOver lands on starts above the screen (a widget's title under the top bar,
+    /// its card's last rows showing): the view moves down just enough to show it, as VoiceOver
+    /// takes no move to an element off screen. Nothing moves when it's on screen already.
+    private func revealVoiceOverLanding(top: CGFloat) {
+        let hidden = edge.visibleTop + Self.voiceOverRevealGap - top
+        guard hidden > 0 else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { position.scrollTo(y: max(0, edge.top - hidden)) }
     }
 
     /// The row's last element asked VoiceOver onto itself, or gave up (VoiceOver moved on).
@@ -957,6 +985,7 @@ struct TranscriptView: View {
         edge.voiceOverLandingWait?.cancel()
         edge.voiceOverLandingWait = nil
         voiceOverLanding = nil
+        edge.voiceOverLoadingWent = false
     }
 
     /// Once a page is in: the next one, if the view still sits near the top. A scroll asks for it
@@ -1269,6 +1298,9 @@ struct TranscriptView: View {
         var voiceOverBelow: String?
         /// VoiceOver is on the loading row now (`voiceOverOnLoading`).
         var voiceOverOnLoading = false
+        /// The loading row went with VoiceOver on it, as the first message came in: VoiceOver
+        /// didn't move, so it lands as if still there (`voiceOverOnLoading`).
+        var voiceOverLoadingWent = false
         /// The earlier page waiting for VoiceOver to settle (`showEarlierAfterVoiceOver`).
         var voiceOverWait: Task<Void, Never>?
         /// The end of the wait for the row VoiceOver lands on to ask (`landVoiceOver`).
@@ -1367,7 +1399,7 @@ struct TranscriptView: View {
     }
 
     private static let endID = "transcript-end"
-    nonisolated private static let contentSpace = "transcript-content"
+    nonisolated static let contentSpace = "transcript-content"
     #if DEBUG
     private static let logsScroll = UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG")
     #endif
@@ -2503,15 +2535,18 @@ nonisolated enum VoiceOverSpot: Hashable {
     let stillOnLoading: () -> Bool
     /// The element asked, or found VoiceOver had moved on.
     let landed: (VoiceOverLandingCue) -> Void
+    /// Brings the element on screen before it asks, given its top in the content's coordinates.
+    let reveal: (CGFloat) -> Void
     /// An element of the row took it: a row asks once, from its last element.
     private(set) var isTaken = false
 
     init(key: String, focus: AccessibilityFocusState<VoiceOverSpot?>.Binding, stillOnLoading: @escaping () -> Bool,
-         landed: @escaping (VoiceOverLandingCue) -> Void) {
+         landed: @escaping (VoiceOverLandingCue) -> Void, reveal: @escaping (CGFloat) -> Void) {
         self.key = key
         self.focus = focus
         self.stillOnLoading = stillOnLoading
         self.landed = landed
+        self.reveal = reveal
     }
 
     func take() -> Bool {
@@ -2542,13 +2577,17 @@ struct VoiceOverLandingEnds: ViewModifier {
 
 /// The element VoiceOver lands on in a transcript row: its last in reading order, the one a
 /// swipe back from the row below reaches first (a message; a reply's last action or note, else
-/// its last paragraph, heading or list item, else its work line). That end of the row is just
-/// above where the reader was, so it's on screen while the view holds still. Exactly one element
-/// per row asks, where `voiceOverLandingEnds` says its part ends the row and `isLast` says it
-/// ends its part, and it is a single element, never a stack: focus asked of a container never
-/// takes. Rows that end in something else (a card, a widget, code or a table) ask nowhere, and
-/// VoiceOver stays where it was. It asks once the row is drawn, a frame after the update that
-/// draws it, and only while VoiceOver is still on the loading row, so a reader who moved on
+/// its last paragraph, heading or list item, else its work line). A reply with words lands on its
+/// actions whatever its last block is, code and tables too; a reply that is only a widget lands
+/// on the widget's title, or its one line; a reply the app lost track of lands on that line
+/// (`AssistantTurn.landing`). That end of the row is just above where the reader was, so it's on
+/// screen while the view holds still; an element that isn't (a widget's title, under the top
+/// bar) has the view move down just enough to show it before it asks, because VoiceOver doesn't
+/// take a move to an element off screen. Exactly one element per row asks, where
+/// `voiceOverLandingEnds` says its part ends the row and `isLast` says it ends its part, and it
+/// is a single element, never a stack: focus asked of a container never takes. It asks once the
+/// row is drawn, a frame after the update that draws it, and only while VoiceOver is still on
+/// the loading row (or was when the row went, the first message in), so a reader who moved on
 /// stays where they went. While VoiceOver is on the loading row it doesn't take the move; once
 /// it has finished with that row, about 2.9 s in, it makes the last move asked of it, so the
 /// element must be on screen then. The element asks up to three times, half a second apart, and
@@ -2566,6 +2605,13 @@ struct VoiceOverLandingTarget: ViewModifier {
     @Environment(\.voiceOverLanding) private var cue
     @State private var bound: Bound?
     @AccessibilityFocusState private var unbound: VoiceOverSpot?
+    /// Where the element starts in the transcript's content, kept out of the view's state so a
+    /// row moving doesn't redraw it.
+    @State private var top = Top()
+
+    private final class Top {
+        var value: CGFloat?
+    }
 
     private struct Bound {
         let focus: AccessibilityFocusState<VoiceOverSpot?>.Binding
@@ -2576,6 +2622,9 @@ struct VoiceOverLandingTarget: ViewModifier {
         if ends && isLast {
             content
                 .accessibilityFocused(bound?.focus ?? $unbound, equals: .row(bound?.key ?? ""))
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(TranscriptView.contentSpace)).minY } action: { [top] in
+                    top.value = $0
+                }
                 .onChange(of: cue.map(ObjectIdentifier.init), initial: true) {
                     guard let cue, cue.take() else { return }
                     bound = Bound(focus: cue.focus, key: cue.key)
@@ -2589,6 +2638,7 @@ struct VoiceOverLandingTarget: ViewModifier {
     private func ask(_ cue: VoiceOverLandingCue, tries: Int) {
         NextFrame.run {
             guard cue.stillOnLoading() else { return cue.landed(cue) }
+            if let top = top.value { cue.reveal(top) }
             cue.focus.wrappedValue = .row(cue.key)
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(500))
