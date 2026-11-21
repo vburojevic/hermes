@@ -970,13 +970,14 @@ struct TranscriptView: View {
 
     /// The element VoiceOver lands on starts above the screen (a widget's title under the top bar,
     /// its card's last rows showing): the view moves down just enough to show it, as VoiceOver
-    /// takes no move to an element off screen. Nothing moves when it's on screen already.
+    /// takes no move to an element off screen. It moves by the hidden part and the gap, at once.
+    /// Nothing moves when the element starts on screen, however close to the top bar.
     private func revealVoiceOverLanding(top: CGFloat) {
-        let hidden = edge.visibleTop + Self.voiceOverRevealGap - top
+        let hidden = edge.visibleTop - top
         guard hidden > 0 else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
-        withTransaction(instant) { position.scrollTo(y: max(0, edge.top - hidden)) }
+        withTransaction(instant) { position.scrollTo(y: max(0, edge.top - hidden - Self.voiceOverRevealGap)) }
     }
 
     /// The row's last element asked VoiceOver onto itself, or gave up (VoiceOver moved on).

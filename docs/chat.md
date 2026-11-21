@@ -806,13 +806,13 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   the end of that message, the element one swipe back from the row below would reach: the reply's
   last action or the last note under it (usage, a learned skill, a memory, a review, cards added, a
   full chat), else its last paragraph, heading or list item, else its work line; a question is one
-  element. Reading upward goes on from there, and the view doesn't move, unless the landing is above
-  the screen: then it moves down just enough to show it, since VoiceOver won't move to an element
-  off screen. Every row has a landing (`AssistantTurn.landing`): a reply that ends with code, a
-  table or an image lands on its last action too, a reply that is only a widget lands on the
-  widget's title (or its one line while it loads, can't load or shows as text), and a reply the app
-  lost track of on the line that says so. VoiceOver anywhere else, and a page a scroll by hand
-  brings in, stay where they are.
+  element. Reading upward goes on from there, and the view doesn't move, unless the landing starts
+  above the screen (under the top bar): then it moves down at once by the hidden part and 12 points
+  more, since VoiceOver won't move to an element off screen. Every row has a landing
+  (`AssistantTurn.landing`): a reply that ends with code, a table or an image lands on its last
+  action too, a reply that is only a widget lands on the widget's title (or its one line while it
+  loads, can't load or shows as text), and a reply the app lost track of on the line that says so.
+  VoiceOver anywhere else, and a page a scroll by hand brings in, stay where they are.
   Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone went from
   waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
   message, to the first message in about 105 s, the time its height takes at that speed, with no
