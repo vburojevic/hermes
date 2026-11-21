@@ -45,6 +45,11 @@ design's component names, used in code comments.
   redirects." With no turn running, ⌥Return is a new line and ⌘Return sends. ⌘Return redirects
   only when "Send with Return" is on and the chat can redirect; otherwise it sends with the
   default mode.
+- **Quotes.** A reply with quotes in the bar ([inbox.md](inbox.md) §4) takes them in every mode:
+  each goes in front of the words as its own block quote, in order, and the bar empties as the
+  message goes. Steer and Redirect carry them as text, so the steer bubble shows them too. An
+  aside or background task Hermes refuses comes back with its quotes in the bar and its words in
+  the field.
 - **Fall-backs.** Hermes can only steer with text:
   - A Steer or Redirect with images, files or skills waits for the next turn instead. Over the
     gateway protocol (without skills) the app attaches the images and files to the session and
@@ -143,15 +148,18 @@ design's component names, used in code comments.
   only with a Send. The reason is kept with the queue across a relaunch; a refusal isn't (the
   next send asks Hermes again). Items are numbered
   in send order (`queueItem`: number, one line of text or the file name or "Photo", a paperclip
-  if it has attachments, a drag handle). Three show; more fold into "+N more", which shows them
-  all.
+  if it has attachments, a drag handle). A message with quotes shows a line above its text with
+  the first quote's author and words, and "+N" for the others (`queueItemQuoted`). Three show;
+  more fold into "+N more", which shows them all.
 - **Actions:**
   - Drag to reorder.
   - Tap to edit (`composerQueueEditing`): the item leaves the queue while it is in the field, its
-    attachments and skills come with it, and anything already typed is set aside. The strip says
+    attachments and skills come with it, its quotes go back in the reply bar and its own words in
+    the field, and anything already typed or quoted is set aside until it goes. The strip says
     "Editing queued message 2 · Send puts it back", and Send returns it to its place; the close
     button puts it back unchanged. Picking another mode on the chip while editing sends it now
-    that way instead.
+    that way instead. Edited down to attachments with no words, it goes without its quotes, which
+    stay in the bar; what was set aside comes back beside them, while the bar has room.
   - Long press (`queueItemMenu`): Edit, Steer Now (sends it as a steer into the running turn; Send
     Now when nothing runs), Move to Top, Remove.
 - **Draining:** when the turn has settled (`session.info {running: false}` over the gateway
@@ -211,7 +219,8 @@ Next while a turn runs, or sends normally otherwise. With no turn running, ⌥Re
 
 - The mode chip reads "Send mode, Steer, button". The menu options read their title and detail,
   and the current one is selected.
-- The queue tray is a container labelled "Up next". Each item reads "2. the message" (", with
+- The queue tray is a container labelled "Up next". Each item reads "2. the message" (with quotes,
+  "2. Quote from Hermes: the passage, and 1 more. the message"; ", with
   attachments" when it has them, ", not sent" or ", maybe sent" when it waits for a Send, then the
   line that says why it's there), with the hint "Edits the message" and the actions "Move up",
   "Move down", "Steer Now" (while a turn runs) and "Remove". The drag handle, number badge and

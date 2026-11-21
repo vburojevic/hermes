@@ -1043,7 +1043,8 @@ private struct SteerStepLine: View {
                 Text("Read your note")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Theme.primaryText)
-                Text("“\(text)”")
+                // The note's own words; its quotes show on its bubble.
+                Text("“\(QuotedReply.parse(text)?.message ?? text)”")
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(3)

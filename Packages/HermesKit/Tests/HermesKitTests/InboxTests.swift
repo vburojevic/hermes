@@ -916,6 +916,108 @@ struct InboxTests {
         #expect(QuotedReply.key("a  b\n c") != QuotedReply.key("x") && QuotedReply.key("one\ntwo") == QuotedReply.key("one\n  two  "))
     }
 
+    @Test func severalQuotesGoOutAsSeparateBlocksInOrder() throws {
+        let reply = QuotedReply(quotes: ["Back off and retry.", "Reopen on wake,\nthen resume.", "Both work."], message: "Do the first.")
+        #expect(reply.text == "> Back off and retry.\n\n> Reopen on wake,\n> then resume.\n\n> Both work.\n\nDo the first.")
+        let parsed = try #require(QuotedReply.parse(reply.text))
+        #expect(parsed.quotes == ["Back off and retry.", "Reopen on wake,\nthen resume.", "Both work."])
+        #expect(parsed.message == "Do the first." && parsed.quote == "Back off and retry.")
+        // A fourth block quote is the person's own words: the most a reply quotes is three.
+        let four = "> a\n\n> b\n\n> c\n\n> d\n\nok"
+        #expect(QuotedReply.parse(four)?.quotes == ["a", "b", "c"])
+        #expect(QuotedReply.parse(four)?.message == "> d\n\nok")
+        // Each quote is trimmed on its own, and a message of quotes alone is not a reply.
+        let long = String(repeating: "word ", count: 100)
+        let trimmedText = QuotedReply(quotes: [long, "short"], message: "ok").text
+        let trimmed = try #require(QuotedReply.parse(trimmedText))
+        #expect(trimmed.quotes[0].count <= QuotedReply.maxQuote + 1 && trimmed.quotes[0].hasSuffix("…") && trimmed.quotes[1] == "short")
+        #expect(QuotedReply.parse("> a\n\n> b") == nil)
+        #expect(QuotedReply.parse("> a\n\n>\n\nok") == nil)
+        // A quote followed straight by words, with no blank line, still parses as before.
+        #expect(QuotedReply.parse("> a\nok")?.quotes == ["a"] && QuotedReply.parse("> a\nok")?.message == "ok")
+    }
+
+    @Test func theReplyBarHoldsUpToThreeQuotesEachOnce() throws {
+        var draft = QuotedReply.Draft()
+        #expect(draft.add(author: "Hermes", quote: "  first\n", rowID: "r1") == .added)
+        #expect(draft.add(author: "Hermes", quote: "first", rowID: "r1") == .alreadyQuoted)
+        // The same words in another row are another quote.
+        #expect(draft.add(author: "Ada", quote: "first", rowID: "r2") == .added)
+        #expect(draft.add(author: "Hermes", quote: " \n ", rowID: "r3") == .empty)
+        #expect(draft.add(author: "Hermes", quote: "third", rowID: "r3") == .added)
+        #expect(draft.isFull && !draft.showsLimit)
+        #expect(draft.add(author: "Hermes", quote: "fourth", rowID: "r4") == .full)
+        #expect(draft.count == 3 && draft.showsLimit)
+        #expect(draft.passages.map(\.quote) == ["first", "first", "third"])
+        // Removing one keeps the others in order and takes the limit note away.
+        draft.remove(draft.passages[1].id)
+        #expect(draft.passages.map(\.rowID) == ["r1", "r3"] && !draft.showsLimit)
+        let composed = try #require(draft.compose("Do it."))
+        #expect(composed.text == "> first\n\n> third\n\nDo it.")
+        #expect(composed.shift == composed.text.utf16.count - "Do it.".utf16.count)
+        // Never a message of quotes alone, and no quotes means nothing to compose.
+        #expect(draft.compose("  \n") == nil)
+        draft.removeAll()
+        #expect(draft.isEmpty && draft.compose("Do it.") == nil)
+    }
+
+    @Test func aQueuedMessageOpensWithItsQuotesBackInTheBar() {
+        let text = QuotedReply(quotes: ["first", "second"], message: "Do it.").text
+        let opened = QuotedReply.Draft.opening(text, fallbackAuthor: "Hermes") { quote in
+            quote == "first" ? (author: "Ada", rowID: "r1") : nil
+        }
+        #expect(opened.message == "Do it.")
+        #expect(opened.draft.passages.map(\.author) == ["Ada", "Hermes"])
+        #expect(opened.draft.passages.map(\.rowID) == ["r1", ""])
+        #expect(opened.draft.compose(opened.message)?.text == text)
+        // A message without quotes opens as it is.
+        let plain = QuotedReply.Draft.opening("Just words", fallbackAuthor: "Hermes") { _ in nil }
+        #expect(plain.draft.isEmpty && plain.message == "Just words")
+    }
+
+    @Test func aDraftSetAsideComesBackWithoutPushingOutQuotesLeftInTheBar() {
+        // A queued message edited down to a picture goes without its quotes, so they stay in the
+        // bar; the draft set aside for the edit joins them instead of replacing them.
+        var left = QuotedReply.Draft()
+        left.add(author: "Ada", quote: "left behind", rowID: "r1")
+        var stashed = QuotedReply.Draft()
+        stashed.add(author: "Hermes", quote: "set aside", rowID: "r2")
+        stashed.add(author: "Ada", quote: "left behind", rowID: "r1")
+        stashed.add(author: "Hermes", quote: "also set aside", rowID: "r3")
+        stashed.add(author: "Hermes", quote: "no room", rowID: "r4")
+        #expect(left.compose("") == nil)
+        let merged = left.merging(stashed)
+        #expect(merged.passages.map(\.quote) == ["left behind", "set aside", "also set aside"])
+        #expect(!merged.showsLimit)
+        // Nothing left in the bar: the set-aside draft comes back as it was.
+        #expect(QuotedReply.Draft().merging(stashed).passages == stashed.passages)
+    }
+
+    @Test func eachQuoteInAFullerBarSaysWhereItSits() {
+        var bar = QuotedReply.Draft()
+        bar.add(author: "Ada", quote: "Same words.", rowID: "r1")
+        // One quote: no position to tell it apart from.
+        #expect(bar.position(of: bar.passages[0].id) == nil)
+        bar.add(author: "Ada", quote: "Same words.", rowID: "r2")
+        bar.add(author: "Hermes", quote: "Other words.", rowID: "r3")
+        #expect(bar.passages.map { bar.position(of: $0.id) } == [1, 2, 3])
+        #expect(bar.position(of: "missing") == nil)
+    }
+
+    @Test func aSentMessageThatOpensWithBlockQuotesReadsThemAsQuotes() throws {
+        // Leading block quotes separated by blank lines, up to three, are read as quotes, even
+        // when the person typed one themselves: what follows is the message.
+        let parsed = try #require(QuotedReply.parse("> q\n\n> my words\n\nmore"))
+        #expect(parsed.quotes == ["q", "my words"])
+        #expect(parsed.message == "more")
+    }
+
+    @Test func voiceOverReadsEverySentQuoteInOrder() throws {
+        let reply = try #require(QuotedReply.parse(QuotedReply(quotes: ["Back off\nand retry.", "Both work."], message: "Do it.").text))
+        let spoken = reply.spokenQuotes { $0 == "Both work." ? "Ada" : nil }
+        #expect(spoken == ["“Back off and retry.”", "Ada, “Both work.”"])
+    }
+
     @Test func quotingAPassageNeverScrollsTheChat() {
         #expect(!QuotedReply.Flash.quoted.scrolls(rowOnScreen: true))
         #expect(!QuotedReply.Flash.quoted.scrolls(rowOnScreen: false))
