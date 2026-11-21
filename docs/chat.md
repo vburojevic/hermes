@@ -798,7 +798,11 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   the view down with it in the same pass, so nothing on screen moves even mid-scroll. Once the page
   is in, the next one follows if the view still sits near the top: a view resting there sends no
   scroll that would ask for it, and a page from the gateway that lands while it rests there goes
-  in the same way. Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone
+  in the same way. With VoiceOver, reading upward onto the Loading row above the oldest message
+  brings the earlier page in, and VoiceOver goes on to that page's last row, the message just
+  above the one it came from (the first message, when nothing came before), so swiping on keeps
+  reading upward; VoiceOver anywhere else, and a page a scroll by hand brings in, stay where
+  they are. Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone
   went from waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
   message, to the first message in about 105 s, the time its height takes at that speed, with no
   wait and nothing on screen moving more than 1 point (`-HERMES_SCROLL_RUN`,
