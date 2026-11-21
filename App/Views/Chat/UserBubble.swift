@@ -184,6 +184,10 @@ struct UserBubble: View {
             label: quoted.map { Text("You, quoting “\(LastLine.flatten($0.quote))”: \(spokenText)") } ?? Text("You: \(spokenText)"),
             hint: entry.fileNames.isEmpty ? Text(verbatim: "") : Text("With \(entry.fileNames.formatted(.list(type: .and)))")
         ))
+        // Where VoiceOver lands when reading back brings this message in (`docs/chat.md` §1).
+        .modifier(VoiceOverLandingTarget())
+        // A message is one element, so it ends its row.
+        .environment(\.voiceOverLandingEnds, true)
         .sheet(item: $previewing) { image in
             ImagePreview(image: image)
         }

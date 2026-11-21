@@ -91,6 +91,35 @@ struct AssistantTurnView: View, Equatable {
         !turn.steps.isEmpty || !turn.plan.isEmpty || (turn.isWorking && turn.answer.isEmpty) || turn.lostTrack
     }
 
+    /// The part of the turn its last element is in, where VoiceOver lands reading back
+    /// (`docs/chat.md` §1): the last note under the reply, else its actions, else its text, else
+    /// its work line. Each case mirrors what `footer` draws, from the bottom up.
+    private enum LandingEnd {
+        case header, reply, failure, actions, usage, learned, memory, review, cards, context
+    }
+
+    private var landingEnd: LandingEnd? {
+        let finished = !turn.isWorking
+        if let onBranch, onBranch.isLatest, finished, let percent = turn.usage?.contextPercent, percent >= 80 { return .context }
+        if finished, memoryContext != nil, !turn.addedCards.isEmpty { return .cards }
+        if finished, turn.review != nil { return .review }
+        if finished, !memoryChanges.isEmpty { return .memory }
+        if finished, !turn.createdSkills.isEmpty { return .learned }
+        switch turn.state {
+        case .complete:
+            if turn.usage != nil, alwaysShowsUsage || showsUsage { return .usage }
+            if !turn.copyableText.isEmpty { return .actions }
+        case .stopped:
+            if !turn.copyableText.isEmpty { return .actions }
+        case .failed where turn.lostTrack, .streaming, .waitingForApproval:
+            break
+        case .failed:
+            return .failure
+        }
+        if shownText != nil { return .reply }
+        return showsWork ? .header : nil
+    }
+
     /// What the memory tool did during the turn (`memoryNote`).
     private var memoryChanges: [MemoryChange] { turn.memoryChanges }
 
@@ -126,6 +155,7 @@ struct AssistantTurnView: View, Equatable {
                     if turn.usage != nil { withAnimation(Theme.spring) { showsUsage.toggle() } }
                 }
                 .equatable()
+                .environment(\.voiceOverLandingEnds, landingEnd == .header)
             }
             if let models = turn.models {
                 ModelsCard(progress: models, isWorking: turn.isWorking)
@@ -163,6 +193,9 @@ struct AssistantTurnView: View, Equatable {
                     // Only the tone eases; the words switch at once, never drawn over each other.
                     .animation(.smooth(duration: 0.3)) { $0.opacity(shown.isInterim ? 0.55 : 1) }
                     .contextMenu { replyMenu }
+                    // Its last paragraph, heading or list item is where VoiceOver lands only when
+                    // nothing is drawn below the text (`docs/chat.md` §1).
+                    .environment(\.voiceOverLandingEnds, landingEnd == .reply)
                     #if os(macOS)
                     .environment(\.selectionReply, selectionReply)
                     #endif
@@ -328,6 +361,7 @@ struct AssistantTurnView: View, Equatable {
                 .background(Theme.surface, in: Capsule())
             if !turn.copyableText.isEmpty {
                 MessageActions(text: turn.copyableText, listen: listenReading, onBranch: onBranch) { replyMenu }
+                    .environment(\.voiceOverLandingEnds, landingEnd == .actions)
             }
         case .failed where turn.lostTrack:
             // Its header says it, with Reload (`turnHeaderLost`).
@@ -336,12 +370,17 @@ struct AssistantTurnView: View, Equatable {
             Label(message, systemImage: "exclamationmark.triangle")
                 .font(Theme.Typography.caption.weight(.medium))
                 .foregroundStyle(Theme.warning)
+                .modifier(VoiceOverLandingTarget())
+                .environment(\.voiceOverLandingEnds, landingEnd == .failure)
         case .complete:
             if !turn.copyableText.isEmpty {
                 MessageActions(text: turn.copyableText, listen: listenReading, onBranch: onBranch) { replyMenu }
+                    .environment(\.voiceOverLandingEnds, landingEnd == .actions)
             }
             if let usage = turn.usage, alwaysShowsUsage || showsUsage {
                 UsageFooter(usage: usage)
+                    .modifier(VoiceOverLandingTarget())
+                    .environment(\.voiceOverLandingEnds, landingEnd == .usage)
                     .transition(.opacity)
             }
         case .streaming, .waitingForApproval:
@@ -350,21 +389,27 @@ struct AssistantTurnView: View, Equatable {
         // Skills Hermes wrote in this turn (`docs/learned.md` §6), before what it remembered.
         if !turn.isWorking, case let learned = turn.createdSkills, !learned.isEmpty {
             LearnedSkillNotes(names: learned, context: memoryContext)
+                .environment(\.voiceOverLandingEnds, landingEnd == .learned)
         }
         if !turn.isWorking, !memoryChanges.isEmpty {
             MemoryNotes(changes: memoryChanges, context: memoryContext)
+                .environment(\.voiceOverLandingEnds, landingEnd == .memory)
         }
         // What Hermes's background self-review of this reply did (`review.summary`, `reviewNote`):
         // quietly here, never a row of its own between the turn and the next (`docs/chat.md` §1, 13).
         if !turn.isWorking, let review = turn.review {
             TurnNote(symbol: "checkmark.seal", text: String(localized: "Reviewed this reply · \(review)"))
+                .modifier(VoiceOverLandingTarget())
+                .environment(\.voiceOverLandingEnds, landingEnd == .review)
         }
         // Cards Hermes put on a board (`kanban_create`, `docs/board.md` §4).
         if !turn.isWorking, let memoryContext, case let cards = turn.addedCards, !cards.isEmpty {
             CardsAddedNote(cards: cards, context: memoryContext)
+                .environment(\.voiceOverLandingEnds, landingEnd == .cards)
         }
         if let onBranch, onBranch.isLatest, !turn.isWorking, let percent = turn.usage?.contextPercent, percent >= 80 {
             ContextNotice(percent: percent) { onBranch.conversation.runCommand("compress", argument: nil) }
+                .environment(\.voiceOverLandingEnds, landingEnd == .context)
         }
     }
 }
@@ -447,6 +492,8 @@ private struct MessageActions<More: View>: View {
             .fixedSize()
             .help("More")
             .accessibilityLabel("More")
+            // The reply's last control: where VoiceOver lands reading back (`docs/chat.md` §1).
+            .modifier(VoiceOverLandingTarget())
         }
         .buttonStyle(IconButtonStyle(size: side))
         .foregroundStyle(Theme.tertiaryText)
@@ -621,6 +668,8 @@ struct WorkSummaryView: View, Equatable {
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Where VoiceOver lands reading back when the turn has no reply (`docs/chat.md` §1).
+                .modifier(VoiceOverLandingTarget())
             if let conversation = inspector?.conversation {
                 Button {
                     conversation.reloadLostTurn()
@@ -672,6 +721,8 @@ struct WorkSummaryView: View, Equatable {
         .accessibilityRemoveTraits(opens ? [] : .isButton)
         .accessibilityLabel(title)
         .accessibilityHint(!hasSteps ? "" : (isExpanded ? "Hides the steps" : "Shows the steps"))
+        // Where VoiceOver lands reading back when the turn has no reply (`docs/chat.md` §1).
+        .modifier(VoiceOverLandingTarget())
     }
 
     private var workingTitle: String {

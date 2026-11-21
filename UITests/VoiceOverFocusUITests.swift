@@ -80,43 +80,10 @@ final class VoiceOverFocusUITests: XCTestCase {
     @MainActor
     func testReadingBackGoesOnIntoEarlierMessages() throws {
         guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
-        // Opened at its end, as a chat read to the end opens: it follows the end until read back.
         let app = launch(opening: "long_history", settings: ["-openChatsAt", "latest"])
-        XCTAssertTrue(message("is healthy again", in: app).waitForExistence(timeout: 30), "the long chat didn't open")
-        Thread.sleep(forTimeInterval: 3)
-        // Every question names its step ("Step N:"); the oldest one shown before VoiceOver
-        // starts. The page goes in above it.
-        let pattern = try NSRegularExpression(pattern: #"Step (\d+):"#)
-        func step(_ heard: String) -> Int? {
-            let range = NSRange(heard.startIndex..., in: heard)
-            guard let match = pattern.firstMatch(in: heard, range: range),
-                  let number = Range(match.range(at: 1), in: heard) else { return nil }
-            return Int(heard[number])
-        }
-        let questions = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Step "))
-        let shown = questions.allElementsBoundByIndex.compactMap { step($0.label) }
-        let oldest = try XCTUnwrap(shown.min(), "no question was shown")
-        XCTAssertGreaterThan(oldest, 1, "the whole chat was shown, with no page left to come in")
-        attach("read-back-start")
-
+        let oldest = try readBackToLoading(in: app)
         let service = XCUIDevice.shared.voiceOverService
-        for attempt in 0..<3 {
-            if attempt > 0 { try service.disable(); Thread.sleep(forTimeInterval: 1) }
-            try service.enable()
-            Thread.sleep(forTimeInterval: 3)
-            if (try? service.currentSpeech()) != nil || (try? service.moveForward()) != nil { break }
-        }
-        // The loading row is the first thing in the chat: VoiceOver comes to it from the
-        // toolbar, as it does reading back from below.
-        var heard = ""
-        var path: [String] = []
-        for _ in 0..<20 {
-            heard = (try? service.moveForward().utterance) ?? "<no speech>"
-            path.append(heard)
-            if heard.hasPrefix("Loading") || step(heard) != nil { break }
-        }
-        keep(path.joined(separator: "\n"), as: "read-back-path")
-        XCTAssertTrue(heard.hasPrefix("Loading"), "VoiceOver never reached the loading row:\n\(path.joined(separator: "\n"))")
+        let step = Self.step
         attach("read-back-on-loading")
 
         // Waiting on the loading row: the earlier page comes in above the oldest question. The
@@ -148,7 +115,80 @@ final class VoiceOverFocusUITests: XCTestCase {
         XCTAssertLessThan(into, oldest, "VoiceOver read a question that was already shown:\n\(log)")
     }
 
+    /// The reader swipes off the loading row while the earlier page lands under it, before
+    /// VoiceOver has moved on into the page: VoiceOver stays where the reader went, and nothing
+    /// the landing asked for pulls it back (`docs/chat.md` §1).
+    @MainActor
+    func testSwipingOffTheLoadingRowKeepsVoiceOverWhereTheReaderWent() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
+        let app = launch(opening: "long_history", settings: ["-openChatsAt", "latest"])
+        let oldest = try readBackToLoading(in: app)
+        let service = XCUIDevice.shared.voiceOverService
+        // VoiceOver reached the loading row; the page goes in under it within half a second, the
+        // row above asks for VoiceOver from about 0.9 s, and VoiceOver makes that move once it
+        // has finished with the loading row, about 2.9 s in. The swipe comes between the two,
+        // while the asks are still being made.
+        Thread.sleep(forTimeInterval: 1.2)
+        let went = (try? service.moveBackward().utterance) ?? "<no speech>"
+        XCTAssertFalse(went.hasPrefix("Loading") || went == "<no speech>", "VoiceOver didn't move off the loading row: \(went)")
+        attach("swipe-off-moved")
+        // Waiting there past every ask, then stepping off and back: VoiceOver comes back to
+        // wherever focus is now. Up and down again, so it doesn't pass the loading row.
+        Thread.sleep(forTimeInterval: 5)
+        let earlier = message("Step \(oldest - 1):", in: app)
+        XCTAssertTrue(earlier.waitForExistence(timeout: 20), "the messages before step \(oldest) never came in")
+        _ = try? service.moveBackward()
+        let after = (try? service.moveForward().utterance) ?? "<no speech>"
+        try service.disable()
+        let log = "oldest shown: step \(oldest)\nswiped to: \(went)\nafter the page: \(after)"
+        keep(log, as: "swipe-off")
+        print("VoiceOver swiping off the loading row:\n\(log)")
+        // The same element reads the same words first; VoiceOver may add a hint after them.
+        XCTAssertTrue(after.hasPrefix(String(went.prefix(24))), "VoiceOver didn't stay where the reader went:\n\(log)")
+        XCTAssertFalse(after.hasPrefix("More"), "VoiceOver went to the row the page landed under:\n\(log)")
+    }
+
     // MARK: Helpers
+
+    /// The number in a question's "Step N:", where it has one.
+    private static func step(_ heard: String) -> Int? {
+        guard let match = heard.firstMatch(of: /Step (\d+):/) else { return nil }
+        return Int(match.1)
+    }
+
+    /// With the long chat opened at its end, as a chat read to the end opens (it follows the end
+    /// until read back), turns VoiceOver on and reads back to the loading row, the first thing
+    /// in the chat, from the toolbar, as it does reading back from below. Answers the oldest
+    /// step shown before VoiceOver started: the page goes in above it.
+    @available(iOS 27.0, *)
+    @MainActor
+    private func readBackToLoading(in app: XCUIApplication) throws -> Int {
+        XCTAssertTrue(message("is healthy again", in: app).waitForExistence(timeout: 30), "the long chat didn't open")
+        Thread.sleep(forTimeInterval: 3)
+        let questions = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Step "))
+        let shown = questions.allElementsBoundByIndex.compactMap { Self.step($0.label) }
+        let oldest = try XCTUnwrap(shown.min(), "no question was shown")
+        XCTAssertGreaterThan(oldest, 1, "the whole chat was shown, with no page left to come in")
+        attach("read-back-start")
+
+        let service = XCUIDevice.shared.voiceOverService
+        for attempt in 0..<3 {
+            if attempt > 0 { try service.disable(); Thread.sleep(forTimeInterval: 1) }
+            try service.enable()
+            Thread.sleep(forTimeInterval: 3)
+            if (try? service.currentSpeech()) != nil || (try? service.moveForward()) != nil { break }
+        }
+        var heard = ""
+        var path: [String] = []
+        for _ in 0..<20 {
+            heard = (try? service.moveForward().utterance) ?? "<no speech>"
+            path.append(heard)
+            if heard.hasPrefix("Loading") || Self.step(heard) != nil { break }
+        }
+        keep(path.joined(separator: "\n"), as: "read-back-path")
+        XCTAssertTrue(heard.hasPrefix("Loading"), "VoiceOver never reached the loading row:\n\(path.joined(separator: "\n"))")
+        return oldest
+    }
 
     /// What a test sees of the reply in the app: whether its answer is there, whether what it
     /// moves has moved, and a line for the log.

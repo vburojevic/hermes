@@ -801,9 +801,16 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   in the same way. With VoiceOver, reading upward onto the Loading row above the oldest message
   brings the earlier page in, and VoiceOver goes on to that page's last row, the message just
   above the one it came from (the first message, when nothing came before), so swiping on keeps
-  reading upward; VoiceOver anywhere else, and a page a scroll by hand brings in, stay where
-  they are. Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone
-  went from waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
+  reading upward. VoiceOver moves there once it has finished reading the Loading row. It lands on
+  the end of that message, the element one swipe back from the row below would reach: the reply's
+  last action or the last note under it (usage, a learned skill, a memory, a review, cards added,
+  a full chat), else its last paragraph, heading or list item, else its work line; a question is
+  one element. Reading upward goes on from there, and the view
+  doesn't move. A reply that ends with code, a table, an image or a widget gives VoiceOver no
+  landing, and it stays where it was. VoiceOver anywhere else, and a page a scroll by hand brings
+  in, stay where they are.
+  Scrolling a 300-turn chat up from its end at 3,000 points a second on an iPhone went from
+  waits at the top of up to 4 s and jumps of whole pages, often never reaching the first
   message, to the first message in about 105 s, the time its height takes at that speed, with no
   wait and nothing on screen moving more than 1 point (`-HERMES_SCROLL_RUN`,
   `docs/development.md`). On a Mac it went from about 30 waits of up to 4 s and never reaching the

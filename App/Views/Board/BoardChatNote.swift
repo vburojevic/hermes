@@ -38,6 +38,7 @@ struct CardsAddedNote: View {
             Rectangle().fill(Theme.hairline).frame(height: 0.5)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(cards) { card in
+                    let opensBoard = projectID != nil && workspace.roster != nil
                     HStack(spacing: 8) {
                         Circle()
                             .fill(Theme.tertiaryText)
@@ -55,6 +56,9 @@ struct CardsAddedNote: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                     .accessibilityElement(children: .combine)
+                    // The note's last element can end the reply: where VoiceOver lands reading back
+                    // (`docs/chat.md` §1).
+                    .modifier(VoiceOverLandingTarget(isLast: !opensBoard && card.id == cards.last?.id))
                 }
             }
             .padding(.vertical, 3)
@@ -73,6 +77,7 @@ struct CardsAddedNote: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .modifier(VoiceOverLandingTarget())
             }
         }
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
