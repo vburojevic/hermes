@@ -110,6 +110,7 @@ struct MarkdownBlocksView: View {
     let blocks: [MarkdownBlock]
     /// The sentence being read aloud, by its top-level block.
     var highlight: SpokenSentence?
+    @Environment(\.voiceOverLandingEnds) private var ends
 
     var body: some View {
         VStack(alignment: .leading, spacing: MarkdownSpacing.block) {
@@ -118,6 +119,8 @@ struct MarkdownBlocksView: View {
                 MarkdownBlockView(block: block, sentence: highlight?.block == index ? highlight : nil)
                     .equatable()
                     .modifier(SpokenTone(isDimmed: highlight.map { $0.block != index } ?? false))
+                    // Only the last block can hold the row's last element (`docs/chat.md` §1).
+                    .environment(\.voiceOverLandingEnds, ends && index == blocks.count - 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,8 +192,13 @@ struct MarkdownBlockView: View, Equatable {
                 // the others don't redraw when that changes, as the roster and the commands
                 // arrive while a chat opens (every reply's every block did).
                 NamingParagraph(inlines: inlines, sentence: sentence)
+                    // One element either way: its text, or its pills read as one line.
+                    .modifier(VoiceOverLandingTarget())
             } else {
                 Self.paragraph(InlineRenderer.attributed(inlines), font: bodyFont, sentence: sentence)
+                    // Where VoiceOver lands when reading back brings in a reply that ends here
+                    // (`docs/chat.md` §1).
+                    .modifier(VoiceOverLandingTarget())
             }
 
         case .heading(let level, let inlines):
@@ -201,6 +209,7 @@ struct MarkdownBlockView: View, Equatable {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .modifier(StreamingReveal(length: text.characters.count))
+                .modifier(VoiceOverLandingTarget())
 
         case .codeBlock(let language, let code):
             FencedCode(language: language, code: code)
@@ -385,6 +394,9 @@ private struct MarkdownListView: View {
                     marker(index: index, item: item)
                         .modifier(StreamingAppear())
                     AnyView(MarkdownBlocksView(blocks: item.blocks))
+                        // Its marker reads first, so the last item's text ends the list
+                        // (`docs/chat.md` §1).
+                        .modifier(VoiceOverLandingEnds(isLast: index == list.items.count - 1))
                 }
             }
         }

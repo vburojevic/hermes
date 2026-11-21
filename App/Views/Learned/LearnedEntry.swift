@@ -103,6 +103,8 @@ struct LearnedSkillNotes: View {
                 .buttonStyle(.plain)
                 .disabled(context == nil)
                 .accessibilityHint("Opens the skill")
+                // The last note can end the reply: where VoiceOver lands reading back (`docs/chat.md` §1).
+                .modifier(VoiceOverLandingTarget(isLast: name == names.last))
             }
         }
         .sheet(item: $opened) { skill in

@@ -4,8 +4,9 @@ import XCTest
 /// the chat list, and on a message in the open chat. VoiceOver runs inside the simulator only, for
 /// the length of each test. VoiceOver is placed first; only then does the app send the mock's
 /// "slow marathon" turn (its steps, then the answer), so everything the turn changes happens under
-/// the focus. Start the mock first:
-/// `python3 -I Tools/mock-hermes/backend.py --port 19119 --gateway-port 18642`.
+/// the focus. Reading back, VoiceOver goes on from the loading row into the earlier messages that
+/// come in (`docs/chat.md` §1). Start the mock first, with the long chat:
+/// `python3 -I Tools/mock-hermes/backend.py --port 19119 --gateway-port 18642 --long-chat`.
 final class VoiceOverFocusUITests: XCTestCase {
     /// Seconds after launch the app sends: past the walk to the target, which takes about 30 s.
     private let sendAfter = 45
@@ -72,7 +73,193 @@ final class VoiceOverFocusUITests: XCTestCase {
         }
     }
 
+    /// VoiceOver reaches the loading row above the oldest message shown, the way reading a long
+    /// chat upward does, and waits there. When the earlier page goes in above that message,
+    /// VoiceOver is on the row just above it, and reading on goes up into the page rather than
+    /// off to the toolbar.
+    @MainActor
+    func testReadingBackGoesOnIntoEarlierMessages() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
+        let app = launch(opening: "long_history", settings: ["-openChatsAt", "latest"])
+        let oldest = try readBackToLoading(in: app)
+        let service = XCUIDevice.shared.voiceOverService
+        let step = Self.step
+        attach("read-back-on-loading")
+
+        // Waiting on the loading row: the earlier page comes in above the oldest question. The
+        // test waits as a person would, without reading the app meanwhile: its reads while the
+        // page lands keep VoiceOver busy.
+        Thread.sleep(forTimeInterval: 6)
+        let earlier = message("Step \(oldest - 1):", in: app)
+        XCTAssertTrue(earlier.waitForExistence(timeout: 20), "the messages before step \(oldest) never came in")
+        attach("read-back-landed")
+        // Step off and back: VoiceOver comes back to wherever focus is now.
+        _ = try? service.moveForward()
+        let focused = (try? service.moveBackward().utterance) ?? "<no speech>"
+        // Reading on from there goes up into the page: a question older than any shown before,
+        // before any loading row or the toolbar.
+        var onward = [focused]
+        var next = step(focused)
+        while next == nil, onward.count < 60, !(onward.last ?? "").hasPrefix("Loading") {
+            let heard = (try? service.moveBackward().utterance) ?? "<no speech>"
+            if onward.last == heard { break }
+            onward.append(heard)
+            next = step(heard)
+        }
+        try service.disable()
+        let log = onward.joined(separator: "\n")
+        keep("oldest shown: step \(oldest)\nafter the page:\n\(log)", as: "read-back-after")
+        print("VoiceOver after the page (oldest shown: step \(oldest)):\n\(log)")
+        XCTAssertFalse(focused.hasPrefix("Loading"), "VoiceOver stayed on the loading row above the page")
+        let into = try XCTUnwrap(next, "VoiceOver didn't go on into the page from “\(focused)”:\n\(log)")
+        XCTAssertLessThan(into, oldest, "VoiceOver read a question that was already shown:\n\(log)")
+    }
+
+    /// The reader swipes off the loading row while the earlier page lands under it, before
+    /// VoiceOver has moved on into the page: VoiceOver stays where the reader went, and nothing
+    /// the landing asked for pulls it back (`docs/chat.md` §1).
+    @MainActor
+    func testSwipingOffTheLoadingRowKeepsVoiceOverWhereTheReaderWent() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
+        let app = launch(opening: "long_history", settings: ["-openChatsAt", "latest"])
+        let oldest = try readBackToLoading(in: app)
+        let service = XCUIDevice.shared.voiceOverService
+        // VoiceOver reached the loading row; the page goes in under it within half a second, the
+        // row above asks for VoiceOver from about 0.9 s, and VoiceOver makes that move once it
+        // has finished with the loading row, about 2.9 s in. The swipe comes between the two,
+        // while the asks are still being made.
+        Thread.sleep(forTimeInterval: 1.2)
+        let went = (try? service.moveBackward().utterance) ?? "<no speech>"
+        XCTAssertFalse(went.hasPrefix("Loading") || went == "<no speech>", "VoiceOver didn't move off the loading row: \(went)")
+        attach("swipe-off-moved")
+        // Waiting there past every ask, then stepping off and back: VoiceOver comes back to
+        // wherever focus is now. Up and down again, so it doesn't pass the loading row.
+        Thread.sleep(forTimeInterval: 5)
+        let earlier = message("Step \(oldest - 1):", in: app)
+        XCTAssertTrue(earlier.waitForExistence(timeout: 20), "the messages before step \(oldest) never came in")
+        _ = try? service.moveBackward()
+        let after = (try? service.moveForward().utterance) ?? "<no speech>"
+        try service.disable()
+        let log = "oldest shown: step \(oldest)\nswiped to: \(went)\nafter the page: \(after)"
+        keep(log, as: "swipe-off")
+        print("VoiceOver swiping off the loading row:\n\(log)")
+        // The same element reads the same words first; VoiceOver may add a hint after them.
+        XCTAssertTrue(after.hasPrefix(String(went.prefix(24))), "VoiceOver didn't stay where the reader went:\n\(log)")
+        XCTAssertFalse(after.hasPrefix("More"), "VoiceOver went to the row the page landed under:\n\(log)")
+    }
+
+    /// A reply that ends in a code block lands on its actions, More, like any reply with words, when
+    /// the earlier page goes in above the question below it (`docs/chat.md` §1).
+    @MainActor
+    func testAReplyEndingInCodeLandsOnMore() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
+        let app = launch(opening: "long_code", settings: ["-openChatsAt", "latest"])
+        let oldest = try readBackToLoading(in: app, opened: "8023")
+        let landed = try landing(below: oldest, in: app, name: "code")
+        XCTAssertTrue(landed.hasPrefix("More"), "VoiceOver didn't land on the reply's More: “\(landed)”")
+    }
+
+    /// A reply that is only a widget, with no words to copy, lands on the widget's card: its
+    /// title (`docs/chat.md` §1).
+    @MainActor
+    func testAWidgetOnlyReplyLandsOnItsCard() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
+        let app = launch(opening: "long_widget", settings: ["-openChatsAt", "latest"])
+        let oldest = try readBackToLoading(in: app, opened: "Check 24")
+        let landed = try landing(below: oldest, in: app, name: "widget")
+        XCTAssertTrue(landed.contains("Check \(oldest - 1)"), "VoiceOver didn't land on the card of step \(oldest - 1): “\(landed)”")
+    }
+
+    /// Reading a chat of two pages back from its end: past the loading row, once the earlier page
+    /// is in and the loading row has gone, reading on reaches the chat's first message.
+    @MainActor
+    func testReadingBackReachesTheFirstMessage() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("driving VoiceOver needs iOS 27") }
+        let app = launch(opening: "garden_plan", settings: ["-openChatsAt", "latest"])
+        let oldest = try readBackToLoading(in: app, opened: "Bed 14 gets")
+        let service = XCUIDevice.shared.voiceOverService
+        Thread.sleep(forTimeInterval: 6)
+        XCTAssertTrue(message("Step 1:", in: app).waitForExistence(timeout: 20), "the first page never came in")
+        attach("start-landed")
+        var heard = [String]()
+        var pages = 1
+        while heard.count < 80 {
+            let next = (try? service.moveBackward().utterance) ?? "<no speech>"
+            if heard.last == next { break }
+            heard.append(next)
+            if Self.step(next) == 1 { break }
+            // Another page, if the chat had one: it goes in above, as the first did.
+            if next.hasPrefix("Loading") { pages += 1; Thread.sleep(forTimeInterval: 6) }
+        }
+        try service.disable()
+        let log = heard.joined(separator: "\n")
+        keep("oldest shown: step \(oldest)\npages: \(pages)\nreading back:\n\(log)", as: "start-read-back")
+        print("VoiceOver reading back to the start (oldest shown: step \(oldest), pages: \(pages)):\n\(log)")
+        XCTAssertEqual(heard.last.flatMap(Self.step), 1, "VoiceOver didn't reach the first message:\n\(log)")
+        let steps = heard.compactMap(Self.step)
+        XCTAssertEqual(steps, steps.sorted(by: >), "VoiceOver didn't read the questions upward in order:\n\(log)")
+    }
+
     // MARK: Helpers
+
+    /// Waiting on the loading row until the page is in above step `oldest`, then stepping off and
+    /// back, so VoiceOver reads wherever focus is now. Answers what it reads.
+    @available(iOS 27.0, *)
+    @MainActor
+    private func landing(below oldest: Int, in app: XCUIApplication, name: String) throws -> String {
+        let service = XCUIDevice.shared.voiceOverService
+        attach("\(name)-on-loading")
+        Thread.sleep(forTimeInterval: 6)
+        XCTAssertTrue(message("Step \(oldest - 1):", in: app).waitForExistence(timeout: 20), "the messages before step \(oldest) never came in")
+        attach("\(name)-landed")
+        _ = try? service.moveForward()
+        let focused = (try? service.moveBackward().utterance) ?? "<no speech>"
+        try service.disable()
+        keep("oldest shown: step \(oldest)\nafter the page: \(focused)", as: "\(name)-landing")
+        print("VoiceOver after the page (\(name), oldest shown: step \(oldest)): \(focused)")
+        return focused
+    }
+
+    /// The number in a question's "Step N:", where it has one.
+    private static func step(_ heard: String) -> Int? {
+        guard let match = heard.firstMatch(of: /Step (\d+):/) else { return nil }
+        return Int(match.1)
+    }
+
+    /// With a long chat opened at its end, as a chat read to the end opens (it follows the end
+    /// until read back), turns VoiceOver on and reads back to the loading row, the first thing
+    /// in the chat, from the toolbar, as it does reading back from below. `last` is words of the
+    /// chat's last reply, there once it's open. Answers the oldest step shown before VoiceOver
+    /// started: the page goes in above it.
+    @available(iOS 27.0, *)
+    @MainActor
+    private func readBackToLoading(in app: XCUIApplication, opened last: String = "is healthy again") throws -> Int {
+        XCTAssertTrue(message(last, in: app).waitForExistence(timeout: 30), "the long chat didn't open")
+        Thread.sleep(forTimeInterval: 3)
+        let questions = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Step "))
+        let shown = questions.allElementsBoundByIndex.compactMap { Self.step($0.label) }
+        let oldest = try XCTUnwrap(shown.min(), "no question was shown")
+        XCTAssertGreaterThan(oldest, 1, "the whole chat was shown, with no page left to come in")
+        attach("read-back-start")
+
+        let service = XCUIDevice.shared.voiceOverService
+        for attempt in 0..<3 {
+            if attempt > 0 { try service.disable(); Thread.sleep(forTimeInterval: 1) }
+            try service.enable()
+            Thread.sleep(forTimeInterval: 3)
+            if (try? service.currentSpeech()) != nil || (try? service.moveForward()) != nil { break }
+        }
+        var heard = ""
+        var path: [String] = []
+        for _ in 0..<20 {
+            heard = (try? service.moveForward().utterance) ?? "<no speech>"
+            path.append(heard)
+            if heard.hasPrefix("Loading") || Self.step(heard) != nil { break }
+        }
+        keep(path.joined(separator: "\n"), as: "read-back-path")
+        XCTAssertTrue(heard.hasPrefix("Loading"), "VoiceOver never reached the loading row:\n\(path.joined(separator: "\n"))")
+        return oldest
+    }
 
     /// What a test sees of the reply in the app: whether its answer is there, whether what it
     /// moves has moved, and a line for the log.
@@ -184,6 +371,14 @@ final class VoiceOverFocusUITests: XCTestCase {
     }
 
     @MainActor
+    private func keep(_ text: String, as name: String) {
+        let attachment = XCTAttachment(string: text)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     private func attach(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
@@ -192,9 +387,10 @@ final class VoiceOverFocusUITests: XCTestCase {
     }
 
     /// Opens a chat and, `sendAfter` seconds after launch, sends one message into it, or into the
-    /// chat `chat` names.
+    /// chat `chat` names. `settings` are more launch arguments.
     @MainActor
-    private func launch(opening session: String, sending text: String, into chat: String? = nil) -> XCUIApplication {
+    private func launch(opening session: String, sending text: String? = nil, into chat: String? = nil,
+                        settings: [String] = []) -> XCUIApplication {
         let bundle = Bundle(for: VoiceOverFocusUITests.self)
         func setting(_ key: String, _ fallback: String) -> String {
             (bundle.object(forInfoDictionaryKey: key) as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
@@ -207,8 +403,10 @@ final class VoiceOverFocusUITests: XCTestCase {
             "-HERMES_TIPS", "hide", "-HERMES_WHATS_NEW", "NO", "-HERMES_PASTEBOARD", "NO", "-push.primeDeclines", "2",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-HERMES_OPEN_SESSION", session,
-            "-HERMES_SEND_HERE", text, "-HERMES_SEND_HERE_AFTER", "\(sendAfter)", "-HERMES_SEND_HERE_ROUNDS", "1",
-        ]
+        ] + settings
+        if let text {
+            app.launchArguments += ["-HERMES_SEND_HERE", text, "-HERMES_SEND_HERE_AFTER", "\(sendAfter)", "-HERMES_SEND_HERE_ROUNDS", "1"]
+        }
         if let chat { app.launchArguments += ["-HERMES_SEND_HERE_CHAT", chat] }
         app.launch()
         return app

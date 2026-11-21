@@ -198,6 +198,51 @@ def seed_long_chat(turns=60):
     SESSIONS[sid]["_last_read_at"] = NOW - 2 * 86400  # read two days ago: many replies since
 
 
+def seed_landing_chats(widgets):
+    """With --long-chat, three chats for where VoiceOver lands reading back as an earlier page comes
+    in (docs/chat.md §1), listed below the others: "Shell snippets", whose replies end in a code
+    block; "Daily checks", whose replies are only a widget with no alt (a directive the plugin didn't
+    write, so the reply has no words to copy); and "Garden plan", two pages long, to read back to its
+    first message. Questions say "Step N:", as the long chat's do. `widgets` is widgets.py, which
+    stores each card as its create would."""
+    t = NOW - 40 * 86400
+    sid = "long_code"
+    session_row(sid, "Shell snippets", "cli", t, t + 24 * 3600, "")
+    for turn in range(24):
+        add_message(sid, "user", f"Step {turn + 1}: how do I list what's on port {8000 + turn}?", timestamp=t)
+        add_message(sid, "assistant", f"This shows what listens there:\n\n```sh\nlsof -nP -iTCP:{8000 + turn} -sTCP:LISTEN\n```",
+                    timestamp=t + 20, finish_reason="stop")
+        t += 3600
+    t = NOW - 38 * 86400
+    sid = "long_widget"
+    session_row(sid, "Daily checks", "cli", t, t + 24 * 3600, "")
+    for turn in range(24):
+        add_message(sid, "user", f"Step {turn + 1}: show me check {turn + 1}.", timestamp=t)
+        raw = {"type": "details", "v": 1, "title": f"Check {turn + 1}", "as_of": rfc3339_at(t + 10),
+               "sections": [{"fields": [{"label": "Disk", "value": f"{40 + turn % 9}% used"}]}],
+               "fallback_text": f"Check {turn + 1}: disk {40 + turn % 9}% used."}
+        made = widgets.op_create(raw, session=sid)
+        call = f"call_check_{turn}"
+        add_message(sid, "assistant", "", timestamp=t + 5, finish_reason="tool_calls",
+                    tool_calls=[{"id": call, "type": "function",
+                                 "function": {"name": "widget", "arguments": json.dumps({"op": "create", "payload": raw})}}])
+        add_message(sid, "tool", json.dumps(made), timestamp=t + 6, tool_call_id=call, tool_name="widget")
+        add_message(sid, "assistant", f'::widget{{id="{made["id"]}"}}', timestamp=t + 20, finish_reason="stop")
+        t += 3600
+    t = NOW - 36 * 86400
+    sid = "garden_plan"
+    session_row(sid, "Garden plan", "cli", t, t + 24 * 3600, "")
+    for turn in range(14):
+        add_message(sid, "user", f"Step {turn + 1}: what goes in bed {turn + 1}?", timestamp=t)
+        add_message(sid, "assistant", f"Bed {turn + 1} gets tomatoes along the back and basil in front.",
+                    timestamp=t + 20, finish_reason="stop")
+        t += 3600
+
+
+def rfc3339_at(moment):
+    return datetime.datetime.fromtimestamp(moment, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def seed_photo_chats():
     """`--photo-chats`: a chat whose photos were stored before Hermes stamped the words the person typed
     (no `typed_ask`), each row as image_turns.py builds it: the gateway's `[Image attached at: …]` hints

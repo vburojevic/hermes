@@ -23,14 +23,20 @@ struct ReplyBody: View, Equatable {
             MarkdownView(text: markdown, caches: caches, highlight: highlight, selectsWhole: true)
         } else {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                    switch segment {
-                    case .markdown(let markdown): MarkdownView(text: markdown, caches: caches, selectsWhole: true)
-                    case .widget(let directive): WidgetSlot(directive: directive)
-                    case .inline(let json): InlineWidgetSlot(json: json)
-                    case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json))
-                    case .unreadable: WidgetFallbackView(fallback: Self.unreadableFallback)
+                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                    // Only the last segment can end the row (`docs/chat.md` §1): text before a
+                    // widget never does, and a widget that ends a reply with no words lands on its
+                    // card (`WidgetSlot`).
+                    Group {
+                        switch segment {
+                        case .markdown(let markdown): MarkdownView(text: markdown, caches: caches, selectsWhole: true)
+                        case .widget(let directive): WidgetSlot(directive: directive)
+                        case .inline(let json): InlineWidgetSlot(json: json)
+                        case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json))
+                        case .unreadable: WidgetFallbackView(fallback: Self.unreadableFallback)
+                        }
                     }
+                    .modifier(VoiceOverLandingEnds(isLast: index == segments.count - 1))
                 }
             }
         }

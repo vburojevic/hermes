@@ -93,6 +93,8 @@ struct MemoryNotes: View {
                 .buttonStyle(.plain)
                 .disabled(context == nil)
                 .accessibilityHint("Shows what was remembered")
+                // The last note can end the reply: where VoiceOver lands reading back (`docs/chat.md` §1).
+                .modifier(VoiceOverLandingTarget(isLast: waiting.isEmpty))
             }
             if !waiting.isEmpty {
                 Button {
@@ -104,6 +106,7 @@ struct MemoryNotes: View {
                 .buttonStyle(.plain)
                 .disabled(context == nil)
                 .accessibilityHint("Opens Hermes's Notes to review it")
+                .modifier(VoiceOverLandingTarget())
             }
         }
         // A saved memory ticks "Tell Hermes about you" (`getStartedCard`); never the tour's demo note.

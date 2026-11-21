@@ -3,7 +3,8 @@ import SwiftUI
 
 /// A widget where a reply's directive is (`docs/widgets.md` §2, §9): the card once its payload is
 /// known, a skeleton under the directive's `alt` until then, and "Couldn't load this widget" when
-/// it can't be found on this device.
+/// it can't be found on this device. A widget that ends a reply with no words is where VoiceOver
+/// lands reading back onto it (`docs/chat.md` §1): one element of whichever of these shows.
 struct WidgetSlot: View {
     let directive: WidgetDirective
 
@@ -73,6 +74,8 @@ struct WidgetCard: View {
     @State private var copied = false
     @State private var showsSource = false
     @Environment(\.widgetPreview) private var preview
+    /// The card ends its row: its title is where VoiceOver lands, and nothing else in it asks.
+    @Environment(\.voiceOverLandingEnds) private var landingEnds
 
     /// The clock the card reads: the gallery's, else the one it keeps.
     private var now: Date { preview?.now ?? clock }
@@ -87,14 +90,19 @@ struct WidgetCard: View {
             } else if case .choice(let choice) = payload.content, choice.style == .suggestions {
                 // Follow-ups have no card (`Asking.choiceSuggestions`).
                 SuggestionRows(payload: payload, model: choice)
+                    .environment(\.voiceOverLandingEnds, landingEnds)
             } else if let reason = foldReason(interaction), !view.unfolded {
                 WidgetFoldedCard(payload: payload, reason: reason) {
                     host?.store.updateView(payload.id) { $0.unfolded = true }
                 }
+                .modifier(VoiceOverLandingTarget())
+                .environment(\.voiceOverLandingEnds, landingEnds)
             } else {
                 card(interaction: unfoldedInteraction(interaction, view: view))
             }
         }
+        // The card's text and the widgets in a stack never end the row (`landingEnds`).
+        .environment(\.voiceOverLandingEnds, false)
         .task(id: nextDeadline(interaction)) {
             // Wakes once at the next moment the card changes by itself: expiry, staleness, the
             // 60 s answer timeout. No timer runs in between.
@@ -159,6 +167,8 @@ struct WidgetCard: View {
                 }
             }
             .accessibilityElement(children: .combine)
+            .modifier(VoiceOverLandingTarget())
+            .environment(\.voiceOverLandingEnds, landingEnds)
             StackBody(model: stack, context: context)
             WidgetActionRow(context: context)
         }
@@ -179,6 +189,7 @@ struct WidgetCard: View {
         )
         return VStack(alignment: .leading, spacing: density.gap) {
             WidgetHeader(payload: payload, now: now, interaction: interaction)
+                .environment(\.voiceOverLandingEnds, landingEnds)
             banners(interaction)
             WidgetBodyView(context: context)
             WidgetStatusLine(context: context)
@@ -395,6 +406,8 @@ struct WidgetHeader: View {
                     .foregroundStyle(Theme.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
+                    // Where VoiceOver lands when the card ends its reply (`WidgetCard`).
+                    .modifier(VoiceOverLandingTarget())
                 if let subtitle = payload.envelope.subtitle, !subtitle.isEmpty {
                     Text(widgetLinking: subtitle)
                         .font(WidgetFont.subtitle)
@@ -806,6 +819,7 @@ struct WidgetLoadingCard: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: density.radius, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Loading: \(title ?? "")"))
+        .modifier(VoiceOverLandingTarget())
     }
 }
 
@@ -937,6 +951,7 @@ struct WidgetMissingCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Try Again", action: retry)
                 .buttonStyle(WidgetActionButtonStyle(fillsWidth: false))
+                .modifier(VoiceOverLandingTarget())
         }
         .padding(.top, density.padTop)
         .padding(.horizontal, density.pad)
@@ -955,9 +970,12 @@ struct WidgetFallbackView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             MarkdownView(text: fallback.text ?? fallback.title ?? String(localized: "A widget this app can't show."))
+                .environment(\.voiceOverLandingEnds, false)
+            // Its last element, where VoiceOver lands when it ends a reply (`WidgetSlot`).
             Label("Shown as text", systemImage: "info.circle")
                 .font(WidgetFont.caption)
                 .foregroundStyle(Theme.tertiaryText)
+                .modifier(VoiceOverLandingTarget())
         }
         .contextMenu {
             Button("Copy as Text", systemImage: "doc.on.doc") { Pasteboard.copy(fallback.text ?? "") }
