@@ -702,11 +702,24 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   waits until the mouse has moved 16 points, hands a drag heading left to the message's swipe
   and selects on any other.
   VoiceOver reads the reply as one text, moves by its headings, and reaches the code blocks' Copy
-  and the tables' cells where they stand. On iPhone and iPad reply text isn't selectable in place
-  (selectable text made laying out a chat a fifth heavier as it opened and scrolled): the reply's
-  menu (long press, or …) has **Select Text**, a sheet with the reply's words to select any part
-  of and copy (Copy, or Copy All). The person's bubbles aren't selectable; their long press opens
-  the message menu (§4).
+  and the tables' cells where they stand.
+  On iPhone and iPad a finished reply draws as these blocks, as before, and a long press on its
+  words swaps in the same reply as a UIKit text view (`ReplyUITextView`) for as long as words in it
+  are selected. The text view is built from the same `ReplyText`, copied the same way
+  (`ReplyPlainText`) and laid out for the screen's pixels, each paragraph rounded up to a whole
+  pixel as SwiftUI rounds each block, so the words stay where they were (at most a pixel off). The
+  word under the finger is selected, the handles carry the selection across the reply's paragraphs,
+  lists, checklists and quotes and over its blocks, and the edit menu puts Reply first
+  (`docs/inbox.md` §4). A tap anywhere else clears the selection and puts the blocks back. Only the
+  words take the press: a long press on a code block, a table, an image or the margin opens the
+  message menu (§4) as before, and a drag to the left on the words still replies. Links open through
+  the chat's gate only, with no system preview or menu. VoiceOver reads the blocks, as before. The
+  text view is built only on a long press because keeping one for every reply made the chat hitch
+  twice as often while scrolling, and SwiftUI's own text selection stays off because it made laying
+  out a chat a fifth heavier as it opened and scrolled. A streaming reply isn't selectable. The
+  reply's menu (long press, or …) still has **Select Text**, a sheet with the reply's words to
+  select any part of and copy (Copy, or Copy All). The person's bubbles aren't selectable; their
+  long press opens the message menu (§4).
 - **The person's own messages** are plain text, as in Hermes Desktop (§2a). A routine's, a
   webhook's or an automation's delivery is Markdown like a reply.
 

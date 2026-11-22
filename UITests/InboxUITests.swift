@@ -141,6 +141,85 @@ final class InboxUITests: XCTestCase {
     }
 }
 
+/// Reply on words selected in a finished reply (`docs/inbox.md` §4), against the mock gateway alone:
+/// `python3 -I Tools/mock-hermes/server.py --port 18642 --key dev-key-0123456789abcdef`, or another
+/// port through `HERMES_MOCK_GATEWAY=…`. It needs no dashboard, so it resets nothing first.
+final class SelectedWordsUITests: XCTestCase {
+    private let mock = Mock()
+
+    override func setUp() async throws {
+        continueAfterFailure = false
+        addTeardownBlock { @MainActor in XCUIDevice.shared.orientation = .portrait }
+    }
+
+    /// On iPhone and iPad a long press on the words of a finished reply selects them in place, and
+    /// Reply, first in the edit menu, quotes them in the composer's bar: once in landscape, then
+    /// other words of the same reply in portrait, beside the first.
+    @MainActor
+    func testSelectedWordsQuoteInOneStep() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-HERMES_BOOTSTRAP_URL", mock.gateway.absoluteString, "-HERMES_BOOTSTRAP_KEY", mock.key,
+            "-HERMES_TIPS", "hide", "-HERMES_WHATS_NEW", "NO", "-HERMES_OPEN_SESSION", "api_old_1",
+        ]
+        app.launch()
+        // "Day 1 Alfama and the castle. Day 2 Belém. Day 3 Sintra."
+        // The reply draws as SwiftUI text until a long press swaps in the selectable text view. Its
+        // whole first sentence, inside the transcript's scroll view: the composer's bar quotes
+        // "Alfama", and the iPad's sidebar previews the same sentence in the chat's row.
+        let reply = app.scrollViews.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH 'Day 1 Alfama and the castle'")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 30), "no finished reply")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        try await Task.sleep(for: .seconds(1))
+        // Points from the text's leading edge, on its first line: the words sit there whatever
+        // the column's width.
+        quote(word(at: 75, in: reply), in: app, named: "Landscape: Alfama selected")
+        XCTAssertTrue(app.staticTexts["Replying to Hermes"].waitForExistence(timeout: 5), "Reply didn't quote the words")
+        // The selected word alone: the message menu's Reply would quote the whole reply.
+        XCTAssertTrue(app.staticTexts["Alfama"].exists, "the bar doesn't quote just the selected word")
+        attach("Landscape: Alfama quoted")
+
+        XCUIDevice.shared.orientation = .portrait
+        try await Task.sleep(for: .seconds(1))
+        quote(word(at: 190, in: reply), in: app, named: "Portrait: castle selected")
+        func quoted(_ label: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+        }
+        XCTAssertTrue(quoted("Quote 2 of 2, from Hermes: castle").waitForExistence(timeout: 5), "no second quote of the selected word")
+        XCTAssertTrue(quoted("Quote 1 of 2, from Hermes: Alfama").exists, "the first quote changed")
+        attach("Portrait: two quotes")
+    }
+
+    @MainActor
+    private func word(at x: CGFloat, in reply: XCUIElement) -> XCUICoordinate {
+        reply.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: 11))
+    }
+
+    /// Selects the word under the point with a long press, then chooses Reply in the edit menu.
+    @MainActor
+    private func quote(_ word: XCUICoordinate, in app: XCUIApplication, named name: String) {
+        word.press(forDuration: 1.2)
+        let reply = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Reply'")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "no Reply in the edit menu")
+        // The edit menu, not the message menu, which also starts with Reply.
+        let messageMenu = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Reply to Words…'")).firstMatch
+        XCTAssertFalse(messageMenu.exists, "the long press opened the message menu")
+        attach(name)
+        reply.tap()
+    }
+
+    @MainActor
+    private func attach(_ name: String) {
+        // The whole screen: the app's own screenshot crops a landscape simulator to a portrait frame.
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+}
+
 /// The mock gateway (`Tools/mock-hermes`): its API server and its dashboard.
 private struct Mock {
     let gateway: URL

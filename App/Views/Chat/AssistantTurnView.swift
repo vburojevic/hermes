@@ -174,6 +174,8 @@ struct AssistantTurnView: View, Equatable {
                     .environment(\.voiceOverLandingEnds, landingEnd == .reply)
                     #if os(macOS)
                     .environment(\.selectionReply, selectionReply)
+                    #else
+                    .environment(\.replyQuote, replyQuote)
                     #endif
                     // Code and tables scroll sideways themselves: those replies take Reply from the menu.
                     .modifier(SwipeToReply(isEnabled: canQuote && !Self.scrollsSideways(turn.answer)) {
@@ -259,6 +261,16 @@ struct AssistantTurnView: View, Equatable {
         guard canQuote, let words = selectedReplyWords else { return nil }
         let quoteActions = quoteActions, turn = turn
         return SelectionReply(words: words) { passage in
+            quoteActions.reply(.assistant(turn), quoteActions.assistantName, passage)
+        }
+    }
+    #else
+    /// Words selected in a finished reply quote into the composer from Reply, first in the edit
+    /// menu (`docs/inbox.md` §4).
+    private var replyQuote: ReplyQuote? {
+        guard canQuote else { return nil }
+        let quoteActions = quoteActions, turn = turn
+        return ReplyQuote(rowID: turn.id, author: quoteActions.assistantName) { passage in
             quoteActions.reply(.assistant(turn), quoteActions.assistantName, passage)
         }
     }

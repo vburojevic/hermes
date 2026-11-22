@@ -1938,9 +1938,11 @@ extension TranscriptView {
             .sheet(item: $selectingText) { choice in
                 SelectTextSheet(author: choice.author, text: choice.text)
             }
-            // On iPhone and iPad a reply's words aren't selectable in place (Select Text in its
-            // menu instead): every selectable text made laying out a chat a fifth heavier as it
-            // opened and scrolled.
+            // On iPhone and iPad SwiftUI's text selection stays off: every selectable text made
+            // laying out a chat a fifth heavier as it opened and scrolled. A long press on a
+            // finished reply's words selects them in place through a text view made for that
+            // press instead (`ReplySelection`, `docs/chat.md` §3), and Select Text in its menu
+            // still opens the whole reply.
             .environment(\.selectsText, Self.selectsInPlace)
             #endif
             .onDisappear(perform: rememberPlace)
