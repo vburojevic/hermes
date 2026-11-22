@@ -1,10 +1,24 @@
 #if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import HermesKit
 import HermesMarkdown
 import os
 import SwiftUI
 
+#if os(macOS)
+typealias ReplyFont = NSFont
+typealias ReplyColor = NSColor
+typealias ReplyImage = NSImage
+#else
+typealias ReplyFont = UIFont
+typealias ReplyColor = UIColor
+typealias ReplyImage = UIImage
+#endif
+
+#if os(macOS)
 /// A finished reply on the Mac as one text (`docs/chat.md` §3 Selection): one drag selects
 /// across its paragraphs, lists and quotes, Cmd-A selects the whole reply, and Copy, Speech and
 /// Services read the selection as plain text (`ReplyPlainText`). It draws what `MarkdownBlocksView`
@@ -35,6 +49,7 @@ struct ReplyTextView: NSViewRepresentable {
         return CGSize(width: width, height: view.height(for: width))
     }
 }
+#endif
 
 // MARK: - The text
 
@@ -114,17 +129,30 @@ nonisolated final class ReplyText: @unchecked Sendable {
 
     var units: [ReplyPlainText.Unit] { paragraphs.map(\.unit) }
 
+    /// Whether TextKit adds a font's leading below its lines. On iPhone and iPad the line spacing
+    /// carries it, as SwiftUI places it (`Metrics.lineSpacing(_:font:)`).
+    #if os(macOS)
+    static let drawsLeading = true
+    #else
+    static let drawsLeading = false
+    #endif
+
     var bodyFont: Font { compact ? Theme.Typography.compactMessage : Theme.Typography.message }
 
-    /// The reply's text, for a screen of `scale` pixels per point. `named` are the paragraphs whose
-    /// words name a Bot or a file the chat knows (`InlineRenderer.mayName`): they are drawn as pills
-    /// by their own view.
-    static func build(_ blocks: [MarkdownBlock], compact: Bool, scale: CGFloat, named: Set<Int> = []) -> ReplyText? {
+    /// The reply's text, for a screen of `scale` pixels per point, at a text size (iPhone and iPad
+    /// follow Dynamic Type and Bold Text; the Mac's sizes are fixed). `named` are the paragraphs
+    /// whose words name a Bot or a file the chat knows (`InlineRenderer.mayName`): they are drawn
+    /// as pills by their own view.
+    static func build(
+        _ blocks: [MarkdownBlock], compact: Bool, scale: CGFloat, named: Set<Int> = [],
+        typeSize: DynamicTypeSize = .large, legibility: LegibilityWeight? = nil
+    ) -> ReplyText? {
         let units = ReplyPlainText.units(blocks)
         guard !units.isEmpty else { return nil }
-        let fonts = Fonts(compact: compact)
+        let fonts = Fonts(compact: compact, typeSize: typeSize, legibility: legibility)
         let hosts = units.indices.map { ReplyPlainText.hosted(units[$0], names: named.contains($0)) }
-        let lineSpacings = units.indices.map { hosts[$0] == nil ? Metrics.lineSpacing(units[$0]) : 0 }
+        let unitFonts = units.indices.map { fonts.font(for: units[$0], hosted: hosts[$0] != nil) }
+        let lineSpacings = units.indices.map { hosts[$0] == nil ? Metrics.lineSpacing(units[$0], font: unitFonts[$0]) : 0 }
         let topPads = units.indices.map { hosts[$0] == nil ? Metrics.topPad(units[$0]) : 0 }
         let storage = NSMutableAttributedString()
         var paragraphs: [Paragraph] = []
@@ -155,22 +183,16 @@ nonisolated final class ReplyText: @unchecked Sendable {
             // A block that opens list items is that list, drawn from the outer one's edge.
             let indent = host == nil ? x : unit.markers.first.flatMap { lists[$0] } ?? x
 
-            let font: NSFont
+            let font = unitFonts[index]
             let text = NSMutableAttributedString()
             switch (host, unit.content) {
-            case (nil, .paragraph(let inlines)):
-                font = fonts.body
-                text.append(Inlines(fonts: fonts, base: font, color: color).attributed(inlines))
-            case (nil, .heading(let level, let inlines)):
-                font = fonts.heading(level)
+            case (nil, .paragraph(let inlines)), (nil, .heading(_, let inlines)):
                 text.append(Inlines(fonts: fonts, base: font, color: color).attributed(inlines))
             case (nil, .html(let raw)):
-                font = fonts.code
                 text.append(NSAttributedString(string: raw.replacingOccurrences(of: "\n", with: "\u{2028}"), attributes: [
                     .font: font, .foregroundColor: Palette.secondary,
                 ]))
             default:
-                font = Metrics.attachmentFont
                 text.append(NSAttributedString(string: "\u{FFFC}", attributes: [
                     .font: font, .replyBlock: index, .foregroundColor: color,
                 ]))
@@ -189,7 +211,7 @@ nonisolated final class ReplyText: @unchecked Sendable {
                     // list's `HStack(alignment: .firstTextBaseline)`. SwiftUI sizes the marker's Text
                     // to whole pixels and places it on a whole pixel: a number at the column's
                     // trailing edge, a bullet in the column's middle.
-                    let (markerText, markerFont): (String, NSFont) = if case .number(let number) = marker.marker {
+                    let (markerText, markerFont): (String, ReplyFont) = if case .number(let number) = marker.marker {
                         ("\(number).", fonts.number)
                     } else {
                         ("•", fonts.bullet)
@@ -200,15 +222,32 @@ nonisolated final class ReplyText: @unchecked Sendable {
                     } else {
                         Metrics.pixels((marker.width - markerWidth) / 2, scale: scale, rule: .toNearestOrAwayFromZero)
                     }
-                    let tab = NSTextTab(textAlignment: .left, location: marker.x + offset)
-                    let prefix = NSMutableAttributedString(string: "\t\(markerText)\t", attributes: [
-                        .font: markerFont, .foregroundColor: Palette.secondary,
-                    ])
+                    let start = marker.x + offset
+                    let markerAttributes: [NSAttributedString.Key: Any] = [.font: markerFont, .foregroundColor: Palette.secondary]
+                    let prefix: NSMutableAttributedString
+                    #if os(iOS)
+                    // A tab never moves back, and one at the pen is passed by. A bullet wider than
+                    // its column (the largest text sizes) would want a stop at or before the line's
+                    // start, and TextKit would push it to the words' stop and lay out nothing after
+                    // it: it starts at the line's start with no tab, and the words never start
+                    // before it ends. The Mac lays its markers out as it always has.
+                    let words = NSTextTab(textAlignment: .left, location: max(x, max(0, start) + markerWidth))
+                    if start > 0 {
+                        prefix = NSMutableAttributedString(string: "\t\(markerText)\t", attributes: markerAttributes)
+                        prefix.addAttribute(.font, value: font, range: NSRange(location: 0, length: 1))
+                        tabs = [NSTextTab(textAlignment: .left, location: start), words]
+                    } else {
+                        prefix = NSMutableAttributedString(string: "\(markerText)\t", attributes: markerAttributes)
+                        tabs = [words]
+                    }
+                    #else
+                    prefix = NSMutableAttributedString(string: "\t\(markerText)\t", attributes: markerAttributes)
                     prefix.addAttribute(.font, value: font, range: NSRange(location: 0, length: 1))
+                    tabs = [NSTextTab(textAlignment: .left, location: start), NSTextTab(textAlignment: .left, location: x)]
+                    #endif
                     prefix.addAttribute(.font, value: font, range: NSRange(location: prefix.length - 1, length: 1))
                     text.insert(prefix, at: 0)
                     content = prefix.length
-                    tabs = [tab, NSTextTab(textAlignment: .left, location: x)]
                 }
             }
 
@@ -222,12 +261,17 @@ nonisolated final class ReplyText: @unchecked Sendable {
             style.lineBreakStrategy = .standard
             if host == nil {
                 let line = Metrics.line(for: font)
+                #if os(macOS)
                 style.minimumLineHeight = line.height
                 style.maximumLineHeight = line.height
                 // TextKit sets the baseline lower in the line than SwiftUI does. A baseline offset
                 // would move the line with it, so the paragraph's glyphs are raised as they draw.
                 let raise = Metrics.raise(for: font)
                 if raise != 0 { text.addAttribute(.replyRaise, value: raise, range: NSRange(location: 0, length: text.length)) }
+                #else
+                // On iPhone and iPad each line is as tall as its own fonts, as SwiftUI's are: a line
+                // of nothing but inline code is shorter than one with words in the body font.
+                #endif
                 // SwiftUI draws glyphs on a whole point but places underlines from the baseline it
                 // computed: the line's bottom less the font's descent.
                 let drop = line.height + font.descender - line.ascent
@@ -262,19 +306,25 @@ nonisolated final class ReplyText: @unchecked Sendable {
             bottom: CGFloat(ReplyPlainText.trailingBlanks(blocks)) * Metrics.blockSpacing)
     }
 
-    /// The theme's fonts as AppKit draws them, resolved as SwiftUI resolves them.
+    /// The theme's fonts as TextKit draws them, resolved as SwiftUI resolves them at this text size.
     nonisolated struct Fonts {
-        let body: NSFont
-        let number: NSFont
-        let bullet: NSFont
-        let code: NSFont
-        let inlineCode: NSFont
-        let inlineCodeBold: NSFont
-        private let headings: [NSFont]
+        let body: ReplyFont
+        let number: ReplyFont
+        let bullet: ReplyFont
+        let code: ReplyFont
+        let inlineCode: ReplyFont
+        let inlineCodeBold: ReplyFont
+        private let headings: [ReplyFont]
+        /// Bold words as SwiftUI draws them: on iPhone and iPad a text style's bold is its own
+        /// emphasized weight (semibold for the body), which `systemFont(weight: .bold)` is not.
+        private let strongs: [ReplyFont]
 
-        init(compact: Bool) {
-            let context = EnvironmentValues().fontResolutionContext
-            func resolved(_ font: Font) -> NSFont { font.resolve(in: context).ctFont as NSFont }
+        init(compact: Bool, typeSize: DynamicTypeSize = .large, legibility: LegibilityWeight? = nil) {
+            var environment = EnvironmentValues()
+            environment.dynamicTypeSize = typeSize
+            environment.legibilityWeight = legibility
+            let context = environment.fontResolutionContext
+            func resolved(_ font: Font) -> ReplyFont { font.resolve(in: context).ctFont as ReplyFont }
             let message = compact ? Theme.Typography.compactMessage : Theme.Typography.message
             body = resolved(message)
             number = resolved(message.monospacedDigit())
@@ -283,15 +333,37 @@ nonisolated final class ReplyText: @unchecked Sendable {
             inlineCode = resolved(Theme.Typography.inlineCode)
             inlineCodeBold = resolved(Theme.Typography.inlineCode.bold())
             headings = (1...4).map { resolved(Theme.Typography.heading($0)) }
-            #if DEBUG
+            strongs = [resolved(message.bold())] + (1...4).map { resolved(Theme.Typography.heading($0).bold()) }
+            #if DEBUG && os(macOS)
             for font in [body, code] + headings {
                 assert(Metrics.measured(font) != nil, "\(font.pointSize) pt: measure its line against the block views")
             }
             #endif
         }
 
-        func heading(_ level: Int) -> NSFont {
+        func heading(_ level: Int) -> ReplyFont {
             headings[min(max(level, 1), 4) - 1]
+        }
+
+        /// The bold of a line's font. The Mac's block views draw the system font's bold weight.
+        func strong(_ base: ReplyFont) -> ReplyFont {
+            #if os(macOS)
+            return .systemFont(ofSize: base.pointSize, weight: .bold)
+            #else
+            if let index = ([body] + headings).firstIndex(of: base) { return strongs[index] }
+            return .systemFont(ofSize: base.pointSize, weight: .bold)
+            #endif
+        }
+
+        /// The font a unit's line is drawn in; a hosted block's line is a point tall.
+        func font(for unit: ReplyPlainText.Unit, hosted: Bool) -> ReplyFont {
+            guard !hosted else { return Metrics.attachmentFont }
+            switch unit.content {
+            case .paragraph: return body
+            case .heading(let level, _): return heading(level)
+            case .html: return code
+            default: return Metrics.attachmentFont
+            }
         }
     }
 
@@ -308,11 +380,23 @@ nonisolated final class ReplyText: @unchecked Sendable {
         static let ruleHeight = 1 + 2 * MarkdownSpacing.rulePadding
 
         /// The font of a hosted block's line: a point tall, so the line is as tall as the block.
-        /// Never changed, so it is shared across threads.
-        nonisolated(unsafe) static let attachmentFont = NSFont.systemFont(ofSize: 1)
+        /// Never changed, so it is shared across threads (`UIFont` is `Sendable`; `NSFont` isn't marked so).
+        #if os(macOS)
+        nonisolated(unsafe) static let attachmentFont = ReplyFont.systemFont(ofSize: 1)
+        #else
+        static let attachmentFont = ReplyFont.systemFont(ofSize: 1)
+        #endif
 
-        static func lineSpacing(_ unit: ReplyPlainText.Unit) -> CGFloat {
-            if case .paragraph = unit.content { Theme.Typography.messageLineSpacing } else { 0 }
+        /// The space between a unit's lines. On iPhone and iPad SwiftUI puts the font's leading
+        /// there when it is more than the `Text`'s line spacing, so TextKit draws no leading of its
+        /// own (`ReplyText.drawsLeading`).
+        static func lineSpacing(_ unit: ReplyPlainText.Unit, font: ReplyFont) -> CGFloat {
+            let spacing: CGFloat = if case .paragraph = unit.content { Theme.Typography.messageLineSpacing } else { 0 }
+            #if os(macOS)
+            return spacing
+            #else
+            return max(spacing, font.leading)
+            #endif
         }
 
         static func topPad(_ unit: ReplyPlainText.Unit) -> CGFloat {
@@ -320,7 +404,7 @@ nonisolated final class ReplyText: @unchecked Sendable {
         }
 
         /// How far a run of text advances in one font.
-        static func advance(_ string: String, font: NSFont) -> CGFloat {
+        static func advance(_ string: String, font: ReplyFont) -> CGFloat {
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font]))
             return CTLineGetTypographicBounds(line, nil, nil, nil)
         }
@@ -339,23 +423,41 @@ nonisolated final class ReplyText: @unchecked Sendable {
             case .number(let number):
                 return max(MarkdownSpacing.numberWidth, pixels(advance("\(number).", font: fonts.number), scale: scale, rule: .up))
             case .checkbox(let checked):
+                let name = checked ? "checkmark.square.fill" : "square"
+                #if os(macOS)
                 let configuration = NSImage.SymbolConfiguration(pointSize: fonts.body.pointSize, weight: .regular)
-                let image = NSImage(systemSymbolName: checked ? "checkmark.square.fill" : "square", accessibilityDescription: nil)?
-                    .withSymbolConfiguration(configuration)
-                return pixels(image?.alignmentRect.width ?? MarkdownSpacing.bulletWidth, scale: scale, rule: .up)
+                let width = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(configuration)?.alignmentRect.width
+                #else
+                let configuration = UIImage.SymbolConfiguration(pointSize: fonts.body.pointSize, weight: .regular)
+                let width = UIImage(systemName: name, withConfiguration: configuration).map { image in
+                    image.size.width - image.alignmentRectInsets.left - image.alignmentRectInsets.right
+                }
+                #endif
+                return pixels(width ?? MarkdownSpacing.bulletWidth, scale: scale, rule: .up)
             }
         }
 
+        #if os(macOS)
         /// How tall SwiftUI draws a line of this font, and where its baseline sits: measured at
         /// each size a reply uses, against the views.
-        static func line(for font: NSFont) -> (ascent: CGFloat, height: CGFloat) {
+        static func line(for font: ReplyFont) -> (ascent: CGFloat, height: CGFloat) {
             measured(font) ?? (ceil(font.ascender), ceil(font.ascender - font.descender + font.leading))
         }
+        #else
+        /// How tall SwiftUI draws a line of this font, and where its baseline sits. On iPhone and
+        /// iPad a `Text` line is the font's own line height, unrounded, at every Dynamic Type size;
+        /// the space between lines is `lineSpacing(_:font:)`.
+        static func line(for font: ReplyFont) -> (ascent: CGFloat, height: CGFloat) {
+            (font.ascender, font.lineHeight)
+        }
+        #endif
 
         /// The lines measured at the theme's Mac sizes (`Theme.Typography`). `Fonts` checks in
         /// Debug builds that every size the reply uses is here, so a new size is measured against
         /// the views before the text can draw it differently.
-        static func measured(_ font: NSFont) -> (ascent: CGFloat, height: CGFloat)? {
+        #if os(macOS)
+        static func measured(_ font: ReplyFont) -> (ascent: CGFloat, height: CGFloat)? {
             let isMono = font.fontDescriptor.symbolicTraits.contains(.monoSpace)
             switch (isMono, font.pointSize) {
             case (false, 22): return (21, 26)
@@ -367,12 +469,13 @@ nonisolated final class ReplyText: @unchecked Sendable {
             default: return nil
             }
         }
+        #endif
 
         private static let offsets = OSAllocatedUnfairLock<[String: CGFloat]>(initialState: [:])
 
         /// How far above TextKit's baseline SwiftUI's sits, in a line of SwiftUI's height:
         /// measured once per font.
-        static func raise(for font: NSFont) -> CGFloat {
+        static func raise(for font: ReplyFont) -> CGFloat {
             let key = "\(font.fontName) \(font.pointSize)"
             if let offset = offsets.withLock({ $0[key] }) { return offset }
             let line = line(for: font)
@@ -381,6 +484,7 @@ nonisolated final class ReplyText: @unchecked Sendable {
             style.maximumLineHeight = line.height
             let content = NSTextContentStorage()
             let layout = NSTextLayoutManager()
+            layout.usesFontLeading = ReplyText.drawsLeading
             content.addTextLayoutManager(layout)
             layout.textContainer = NSTextContainer(size: CGSize(width: 1000, height: 1000))
             layout.textContainer?.lineFragmentPadding = 0
@@ -399,14 +503,19 @@ nonisolated final class ReplyText: @unchecked Sendable {
         }
     }
 
-    /// The theme's colors, as AppKit draws them (they follow light, dark and Increase Contrast).
+    /// The theme's colors, as TextKit draws them (they follow light, dark and Increase Contrast).
     nonisolated enum Palette {
-        static var primary: NSColor { NSColor(Theme.primaryText) }
-        static var secondary: NSColor { NSColor(Theme.secondaryText) }
-        static var codeBackground: NSColor { NSColor(Theme.surfaceRaised) }
-        static var hairline: NSColor { NSColor(Theme.hairline) }
-        /// What SwiftUI draws a `Text` link in when nothing above it sets a tint.
-        static var link: NSColor { .linkColor }
+        static var primary: ReplyColor { ReplyColor(Theme.primaryText) }
+        static var secondary: ReplyColor { ReplyColor(Theme.secondaryText) }
+        static var codeBackground: ReplyColor { ReplyColor(Theme.surfaceRaised) }
+        static var hairline: ReplyColor { ReplyColor(Theme.hairline) }
+        /// What SwiftUI draws a `Text` link in when nothing above it sets a tint: the system's link
+        /// color on the Mac, the app's accent on iPhone and iPad.
+        #if os(macOS)
+        static var link: ReplyColor { .linkColor }
+        #else
+        static var link: ReplyColor { ReplyColor(Color.accentColor) }
+        #endif
     }
 }
 
@@ -431,8 +540,8 @@ extension NSAttributedString.Key {
 /// Inline Markdown as `InlineRenderer.attributed` renders it, in AppKit attributes.
 private nonisolated struct Inlines {
     let fonts: ReplyText.Fonts
-    let base: NSFont
-    let color: NSColor
+    let base: ReplyFont
+    let color: ReplyColor
 
     func attributed(_ inlines: [MarkdownInline]) -> NSAttributedString {
         let result = NSMutableAttributedString()
@@ -440,11 +549,17 @@ private nonisolated struct Inlines {
         return result
     }
 
-    private func font(bold: Bool, italic: Bool) -> NSFont {
+    private func font(bold: Bool, italic: Bool) -> ReplyFont {
         var font = base
-        if bold { font = .systemFont(ofSize: base.pointSize, weight: .bold) }
+        if bold { font = fonts.strong(base) }
         if italic {
+            #if os(macOS)
             font = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.italic)), size: font.pointSize) ?? font
+            #else
+            if let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(.traitItalic)) {
+                font = UIFont(descriptor: descriptor, size: font.pointSize)
+            }
+            #endif
         }
         return font
     }
@@ -508,10 +623,11 @@ private nonisolated struct Inlines {
     }
 }
 
+#if os(macOS)
 // MARK: - The view
 
 /// The text view behind `ReplyTextView`: selectable, never editable, with no background of its own.
-final class ReplyNSTextView: NSTextView {
+final class ReplyNSTextView: NSTextView, ReplyBlockOwner {
     private(set) var reply: ReplyText
     /// Where the reply sits, for the views it hosts. Its `openURL` is the chat's link gate
     /// (`MarkdownView`): links open only through it.
@@ -652,24 +768,11 @@ final class ReplyNSTextView: NSTextView {
     /// Each quote's bar runs beside its paragraphs, from the top of the first (with a heading's
     /// space above it) to the last one's last line.
     private func measureBars() {
-        guard !reply.bars.isEmpty else { return barRects = [] }
-        layout.ensureLayout(for: layout.documentRange)
-        barRects = reply.bars.compactMap { bar in
-            guard let first = fragment(for: bar.paragraphs.lowerBound), let last = fragment(for: bar.paragraphs.upperBound),
-                  let lastLine = last.textLineFragments.last else { return nil }
-            // The first line's top: TextKit may put the line's spacing above it, inside the fragment.
-            let lineTop = first.textLineFragments.first?.typographicBounds.minY ?? 0
-            let top = first.layoutFragmentFrame.minY + lineTop - reply.paragraphs[bar.paragraphs.lowerBound].topPad
-            let bottom = last.layoutFragmentFrame.minY + lastLine.typographicBounds.maxY
-            let origin = textContainerOrigin
-            return NSRect(x: origin.x + bar.x, y: origin.y + top, width: ReplyText.Metrics.quoteBarWidth, height: bottom - top)
-        }
+        barRects = reply.barRects(in: layout, content: contentStorage, origin: textContainerOrigin)
     }
 
     private func fragment(for paragraph: Int) -> NSTextLayoutFragment? {
-        let offset = reply.paragraphs[paragraph].range.location
-        guard let location = contentStorage.location(contentStorage.documentRange.location, offsetBy: offset) else { return nil }
-        return layout.textLayoutFragment(for: location)
+        reply.fragment(for: paragraph, in: layout, content: contentStorage)
     }
 
     override func drawBackground(in rect: NSRect) {
@@ -1014,7 +1117,7 @@ final class ReplyNSTextView: NSTextView {
 
     /// The selection as plain text (`ReplyPlainText.text(_:drawn:hidden:selection:)`).
     func plainText(in range: NSRange) -> String {
-        ReplyPlainText.text(reply.placed, drawn: reply.storage.string as NSString, hidden: reply.hidden, selection: range)
+        reply.plainText(in: range)
     }
 
     private var selectionText: String {
@@ -1066,46 +1169,97 @@ final class ReplyNSTextView: NSTextView {
     func light(_ sentence: SpokenSentence?) {
         guard sentence != spoken, let storage = textStorage else { return }
         spoken = sentence
-        let all = NSRange(location: 0, length: storage.length)
-        storage.beginEditing()
-        reply.storage.enumerateAttribute(.foregroundColor, in: all) { value, range, _ in
-            if let value { storage.addAttribute(.foregroundColor, value: value, range: range) }
-        }
-        if let sentence {
-            for paragraph in reply.paragraphs where paragraph.hosted == nil {
-                if paragraph.unit.block != sentence.block {
-                    reply.storage.enumerateAttribute(.link, in: paragraph.range) { link, range, _ in
-                        if link == nil { storage.addAttribute(.foregroundColor, value: ReplyText.Palette.secondary, range: range) }
-                    }
-                } else if paragraph.unit.levels.isEmpty, case .paragraph = paragraph.unit.content, case .words = sentence.kind {
-                    lit(paragraph.range, sentence: sentence, in: storage)
-                }
-            }
-        }
-        storage.endEditing()
+        reply.light(storage, sentence: sentence)
         for (index, attachment) in blocks {
-            let unit = reply.paragraphs[index].unit
-            let isDimmed = sentence.map { $0.block != unit.block } ?? false
-            if attachment.state.isDimmed != isDimmed { attachment.state.isDimmed = isDimmed }
-            // A block of its own is read as the views read it; one inside a list or quote dims only.
-            let read = unit.levels.isEmpty && sentence?.block == unit.block ? sentence : nil
-            if attachment.state.sentence != read { attachment.state.sentence = read }
+            let listen = reply.listen(index, sentence: sentence)
+            if attachment.state.isDimmed != listen.isDimmed { attachment.state.isDimmed = listen.isDimmed }
+            if attachment.state.sentence != listen.read { attachment.state.sentence = listen.read }
         }
         for (index, view) in checkboxViews {
             guard let state = (view as? ReplyCheckboxView)?.state else { continue }
-            let isDimmed = sentence.map { $0.block != reply.paragraphs[index].unit.block } ?? false
+            let isDimmed = reply.listen(index, sentence: sentence).isDimmed
             if state.isDimmed != isDimmed { state.isDimmed = isDimmed }
         }
     }
+}
 
-    private func lit(_ range: NSRange, sentence: SpokenSentence, in storage: NSTextStorage) {
-        let text = reply.storage.string as NSString
+#endif
+
+// MARK: - Shared by the text views
+
+extension ReplyText {
+    /// A paragraph's fragment in a layout of this reply's text.
+    func fragment(
+        for paragraph: Int, in layout: NSTextLayoutManager, content: NSTextContentStorage
+    ) -> NSTextLayoutFragment? {
+        let offset = paragraphs[paragraph].range.location
+        guard let location = content.location(content.documentRange.location, offsetBy: offset) else { return nil }
+        return layout.textLayoutFragment(for: location)
+    }
+
+    /// Each quote's bar beside its paragraphs, in the view's coordinates (y running down): from
+    /// the top of the first (with a heading's space above it) to the last one's last line.
+    func barRects(in layout: NSTextLayoutManager, content: NSTextContentStorage, origin: CGPoint) -> [CGRect] {
+        guard !bars.isEmpty else { return [] }
+        layout.ensureLayout(for: layout.documentRange)
+        return bars.compactMap { bar in
+            guard let first = fragment(for: bar.paragraphs.lowerBound, in: layout, content: content),
+                  let last = fragment(for: bar.paragraphs.upperBound, in: layout, content: content),
+                  let lastLine = last.textLineFragments.last else { return nil }
+            // The first line's top: TextKit may put the line's spacing above it, inside the fragment.
+            let lineTop = first.textLineFragments.first?.typographicBounds.minY ?? 0
+            let top = first.layoutFragmentFrame.minY + lineTop - paragraphs[bar.paragraphs.lowerBound].topPad
+            let bottom = last.layoutFragmentFrame.minY + lastLine.typographicBounds.maxY
+            return CGRect(x: origin.x + bar.x, y: origin.y + top, width: Metrics.quoteBarWidth, height: bottom - top)
+        }
+    }
+
+    /// The selection as plain text (`ReplyPlainText.text(_:drawn:hidden:selection:)`).
+    func plainText(in range: NSRange) -> String {
+        ReplyPlainText.text(placed, drawn: storage.string as NSString, hidden: hidden, selection: range)
+    }
+
+    /// While Listen reads the reply, the paragraphs it isn't reading are lighter, and in a
+    /// paragraph being read only the sentence is ink (`MarkdownBlockView.lit`). `text` is a copy
+    /// of this reply's text, with its blocks' attachments.
+    func light(_ text: NSTextStorage, sentence: SpokenSentence?) {
+        let all = NSRange(location: 0, length: text.length)
+        text.beginEditing()
+        storage.enumerateAttribute(.foregroundColor, in: all) { value, range, _ in
+            if let value { text.addAttribute(.foregroundColor, value: value, range: range) }
+        }
+        if let sentence {
+            for paragraph in paragraphs where paragraph.hosted == nil {
+                if paragraph.unit.block != sentence.block {
+                    storage.enumerateAttribute(.link, in: paragraph.range) { link, range, _ in
+                        if link == nil { text.addAttribute(.foregroundColor, value: Palette.secondary, range: range) }
+                    }
+                } else if paragraph.unit.levels.isEmpty, case .paragraph = paragraph.unit.content, case .words = sentence.kind {
+                    lit(paragraph.range, sentence: sentence, in: text)
+                }
+            }
+        }
+        text.endEditing()
+    }
+
+    /// How a hosted block or a checklist box looks while Listen reads `sentence`: lighter when
+    /// it reads another block, and the sentence it reads in a block of its own (one inside a list
+    /// or quote dims only).
+    func listen(_ paragraph: Int, sentence: SpokenSentence?) -> (isDimmed: Bool, read: SpokenSentence?) {
+        let unit = paragraphs[paragraph].unit
+        let isDimmed = sentence.map { $0.block != unit.block } ?? false
+        let read = unit.levels.isEmpty && sentence?.block == unit.block ? sentence : nil
+        return (isDimmed, read)
+    }
+
+    private func lit(_ range: NSRange, sentence: SpokenSentence, in text: NSTextStorage) {
+        let drawn = storage.string as NSString
         var plain = ""
         var places: [NSRange] = []
         var index = range.location
         while index < NSMaxRange(range) {
-            let character = text.rangeOfComposedCharacterSequence(at: index)
-            let piece = text.substring(with: character)
+            let character = drawn.rangeOfComposedCharacterSequence(at: index)
+            let piece = drawn.substring(with: character)
             if piece != "\u{202F}" {
                 plain += piece == "\u{2028}" ? "\n" : piece
                 places.append(character)
@@ -1116,9 +1270,9 @@ final class ReplyNSTextView: NSTextView {
         let first = plain.distance(from: plain.startIndex, to: found.lowerBound)
         let last = plain.distance(from: plain.startIndex, to: found.upperBound) - 1
         guard first <= last, last < places.count else { return }
-        storage.addAttribute(.foregroundColor, value: ReplyText.Palette.secondary, range: range)
+        text.addAttribute(.foregroundColor, value: Palette.secondary, range: range)
         let lit = NSRange(location: places[first].location, length: NSMaxRange(places[last]) - places[first].location)
-        storage.addAttribute(.foregroundColor, value: ReplyText.Palette.primary, range: lit)
+        text.addAttribute(.foregroundColor, value: Palette.primary, range: lit)
     }
 }
 
@@ -1172,7 +1326,7 @@ nonisolated final class ReplyFragment: NSTextLayoutFragment {
         for (index, line) in lines.enumerated() {
             let text = line.attributedString
             text.enumerateAttribute(.replyLinkBackground, in: line.characterRange) { value, run, _ in
-                guard let color = value as? NSColor, run.length > 0 else { return }
+                guard let color = value as? ReplyColor, run.length > 0 else { return }
                 let bounds = line.typographicBounds
                 let style = text.attribute(.paragraphStyle, at: run.location, effectiveRange: nil) as? NSParagraphStyle
                 let spacing = index + 1 < lines.count ? style?.lineSpacing ?? 0 : 0
@@ -1199,8 +1353,8 @@ nonisolated final class ReplyFragment: NSTextLayoutFragment {
             for key in [NSAttributedString.Key.replyUnderline, .replyStrike] {
                 text.enumerateAttribute(key, in: line.characterRange) { value, run, _ in
                     guard value != nil, run.length > 0,
-                          let font = text.attribute(.font, at: run.location, effectiveRange: nil) as? NSFont,
-                          let color = text.attribute(.foregroundColor, at: run.location, effectiveRange: nil) as? NSColor
+                          let font = text.attribute(.font, at: run.location, effectiveRange: nil) as? ReplyFont,
+                          let color = text.attribute(.foregroundColor, at: run.location, effectiveRange: nil) as? ReplyColor
                     else { return }
                     let codeLink = text.attribute(.replyLinkBackground, at: run.location, effectiveRange: nil) != nil
                     let start = line.locationForCharacter(at: run.location).x
@@ -1236,7 +1390,7 @@ nonisolated final class ReplyFragment: NSTextLayoutFragment {
 
     /// Where descenders cross an underline, widened by its thickness and 0.375 pt more (measured):
     /// SwiftUI leaves those gaps.
-    private func inkGaps(_ text: NSAttributedString, font: NSFont, band: CGRect, baseline: CGFloat) -> [ClosedRange<CGFloat>] {
+    private func inkGaps(_ text: NSAttributedString, font: ReplyFont, band: CGRect, baseline: CGFloat) -> [ClosedRange<CGFloat>] {
         let clearance = font.underlineThickness + 0.375
         // The band in a glyph's own space: y up from the baseline.
         let slab = CGRect(x: -1_000, y: baseline - band.maxY, width: 100_000, height: band.height)
@@ -1249,7 +1403,7 @@ nonisolated final class ReplyFragment: NSTextLayoutFragment {
             CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
             CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
             for (glyph, position) in zip(glyphs, positions) {
-                guard let path = CTFontCreatePathForGlyph(font, glyph, nil) else { continue }
+                guard let path = CTFontCreatePathForGlyph(font as CTFont, glyph, nil) else { continue }
                 let ink = path.intersection(CGPath(rect: slab, transform: nil)).boundingBoxOfPath
                 guard !ink.isNull, ink.width > 0 else { continue }
                 gaps.append((band.minX + position.x + ink.minX - clearance)...(band.minX + position.x + ink.maxX + clearance))
@@ -1271,6 +1425,13 @@ nonisolated final class ReplyFragment: NSTextLayoutFragment {
     }
 }
 
+#if !os(macOS)
+extension UIFont {
+    /// The font's own underline thickness, which AppKit's `NSFont` has as a property.
+    nonisolated var underlineThickness: CGFloat { CTFontGetUnderlineThickness(self as CTFont) }
+}
+#endif
+
 // MARK: - Measuring
 
 /// A reply's text laid out in a container of any width, with no view: how tall it is there, and
@@ -1279,9 +1440,12 @@ final class ReplyMeasure {
     private let storage = NSTextContentStorage()
     private let layout = NSTextLayoutManager()
     private let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    /// Called once the text is laid out at a new width, to adjust it as its view does.
+    var laidOut: ((NSTextLayoutManager, NSTextContentStorage) -> Void)?
 
     init() {
         container.lineFragmentPadding = 0
+        layout.usesFontLeading = ReplyText.drawsLeading
         layout.textContainer = container
         storage.addTextLayoutManager(layout)
     }
@@ -1331,6 +1495,7 @@ final class ReplyMeasure {
         // TextKit 2 keeps its lines when only the container changes: lay them out again.
         layout.invalidateLayout(for: layout.documentRange)
         layout.ensureLayout(for: layout.documentRange)
+        laidOut?(layout, storage)
     }
 }
 
@@ -1401,6 +1566,11 @@ final class ReplyEnvironment {
     }
 }
 
+/// The text view a reply's blocks sit in, which sizes them by their own views.
+protocol ReplyBlockOwner: AnyObject {
+    func blockHeight(_ attachment: ReplyBlockAttachment, width: CGFloat) -> CGFloat
+}
+
 /// A paragraph drawn by its own view (a code block, table, rule, lone image, or a list item the
 /// text can't draw): one character wide, as tall as its view.
 nonisolated final class ReplyBlockAttachment: NSTextAttachment {
@@ -1409,10 +1579,10 @@ nonisolated final class ReplyBlockAttachment: NSTextAttachment {
     let block: MarkdownBlock
     let indent: CGFloat
     let state: ReplyBlockState
-    nonisolated(unsafe) private weak var owner: ReplyNSTextView?
+    nonisolated(unsafe) private weak var owner: (any ReplyBlockOwner)?
 
     @MainActor
-    init(paragraph: Int, block: MarkdownBlock, indent: CGFloat, owner: ReplyNSTextView) {
+    init(paragraph: Int, block: MarkdownBlock, indent: CGFloat, owner: any ReplyBlockOwner) {
         self.paragraph = paragraph
         self.block = block
         self.indent = indent
@@ -1445,8 +1615,12 @@ nonisolated final class ReplyBlockAttachment: NSTextAttachment {
     // The text view puts the block's own view over this space: the text draws nothing here.
     override func image(
         for bounds: CGRect, attributes: [NSAttributedString.Key: Any], location: any NSTextLocation, textContainer: NSTextContainer?
-    ) -> NSImage? {
+    ) -> ReplyImage? {
+        #if os(macOS)
         NSImage(size: bounds.size)
+        #else
+        UIImage()
+        #endif
     }
 }
 
@@ -1463,13 +1637,15 @@ struct ReplyBlockHost: View {
         MarkdownBlockView(block: block, sentence: state.sentence)
             .equatable()
             .foregroundStyle(state.isQuoted || state.isDimmed ? Theme.secondaryText : Theme.primaryText)
+            #if os(macOS)
             .textSelection(.enabled)
+            #endif
             .fixedSize(horizontal: false, vertical: true)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resized?($0) }
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay {
                 if state.isSelected {
-                    shape.fill(Color(nsColor: .selectedTextBackgroundColor).opacity(0.45))
+                    shape.fill(Self.selectionColor)
                         .allowsHitTesting(false)
                 }
             }
@@ -1478,6 +1654,13 @@ struct ReplyBlockHost: View {
             // The chat's environment around the reply's own settings, so those win.
             .environment(\.self, environment.current)
     }
+
+    /// The selection's color over a block, as the text's own selection looks around it.
+    #if os(macOS)
+    private static var selectionColor: Color { Color(nsColor: .selectedTextBackgroundColor).opacity(0.45) }
+    #else
+    private static var selectionColor: Color { Color.accentColor.opacity(0.2) }
+    #endif
 
     private var shape: some Shape {
         let radius: CGFloat = switch block {
@@ -1512,6 +1695,7 @@ struct ReplyCheckbox: View {
     }
 }
 
+#if os(macOS)
 /// A checklist item's box over the text: clicks and drags go through it to the text.
 final class ReplyCheckboxView: NSHostingView<ReplyCheckbox> {
     var state: ReplyBlockState?

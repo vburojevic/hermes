@@ -1,6 +1,7 @@
 import Foundation
 import HermesMarkdown
 import os
+import SwiftUI
 
 /// Parsed Markdown and tokenized code, kept by their text, so a reply is parsed once: not on every
 /// redraw, not again when the chat is opened again, and ahead of time off the main thread
@@ -148,7 +149,6 @@ nonisolated enum MarkdownCache {
         return result
     }
 
-    #if os(macOS)
     private final class ReplyBox {
         let reply: ReplyText?
         init(_ reply: ReplyText?) { self.reply = reply }
@@ -164,19 +164,24 @@ nonisolated enum MarkdownCache {
     /// non-Retina screen would otherwise build every reply again on the main thread.
     private static let shownScale = OSAllocatedUnfairLock<CGFloat>(initialState: 2)
 
-    /// A finished reply as one selectable text on the Mac (`ReplyTextView`), for a screen of
-    /// `scale` pixels per point, with the `named` paragraphs drawn by their own view. Built from the
-    /// parsed blocks once and kept, like them; `prewarm(_:)` builds it off the main thread.
-    static func reply(for text: String, compact: Bool, scale: CGFloat, named: Set<Int> = []) -> ReplyText? {
+    /// A finished reply as one selectable text (`ReplyTextView` on the Mac, `ReplyUIKitTextView` on
+    /// iPhone and iPad), for a screen of `scale` pixels per point at a text size, with the `named`
+    /// paragraphs drawn by their own view. Built from the parsed blocks once and kept, like them;
+    /// on the Mac `prewarm(_:)` builds it off the main thread.
+    static func reply(
+        for text: String, compact: Bool, scale: CGFloat, named: Set<Int> = [],
+        typeSize: DynamicTypeSize = .large, legibility: LegibilityWeight? = nil
+    ) -> ReplyText? {
         shownScale.withLock { $0 = scale }
         let names = named.sorted().map(String.init).joined(separator: ",")
-        let key = "\(compact ? 1 : 0)\u{0}\(scale)\u{0}\(names)\u{0}\(text)" as NSString
+        let look = "\(scale)\u{0}\(typeSize)\u{0}\(legibility == .bold ? 1 : 0)"
+        let key = "\(compact ? 1 : 0)\u{0}\(look)\u{0}\(names)\u{0}\(text)" as NSString
         if let hit = replies.object(forKey: key) { return hit.reply }
-        let reply = ReplyText.build(document(for: text).blocks, compact: compact, scale: scale, named: named)
+        let reply = ReplyText.build(
+            document(for: text).blocks, compact: compact, scale: scale, named: named, typeSize: typeSize, legibility: legibility)
         replies.setObject(ReplyBox(reply), forKey: key)
         return reply
     }
-    #endif
 
     /// Parses these texts (and tokenizes their code) off the main thread.
     static func prewarm(_ texts: [String]) async {
@@ -194,7 +199,7 @@ nonisolated enum MarkdownCache {
                 #if os(macOS)
                 // The reply as one text, as the transcript draws a finished reply: at the message
                 // size (the compact size is a Bot's delivery, which is never prewarmed), on the
-                // screen replies last drew on.
+                // screen replies last drew on. iPhone and iPad build it only for a long press.
                 _ = reply(for: text, compact: false, scale: shownScale.withLock { $0 })
                 #endif
             }

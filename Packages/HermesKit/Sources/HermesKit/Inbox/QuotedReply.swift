@@ -181,10 +181,11 @@ extension QuotedReply {
 
         /// This bar's quotes first, then `other`'s that aren't in it yet, while there is room:
         /// a draft set aside to edit a queued message comes back without pushing out quotes that
-        /// message left in the bar.
+        /// message left in the bar. One that finds no room shows the limit note, so a quote never
+        /// goes without the bar saying why.
         public func merging(_ other: Draft) -> Draft {
             var merged = Draft(passages)
-            for passage in other.passages where !merged.isFull {
+            for passage in other.passages {
                 merged.add(author: passage.author, quote: passage.quote, rowID: passage.rowID)
             }
             return merged

@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import HermesKit
 import HermesPush
+import HermesMarkdown
 
 @Suite("Inbox")
 struct InboxTests {
@@ -988,9 +989,27 @@ struct InboxTests {
         #expect(left.compose("") == nil)
         let merged = left.merging(stashed)
         #expect(merged.passages.map(\.quote) == ["left behind", "set aside", "also set aside"])
+        // The stash was full too, so "no room" never joined it: nothing is lost, no note.
         #expect(!merged.showsLimit)
         // Nothing left in the bar: the set-aside draft comes back as it was.
-        #expect(QuotedReply.Draft().merging(stashed).passages == stashed.passages)
+        let restored = QuotedReply.Draft().merging(stashed)
+        #expect(restored.passages == stashed.passages && !restored.showsLimit)
+    }
+
+    @Test func aSetAsideQuoteThatFindsTheBarFullShowsTheLimit() {
+        var bar = QuotedReply.Draft()
+        bar.add(author: "Ada", quote: "one", rowID: "r1")
+        bar.add(author: "Hermes", quote: "two", rowID: "r2")
+        bar.add(author: "Ada", quote: "three", rowID: "r3")
+        var stashed = QuotedReply.Draft()
+        stashed.add(author: "Hermes", quote: "four", rowID: "r4")
+        let merged = bar.merging(stashed)
+        #expect(merged.showsLimit)
+        #expect(merged.passages == bar.passages)
+        // A stashed quote already in the full bar is no loss: no note.
+        var same = QuotedReply.Draft()
+        same.add(author: "Hermes", quote: "two", rowID: "r2")
+        #expect(!bar.merging(same).showsLimit)
     }
 
     @Test func eachQuoteInAFullerBarSaysWhereItSits() {
@@ -1080,5 +1099,76 @@ struct InboxTests {
         // Neither fits (the words are scrolled away): no button.
         #expect(selection.origin(for: button, visible: 190...300) == nil)
         #expect(selection.origin(for: button, visible: 400...800) == nil)
+    }
+
+    // MARK: Reply to selected words (iPhone and iPad)
+
+    /// A finished reply as its text draws it: each paragraph on its own line, a list item's
+    /// marker between tabs before its words, a block as one character.
+    private static func drawn(_ markdown: String) -> (placed: [ReplyPlainText.Placed], text: NSString) {
+        var text = ""
+        var placed: [ReplyPlainText.Placed] = []
+        for unit in ReplyPlainText.units(MarkdownDocument(parsing: markdown).blocks) {
+            if !text.isEmpty { text += "\n" }
+            let start = (text as NSString).length
+            if unit.isWhole {
+                text += "\u{FFFC}"
+                placed.append(.init(unit: unit, range: NSRange(location: start, length: 1), content: start, isWhole: true))
+            } else {
+                let marks = unit.markers.isEmpty ? "" : "\t" + unit.prefix.trimmingCharacters(in: .whitespaces) + "\t"
+                text += marks + unit.text
+                let end = (text as NSString).length
+                placed.append(.init(unit: unit, range: NSRange(location: start, length: end - start),
+                                    content: start + (marks as NSString).length, isWhole: false))
+            }
+        }
+        return (placed, text as NSString)
+    }
+
+    /// What Reply quotes for the words selected: the selection read as plain text, as Copy reads it.
+    private static func selected(_ markdown: String, from: String, through: String) -> String {
+        let (placed, text) = drawn(markdown)
+        let start = text.range(of: from).location
+        let end = NSMaxRange(text.range(of: through, range: NSRange(location: start, length: text.length - start)))
+        return ReplyPlainText.text(placed, drawn: text, hidden: [], selection: NSRange(location: start, length: end - start))
+    }
+
+    @Test func selectedWordsQuoteAcrossParagraphsAndItems() {
+        let reply = "Two options: back off and retry, or reopen on wake.\n\n- Reopen the socket\n- Resume the run\n\nEither works."
+        // Inside one paragraph: only the words.
+        let words = Self.selected(reply, from: "back off", through: "retry")
+        #expect(words == "back off and retry")
+        #expect(QuotedReply.Passage(author: "Hermes", quote: words, rowID: "turn-1").quote == "back off and retry")
+        // Across a paragraph into a list: each piece on its own line, items with their marker.
+        let across = Self.selected(reply, from: "reopen on wake", through: "Resume the")
+        #expect(across == "reopen on wake.\n\n• Reopen the socket\n• Resume the")
+        #expect(QuotedReply.trimmed(across) == "reopen on wake.\n• Reopen the socket\n• Resume the")
+        // Out of the list into the next paragraph.
+        #expect(QuotedReply.trimmed(Self.selected(reply, from: "the run", through: "Either")) == "the run\nEither")
+    }
+
+    @Test func aLongSelectionIsCutAtAWord() {
+        let paragraph = Array(repeating: "retry with backoff", count: 30).joined(separator: " ")
+        let words = Self.selected(paragraph + "\n\nAfter.", from: "retry", through: "After.")
+        let quote = QuotedReply.Passage(author: "Hermes", quote: words, rowID: "turn-1").quote
+        #expect(quote.count <= QuotedReply.maxQuote + 1 && quote.hasSuffix("…"))
+        #expect(!quote.hasSuffix(" …") && paragraph.hasPrefix(String(quote.dropLast())))
+    }
+
+    @Test func selectedWordsJoinTheBarForTheirRow() {
+        let reply = "Back off and retry.\n\nReopen on wake."
+        var bar = QuotedReply.Draft()
+        #expect(bar.add(author: "Hermes", quote: Self.selected(reply, from: "Back", through: "retry."), rowID: "turn-1") == .added)
+        // The same words of the same reply again: one quote.
+        #expect(bar.add(author: "Hermes", quote: Self.selected(reply, from: "Back", through: "retry."), rowID: "turn-1") == .alreadyQuoted)
+        // A second passage of that reply, then the same words in another reply: each its own quote.
+        #expect(bar.add(author: "Hermes", quote: Self.selected(reply, from: "Reopen", through: "wake"), rowID: "turn-1") == .added)
+        #expect(bar.add(author: "Hermes", quote: Self.selected(reply, from: "Back", through: "retry."), rowID: "turn-2") == .added)
+        #expect(bar.passages.map(\.rowID) == ["turn-1", "turn-1", "turn-2"])
+        #expect(bar.passages.map(\.quote) == ["Back off and retry.", "Reopen on wake", "Back off and retry."])
+        // Only the gap between paragraphs: nothing to quote, and no Reply in the menu.
+        let gap = Self.selected(reply, from: "\n", through: "\n")
+        #expect(!QuotedReply.quotes(gap))
+        #expect(bar.add(author: "Hermes", quote: gap, rowID: "turn-1") == .empty)
     }
 }

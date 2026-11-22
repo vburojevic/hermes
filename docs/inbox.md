@@ -324,8 +324,16 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
     items (macOS may still add Ask Siri at the very top), and Chat → Reply to Selection (⇧⌘R)
     does the same from the keyboard; it is dimmed when no words in a finished reply are selected.
     Reply clears the selection and puts the cursor in the composer. Right-click outside the
-    selection still opens the message menu. Reply to Words… stays, for iPhone and iPad and for
-    picking words from the whole reply.
+    selection still opens the message menu. Reply to Words… stays, for picking words from the
+    whole reply.
+  - On iPhone and iPad, words selected in a finished reply quote in one step too. A long press on
+    the words selects them in place ([chat.md](chat.md) §3), and Reply comes first in the edit
+    menu, before Copy and the system's items, for a selection that isn't only spaces. Reply quotes
+    the selected words from that reply, clears the selection and puts the cursor in the composer;
+    selecting more and choosing Reply again adds another quote, up to three. A streaming reply and
+    your own messages aren't selectable in place: their long press opens the message menu, as a
+    long press off the words does (a code block, a table, an image, the margin) and as "…" and
+    VoiceOver's actions do. Select Text and Reply to Words… stay in that menu.
   - On iPhone and iPad the swipe is a UIKit pan that begins only on a drag to the left
     (`SidewaysSwipe`): a SwiftUI drag on each reply took the chat's vertical drags, and the chat
     stopped scrolling under a finger that started on a reply. A drag to the right from the
@@ -348,7 +356,8 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
   short iPhone screen the list stops at 120 points and scrolls, and iPhone landscape with the
   keyboard up shows only the head. With three in the bar, Reply adds nothing and the bar says "You
   can quote up to 3 passages. Remove one to add another." (`replyQuotesLimit`) until one is
-  removed.
+  removed. The bar says the same when a draft set aside to edit a queued message comes back to a
+  bar with no room for all its quotes.
 - **Sent:** each quote as its own `> quote` lines, in order, each followed by a blank line, then
   your words (`QuotedReply`, at most 280 characters per quote). Quotes go only with words of
   your own: without them they stay in the bar. Every way a message goes takes the bar's quotes
@@ -529,6 +538,11 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   each jumping back to its own passage. While a turn runs ("approve", "slow"), quote and send
   with each mode: the bar empties every time, and the queued row, the steer bubble, the aside and
   the background bubble carry the quotes.
+- On iPhone and iPad, long press words in a finished reply: they select in place and Reply is
+  first in the edit menu; choose it, select other words and choose it again, and the bar shows
+  two quotes, in portrait and landscape (`SelectedWordsUITests` runs these steps). A long press on
+  a code block, a table or the margin, and on a streaming reply or your own message, opens the
+  message menu; a link opens with no preview.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
   reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
   compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),

@@ -14,12 +14,16 @@ struct MarkdownView: View, Equatable {
     var caches = true
     /// Listen (`docs/voice.md` §3): the sentence being read is ink, the rest of the reply lighter.
     var highlight: SpokenSentence?
-    /// A finished reply on the Mac selects as one text, across its blocks (`docs/chat.md` §3).
+    /// A finished reply selects as one text, across its blocks (`docs/chat.md` §3).
     var selectsWhole = false
     @Environment(\.references) private var references
     @Environment(\.markdownBodyFont) private var bodyFont
-    #if os(macOS)
     @Environment(\.displayScale) private var displayScale
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.legibilityWeight) private var legibility
+    @Environment(\.replyQuote) private var replyQuote
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     #endif
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -48,13 +52,29 @@ struct MarkdownView: View, Equatable {
     @ViewBuilder
     private var content: some View {
         #if os(macOS)
-        if let reply = wholeReply {
+        if let compact = wholeReplySize, let reply = Self.wholeReply(
+            text, compact: compact, vocabulary: references.vocabulary, build: { named in
+                MarkdownCache.reply(for: text, compact: compact, scale: displayScale, named: named)
+            }) {
             ReplyTextView(reply: reply, highlight: highlight)
         } else {
             blocks
         }
         #else
-        blocks
+        if let compact = wholeReplySize {
+            // Drawn a block at a time, as every reply is; the one text comes in only for a long
+            // press on its words, built then (`ReplySelection`).
+            let text = text, vocabulary = references.vocabulary, scale = displayScale
+            let typeSize = typeSize, legibility = legibility
+            blocks.modifier(ReplySelection(highlight: highlight) {
+                Self.wholeReply(text, compact: compact, vocabulary: vocabulary) { named in
+                    MarkdownCache.reply(
+                        for: text, compact: compact, scale: scale, named: named, typeSize: typeSize, legibility: legibility)
+                }
+            })
+        } else {
+            blocks
+        }
         #endif
     }
 
@@ -62,27 +82,37 @@ struct MarkdownView: View, Equatable {
         MarkdownBlocksView(blocks: caches ? MarkdownCache.document(for: text).blocks : MarkdownCache.streamingBlocks(for: text), highlight: highlight)
     }
 
-    #if os(macOS)
-    /// The reply as one text, once it has finished: while it streams, and where its words aren't
-    /// selectable or aren't the reply's own type, it stays a block at a time.
-    private var wholeReply: ReplyText? {
-        guard selectsWhole, caches, selectsText, tone == .primary else { return nil }
-        let compact: Bool
+    /// Whether the reply selects as one text once it has finished, and at which size (compact or
+    /// not): while it streams, and where its words aren't selectable or aren't the reply's own
+    /// type, it stays a block at a time. On iPhone and iPad that is a reply that can be quoted;
+    /// with VoiceOver on it is read a block at a time, as before (`docs/chat.md` §3).
+    private var wholeReplySize: Bool? {
+        guard selectsWhole, caches, tone == .primary else { return nil }
+        #if os(macOS)
+        guard selectsText else { return nil }
+        #else
+        guard replyQuote != nil, !voiceOver else { return nil }
+        #endif
         switch bodyFont {
-        case Theme.Typography.message: compact = false
-        case Theme.Typography.compactMessage: compact = true
+        case Theme.Typography.message: return false
+        case Theme.Typography.compactMessage: return true
         default: return nil
         }
-        guard let reply = MarkdownCache.reply(for: text, compact: compact, scale: displayScale) else { return nil }
-        // Paragraphs that name a Bot or a file the chat knows draw it as a pill, in their own view.
+    }
+
+    /// The reply as one text, with the paragraphs that name a Bot or a file the chat knows drawn
+    /// as a pill, in their own view.
+    private static func wholeReply(
+        _ text: String, compact: Bool, vocabulary: ReferenceVocabulary, build: (Set<Int>) -> ReplyText?
+    ) -> ReplyText? {
+        guard let reply = build([]) else { return nil }
         let named = Set(reply.units.indices.filter { index in
             guard case .paragraph(let inlines) = reply.units[index].content, InlineRenderer.mayName(inlines) else { return false }
-            return InlineRenderer.attributed(inlines, vocabulary: references.vocabulary).runs
+            return InlineRenderer.attributed(inlines, vocabulary: vocabulary).runs
                 .contains { $0[MessageReferenceAttribute.self] != nil }
         })
-        return named.isEmpty ? reply : MarkdownCache.reply(for: text, compact: compact, scale: displayScale, named: named)
+        return named.isEmpty ? reply : build(named)
     }
-    #endif
 }
 
 /// The spaces a reply's blocks keep. The Mac's one-text reply (`ReplyText`) lays its paragraphs out
