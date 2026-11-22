@@ -173,6 +173,15 @@ of three rounds or its message cap ("Room paused · reached its limit").
 (paging while `has_more`) and then `groups.state`: every 1.2 s while Bots are replying or an
 approval waits, every 5 s otherwise, and every 15 s while the app isn't in front.
 
+A room opens on its newest messages. Its log arrives a moment after the screen, and those first
+rows land at once, at the bottom, along with any message of yours kept from the last launch; only
+rows that come in after the first read fade in, in an empty room too, where the first message
+fades in as the room's welcome fades out. Animating a whole transcript into the scroll view's lazy
+stack kept it at its top and blank, sometimes until the person scrolled. The open is placed by the
+scroll view's initial anchor; the scroll position holds only the pill's jumps. Held at the bottom
+edge, it was put back each time the iPad sidebar folded and left the column pressed to the left
+side.
+
 | Action | Call | Notes |
 |---|---|---|
 | Feature check | `groups.capabilities` | Asked once. `driver: true` means rooms run on the gateway; a gateway without it isn't asked for rooms again on each poll. |
@@ -285,6 +294,11 @@ Rescan (`skills.reload`).
   only when it was read with the app in front.
 - A group chat runs its rounds, shows passes, failures and the settled divider, takes an approval,
   stops the whole room, renames and deletes after confirmation.
+- A group chat opens on its newest messages within about a second, with no scroll, for a long
+  room and a short one, on iPhone, iPad and Mac. Its column stays centered on iPad as the sidebar
+  folds, in both orientations, and on the Mac as the sidebar hides and comes back. Mock:
+  `backend.py --group-counts`, then `-HERMES_OPEN group:release-log`; on iPad,
+  `GroupChatUITests`.
 - A group chat's row shows its newest message and that message's time within a refresh of it
   arriving, with the list on screen and with another chat open, for a room opened earlier this
   launch and left, and for one never opened. Mock: `backend.py --group-counts`, then `POST

@@ -849,6 +849,10 @@ def groups_send(params):
     room = group_room(params)
     text = (params.get("payload") or {}).get("text") or ""
     client_id = params.get("event_id")
+    if "holdsend" in text.lower():
+        # A send Hermes never answers in time: the app keeps the message and sends it again later.
+        time.sleep(60)
+        raise B["RPCError"](4113, "the mock held this send")
     # Like Hermes' hosted rooms (`user_event_id`): one person's message per event_id, so a send that
     # goes again after a timeout or a dropped socket gets the first one's event back.
     with ROOMS_LOCK:

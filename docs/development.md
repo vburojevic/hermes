@@ -587,6 +587,14 @@ make, with who made it (`SCROLLRUN chat moved`, from where to where, and the cal
 the run, as ⌘↓ would, and `-HERMES_SEARCH_OPEN YES` (with `-HERMES_SEARCH`) opens the first result:
 both reach on the Mac what a tap or a key would, without taking over the screen.
 
+In a group chat, `-HERMES_SCROLL_LOG YES` logs each poll that brings events (`GROUPLOG model`,
+with the room's item count) and the transcript's geometry (`GROUPLOG geometry`, with the content
+and container widths and the sideways offset `ox`). A room that opens right rests at its end within
+about a second of its items arriving: the visible rect ends at the content height plus the bottom
+inset, and `ox` stays 0 ([bots-groups-skills.md](bots-groups-skills.md) §2). A room message
+with "holdsend" in it gets no answer for 60 s, so it stays on its way and is kept on the device:
+quit then, and the next launch opens the room with it (`-HERMES_GROUP_SEND "holdsend …"`).
+
 Measuring a streaming reply: "essay" streams a long Markdown reply for about ten seconds, and
 `-HERMES_SEND_HERE "essay please" -HERMES_SEND_HERE_AFTER 10` sends it into the chat that opened.
 The frame log works on the Mac too, and marks the send (`send-here: sending`) and the reply's end
@@ -917,8 +925,10 @@ window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in
 `mainkey cmd+r` (⌘R there, then the menus, which answer from the key window's focused values),
 `mainkey tab|up|down|left|right|return` (typed into the chats window, as the project home's lanes
 read them), `key cmd+r` (⌘R in the Settings window, then the menus, as Setup's Check Again answers),
-`sidebar` (the sidebar button's action), and `dump` / `views` to see what's there (`maindump` the
-chats window's accessibility tree). For the ⌘K palette (`-HERMES_PALETTE <text>` opens it in each
+`sidebar` (the sidebar button's action), `select group:<id>` or `select bot:<name>` (that sidebar
+row, as a click on it would, to leave a chat and open it again in one launch), and `dump` / `views`
+to see what's there (`maindump` the chats window's accessibility tree). For the ⌘K palette
+(`-HERMES_PALETTE <text>` opens it in each
 chats window once connected, and fills its field with that text each time it opens): `paletteopen`
 (⌘K in the first window), `palettekey up|down|return|esc|space|cmd+return|cmd+1` (any digit; a ⌘
 key goes to the window's key equivalents, then the menus, as the app routes one), `palettetype

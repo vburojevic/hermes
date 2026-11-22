@@ -287,6 +287,9 @@ final class GroupChatModel {
     var room: GroupRoom
     private(set) var events: [RoomEvent] = []
     private(set) var items: [RoomItem] = []
+    /// The room's log has been read once since it opened. Rows shown before that are only your
+    /// messages kept from the last launch, so the room's first fill is still to come.
+    private(set) var hasReadLog = false
     private(set) var isWorking = false
     private(set) var pendingApproval: PendingApproval?
     private(set) var retryTask: String?
@@ -438,9 +441,15 @@ final class GroupChatModel {
                 if let last = fresh.last?.seq { lastSeq = max(lastSeq, last) }
                 hasMore = page["has_more"]?.boolValue ?? false
             }
+            hasReadLog = true
             if !fresh.isEmpty {
                 events += fresh
                 items = RoomTranscript.build(events)
+                #if DEBUG
+                if UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG") {
+                    print("GROUPLOG \(Int(Date().timeIntervalSince1970 * 1000) % 100_000)ms model \(room.id) events=\(events.count) items=\(items.count) shown=\(shownItems.count) working=\(isWorking) last=\(String(describing: items.last).prefix(60))")
+                }
+                #endif
                 // Yours, in the log now: no longer on their way. By the event Hermes said it was,
                 // else by its words.
                 for event in fresh where event.kind == "message.user" {

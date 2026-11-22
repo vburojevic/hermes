@@ -242,7 +242,7 @@ struct RootView: View {
         // launch (`LaunchFlags`): a new window doesn't run the steps again.
         .task {
             guard LaunchFlags.take("HERMES_MAC_DRIVE") != nil else { return }
-            await MacDebugDriver.runIfAsked(router: router)
+            await MacDebugDriver.runIfAsked(router: router) { windowWorkspace }
         }
         #endif
         #endif
