@@ -18,8 +18,12 @@ struct GroupChatScreen: View {
     @State private var seenAtOpen: Int?
     /// The first unseen mention of the person below, as the room opened.
     @State private var mention: (memberID: String, seq: Int)?
-    @State private var position = ScrollPosition(edge: .bottom)
+    /// Holds only the pill's scrolls; the room opens at its end by the initial-offset anchor. Held
+    /// at the bottom edge, it was re-applied as the iPad sidebar folded and left the rows scrolled
+    /// sideways by the column's margin (`docs/bots-groups-skills.md` §2).
+    @State private var position = ScrollPosition(idType: String.self)
     @State private var isAtEnd = true
+    @State private var showsRows = false
     @State private var lastVisibleSeq = 0
     /// Members' messages below not seen yet, with the pill's two steps (`newMessagesPill`).
     @State private var below = NewMessagesBelow()
@@ -107,6 +111,16 @@ struct GroupChatScreen: View {
 
     // MARK: Transcript
 
+    #if DEBUG
+    private static let logsScroll = UserDefaults.standard.bool(forKey: "HERMES_SCROLL_LOG")
+    private static var ms: Int { Int(Date().timeIntervalSince1970 * 1000) % 100_000 }
+    #endif
+
+    /// The rows animate once the room's log has been read. Its first fill lands at once: animating
+    /// a whole transcript into the lazy stack kept the scroll view at its top and blank while every
+    /// row's height was re-estimated against the bottom anchor (`docs/bots-groups-skills.md` §2).
+    private var rowsAnimation: Animation? { showsRows ? Theme.spring : nil }
+
     private var transcript: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
@@ -165,6 +179,14 @@ struct GroupChatScreen: View {
         .environment(\.widgetHost, chat.widgetHost)
         .task { await chat.markForWidgets() }
         .scrollPosition($position)
+        #if DEBUG
+        .onScrollGeometryChange(for: String.self) { g in
+            guard Self.logsScroll else { return "" }
+            return "off=\(Int(g.contentOffset.y)) size=\(Int(g.contentSize.height)) cont=\(Int(g.containerSize.height)) vis=\(Int(g.visibleRect.minY))-\(Int(g.visibleRect.maxY)) ins=\(Int(g.contentInsets.top))/\(Int(g.contentInsets.bottom)) w=\(Int(g.contentSize.width))/\(Int(g.containerSize.width)) ox=\(Int(g.contentOffset.x))"
+        } action: { _, line in
+            if !line.isEmpty { print("GROUPLOG \(Self.ms)ms geometry \(line) shown=\(chat.shownItems.count)") }
+        }
+        #endif
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY < 72
         } action: { _, atEnd in
@@ -199,7 +221,12 @@ struct GroupChatScreen: View {
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-        .animation(Theme.spring, value: chat.shownItems)
+        .animation(rowsAnimation, value: chat.shownItems)
+        // After the update that brought the log, so its rows themselves land without it. Not on
+        // rows existing: a message kept from the last launch shows before the log arrives.
+        .onChange(of: chat.hasReadLog, initial: true) { _, hasRead in
+            if hasRead { showsRows = true }
+        }
     }
 
     // MARK: New messages (`docs/inbox.md` §4)

@@ -17,7 +17,8 @@ import AppKit
 /// can't capture); `item <menu> > <item>` (chooses a menu bar item, as a click on it would);
 /// `mainkey esc` (Esc in the chats window; `mainkey cmd+r` ⌘R there, then the menus; `mainkey
 /// tab|up|down|left|right|return` typed there; `key cmd+r` ⌘R in Settings, then the menus); `sidebar`
-/// (the sidebar button's action); `dump`, `views` and `toolbar` (the accessibility, content and
+/// (the sidebar button's action); `select group:<id>|bot:<name>` (a sidebar row, as a click on it
+/// would); `dump`, `views` and `toolbar` (the accessibility, content and
 /// toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
 /// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
 /// `palettetype <text>` (typed into its field as keys, one per character), `paletteblur` (takes
@@ -26,7 +27,7 @@ import AppKit
 /// window's title, which is the page it shows, to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
 @MainActor
 enum MacDebugDriver {
-    static func runIfAsked(router: WindowRouter) async {
+    static func runIfAsked(router: WindowRouter, workspace: () -> BotWorkspace?) async {
         guard let script = UserDefaults.standard.string(forKey: "HERMES_MAC_DRIVE") else { return }
         for step in script.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) }) where !step.isEmpty {
             let parts = step.split(separator: " ", maxSplits: 1).map(String.init)
@@ -66,6 +67,8 @@ enum MacDebugDriver {
                 result = router.layout.showsSidebar ? "shown" : "put away"
             case "maintabs":
                 result = mainToolbarItems()
+            case "select":
+                result = select(argument, in: workspace())
             case "toolbar":
                 if let frame = settingsWindow?.contentView?.superview { dumpToolbar(frame, depth: 0) }
             case "views":
@@ -88,6 +91,21 @@ enum MacDebugDriver {
             log("\(step) → \(result) · window: \(settingsWindow?.title ?? "none")")
         }
         log("done")
+    }
+
+    /// `select group:<id>` or `select bot:<name>`: what a click on that sidebar row does, so a chat
+    /// can be left and opened again in one launch.
+    private static func select(_ target: String, in workspace: BotWorkspace?) -> String {
+        guard let workspace else { return "no workspace" }
+        if target.hasPrefix("group:") {
+            workspace.selection = .group(String(target.dropFirst(6)))
+        } else if target.hasPrefix("bot:") {
+            workspace.selection = .bot(String(target.dropFirst(4)))
+        } else {
+            return "unknown target"
+        }
+        workspace.sidebarMode = .bots
+        return "selected"
     }
 
     private static var settingsWindow: NSWindow? {
