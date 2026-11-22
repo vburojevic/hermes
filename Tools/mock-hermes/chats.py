@@ -275,6 +275,8 @@ def pdf_attach(params):
 def prompt_btw(params):
     sid = params.get("session_id") or ""
     question = params.get("text") or ""
+    # What the aside carries, quotes included, so a check can read what the app sent.
+    print(f"[mock-hermes] prompt.btw text {question!r}", flush=True)
     task = f"btw_{uuid.uuid4().hex[:6]}"
 
     def answer():
@@ -429,6 +431,8 @@ PROCESSES = {}  # process_id -> {"command", "running", "started"}
 
 def prompt_background(params):
     sid = params.get("session_id") or ""
+    text = params.get("text") or ""
+    print(f"[mock-hermes] prompt.background text {text!r}", flush=True)
     task = f"bg_{uuid.uuid4().hex[:6]}"
 
     def done():
