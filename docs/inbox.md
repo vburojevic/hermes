@@ -471,13 +471,13 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   the first tap "2 new messages. Jump to the latest.", for one message "1 new message. Jump to
   it.". The count rolls to its new value; with Reduce Motion it just changes.
 - The open chat's activity line is announced at most every 10 s, never the words as they stream.
-- The reply bar's head is a heading ("Replying with 2 quotes"). Each quote reads "Quote from
-  Hermes: the passage", and its ✕ reads "Remove the quote from Hermes: the passage". With two or
-  three each says where it sits, so the same words twice can be told apart: "Quote 2 of 3, from
-  Hermes: the passage" and "Remove quote 2 of 3, from Hermes: the passage". The limit
-  note reads as one line, and a Reply refused for the limit announces it. A sent bubble reads
-  every quote in order, with whose it was when this device knows: "You, quoting Hermes, “the
-  first passage” and “the second”: your words".
+- With one quote the reply bar reads "Replying to Hermes", then the passage, and its ✕ reads
+  "Stop replying". With two or three its head is a heading ("Replying with 2 quotes"), and each
+  quote says where it sits, so the same words twice can be told apart: "Quote 2 of 3, from
+  Hermes: the passage" and "Remove quote 2 of 3, from Hermes: the passage". The limit note reads
+  as one line, and a Reply refused for the limit announces it. A sent bubble reads every quote in
+  order, with whose it was when this device knows: "You, quoting Hermes, “the first passage” and
+  “the second”: your words".
 - Never colour alone: needs you has the hand, failed the triangle, muted the slashed bell, unread
   the weight and the count.
 - At the accessibility text sizes on iPhone and iPad the list keeps everything and cuts nothing
