@@ -11,6 +11,8 @@ DerivedData/
 /0
 .claude/*
 !.claude/skills/
+!.claude/settings.json
+!.claude/hooks/
 .env
 .env.*
 !.env.example
