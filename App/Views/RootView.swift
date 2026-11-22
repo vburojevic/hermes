@@ -4,6 +4,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 #endif
+#if DEBUG
+import os
+#endif
 
 /// Onboarding until a gateway exists, then the main interface.
 struct RootView: View {
@@ -388,6 +391,7 @@ struct RootView: View {
         let sendHere = LaunchFlags.take("HERMES_SEND_HERE")
         let draftText = LaunchFlags.take("HERMES_DRAFT")
         let sendText = LaunchFlags.take("HERMES_SEND")
+        let sendFirst = LaunchFlags.take("HERMES_SEND_FIRST")
         // `-HERMES_STUCK_TURN <s>`: that long after launch, the open chat holds as if it never heard
         // a turn end (`docs/chat.md` §4b): Send queues, and the chat settles from the gateway.
         if let stuckAfter {
@@ -502,9 +506,10 @@ struct RootView: View {
         if let delay = UserDefaults.standard.string(forKey: "HERMES_SEND_AFTER").flatMap(Double.init) {
             try? await Task.sleep(for: .seconds(delay))
             let conversation = workspace.currentConversation
+            await sendDebugFirst(sendFirst, in: conversation)
             conversation.draft = text
             conversation.send()
-            await sendDebugFollowUp(in: conversation)
+            await sendDebugFollowUp(in: conversation, workspace: workspace)
             return
         }
         workspace.sidebarMode = .chats
@@ -515,12 +520,34 @@ struct RootView: View {
         }
         conversation.loadSlashCatalog()
         try? await Task.sleep(for: .milliseconds(600))
+        await sendDebugFirst(sendFirst, in: conversation)
         conversation.draft = text
         conversation.send()
         // `-HERMES_FOLLOWUP <text>` types a follow-up while the turn runs (`-HERMES_FOLLOWUP_MODE
         // steer|redirect|sendNext|askAside|background` picks the mode, `-HERMES_FOLLOWUP_SEND YES`
-        // sends it). Several follow-ups go one after another, separated by `|`.
-        await sendDebugFollowUp(in: conversation)
+        // sends it, or `<seconds>` after typing it). Several follow-ups go one after another,
+        // separated by `|`.
+        await sendDebugFollowUp(in: conversation, workspace: workspace)
+    }
+
+    /// `-HERMES_SEND_FIRST <text>` sends that first, in the chat `-HERMES_SEND` then goes to, and
+    /// waits for its reply to finish: the long turn's follow-up can then quote a finished reply
+    /// (`-HERMES_FOLLOWUP_QUOTE`) with no tap, since Reply isn't offered while a turn runs. It
+    /// gives up after 60 s and `-HERMES_SEND` goes anyway.
+    private func sendDebugFirst(_ text: String?, in conversation: ConversationModel) async {
+        guard let text else { return }
+        // A Bot chat can already end in a finished reply; only a newer one is this message's.
+        let before = conversation.rows.last { if case .assistant = $0 { true } else { false } }?.id
+        conversation.draft = text
+        conversation.send()
+        for _ in 0..<240 {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !conversation.isWorking, !conversation.isFinishing,
+                  case .assistant(let turn)? = conversation.rows.last(where: { if case .assistant = $0 { true } else { false } }),
+                  turn.id != before, turn.state == .complete else { continue }
+            return
+        }
+        Self.debugLogger.error("HERMES_SEND_FIRST: no finished reply after 60 s")
     }
 
     /// `-HERMES_HELPERS team|helper:<n>|steer:<n>|stop:<n>` opens the chat's latest team, its helper
@@ -586,15 +613,38 @@ struct RootView: View {
         }
     }
 
-    private func sendDebugFollowUp(in conversation: ConversationModel) async {
+    private static let debugLogger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "debug")
+
+    private func sendDebugFollowUp(in conversation: ConversationModel, workspace: BotWorkspace) async {
         guard let followUps = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP"), !followUps.isEmpty else { return }
         let delay = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_AFTER").flatMap(Double.init) ?? 2
         try? await Task.sleep(for: .seconds(delay))
         let modes = (UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_MODE") ?? "").split(separator: "|").map(String.init)
+        // `-HERMES_FOLLOWUP_SEND <seconds>` waits that long between typing and sending (time to see
+        // the bar and the field); `YES` keeps 0.6 s. The number is read first because `bool` reads
+        // any number but 0 as YES.
+        let sendSeconds = UserDefaults.standard.double(forKey: "HERMES_FOLLOWUP_SEND")
+        let sendPause: Double? = sendSeconds > 0 ? sendSeconds : UserDefaults.standard.bool(forKey: "HERMES_FOLLOWUP_SEND") ? 0.6 : nil
         for (index, followUp) in followUps.split(separator: "|").map(String.init).enumerated() {
             if index > 0 { try? await Task.sleep(for: .seconds(1.2)) }
             let mode = modes.indices.contains(index) ? FollowUpMode(rawValue: modes[index]) : modes.last.flatMap(FollowUpMode.init(rawValue:))
             conversation.followUpPick = mode
+            // `-HERMES_FOLLOWUP_QUOTE <words>` quotes those words from the newest finished reply that
+            // has them, through the same call Reply makes, so the follow-up carries them in every
+            // mode (`docs/follow-ups.md` §1). On the Mac, Reply isn't offered while a turn runs.
+            if index == 0, let words = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_QUOTE"), !words.isEmpty {
+                let source = conversation.rows.last { row in
+                    guard case .assistant(let turn) = row else { return false }
+                    return turn.state == .complete && turn.copyableText.contains(words)
+                }
+                if let source {
+                    // The name the transcript passes Reply: `TranscriptView.botTitle`, else "Hermes".
+                    let author = conversation.botName.flatMap { workspace.roster?.bot(named: $0)?.title } ?? "Hermes"
+                    conversation.reply(to: source.id, author: author, passage: words)
+                } else {
+                    Self.debugLogger.error("HERMES_FOLLOWUP_QUOTE: no finished reply has those words")
+                }
+            }
             // `-HERMES_FOLLOWUP_IMAGE <path>` attaches that picture to the follow-up, as a paste does
             // (a photo sent while a turn runs, without the system's picker or the clipboard).
             if index == 0, let path = UserDefaults.standard.string(forKey: "HERMES_FOLLOWUP_IMAGE"),
@@ -602,8 +652,8 @@ struct RootView: View {
                 conversation.attachments.append(image)
             }
             conversation.draft = followUp
-            if UserDefaults.standard.bool(forKey: "HERMES_FOLLOWUP_SEND") {
-                try? await Task.sleep(for: .milliseconds(600))
+            if let sendPause {
+                try? await Task.sleep(for: .seconds(sendPause))
                 conversation.send()
             }
         }

@@ -152,6 +152,29 @@ python3 -I Tools/mock-hermes/matrix/send_matrix.py --mac --app <Hermes Dev.app> 
 It starts its own mock on ports 40219 and 40742 and stops it at the end; on the Mac it sets Hermes
 Dev's data folder aside first and puts it back byte for byte.
 
+A follow-up that quotes a reply runs from launch flags too, since the Mac doesn't offer Reply while
+a turn runs. `-HERMES_SEND_FIRST <text>` sends that first, in the chat `-HERMES_SEND` then goes to,
+and waits up to 60 s for its reply to finish. `-HERMES_FOLLOWUP_QUOTE <words>` quotes those words
+from the newest finished reply that has them, through the same call Reply makes, before the first
+`-HERMES_FOLLOWUP` is typed (`docs/follow-ups.md` §1). `-HERMES_FOLLOWUP_SEND <seconds>` waits that
+long between typing the follow-up and sending it, so the bar and the field can be seen first (`YES`
+waits 0.6 s). The mock prints the text each aside and background task carries, quotes included:
+`[mock-hermes] prompt.btw text '…'` and `[mock-hermes] prompt.background text '…'`. In
+`backend.py`, "Show me the links" reaches the "links" reply, which begins "**Blog published:** it's
+live.", and "marathon please" runs twelve steps of 3.6 s, about 45 s. On the Mac:
+
+```sh
+.../Hermes.app/Contents/MacOS/Hermes -HERMES_OPEN bot:default -HERMES_SEND_AFTER 6 \
+  -HERMES_SEND_FIRST "Show me the links" -HERMES_SEND "marathon please" \
+  -HERMES_FOLLOWUP "What does it cover?" -HERMES_FOLLOWUP_MODE askAside \
+  -HERMES_FOLLOWUP_QUOTE "Blog published" -HERMES_FOLLOWUP_SEND 8
+```
+
+with the `-HERMES_BOOTSTRAP_*` flags and its own `CFFIXED_USER_HOME`. Two seconds into the marathon
+(`-HERMES_FOLLOWUP_AFTER`'s default) the bar shows the quote and the field the question; 8 s later
+both are empty, the turn still runs, and the mock prints the question behind a block quote of "Blog
+published". `-HERMES_FOLLOWUP_MODE background` does the same for Run in Background.
+
 ## Checks on main
 
 Every commit to `main` runs the checks in the studio's Buildkite pipeline `hermes-checks`, on its
