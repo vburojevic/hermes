@@ -46,3 +46,16 @@ bbf8c45 Chat: a long approval card scrolls under the top bar so the composer sta
 6d897a2 Chat: a chat started with a photo lists your words, however Hermes cut its preview
 95c5d72 Notifications: tapping a reply opens the chat it came from, not the Bot
 95c5d72 Notifications: replying to or opening a notice goes by its chat, never by the profile that ran it
+dd101cf Debug: Mac development builds never ask for the login keychain password
+e41538f Docs: a code comment in Projects says a click on a lane opens a chat and leaves the selection alone
+24700e7 Chat: VoiceOver keeps reading upward when earlier messages come in
+24700e7 Chat: VoiceOver lands on every reply, up to the first message, when earlier messages come in
+51df33e Chat: a reply can quote up to three passages, each removable, and sends them in order
+51df33e Chat: a reply sent while Hermes works keeps its quotes and clears the reply bar
+51df33e Chat: a queued message edited down to a picture keeps its quotes in the reply bar
+51df33e Chat: VoiceOver says which of several quotes each reply bar row and its remove button is
+51df33e Chat: VoiceOver reads every quote of a sent reply, in order
+51df33e Chat: VoiceOver reads a quoted queued message without a doubled period
+51df33e Chat: VoiceOver reads the quote limit note as one line, without an Info glyph
+f139707 Chat: on iPhone and iPad, words selected in a reply quote into the composer from Reply
+f139707 Chat: a quote set aside for an edit that finds the bar full shows the limit note
