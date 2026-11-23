@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A file Hermes sent in a reply (`docs/chat.md` §3a): a `MEDIA:<path>` line on its own, outside
@@ -91,7 +92,9 @@ public struct ReplyAttachment: Hashable, Sendable {
         "tsv": "TSV", "json": "JSON", "jsonl": "JSON Lines", "yaml": "YAML", "yml": "YAML", "toml": "TOML",
         "xml": "XML", "html": "HTML page", "htm": "HTML page", "svg": "SVG", "log": "Log", "zip": "ZIP archive",
         "docx": "Word document", "xlsx": "Excel workbook", "pptx": "PowerPoint deck", "key": "Keynote deck",
-        "pages": "Pages document", "numbers": "Numbers spreadsheet",
+        "pages": "Pages document", "numbers": "Numbers spreadsheet", "doc": "Word document", "xls": "Excel workbook",
+        "ppt": "PowerPoint deck", "rtf": "Rich text", "odt": "OpenDocument text", "ods": "OpenDocument spreadsheet",
+        "odp": "OpenDocument presentation",
     ]
 
     // MARK: Reading a reply
@@ -153,13 +156,27 @@ public struct ReplyAttachment: Hashable, Sendable {
 
 /// Where a gateway file a reply names opens (`docs/inspector.md` §2): text and code in the File
 /// tab, pages and PDFs in a Preview tab (`hermes-fs`, which shows an HTML file with its relative
-/// files, a PDF or a picture), and anything else only as a copy saved to the device.
+/// files, a PDF or a picture), office documents in Quick Look (`docs/chat.md` §3a), and anything
+/// else only as a copy saved to the device.
 public enum GatewayFileOpening {
     public enum Destination: Sendable, Hashable {
         case fileTab
         case preview
+        /// A copy read on the person's tap, shown by the system's Quick Look and deleted when it
+        /// closes (`QuickLookCopy`).
+        case quickLook
         case save
     }
+
+    /// Word, Excel and PowerPoint, rich text and iWork files: what Quick Look draws everywhere. Of
+    /// OpenDocument it draws only text, and only on the Mac; the rest keeps Save.
+    static let quickLooked: Set<String> = {
+        var suffixes: Set<String> = ["docx", "doc", "xlsx", "xls", "pptx", "ppt", "rtf", "pages", "numbers", "key"]
+        #if os(macOS)
+        suffixes.insert("odt")
+        #endif
+        return suffixes
+    }()
 
     /// Shown by the Preview tab: a page, a PDF, or a picture the File tab doesn't draw.
     static let previewed: Set<String> = ["pdf", "html", "htm", "svg", "bmp"]
@@ -180,6 +197,7 @@ public enum GatewayFileOpening {
         guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return .save }
         let suffix = name[name.index(after: dot)...].lowercased()
         if previewed.contains(suffix) { return .preview }
+        if quickLooked.contains(suffix) { return .quickLook }
         if textual.contains(suffix) || MediaFileType(path: name) != nil { return .fileTab }
         return .save
     }
@@ -188,5 +206,32 @@ public enum GatewayFileOpening {
     /// the File tab, which can't show it: a PDF or a page.
     public static func opensInPreview(_ path: String) -> Bool {
         destination(for: path) == .preview
+    }
+}
+
+/// Where the copy of a file opened in Quick Look is kept while it shows (`docs/chat.md` §3a): a
+/// folder of its own in the app's caches, named for the gateway path and the Bot profile it was
+/// read with, so two Bots' files of the same name never meet, holding the file under its own name
+/// (Quick Look reads the type from it). The folder is deleted when the preview closes.
+public enum QuickLookCopy {
+    /// The caches folder the copies live under.
+    public static let folder = "Quick Look"
+
+    /// The copy's folder: a digest of the profile and the path, never the path itself.
+    public static func folderName(path: String, profile: String?) -> String {
+        let digest = SHA256.hash(data: Data("\(profile ?? "")\u{0}\(path)".utf8))
+        return digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The copy's own name: the file's, as a single safe path component.
+    public static func fileName(of path: String) -> String {
+        let last = path.split(separator: "/").last.map(String.init) ?? ""
+        var name = String(last.map { $0 == ":" || $0.isNewline || $0 == "\\" ? "_" : $0 })
+        while name.hasPrefix(".") { name.removeFirst() }
+        if name.count > 120, let dot = name.lastIndex(of: ".") {
+            let ext = name[dot...]
+            name = String(name.prefix(120 - ext.count)) + ext
+        }
+        return name.isEmpty ? "file" : name
     }
 }

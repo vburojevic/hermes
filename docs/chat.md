@@ -752,7 +752,18 @@ once, in order. A note with no file behind it (someone typed it) stays words.
 | Video (MP4, MOV) | Its first frame, a play button and its length | Plays in the viewer, streamed |
 | Document: text, Markdown, CSV, JSON, YAML, code | A card: kind glyph, name, "Markdown · 1 KB", Open | The chat's Inspector, File tab ([inspector.md](inspector.md) §2) |
 | PDF, HTML page | The same card | The chat's Inspector, a Preview tab (`hermes-fs`, [inspector.md](inspector.md) §2.4): a page's relative pictures and styles load with it |
-| Anything else (zip, docx, pptx…) | The same card with Save | Reads the file (up to 100 MB, held in memory) and asks where to save it: the save panel on the Mac, Files on iPhone and iPad |
+| Word, Excel and PowerPoint, rich text, Pages, Numbers and Keynote; OpenDocument text on the Mac | The same card | Quick Look, below |
+| Anything else (zip, OpenDocument where Quick Look doesn't draw it…) | The same card with Save | Reads the file (up to 100 MB, held in memory) and asks where to save it: the save panel on the Mac, Files on iPhone and iPad |
+
+**Quick Look.** An Office file opens in the system's Quick Look, which needs it on disk. On the
+person's tap the file is read as for Save (below) and written to
+`<caches>/Quick Look/<key>/<file name>`, where `<caches>` is the app's own caches folder and
+`<key>` is the first 32 hex digits of a SHA-256 of the Bot profile and the gateway path
+(`QuickLookCopy`), on iPhone and iPad with complete file protection. There's one copy at a time:
+closing Quick Look deletes its folder, so does leaving the chat, and opening the next file first
+clears whatever a run that ended early left. A file Quick Look says it can't draw is offered to
+save instead. OpenDocument spreadsheets and presentations keep Save everywhere, OpenDocument text
+on iPhone and iPad: Quick Look doesn't draw them there.
 
 **Keeping a copy.** Every file the gateway shares can be kept on the device, whatever its tap
 does: a card's and a tile's context menu (long press, or right-click on the Mac) has **Save to
@@ -764,7 +775,7 @@ All of these, and the Preview tab's Share or Save As… ([inspector.md](inspecto
 one path (`GatewayFileCopy`): on the person's tap only, the file is read whole through `GET
 /api/fs/download` with the chat's Bot profile (`downloadCopy`, a `HEAD` first) and held in memory,
 up to 100 MB (`ReplyAttachment.maxSaveBytes`); over that it says "It's 120 MB, too big to save
-here". The app writes nothing itself: the share sheet gets the bytes with the file's name, and the
+here". The app writes nothing itself but Quick Look's copy: the share sheet gets the bytes with the file's name, and the
 file lands only where the person picks. A card says what went wrong on itself, in the words
 below; a tile says it in an alert, with Try Again when it couldn't load. A card or tile that
 can't be read (gone, private, Bot Mode off) has no menu.
@@ -801,7 +812,8 @@ before: one scan of its bytes.
 Check with the mock: "attachments" (two pictures, a video, a PDF, Markdown, an HTML page with a
 picture beside it, a zip, a 60 MB picture, one gone, one private, a code-block example) and
 "broken attachments" (only the ones that don't show), in a chat or a Bot Chat; over `server.py`
-alone, every file says Bot Mode isn't on. `-HERMES_OPEN_SENT_FILE <name>` opens that file 5 s after
+alone, every file says Bot Mode isn't on. "office files" sends a docx, xlsx, pptx, rtf, odt,
+ods and odp. `-HERMES_OPEN_SENT_FILE <name>` opens that file 5 s after
 it shows, as a tap would ([development.md](development.md)).
 
 ## 3b. Diagrams, formulas and SVG pictures
@@ -1341,8 +1353,7 @@ once when the chat's stored rows show the other turn ending.
 
 Not built yet:
 
-- Screenshot thumbnails inside tool steps (`screenshotResult`), and Quick Look for Office files a
-  reply sends: they save a copy instead (§3a). A `MEDIA:` line in a step's narration (the steps
+- Screenshot thumbnails inside tool steps (`screenshotResult`). A `MEDIA:` line in a step's narration (the steps
   opened) or in a group chat's messages shows as it did before: only a chat's and a Bot Chat's
   replies draw files.
 - Toasts and sticky banners for `notification.show` and `notification.clear`.

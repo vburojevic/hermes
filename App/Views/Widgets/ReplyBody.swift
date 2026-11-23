@@ -5,6 +5,7 @@ import HermesMarkdown
 import LinkPresentation
 #endif
 import OSLog
+import QuickLook
 import Synchronization
 import SwiftUI
 import UniformTypeIdentifiers
@@ -680,7 +681,11 @@ struct ReplyFileCard: View {
     private var hint: String {
         switch action {
         case .open:
-            file.opens == .preview ? String(localized: "Opens in a Preview tab") : String(localized: "Opens in the Inspector")
+            switch file.opens {
+            case .preview: String(localized: "Opens in a Preview tab")
+            case .quickLook: String(localized: "Opens in Quick Look")
+            default: String(localized: "Opens in the Inspector")
+            }
         case .save: String(localized: "Saves a copy to this device")
         case .retry: String(localized: "Tries again")
         case .linkBotMode: String(localized: "Opens Edit Gateway")
@@ -727,7 +732,9 @@ struct ReplyFileCard: View {
         case "pdf": "doc.richtext"
         case "html", "htm": "globe"
         case "md", "markdown", "txt", "text", "rst", "log": "doc.text"
-        case "csv", "tsv", "xlsx", "numbers": "tablecells"
+        case "csv", "tsv", "xlsx", "xls", "ods", "numbers": "tablecells"
+        case "docx", "doc", "rtf", "odt", "pages": "doc.richtext"
+        case "pptx", "ppt", "odp", "key": "rectangle.on.rectangle"
         case "json", "jsonl", "ndjson", "yaml", "yml", "toml", "xml": "curlybraces"
         case "zip", "gz", "tgz", "tar", "7z", "rar": "doc.zipper"
         case "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp", "svg": "photo"
@@ -739,7 +746,11 @@ struct ReplyFileCard: View {
     private func perform() {
         switch action {
         case .open:
-            references.openInInspector(file.path)
+            if file.opens == .quickLook {
+                keep(.look)
+            } else {
+                references.openInInspector(file.path)
+            }
         case .save:
             keep(.save)
         case .retry:
@@ -832,6 +843,8 @@ enum GatewayFileCopy {
     enum Use: Equatable {
         case save
         case share
+        /// Shown in Quick Look from a copy in the caches, deleted when it closes (`QuickLookFiles`).
+        case look
     }
 
     struct Copy: Identifiable {
@@ -839,6 +852,8 @@ enum GatewayFileCopy {
         let use: Use
         let document: ReplyFileDocument
         let fileName: String
+        /// Where a copy for Quick Look goes: its folder for the path and profile it was read with.
+        var folder: String?
     }
 
     /// A view's copy: being read, read and waiting for the person, or why it couldn't be.
@@ -863,7 +878,8 @@ enum GatewayFileCopy {
             let data = try await client.downloadCopy(path, profile: profile, limit: ReplyAttachment.maxSaveBytes)
             let name = (path as NSString).lastPathComponent
             let document = ReplyFileDocument(data: data, suffix: (name as NSString).pathExtension.lowercased())
-            state.wrappedValue = State(copy: Copy(use: use, document: document, fileName: name), asked: use)
+            let folder = use == .look ? QuickLookCopy.folderName(path: path, profile: profile) : nil
+            state.wrappedValue = State(copy: Copy(use: use, document: document, fileName: name, folder: folder), asked: use)
         } catch is CancellationError {
             state.wrappedValue.reading = nil
         } catch {
@@ -935,6 +951,8 @@ private struct GatewayFileCopyPresenter: ViewModifier {
     @Binding var state: GatewayFileCopy.State
     let alerts: Bool
     let retry: ((GatewayFileCopy.Use) -> Void)?
+    /// The copy Quick Look shows, deleted when it closes.
+    @State private var looking: URL?
 
     private var saving: Bool { state.copy?.use == .save }
 
@@ -944,6 +962,17 @@ private struct GatewayFileCopyPresenter: ViewModifier {
                           document: saving ? state.copy?.document : nil,
                           contentType: state.copy?.document.contentType ?? .data,
                           defaultFilename: state.copy?.fileName) { _ in state.copy = nil }
+            .quickLookPreview(Binding(get: { looking }, set: { shown in
+                if shown == nil, let looking {
+                    QuickLookFiles.discard(looking)
+                    self.looking = nil
+                }
+            }))
+            .onChange(of: state.copy?.id) { look() }
+            .onDisappear {
+                // The card scrolled away or the chat closed with Quick Look still up: the copy goes too.
+                if let looking { QuickLookFiles.discard(looking) }
+            }
             #if os(iOS)
             .background {
                 // Only while there's a copy to share: nothing extra stays in a long chat.
@@ -966,6 +995,68 @@ private struct GatewayFileCopyPresenter: ViewModifier {
 
     private var alertTitle: String {
         state.problem.map { ReplyFileCard.note($0, video: false) } ?? ""
+    }
+
+    /// A copy read for Quick Look goes to the caches and shows; one Quick Look can't draw here is
+    /// offered to save instead.
+    private func look() {
+        guard let copy = state.copy, copy.use == .look, let folder = copy.folder else { return }
+        guard let url = QuickLookFiles.write(copy.document.data, name: copy.fileName, folder: folder) else {
+            state = GatewayFileCopy.State(problem: .couldntLoad, asked: .look)
+            return
+        }
+        guard QuickLookFiles.canShow(url) else {
+            QuickLookFiles.discard(url)
+            state.copy = GatewayFileCopy.Copy(use: .save, document: copy.document, fileName: copy.fileName)
+            return
+        }
+        state.copy = nil
+        looking = url
+    }
+}
+
+/// The copies Quick Look shows (`docs/chat.md` §3a): one at a time, each in its own folder under
+/// the caches' "Quick Look" folder, named for the gateway path and profile (`QuickLookCopy`),
+/// written with the strongest file protection the system offers, and deleted when the preview
+/// closes. Opening one clears whatever an earlier run left behind.
+enum QuickLookFiles {
+    private static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "widgets")
+
+    static var root: URL {
+        URL.cachesDirectory.appending(path: QuickLookCopy.folder, directoryHint: .isDirectory)
+    }
+
+    static func write(_ data: Data, name: String, folder: String) -> URL? {
+        let manager = FileManager.default
+        try? manager.removeItem(at: root)
+        let directory = root.appending(path: folder, directoryHint: .isDirectory)
+        let url = directory.appending(path: QuickLookCopy.fileName(of: name), directoryHint: .notDirectory)
+        do {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            #if os(iOS)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            #else
+            try data.write(to: url, options: .atomic)
+            #endif
+            return url
+        } catch {
+            logger.error("Quick Look copy not written: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
+            return nil
+        }
+    }
+
+    /// Whether Quick Look draws this kind of file here. The Mac's Quick Look shows any file, as
+    /// its icon at worst.
+    static func canShow(_ url: URL) -> Bool {
+        #if os(iOS)
+        QLPreviewController.canPreview(url as NSURL)
+        #else
+        true
+        #endif
+    }
+
+    static func discard(_ url: URL) {
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
     }
 }
 

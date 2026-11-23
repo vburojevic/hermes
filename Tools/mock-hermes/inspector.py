@@ -42,6 +42,10 @@ Scripted chat turns (on top of chats.py) by message content:
                           script and a remote picture that never run or load) and an SVG in the
                           prose, then a diagram Mermaid can't read (`DRAWINGS`, docs/chat.md §3b).
                           server.py and a Bot Chat answer the same.
+  "live page"          -> a `::preview` page whose buttons send hidden messages, and a Markdown file
+                          (docs/chat.md §3c); "Plan picked on the page: …" is answered
+  "office files"       -> a docx, xlsx, pptx and rtf made here, which open in Quick Look, and an odt, ods
+                          and odp, which save where it can't draw them (docs/chat.md §3a)
 
 Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
@@ -486,6 +490,157 @@ def _zip(files):
     return buffer.getvalue()
 
 
+# Office files the mock sends with "office files" (docs/chat.md §3a), made with the standard library:
+# just enough of each format for Quick Look to draw the launch plan.
+
+OFFICE_ROWS = [("Week", "Sign-ups", "Pro"), ("1", "312", "14"), ("2", "468", "29"), ("3", "504", "36")]
+OFFICE_POINTS = ["Beta opens to the waiting list on Monday", "Pro launches at $8 a month",
+                 "Team adds shared Boards in week three"]
+
+
+def _x(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _docx():
+    body = "".join(f'<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr><w:r><w:t xml:space="preserve">{_x(t)}</w:t></w:r></w:p>'
+                   for style, t in [("Title", "Launch plan")] + [("Normal", p) for p in OFFICE_POINTS])
+    cells = "".join("<w:tr>" + "".join(f"<w:tc><w:p><w:r><w:t>{_x(c)}</w:t></w:r></w:p></w:tc>" for c in row) + "</w:tr>"
+                    for row in OFFICE_ROWS)
+    table = ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/><w:tblBorders>'
+             + "".join(f'<w:{b} w:val="single" w:sz="4" w:space="0" w:color="999999"/>' for b in ("top", "left", "bottom", "right", "insideH", "insideV"))
+             + "</w:tblBorders></w:tblPr>" + cells + "</w:tbl>")
+    W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    styles = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles {W}>'
+              '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="48"/></w:rPr></w:style></w:styles>')
+    return _zip({
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>',
+        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+        "word/_rels/document.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+        "word/styles.xml": styles,
+        "word/document.xml": f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W}><w:body>{body}{table}<w:sectPr/></w:body></w:document>',
+    })
+
+
+def _xlsx():
+    def cell(ref, value):
+        return f'<c r="{ref}"><v>{value}</v></c>' if value.isdigit() else f'<c r="{ref}" t="inlineStr"><is><t>{_x(value)}</t></is></c>'
+    rows = "".join(f'<row r="{i + 1}">' + "".join(cell(f"{'ABC'[j]}{i + 1}", v) for j, v in enumerate(row)) + "</row>"
+                   for i, row in enumerate(OFFICE_ROWS))
+    return _zip({
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Beta" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        "xl/worksheets/sheet1.xml": f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>',
+    })
+
+
+def _pptx():
+    P = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+         'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
+    R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    rels = lambda items: ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                          + "".join(f'<Relationship Id="{i}" Type="{R}/{t}" Target="{g}"/>' for i, t, g in items) + "</Relationships>")
+    tree = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
+
+    def box(n, y, h, size, text, bold=False):
+        weight = ' b="1"' if bold else ""
+        runs = "".join(f'<a:p><a:r><a:rPr lang="en-US" sz="{size}"{weight}/><a:t>{_x(t)}</a:t></a:r></a:p>' for t in text)
+        return (f'<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="Text {n}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
+                f'<p:spPr><a:xfrm><a:off x="457200" y="{y}"/><a:ext cx="8229600" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>'
+                f'<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>{runs}</p:txBody></p:sp>')
+    slide = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld {P}><p:cSld><p:spTree>{tree}'
+             + box(2, 457200, 1143000, 4000, ["Launch plan"], True) + box(3, 1828800, 3200400, 2400, OFFICE_POINTS)
+             + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>')
+    clr = '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+    master = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster {P}><p:cSld><p:spTree>{tree}</p:spTree></p:cSld>{clr}'
+              '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>')
+    layout = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout {P} type="blank"><p:cSld name="Blank"><p:spTree>{tree}</p:spTree></p:cSld>'
+              '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>')
+    colors = "".join(f'<a:{n}><a:srgbClr val="{v}"/></a:{n}>' for n, v in [("dk1", "000000"), ("lt1", "FFFFFF"), ("dk2", "1F2937"), ("lt2", "F3F4F6"), ("accent1", "2563EB"), ("accent2", "16A34A"), ("accent3", "D97706"), ("accent4", "DC2626"), ("accent5", "7C3AED"), ("accent6", "0891B2"), ("hlink", "2563EB"), ("folHlink", "7C3AED")])
+    font = '<a:latin typeface="Helvetica"/><a:ea typeface=""/><a:cs typeface=""/>'
+    fill = '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
+    line = '<a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>'
+    theme = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Plain"><a:themeElements>'
+             f'<a:clrScheme name="Plain">{colors}</a:clrScheme><a:fontScheme name="Plain"><a:majorFont>{font}</a:majorFont><a:minorFont>{font}</a:minorFont></a:fontScheme>'
+             f'<a:fmtScheme name="Plain"><a:fillStyleLst>{fill * 3}</a:fillStyleLst><a:lnStyleLst>{line * 3}</a:lnStyleLst>'
+             '<a:effectStyleLst>' + '<a:effectStyle><a:effectLst/></a:effectStyle>' * 3 + f'</a:effectStyleLst><a:bgFillStyleLst>{fill * 3}</a:bgFillStyleLst></a:fmtScheme>'
+             '</a:themeElements></a:theme>')
+    ct = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+          '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
+          '<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+          '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>'
+          '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'
+          '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>')
+    presentation = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation {P}>'
+                    '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>'
+                    '<p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>')
+    return _zip({
+        "[Content_Types].xml": ct,
+        "_rels/.rels": rels([("rId1", "officeDocument", "ppt/presentation.xml")]),
+        "ppt/presentation.xml": presentation,
+        "ppt/_rels/presentation.xml.rels": rels([("rId1", "slideMaster", "slideMasters/slideMaster1.xml"), ("rId2", "slide", "slides/slide1.xml"), ("rId3", "theme", "theme/theme1.xml")]),
+        "ppt/slides/slide1.xml": slide,
+        "ppt/slides/_rels/slide1.xml.rels": rels([("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")]),
+        "ppt/slideLayouts/slideLayout1.xml": layout,
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels": rels([("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+        "ppt/slideMasters/slideMaster1.xml": master,
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": rels([("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"), ("rId2", "theme", "../theme/theme1.xml")]),
+        "ppt/theme/theme1.xml": theme,
+    })
+
+
+def _odf(kind):
+    """An OpenDocument text, spreadsheet or presentation: its mimetype first and unpacked, as the format asks."""
+    import io
+    import zipfile
+    mime = f"application/vnd.oasis.opendocument.{kind}"
+    NS = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+          'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
+          'xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" '
+          'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3"')
+    paragraphs = "".join(f"<text:p>{_x(p)}</text:p>" for p in OFFICE_POINTS)
+    if kind == "text":
+        body = f'<office:text><text:h text:outline-level="1">Launch plan</text:h>{paragraphs}</office:text>'
+    elif kind == "spreadsheet":
+        def cell(v):
+            if v.isdigit():
+                return f'<table:table-cell office:value-type="float" office:value="{v}"><text:p>{v}</text:p></table:table-cell>'
+            return f'<table:table-cell office:value-type="string"><text:p>{_x(v)}</text:p></table:table-cell>'
+        rows = "".join("<table:table-row>" + "".join(cell(v) for v in row) + "</table:table-row>" for row in OFFICE_ROWS)
+        body = f'<office:spreadsheet><table:table table:name="Beta">{rows}</table:table></office:spreadsheet>'
+    else:
+        body = ('<office:presentation><draw:page draw:name="Launch plan" draw:master-page-name="Default">'
+                '<draw:frame svg:x="2cm" svg:y="1.5cm" svg:width="24cm" svg:height="3cm"><draw:text-box><text:p>Launch plan</text:p></draw:text-box></draw:frame>'
+                f'<draw:frame svg:x="2cm" svg:y="5cm" svg:width="24cm" svg:height="10cm"><draw:text-box>{paragraphs}</draw:text-box></draw:frame>'
+                '</draw:page></office:presentation>')
+    styles = ""
+    if kind == "presentation":
+        styles = ('<office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles>')
+    content = f'<?xml version="1.0" encoding="UTF-8"?><office:document-content {NS}><office:body>{body}</office:body></office:document-content>'
+    styles_xml = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-styles {NS}><office:automatic-styles>'
+                  '<style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm"/></style:page-layout>'
+                  f'</office:automatic-styles>{styles}</office:document-styles>')
+    manifest = ('<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">'
+                f'<manifest:file-entry manifest:full-path="/" manifest:media-type="{mime}"/>'
+                '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>'
+                '<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/></manifest:manifest>')
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(zipfile.ZipInfo("mimetype"), mime, compress_type=zipfile.ZIP_STORED)
+        for name, data in [("content.xml", content), ("styles.xml", styles_xml), ("META-INF/manifest.xml", manifest)]:
+            archive.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+    return buffer.getvalue()
+
+
+def _rtf():
+    points = "".join(f"\\bullet  {p}\\par\n" for p in OFFICE_POINTS)
+    return ("{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs24\n{\\b\\fs40 Launch brief}\\par\n"
+            + points + "}\n").encode()
+
 LAUNCH_NOTES = """# Launch notes
 
 - The beta form goes live on Monday at 09:00.
@@ -579,6 +734,14 @@ MEDIA = {
     "exports/launch-flow.png": lambda: PICTURES["diagrams/launch-flow.png"],   # the page's own picture
     "exports/launch-assets.zip": lambda: _zip({"hero.png": PICTURES["photos/home-hero.png"], "notes.md": LAUNCH_NOTES}),
     "pairing/device-qr.png": lambda: PICTURES["diagrams/orbit-card.png"],   # refused as sensitive
+    # The office files "office files" sends, which open in Quick Look (docs/chat.md §3a).
+    "exports/launch-plan.docx": _docx,
+    "exports/beta-numbers.xlsx": _xlsx,
+    "exports/launch-deck.pptx": _pptx,
+    "exports/launch-brief.rtf": _rtf,
+    "exports/launch-plan.odt": lambda: _odf("text"),
+    "exports/beta-numbers.ods": lambda: _odf("spreadsheet"),
+    "exports/launch-deck.odp": lambda: _odf("presentation"),
 }
 
 # A Hermes reply that sends files (docs/chat.md §3a): each `MEDIA:` line on its own, as the agent
@@ -678,12 +841,28 @@ And the notes it's based on:
 ::preview{{file="{ROOT}/exports/launch-notes.md"}}"""
 
 
+OFFICE_FILES = f"""The plan as a document, the numbers and the deck:
+
+MEDIA:{ROOT}/exports/launch-plan.docx
+MEDIA:{ROOT}/exports/beta-numbers.xlsx
+MEDIA:{ROOT}/exports/launch-deck.pptx
+
+And the same in OpenDocument, with the brief in rich text:
+
+MEDIA:{ROOT}/exports/launch-plan.odt
+MEDIA:{ROOT}/exports/beta-numbers.ods
+MEDIA:{ROOT}/exports/launch-deck.odp
+MEDIA:{ROOT}/exports/launch-brief.rtf"""
+
+
 def formats_reply(lower):
     """The reply for a Round 3 format word, or None (docs/development.md, mock words)."""
     if "drawings" in lower:
         return DRAWINGS
     if "live page" in lower:
         return LIVE_PAGE
+    if "office files" in lower:
+        return OFFICE_FILES
     if lower.startswith("plan picked on the page:"):
         # What a page's button sent, as a hidden message: Hermes answers it as any other.
         plan = lower.split(":", 1)[1].strip().title() or "That"

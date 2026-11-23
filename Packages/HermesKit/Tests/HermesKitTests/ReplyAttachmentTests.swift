@@ -57,10 +57,32 @@ struct ReplyAttachmentTests {
         #expect(GatewayFileOpening.destination(for: "/a/report.PDF") == .preview)
         #expect(GatewayFileOpening.destination(for: "/a/index.htm") == .preview)
         #expect(GatewayFileOpening.destination(for: "/a/bundle.zip") == .save)
-        #expect(GatewayFileOpening.destination(for: "/a/deck.pptx") == .save)
+        #expect(GatewayFileOpening.destination(for: "/a/deck.pptx") == .quickLook)
+        #expect(GatewayFileOpening.destination(for: "/a/Plan.DOCX") == .quickLook)
+        #expect(GatewayFileOpening.destination(for: "/a/budget.ods") == .save, "Quick Look doesn't draw it")
+        #expect(GatewayFileOpening.destination(for: "/a/deck.odp") == .save)
+        #expect(GatewayFileOpening.destination(for: "/a/brief.rtf") == .quickLook)
+        #expect(GatewayFileOpening.destination(for: "/a/q3.numbers") == .quickLook)
+        #expect(ReplyAttachment(path: "/a/deck.pptx")?.kind == .document, "a card that opens")
+        #expect(ReplyAttachment(path: "/a/brief.odt")?.typeName == "OpenDocument text")
         #expect(GatewayFileOpening.destination(for: "/a/Makefile") == .save)
         #expect(GatewayFileOpening.opensInPreview("/a/report.pdf"))
         #expect(!GatewayFileOpening.opensInPreview("/a/notes.md"))
+    }
+
+    @Test func aQuickLookCopyIsKeptApartByPathAndProfile() {
+        let one = QuickLookCopy.folderName(path: "/srv/out/plan.docx", profile: "writer")
+        #expect(one.count == 32 && one.allSatisfy(\.isHexDigit))
+        #expect(one == QuickLookCopy.folderName(path: "/srv/out/plan.docx", profile: "writer"))
+        #expect(one != QuickLookCopy.folderName(path: "/srv/out/plan.docx", profile: "ops"))
+        #expect(one != QuickLookCopy.folderName(path: "/srv/old/plan.docx", profile: "writer"))
+        #expect(QuickLookCopy.folderName(path: "/a", profile: nil) == QuickLookCopy.folderName(path: "/a", profile: ""))
+        #expect(QuickLookCopy.fileName(of: "/srv/out/Q3 plan.docx") == "Q3 plan.docx")
+        #expect(QuickLookCopy.fileName(of: "/srv/out/..hidden.xlsx") == "hidden.xlsx")
+        #expect(QuickLookCopy.fileName(of: "/srv/a:b.rtf") == "a_b.rtf")
+        #expect(QuickLookCopy.fileName(of: "/") == "file")
+        let long = QuickLookCopy.fileName(of: "/a/" + String(repeating: "x", count: 300) + ".pptx")
+        #expect(long.count == 120 && long.hasSuffix(".pptx"))
     }
 
     @Test func theViewerReadsTheSameFile() throws {
