@@ -35,7 +35,10 @@ public final class PushShared: @unchecked Sendable {
     public let defaults: UserDefaults
 
     public init(bundle: Bundle = .main) {
-        groupID = bundle.object(forInfoDictionaryKey: "HermesAppGroup") as? String
+        // The Mac has no App Group and its Info.plist says so with "". A suite named "" keeps
+        // nothing between launches, and in the app it read back its launch values seconds after a
+        // write, so it counts as no group.
+        groupID = (bundle.object(forInfoDictionaryKey: "HermesAppGroup") as? String).flatMap { $0.isEmpty ? nil : $0 }
         keychainGroup = bundle.object(forInfoDictionaryKey: "HermesKeychainGroup") as? String
         defaults = groupID.flatMap { UserDefaults(suiteName: $0) } ?? .standard
     }

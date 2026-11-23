@@ -333,37 +333,47 @@ Rules:
     too, unless it moved since. A room read on the Mac while its Bot's message settled sends no
     notice to carry the read, so without those answers it stayed unread on the iPhone.
 - **Badge** counts unread, unmuted chats, Bots and group chats (one each, however many messages)
-  plus open "needs you" requests across gateways by default (Settings → Notifications → App Icon Badge, Dock Badge on the Mac → Unread
-  Chats; Needs You counts only the requests). A hidden Bot (folded under "Hidden · N") counts like
-  a muted one: never on the badge or in the Bots count, on any device, and its chat leaves what the
-  extension and the plugin may count (`BadgeScope`, `countableChats`, `listed`), while its own row
-  still shows its news. Its notices are unchanged. It once left the icon at 1 with nothing unread
-  in the list. Requests: each gateway's latest `open` count, ignoring
-  counts older than six hours. In front, and on the Mac whenever it runs, a gateway's count adds no
-  more than the app shows waiting there (`PushShared.recordShown`, `ShownRequests`): the approvals and
-  questions on its chats' cards and docks, plus one for each chat or group chat whose row waits on the
-  person. The plugin's `open` is only a number, and an older plugin's count for a request nobody could
-  answer held both devices' icons at 1 with nothing waiting (#86). A widget that asks counts on the
-  icon while the app is away (its notification) but not in front, where its card is in the chat. What
-  the app counted lapses after two minutes (it counts again at least every 50 s in front), and the
-  iPhone drops it as it leaves: away, a plugin's count stands alone (1.4.8 never counts a request
-  nobody can answer). A plugin before 1.4.8 still may, so as the iPhone leaves, what that gateway
-  counts beyond what the app showed (its last count, and its answer to `presence away`) stays off
-  the icon until the app is back in front (`PushShared.leave`, `recordLeavingOpen`), in the app and
-  in the service extension, while a request that comes in meanwhile adds to it. When the app already
-  knew of such a count as it left, it sends that plugin no unread lists, so it sends no badge-only
-  pushes, which would set the stale count again; reads elsewhere then reach that iPhone's icon when a
-  notice or the app next runs. A request that went stale in the moments before the app left, which it
-  hadn't heard of yet, can still come back with that plugin's next badge push. Counts kept for a gateway the app no longer has go
-  (`keepUnread`). In front, the app counts again as soon as a row starts or stops waiting on the
-  person, so a new request reaches the Dock at once. Chats: one list per gateway in the App Group (`PushShared.unread`),
+  plus open "needs you" requests across gateways by default (Settings → Notifications → App Icon
+  Badge, Dock Badge on the Mac → Unread Chats; Needs You counts only the requests). A hidden Bot
+  (folded under "Hidden · N") counts like a muted one: never on the badge or in the Bots count, on
+  any device, and its chat leaves what the extension and the plugin may count (`BadgeScope`,
+  `countableChats`, `listed`), while its own row still shows its news. Its notices are unchanged. It
+  once left the icon at 1 with nothing unread in the list. Requests: each gateway's latest `open`
+  count, ignoring counts older than six hours. The app asks a gateway's plugin for it, and for reads
+  made on other devices, only while Push is on there, so on an iPhone or iPad without notification
+  permission (which shows no badge anyway) neither reaches the count. In front, and on the Mac
+  whenever it runs, a gateway's count adds no more than the app shows waiting there
+  (`PushShared.recordShown`, `ShownRequests`): the approvals and questions on its chats' cards and
+  docks, plus one for each chat or group chat whose row waits on the person. The plugin's `open` is
+  only a number, and an older plugin's count for a request nobody could answer held both devices'
+  icons at 1 with nothing waiting (#86). A widget that asks counts on the icon while the app is away
+  (its notification) but not in front, where its card is in the chat. What the app counted lapses
+  after two minutes (it counts again at least every 50 s in front), and the iPhone drops it as it
+  leaves: away, a plugin's count stands alone (1.4.8 never counts a request nobody can answer). A
+  plugin before 1.4.8 still may, so as the iPhone leaves, what that gateway counts beyond what the
+  app showed (its last count, and its answer to `presence away`) stays off the icon until the app is
+  back in front (`PushShared.leave`, `recordLeavingOpen`), in the app and in the service extension,
+  while a request that comes in meanwhile adds to it. When the app already knew of such a count as
+  it left, it sends that plugin no unread lists, so it sends no badge-only pushes, which would set
+  the stale count again; reads elsewhere then reach that iPhone's icon when a notice or the app next
+  runs. A request that went stale in the moments before the app left, which it hadn't heard of yet,
+  can still come back with that plugin's next badge push. Counts kept for a gateway the app no
+  longer has go (`keepUnread`). In front, the app counts again as soon as a row starts or stops
+  waiting on the person, so a new request reaches the Dock at once. Chats: one list per gateway in
+  the App Group (`PushShared.unread`; the Mac has no App Group, so its lists live in the app's own
+  defaults, and an empty group name counts as none: a suite named "" kept nothing between launches,
+  and in a running app it read back the empty lists of launch seconds after each write, so the Dock
+  fell to 0 with unread rows in the list until the next count, every 30 s, and again after it),
   which the app writes whenever its counts move (`UnreadStore`), the service extension adds a chat
   to when a reply or message for it arrives (unless it's muted), and every read takes chats off.
   Only chats the app's list shows ever count (`PushShared.countable`, written with the list): a
   routine's run, a Bot-to-Bot one-shot chat or a helper's session is a new session the list never
   shows, and counting their replies took a badge to 120 for two unread chats (build 2610210714). A
   list from before that rule keeps only the app's own entries, and lists for gateways the app no
-  longer has go.
+  longer has go. Everything else the app keeps there (`PushShared`) now outlasts a launch on the Mac
+  too: the Dock Badge mode and the mention names in Settings → Notifications, the gateways with
+  their mutes and open counts, Talk's entries and the device id, so the widgets plugin sees one Mac
+  instead of a new device at every launch.
   A chat is unread on the icon only while its count has a message in it (`docs/inbox.md` §1
   Counting): tool calls, their results, narration, status, a background process's heartbeats and a
   silent answer to them never make it unread. The extension and the plugin add a chat only for a
@@ -623,7 +633,12 @@ Rules:
 - Opening a reply's notification shows the reply within a second or two of the chat opening, even
   when it was stored after the notice (`-HERMES_PUSH_OPEN botreply:ops` against the mock, with
   `POST /api/mock/message-agent` just before it opens).
-- The badge equals open requests and reaches 0 when they're answered.
+- The badge follows its mode (§2 Badge). Unread Chats, the default: one for each unread, unmuted
+  chat, Bot and group chat, however many messages, plus the open requests; a muted chat, a muted
+  Bot, a muted group chat and a hidden Bot add nothing while their rows still count, the chat on
+  screen adds nothing until you leave it, and a read on another device takes its chat off. Needs
+  You: the open requests only, reaching 0 when they're answered, whatever is unread. The Mac's Dock
+  shows the same number as the icon, and keeps it after a relaunch.
 - Time Sensitive approvals break through a Focus that allows Hermes; passive task results never
   light the screen.
 - A turn over 15 s shows a Live Activity that moves to needs-you for an approval and ends with the

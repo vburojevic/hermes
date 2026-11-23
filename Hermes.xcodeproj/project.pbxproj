@@ -240,6 +240,7 @@
 		A894F7F855A6F1A9F1FD54C0 /* PushAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ABE779FF5657A35A4130CED /* PushAppDelegate.swift */; };
 		AA18313F6D38222C155CA48C /* WebDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BD38901E3A17519EA63810 /* WebDebug.swift */; };
 		AB458D35ADAE9277CB17A5FB /* SkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042C768AB2907943B7677D15 /* SkillsView.swift */; };
+		AB8ABC06F2FB77A0DEFBF460 /* RowCountUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C824EFFEA9BFDA9D3771D52 /* RowCountUITests.swift */; };
 		AB8ED4FAF20C225BAA0592BB /* ReferenceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49D00A93727ACE5AB8AE4B10 /* ReferenceContext.swift */; };
 		ABC6AFBD154AECABB093EBA8 /* SpeechInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D1BC7835D441B9122BE0CF /* SpeechInput.swift */; };
 		AC178049990D093B97A545F0 /* TranscriptCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16471D90FF6989063389860C /* TranscriptCache.swift */; };
@@ -593,6 +594,7 @@
 		9B41284776F99B1FE32408EF /* NumbersWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumbersWidgets.swift; sourceTree = "<group>"; };
 		9BF0637C55B964A45E3D01AA /* BoardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardModel.swift; sourceTree = "<group>"; };
 		9C2FF410647CFB35DC1C92C2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9C824EFFEA9BFDA9D3771D52 /* RowCountUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowCountUITests.swift; sourceTree = "<group>"; };
 		9D395A69D7839A8E4686044B /* InlineFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineFlow.swift; sourceTree = "<group>"; };
 		A08A478CF569E541F077B3CA /* DictationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationController.swift; sourceTree = "<group>"; };
 		A098A4F67CC9E04D4C5C020D /* TalkControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkControl.swift; sourceTree = "<group>"; };
@@ -1101,6 +1103,7 @@
 				0B7007FFF1EBBE3208FDDC9F /* PluginsUITests.swift */,
 				7F281FE5600EDDA0A9346D0D /* ProcessesUITests.swift */,
 				15FE26933154EBF12B5A749D /* RequestCardUITests.swift */,
+				9C824EFFEA9BFDA9D3771D52 /* RowCountUITests.swift */,
 				544BA2966BE8A104F675577A /* ToolbarButtonsUITests.swift */,
 				30FD5A4F9BCB3E9CEFDF9CBA /* VoiceOverFocusUITests.swift */,
 				50BD332B5E6974D145FD6A19 /* VoiceUITests.swift */,
@@ -1768,6 +1771,7 @@
 				EB0A522033F38EFED652E5FD /* PluginsUITests.swift in Sources */,
 				88437626B47FBF14208587E1 /* ProcessesUITests.swift in Sources */,
 				1D29FFEFED30AD19557D7263 /* RequestCardUITests.swift in Sources */,
+				AB8ABC06F2FB77A0DEFBF460 /* RowCountUITests.swift in Sources */,
 				8F2AE4ED6EC7B2BA91EBCE9D /* ToolbarButtonsUITests.swift in Sources */,
 				8A115017ABCA5F77E39E3272 /* VoiceOverFocusUITests.swift in Sources */,
 				C28896533AA3CF30D16E846E /* VoiceUITests.swift in Sources */,

@@ -521,7 +521,10 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
 - The back button's count is the unread, unmuted chats other than the open one.
 - On iPhone, open a group chat, go back to the list and `POST /api/mock/room-say` to it: within a
   minute its row shows the new messages' count (and the Bots count and the back button with it),
-  as a chat's or a Bot's row does; opening it again clears it.
+  as a chat's or a Bot's row does; opening it again clears it. A Bot's row (`POST /api/mock/deliver`
+  with `researcher`) counts the same way, and both rows keep their counts and count on after
+  `POST /api/mock/drop-sockets`, on iPhone and on iPad in portrait and landscape
+  (`RowCountUITests` runs these steps).
 - A group chat's row shows its newest message ("Ada: …") and that message's time, never "N Bots"
   or a frozen line, with the list on screen or another chat open, for a room left earlier and for
   one never opened (`room-say` with `reply`, [bots-groups-skills.md](bots-groups-skills.md) §4).

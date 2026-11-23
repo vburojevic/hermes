@@ -45,8 +45,16 @@ final class GroupRooms {
     init(roster: BotRoster) {
         self.roster = roster
         seenKey = "groupSeen.\(roster.botID.uuidString)"
-        seenSeq = UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Int] ?? [:]
         readKey = "groupReadAt.\(roster.botID.uuidString)"
+        #if DEBUG
+        // `-HERMES_RESET_INBOX YES` starts the rooms from nothing too: a seen mark kept from an earlier
+        // mock, whose rooms ran further, would hide every message of a fresh one.
+        if UserDefaults.standard.bool(forKey: "HERMES_RESET_INBOX") {
+            UserDefaults.standard.removeObject(forKey: seenKey)
+            UserDefaults.standard.removeObject(forKey: readKey)
+        }
+        #endif
+        seenSeq = UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Int] ?? [:]
         readTimes = UserDefaults.standard.dictionary(forKey: readKey) as? [String: Double] ?? [:]
     }
 

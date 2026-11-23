@@ -652,7 +652,9 @@ final class PushCenter {
 
     // MARK: - Badge
 
-    /// Badge = open "needs you" requests across gateways, nothing else.
+    /// Asks each gateway's plugin for its open "needs you" requests and the reads it holds, then sets
+    /// the badge: those requests, plus the unread chats in Unread Chats mode (`docs/notifications.md`
+    /// §2 Badge).
     func refreshBadge() async {
         guard let model else { return }
         let deviceID = shared.deviceID
@@ -671,6 +673,10 @@ final class PushCenter {
         // Lists for gateways the app no longer has would count for ever.
         if let gateways = model?.workspaces.keys, !gateways.isEmpty { shared.keepUnread(gateways: Set(gateways)) }
         noteShownRequests()
+        #if DEBUG
+        // The simulator's icon badge can't be read from outside, so checks read it here.
+        ConnectionLog.logger.notice("badge: set \(self.shared.badge, privacy: .public) (\(self.shared.badgeMode.rawValue, privacy: .public))")
+        #endif
         #if os(iOS)
         try? await UNUserNotificationCenter.current().setBadgeCount(shared.badge)
         #else
