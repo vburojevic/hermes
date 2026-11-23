@@ -1119,12 +1119,12 @@ addresses, no region, no device, and anything that could carry words is cut to l
 a few marks. The blamed thread comes first. A report goes to the system log under the app's bundle
 id, category `hangs` (its heading and top frames: `log show --predicate 'subsystem BEGINSWITH
 "co.caffeinatedcode.hermes" AND category == "hangs"' --last 2d` finds Release and Debug alike),
-and whole to `Diagnostics/hangs.log` in Application Support
-(the app's container on a sandboxed Mac), newest last, about 256 KB at most. Nothing is sent
-anywhere. To read a stack, match each frame's UUID to the build's dSYM (`dwarfdump --uuid`) and
-look up its offset (`atos -o <dSYM> -l 0x100000000 <0x100000000 + offset>`); frames in system
-binaries name the framework, which is often enough. `-HERMES_HANG_REPORT_SAMPLE YES` (Debug)
-writes one made-up report through the same path, to see both written without waiting a day.
+and whole to `Diagnostics/hangs.log` in Application Support (the app's container on a sandboxed
+Mac), newest last, about 256 KB at most. Nothing is sent anywhere. To read a stack, match each
+frame's UUID to the build's dSYM (`dwarfdump --uuid`) and look up its offset (`atos -o <dSYM> -l
+0x100000000 <0x100000000 + offset>`); frames in system binaries name the framework, which is
+often enough. `-HERMES_HANG_REPORT_SAMPLE YES` (Debug) writes one made-up report through the
+same path, to see both written without waiting a day.
 
 In Debug, `-HERMES_HANG_LOG <file>` starts a watchdog: a thread pings the main queue every 20 ms
 and writes `HANG start=<ms> duration=<ms> main-cpu=<ms>` for each block of 250 ms or more, timed
@@ -1148,6 +1148,16 @@ backend mock started with `--token <t>` and the app given `-HERMES_MOCK_TOKEN <t
   (`/api/mock/drop-sockets {outage}`), then the wake notice and 10 s after it.
 - `mark <text>` writes a line of its own; `window` logs whether the chats window is on screen and
   the app in front. A covered window draws no frames, so a run with one measures nothing.
+
+Start a measured copy with `-NSAppSleepDisabled YES`, so App Nap doesn't slow a covered window's
+app, and `-HERMES_LAUNCH_BEHIND YES` (Debug), so it stays behind the app in front. Both are
+launch arguments and write nothing to the app's preferences. A binary a shell runs is never
+launched in the background as `open -g` is, so AppKit activates it as launching ends and its
+first window comes key and front, even as an accessory app. With the flag the copy launches
+with a prohibited activation policy, which nothing can activate; once the chats window's first
+view is up it becomes an accessory app (no Dock icon, no menu bar) and the window is ordered in
+at the back, never key, which the hang log marks (`launch behind: …`). Count the runs where it
+came forward anyway: `lsappinfo front` against the copy's own ASN.
 
 The mock calls go only to a `-HERMES_BOOTSTRAP_BACKEND` on 127.0.0.1. SwiftUI's own complaints
 read alongside: `log show --predicate 'processIdentifier == <pid> AND eventMessage CONTAINS "tried

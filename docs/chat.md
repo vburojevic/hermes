@@ -695,7 +695,11 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   text and copied whole, an empty fence keeps the space it had, and the sentence Listen reads is
   lit the same way. Links open through the same rules as the rest of the chat. It is built from
   the parsed blocks once and kept (`MarkdownCache.reply`), off the main thread when a chat's
-  replies are prewarmed. A reply stays a block at a time, selectable a paragraph at a time, while
+  replies are prewarmed. Its heights are kept with it, by width (`MeasuredHeights`): a reply is
+  measured (its text laid out, its code blocks and tables built away from the window) the first
+  time a view of it is sized at a width, and a chat opened again sizes its replies from what was
+  kept. A reply whose image or widget changed height where it was shown is measured each time,
+  as before. A reply stays a block at a time, selectable a paragraph at a time, while
   it streams, and where it is drawn in the lighter secondary tone, isn't selectable or isn't set
   at the message or compact message size. A drag that starts inside a code block or a table
   selects in there. A drag to the left on the words still replies (`docs/inbox.md` §4): the text
@@ -904,6 +908,14 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   reply's header holds still while only its words change, and a Markdown block reads what the chat
   can name (Bots, files) only when it has an `@` in it, so the roster or the commands arriving as
   a chat opens don't redraw every reply.
+- **Switching chats keeps the toolbar.** A chat and a Bot's chat share one set of toolbar items
+  (the title or model picker, the Inspector, Routines, then ··· or New Chat), and only what's in
+  them changes; on the Mac, Routines is hidden outside a Bot's chat rather than left out. With a
+  set for each, a switch between the two rebuilt the window's whole toolbar and laid it out
+  again, much of the switch's time on the Mac. The Mac also replaces an item whose views change
+  kind, so there each item keeps one: the title switches between the model picker and the Bot's
+  title inside one stack, and Routines, ··· and New Chat are always in the toolbar, each hidden
+  where it doesn't belong.
 - **Haptics** (Settings → Haptics): a light tap when a message is sent, a success tap when a reply
   finishes, and a warning tap when an approval arrives; none per token.
 - **Sizes.** The transcript is at most 760 pt wide (`Theme.readableWidth`), centred on iPad and
