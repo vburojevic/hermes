@@ -582,37 +582,87 @@ struct ChatScreen: View {
 
     // MARK: Toolbar
 
+    /// One set of items for every chat, Bot or not: what changes is inside them. Two toolbars, one
+    /// for each, made switching between a chat and a Bot's chat rebuild every item of the window's
+    /// toolbar and lay it out again, much of the switch on the Mac (`docs/chat.md` §4).
+    ///
+    /// On the Mac an item is also replaced, and the toolbar laid out again, whenever the views in
+    /// it change kind: a title that is the model picker in one chat and the Bot's title in the
+    /// next, or ··· in place of New Chat. So there each item keeps one kind of view. The title
+    /// switches inside a stack, which is a single view whatever it holds, and Routines, New Chat
+    /// and ··· are always there, each hidden where it doesn't belong.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if let roster, let name = conversation.botName {
-            botToolbar(roster: roster, name: name)
-        } else {
-            sessionToolbar
-        }
-    }
-
-    @ToolbarContentBuilder
-    private func botToolbar(roster: BotRoster, name: String) -> some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            BotChatTitle(roster: roster, botName: name, conversation: conversation)
-        }
         #if os(macOS)
+        ToolbarItem(placement: .principal) {
+            ZStack {
+                chatTitle
+            }
+        }
         .hidden(sidebarShowsOverChat)
-        #endif
         inspectorToolbarItem
         if !windowIsNarrow {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    roster.routinesBot = name
-                } label: {
-                    Image(systemName: "alarm")
-                }
-                .accessibilityLabel("Routines")
-                .help("Routines")
+                routinesButton
+            }
+            .hidden(!isBotChat)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            newChatButton
+        }
+        .hidden(isBotChat)
+        ToolbarItem(placement: .primaryAction) {
+            botMenu
+        }
+        .hidden(!isBotChat)
+        #else
+        ToolbarItem(placement: .principal) {
+            chatTitle
+        }
+        inspectorToolbarItem
+        // Hiding a toolbar item needs iOS 26.4, so before it the item is left out.
+        if isBotChat, !windowIsNarrow {
+            ToolbarItem(placement: .primaryAction) {
+                routinesButton
             }
         }
         ToolbarItem(placement: .primaryAction) {
-            Menu {
+            if isBotChat {
+                botMenu
+            } else {
+                newChatButton
+            }
+        }
+        #endif
+    }
+
+    private var isBotChat: Bool { roster != nil && conversation.botName != nil }
+
+    @ViewBuilder
+    private var chatTitle: some View {
+        if let roster, let name = conversation.botName {
+            BotChatTitle(roster: roster, botName: name, conversation: conversation)
+        } else {
+            ModelPickerButton(conversation: conversation, workspace: workspace)
+        }
+    }
+
+    private var routinesButton: some View {
+        Button {
+            if let roster, let name = conversation.botName {
+                roster.routinesBot = name
+            }
+        } label: {
+            Image(systemName: "alarm")
+        }
+        .accessibilityLabel("Routines")
+        .help("Routines")
+    }
+
+    /// The Bot's ···; empty outside a Bot's chat, where the Mac keeps it hidden.
+    private var botMenu: some View {
+        Menu {
+            if let roster, let name = conversation.botName {
                 if let bot = roster.bot(named: name) {
                     BotActions(roster: roster, bot: bot)
                 }
@@ -627,11 +677,11 @@ struct ChatScreen: View {
                     conversation.send()
                 }
                 .disabled(conversation.isWorking || conversation.sessionID == nil)
-            } label: {
-                Image(systemName: "ellipsis")
             }
-            .accessibilityLabel("More")
+        } label: {
+            Image(systemName: "ellipsis")
         }
+        .accessibilityLabel("More")
     }
 
     /// The Inspector's button (Mac, iPad): ink while the panel is open.
@@ -644,25 +694,15 @@ struct ChatScreen: View {
         }
     }
 
-    @ToolbarContentBuilder
-    private var sessionToolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            ModelPickerButton(conversation: conversation, workspace: workspace)
+    private var newChatButton: some View {
+        Button {
+            workspace.startNewChat()
+        } label: {
+            Image(systemName: "square.and.pencil")
         }
-        #if os(macOS)
-        .hidden(sidebarShowsOverChat)
-        #endif
-        inspectorToolbarItem
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                workspace.startNewChat()
-            } label: {
-                Image(systemName: "square.and.pencil")
-            }
-            .accessibilityLabel("New chat")
-            .help("New chat (⌘N)")
-            .disabled(conversation.isEmpty && conversation.sessionID == nil)
-        }
+        .accessibilityLabel("New chat")
+        .help("New chat (⌘N)")
+        .disabled(conversation.isEmpty && conversation.sessionID == nil)
     }
 }
 

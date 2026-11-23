@@ -106,6 +106,9 @@ nonisolated final class ReplyText: @unchecked Sendable {
     /// It holds a code block or a table, which scroll sideways: a sideways drag there is theirs,
     /// and the reply has no swipe to reply (`AssistantTurnView.scrollsSideways`).
     let scrollsSideways: Bool
+    /// Its heights as a view measured them, shared by every view of it: a chat opened again
+    /// doesn't lay its replies out again just to size them (`docs/chat.md` §3 Selection).
+    let heights = MeasuredHeights()
 
     private init(
         storage: NSAttributedString, paragraphs: [Paragraph], bars: [QuoteBar], compact: Bool, top: CGFloat, bottom: CGFloat
@@ -743,9 +746,14 @@ final class ReplyNSTextView: NSTextView, ReplyBlockOwner {
 
     func height(for width: CGFloat) -> CGFloat {
         if let height = heights[width] { return height }
+        if let height = reply.heights.height(at: width) {
+            heights[width] = height
+            return height
+        }
         // Not rounded: a block has a fractional height, and SwiftUI stacks it as it is.
         let height = measure.height(for: width) + textContainerOrigin.y + reply.bottom
         heights[width] = height
+        reply.heights.record(height, at: width)
         return height
     }
 
@@ -790,12 +798,16 @@ final class ReplyNSTextView: NSTextView, ReplyBlockOwner {
     func blockHeight(_ attachment: ReplyBlockAttachment, width: CGFloat) -> CGFloat {
         let index = attachment.paragraph
         if let height = blockHeights[index]?[width] { return height }
+        let key = MeasuredHeights.BlockKey(paragraph: index, width: width)
         let height: CGFloat = if case .thematicBreak = attachment.block {
             ReplyText.Metrics.ruleHeight
+        } else if let kept = reply.heights.blockHeight(key) {
+            kept
         } else {
             measuring(attachment).sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
         }
         blockHeights[index, default: [:]][width] = height
+        reply.heights.recordBlock(height, at: key)
         return height
     }
 
@@ -811,6 +823,8 @@ final class ReplyNSTextView: NSTextView, ReplyBlockOwner {
     private func blockResized(_ index: Int, to height: CGFloat) {
         guard let view = blockViews[index], let known = blockHeights[index]?[view.frame.width],
               abs(known - height) > 0.01 else { return }
+        // What other views of this reply would reuse no longer holds.
+        reply.heights.blockResized()
         blockHeights[index] = [view.frame.width: height]
         heights = [:]
         measure.invalidate()
