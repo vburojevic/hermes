@@ -13,7 +13,8 @@ public struct MarkdownDocument: Hashable, Sendable {
     }
 
     public init(parsing source: String) {
-        let document = Document(parsing: Self.boundedNesting(source))
+        // Display math becomes a `math` fence first, so its TeX is never read as Markdown.
+        let document = Document(parsing: Self.boundedNesting(DisplayMath.fenced(source)))
         self.blocks = Array(document.children).compactMap(MarkdownBlock.init(markup:))
     }
 

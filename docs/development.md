@@ -999,7 +999,12 @@ page, starts `npm run dev`, opens it in the Preview and drives it (`preview.act`
 way Hermes does, a `MEDIA:` line each (two pictures, a video, a PDF, Markdown notes, an HTML page
 with a picture beside it, a zip, a 60 MB picture, one gone and one Hermes keeps private), and
 "broken attachments" only the ones that don't show ([chat.md](chat.md) §3a); both work in a Bot
-Chat too, and over `server.py` alone, where each file says Bot Mode isn't on.
+Chat too, and over `server.py` alone, where each file says Bot Mode isn't on. "drawings" answers
+with a Mermaid flowchart, prices in dollars beside inline `$n$`, two display formulas (`$$` and
+`\[`), an SVG fence whose script and remote image must do nothing, a one-line SVG badge in the
+prose and a diagram Mermaid can't read ([chat.md](chat.md) §3b), in a chat, a Bot Chat or over
+`server.py`. `--long-chat` also seeds "Launch diagrams", 60 replies (about 1,400 lines) that each
+draw a diagram and a formula, for scrolling back through drawn blocks.
 `-HERMES_OPEN_SENT_FILE <name>` opens the first file a reply sent with that name 5 s after it
 shows, as a tap would: the viewer, the Inspector or Save. `--widgets-version repo` plays this
 repository's widgets plugin, which knows `gateway-files`; the default 1.6.0 refuses it and the

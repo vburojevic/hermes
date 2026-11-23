@@ -65,6 +65,12 @@ public struct SpokenDescriptions: Sendable {
 
     public static let english = SpokenDescriptions(
         code: { language in
+            switch language.flatMap({ DrawnBlock(language: $0, code: "<svg></svg>")?.kind }) {
+            case .mermaid: return "I put a diagram in the chat."
+            case .math: return "I put a formula in the chat."
+            case .svg: return "I put a picture in the chat."
+            case nil: break
+            }
             if let language, !language.isEmpty {
                 return "I put the \(SpokenDescriptions.languageName(language)) code in the chat."
             }

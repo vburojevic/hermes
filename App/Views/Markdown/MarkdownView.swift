@@ -38,6 +38,7 @@ struct MarkdownView: View, Equatable {
             .foregroundStyle(tone == .primary ? Theme.primaryText : Theme.secondaryText)
             .modifier(SelectableText(isOn: selectsText))
             .environment(\.markdownCaches, caches)
+            .environment(\.markdownOpenTail, !caches)
             // A second lock behind the renderer's: whatever a reply links to, only the web and
             // mail open from it, and the gateway files the renderer found open in the Inspector.
             .environment(\.openURL, OpenURLAction { [references] url in
@@ -141,6 +142,7 @@ struct MarkdownBlocksView: View {
     /// The sentence being read aloud, by its top-level block.
     var highlight: SpokenSentence?
     @Environment(\.voiceOverLandingEnds) private var ends
+    @Environment(\.markdownOpenTail) private var openTail
 
     var body: some View {
         VStack(alignment: .leading, spacing: MarkdownSpacing.block) {
@@ -151,6 +153,8 @@ struct MarkdownBlocksView: View {
                     .modifier(SpokenTone(isDimmed: highlight.map { $0.block != index } ?? false))
                     // Only the last block can hold the row's last element (`docs/chat.md` §1).
                     .environment(\.voiceOverLandingEnds, ends && index == blocks.count - 1)
+                    // Only the last block of a reply still arriving can hold an open fence.
+                    .environment(\.markdownOpenTail, openTail && index == blocks.count - 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -215,7 +219,11 @@ struct MarkdownBlockView: View, Equatable {
     var body: some View {
         switch block {
         case .paragraph(let inlines):
-            if let source = Self.standaloneImage(inlines) {
+            if let drawn = DrawnBlock(block) {
+                // An `<svg>` written on one line of its own (`docs/chat.md` §3b).
+                DrawnBlockView(block: drawn, language: "svg")
+                    .modifier(StreamingAppear())
+            } else if let source = Self.standaloneImage(inlines) {
                 MarkdownImage(source: source)
             } else if InlineRenderer.mayName(inlines) {
                 // Only a paragraph that can name a Bot or a file reads what the chat can name:
@@ -242,8 +250,14 @@ struct MarkdownBlockView: View, Equatable {
                 .modifier(VoiceOverLandingTarget())
 
         case .codeBlock(let language, let code):
-            FencedCode(language: language, code: code)
-                .modifier(StreamingAppear())
+            if let drawn = DrawnBlock(block) {
+                // Mermaid, math and SVG fences are drawn (`docs/chat.md` §3b).
+                DrawnBlockView(block: drawn, language: language)
+                    .modifier(StreamingAppear())
+            } else {
+                FencedCode(language: language, code: code)
+                    .modifier(StreamingAppear())
+            }
 
         case .blockQuote(let blocks):
             HStack(alignment: .top, spacing: MarkdownSpacing.quoteGap) {
@@ -271,9 +285,14 @@ struct MarkdownBlockView: View, Equatable {
                 .modifier(StreamingAppear())
 
         case .html(let raw):
-            Text(raw)
-                .font(Theme.Typography.code)
-                .foregroundStyle(Theme.secondaryText)
+            if let drawn = DrawnBlock(block) {
+                DrawnBlockView(block: drawn, language: "svg")
+                    .modifier(StreamingAppear())
+            } else {
+                Text(raw)
+                    .font(Theme.Typography.code)
+                    .foregroundStyle(Theme.secondaryText)
+            }
         }
     }
 

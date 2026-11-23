@@ -201,7 +201,9 @@ public enum ReplyPlainText {
     /// Whether a block holds a code block or a table, which scroll sideways.
     public static func scrollsSideways(_ block: MarkdownBlock) -> Bool {
         switch block {
-        case .codeBlock, .table: true
+        // A diagram or formula fits the reply's width; its code, when it can't be drawn, wraps.
+        case .codeBlock: DrawnBlock(block) == nil
+        case .table: true
         case .blockQuote(let blocks): blocks.contains(where: scrollsSideways)
         case .list(let list): list.items.contains { $0.blocks.contains(where: scrollsSideways) }
         case .paragraph, .heading, .thematicBreak, .html: false
@@ -253,13 +255,16 @@ public enum ReplyPlainText {
             }
             switch block {
             case .paragraph(let inlines):
-                if Self.isLoneImage(inlines) {
+                if Self.isLoneImage(inlines) || DrawnBlock(block) != nil {
                     unit(.block(block), inlines.map(\.plainText).joined().trimmingCharacters(in: .whitespacesAndNewlines))
                 } else {
                     unit(.paragraph(inlines), inlines.map(\.plainText).joined())
                 }
             case .heading(let level, let inlines):
                 unit(.heading(level: level, content: inlines), inlines.map(\.plainText).joined())
+            case .html(let raw) where DrawnBlock(block) != nil:
+                // An SVG drawn as a picture is a block of its own, copied as its markup.
+                unit(.block(block), raw)
             case .html(let raw):
                 unit(.html(raw), raw)
             case .codeBlock(_, let code):

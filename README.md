@@ -345,7 +345,8 @@ what's in scope.
 
 [MIT](LICENSE). Hermes stands on [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous
 Research, and uses [swift-markdown](https://github.com/swiftlang/swift-markdown) and
-[Sparkle](https://sparkle-project.org). Bot faces follow the shapes and colors of Hermes Agent's Bot
+[Sparkle](https://sparkle-project.org), and draws diagrams and formulas with
+[Mermaid](https://mermaid.js.org) and [MathJax](https://www.mathjax.org) ([notices](THIRD_PARTY_NOTICES.md)). Bot faces follow the shapes and colors of Hermes Agent's Bot
 Mode, so a Bot looks the same in every app.
 
 Hermes is an independent app made by [Caffeinated Code](https://caffeinatedcode.co); it is not

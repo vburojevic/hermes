@@ -3151,7 +3151,8 @@ def main():
     parser.add_argument("--gateway-key", default="dev-key-0123456789abcdef")
     parser.add_argument("--bandwidth", type=int, default=0, metavar="KBPS",
                         help="answer HTTP like a phone over the network at this many kbit/s (0: localhost speed)")
-    parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one, and the chats "
+    parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one, 'Launch diagrams', as long and "
+                             "full of drawn diagrams and formulas, and the chats "
                              "for where VoiceOver lands reading back (server.py seed_landing_chats)")
     parser.add_argument("--many-chats", type=int, default=0, metavar="N",
                         help="seed N more ordinary chats on the gateway, to measure a long chat list")

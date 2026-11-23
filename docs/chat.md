@@ -660,8 +660,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   ([widgets.md](widgets.md) §9). One part laid out at its own width once widened the whole reply,
   so its words ran off the screen. "widget wide" in the mock has one of everything
   ([development.md](development.md)).
-- **Raw HTML blocks** show as text in the code font. LaTeX and Mermaid are not rendered; in a
-  fenced block they show as code.
+- **Raw HTML blocks** show as text in the code font, except a lone `<svg>` (§3b).
+- **Diagrams, display math and SVG** are drawn as pictures (§3b): a ` ```mermaid ` fence, a
+  `$$…$$` or `\[ … \]` block and a ` ```svg ` fence or a lone `<svg>` paragraph. Inline `$…$` is
+  never math.
 - **Bots and gateway files** named in a reply draw as pills (`mentionInline`,
   [commands-and-references.md](commands-and-references.md) §3).
 - **Streaming**: finished paragraphs are parsed once and kept (`MarkdownDocument.Stream`), and the
@@ -801,6 +803,53 @@ picture beside it, a zip, a 60 MB picture, one gone, one private, a code-block e
 "broken attachments" (only the ones that don't show), in a chat or a Bot Chat; over `server.py`
 alone, every file says Bot Mode isn't on. `-HERMES_OPEN_SENT_FILE <name>` opens that file 5 s after
 it shows, as a tap would ([development.md](development.md)).
+
+## 3b. Diagrams, formulas and SVG pictures
+
+A reply's Mermaid diagrams, display math and SVG pictures are drawn on the device, offline
+(`DrawnBlock`, `DrawnBlockView`, `DrawnBlockRenderer`).
+
+1. **What is drawn.** A fenced block whose language is `mermaid`, `math` or `svg`, in any case (a
+   `latex` fence is code someone wants to read). Display math is a block that starts with `$$` or
+   `\[` at the start of a line and ends with `$$` or `\]` before a blank line; it becomes a `math`
+   fence before parsing (`DisplayMath`), so it never reaches Markdown's escapes. Inline `$…$` is
+   never math (money is written that way: "$5 and $10"), a `$$` that doesn't close stays words,
+   and `\[` inside a sentence stays words. An SVG is drawn only when the fence or paragraph is one
+   whole `<svg>` element (an XML declaration or comments before it are fine); anything else stays
+   code or text. A source past Mermaid's own 50,000 characters, 8,000 for a formula or 512 KB for
+   an SVG stays code.
+2. **How.** One hidden web view, made the first time a reply needs it, runs Mermaid 11 and MathJax 3
+   from the app's resources (`App/Resources/RenderKit`, licences in `THIRD_PARTY_NOTICES.md`).
+   Its page loads nothing: a policy that allows only `data:` images, every navigation cancelled and
+   a data store that keeps nothing. Mermaid runs at its strict security level with HTML labels
+   off. Every drawing ends as SVG markup that is decoded as an image before it is painted, so no
+   script in it runs and nothing it points to (an `<image href>`, a font, a link) loads. The
+   picture comes back as a PNG at the screen's scale, at most 4096 pixels a side. Nothing leaves
+   the device.
+3. **Look.** Drawn at the reply's type size (Dynamic Type on iPhone and iPad, up to 34 pt) in the
+   chat's colours for light, dark and Increase Contrast, never wider than the reply: a diagram sits
+   on the code block's surface, a formula is centred, an SVG keeps its own colours on a white
+   card, as an image file would. It is never shown larger than drawn, so it never blurs.
+4. **Kept.** A drawing is kept in memory by its source, colours, type size and scale, up to about
+   64 MB, never per frame or per width: scrolling back past a reply draws nothing again, and
+   changing the appearance draws once more. A failure is kept too. The web view goes after 30 s
+   with nothing to draw and on a memory warning, and is made again for the next drawing.
+5. **Streaming.** While a reply writes, a diagram or SVG at its end shows as its source until the
+   fence closes and the reply moves past it, then it is drawn; a formula is drawn once its block
+   closes (`markdownOpenTail`).
+6. **Tap.** A tap opens it larger in a sheet, re-drawn at three times the scale: pinch, double tap
+   or ⌘+ to zoom, a Source tab with the code, and Copy Source. The context menu has Open and Copy
+   Source.
+7. **Can't be drawn.** A diagram Mermaid can't read, a formula MathJax rejects or markup that isn't
+   an SVG shows its code with "This diagram couldn't be drawn" (formula, picture) under it.
+8. **Accessibility.** VoiceOver reads its kind ("Flowchart", "Sequence diagram", "Formula",
+   "Picture") and, for a diagram or formula, its source; the hint says a tap opens it larger, and a
+   Copy Source action is there. Listen says "I put a diagram in the chat." (formula, picture).
+   Copying a reply copies the source as written.
+
+"drawings" in the mock sends one of each, with prices in dollars, an SVG with a script and a
+remote image that must do nothing, and a diagram Mermaid can't read
+([development.md](development.md)).
 
 ## 4. Interaction
 

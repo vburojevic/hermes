@@ -38,6 +38,10 @@ Scripted chat turns (on top of chats.py) by message content:
   "broken attachments" -> only the ones that don't show: the 60 MB picture, a picture and a PDF
                           that are gone, the private one and a ".mp4" that isn't a video. Both
                           in a Bot Chat too.
+  "drawings"           -> a Mermaid flowchart, `$$` and `\[` display math, an SVG fence (with a
+                          script and a remote picture that never run or load) and an SVG in the
+                          prose, then a diagram Mermaid can't read (`DRAWINGS`, docs/chat.md §3b).
+                          server.py and a Bot Chat answer the same.
 
 Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
@@ -221,6 +225,8 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
             return run_rewrite_turn(sid, text)
         if "attachments" in lower:
             return run_attachments_turn(sid, text, ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS)
+        if (reply := formats_reply(lower)) is not None:
+            return run_attachments_turn(sid, text, reply)
         return original(sid, text)
 
     C.run_chat_turn = run_chat_turn
@@ -229,13 +235,15 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
 
     def run_bot_turn(sid, text):
         lower = text.lower()
-        if "attachments" not in lower:
+        answer = formats_reply(lower)
+        if "attachments" in lower:
+            answer = ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS
+        if answer is None:
             return original_bot(sid, text)
         stored = B["ensure_row"](sid)
         B["add_message"](stored, "user", text)
         B["emit"](sid, "session.info", {"running": True})
         B["emit"](sid, "message.start", {})
-        answer = ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS
         B["stream"](sid, answer)
         return B["finish"](sid, stored, answer)
 
@@ -553,6 +561,62 @@ MEDIA:{ROOT}/exports/old-report.pdf
 MEDIA:{ROOT}/media/broken.mp4
 
 The scan is too big to show, the chart and the report are gone, and Hermes keeps the pairing code private."""
+
+
+# "drawings" (docs/chat.md §3b): a Mermaid flowchart, display math both ways, an SVG fence and an
+# SVG written in the prose, which the app draws; inline dollars stay words, and a diagram Mermaid
+# can't read shows its code.
+DRAWINGS = r"""Here's how a sign-up moves through the launch, with the numbers behind it.
+
+```mermaid
+flowchart LR
+  A[Visitor] --> B{Signed up?}
+  B -- yes --> C[Beta invite]
+  B -- no --> D[Reminder in 3 days]
+  C --> E((Pro))
+  D --> B
+```
+
+The conversion rate after $n$ reminders, at $5 a seat and $10 for teams:
+
+$$
+P(n) = 1 - \prod_{k=1}^{n} \left(1 - \frac{p}{k}\right)
+$$
+
+and the time to the first reply follows
+
+\[
+\int_0^{\infty} e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
+\]
+
+The badge for the page:
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" width="240" height="80">
+  <rect x="2" y="2" width="236" height="76" rx="18" fill="#7c3aed"/>
+  <circle cx="40" cy="40" r="18" fill="#fde68a"/>
+  <text x="70" y="48" font-family="-apple-system, sans-serif" font-size="22" fill="#ffffff">Beta 2026</text>
+  <image href="https://example.com/tracker.png" width="1" height="1"/>
+  <script>alert('never runs')</script>
+</svg>
+```
+
+<svg width="120" height="24" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="24" rx="12" fill="#10b981"/><text x="60" y="17" text-anchor="middle" font-size="13" fill="#fff" font-family="-apple-system">6.1% Pro</text></svg>
+
+This one has a mistake in it:
+
+```mermaid
+flowchart LR
+  A --> 
+  ((( 
+```"""
+
+
+def formats_reply(lower):
+    """The reply for a Round 3 format word, or None (docs/development.md, mock words)."""
+    if "drawings" in lower:
+        return DRAWINGS
+    return None
 
 
 def media_bytes(key):
