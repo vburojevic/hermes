@@ -42,28 +42,31 @@ struct WaveformBars: View {
     }
 }
 
-/// 1×, 1.5×, 2×: the speed every clip plays at, pitch kept.
+/// The speed (`speed`): 1× to 2× in quarters, pitch kept. One speed for Listen and every clip,
+/// kept as Settings → Voice & Audio → Speed, so a tap changes what's playing and the default.
 struct ClipSpeedButton: View {
-    let player: ClipPlayer
+    private let speed = ListenSpeedSetting.shared
 
     var body: some View {
         Button {
-            player.rate = player.rate < 1.25 ? 1.5 : player.rate < 1.75 ? 2 : 1
+            speed.step()
         } label: {
-            Text(Self.label(player.rate))
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .foregroundStyle(Theme.primaryText)
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(Theme.controlFill, in: Capsule())
+            Self.chip(ListenSpeed.label(speed.rate))
         }
         .buttonStyle(PressableStyle())
         .accessibilityLabel("Speed")
-        .accessibilityValue(Self.label(player.rate))
+        .accessibilityValue(ListenSpeed.label(speed.rate))
     }
 
-    static func label(_ rate: Double) -> String {
-        rate == 1 ? "1×" : rate == 2 ? "2×" : "1.5×"
+    /// The capsule around a speed. At least 24 pt tall, so it grows with Dynamic Type instead of
+    /// cutting the label off.
+    static func chip(_ label: String) -> some View {
+        Text(label)
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .foregroundStyle(Theme.primaryText)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 24)
+            .background(Theme.controlFill, in: Capsule())
     }
 }
 
@@ -244,9 +247,16 @@ struct VoiceMessageBubble: View {
                     Text(clip.timeLabel)
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(Theme.secondaryText)
-                    ClipSpeedButton(player: clip.player)
+                    // The column is as wide as the longest speed at every text size, so the
+                    // waveform and the bubble stay put when the speed changes.
+                    ZStack(alignment: .leading) {
+                        ClipSpeedButton.chip(ListenSpeed.longestLabel())
+                            .hidden()
+                            .accessibilityHidden(true)
+                        ClipSpeedButton()
+                    }
+                    .fixedSize()
                 }
-                .frame(width: 44, alignment: .leading)
             }
             if let failure = clip.failure {
                 Text(failure)
@@ -281,8 +291,8 @@ struct VoiceMessageBubble: View {
         .accessibilityAdjustableAction { direction in
             Task { await clip.skip(by: direction == .increment ? 5 : -5, backend: backend) }
         }
-        .accessibilityAction(named: "Speed \(ClipSpeedButton.label(clip.player.rate))") {
-            clip.player.rate = clip.player.rate < 1.25 ? 1.5 : clip.player.rate < 1.75 ? 2 : 1
+        .accessibilityAction(named: "Speed \(ListenSpeed.label(ListenSpeedSetting.shared.rate))") {
+            ListenSpeedSetting.shared.step()
         }
     }
 
@@ -364,7 +374,9 @@ struct ListenStrip: View {
                 Text(clip.timeLabel)
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(Theme.secondaryText)
-                ClipSpeedButton(player: clip.player)
+                // At its own width, so every speed shows whole; the waveform gives way.
+                ClipSpeedButton()
+                    .fixedSize()
             }
             .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 12))
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

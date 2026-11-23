@@ -5,8 +5,8 @@ import Observation
 import os
 
 /// Plays a voice message or a Bot's audio file (`docs/voice.md` §2): one at a time, through the
-/// coordinator's playback role (`docs/voice.md` §7) and the one engine, at 1–2× with the pitch
-/// kept (`AVAudioUnitTimePitch`). Starting another clip stops this one.
+/// coordinator's playback role (`docs/voice.md` §7) and the one engine, at the shared Listen speed
+/// with the pitch kept (`AVAudioUnitTimePitch`). Starting another clip stops this one.
 @MainActor
 @Observable
 final class ClipPlayer {
@@ -21,19 +21,15 @@ final class ClipPlayer {
     private(set) var duration: TimeInterval = 0
     /// What went wrong playing the last clip, in a sentence.
     private(set) var failure: (id: String, message: String)?
-    /// 1, 1.5 or 2.
-    var rate: Double = TalkPreferences.listenSpeed {
-        didSet {
-            chain?.rate = Float(rate)
-            UserDefaults.standard.set(rate, forKey: TalkPreferences.Key.listenSpeed)
-        }
-    }
+    /// The shared speed (`ListenSpeedSetting`), which a playing clip follows as it changes.
+    var rate: Double { ListenSpeedSetting.shared.rate }
 
     @ObservationIgnored private var lease: AudioLease?
     @ObservationIgnored private var chain: AudioPlayerChain?
     @ObservationIgnored private var file: AVAudioFile?
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var leaseEvents: Task<Void, Never>?
+    @ObservationIgnored private var speedChanges: Task<Void, Never>?
     /// Bumped by every schedule: a completion from an earlier one (a stop, a seek) is ignored.
     @ObservationIgnored private var schedule = 0
     /// The player still holds the clip from `position` (paused, not seeked since).
@@ -73,6 +69,7 @@ final class ClipPlayer {
             duration = Double(file.length) / file.processingFormat.sampleRate
             position = min(start, duration)
             follow(lease)
+            followSpeed()
             try begin(at: position)
         } catch {
             Self.logger.error("clip didn't play: \((error as NSError).domain, privacy: .public) \((error as NSError).code)")
@@ -131,6 +128,7 @@ final class ClipPlayer {
         isQueued = false
         ticker?.cancel()
         leaseEvents?.cancel()
+        speedChanges?.cancel()
         chain?.stop()
         if let chain, let lease { lease.graph.removePlayer(chain) }
         let lease = lease
@@ -174,6 +172,16 @@ final class ClipPlayer {
                 try? await Task.sleep(for: .milliseconds(50))
                 guard let self, self.isPlaying, let chain = self.chain else { return }
                 self.position = min(self.duration, chain.currentTime)
+            }
+        }
+    }
+
+    /// A new speed from the button, Now Playing or Settings plays on at once, from where it is.
+    private func followSpeed() {
+        speedChanges = Task { [weak self] in
+            for await rate in Observations({ ListenSpeedSetting.shared.rate }) {
+                guard let self, !Task.isCancelled else { return }
+                self.chain?.rate = Float(rate)
             }
         }
     }

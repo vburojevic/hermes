@@ -52,16 +52,12 @@ final class BotWorkspace: Identifiable {
         if case .failed(let error) = connection { return error.accessRefusal }
         return nil
     }
-    /// The last sign the Mac was busy. "Busy" clears only after half a minute without one: a starved
-    /// Mac answers quickly for the moment it runs, then goes quiet again.
-    @ObservationIgnored private var lastSlowAt = Date.distantPast
-    private static let busyLingers: TimeInterval = 30
-    /// Requests running under `watchingForBusy`: a quick health check doesn't clear "busy" while
-    /// one of them is still slow.
-    @ObservationIgnored private var watchedRequests = 0
-    /// Only an answer this quick clears "busy": a starved Mac answers in bursts, and an answer that
-    /// took longer is the busy Mac itself.
-    private static let quickAnswer: Duration = .seconds(5)
+    /// Decides `isBusy` from the signs and answers this workspace sees
+    /// (`docs/connecting-and-voice.md` §3): the person's own turns are no sign, and busy clears by
+    /// itself once answers are quick.
+    @ObservationIgnored private var busySignal = BusySignal()
+    /// Wakes at `BusySignal.clearsAt`, so busy clears with nothing else going on.
+    @ObservationIgnored private var busyClearing: Task<Void, Never>?
     @ObservationIgnored private var busyRetry: Task<Void, Never>?
     /// Every session the list keeps: the chats and the scheduled runs with output, which only
     /// Show → Scheduled Tasks lists (`ScheduledRuns`, `docs/inbox.md` §5). Empty runs never come in.
@@ -506,6 +502,8 @@ final class BotWorkspace: Identifiable {
     private(set) var preferredEffort: ReasoningEffort?
 
     @ObservationIgnored private var conversations: [String: ConversationModel] = [:]
+    /// Chats with the person's own turn running (`ownTurnChanged`, `ownTurnCutOff`).
+    @ObservationIgnored private var ownTurns = BusySignal.OwnTurns<ConversationModel>()
     @ObservationIgnored private var titleRefreshTasks: [String: Task<Void, Never>] = [:]
 
     @ObservationIgnored private let store: BotStore
@@ -1151,19 +1149,16 @@ final class BotWorkspace: Identifiable {
             widgets.flushWaiting()
             _ = await (sessions, models)
         } catch is CancellationError {
+        } catch is TooSlow {
+            // Alive but too slow to finish connecting: keep at it (the keeper connects again in a
+            // few seconds), rather than calling it offline.
+            connection = .connecting
         } catch {
             let failure = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-            // Alive but too slow to finish connecting: keep at it (the keeper connects again in a
-            // few seconds) and say the Mac is busy, rather than calling it offline.
-            if failure.isTimeout, (try? await client.liveness())?.isThere == true {
-                noteSlow()
-                connection = .connecting
-                return
-            }
             let explained = await explained(failure, endpoint: endpoint)
             // The gateway's address changed meanwhile (`update(bot:)`): this failure is the old one's.
             guard bot.baseURL == endpoint else { return }
-            clearBusy()
+            updateBusy { $0.reset() }
             connection = .failed(explained)
         }
     }
@@ -1229,66 +1224,86 @@ final class BotWorkspace: Identifiable {
             if case .failed = connection { connection = .online(version: nil) }
             prefetchRecent()
         } catch is CancellationError {
+        } catch is TooSlow {
+            // Too slow, but alive: a busy Mac, not an offline one. Try again shortly.
+            if !connection.isOnline { connection = .online(version: nil) }
+            retrySessionsWhileBusy()
         } catch {
             let failure = error as? HermesError ?? .invalidResponse(error.localizedDescription)
-            // Too slow, but alive: a busy Mac, not an offline one. Say so and try again shortly.
-            if failure.isTimeout, (try? await client.liveness())?.isThere == true {
-                noteSlow()
-                if !connection.isOnline { connection = .online(version: nil) }
-                retrySessionsWhileBusy()
-                return
-            }
             // It answered (an error, not a timeout or a proxy giving up): not busy. Kept rows don't
             // hide a first read that failed.
-            if !BackendClient.isSlowAnswer(error) { clearBusy() }
+            if !BackendClient.isSlowAnswer(error) { updateBusy { $0.reset() } }
             if !hasFetchedSessions { connection = .failed(failure) }
         }
     }
 
-    /// Runs `work`; still going after 8 s while the gateway is there (`GatewayLiveness`), its Mac is
-    /// busy, and the status line says so while the work carries on. Back quickly with nothing else
-    /// slow under way, it isn't.
+    /// A request that timed out while the gateway was there (`GatewayLiveness`): its Mac is slow,
+    /// not gone.
+    private struct TooSlow: Error {}
+
+    /// Runs `work`, timed by `busySignal`: still going after 8 s while the gateway is there, back
+    /// slowly, or timed out while it's there, the Mac is busy (unless the person's own turn
+    /// explains it); back quickly, it may not be any more. A timeout with the gateway there
+    /// throws `TooSlow`.
     private func watchingForBusy<T>(_ work: () async throws -> T) async throws -> T {
-        let began = ContinuousClock.now
-        watchedRequests += 1
+        let ticket = busySignal.began()
         let watcher = Task { [weak self] in
             try? await Task.sleep(for: .seconds(8))
             guard !Task.isCancelled, let client = self?.client else { return }
-            if (try? await client.liveness())?.isThere == true, !Task.isCancelled { self?.noteSlow() }
+            if (try? await client.liveness())?.isThere == true, !Task.isCancelled {
+                self?.updateBusy { $0.stillRunning(ticket) }
+            }
         }
-        let result: T
+        defer { watcher.cancel() }
         do {
-            result = try await work()
+            let result = try await work()
+            updateBusy { $0.answered(ticket) }
+            return result
         } catch {
-            watcher.cancel()
-            watchedRequests -= 1
+            if (error as? HermesError)?.isTimeout == true, let client,
+               (try? await client.liveness())?.isThere == true {
+                updateBusy { $0.timedOut(ticket) }
+                throw TooSlow()
+            }
+            updateBusy { $0.ended(ticket) }
             throw error
         }
-        watcher.cancel()
-        watchedRequests -= 1
-        answered(within: ContinuousClock.now - began)
-        return result
     }
 
-    /// An answer came. A slow one is a sign the Mac is busy; a quick one, with nothing else slow
-    /// under way and no sign for half a minute, means it isn't any more.
-    private func answered(within elapsed: Duration) {
-        guard elapsed < Self.quickAnswer else {
-            noteSlow()
-            return
+    /// Changes `busySignal`, shows what it decides, and wakes when busy would clear by itself.
+    private func updateBusy(_ change: (inout BusySignal) -> Void) {
+        change(&busySignal)
+        busySignal.settle()
+        if busySignal.isBusy != isBusy { isBusy = busySignal.isBusy }
+        busyClearing?.cancel()
+        busyClearing = nil
+        guard let clearsAt = busySignal.clearsAt else { return }
+        busyClearing = Task { [weak self] in
+            try? await Task.sleep(until: clearsAt, clock: .continuous)
+            guard !Task.isCancelled else { return }
+            self?.updateBusy { _ in }
         }
-        guard watchedRequests == 0, Date.now.timeIntervalSince(lastSlowAt) > Self.busyLingers else { return }
-        clearBusy()
     }
 
-    /// A sign the Mac is busy: "busy" from now on, for at least half a minute.
-    private func noteSlow() {
-        lastSlowAt = .now
-        if !isBusy { isBusy = true }
+    /// One of the person's own turns, here or in a Bot Chat, started or ended. What a turn holds
+    /// up on the gateway (a chat list waits for its token counts) says nothing about the Mac. Each
+    /// chat says so itself: a new chat's first turn runs before it's filed under its session.
+    func ownTurnChanged(_ conversation: ConversationModel) {
+        ownTurns.set(conversation, running: conversation.isWorking)
+        ownTurnsCounted()
     }
 
-    private func clearBusy() {
-        if isBusy { isBusy = false }
+    /// The chat stopped all its work (deleted, discarded, disconnected). Its `isWorking` never
+    /// comes back down, so a turn it was running stops excusing slow answers here.
+    func ownTurnCutOff(_ conversation: ConversationModel) {
+        ownTurns.forget(conversation)
+        ownTurnsCounted()
+    }
+
+    private func ownTurnsCounted() {
+        let running = ownTurns.anyRunning
+        updateBusy { $0.ownTurn(running: running) }
+        roster?.ownTurn(running: running)
     }
 
     /// Another go at the chat list once a busy Mac has had a moment.
@@ -1643,14 +1658,20 @@ final class BotWorkspace: Identifiable {
         var failure: HermesError?
         for attempt in 0..<2 {
             if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
-            let began = ContinuousClock.now
+            let ticket = busySignal.began()
+            // Every way out ends the ticket; once answered, ending it again does nothing.
+            defer { updateBusy { $0.ended(ticket) } }
             guard !Task.isCancelled, let liveness = try? await client.liveness() else { return true }
             switch liveness {
             case .answering:
-                answered(within: ContinuousClock.now - began)
+                updateBusy { $0.answered(ticket) }
                 return true
             case .busy:
-                noteSlow()
+                // A health check left unanswered: no turn of the person's holds that up.
+                updateBusy {
+                    $0.ended(ticket)
+                    $0.sign()
+                }
                 return true
             case .unreachable(let error) where error.accessRefusal?.isSignIn == true:
                 // The access gateway turned the app away (a sign-in that ran out or was revoked):
@@ -1760,6 +1781,9 @@ final class BotWorkspace: Identifiable {
         widgets.tearDown()
         setupCenter?.tearDown()
         titleRefreshTasks.values.forEach { $0.cancel() }
+        // Last, after the chats' `cancelAll` recounts that may have started it again.
+        busyClearing?.cancel()
+        busyClearing = nil
     }
 }
 

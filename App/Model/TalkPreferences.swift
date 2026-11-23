@@ -67,9 +67,10 @@ enum TalkPreferences {
     static var raiseToListen: Bool { defaults.object(forKey: Key.raiseToListen) as? Bool ?? true }
     static var studioMic: Bool { defaults.object(forKey: Key.studioMic) as? Bool ?? true }
 
+    /// The stored speed, snapped to a step. A launch argument (`-listen.speed 1.25`) arrives as
+    /// text, which `double(forKey:)` reads too.
     static var listenSpeed: Double {
-        let speed = defaults.object(forKey: Key.listenSpeed) as? Double ?? 1
-        return min(2, max(1, speed))
+        ListenSpeed.snapped(defaults.object(forKey: Key.listenSpeed) == nil ? nil : defaults.double(forKey: Key.listenSpeed))
     }
 
     static var codeAndTables: SpokenDetail {
@@ -87,4 +88,31 @@ enum TalkPreferences {
 
     static var sounds: Bool { defaults.object(forKey: Key.sounds) as? Bool ?? true }
     static var heyHermes: Bool { defaults.bool(forKey: Key.heyHermes) }
+}
+
+/// The one speed Listen and voice messages play at (`docs/voice.md` §2, §3, §6). The speed
+/// button, Now Playing and Settings → Voice & Audio → Speed all change it here, so a change from
+/// any of them reaches the others, and a reading or clip that's playing, at once.
+@MainActor
+@Observable
+final class ListenSpeedSetting {
+    static let shared = ListenSpeedSetting()
+
+    var rate: Double {
+        didSet {
+            // Now Playing can ask for any speed: it gets the nearest step.
+            let snapped = ListenSpeed.snapped(rate)
+            if snapped != rate { rate = snapped }
+            UserDefaults.standard.set(rate, forKey: TalkPreferences.Key.listenSpeed)
+        }
+    }
+
+    private init() {
+        rate = TalkPreferences.listenSpeed
+    }
+
+    /// A tap on the speed button: the next step, from 2× back to 1×.
+    func step() {
+        rate = ListenSpeed.next(after: rate)
+    }
 }
