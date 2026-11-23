@@ -1009,7 +1009,8 @@ draw a diagram and a formula, for scrolling back through drawn blocks.
 page whose buttons send "Plan picked on the page: …" as a hidden message (answered "Noted: …"), and
 a Markdown file that opens in the Inspector.
 "office files" sends a docx, xlsx, pptx, rtf, odt, ods and odp made by the mock, which open in Quick
-Look or save ([chat.md](chat.md) §3a).
+Look or save ([chat.md](chat.md) §3a). "video links" answers with links that show as cards and
+links that stay words ([chat.md](chat.md) §3d).
 `-HERMES_OPEN_SENT_FILE <name>` opens the first file a reply sent with that name 5 s after it
 shows, as a tap would: the viewer, the Inspector or Save. `--widgets-version repo` plays this
 repository's widgets plugin, which knows `gateway-files`; the default 1.6.0 refuses it and the

@@ -255,7 +255,8 @@ public enum ReplyPlainText {
             }
             switch block {
             case .paragraph(let inlines):
-                if Self.isLoneImage(inlines) || DrawnBlock(block) != nil {
+                // A link drawn as a card (`LinkEmbed`) is one too, but not in a list or a quote.
+                if Self.isLoneImage(inlines) || DrawnBlock(block) != nil || (levels.isEmpty && LinkEmbed(inlines) != nil) {
                     unit(.block(block), inlines.map(\.plainText).joined().trimmingCharacters(in: .whitespacesAndNewlines))
                 } else {
                     unit(.paragraph(inlines), inlines.map(\.plainText).joined())

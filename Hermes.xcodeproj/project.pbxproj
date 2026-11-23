@@ -122,6 +122,7 @@
 		57E63CC55E6D8CE95264561A /* MacPasswordsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CE9610C52E4823749DE17A /* MacPasswordsPane.swift */; };
 		582BE152880BA5E4F3B77E15 /* ServerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35D215F7FDAE63FE0C08BF3E /* ServerViews.swift */; };
 		59250380D3BF0BBECF15199C /* InboxChatParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB8C73EAB2B52E4FB5647230 /* InboxChatParts.swift */; };
+		59311ABD0CCB3C933BADBC80 /* LinkEmbedCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A845BA5DB4C26B54309F4D2 /* LinkEmbedCard.swift */; };
 		5996B67C1EB1A2DCEBA250FE /* AppsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4592DD87397620D7427C349D /* AppsViews.swift */; };
 		5A07DFADE481B7B68F071652 /* PushSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688513237C13FDE87E5FF515 /* PushSheets.swift */; };
 		5A4835CFCCC7D23AFE813E46 /* LearnedParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94B7E50C21B675B09477FE25 /* LearnedParts.swift */; };
@@ -579,6 +580,7 @@
 		887C3587481BBCDBC04DA526 /* WelcomeTour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeTour.swift; sourceTree = "<group>"; };
 		8A2D7B3ABDAE231999604BAF /* NativeNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNavigationUITests.swift; sourceTree = "<group>"; };
 		8A80281BFE3580AB2A5C2537 /* BoardChatNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardChatNote.swift; sourceTree = "<group>"; };
+		8A845BA5DB4C26B54309F4D2 /* LinkEmbedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkEmbedCard.swift; sourceTree = "<group>"; };
 		8B20471FFD9CF59C1A8BD6D6 /* BotVoiceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotVoiceModel.swift; sourceTree = "<group>"; };
 		8B7F146A3F863763C495CEF0 /* CheckpointsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckpointsModel.swift; sourceTree = "<group>"; };
 		8BE62AA56C7273A33AAF03D0 /* SearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViews.swift; sourceTree = "<group>"; };
@@ -1298,6 +1300,7 @@
 				BC8933EA0ADEC930A6EC2949 /* CodeBlockView.swift */,
 				E064508835AB5A56289FC54C /* DrawnBlockRenderer.swift */,
 				4BA105272E8FB5ECF10E5C1D /* DrawnBlockView.swift */,
+				8A845BA5DB4C26B54309F4D2 /* LinkEmbedCard.swift */,
 				9A3335030C10A5603C9C2486 /* MarkdownCache.swift */,
 				64008DDC964C1C69C8B394C9 /* MarkdownView.swift */,
 				598CA8F535E8924DE352A7D4 /* PagePreviewViews.swift */,
@@ -1928,6 +1931,7 @@
 				B74F686EBA8D095548A41CB6 /* LearnedSkillPage.swift in Sources */,
 				3FE18DC1E93A6F1CD513BF47 /* LearnedTidyingPage.swift in Sources */,
 				FE09DAB3A64EE0597D335112 /* LearningMapView.swift in Sources */,
+				59311ABD0CCB3C933BADBC80 /* LinkEmbedCard.swift in Sources */,
 				BE10A2C36F62E24377CAE679 /* ListenPlayer.swift in Sources */,
 				235BF6690F11A25B1DA5D828 /* ListenViews.swift in Sources */,
 				E9436705D7CAFC00A2BEE608 /* LiveActivity.swift in Sources */,

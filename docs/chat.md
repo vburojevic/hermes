@@ -637,6 +637,7 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   next space, without the sentence's closing punctuation or a bracket it didn't open; `www.`
   opens over https). Not inside inline code or a link's own words. Another Bot's message in a
   Bot Chat (`BotMessageCard`) links its addresses the same way (`Text(linking:)`).
+- **A link alone in its paragraph** to a video, some music or a GitHub page shows as a card (§3d).
 - **Files on the gateway** a reply names open in the chat's Inspector, read-only: a link to a
   file (`[notes](/Users/me/notes.md)`, `~/notes.md`, a local `file:` URL) and inline code that is
   one whole path to a file (`/Users/me/.hermes/cache/scratch/prompt.md`, a `:42` line number
@@ -906,6 +907,38 @@ HermesKit; `PagePreviewCard` in the app). Inside code it stays code.
 "live page" in the mock answers with a page and a Markdown file: the page's Free and Pro buttons
 send with `data-hermes-send`, Team with `hermes.send` and shows the answer, and it says whether a
 request, a call or a frame got out ([development.md](development.md)).
+
+## 3d. Link cards
+
+A paragraph that is only a link to a page the app knows by its address shows as a card
+(`LinkEmbed`, `LinkEmbedCard`): a glyph, a title, where it goes, and Open, which opens it in the
+browser through the reply's link gate (`WebLink`).
+
+| Service | Addresses |
+|---|---|
+| YouTube | Videos (`watch`, `youtu.be`, `embed`), Shorts, live videos, playlists |
+| Vimeo | Videos, with a private video's key or not |
+| Spotify | Tracks, albums, playlists, artists, episodes, shows |
+| SoundCloud | Tracks and sets |
+| GitHub | Repositories, issues, pull requests, discussions |
+| Bilibili | Videos (`BV…`, `av…`) |
+
+- **Nothing is fetched.** The card is the address and the reply's words, so a reply that is only
+  read tells no service anything: no page, picture, title or player is loaded. The title is the
+  link's words, else what the address names (`owner/repository`, `artist/track`), else "YouTube
+  video". The second line always comes from the address, so a link's words can't pass one page
+  off as another. A short link that hides where it goes (`b23.tv`) stays a link.
+- **Only the service's own address**: https, its own host matched whole, no user name or port, and
+  parts in the plain characters ids are written with. Anything else stays the link it was.
+- **Only alone.** A link in a sentence, a heading, a list or a quote stays words. While a reply
+  streams, the paragraph still arriving stays words and becomes a card when the next one starts or
+  the reply ends.
+- **Copying, Listen, search and previews** read the link as before: on the Mac a card is selected
+  whole and copies as the link's words.
+- **VoiceOver** reads the card as one link: its title, then where it goes. At the accessibility
+  sizes Open goes under the words.
+
+Check with the mock: "video links".
 
 ## 4. Interaction
 

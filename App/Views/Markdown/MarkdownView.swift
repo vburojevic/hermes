@@ -225,18 +225,10 @@ struct MarkdownBlockView: View, Equatable {
                     .modifier(StreamingAppear())
             } else if let source = Self.standaloneImage(inlines) {
                 MarkdownImage(source: source)
-            } else if InlineRenderer.mayName(inlines) {
-                // Only a paragraph that can name a Bot or a file reads what the chat can name:
-                // the others don't redraw when that changes, as the roster and the commands
-                // arrive while a chat opens (every reply's every block did).
-                NamingParagraph(inlines: inlines, sentence: sentence)
-                    // One element either way: its text, or its pills read as one line.
-                    .modifier(VoiceOverLandingTarget())
+            } else if let embed = LinkEmbed(block) {
+                LinkEmbedParagraph(embed: embed) { words(inlines) }
             } else {
-                Self.paragraph(InlineRenderer.attributed(inlines), font: bodyFont, sentence: sentence)
-                    // Where VoiceOver lands when reading back brings in a reply that ends here
-                    // (`docs/chat.md` §1).
-                    .modifier(VoiceOverLandingTarget())
+                words(inlines)
             }
 
         case .heading(let level, let inlines):
@@ -267,6 +259,7 @@ struct MarkdownBlockView: View, Equatable {
                     .modifier(StreamingAppear())
                 AnyView(MarkdownBlocksView(blocks: blocks))
                     .foregroundStyle(Theme.secondaryText)
+                    .environment(\.markdownLinkCards, false)
             }
             .fixedSize(horizontal: false, vertical: true)
 
@@ -293,6 +286,24 @@ struct MarkdownBlockView: View, Equatable {
                     .font(Theme.Typography.code)
                     .foregroundStyle(Theme.secondaryText)
             }
+        }
+    }
+
+    /// A paragraph's words.
+    @ViewBuilder
+    private func words(_ inlines: [MarkdownInline]) -> some View {
+        if InlineRenderer.mayName(inlines) {
+            // Only a paragraph that can name a Bot or a file reads what the chat can name:
+            // the others don't redraw when that changes, as the roster and the commands
+            // arrive while a chat opens (every reply's every block did).
+            NamingParagraph(inlines: inlines, sentence: sentence)
+                // One element either way: its text, or its pills read as one line.
+                .modifier(VoiceOverLandingTarget())
+        } else {
+            Self.paragraph(InlineRenderer.attributed(inlines), font: bodyFont, sentence: sentence)
+                // Where VoiceOver lands when reading back brings in a reply that ends here
+                // (`docs/chat.md` §1).
+                .modifier(VoiceOverLandingTarget())
         }
     }
 
@@ -450,6 +461,7 @@ private struct MarkdownListView: View {
             }
         }
         .padding(.leading, MarkdownSpacing.listLeading)
+        .environment(\.markdownLinkCards, false)
     }
 
     @ViewBuilder

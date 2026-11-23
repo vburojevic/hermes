@@ -46,6 +46,8 @@ Scripted chat turns (on top of chats.py) by message content:
                           (docs/chat.md §3c); "Plan picked on the page: …" is answered
   "office files"       -> a docx, xlsx, pptx and rtf made here, which open in Quick Look, and an odt, ods
                           and odp, which save where it can't draw them (docs/chat.md §3a)
+  "video links"        -> links to YouTube, Vimeo, Spotify, SoundCloud, GitHub and Bilibili that show
+                          as cards, and links that stay words (docs/chat.md §3d)
 
 Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
@@ -855,6 +857,31 @@ MEDIA:{ROOT}/exports/launch-deck.odp
 MEDIA:{ROOT}/exports/launch-brief.rtf"""
 
 
+LINK_CARDS = """The launch talk, then the same one by its address:
+
+[The launch talk](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
+
+https://youtu.be/dQw4w9WgXcQ
+
+https://vimeo.com/76979871
+
+https://open.spotify.com/album/4cOdK2wGLETKBW3PvgPWqT
+
+https://soundcloud.com/forss/flickermood
+
+https://github.com/NousResearch/hermes-agent
+
+[Fix the launch checklist](https://github.com/NousResearch/hermes-agent/pull/12)
+
+https://www.bilibili.com/video/BV1xx411c7mD
+
+These stay words: https://youtu.be/dQw4w9WgXcQ in a sentence, and
+
+- https://github.com/NousResearch/hermes-agent
+
+https://example.com/launch"""
+
+
 def formats_reply(lower):
     """The reply for a Round 3 format word, or None (docs/development.md, mock words)."""
     if "drawings" in lower:
@@ -863,6 +890,8 @@ def formats_reply(lower):
         return LIVE_PAGE
     if "office files" in lower:
         return OFFICE_FILES
+    if "video links" in lower:
+        return LINK_CARDS
     if lower.startswith("plan picked on the page:"):
         # What a page's button sent, as a hidden message: Hermes answers it as any other.
         plan = lower.split(":", 1)[1].strip().title() or "That"
