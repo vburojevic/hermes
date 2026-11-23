@@ -126,7 +126,7 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
 | Muted | Title, slashed bell, time | Last message | Grey count |
 | Live | Still ink dot, semibold title | The activity line, shimmering | – |
 | Needs you | Semibold | Orange hand + what it needs | Orange hand badge |
-| Draft | Title | **Draft:** then the draft (a chat opened this launch) | – |
+| Draft | Title | **Draft:** then the draft (a chat or Bot Chat opened this launch, `RowDraft`) | – |
 | Failed | Title | Red triangle + "Stopped: …" until opened | – |
 | Mention (group chat) | Semibold | Last message or who's working | @ badge, then the count |
 

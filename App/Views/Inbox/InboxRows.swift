@@ -20,7 +20,8 @@ struct ChatInboxRow: View {
         let badge: UnreadBadge = running ? .none : BadgeScope.rowBadge(unread.badge(for: key), key: key, open: open)
         let muted = unread.isMuted(key)
         // The open chat's draft is in its composer; the others' show on their row.
-        let draft = key == open ? nil : workspace.loadedConversation(forKey: key).flatMap { $0.hasDraftText ? $0.draft : nil }
+        let draft = RowDraft.shown(workspace.loadedConversation(forKey: key).flatMap { $0.hasDraftText ? $0.draft : nil },
+                                   key: key, open: open)
         let lastLine = unread.lastLines[key]
         let strong = badge.isUnread || (line?.isLive ?? false)
         let date = workspace.rowTime(session)
@@ -86,6 +87,9 @@ struct BotInboxRow: View {
         let badge = BadgeScope.rowBadge(unread.badge(for: key), key: key, open: unread.openKey)
         let muted = unread.isMuted(key)
         let line = workspace.activity.line(for: key)
+        // Its chat's unsent words show on its row once another chat is open, as a chat's do.
+        let draft = RowDraft.shown(roster.botConversations[bot.name].flatMap { $0.hasDraftText ? $0.draft : nil },
+                                   key: key, open: unread.openKey)
         let lastLine = unread.lastLines[key]
         let date = roster.rowTime(for: bot)
         let mood = ActivityLine.faceMood(for: line, justReplied: workspace.activity.justReplied.contains(bot.name), muted: muted,
@@ -107,6 +111,8 @@ struct BotInboxRow: View {
             ) {
                 if let line {
                     ActivityLineView(line: line)
+                } else if let draft {
+                    RowPreview(prefix: String(localized: "Draft:"), prefixIsInk: true, text: LastLine.flatten(draft), bright: false)
                 } else if let lastLine {
                     RowPreview(lastLine, bright: badge.isUnread)
                 } else {
