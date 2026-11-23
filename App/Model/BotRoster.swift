@@ -185,9 +185,11 @@ final class BotRoster {
             ConnectionLog.logger.notice("bots: \(self.isBusy ? "busy" : "no longer busy", privacy: .public)")
         }
     }
-    /// The last sign the backend was busy: a quick roster read clears "busy" only half a minute
-    /// after it (a starved Mac answers quickly for the moment it runs, then goes quiet again).
-    @ObservationIgnored private var lastSlowAt = Date.distantPast
+    /// Decides `isBusy` (`docs/connecting-and-voice.md` §3): the person's own turns are no sign,
+    /// and busy clears by itself half a minute after the last sign once roster reads are quick.
+    @ObservationIgnored private var busySignal = BusySignal()
+    /// Wakes at `BusySignal.clearsAt`, so busy clears with nothing else going on.
+    @ObservationIgnored private var busyClearing: Task<Void, Never>?
     @ObservationIgnored private var busySince: Date?
     @ObservationIgnored private var isTornDown = false
     /// The app is in the background: no polling, no reconnect loop.
@@ -786,7 +788,7 @@ final class BotRoster {
 
     private func markBusy() {
         if busySince == nil { busySince = .now }
-        noteSlow()
+        updateBusy { $0.sign() }
     }
 
     /// The socket has heard nothing for over a minute while the gateway's machine is there.
@@ -794,18 +796,32 @@ final class BotRoster {
         // Busy, without starting `busyGiveUp`'s clock: only a failed connect starts that, and the
         // next roster read that comes back clears both.
         guard socket === stalled else { return }
-        noteSlow()
+        updateBusy { $0.sign() }
     }
 
-    /// A sign the backend is busy: "busy" from now on, for at least half a minute.
-    private func noteSlow() {
-        lastSlowAt = .now
-        if !isBusy { isBusy = true }
+    /// Changes `busySignal`, shows what it decides, and wakes when busy would clear by itself.
+    /// Not busy any more, `busyGiveUp`'s clock starts over.
+    private func updateBusy(_ change: (inout BusySignal) -> Void) {
+        change(&busySignal)
+        busySignal.settle()
+        if !busySignal.isBusy { busySince = nil }
+        if busySignal.isBusy != isBusy { isBusy = busySignal.isBusy }
+        busyClearing?.cancel()
+        busyClearing = nil
+        guard let clearsAt = busySignal.clearsAt else { return }
+        busyClearing = Task { [weak self] in
+            try? await Task.sleep(until: clearsAt, clock: .continuous)
+            guard !Task.isCancelled else { return }
+            self?.updateBusy { _ in }
+        }
     }
 
-    private func clearBusy() {
-        busySince = nil
-        if isBusy { isBusy = false }
+    /// The person's own turns, in Bot Chats or on the gateway, started or all ended
+    /// (`BotWorkspace.ownTurnChanged`).
+    func ownTurn(running: Bool) {
+        // Torn down, its chats' `cancelAll` still recounts: nothing should wake for busy then.
+        guard !isTornDown else { return }
+        updateBusy { $0.ownTurn(running: running) }
     }
 
     /// A refusal no retry fixes: a sign-in, a missing token, not a Hermes backend, an access
@@ -943,6 +959,8 @@ final class BotRoster {
         rosterRecheck = nil
         sessionsTick?.cancel()
         sessionsTick = nil
+        busyClearing?.cancel()
+        busyClearing = nil
         FaceImageCache.stopRefetching(scope: botID.uuidString)
         disconnect()
         resumeConnectedWaiters()
@@ -1622,11 +1640,16 @@ final class BotRoster {
     /// Reads the roster (`profiles.list`), the way Desktop polls it every five seconds.
     func refresh() async {
         guard socket != nil else { return }
+        let ticket = busySignal.began()
+        // Every way out ends the ticket; once answered, ending it again does nothing.
+        defer { updateBusy { $0.ended(ticket) } }
         do {
-            let began = ContinuousClock.now
             let result = try await request("profiles.list", [:], timeout: .seconds(30))
+            // A read back slowly is the busy Mac itself (unless the person's own turn explains
+            // it); back quickly, busy may clear. Only an open socket's answer counts.
+            if socket != nil { updateBusy { $0.answered(ticket) } }
             guard case .array(let rows)? = result["profiles"] else { return }
-            apply(rows.map(BotProfile.init(json:)).filter { !$0.name.isEmpty }, quickly: ContinuousClock.now - began < .seconds(5))
+            apply(rows.map(BotProfile.init(json:)).filter { !$0.name.isEmpty })
             LaunchTrace.mark("Bots fetched (\(rows.count))", id: "Bots fetched")
             if rows != cachedRows {
                 cachedRows = rows
@@ -1638,7 +1661,8 @@ final class BotRoster {
             // A roster read that timed out on an open socket is a busy backend: the polls ask
             // again, and nothing on screen calls the Bots offline meanwhile.
             if BackendClient.isSlowAnswer(error), socket != nil {
-                markBusy()
+                updateBusy { $0.timedOut(ticket) }
+                if isBusy, busySince == nil { busySince = .now }
             } else if !hasLoaded {
                 state = .failed(Self.describe(error))
             }
@@ -1871,9 +1895,7 @@ final class BotRoster {
     /// - Parameter fromGateway: false for a change made here (`saveFlag`) or the device's copy
     ///   (`restoreCachedRoster`): the list is rebuilt, but nothing that only a read the gateway
     ///   answered can say (the list is the gateway's, it's not busy, it's online) moves.
-    /// - Parameter quickly: the read came back quickly; a slow one is the busy Mac itself, so the
-    ///   Bots stay (or turn) busy.
-    private func apply(_ fresh: [BotProfile], fromGateway: Bool = true, quickly: Bool = true) {
+    private func apply(_ fresh: [BotProfile], fromGateway: Bool = true) {
         var fresh = fresh
         // Pins and hides still on their way (`saveFlag`): a roster read from before them doesn't
         // move the Bot back.
@@ -1892,13 +1914,6 @@ final class BotRoster {
         }
         guard fromGateway else { return }
         if !load.hasLiveList { load.gatewayAnswered() }
-        if socket != nil {
-            if !quickly {
-                noteSlow() // not `markBusy`: it answered, so no clock toward "offline"
-            } else if Date.now.timeIntervalSince(lastSlowAt) > 30 {
-                clearBusy()
-            }
-        }
         // A failed first read must not leave a working socket looking offline.
         if socket != nil, !state.isOnline { state = .online(version: version) }
         // Time windows move even when the roster doesn't.

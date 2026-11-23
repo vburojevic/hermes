@@ -1182,6 +1182,9 @@ final class ConversationModel: Identifiable {
             // This Turn's base, and Hermes's ink dots going out when it's done.
             if working, usesGateway, !isBotChat { inspector.turnStarted() }
             if !working { inspectorStore?.turnFinished() }
+            // The person's own turn slows Hermes's chat-list reads: no sign the Mac is busy
+            // (`docs/connecting-and-voice.md` §3).
+            (workspace ?? roster?.workspace)?.ownTurnChanged(self)
             #if HERMES_PUSH
             PushCenter.shared.conversation(self, working: working)
             #endif
@@ -4962,6 +4965,8 @@ final class ConversationModel: Identifiable {
         botTurnDone = nil
         // The chat is going: its browser is given back and closed (`docs/web.md` §6.5).
         inspectorStore?.browserIfLoaded?.tearDown()
+        // Nor does its turn excuse a slow Mac any longer (`docs/connecting-and-voice.md` §3).
+        (workspace ?? roster?.workspace)?.ownTurnCutOff(self)
     }
 }
 
