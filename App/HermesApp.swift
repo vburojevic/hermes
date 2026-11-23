@@ -27,6 +27,7 @@ struct HermesApp: App {
         // a file, stdout otherwise holds 4 KB, and loses it when the app is stopped.
         setvbuf(stdout, nil, _IOLBF, 0)
         LaunchTrace.mark("app init")
+        HangLog.shared.startIfRequested()
         #if os(macOS)
         // The first view's `onAppear` comes before its first frame is drawn; the window turning
         // visible is when the person sees it.

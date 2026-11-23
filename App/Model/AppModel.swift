@@ -64,6 +64,7 @@ final class AppModel {
         #if HERMES_PUSH
         PushCenter.shared.attach(self)
         #endif
+        HangDiagnostics.shared.start()
         #if os(macOS)
         watchSleep()
         watchActivation()
