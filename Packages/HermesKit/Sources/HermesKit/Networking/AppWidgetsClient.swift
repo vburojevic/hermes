@@ -71,6 +71,21 @@ public struct AppWidgetsClient: Sendable {
         return answer["pending"]?.intValue
     }
 
+    /// `announceClient`, told again with only the render values plugin 1.6.0 knows when the
+    /// plugin refuses one it doesn't (`ClientApp.Render.knownSince160`): the client line still
+    /// reaches an older plugin, without what it can't say. Answers whether it had to.
+    public func announceClientKnownRenders(runtimeID: String, storedID: String, client: ClientApp, textHash: String) async throws -> Bool {
+        do {
+            try await announceClient(runtimeID: runtimeID, storedID: storedID, client: client, textHash: textHash)
+            return false
+        } catch where ClientAnnouncements.refusesRenders(error) {
+            let older = client.withRendersKnownSince160
+            guard older.renders != client.renders else { throw error }
+            try await announceClient(runtimeID: runtimeID, storedID: storedID, client: older, textHash: textHash)
+            return true
+        }
+    }
+
     /// Marks many chats at once by their stored ids (`session_ids`, at most 500 a call; plugin 1.1.1):
     /// chats this device knows but hasn't opened still get widgets.
     public func markSessions(_ storedIDs: [String]) async throws {

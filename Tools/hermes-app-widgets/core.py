@@ -45,7 +45,11 @@ MAX_LINEAGES = 2000
 # `/app-widgets client` (docs/widgets.md §11): what the app may say about itself, all of it checked.
 CLIENT_OS = ("iOS", "iPadOS", "macOS")
 CLIENT_DEVICES = ("iphone", "ipad", "mac")
-CLIENT_RENDERS = ("widgets", "gateway-file-images", "markdown", "code", "tables")
+CLIENT_RENDERS = ("widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables")
+# A render value a newer app sends that this plugin doesn't know yet: kept out of the line, never
+# a reason to refuse the client (an older plugin refused it, and the client line was lost).
+RENDER_VALUE = r"[a-z][a-z0-9-]{0,31}"
+CLIENT_RENDERS_MAX = 16
 CLIENT_FIELDS = {"id": r"hermes-app", "version": r"[0-9][0-9A-Za-z.+-]{0,19}", "build": r"[0-9A-Za-z.]{1,20}",
                  "os": "|".join(CLIENT_OS), "os_version": r"[0-9]{1,3}(\.[0-9]{1,3}){0,2}",
                  "device": "|".join(CLIENT_DEVICES)}
@@ -1114,10 +1118,11 @@ def _client_args(args: Any) -> tuple[list[str], dict, str] | str:
             return f"client.{key} is missing or not allowed"
         checked[key] = value
     renders = client.get("renders")
-    if (not isinstance(renders, list) or not all(isinstance(r, str) and r in CLIENT_RENDERS for r in renders)
+    if (not isinstance(renders, list) or len(renders) > CLIENT_RENDERS_MAX
+            or not all(isinstance(r, str) and re.fullmatch(RENDER_VALUE, r) for r in renders)
             or len(set(renders)) != len(renders)):
-        return f"client.renders must list distinct values from {', '.join(CLIENT_RENDERS)}"
-    checked["renders"] = list(renders)
+        return f"client.renders must list distinct values such as {', '.join(CLIENT_RENDERS)}"
+    checked["renders"] = [r for r in renders if r in CLIENT_RENDERS]
     turn = args.get("turn")
     if not isinstance(turn, dict) or set(turn) != {"text_sha256"}:
         return "turn must be {\"text_sha256\": ...}"

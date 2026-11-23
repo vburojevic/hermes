@@ -25,12 +25,19 @@ public struct ClientApp: Sendable, Hashable {
     public enum Render: String, Sendable, Hashable, CaseIterable {
         case widgets
         case gatewayFileImages = "gateway-file-images"
+        /// Files sent with `MEDIA:` lines: pictures and videos drawn in the reply, other files as
+        /// cards that open or save them (`docs/chat.md` §3a).
+        case gatewayFiles = "gateway-files"
         case markdown, code, tables
+
+        /// The values plugin 1.6.0 knows. It refuses a client that names any other, and its
+        /// client line is lost with it (`ClientAnnouncements`).
+        public static let knownSince160: Set<Render> = [.widgets, .gatewayFileImages, .markdown, .code, .tables]
     }
 
     public static let id = "hermes-app"
     /// Everything but widgets, which the gateway's widget store answers for (`WidgetStore`).
-    public static let alwaysRenders: [Render] = [.gatewayFileImages, .markdown, .code, .tables]
+    public static let alwaysRenders: [Render] = [.gatewayFileImages, .gatewayFiles, .markdown, .code, .tables]
 
     public let version: String
     public let build: String
@@ -45,6 +52,12 @@ public struct ClientApp: Sendable, Hashable {
         self.osVersion = osVersion
         // In the plugin's order, each once: it refuses a list that repeats one.
         self.renders = Render.allCases.filter(renders.contains)
+    }
+
+    /// The same client naming only what plugin 1.6.0 knows.
+    public var withRendersKnownSince160: ClientApp {
+        ClientApp(version: version, build: build, device: device, osVersion: osVersion,
+                  renders: renders.filter(Render.knownSince160.contains))
     }
 
     /// "26.1", or "26.1.2" when there is a patch.
@@ -88,11 +101,20 @@ public struct ClientAnnouncements: Sendable, Equatable {
     }
 
     private var unsupported: Set<String> = []
+    /// Profiles whose plugin refused a render value it doesn't know (1.6.0): told only the ones
+    /// it knows, until the plugin may have changed.
+    private var olderRenders: Set<String> = []
 
     public init() {}
 
     public func shouldAnnounce(profile: String?) -> Bool {
         !unsupported.contains(Self.key(profile))
+    }
+
+    /// The client as `profile`'s plugin takes it: without the render values a plugin that
+    /// refused them doesn't know.
+    public func client(_ client: ClientApp, profile: String?) -> ClientApp {
+        olderRenders.contains(Self.key(profile)) ? client.withRendersKnownSince160 : client
     }
 
     public mutating func record(_ outcome: Outcome, profile: String?) {
@@ -103,9 +125,15 @@ public struct ClientAnnouncements: Sendable, Equatable {
         }
     }
 
-    /// The plugin may have changed: every profile is asked again.
+    /// `profile`'s plugin refused a render value it doesn't know.
+    public mutating func recordOlderRenders(profile: String?) {
+        olderRenders.insert(Self.key(profile))
+    }
+
+    /// The plugin may have changed: every profile is asked again, with everything the app draws.
     public mutating func forgetUnsupported() {
         unsupported.removeAll()
+        olderRenders.removeAll()
     }
 
     public static func outcome(of error: any Error) -> Outcome {
@@ -117,6 +145,13 @@ public struct ClientAnnouncements: Sendable, Equatable {
         default:
             return .failed
         }
+    }
+
+    /// The plugin refused the client for its render values: 1.6.0 refuses any it doesn't know
+    /// ("client.renders must list distinct values from …").
+    public static func refusesRenders(_ error: any Error) -> Bool {
+        if case .refused(let message)? = error as? AppWidgetsClient.Failure { return message.hasPrefix("client.renders") }
+        return false
     }
 
     private static func key(_ profile: String?) -> String {

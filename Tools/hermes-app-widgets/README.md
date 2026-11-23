@@ -167,9 +167,13 @@ commands that change state are refused from messaging platforms.
 Just before it sends a turn, the app runs `client` with the SHA-256 of the turn's text (its UTF-8
 bytes, nothing trimmed) and what it is: its version and build, `os` (`iOS`, `iPadOS`, `macOS`),
 `os_version`, `device` (`iphone`, `ipad`, `mac`) and `renders` (any of `widgets`,
-`gateway-file-images`, `markdown`, `code`, `tables`). Every field is checked against a short list or
-pattern and anything else is refused: no device name, no identifier, nothing a person typed. The
-plugin keeps up to 8 markers per chat id for 10 minutes, oldest dropped first.
+`gateway-file-images`, `gateway-files`, `markdown`, `code`, `tables`; `gateway-files` means files
+sent on `MEDIA:` lines show in the reply). Every field is checked against a short list or pattern
+and anything else is refused: no device name, no identifier, nothing a person typed. A render value
+the plugin doesn't know (a newer app's) is left out rather than refused, so long as it's a short
+lowercase word (`[a-z][a-z0-9-]{0,31}`, at most 16): 1.6.0 refused the whole client for one, and the
+app now tells such a plugin again with only the values it knows. The plugin keeps up to 8 markers
+per chat id for 10 minutes, oldest dropped first.
 
 `pre_llm_call` hashes the turn's clean `user_message` and uses up the oldest live marker with that
 hash in the chat, or in a session Hermes compacted it from. When that client differs from the one

@@ -327,12 +327,15 @@ final class WidgetStore {
                         transport: @escaping AppWidgetsClient.Transport) async {
         guard reaches(profile: profile), announcements.shouldAnnounce(profile: profile) else { return }
         let client = AppWidgetsClient(profile: profile, transport: transport)
-        let identity = ClientApp.thisDevice(renders: renders(profile: profile))
+        let identity = announcements.client(ClientApp.thisDevice(renders: renders(profile: profile)), profile: profile)
         let hash = ClientApp.textHash(text)
         do {
-            _ = try await AppModel.withDeadline(seconds: Self.announceLimit) {
-                try await client.announceClient(runtimeID: runtime, storedID: storedID, client: identity, textHash: hash)
+            // A plugin older than the app's render values refuses the client for them: it's told
+            // again with the ones it knows, and from then on only those (`docs/widgets.md` §11).
+            let olderRenders = try await AppModel.withDeadline(seconds: Self.announceLimit) {
+                try await client.announceClientKnownRenders(runtimeID: runtime, storedID: storedID, client: identity, textHash: hash)
             }
+            if olderRenders { announcements.recordOlderRenders(profile: profile) }
             announcements.record(.announced, profile: profile)
         } catch {
             let outcome = ClientAnnouncements.outcome(of: error)
