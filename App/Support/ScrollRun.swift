@@ -129,15 +129,38 @@ final class ScrollRun {
 
     private func mark(_ event: String) {
         print("SCROLLRUN \(Int(CACurrentMediaTime() * 1000) % 100_000)ms \(event)")
+        HangLog.shared.mark(event)
         #if os(iOS)
         FrameMonitor.shared.mark(event)
         #endif
     }
 
+    #if os(macOS)
+    /// Scrolls the main window's sidebar from its top to its end and back, `rounds` times, at
+    /// `speed` points a second (the Mac driver's `scroll sidebar` step). The chat list isn't a
+    /// drag the transcript should hear of, so nothing is posted.
+    func scrollSidebar(in window: NSWindow, speed: CGFloat, rounds: Int) async {
+        guard let scroll = Scrolled.sidebar(in: window) else {
+            mark("scroll sidebar: no sidebar list to scroll")
+            return
+        }
+        scroll.offset = scroll.top
+        for round in 1...max(rounds, 1) {
+            mark(String(format: "scroll sidebar %d: down from the top (content %.0f pt)", round, scroll.contentHeight)
+                + scroll.windowNote)
+            await move(scroll, up: false, speed: speed, drags: false)
+            mark(String(format: "scroll sidebar %d: end, back up (content %.0f pt)", round, scroll.contentHeight)
+                + scroll.windowNote)
+            await move(scroll, up: true, speed: speed, drags: false)
+            mark(String(format: "scroll sidebar %d: top", round) + scroll.windowNote)
+        }
+    }
+    #endif
+
     /// Moves `scroll` to its top or end, at most 150 s (a 300-turn chat at 3000 pt/s takes about
     /// 100): pages coming in and going on the way change its length.
-    private func move(_ scroll: Scrolled, up: Bool, speed: CGFloat) async {
-        NotificationCenter.default.post(name: Self.drags, object: true)
+    private func move(_ scroll: Scrolled, up: Bool, speed: CGFloat, drags: Bool = true) async {
+        if drags { NotificationCenter.default.post(name: Self.drags, object: true) }
         await withCheckedContinuation { done in
             glide = Glide(scroll: scroll, up: up, speed: speed, until: CACurrentMediaTime() + 150, done: done)
             last = CACurrentMediaTime()
@@ -149,7 +172,7 @@ final class ScrollRun {
         }
         timer?.invalidate()
         timer = nil
-        NotificationCenter.default.post(name: Self.drags, object: false)
+        if drags { NotificationCenter.default.post(name: Self.drags, object: false) }
     }
 
     private func tick() {
@@ -254,6 +277,24 @@ private struct Scrolled {
             if let content = window.contentView { visit(content) }
         }
         return best.map { Scrolled(view: $0.view) }
+    }
+
+    /// The sidebar's list: the leftmost scroll view in `window` with more to show than fits,
+    /// narrower than half the window.
+    static func sidebar(in window: NSWindow) -> Scrolled? {
+        var best: NSScrollView?
+        func visit(_ view: NSView) {
+            if let scroll = view as? NSScrollView, !scroll.isHidden,
+               (scroll.documentView?.frame.height ?? 0) > scroll.contentView.bounds.height {
+                let frame = scroll.convert(scroll.bounds, to: nil)
+                if frame.width < window.frame.width / 2, frame.minX < (best.map { $0.convert($0.bounds, to: nil).minX } ?? .infinity) {
+                    best = scroll
+                }
+            }
+            view.subviews.forEach(visit)
+        }
+        window.contentView.map(visit)
+        return best.map { Scrolled(view: $0) }
     }
     #endif
 }

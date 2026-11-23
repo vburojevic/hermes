@@ -1,5 +1,6 @@
 #if DEBUG && os(macOS)
 import AppKit
+import HermesKit
 
 /// Drives the Mac app from inside for checks, without touching the person's screen: a window on
 /// another Space can't take input from outside (cua-driver refuses it), but the app can press its
@@ -25,6 +26,17 @@ import AppKit
 /// the field out of editing) and `palette` (the field's text, the field editor's corrections and
 /// the chats windows' titles). Each step logs `HERMES_MAC_DRIVE` with its result and the Settings
 /// window's title, which is the page it shows, to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
+///
+/// The freeze scenarios (docs/development.md, Hangs) mark each step in the hang log
+/// (`-HERMES_HANG_LOG`): `mark <text>`; `mode chats|bots` (the sidebar's list); `scroll sidebar
+/// <points/s> <rounds>` (the sidebar's list from the top to the bottom and back);
+/// `cycle <rounds> <target>,<target>…` (opens each in turn and stays 4 s: `chat:<id>`,
+/// `chat:#<n>` the n-th chat in the list, `bot:<name>`, `bot:#<n>`, `group:<id>`, `group:#<n>`);
+/// `burst <count> <seconds>` (the mock backend sends that many messages across chats, through
+/// `/api/mock/burst`); `sleepwake <seconds>` (the Mac's sleep as the app hears it: the sleep
+/// notice, the mock's sockets cut for that long, then the wake notice). The mock calls go to
+/// `-HERMES_BOOTSTRAP_BACKEND` on this Mac only, with `-HERMES_MOCK_TOKEN`, the mock's `--token`.
+/// `window` logs whether the chats window is on screen, which a run needs to mean anything.
 @MainActor
 enum MacDebugDriver {
     static func runIfAsked(router: WindowRouter, workspace: () -> BotWorkspace?) async {
@@ -85,6 +97,24 @@ enum MacDebugDriver {
                 result = paletteField.map { $0.window?.makeFirstResponder(nil) == true ? "blurred" : "refused" } ?? "no palette"
             case "palette":
                 result = paletteDump()
+            case "mark":
+                HangLog.shared.mark(argument)
+            case "window":
+                // A covered window or one on another Space draws no frames, so a run there measures nothing.
+                result = mainWindow.map { window in
+                    let shown = window.occlusionState.contains(.visible) ? "visible" : "covered"
+                    return "\(shown), \(window.isOnActiveSpace ? "this Space" : "another Space"), \(NSApp.isActive ? "app active" : "app behind")"
+                } ?? "no chats window"
+            case "mode":
+                result = mode(argument, in: workspace())
+            case "scroll":
+                result = await scroll(argument)
+            case "cycle":
+                result = await cycle(argument, in: workspace())
+            case "burst":
+                result = await burst(argument)
+            case "sleepwake":
+                result = await sleepWake(argument)
             default:
                 result = "unknown step"
             }
@@ -106,6 +136,127 @@ enum MacDebugDriver {
         }
         workspace.sidebarMode = .bots
         return "selected"
+    }
+
+    private static func mode(_ name: String, in workspace: BotWorkspace?) -> String {
+        guard let workspace else { return "no workspace" }
+        guard let mode = SidebarMode(rawValue: name) else { return "unknown mode" }
+        workspace.sidebarMode = mode
+        return name
+    }
+
+    /// `scroll sidebar 2000 3`: the sidebar's list at that speed, top to bottom and back, that many times.
+    private static func scroll(_ argument: String) async -> String {
+        let words = argument.split(separator: " ")
+        guard words.first == "sidebar", let window = mainWindow else { return "scroll sidebar needs the chats window" }
+        let speed = words.count > 1 ? Double(words[1]) ?? 2000 : 2000
+        let rounds = words.count > 2 ? Int(words[2]) ?? 3 : 3
+        await ScrollRun.shared.scrollSidebar(in: window, speed: speed, rounds: rounds)
+        return "scrolled"
+    }
+
+    /// `cycle 3 chat:#0,bot:#1,group:#0`: what a click on each row does, in turn, staying 4 s on each,
+    /// with the hang log marked as each opens and as it's left.
+    private static func cycle(_ argument: String, in workspace: BotWorkspace?) async -> String {
+        guard let workspace else { return "no workspace" }
+        let words = argument.split(separator: " ", maxSplits: 1).map(String.init)
+        guard words.count == 2, let rounds = Int(words[0]) else { return "cycle needs rounds and targets" }
+        let targets = words[1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        var missed: [String] = []
+        for round in 1...max(rounds, 1) {
+            for target in targets {
+                guard open(target, in: workspace) else {
+                    if round == 1 { missed.append(target) }
+                    continue
+                }
+                HangLog.shared.mark("cycle \(round): open \(target)")
+                try? await Task.sleep(for: .seconds(4))
+                HangLog.shared.mark("cycle \(round): settled \(target)")
+            }
+        }
+        return missed.isEmpty ? "cycled" : "cycled, not found: \(missed.joined(separator: ","))"
+    }
+
+    private static func open(_ target: String, in workspace: BotWorkspace) -> Bool {
+        let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return false }
+        // `#<n>` picks by place in the list, so a scenario needs no ids from the mock.
+        let place = parts[1].hasPrefix("#") ? Int(parts[1].dropFirst()) : nil
+        switch parts[0] {
+        case "chat":
+            let session: HermesSession?
+            if let place {
+                session = workspace.sessions.indices.contains(place) ? workspace.sessions[place] : nil
+            } else {
+                session = workspace.session(forKey: parts[1]) ?? .opened(id: parts[1])
+            }
+            guard let session else { return false }
+            workspace.sidebarMode = .chats
+            workspace.open(session)
+        case "bot":
+            let bots = workspace.roster?.visibleBots ?? []
+            let name = place.map { bots.indices.contains($0) ? bots[$0].name : "" } ?? parts[1]
+            guard !name.isEmpty else { return false }
+            workspace.sidebarMode = .bots
+            workspace.selection = .bot(name)
+        case "group":
+            let rooms = workspace.roster?.groupRooms.rooms ?? []
+            let id = place.map { rooms.indices.contains($0) ? rooms[$0].id : "" } ?? parts[1]
+            guard !id.isEmpty else { return false }
+            workspace.sidebarMode = .bots
+            workspace.selection = .group(id)
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// `burst 50 5`: the mock backend sends 50 messages across chats within 5 s.
+    private static func burst(_ argument: String) async -> String {
+        let numbers = argument.split(separator: " ").compactMap { Double($0) }
+        let count = numbers.first ?? 50
+        let seconds = numbers.count > 1 ? numbers[1] : 5
+        HangLog.shared.mark("burst: \(Int(count)) messages in \(Int(seconds)) s")
+        let answer = await mock("/api/mock/burst", ["count": count, "seconds": seconds])
+        // The mock answers at once; the messages arrive over the next `seconds`.
+        try? await Task.sleep(for: .seconds(seconds + 1))
+        HangLog.shared.mark("burst: sent")
+        return answer
+    }
+
+    /// `sleepwake 30`: the notices `AppModel.watchSleep` hears around a real sleep, posted where it
+    /// listens, with the mock's sockets cut in between, as a sleeping Mac's are.
+    private static func sleepWake(_ argument: String) async -> String {
+        let seconds = Double(argument) ?? 30
+        let center = NSWorkspace.shared.notificationCenter
+        HangLog.shared.mark("sleepwake: going to sleep")
+        center.post(name: NSWorkspace.willSleepNotification, object: NSWorkspace.shared)
+        let answer = await mock("/api/mock/drop-sockets", ["outage": seconds])
+        try? await Task.sleep(for: .seconds(seconds))
+        HangLog.shared.mark("sleepwake: woke")
+        center.post(name: NSWorkspace.didWakeNotification, object: NSWorkspace.shared)
+        try? await Task.sleep(for: .seconds(10))
+        HangLog.shared.mark("sleepwake: 10 s after waking")
+        return answer
+    }
+
+    /// A mock backend's control call. Only a backend on this Mac: these steps never reach a real one.
+    private static func mock(_ path: String, _ body: [String: Double]) async -> String {
+        guard let base = UserDefaults.standard.string(forKey: "HERMES_BOOTSTRAP_BACKEND").flatMap(URL.init(string:)),
+              base.host() == "127.0.0.1", let token = UserDefaults.standard.string(forKey: "HERMES_MOCK_TOKEN")
+        else { return "needs -HERMES_BOOTSTRAP_BACKEND on 127.0.0.1 and -HERMES_MOCK_TOKEN" }
+        var request = URLRequest(url: base.appending(path: path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            return "mock \(status) \(String(decoding: data.prefix(200), as: UTF8.self))"
+        } catch let error as NSError {
+            return "mock failed (\(error.domain) \(error.code))"
+        }
     }
 
     private static var settingsWindow: NSWindow? {

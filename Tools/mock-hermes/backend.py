@@ -170,6 +170,7 @@ def ws_max_bytes():
         parts.append(int(digits))
     return 384 * 1024 * 1024 if (parts + [0, 0, 0])[:3] >= [0, 23, 1] else 16 * 1024 * 1024
 GATEWAY_PAGING = []  # server.py's page_rows and throttle, when it runs alongside
+CHATS = []    # chats.py, when the gateway runs alongside: its group chats (`/api/mock/burst`)
 GATEWAY = []  # server.py itself, when it runs alongside: the default profile's chats are its sessions
 
 
@@ -1862,6 +1863,38 @@ def overnight(sid, stored, profile):
     threading.Thread(target=night, daemon=True).start()
 
 
+def burst(count, seconds):
+    """`/api/mock/burst {count, seconds}`: `count` messages arriving across chats within `seconds`, as
+    a busy gateway delivers them: the newest ordinary chats get a turn Hermes ran by itself, Bots
+    each other's messages, and every tenth starts a discussion in a group chat. Answers how many
+    chats it spread them over, 0 when there's nowhere to send them."""
+    with LOCK:
+        names = sorted(PROFILES)
+    chats = []
+    if GATEWAY:
+        with GATEWAY[0].LOCK:
+            newest = sorted(GATEWAY[0].SESSIONS.values(), key=lambda s: s.get("last_active") or 0, reverse=True)
+            chats = [s["id"] for s in newest[:20] if s.get("id")]
+    rooms = list(CHATS[0].ROOMS) if CHATS else []
+    pairs = [(a, b) for a in names for b in names if a != b][:20]
+    if not (chats or pairs or rooms):
+        return 0
+    say = HTTP_ROUTES.get(("POST", "/api/mock/room-say"))
+
+    def run():
+        for index in range(count):
+            text = f"Burst message {index + 1} of {count}."
+            if rooms and say and index % 10 == 9:
+                say({}, {"room": rooms[(index // 10) % len(rooms)], "text": text})
+            elif chats and (index % 2 == 0 or not pairs):
+                CHAT_TURN_ELSEWHERE(chats[index % len(chats)], text, f"Noted: {index + 1}.", 1)
+            elif pairs:
+                deliver_dm(*pairs[index % len(pairs)], text)
+            time.sleep(seconds / max(count, 1))
+    threading.Thread(target=run, daemon=True).start()
+    return len(chats) + len(pairs) + len(rooms)
+
+
 def deliver_alert(profile, text, reply):
     """A script's alert posted into a Bot Chat (`hermes peer dm`, a plugin's `inject_message`): Hermes
     stores it as it is, tagged `internal_notification`, and the Bot answers it in a live turn that an
@@ -2985,6 +3018,10 @@ class Handler(BaseHTTPRequestHandler):
                                                body.get("reply") or PROCESS_REPLY, float(body.get("seconds") or 8),
                                                kind, meta)
             return self.send_json(200 if done else 404, {"ok": done})
+        if url.path == "/api/mock/burst":
+            # Mock-only: a busy gateway's messages all at once (docs/development.md, Hangs).
+            started = burst(int(body.get("count") or 50), float(body.get("seconds") or 5))
+            return self.send_json(200 if started else 404, {"ok": bool(started), "targets": started})
         if url.path == "/api/mock/deliver":
             # Mock-only: a script's alert in a Bot Chat, answered live (docs/chat.md §2a).
             done = deliver_alert(body.get("profile") or "ops", body.get("text") or OPS_ALERT, body.get("reply") or OPS_ALERT_REPLY)
@@ -3276,6 +3313,7 @@ def main():
         chats = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(chats)
         chats.install(globals(), gateway)
+        CHATS.append(chats)
         spec = importlib.util.spec_from_file_location("mock_projects", here / "projects.py")
         projects = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(projects)

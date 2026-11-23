@@ -1108,6 +1108,51 @@ The mock's audio routes (REST, both sockets, the voice fields of `prompt.submit`
 have tests that start their own mock on free ports: `python3 -I -m unittest discover -s
 Tools/mock-hermes/tests`.
 
+### Hangs
+
+Every build, Release included, keeps MetricKit's hang and CPU exception reports
+(`App/Support/HangDiagnostics.swift`). MetricKit hands them over at most once a day, usually on
+the next launch after the hang, and only for a main thread blocked about 250 ms or more. Each
+report goes through `HangReport` (HermesKit), which keeps the length, the app's version and build,
+the system's version and every thread's stack as binary, UUID, offset and sample count: no
+addresses, no region, no device, and anything that could carry words is cut to letters, digits and
+a few marks. The blamed thread comes first. A report goes to the system log under the app's bundle
+id, category `hangs` (its heading and top frames: `log show --predicate 'subsystem BEGINSWITH
+"co.caffeinatedcode.hermes" AND category == "hangs"' --last 2d` finds Release and Debug alike),
+and whole to `Diagnostics/hangs.log` in Application Support
+(the app's container on a sandboxed Mac), newest last, about 256 KB at most. Nothing is sent
+anywhere. To read a stack, match each frame's UUID to the build's dSYM (`dwarfdump --uuid`) and
+look up its offset (`atos -o <dSYM> -l 0x100000000 <0x100000000 + offset>`); frames in system
+binaries name the framework, which is often enough. `-HERMES_HANG_REPORT_SAMPLE YES` (Debug)
+writes one made-up report through the same path, to see both written without waiting a day.
+
+In Debug, `-HERMES_HANG_LOG <file>` starts a watchdog: a thread pings the main queue every 20 ms
+and writes `HANG start=<ms> duration=<ms> main-cpu=<ms>` for each block of 250 ms or more, timed
+from the process's start like the frame log. `main-cpu` is what the main thread itself used
+meanwhile: close to the duration, it was busy; far below, it waited (a lock, a synchronous call)
+or was starved, as a covered window's app is under App Nap on a loaded Mac. The scenarios below
+write `MARK at=<ms> <step>` into the same file, and so does each `SCROLLRUN` mark, so a block
+reads against what was happening. Count the `HANG` lines and take the longest; five fresh
+launches per scenario, the median of each.
+
+The freeze scenarios run in the Mac Debug app through `-HERMES_MAC_DRIVE` (see above), with the
+backend mock started with `--token <t>` and the app given `-HERMES_MOCK_TOKEN <t>`:
+
+- `mode chats; scroll sidebar 2000 3`: the chat list from the top to its end and back, 3 times,
+  at 2000 points a second (`--many-chats` makes it long).
+- `cycle 3 chat:#0,chat:#5,bot:#0,group:#0,…`: opens each in turn for 4 s, 3 rounds. A target is
+  `chat:<id>`, `bot:<name>`, `group:<id>`, or `#<n>` for its place in the list.
+- `burst 50 5`: `POST /api/mock/burst {count, seconds}` sends that many messages within that time,
+  across the newest chats, between Bots and into group chats (every tenth).
+- `sleepwake 30`: the sleep notice the app hears from the system, the mock's sockets cut for 30 s
+  (`/api/mock/drop-sockets {outage}`), then the wake notice and 10 s after it.
+- `mark <text>` writes a line of its own; `window` logs whether the chats window is on screen and
+  the app in front. A covered window draws no frames, so a run with one measures nothing.
+
+The mock calls go only to a `-HERMES_BOOTSTRAP_BACKEND` on 127.0.0.1. SwiftUI's own complaints
+read alongside: `log show --predicate 'processIdentifier == <pid> AND eventMessage CONTAINS "tried
+to update multiple times per frame"'` counts them for that run.
+
 ### Push notifications
 
 Run the mock backend with a relay to try notifications end to end:
