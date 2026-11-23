@@ -46,6 +46,9 @@ struct ReferenceContext: Equatable {
 
     var roster: BotRoster? { workspace?.roster }
 
+    /// Bot Mode is linked: gateway files can be read (docs/widgets.md §9).
+    var isBotModeOn: Bool { workspace?.roster != nil }
+
     func bot(handle: String) -> BotProfile? {
         guard let roster else { return nil }
         let wanted = handle.lowercased()

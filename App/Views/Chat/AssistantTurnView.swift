@@ -164,7 +164,9 @@ struct AssistantTurnView: View, Equatable {
                 // Widgets draw where their directives are (`docs/widgets.md` §2); the sentence Listen
                 // is reading is lit up (`docs/voice.md` §3).
                 ReplyBody(text: turn.isWorking ? StreamingMarkdown.displayed(shown.text) : replyText(shown.text), streaming: turn.isWorking, caches: !turn.isWorking,
-                          highlight: turn.isWorking ? nil : ListenPlayer.shared.highlight(for: turn.id))
+                          highlight: turn.isWorking ? nil : ListenPlayer.shared.highlight(for: turn.id),
+                          // Files Hermes sent draw where their notes are (`docs/chat.md` §3a).
+                          attachments: turn.attachments, owner: turn.id)
                     .equatable()
                     // Only the tone eases; the words switch at once, never drawn over each other.
                     .animation(.smooth(duration: 0.3)) { $0.opacity(shown.isInterim ? 0.55 : 1) }
@@ -1854,8 +1856,10 @@ enum StreamingMarkdown {
         let start = text.range(of: "\n\n", options: .backwards)?.upperBound ?? text.startIndex
         let head = String(text[..<start])
         var paragraph = String(text[start...])
-        // Half of a "**" that has just arrived.
-        if paragraph.hasSuffix("*"), !paragraph.hasSuffix("**"), !paragraph.hasSuffix(" *"), paragraph.count > 1 {
+        // Half of a "**" that has just arrived; not the end of a file's note, which arrives whole
+        // and is drawn as the file (`docs/chat.md` §3a).
+        let endsOnNote = paragraph.split(separator: "\n").last?.trimmingCharacters(in: .whitespaces).hasPrefix("*Attachment on server: ") == true
+        if paragraph.hasSuffix("*"), !paragraph.hasSuffix("**"), !paragraph.hasSuffix(" *"), paragraph.count > 1, !endsOnNote {
             paragraph.removeLast()
         }
         let spans = paragraph.replacingOccurrences(of: "```", with: "")

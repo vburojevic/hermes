@@ -44,6 +44,9 @@ public enum SpokenWidgets {
                 words = ReplySplitter.typedWords(json).map { Words(text: $0, isPrivate: json["sensitivity"]?.stringValue != "normal") }
             case .unreadable:
                 words = nil
+            case .attachments(let files):
+                // Not split with attachments here; read as their notes if ever they are.
+                words = Words(text: files.map(\.note).joined(separator: "\n"))
             }
             if words?.isPrivate == true { isPrivate = true }
             return words?.text

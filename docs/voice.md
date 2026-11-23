@@ -94,7 +94,7 @@ extension (Hermes's list: ogg, opus, mp3, m2a, wav, m4a, flac) becomes a strip b
 words, played from `/api/files/stream`. `[[audio_as_voice]]` (the `text_to_speech` tool) makes
 every audio file in the message a voice message; other audio is titled with its file name.
 Paths inside code blocks are examples and stay text; the same file twice plays once
-(`AgentAudio.split`). Other `MEDIA:` lines stay "Attachment on server".
+(`AgentAudio.split`). Other `MEDIA:` lines are drawn as files ([chat.md](chat.md) §3a).
 
 **Playback** (`ClipPlayer`): one clip at a time, on the coordinator's playback role, through the
 one engine (`AVAudioPlayerNode` → `AVAudioUnitTimePitch`). A call or the headphones coming out

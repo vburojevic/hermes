@@ -1,6 +1,10 @@
+import AVFoundation
 import HermesKit
 import HermesMarkdown
+import OSLog
+import Synchronization
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A reply's text with its widgets where its directives are (`docs/widgets.md` §2): Markdown as
 /// before between them, and a card for each `::widget{…}` line. A reply without widgets is one
@@ -16,12 +20,22 @@ struct ReplyBody: View, Equatable {
     var typedAsText = false
     /// The sentence Listen is reading (`docs/voice.md` §3), in a reply that's all Markdown.
     var highlight: SpokenSentence?
+    /// The files the reply sent (`AssistantTurn.attachments`), drawn where their notes are
+    /// (`docs/chat.md` §3a).
+    var attachments: [ReplyAttachment] = []
+    /// The reply they're in (its turn's id), so their tiles' zooms into the viewer are their own.
+    var owner = ""
 
     var body: some View {
-        let segments = ReplySplitter.split(text, inlineWidgets: inlineWidgets, streaming: streaming, typedAsText: typedAsText)
+        // A finished reply with files is split once and kept, with its parsed Markdown
+        // (`MarkdownCache`); one without any is told so by a scan of its bytes, as before.
+        let segments = caches && !streaming && !attachments.isEmpty
+            ? MarkdownCache.segments(for: text, inlineWidgets: inlineWidgets, typedAsText: typedAsText, attachments: attachments)
+            : ReplySplitter.split(text, inlineWidgets: inlineWidgets, streaming: streaming, typedAsText: typedAsText, attachments: attachments)
         if segments.count == 1, case .markdown(let markdown) = segments[0] {
             MarkdownView(text: markdown, caches: caches, highlight: highlight, selectsWhole: true)
         } else {
+            let viewerFiles = ReplyAttachment.viewerFiles(in: segments)
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                     // Only the last segment can end the row (`docs/chat.md` §1): text before a
@@ -34,6 +48,10 @@ struct ReplyBody: View, Equatable {
                         case .inline(let json): InlineWidgetSlot(json: json)
                         case .typed(let json): WidgetFallbackView(fallback: Self.typedFallback(json))
                         case .unreadable: WidgetFallbackView(fallback: Self.unreadableFallback)
+                        case .attachments(let files):
+                            ReplyAttachmentsView(files: files, viewerFiles: viewerFiles,
+                                                 viewerStart: ReplyAttachment.viewerFiles(in: Array(segments[..<index])).count,
+                                                 owner: owner)
                         }
                     }
                     .modifier(VoiceOverLandingEnds(isLast: index == segments.count - 1))
@@ -136,5 +154,658 @@ struct ActionBubble: View {
         case "set": "slider.horizontal.3"
         default: "checkmark"
         }
+    }
+}
+
+// MARK: - Files a reply sends
+
+/// Files Hermes sent on lines next to each other (`MEDIA:` lines, `docs/chat.md` §3a): pictures
+/// and videos as tiles (`imageResult`), one drawn whole up to 480 pt and several in a grid, and
+/// every other file as a card (`fileResult`). Nothing is read until it's on screen, and nothing
+/// is written to disk but a copy the person saves.
+struct ReplyAttachmentsView: View {
+    let files: [ReplyAttachment]
+    /// The reply's pictures and videos, which the viewer pages through, and where in them these
+    /// files start.
+    let viewerFiles: [ReplyAttachment]
+    let viewerStart: Int
+    /// The reply the files are in, so a tile's zoom into the viewer is its own.
+    let owner: String
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Self.runs(files, viewerStart: viewerStart), id: \.offset) { run in
+                if run.visual {
+                    media(run)
+                } else {
+                    ForEach(Array(run.files.enumerated()), id: \.offset) { _, file in
+                        ReplyFileCard(file: file)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 480, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func media(_ run: Run) -> some View {
+        if run.files.count == 1, let file = run.files.first {
+            ReplyMediaTile(file: file, page: run.firstPage, viewerFiles: viewerFiles, owner: owner, single: true)
+        } else {
+            let columns = typeSize.isAccessibilitySize ? 1 : 2
+            Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+                ForEach(Array(stride(from: 0, to: run.files.count, by: columns)), id: \.self) { start in
+                    GridRow {
+                        ForEach(start..<min(start + columns, run.files.count), id: \.self) { index in
+                            ReplyMediaTile(file: run.files[index], page: run.firstPage + index, viewerFiles: viewerFiles,
+                                           owner: owner, single: false)
+                                .frame(height: 160)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    struct Run {
+        var offset: Int
+        var visual: Bool
+        var files: [ReplyAttachment]
+        /// The viewer's page for the run's first file.
+        var firstPage: Int
+    }
+
+    /// The files in runs: pictures and videos together, the other files together, in order.
+    static func runs(_ files: [ReplyAttachment], viewerStart: Int) -> [Run] {
+        var runs: [Run] = []
+        var page = viewerStart
+        for file in files {
+            if let last = runs.last, last.visual == file.isVisual {
+                runs[runs.count - 1].files.append(file)
+            } else {
+                runs.append(Run(offset: runs.count, visual: file.isVisual, files: [file], firstPage: page))
+            }
+            if file.isVisual { page += 1 }
+        }
+        return runs
+    }
+}
+
+/// Decoded pictures and video posters of files replies sent, kept in memory only (never on
+/// disk), so a reply scrolled back into view doesn't read its files again. The system takes
+/// them back under memory pressure.
+nonisolated enum ReplyMediaCache {
+    final class Entry {
+        let image: CGImage?
+        let duration: Double?
+        init(image: CGImage?, duration: Double?) {
+            self.image = image
+            self.duration = duration
+        }
+    }
+
+    nonisolated(unsafe) private static let entries: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 60
+        return cache
+    }()
+
+    static func entry(_ key: String) -> Entry? { entries.object(forKey: key as NSString) }
+    static func keep(_ entry: Entry, for key: String) { entries.setObject(entry, forKey: key as NSString) }
+
+    /// Cards' sizes, so a card scrolled back into view doesn't ask the gateway again.
+    nonisolated(unsafe) private static let sizes: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    static func size(_ path: String) -> Int64? { sizes.object(forKey: path as NSString)?.int64Value }
+    static func keepSize(_ size: Int64, for path: String) { sizes.setObject(NSNumber(value: size), forKey: path as NSString) }
+}
+
+/// One picture or video a reply sent. A picture is read whole (up to `MediaViewing.maxBytes`,
+/// over that it's a card) and drawn at the size it's shown; a video shows its first frame and
+/// length, read a stretch at a time like the viewer streams it. A tap opens the viewer on it.
+/// What went wrong shows as the file's card, saying so (`ReplyFileCard`).
+private struct ReplyMediaTile: View {
+    let file: ReplyAttachment
+    let page: Int
+    let viewerFiles: [ReplyAttachment]
+    let owner: String
+    /// Drawn on its own, at its own shape, rather than in a grid's square.
+    let single: Bool
+
+    enum Phase {
+        case loading
+        case shown(CGImage?, duration: Double?)
+        case failed(MediaProblem)
+    }
+
+    @Environment(\.references) private var references
+    @Environment(\.gatewayHosts) private var gatewayHosts
+    @Environment(\.mediaViewer) private var viewer
+    @Environment(\.mediaViewerNamespace) private var namespace
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase = Phase.loading
+    @State private var attempt = 0
+
+    private var cacheKey: String { "\(file.path)\u{0}\(Int(displayScale))" }
+
+    var body: some View {
+        Group {
+            if case .failed(let problem) = phase {
+                // In a grid it keeps the tile's place; on its own it's the file's card.
+                ReplyFileCard(file: file, problem: problem, fillsTile: !single) { attempt += 1 }
+            } else {
+                Button(action: open) { tile }
+                    .buttonStyle(.plain)
+                    .disabled(viewer == nil)
+                    .accessibilityLabel(label)
+                    .accessibilityAddTraits(.isImage)
+                    .accessibilityHint(String(localized: "Opens full screen"))
+                    .modifier(ReplyMediaTransitionSource(id: transitionID, namespace: namespace))
+            }
+        }
+        .task(id: Load(picture: references.gatewayPicture(.path(file.path)), attempt: attempt)) { await load() }
+        #if DEBUG
+        // Again once the reply has finished, so the viewer pages through all of its files.
+        .task(id: viewerFiles.count) { if await ReplyFileLaunchFlag.opens(file) { open() } }
+        #endif
+    }
+
+    private struct Load: Hashable {
+        var picture: ReferenceContext.GatewayPicture
+        var attempt: Int
+    }
+
+    @ViewBuilder
+    private var tile: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        ZStack {
+            switch phase {
+            case .shown(let image?, _):
+                let picture = Image(decorative: image, scale: displayScale)
+                if single {
+                    picture.resizable().scaledToFit()
+                } else {
+                    Color.clear.overlay { picture.resizable().scaledToFill() }
+                }
+            default:
+                Theme.controlFill
+                    .frame(height: single ? (file.kind == .video ? 220 : 200) : nil)
+            }
+            if file.kind == .video { videoMarks }
+        }
+        .frame(maxWidth: single ? 480 : .infinity, maxHeight: single ? 480 : .infinity, alignment: .leading)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 0.5))
+        .contentShape(shape)
+    }
+
+    /// The play button and the video's length over its poster (design `mediaChat`).
+    @ViewBuilder
+    private var videoMarks: some View {
+        Image(systemName: "play.fill")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 56, height: 56)
+            .glassEffect(.regular, in: Circle())
+            .accessibilityHidden(true)
+        if case .shown(_, let duration?) = phase {
+            Text(MediaViewing.clock(duration))
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.black.opacity(0.55), in: Capsule())
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var label: String {
+        var parts = [file.fileName]
+        if file.kind == .video {
+            parts.append(String(localized: "video"))
+            if case .shown(_, let duration?) = phase { parts.append(MediaViewing.clock(duration)) }
+        } else {
+            parts.append(String(localized: "picture"))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var transitionID: String { "\(owner)-file-\(page)" }
+
+    private func open() {
+        guard let viewer else { return }
+        let request = MediaViewerRequest(files: viewerFiles, start: page, references: references, gatewayHosts: gatewayHosts,
+                                         transitionID: transitionID)
+        viewer.open(request, reducesMotion: reduceMotion)
+    }
+
+    private func load() async {
+        if let kept = ReplyMediaCache.entry(cacheKey) {
+            phase = .shown(kept.image, duration: kept.duration)
+            return
+        }
+        switch references.gatewayPicture(.path(file.path)) {
+        case .needsBotMode:
+            phase = .failed(.needsBotMode)
+            return
+        case .unreadable:
+            phase = .failed(file.kind == .video ? .couldntPlay : .couldntLoad)
+            return
+        case .file(let path, let profile):
+            guard let client = references.roster?.boardClient else {
+                phase = .failed(.needsBotMode)
+                return
+            }
+            if case .failed = phase { phase = .loading }
+            do {
+                let pixels = Int((480 * displayScale).rounded(.up))
+                let entry: ReplyMediaCache.Entry
+                if file.kind == .video {
+                    entry = try await ReplyVideoPoster.read(path: path, profile: profile, client: client, maxPixels: pixels)
+                } else {
+                    let (data, _) = try await client.downloadPicture(path, profile: profile)
+                    try Task.checkCancellation()
+                    guard let image = await MediaDecoder.image(data, maxPixels: pixels) else { throw ReplyMediaUndecodable() }
+                    entry = ReplyMediaCache.Entry(image: image, duration: nil)
+                }
+                try Task.checkCancellation()
+                ReplyMediaCache.keep(entry, for: cacheKey)
+                withTransaction(Transaction(animation: reduceMotion ? nil : .smooth(duration: 0.3))) {
+                    phase = .shown(entry.image, duration: entry.duration)
+                }
+            } catch is CancellationError {
+            } catch {
+                guard !Task.isCancelled else { return }
+                ReplyVideoPoster.log(error, video: file.kind == .video)
+                phase = .failed(MediaProblem.of(error, video: file.kind == .video))
+            }
+        }
+    }
+}
+
+private struct ReplyMediaUndecodable: Error {}
+
+/// The tile the viewer grows from on iPhone and iPad; the Mac crossfades instead.
+private struct ReplyMediaTransitionSource: ViewModifier {
+    let id: String
+    let namespace: Namespace.ID?
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if let namespace {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+/// A video's first frame and length, read through the gateway's stream a stretch at a time
+/// (`MediaStreamLoader`), the way the viewer plays it: never the whole file.
+nonisolated enum ReplyVideoPoster {
+    private static let logger = Logger(subsystem: "co.caffeinatedcode.hermes", category: "widgets")
+
+    @concurrent
+    static func read(path: String, profile: String?, client: BackendClient, maxPixels: Int) async throws -> ReplyMediaCache.Entry {
+        let failure = Mutex<(any Error)?>(nil)
+        let loader = MediaStreamLoader(source: .gateway(client: client, path: path, profile: profile), type: MediaFileType(path: path)) { error in
+            failure.withLock { $0 = $0 ?? error }
+        }
+        defer { loader.cancelAll() }
+        let asset = loader.asset()
+        do {
+            let duration = try await asset.load(.duration).seconds
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: maxPixels, height: maxPixels)
+            let (image, _) = try await generator.image(at: .zero)
+            return ReplyMediaCache.Entry(image: image, duration: duration.isFinite ? duration : nil)
+        } catch {
+            // The gateway's own answer (gone, kept private) says more than the player's.
+            throw failure.withLock { $0 } ?? error
+        }
+    }
+
+    /// Domain and code only: a URL error's description carries the gateway's address.
+    static func log(_ error: any Error, video: Bool) {
+        let nsError = error as NSError
+        var status = 0
+        if case BackendClient.Failure.http(let code, _) = error { status = code }
+        logger.error("reply \(video ? "video" : "picture", privacy: .public) failed: \(nsError.domain, privacy: .public) \(nsError.code) HTTP \(status)")
+    }
+}
+
+/// A file a reply sent that isn't drawn (`fileResult`): its kind, name, type and size, and what
+/// a tap does. A document opens in the chat's Inspector (text in the File tab, a page or a PDF in
+/// a Preview tab); any other file saves a copy where the person chooses. A picture or video that
+/// couldn't be shown is one of these, saying why.
+struct ReplyFileCard: View {
+    let file: ReplyAttachment
+    /// Why the picture or video this stands in for didn't show.
+    var problem: MediaProblem?
+    /// It stands in for a picture or video in a grid: centred in the tile's frame.
+    var fillsTile = false
+    var retry: (() -> Void)?
+
+    @Environment(\.references) private var references
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var size: Int64?
+    /// What a `HEAD` of the file said, when it refused it.
+    @State private var checked: MediaProblem?
+    @State private var saving = false
+    @State private var saveProblem: MediaProblem?
+    @State private var export: ReplyFileDocument?
+    @State private var linkingBotMode = false
+
+    private enum Action { case open, save, retry, linkBotMode, none }
+
+    /// What the card says went wrong, if anything. A picture too big to draw isn't wrong: it
+    /// saves a copy, like any file the Inspector can't show.
+    private var shownProblem: MediaProblem? {
+        if !references.isBotModeOn { return .needsBotMode }
+        if let problem, !Self.isTooBig(problem) { return problem }
+        return saveProblem ?? checked
+    }
+
+    private var action: Action {
+        switch shownProblem {
+        case .couldntLoad?, .couldntPlay?: return .retry
+        // The fix is in the app: Edit Gateway's Bot Mode (docs/setup.md §4.1).
+        case .needsBotMode?: return references.workspace == nil ? .none : .linkBotMode
+        case .some: return .none
+        case nil: break
+        }
+        if let problem, Self.isTooBig(problem) { return .save }
+        return file.kind == .file ? .save : .open
+    }
+
+    private static func isTooBig(_ problem: MediaProblem) -> Bool {
+        if case .tooBig = problem { true } else { false }
+    }
+
+    var body: some View {
+        Group {
+            if action == .none {
+                // Nothing to do: words, not a dimmed button, so they read at full contrast.
+                card
+            } else {
+                Button(action: perform) { card }
+                    .buttonStyle(.plain)
+                    .disabled(saving)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([file.fileName, detail].joined(separator: ", "))
+        .accessibilityHint(hint)
+        .accessibilityAddTraits(action == .none ? [] : .isButton)
+        .accessibilityAction { perform() }
+        .task(id: "\(file.path)\u{0}\(references.isBotModeOn)") { await checkSize() }
+        #if DEBUG
+        .task { if await ReplyFileLaunchFlag.opens(file) { perform() } }
+        #endif
+        .fileExporter(isPresented: Binding(get: { export != nil }, set: { if !$0 { export = nil } }),
+                      document: export, contentType: export?.contentType ?? .data,
+                      defaultFilename: file.fileName) { _ in export = nil }
+        .sheet(isPresented: $linkingBotMode) {
+            if let workspace = references.workspace {
+                NavigationStack {
+                    BotEditorView(mode: .edit(workspace.bot)) { linkingBotMode = false }
+                }
+                #if os(macOS)
+                .frame(width: 520).frame(minHeight: 420, idealHeight: 540)
+                #endif
+            }
+        }
+    }
+
+    private var card: some View {
+        let shape = RoundedRectangle(cornerRadius: fillsTile ? 16 : 14, style: .continuous)
+        return Group {
+            if fillsTile {
+                VStack(spacing: 6) {
+                    glyph
+                    Text(verbatim: file.fileName)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                    actionLabel
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) { glyph; words }
+                    actionLabel
+                }
+            } else {
+                HStack(spacing: 10) {
+                    glyph
+                    words
+                    Spacer(minLength: 8)
+                    actionLabel
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: fillsTile ? .infinity : 480, alignment: .leading)
+        .background(Theme.surface, in: shape)
+        .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 0.5))
+        .contentShape(shape)
+    }
+
+    private var glyph: some View {
+        Image(systemName: shownProblem.map(Self.symbol) ?? Self.symbol(for: file))
+            .font(.system(size: 17, weight: .regular))
+            .foregroundStyle(shownProblem == nil ? Theme.primaryText : Theme.tertiaryText)
+            .frame(width: 36, height: 36)
+            .background(Theme.controlFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .accessibilityHidden(true)
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: file.fileName)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                .truncationMode(.middle)
+            Text(detail)
+                .font(.footnote)
+                .foregroundStyle(Theme.secondaryText)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var actionLabel: some View {
+        if saving {
+            Spinner()
+        } else if action != .none {
+            Text(actionTitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.primaryText)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 30)
+                .background(Theme.controlFill, in: Capsule())
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var actionTitle: String {
+        switch action {
+        case .open: String(localized: "Open")
+        case .save: String(localized: "Save")
+        case .retry: String(localized: "Try Again")
+        case .linkBotMode: references.workspace.map(BotModeLinkButton.title(for:)) ?? ""
+        case .none: ""
+        }
+    }
+
+    private var hint: String {
+        switch action {
+        case .open:
+            file.opens == .preview ? String(localized: "Opens in a Preview tab") : String(localized: "Opens in the Inspector")
+        case .save: String(localized: "Saves a copy to this device")
+        case .retry: String(localized: "Tries again")
+        case .linkBotMode: String(localized: "Opens Edit Gateway")
+        case .none: ""
+        }
+    }
+
+    /// "PDF · 44 KB", or what went wrong.
+    private var detail: String {
+        if let problem = shownProblem { return Self.note(problem, video: file.kind == .video) }
+        var parts = [file.typeName]
+        if case .tooBig(let bytes)? = problem {
+            parts += [bytes.formatted(.byteCount(style: .file)), String(localized: "too big to show here")]
+        } else if let size {
+            parts.append(size.formatted(.byteCount(style: .file)))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The viewer's states, as one line (docs/widgets.md §9.2).
+    static func note(_ problem: MediaProblem, video: Bool) -> String {
+        switch problem {
+        case .gone: String(localized: "Not on the gateway anymore")
+        case .notAllowed: String(localized: "Hermes doesn't share this file")
+        case .needsBotMode: String(localized: "Turn on Bot Mode to open it")
+        case .couldntLoad: String(localized: "Couldn't load this file")
+        case .couldntPlay: String(localized: "Couldn't play this video")
+        case .tooBig(let bytes):
+            String(localized: "It's \(bytes.formatted(.byteCount(style: .file))), too big to save here")
+        }
+    }
+
+    private static func symbol(_ problem: MediaProblem) -> String {
+        switch problem {
+        case .notAllowed: "lock.fill"
+        case .needsBotMode: "server.rack"
+        case .gone: "questionmark.folder"
+        case .couldntLoad, .couldntPlay, .tooBig: "exclamationmark.triangle"
+        }
+    }
+
+    static func symbol(for file: ReplyAttachment) -> String {
+        switch file.suffix {
+        case "pdf": "doc.richtext"
+        case "html", "htm": "globe"
+        case "md", "markdown", "txt", "text", "rst", "log": "doc.text"
+        case "csv", "tsv", "xlsx", "numbers": "tablecells"
+        case "json", "jsonl", "ndjson", "yaml", "yml", "toml", "xml": "curlybraces"
+        case "zip", "gz", "tgz", "tar", "7z", "rar": "doc.zipper"
+        case "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp", "svg": "photo"
+        case "mp4", "mov": "video"
+        default: GatewayFileOpening.destination(for: file.fileName) == .fileTab ? "chevron.left.forwardslash.chevron.right" : "doc"
+        }
+    }
+
+    private func perform() {
+        switch action {
+        case .open:
+            references.openInInspector(file.path)
+        case .save:
+            Task { await save() }
+        case .retry:
+            if saveProblem != nil {
+                saveProblem = nil
+            } else {
+                retry?()
+            }
+        case .linkBotMode:
+            linkingBotMode = true
+        case .none:
+            break
+        }
+    }
+
+    /// The file's size and whether the gateway shares it, from a `HEAD`: nothing of it is read.
+    private func checkSize() async {
+        guard problem == nil, case .file(let path, let profile) = references.gatewayPicture(.path(file.path)),
+              let client = references.roster?.boardClient else { return }
+        if let kept = ReplyMediaCache.size(path) {
+            size = kept
+            return
+        }
+        do {
+            size = try await client.fileSize(path, profile: profile)
+            if let size { ReplyMediaCache.keepSize(size, for: path) }
+            checked = nil
+        } catch is CancellationError {
+        } catch {
+            // Only a refusal says something about the file: anything else leaves the card as it is.
+            let found = MediaProblem.of(error, video: false)
+            if found == .gone || found == .notAllowed { checked = found }
+        }
+    }
+
+    /// Reads the file, held in memory, and asks where to save it.
+    private func save() async {
+        guard case .file(let path, let profile) = references.gatewayPicture(.path(file.path)),
+              let client = references.roster?.boardClient else { return }
+        saving = true
+        defer { saving = false }
+        do {
+            let data = try await client.downloadCopy(path, profile: profile, limit: ReplyAttachment.maxSaveBytes)
+            export = ReplyFileDocument(data: data, suffix: file.suffix)
+        } catch is CancellationError {
+        } catch {
+            ReplyVideoPoster.log(error, video: false)
+            saveProblem = MediaProblem.of(error, video: false)
+        }
+    }
+}
+
+#if DEBUG
+/// `-HERMES_OPEN_SENT_FILE <name>`: the first file a reply sent with that name opens 5 s after it
+/// shows (the reply has finished by then), as a tap on it would: the viewer, the Inspector or
+/// Save, for screenshots and checks.
+enum ReplyFileLaunchFlag {
+    static func opens(_ file: ReplyAttachment) async -> Bool {
+        guard UserDefaults.standard.string(forKey: "HERMES_OPEN_SENT_FILE") == file.fileName else { return false }
+        // A tile drawn again as the reply finishes asks again: the flag is used up only once it acts.
+        try? await Task.sleep(for: .seconds(5))
+        return !Task.isCancelled && LaunchFlags.take("HERMES_OPEN_SENT_FILE") != nil
+    }
+}
+#endif
+
+/// A file's own bytes, saved where the person chooses: the save panel on the Mac, Files on
+/// iPhone and iPad.
+nonisolated struct ReplyFileDocument: FileDocument {
+    static let readableContentTypes: [UTType] = [.data]
+    let data: Data
+    let contentType: UTType
+
+    init(data: Data, suffix: String) {
+        self.data = data
+        contentType = UTType(filenameExtension: suffix) ?? .data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+        contentType = .data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }

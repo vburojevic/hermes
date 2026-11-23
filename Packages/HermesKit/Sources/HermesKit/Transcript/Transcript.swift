@@ -150,6 +150,9 @@ public struct AssistantTurn: Identifiable, Hashable, Sendable {
     public var steers: [SteerNote] = []
     /// Audio the Bot sent (`MEDIA:` lines), drawn as listen strips (`docs/voice.md` §2).
     public var audio: [AgentAudio] = []
+    /// Other files the Bot sent (`MEDIA:` lines), in order: the chat draws each where its note
+    /// is in the reply's text (`ReplyAttachment`, `docs/chat.md` §3a).
+    public var attachments: [ReplyAttachment] = []
     /// Why a failed turn failed, when it was the model provider's credentials (`docs/setup.md` §4.3).
     public var providerProblem: ProviderProblem?
     /// What Hermes's background self-review of this reply did (`ReviewNote`), a quiet note after it.
@@ -520,8 +523,9 @@ public enum TranscriptBuilder {
                     if message.role == "user" {
                         items.append(.user(userEntry(id: "\(rowID)-p", message: prior)))
                     } else {
-                        let text = cleanAssistantText(parts.before)
-                        items.append(.assistant(AssistantTurn(id: "t\(rowID)-p", answer: text, startedAt: message.timestamp, finishedAt: message.timestamp)))
+                        var earlier = AssistantTurn(id: "t\(rowID)-p", answer: cleanAssistantText(parts.before), startedAt: message.timestamp, finishedAt: message.timestamp)
+                        earlier.attachments = ReplyAttachment.parse(parts.before)
+                        items.append(.assistant(earlier))
                     }
                 }
                 if !parts.summary.isEmpty {
@@ -577,6 +581,7 @@ public enum TranscriptBuilder {
                 if silenced { turn?.keptQuiet = true }
                 let media = AgentAudio.split(message.content.text)
                 if kind != "hidden", !silenced, !media.audio.isEmpty { turn?.audio += media.audio }
+                if kind != "hidden", !silenced { turn?.attachments += ReplyAttachment.parse(media.text) }
                 let text = kind == "hidden" || silenced ? "" : cleanAssistantText(media.text)
                 if !text.isEmpty {
                     pendingText.append(text)
@@ -1161,16 +1166,26 @@ public enum TranscriptBuilder {
         return entry
     }
 
-    /// Replaces raw `MEDIA:/path` tags (unloadable on another device) with a readable note.
+    /// Replaces raw `MEDIA:/path` tags with a readable note ("*Attachment on server: chart.png*"):
+    /// what every plain-text use of a reply reads. The chat draws the file in the note's place
+    /// (`ReplyAttachment`, `docs/chat.md` §3a). A line in quotes or backticks is one too, as
+    /// `AgentAudio.split` reads it; inside a code block only a bare `MEDIA:` line is.
     public static func cleanAssistantText(_ text: String) -> String {
         guard text.contains("MEDIA:") else { return text.trimmingCharacters(in: .whitespacesAndNewlines) }
         var output: [String] = []
+        var inCode = false
         for line in text.components(separatedBy: "\n") {
+            guard let first = line.first(where: { !$0.isWhitespace }), ReplyAttachment.mayStartLine(first) else {
+                output.append(line)
+                continue
+            }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("MEDIA:") {
+            if trimmed.hasPrefix("```") { inCode.toggle() }
+            if !inCode, let path = AgentAudio.mediaPath(trimmed) {
+                output.append(ReplyAttachment.note(for: path))
+            } else if trimmed.hasPrefix("MEDIA:") {
                 let path = trimmed.dropFirst("MEDIA:".count).trimmingCharacters(in: .whitespaces)
-                let file = path.split(separator: "/").last.map(String.init) ?? path
-                output.append("*Attachment on server: \(file)*")
+                output.append(ReplyAttachment.note(for: path))
             } else {
                 output.append(line)
             }

@@ -1,4 +1,5 @@
 import Foundation
+import HermesKit
 import HermesMarkdown
 import os
 import SwiftUI
@@ -181,6 +182,28 @@ nonisolated enum MarkdownCache {
             document(for: text).blocks, compact: compact, scale: scale, named: named, typeSize: typeSize, legibility: legibility)
         replies.setObject(ReplyBox(reply), forKey: key)
         return reply
+    }
+
+    private final class SegmentsBox {
+        let segments: [ReplySegment]
+        init(_ segments: [ReplySegment]) { self.segments = segments }
+    }
+
+    nonisolated(unsafe) private static let splitReplies: NSCache<NSString, SegmentsBox> = {
+        let cache = NSCache<NSString, SegmentsBox>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    /// A finished reply with files, split where its files and widgets are (`ReplySplitter`),
+    /// once: not on every redraw nor every scroll back into view (`docs/chat.md` §3a).
+    static func segments(for text: String, inlineWidgets: Bool, typedAsText: Bool, attachments: [ReplyAttachment]) -> [ReplySegment] {
+        let files = attachments.map(\.path).joined(separator: "\u{0}")
+        let key = "\(inlineWidgets ? 1 : 0)\(typedAsText ? 1 : 0)\u{1}\(files)\u{1}\(text)" as NSString
+        if let hit = splitReplies.object(forKey: key) { return hit.segments }
+        let split = ReplySplitter.split(text, inlineWidgets: inlineWidgets, typedAsText: typedAsText, attachments: attachments)
+        splitReplies.setObject(SegmentsBox(split), forKey: key)
+        return split
     }
 
     /// Parses these texts (and tokenizes their code) off the main thread.

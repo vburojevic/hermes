@@ -125,7 +125,9 @@ Needs Hermes's backend (`hermes serve`, or Hermes Desktop, which starts it) link
 Gateway. Everything in Bot Mode, projects, the Board, memory, Apps and Tools, Learned, the app's
 plugins, "/" commands, sending files, searching what was said, Talk's voices and read sync need
 it, and so do pictures and videos kept on the gateway, in a card's viewer and the File tab
-([widgets.md](widgets.md) §9.2); chats, Tasks, Skills and models work without it.
+([widgets.md](widgets.md) §9.2), and the files Hermes sends in a reply, which say so in their
+place and offer Link Bot Mode… ([chat.md](chat.md) §3a); chats, Tasks, Skills and models work
+without it.
 
 | State | Told by | The app shows |
 |---|---|---|

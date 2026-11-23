@@ -43,6 +43,25 @@ struct MediaViewerRequest: Identifiable {
     }
 }
 
+extension MediaViewerRequest {
+    /// The pictures and videos a reply sent (`MEDIA:` lines, `docs/chat.md` §3a), in the reply's
+    /// order, opened at `start`: read from the gateway like a widget's `hermes-file:` media, and
+    /// saved or shared like any of a card's.
+    init(files: [ReplyAttachment], start: Int, references: ReferenceContext, gatewayHosts: Set<String>, transitionID: String) {
+        items = files.enumerated().map { page, file in
+            MediaViewerItem(id: page, media: file.media, caption: nil, credit: nil)
+        }
+        self.start = files.indices.contains(start) ? start : 0
+        title = nil
+        isPrivate = false
+        webAllowed = false
+        allowWeb = {}
+        self.references = references
+        self.gatewayHosts = gatewayHosts
+        self.transitionID = transitionID
+    }
+}
+
 /// Opens and closes the full-screen viewer over the whole window, whichever chat or sheet the
 /// card is in.
 @Observable

@@ -95,6 +95,10 @@ public enum ReplySegment: Hashable, Sendable {
     /// (`docs/widgets.md` §2). It keeps its place as a plain "couldn't show this card", never code
     /// and never drawn. Only where inline blocks draw or with `typedAsText`.
     case unreadable
+    /// Files Hermes sent (`MEDIA:` lines), drawn where their notes are, those on lines next to
+    /// each other (blank lines between them aside) together (`docs/chat.md` §3a). Only where the
+    /// reply's attachments are given.
+    case attachments([ReplyAttachment])
 }
 
 public enum ReplySplitter {
@@ -106,15 +110,21 @@ public enum ReplySplitter {
     ///     back, so `::widget{…}` never shows raw.
     ///   - typedAsText: a routine's delivery: a ` ```json ` (or undrawn ` ```widget `) block that is
     ///     a widget's payload reads as its words (`typedWidget`), never as code.
-    public static func split(_ text: String, inlineWidgets: Bool = false, streaming: Bool = false, typedAsText: Bool = false) -> [ReplySegment] {
+    ///   - attachments: the files the reply sent (`AssistantTurn.attachments`): a line that is one's
+    ///     note, outside a code block, becomes that file. Each is drawn once, in the order its
+    ///     notes come; a note with no file left for it stays words.
+    public static func split(_ text: String, inlineWidgets: Bool = false, streaming: Bool = false, typedAsText: Bool = false,
+                             attachments: [ReplyAttachment] = []) -> [ReplySegment] {
         // Every reply body asks, a streaming one for each word: most have no widget, and are
         // told so by a scan of their bytes before anything is split.
         let lastLine = text.lastIndex(of: "\n").map { text[text.index(after: $0)...] } ?? text[...]
         let holdsLastLine = streaming && !text.hasSuffix("\n") && couldBecomeDirective(lastLine)
-        guard holdsLastLine || text.containsBytes("::widget{") || ((inlineWidgets || typedAsText) && text.containsBytes("widget"))
+        let hasAttachments = !attachments.isEmpty && text.containsBytes("*Attachment on server: ")
+        guard holdsLastLine || hasAttachments || text.containsBytes("::widget{") || ((inlineWidgets || typedAsText) && text.containsBytes("widget"))
                 || (typedAsText && text.containsBytes("\"type\"")) else {
             return [.markdown(text)]
         }
+        var unused = hasAttachments ? attachments : []
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         if holdsLastLine { lines.removeLast() }
 
@@ -173,6 +183,17 @@ public enum ReplySplitter {
                 if !isWidget && !isTyped { prose.append(line) }
                 continue
             }
+            if !unused.isEmpty, let attachment = takeAttachment(for: line, from: &unused) {
+                // Files on lines next to each other, with only blank lines between them, go together.
+                if case .attachments(let group)? = segments.last, prose.allSatisfy({ $0.allSatisfy(\.isWhitespace) }) {
+                    prose.removeAll()
+                    segments[segments.count - 1] = .attachments(group + [attachment])
+                } else {
+                    flushProse()
+                    segments.append(.attachments([attachment]))
+                }
+                continue
+            }
             if let directive = WidgetDirective.parse(line) {
                 guard seen.insert(directive.id).inserted else { continue } // the same widget twice draws once
                 if seen.count > WidgetDirective.maxPerReply {
@@ -198,6 +219,14 @@ public enum ReplySplitter {
         }
         flushProse()
         return segments.isEmpty ? [.markdown("")] : segments
+    }
+
+    /// The first file still to draw whose note `line` is; it's taken, so it draws once.
+    private static func takeAttachment(for line: Substring, from unused: inout [ReplyAttachment]) -> ReplyAttachment? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("*Attachment on server: "),
+              let index = unused.firstIndex(where: { $0.note == trimmed }) else { return nil }
+        return unused.remove(at: index)
     }
 
     private struct Fence {
@@ -228,6 +257,7 @@ public enum ReplySplitter {
             case .inline(let json): json["fallback_text"]?.stringValue
             case .typed(let json): typedWords(json)
             case .unreadable: nil
+            case .attachments(let files): files.map(\.note).joined(separator: "\n")
             }
         }.joined(separator: "\n\n")
     }

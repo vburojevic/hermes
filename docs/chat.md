@@ -459,7 +459,7 @@ that opens to them, and consecutive subagents share one row.
 | Source | Shown as | Component |
 |---|---|---|
 | Images in the reply's Markdown (`data:` URLs from image tools, or web URLs) | The image, up to 480 pt. A picture from anywhere but the gateway itself (its own host or its backend's) waits for a tap ("Show Image from …"), this device's network included: loading it would tell that server the chat was read, and let a reply send requests into the network. A picture that redirects to another server doesn't load (`RemotePicture`): a tap allows the host it names, not wherever that host sends it | `MarkdownImage` |
-| A `MEDIA:/path` line in the reply | "*Attachment on server: name*"; audio plays as a listen strip before the words ([voice.md](voice.md) §2) | |
+| A `MEDIA:/path` line in the reply | The file in the line's place: a picture or a video drawn in the reply, any other file as a card that opens or saves it (§3a). Audio plays as a listen strip before the words ([voice.md](voice.md) §2). Plain text (Copy, Listen, notifications, previews) reads "*Attachment on server: name*" | `imageResult`, `fileResult` (`ReplyAttachmentsView`, `ReplyFileCard`) |
 | `message.reaction` (`row_id`, `reactions`) | A pill under that message with the emoji Hermes sent | `reactionRow` |
 | Usage on `message.complete` or `run.completed` | Tokens, cost and context percent, under the reply when "Show usage under replies" is on, or after tapping the header or choosing Show Usage | `usageFooter` |
 | Context at 80% or more on the latest reply | "This chat is 84% full" with Compact (runs `/compress`) | `contextNotice` |
@@ -722,6 +722,69 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   long press opens the message menu (§4).
 - **The person's own messages** are plain text, as in Hermes Desktop (§2a). A routine's, a
   webhook's or an automation's delivery is Markdown like a reply.
+
+## 3a. Files Hermes sends
+
+Hermes delivers a file by writing a line `MEDIA:<path>` in its reply (the `send_message` and
+`text_to_speech` tools, and agents that send what they made). The app draws each such file where
+its line is (`ReplyAttachment`, `ReplySplitter.split(attachments:)`).
+
+**Which lines are files.** The rules `AgentAudio.split` follows for audio ([voice.md](voice.md)
+§2): a line of its own, outside a code block, quotes, backticks and `*`/`_` around it stripped,
+in an assistant's message. The path must be absolute or in the home folder (`~/`) and end in a file
+name with an extension. A relative path, a folder, a bare or hidden name (`.env`), a `MEDIA:` in
+the middle of a sentence, inside a code block, in a person's message or in a tool's output stays as
+it was: words, never a file. Audio stays a listen strip before the words.
+
+**Plain text doesn't change.** The reply's text keeps the note it always had in the line's place
+("*Attachment on server: chart.png*"), and that's what Copy, Copy All, Share, Listen, voice replies
+in kind, notifications, the Live Activity, the chat list's and the Inbox's previews, search and
+quoting read (`TranscriptBuilder.cleanAssistantText`). Only the reply's body draws the file: the
+turn carries its files (`AssistantTurn.attachments`) and the body puts each where its note is,
+once, in order. A note with no file behind it (someone typed it) stays words.
+
+| File | In the reply | A tap |
+|---|---|---|
+| Picture (JPEG, PNG, GIF, HEIC, WebP, TIFF: `MediaFileType`) | Drawn up to 480 pt; pictures and videos on lines next to each other share a two-column grid (one column at the accessibility sizes) | Opens the media viewer on it ([widgets.md](widgets.md) §9.1), which pages through the reply's pictures and videos in order |
+| Video (MP4, MOV) | Its first frame, a play button and its length | Plays in the viewer, streamed |
+| Document: text, Markdown, CSV, JSON, YAML, code | A card: kind glyph, name, "Markdown · 1 KB", Open | The chat's Inspector, File tab ([inspector.md](inspector.md) §2) |
+| PDF, HTML page | The same card | The chat's Inspector, a Preview tab (`hermes-fs`, [inspector.md](inspector.md) §2.4): a page's relative pictures and styles load with it |
+| Anything else (zip, docx, pptx…) | The same card with Save | Reads the file (up to 100 MB, held in memory) and asks where to save it: the save panel on the Mac, Files on iPhone and iPad |
+
+**Reads.** Nothing is read until the file is on screen, and all of it goes through the backend with
+the chat's Bot profile, like the Inspector: a picture whole through `GET /api/fs/download`
+(`downloadPicture`, a `HEAD` first; over `MediaViewing.maxBytes`, 50 MB, it's a card with Save and
+"too big to show here"), downsampled to 480 pt; a video's first frame and length through Range
+reads of `GET /api/files/stream` (`MediaStreamLoader`), never the whole file; a card's size from a
+`HEAD` of `/api/fs/download`, nothing else. Decoded pictures and posters are kept in memory for the
+chats on screen (`ReplyMediaCache`), never on disk. The app grants itself no access: what the
+gateway refuses stays refused.
+
+**States.** A picture or video that can't be shown becomes the file's card saying why, in the
+viewer's words ([widgets.md](widgets.md) §9.2), never a blank well: "Not on the gateway anymore"
+(404), "Hermes doesn't share this file" (403: `.env` files, credential stores, `pairing/`…),
+"Couldn't load this file" or "Couldn't play this video" with Try Again, and without Bot Mode
+"Turn on Bot Mode to open it" with Link Bot Mode… ([setup.md](setup.md) §4.1). In a grid the card
+keeps the tile's place. A document's card says the same when its `HEAD` is refused.
+
+**Streaming.** A last line still arriving that could become a `MEDIA:` line is held back until it
+ends or the turn does (`ReplyAttachment.holdingBackArrival`), so a half-written path never shows
+and a file is never asked for by half its name.
+
+**Cost.** The files are read from the message once, when the transcript is built or the live turn
+takes a word, never while drawing. A finished reply with files is split once and kept with its
+parsed Markdown (`MarkdownCache.segments`), and the Markdown between its files is parsed ahead of
+time like any reply's (`MarkdownCache.prewarm`). A reply without files takes the same path as
+before: one scan of its bytes.
+
+**The agent knows.** The app tells the widgets plugin it draws `gateway-files` ([widgets.md](widgets.md)
+§11), so the model hears that a `MEDIA:` line shows here.
+
+Check with the mock: "attachments" (two pictures, a video, a PDF, Markdown, an HTML page with a
+picture beside it, a zip, a 60 MB picture, one gone, one private, a code-block example) and
+"broken attachments" (only the ones that don't show), in a chat or a Bot Chat; over `server.py`
+alone, every file says Bot Mode isn't on. `-HERMES_OPEN_SENT_FILE <name>` opens that file 5 s after
+it shows, as a tap would ([development.md](development.md)).
 
 ## 4. Interaction
 
@@ -1169,9 +1232,10 @@ once when the chat's stored rows show the other turn ending.
 
 Not built yet:
 
-- Image and file result cards (`imageResult` with Save and Share, `fileResult` with Quick Look),
-  and screenshot thumbnails inside tool steps (`screenshotResult`). Images reach the chat only
-  through the reply's Markdown; files on the gateway show as an "Attachment on server" line.
+- Screenshot thumbnails inside tool steps (`screenshotResult`), and Quick Look for Office files a
+  reply sends: they save a copy instead (§3a). A `MEDIA:` line in a step's narration (the steps
+  opened) or in a group chat's messages shows as it did before: only a chat's and a Bot Chat's
+  replies draw files.
 - Toasts and sticky banners for `notification.show` and `notification.clear`.
 - "Preparing {tool}…" from `tool.generating`, and live usage from `session.usage`.
 - Goal, loop and heartbeat status updates: the goal bar shows only the goal set from this app

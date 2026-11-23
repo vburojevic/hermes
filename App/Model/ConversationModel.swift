@@ -1424,9 +1424,16 @@ final class ConversationModel: Identifiable {
     /// The replies' text in these rows as they're drawn (a finished one without its artifacts),
     /// for `MarkdownCache.prewarm`.
     static func answers(in items: some Sequence<TranscriptItem>) -> [String] {
-        items.compactMap { item -> String? in
-            guard case .assistant(let turn) = item, !turn.answer.isEmpty else { return nil }
-            return turn.isWorking ? turn.answer : ArtifactDetector.liftingArtifacts(from: turn.answer).text
+        items.flatMap { item -> [String] in
+            guard case .assistant(let turn) = item, !turn.answer.isEmpty else { return [] }
+            let text = turn.isWorking ? turn.answer : ArtifactDetector.liftingArtifacts(from: turn.answer).text
+            guard !turn.isWorking, !turn.attachments.isEmpty else { return [text] }
+            // A reply with files is drawn as the Markdown between them (`ReplyBody`): those are
+            // the texts to parse, and the split is kept for when it draws.
+            return MarkdownCache.segments(for: text, inlineWidgets: WidgetSettings.rendersInlineBlocks, typedAsText: false,
+                                          attachments: turn.attachments).compactMap { segment in
+                if case .markdown(let markdown) = segment { markdown } else { nil }
+            }
         }
     }
 

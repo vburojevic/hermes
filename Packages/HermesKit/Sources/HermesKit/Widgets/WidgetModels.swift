@@ -174,6 +174,13 @@ public struct WidgetMedia: Decodable, Hashable, Sendable {
         case thumb
     }
 
+    /// A picture or video the app shows without a widget: a file a reply sent (`ReplyAttachment`).
+    public init(src: String, alt: String, kind: Kind) {
+        self.src = src
+        self.alt = alt
+        self.kind = kind
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         src = try container.decode(String.self, forKey: .src)

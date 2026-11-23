@@ -51,6 +51,28 @@ extension BackendClient {
         return (data, type)
     }
 
+    /// A file's size without its bytes: the `Content-Length` of a `HEAD` of `/api/fs/download`.
+    /// Nil when the gateway doesn't say, or doesn't answer `HEAD` (405). Throws its refusals: 404
+    /// for a file that's gone, 403 for one Hermes keeps private (`MediaProblem.of`).
+    public func fileSize(_ path: String, profile: String? = nil) async throws -> Int64? {
+        do {
+            let (_, head) = try await restResponse("api/fs/download", method: "HEAD", query: Self.query(["path": path, "profile": profile]))
+            return head.value(forHTTPHeaderField: "Content-Length").flatMap { Int64($0) }
+        } catch Failure.http(405, _) {
+            return nil
+        }
+    }
+
+    /// A file's bytes to save a copy of, held in memory only until it's saved: refused before
+    /// they're read when the file is over `limit` (`MediaTooBig`), by a `HEAD`'s size or, when
+    /// the gateway gave none, once it has answered.
+    public func downloadCopy(_ path: String, profile: String? = nil, limit: Int64) async throws -> Data {
+        if let size = try await fileSize(path, profile: profile), size > limit { throw MediaTooBig(bytes: size) }
+        let (data, _) = try await restData("api/fs/download", query: Self.query(["path": path, "profile": profile]))
+        if Int64(data.count) > limit { throw MediaTooBig(bytes: Int64(data.count)) }
+        return data
+    }
+
     /// The repository a path is in (`GET /api/fs/git-root`); nil outside one.
     public func gitRoot(of path: String, profile: String? = nil) async throws -> String? {
         try await rest("api/fs/git-root", query: Self.query(["path": path, "profile": profile]))["root"]?.stringValue

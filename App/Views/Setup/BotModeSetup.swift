@@ -107,7 +107,10 @@ struct BotModeLinkButton: View {
         }
     }
 
-    private var title: String {
+    private var title: String { Self.title(for: workspace) }
+
+    /// What linking Bot Mode is called for this gateway now; a file a reply sent offers it too.
+    static func title(for workspace: BotWorkspace) -> String {
         switch workspace.setup.facts.botMode {
         case .signInNeeded: String(localized: "Sign In…")
         case .refused: String(localized: "Edit Sign-In…")

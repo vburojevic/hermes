@@ -63,9 +63,12 @@ public struct LiveTurn: Sendable, Equatable {
     public var snapshot: AssistantTurn {
         var current = turn
         if !isFinished {
-            let media = AgentAudio.split(pendingText)
+            // A `MEDIA:` line still arriving waits until it's whole (or the turn ends), so its raw
+            // path never shows and its file is never asked for half named (`docs/chat.md` §3a).
+            let media = AgentAudio.split(ReplyAttachment.holdingBackArrival(pendingText))
             current.answer = TranscriptBuilder.cleanAssistantText(media.text)
             current.audio += media.audio
+            current.attachments += ReplyAttachment.parse(media.text)
         }
         current.relateRewrites()
         return current
@@ -447,6 +450,7 @@ public struct LiveTurn: Sendable, Equatable {
         let media = AgentAudio.split(pendingText)
         turn.answer = TranscriptBuilder.cleanAssistantText(media.text)
         turn.audio += media.audio
+        turn.attachments += ReplyAttachment.parse(media.text)
         pendingText = ""
         approval = nil
         status = nil
@@ -495,6 +499,7 @@ public struct LiveTurn: Sendable, Equatable {
     private mutating func appendNarration(_ text: String) {
         let media = AgentAudio.split(text)
         turn.audio += media.audio
+        turn.attachments += ReplyAttachment.parse(media.text)
         let cleaned = TranscriptBuilder.cleanAssistantText(media.text)
         guard !cleaned.isEmpty else { return }
         turn.steps.append(.narration(id: "\(turn.id)-s\(turn.steps.count)", text: cleaned))
