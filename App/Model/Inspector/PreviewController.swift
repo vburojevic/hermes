@@ -31,6 +31,10 @@ final class PreviewController: NSObject {
     private(set) var isLoading = false
     /// The URL actually loaded, after a localhost rewrite.
     private(set) var loadedURL: URL?
+    /// The page that last finished loading: a gateway file's page can link on to another file.
+    private(set) var shownURL: URL?
+    /// The gateway file the tab shows, which its URL bar saves a copy of; nil for a web page.
+    var savableFile: String? { target.savableFile(shown: shownURL) }
     /// "on Studio Mac": where a localhost page runs.
     var hostNote: String? {
         guard target.isLocalhost else { return nil }
@@ -147,6 +151,7 @@ final class PreviewController: NSObject {
     func load() {
         guard let webView = webViewStorage else { return }
         reach = .loading
+        shownURL = nil
         loadGeneration += 1
         guard let url = urlToLoad() else {
             reach = .failed(String(localized: "This address can't be opened."))
@@ -377,6 +382,9 @@ extension PreviewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         reach = .loaded
+        // Only a page that loaded, so a navigation that failed (a file the tab may not read)
+        // never becomes what Save reads.
+        shownURL = webView.url
         syncState(webView, loading: false)
     }
 
@@ -443,7 +451,7 @@ private final class PersonInput: NSObject, WKScriptMessageHandler {
 /// A page reads only from the folders of the files opened in its tab, and nothing hidden below
 /// them: its script can't fetch `~/.ssh` or another project's files and send them away.
 final class GatewayFileScheme: NSObject, WKURLSchemeHandler {
-    static let scheme = "hermes-fs"
+    static let scheme = PreviewTarget.gatewayFileScheme
 
     private let backend: BackendClient
     private let profile: String?

@@ -16,7 +16,7 @@ struct PreviewTabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            URLBar(controller: controller)
+            URLBar(inspector: inspector, controller: controller)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
             Divider().overlay(Theme.hairline)
@@ -56,10 +56,14 @@ struct PreviewTabView: View {
     }
 }
 
-/// `urlBar`: back, forward, reload, the address (and where it runs), open outside.
+/// `urlBar`: back, forward, reload, the address (and where it runs), and open outside: a web
+/// page in the browser, a gateway file as a copy on this device (the share sheet on iPhone and
+/// iPad, the save panel on the Mac).
 private struct URLBar: View {
+    let inspector: InspectorModel
     let controller: PreviewController
 
+    @State private var copying = GatewayFileCopy.State()
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -73,11 +77,54 @@ private struct URLBar: View {
                 if controller.isLoading { controller.webView.stopLoading() } else { controller.reload() }
             }
             field
-            button("safari", label: "Open in Browser", enabled: externalURL != nil) {
-                if let externalURL { openURL(externalURL) }
+            if let file = controller.savableFile {
+                keepButton(file)
+            } else {
+                button("safari", label: "Open in Browser", enabled: externalURL != nil) {
+                    if let externalURL { openURL(externalURL) }
+                }
             }
         }
         .frame(height: 36)
+        .gatewayFileCopies($copying, alerts: true) { use in
+            if let file = controller.savableFile { keep(file, as: use) }
+        }
+    }
+
+    #if os(iOS)
+    private static let keeps = GatewayFileCopy.Use.share
+    private static let keepSymbol = "square.and.arrow.up"
+    #else
+    private static let keeps = GatewayFileCopy.Use.save
+    private static let keepSymbol = "square.and.arrow.down"
+    #endif
+
+    /// Share (Save As… on the Mac) for the gateway file shown, once it has loaded.
+    private func keepButton(_ file: String) -> some View {
+        let label = Self.keeps == .share ? String(localized: "Share") : GatewayFileCopy.saveTitle
+        let name = (file as NSString).lastPathComponent
+        let enabled = controller.reach == .loaded && !controller.isLoading && !copying.isReading
+        return Button { keep(file, as: Self.keeps) } label: {
+            ZStack {
+                Image(systemName: Self.keepSymbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.primaryText)
+                    .opacity(copying.isReading ? 0 : 1)
+                if copying.isReading { Spinner() }
+            }
+        }
+        .buttonStyle(IconButtonStyle(size: 30))
+        .disabled(!enabled)
+        .opacity(enabled || copying.isReading ? 1 : 0.4)
+        .accessibilityLabel(Text(verbatim: "\(label), \(name)"))
+        .accessibilityHint(Self.keeps == .share ? String(localized: "Saves or sends a copy of the file") : String(localized: "Saves a copy to this device"))
+        .help(Text(label))
+    }
+
+    private func keep(_ file: String, as use: GatewayFileCopy.Use) {
+        let backend = inspector.backend
+        let profile = inspector.profile
+        Task { await GatewayFileCopy.keep(file, profile: profile, client: backend, as: use, in: $copying) }
     }
 
     private var address: some View {

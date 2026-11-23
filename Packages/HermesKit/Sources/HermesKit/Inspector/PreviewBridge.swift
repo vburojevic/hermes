@@ -163,6 +163,28 @@ public struct PreviewTarget: Sendable, Hashable {
         return mine.host() == other.host() && mine.port == other.port
             && (mine.path() == other.path() || theirs.displayURL == displayURL || other.path().isEmpty || other.path() == "/")
     }
+
+    /// The scheme a Preview tab reads gateway files through (`hermes-fs://gateway/<path>`).
+    public static let gatewayFileScheme = "hermes-fs"
+
+    /// The gateway file this tab shows, which the person can keep a copy of (`docs/inspector.md`
+    /// §2.4): the page that last finished loading, since a page can link on to another file or
+    /// out to the web, else the file the tab opened. Nil for a web page or a dev server (they
+    /// open in the browser instead), a folder, or a path that steps up (`..`).
+    public func savableFile(shown: URL?) -> String? {
+        let path: String
+        if let shown {
+            guard shown.scheme?.lowercased() == Self.gatewayFileScheme, shown.host() == "gateway" else { return nil }
+            path = shown.path(percentEncoded: false)
+        } else if case .gatewayFile(let file) = kind {
+            // As the tab loads it (`GatewayFileScheme.url(for:)`).
+            path = file.hasPrefix("/") ? file : "/" + file
+        } else {
+            return nil
+        }
+        guard !path.hasSuffix("/"), let parts = PreviewFileAccess.components(path), !parts.isEmpty else { return nil }
+        return path
+    }
 }
 
 /// Which gateway files a Preview page may read (`hermes-fs://gateway/<path>`): the folders of

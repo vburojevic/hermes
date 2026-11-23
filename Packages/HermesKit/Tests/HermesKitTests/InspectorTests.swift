@@ -117,6 +117,26 @@ struct InspectorTests {
         #expect(!local.matches("localhost:3000"))
     }
 
+    /// Save and Share in a Preview tab's URL bar: only for a gateway file, and the one it shows now.
+    @Test func aPreviewSavesTheGatewayFileItShows() throws {
+        let pdf = PreviewTarget("/Users/studio/out/report.pdf")
+        #expect(pdf.savableFile(shown: nil) == "/Users/studio/out/report.pdf", "before it loads, the file it opened")
+        let loaded = try #require(URL(string: "hermes-fs://gateway/Users/studio/out/report.pdf"))
+        #expect(pdf.savableFile(shown: loaded) == "/Users/studio/out/report.pdf")
+        let page = PreviewTarget("/Users/studio/site/index.html")
+        let linked = try #require(URL(string: "hermes-fs://gateway/Users/studio/site/My%20Notes.html#top"))
+        #expect(page.savableFile(shown: linked) == "/Users/studio/site/My Notes.html", "a page it linked on to")
+        #expect(page.savableFile(shown: URL(string: "https://hermesapp.dev/docs")) == nil, "a page it linked out to the web")
+        #expect(page.savableFile(shown: URL(string: "about:blank")) == nil)
+        #expect(page.savableFile(shown: URL(string: "hermes-fs://elsewhere/Users/studio/site/index.html")) == nil)
+        #expect(page.savableFile(shown: URL(string: "hermes-fs://gateway/Users/studio/site/")) == nil, "a folder")
+        #expect(page.savableFile(shown: URL(string: "hermes-fs://gateway/Users/studio/site/../../.ssh/id_ed25519")) == nil)
+        #expect(PreviewTarget("file:///Users/studio/out/a.pdf").savableFile(shown: nil) == "/Users/studio/out/a.pdf")
+        #expect(PreviewTarget("hermesapp.dev/pricing").savableFile(shown: nil) == nil, "a web page opens in the browser")
+        #expect(PreviewTarget("localhost:5173").savableFile(shown: URL(string: "http://localhost:5173/")) == nil)
+        #expect(PreviewTarget.gatewayFileScheme == "hermes-fs")
+    }
+
     @Test func previewActionsAndAnswers() throws {
         let action = try #require(PreviewAction(params: try json(#"{"session_id": "s", "action": "type", "ref": "input-email", "text": "ada@example.com", "submit": true}"#)))
         #expect(action.verb == .type && action.ref == "input-email" && action.submit && action.actsOnElement)
