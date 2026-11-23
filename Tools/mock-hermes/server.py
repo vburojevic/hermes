@@ -154,6 +154,23 @@ def session_row(sid, title, source, started, last, preview, model="anthropic/cla
 # `GET /health/detailed` reports the process id, which a restart changes (app_plugins.py bumps it).
 RUNTIME = {"pid": 40000}
 NETWORK = {"kbps": 0, "busy": 0}  # --bandwidth: a phone on Wi-Fi or Tailscale, not localhost; --busy: see below
+# --token-flush: how long the chat list waits on a reply that's running (`token_flush_wait`).
+TOKEN_FLUSH = {"seconds": 0.0}
+
+
+def token_flush_wait():
+    """Hermes's chat list waits on running replies: `list_sessions_rich` calls `flush_for_read`
+    first (hermes_state_sessions.py, "rows carry token/cost totals"), which on the worker thread
+    `_handle_list_sessions` reads it on (`asyncio.to_thread`, api_server.py) blocks while token
+    deltas are queued, up to its 5 s budget (`flush_token_counts`, hermes_state_usage.py). A turn
+    queues them as it streams, so a list read during the person's own reply comes back seconds
+    late. Here: while any run is live, up to `--token-flush` seconds."""
+    deadline = time.time() + TOKEN_FLUSH["seconds"]
+    while time.time() < deadline:
+        with LOCK:
+            if not any(not r.terminal for r in RUNS.values()):
+                return
+        time.sleep(0.1)
 
 
 def throttle(size):
@@ -1198,6 +1215,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {"object": "list", "platform": "api_server", "data": TOOLSETS})
         if path == "/api/sessions":
             limit, offset = int(query.get("limit", 50)), int(query.get("offset", 0))
+            token_flush_wait()
             with LOCK:
                 # Like list_sessions_rich: archived and hidden rows stay out; pins come back regardless.
                 listed = [s for s in SESSIONS.values() if (s["pinned"] or not s.get("archived")) and not s.get("hidden")]
@@ -1668,9 +1686,13 @@ def main():
                         help="the morning briefing has a run under way that doesn't finish (live_execution)")
     parser.add_argument("--photo-chats", action="store_true",
                         help="a chat whose photo turns Hermes stored with its notes for the model (seed_photo_chats)")
+    parser.add_argument("--token-flush", type=float, default=0, metavar="SECONDS",
+                        help="the chat list waits up to this long while a run is live, as Hermes's "
+                             "token barrier does (token_flush_wait; Hermes: 5)")
     args = parser.parse_args()
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
+    TOKEN_FLUSH["seconds"] = args.token_flush
     RUN_STREAM["ttl"] = args.run_stream_ttl
     RUN_STREAM["late"] = args.late_events
     Handler.key = args.key

@@ -258,7 +258,8 @@ an iPad scene in the background) stops until one does.
 
 - Requests wait up to 120 s (a busy Mac can be slow over a chat list while its health check answers
   at once). A request still running after 8 s while `/health` answers marks the gateway busy: the
-  status line says replies are slow, and the app keeps going rather than calling it offline.
+  status line says replies are slow, and the app keeps going rather than calling it offline. While
+  busy, a message waits in the composer ("<Mac> is busy…") instead of going out.
 - The backend's reads (`BackendClient`) that come back 502, 503 or 504 are asked again after 2 s
   and 5 s. A proxy in front of the dashboard answers those when the dashboard doesn't answer in
   time: Tailscale Serve, or a Mac's own local proxy with its own timeout. Hermes's dashboard runs
@@ -278,9 +279,17 @@ an iPad scene in the background) stops until one does.
   (HTTP/2 would share one whatever the request asked). One limit: behind a proxy on the device
   that takes every connection itself, a Mac that's asleep reads busy. A starved Mac answers
   quickly for the moment it gets to run, then goes quiet again: a request still running after 8 s,
-  an answer that took over 5 s or a health check it took and didn't answer all say busy, and only
-  quick answers with nothing slow under way clear it, half a minute after the last sign (on the
-  Bots too, from their roster reads). Mock: `--starve 5-30` ([development.md](development.md)).
+  an answer that took over 5 s or a health check it took and didn't answer all say busy. Busy
+  clears by itself half a minute after the last sign, once an answer came back quickly since and
+  nothing slow is under way; nothing else needs to happen (`BusySignal.clearsAt`). The same rules
+  hold for the Bots, from their roster reads and their socket.
+- **The person's own reply is no sign** (`BusySignal`). While a turn of theirs runs, Hermes holds
+  a chat-list read until the reply's token counts are written, up to 5 s (`flush_for_read` in
+  `hermes_state_usage.py`), and older Hermes stalled its whole loop for as long. So a request that
+  was slow or still running while one of their turns ran, in any chat on that gateway or a Bot
+  Chat, or in the 5 s after it, counts for nothing either way. A chat deleted, discarded or cut
+  off mid-reply stops counting as a running turn at once. A health check left unanswered still
+  counts. Mocks: `--starve 5-30` and `--token-flush 5` ([development.md](development.md)).
 - The chat list is kept on the device (`SessionsCache`, the newest 200 rows, in Caches): a cold
   launch shows it at once and the gateway's replaces it when it comes, so a busy Mac no longer
   means an empty sidebar. It's read as the gateway's workspace is made, before the first frame
@@ -315,9 +324,9 @@ an iPad scene in the background) stops until one does.
   busy dashboard (`BackendClient.isSlowAnswer`): the Bots stay listed and the status says
   "<Mac> is busy · Bots are slow" (or "will catch up" while reconnecting). They're called offline
   only after 5 minutes without one answer while the gateway itself isn't busy, or when the gateway
-  is unreachable too. A socket kept through a stall says busy as well, until a roster read comes
-  back. Reconnecting, the open chats re-attach first (a running reply streams again at once), and
-  the roster and group rooms are read after them. A send waits
+  is unreachable too. A socket kept through a stall says busy as well, until roster reads come
+  back quickly (the busy rules in §3). Reconnecting, the open chats re-attach first (a running
+  reply streams again at once), and the roster and group rooms are read after them. A send waits
   up to 10 minutes for its answer on an open socket (`BotRoster.patientTimeout`) rather than
   failing into "Couldn't tell whether Hermes got this message". A chat whose load Hermes was too
   slow for keeps what it shows, turns nothing red ("The Hermes backend answered 502."), and asks
@@ -382,7 +391,10 @@ an iPad scene in the background) stops until one does.
   stall ends.
 - With the mocks on `--starve 5-30` (health checks late too), a relaunch shows the chats and Bots
   this device saw at once, the status says the Mac is busy and never Offline, and stopping the
-  gateway mock instead says Offline within two checks.
+  gateway mock instead says Offline within two checks. Starving stopped, busy clears about 30 s
+  after the last slow answer, with no chat switch.
+- With the mocks on `--token-flush 5`, three messages in a row asking for slow replies never show
+  "<Mac> is busy…" or "busy, replies are slow", in a chat or a Bot Chat.
 - With the mock backend on `--slow-status 40`, the Bots connect in a second or two and the version
   fills in later; quitting and relaunching the app shows the Bots at once.
 - With the mock backend on `--slow-history 15`, a fresh install opening Ops and sending "marathon"

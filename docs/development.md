@@ -389,7 +389,11 @@ Mac instead, both mocks at once (`Tools/mock-hermes/starve.py`, also on the gate
 checks included (`health: "prompt"` keeps those quick), until the process gets a `slice` (0.6 s)
 of CPU every `gap` seconds (5–30 by default), when everything waiting goes out at once. It is what
 Hermes did at load 500 on 2026-10-19, and how the app tells busy from offline
-([connecting-and-voice.md](connecting-and-voice.md) §8); `{"seconds": 0}` ends it. `POST
+([connecting-and-voice.md](connecting-and-voice.md) §8); `{"seconds": 0}` ends it.
+`--token-flush SECONDS` on either mock holds each chat-list read (`GET /api/sessions`) that long
+while any run is under way, as Hermes does while it writes a running reply's token counts
+(`flush_for_read`, up to 5 s): the person's own turns then slow the chat list, which must never
+read as a busy Mac ([connecting-and-voice.md](connecting-and-voice.md) §3). `POST
 /api/mock/lose-answer {method, taken, freeze}` loses the next answer to
 `method` (default `prompt.submit`) with the request run (`taken: true`) or not; with `freeze: true`
 the request runs and its socket goes half-open, so the turn is stored and the app hears nothing

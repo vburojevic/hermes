@@ -3209,6 +3209,10 @@ def main():
     parser.add_argument("--busy", type=float, default=0, metavar="SECONDS",
                         help="the API-server mock answers /health at once and every other GET after this long "
                              "(a gateway on an overloaded Mac)")
+    parser.add_argument("--token-flush", type=float, default=0, metavar="SECONDS",
+                        help="with --gateway-port: the chat list waits up to this long while a run "
+                             "is live, as Hermes's token barrier does (server.py token_flush_wait; "
+                             "Hermes: 5)")
     parser.add_argument("--slow-status", type=float, default=0, metavar="SECONDS",
                         help="answer /api/status this long late; past 30 s, a 502 at 30 s like a proxy in front "
                              "of an overloaded dashboard")
@@ -3295,6 +3299,7 @@ def main():
         gateway.seed()
         gateway.NETWORK["kbps"] = args.bandwidth
         gateway.NETWORK["busy"] = args.busy
+        gateway.TOKEN_FLUSH["seconds"] = args.token_flush
         gateway.RUN_STREAM["ttl"] = args.run_stream_ttl
         if args.long_chat:
             gateway.seed_long_chat()
