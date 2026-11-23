@@ -81,12 +81,18 @@ pausing joins them.
 
 **The bubble** (`voiceMessage`, `VoiceMessageBubble`): a user message carrying a `voice-<uuid>.m4a`
 reference (`UserEntry.voicePath`; it's not a file chip). Play/Pause, the waveform (played bars
-ink), the length (the position while it plays) and speed 1×/1.5×/2× (pitch kept, shared with
-Listen); the transcript under it, 3 lines then More. Tap the waveform to jump; while it's loaded,
-drag sideways to scrub (on iPhone and iPad a UIKit pan that begins only sideways, `SidewaysSwipe`,
-so a vertical drag on it still scrolls the chat). Long press: Copy Transcript, Save Audio…,
-Share. Voice messages from other devices are fetched as they come into view (`GET
-/api/files/stream?path=`, kept in the same cache).
+ink), the length (the position while it plays) and the speed (pitch kept); the transcript under
+it, 3 lines then More. The length and speed share a column as wide as the longest speed's button at
+every text size, so every speed shows whole and the waveform and bubble stay put when the speed
+changes; the button keeps its own width, left-aligned, and grows taller with the text. The speed is
+one value for every clip and Listen, Settings → Voice & Audio → Speed (§6): a tap steps 1× → 1.25× →
+1.5× → 1.75× → 2× → 1×, changes a clip that's playing at once, and saves the new speed as the
+default. A speed changed in Settings shows on the button and reaches a clip that's playing straight
+away (`ListenSpeed`, `ListenSpeedSetting`). Tap the waveform to jump; while it's loaded, drag
+sideways to scrub (on iPhone and iPad a UIKit pan that begins only sideways, `SidewaysSwipe`, so a
+vertical drag on it still scrolls the chat). Long press: Copy Transcript, Save Audio…, Share. Voice
+messages from other devices are fetched as they come into view (`GET /api/files/stream?path=`, kept
+in the same cache).
 VoiceOver reads it as one element with Play/Pause, adjust (±5 s) and Speed.
 
 **A Bot's audio** (`listenStrip`, `ListenStrip`): a reply's `MEDIA:<path>` line with an audio
@@ -142,13 +148,17 @@ fails, the device's best voice for the reply's language reads on (`DeviceVoice`)
   fed. Paragraphs light the sentence; headings, lists and quotes light the whole block.
 - The mini player (`miniPlayer`, `ListenMiniPlayer`) floats 12 pt above the composer in every chat
   while a reply is read, and rides up with it as it grows (more lines, attachments): the Bot's
-  face, Listening/Paused and the sentence, Back 15 s, Play/Pause, the speed (1×/1.5×/2×, pitch
-  kept, shared with voice messages) and Close.
+  face, Listening/Paused and the sentence, Back 15 s, Play/Pause, the speed and Close. The speed
+  is the one voice messages use (§2), so it starts at Settings → Voice & Audio → Speed. A tap
+  changes the reply being read at once, from the word it's at, and saves the new speed as the
+  default; paused, it stays paused and plays on at the new speed. A speed changed in Settings
+  reaches the button and the reading the same way, without a relaunch.
 - Back 15 s goes to the sentence that was playing then; Ahead skips sentences worth about 15 s.
 - Now Playing (`NowPlayingPublisher`): the chat's title, the Bot, its face as artwork, Play/Pause,
-  Back/Ahead 15 s, Stop and the speed. On 27 a NowPlaying `MediaSession` watches the player
-  (`ListenMediaModel`); on 26 `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`. The elapsed time
-  is given at each change (start, pause, skip, speed) and the system runs it on.
+  Back/Ahead 15 s, Stop and the speed (the same five steps; a speed between them goes to the
+  nearest). On 27 a NowPlaying `MediaSession` watches the player (`ListenMediaModel`); on 26
+  `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`. The elapsed time is given at each change
+  (start, pause, skip, speed) and the system runs it on.
 - The session is `.playback` / `.spokenAudio` without mixing: Now Playing takes a session that
   doesn't mix, so other audio pauses while a reply is read, like a podcast. Headphones coming out,
   a call or Siri pause it.
@@ -434,7 +444,7 @@ Pickers are menus.
 | Voice Messages | Voice replies | device | When I Speak / Always / Never |
 | Voice Messages | Raise to Listen | device | on (iPhone) |
 | Voice Messages | AirPods studio-quality mic | device | on (voice messages only) |
-| Listen | Speed | device | 1–2× |
+| Listen | Speed | device | 1× / 1.25× / 1.5× / 1.75× / 2×, the speed button's (§2, §3) |
 | Listen | Code and tables | device | Describe them / Skip |
 | Transcription | Transcribe on | device | This iPhone / The Gateway (calls, §4.2) |
 | Transcription | Language | device | Device Language, or an installed on-device model |

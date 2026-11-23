@@ -12,7 +12,8 @@ struct VoiceSettingsView: View {
     @AppStorage(TalkPreferences.Key.replies) private var replies = TalkPreferences.Replies.whenISpeak
     @AppStorage(TalkPreferences.Key.raiseToListen) private var raiseToListen = true
     @AppStorage(TalkPreferences.Key.studioMic) private var studioMic = true
-    @AppStorage(TalkPreferences.Key.listenSpeed) private var speed = 1.0
+    /// The speed the speed button also changes, so this follows a tap there and the reverse.
+    @Bindable private var speed = ListenSpeedSetting.shared
     @AppStorage(TalkPreferences.Key.codeAndTables) private var codeAndTables = SpokenDetail.describe.rawValue
     @AppStorage(TalkPreferences.Key.language) private var language = ""
     @AppStorage(TalkPreferences.Key.transcribeOn) private var transcribeOn = TalkPreferences.TranscribeOn.device
@@ -22,8 +23,6 @@ struct VoiceSettingsView: View {
     @State private var hermesVoice: BotVoiceModel?
     @State private var showsHermesVoice = false
     @State private var keyEntry: VoiceKeyEntry?
-
-    private static let speeds: [Double] = [1, 1.25, 1.5, 1.75, 2]
 
     var body: some View {
         Form {
@@ -91,9 +90,9 @@ struct VoiceSettingsView: View {
             }
 
             Section("Listen") {
-                Picker("Speed", selection: $speed) {
-                    ForEach(Self.speeds, id: \.self) { value in
-                        Text(Self.speedTitle(value)).tag(value)
+                Picker("Speed", selection: $speed.rate) {
+                    ForEach(ListenSpeed.steps, id: \.self) { value in
+                        Text(ListenSpeed.label(value)).tag(value)
                     }
                 }
                 Picker("Code and tables", selection: $codeAndTables) {
@@ -162,10 +161,6 @@ struct VoiceSettingsView: View {
         var all = installed
         if !language.isEmpty, !all.contains(where: { $0.identifier == language }) { all.append(Locale(identifier: language)) }
         return all.sorted { DictationLanguageMenu.name($0) < DictationLanguageMenu.name($1) }
-    }
-
-    static func speedTitle(_ value: Double) -> String {
-        value == value.rounded() ? "\(Int(value))×" : "\(value.formatted(.number.precision(.fractionLength(0...2))))×"
     }
 }
 
@@ -240,7 +235,7 @@ struct BotVoiceView: View {
                 }
                 Picker("Speed", selection: Binding(get: { model.speed }, set: { value in Task { await model.setSpeed(value) } })) {
                     ForEach([0.75, 1, 1.25, 1.5], id: \.self) { value in
-                        Text(VoiceSettingsView.speedTitle(value)).tag(value)
+                        Text(ListenSpeed.label(value)).tag(value)
                     }
                 }
             } header: {

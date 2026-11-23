@@ -69,14 +69,11 @@ final class ListenPlayer {
         var elapsed: TimeInterval
         var date: Date
     }
-    /// 1, 1.5 or 2, shared with voice messages.
+    /// The shared speed (`ListenSpeedSetting`): the speed button, Now Playing and Settings change
+    /// it, and the reading plays on at the new speed from the word it's at.
     var rate: Double {
-        get { ClipPlayer.shared.rate }
-        set {
-            ClipPlayer.shared.rate = newValue
-            player?.rate = Float(newValue)
-            mark()
-        }
+        get { ListenSpeedSetting.shared.rate }
+        set { ListenSpeedSetting.shared.rate = newValue }
     }
 
     var isActive: Bool { reading != nil }
@@ -112,6 +109,7 @@ final class ListenPlayer {
     @ObservationIgnored private var player: SpokenPlayer?
     @ObservationIgnored private var events: Task<Void, Never>?
     @ObservationIgnored private var clock: Task<Void, Never>?
+    @ObservationIgnored private var speedChanges: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     /// The script's index of the player's first sentence (after a skip it starts part-way).
     @ObservationIgnored private var base = 0
@@ -228,6 +226,8 @@ final class ListenPlayer {
         clock?.cancel()
         events?.cancel()
         events = nil
+        speedChanges?.cancel()
+        speedChanges = nil
         nowPlaying?.end()
         nowPlaying = nil
         let player = player
@@ -269,6 +269,7 @@ final class ListenPlayer {
         base = index
         sentence = index
         mark()
+        if speedChanges == nil { followSpeed() }
         let sentences = Array(script.sentences[index...])
         Task {
             if let player {
@@ -324,6 +325,21 @@ final class ListenPlayer {
         return player
     }
 
+    /// A new speed reaches the voice at once; paused, it stays paused and plays on at it.
+    private func followSpeed() {
+        speedChanges = Task { [weak self] in
+            for await rate in Observations({ ListenSpeedSetting.shared.rate }) {
+                guard let self, !Task.isCancelled else { return }
+                guard self.player?.rate != Float(rate) else { continue }
+                self.player?.rate = Float(rate)
+                self.mark()
+                #if DEBUG
+                Self.logger.debug("listen speed \(rate, privacy: .public)× at \(self.elapsed, format: .fixed(precision: 2), privacy: .public) s heard")
+                #endif
+            }
+        }
+    }
+
     private func mark() {
         timeline = Timeline(elapsed: elapsed, date: .now)
     }
@@ -332,6 +348,13 @@ final class ListenPlayer {
         let absolute = base + index
         sentence = absolute
         if starts[absolute] == nil { starts[absolute] = elapsed }
+        #if DEBUG
+        // How fast the voice really plays: the gap to the next of these lines is this sentence's
+        // length at the speed it played.
+        if let script, script.sentences.indices.contains(absolute) {
+            Self.logger.debug("listen sentence \(absolute, privacy: .public) of \(script.sentences[absolute].text.count, privacy: .public) characters at \(self.rate, privacy: .public)×")
+        }
+        #endif
     }
 
     /// Counts the seconds heard while it plays.
