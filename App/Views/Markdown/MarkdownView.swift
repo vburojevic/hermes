@@ -641,6 +641,9 @@ private struct MarkdownImage: View {
     let source: String
 
     @Environment(\.gatewayHosts) private var gatewayHosts
+    @Environment(\.references) private var references
+    @Environment(\.mediaViewer) private var viewer
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var decoded: PlatformImage?
     @State private var failed = false
     /// The person asked for a picture from somewhere other than the gateway (`WebLink.isOnGateway`).
@@ -678,12 +681,28 @@ private struct MarkdownImage: View {
                     }
                 }
             } else if let path = gatewayPicture {
-                GatewayFileImage(source: .path(path), fits: CGSize(width: 480, height: 480), transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+                let picture = GatewayFileImage(source: .path(path), fits: CGSize(width: 480, height: 480), transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
                     switch phase {
                     case .success(let image): image.resizable().scaledToFit().transition(.opacity)
                     case .failure: Label("Image unavailable", systemImage: "photo").foregroundStyle(Theme.tertiaryText)
                     case .empty: Theme.surface.frame(height: 160)
                     }
+                }
+                // A tap opens it full screen, as a picture Hermes sent does (`docs/chat.md` §3).
+                if let viewer, let file = ReplyAttachment(path: path), file.kind == .picture {
+                    Button {
+                        let request = MediaViewerRequest(files: [file], start: 0, references: references, gatewayHosts: gatewayHosts,
+                                                         transitionID: "markdown-\(path)")
+                        viewer.open(request, reducesMotion: reduceMotion)
+                    } label: {
+                        picture
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(file.fileName)
+                    .accessibilityAddTraits(.isImage)
+                    .accessibilityHint(String(localized: "Opens full screen"))
+                } else {
+                    picture
                 }
             } else {
                 Label("Image", systemImage: "photo").foregroundStyle(Theme.tertiaryText)
