@@ -404,4 +404,22 @@ struct BadgeTests {
         let old = try JSONDecoder().decode(CountableChats.self, from: Data(#"{"ids":["a"],"bots":[],"rooms":[]}"#.utf8))
         #expect(old == CountableChats(ids: ["a"]))
     }
+
+    /// The Mac build has no App Group, and its Info.plist carries an empty `HermesAppGroup`. Its badge
+    /// lists stay in the app's own defaults. A suite named "" kept nothing between launches, and in a
+    /// running app it read back the empty lists of launch seconds after each write, so the Dock badge
+    /// fell to 0 while the rows still showed news.
+    @Test func noAppGroupKeepsTheBadgeInTheAppsOwnDefaults() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("NoGroup-\(UUID().uuidString).bundle")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let info: [String: Any] = ["CFBundleIdentifier": "test.nogroup", "HermesAppGroup": "", "HermesKeychainGroup": "test.push"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: folder.appendingPathComponent("Info.plist"))
+        let bundle = try #require(Bundle(url: folder))
+        let shared = PushShared(bundle: bundle)
+        #expect(shared.groupID == nil)
+        #expect(shared.defaults === UserDefaults.standard)
+        #expect(shared.keychainGroup == "test.push")
+    }
 }

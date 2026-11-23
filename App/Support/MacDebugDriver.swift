@@ -1,6 +1,7 @@
 #if DEBUG && os(macOS)
 import AppKit
 import HermesKit
+import HermesPush
 
 /// Drives the Mac app from inside for checks, without touching the person's screen: a window on
 /// another Space can't take input from outside (cua-driver refuses it), but the app can press its
@@ -24,8 +25,12 @@ import HermesKit
 /// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
 /// `palettetype <text>` (typed into its field as keys, one per character), `paletteblur` (takes
 /// the field out of editing) and `palette` (the field's text, the field editor's corrections and
-/// the chats windows' titles). Each step logs `HERMES_MAC_DRIVE` with its result and the Settings
-/// window's title, which is the page it shows, to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
+/// the chats windows' titles). `badge needsYou|unreadChats` sets what the Dock badge counts, as
+/// Settings → Notifications → Dock Badge does, whose pop-up menu a drive can't use. `remove gateway
+/// <name>` removes a gateway as Remove in Settings → Gateways does once confirmed, without the
+/// alert; only a gateway on this Mac (127.0.0.1, localhost or ::1), so a run can't remove a real
+/// one. Each step logs `HERMES_MAC_DRIVE` with its result and the Settings window's title, which is
+/// the page it shows, to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
 ///
 /// The freeze scenarios (docs/development.md, Hangs) mark each step in the hang log
 /// (`-HERMES_HANG_LOG`): `mark <text>`; `mode chats|bots` (the sidebar's list); `scroll sidebar
@@ -39,7 +44,7 @@ import HermesKit
 /// `window` logs whether the chats window is on screen, which a run needs to mean anything.
 @MainActor
 enum MacDebugDriver {
-    static func runIfAsked(router: WindowRouter, workspace: () -> BotWorkspace?) async {
+    static func runIfAsked(router: WindowRouter, app: AppModel, workspace: () -> BotWorkspace?) async {
         guard let script = UserDefaults.standard.string(forKey: "HERMES_MAC_DRIVE") else { return }
         for step in script.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) }) where !step.isEmpty {
             let parts = step.split(separator: " ", maxSplits: 1).map(String.init)
@@ -115,12 +120,44 @@ enum MacDebugDriver {
                 result = await burst(argument)
             case "sleepwake":
                 result = await sleepWake(argument)
+            case "badge":
+                result = badge(argument)
+            case "remove":
+                result = remove(argument, in: app)
             default:
                 result = "unknown step"
             }
             log("\(step) → \(result) · window: \(settingsWindow?.title ?? "none")")
         }
         log("done")
+    }
+
+    /// `badge needsYou|unreadChats`: what the Dock Badge picker's choice sets.
+    private static func badge(_ mode: String) -> String {
+        #if HERMES_PUSH
+        guard let mode = PushShared.BadgeMode(rawValue: mode) else { return "unknown mode" }
+        PushCenter.shared.badgeMode = mode
+        return "counts \(mode.rawValue)"
+        #else
+        return "no push in this build"
+        #endif
+    }
+
+    /// `remove gateway <name>`: what Remove does once its alert is confirmed. Only a gateway on
+    /// this Mac, so a drive aimed at the shared Hermes Dev preferences can't remove a real one.
+    private static func remove(_ argument: String, in app: AppModel) -> String {
+        guard argument.hasPrefix("gateway ") else { return "remove needs gateway <name>" }
+        let name = String(argument.dropFirst("gateway ".count))
+        guard let bot = app.bots.first(where: { $0.name == name }) else { return "no gateway named that" }
+        guard let host = bot.baseURL.host(), ["127.0.0.1", "localhost", "::1"].contains(host) else {
+            return "refused: not a gateway on this Mac"
+        }
+        do {
+            try app.removeBot(bot.id)
+            return "removed"
+        } catch {
+            return "failed: \((error as NSError).domain) \((error as NSError).code)"
+        }
     }
 
     /// `select group:<id>` or `select bot:<name>`: what a click on that sidebar row does, so a chat

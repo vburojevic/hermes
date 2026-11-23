@@ -89,6 +89,9 @@ xcodebuild -project Hermes.xcodeproj -scheme HermesUITests -destination 'platfor
 
 They cover opening at the New Messages line, the jump pill marking a chat read, and Mark as Read /
 Unread syncing with another client (`docs/inbox.md` §7). Each test resets the mock's read marks.
+The launch flags add the mock's gateway only to an app with no gateway saved, so run them on a
+simulator without Hermes Dev installed (or with it pointed at this mock): one kept from an earlier
+mock on other ports shows its gateway Offline and none of this mock's chats.
 `LaunchAppearanceUITests` switches the simulator between Light and Dark Mode and puts it back as it
 was when each test ends (`docs/design-to-swiftui.md` §1).
 
@@ -666,7 +669,10 @@ second round, so each post leaves a newest message of its own (the row-line chec
 {"profile": "writer"}` gives Ada unread routine news that leaves the rooms alone, and `POST
 /api/mock/drop-sockets {}` reconnects without moving any count. Mute a Bot or a group from its
 row's menu, and turn Bot Mode off and on in Settings, to check that a muted row keeps its grey
-count and every badge returns as it was.
+count and every badge returns as it was. `--quiet-world` stops the mock's own routines (the
+researcher's digest every two minutes), so a test's last message stays the newest on its row;
+`-HERMES_RESET_INBOX YES` starts the app's read marks and its rooms' seen marks from nothing, so
+marks kept from an earlier mock, whose rooms ran further, don't hide a fresh one's messages.
 
 Widgets (`Tools/mock-hermes/widgets.py`, [widgets.md](widgets.md) §13) play the
 hermes-app-widgets plugin over both servers: "widgets" pages through every example (three per
@@ -941,10 +947,15 @@ space` types a space), `paletteblur` (takes the field out of editing, as a click
 and `palette` (logs the field's text, whether it's being edited, its field editor's text
 replacement, spelling correction and spell checking, and the chats windows with their titles, which
 name what each shows; the rows and the selection aren't in it, so read them from a screenshot or
-the accessibility tree). Each step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the
-page shown can be checked without a screenshot (`App/Support/MacDebugDriver.swift`), on standard
-output and in `-HERMES_MAC_DRIVE_LOG <file>` when it's given; `tabs` logs how many Settings tabs
-show, of how many, and `maintabs` which of the chats window's toolbar items show. Capture with
+the accessibility tree). `badge needsYou|unreadChats` sets what the Dock badge counts, as the Dock
+Badge pop-up in Settings → Notifications does, and `remove gateway <name>` removes a gateway as
+Remove in Settings → Gateways does once its alert is confirmed, without the alert; it removes only a
+gateway at 127.0.0.1, localhost or ::1 and logs a refusal for any other, so a drive can't remove a
+real gateway from the shared Hermes Dev preferences. Each step logs `HERMES_MAC_DRIVE` with the
+Settings window's title, so the page shown can be checked without a screenshot
+(`App/Support/MacDebugDriver.swift`), on standard output and in `-HERMES_MAC_DRIVE_LOG <file>` when
+it's given; `tabs` logs how many Settings tabs show, of how many, and `maintabs` which of the chats
+window's toolbar items show. Capture with
 `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts the Settings
 tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR <folder>`
 points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only logs its
