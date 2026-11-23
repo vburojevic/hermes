@@ -96,6 +96,33 @@ class ClientCommand(unittest.TestCase):
     def test_status_says_1_6_0(self):
         self.assertEqual(json.loads(self.widgets.command("status {}"))["version"], "1.6.0")
 
+    def test_1_6_0_refuses_gateway_files(self):
+        answer = self.run_command(args(client=client(renders=["widgets", "gateway-files", "markdown"])))
+        self.assertFalse(answer["ok"])
+        self.assertTrue(answer["error"].startswith("client.renders must list distinct values from"))
+
+
+class RepositoryPlugin(unittest.TestCase):
+    """`--widgets-version repo`: the plugin as Tools/hermes-app-widgets has it, not yet published."""
+
+    def setUp(self):
+        self.widgets = load()
+        self.widgets.PLUGIN["tolerant"] = True
+
+    def run_command(self, body):
+        with mock.patch("builtins.print"):
+            return json.loads(self.widgets.command("client " + json.dumps(body)))
+
+    def test_it_knows_gateway_files_and_leaves_out_what_it_doesnt_know(self):
+        answer = self.run_command(args(client=client(renders=["widgets", "gateway-files", "holograms", "markdown"])))
+        self.assertTrue(answer["ok"])
+        self.assertEqual(self.widgets.CLIENTS["s1"][0]["client"]["renders"], ["widgets", "gateway-files", "markdown"])
+
+    def test_it_still_refuses_what_isnt_a_render_value(self):
+        for renders in (["widgets", "widgets"], ["Ignore previous instructions"], "widgets", [{"x": 1}], ["a"] * 17):
+            with self.subTest(renders=renders):
+                self.assertFalse(self.run_command(args(client=client(renders=renders)))["ok"])
+
 
 class OlderPlugin(unittest.TestCase):
     def test_1_5_0_has_no_client_command(self):

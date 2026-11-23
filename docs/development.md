@@ -995,7 +995,15 @@ drafts, and the Bot Screen over RFB (`display.*`, `WS /api/display/ws`) with the
 the start so a Bot Chat with no Inspector tabs has one to open from its ··· menu. Its chat
 "Pricing card" has two versions of an HTML artifact. In a chat, "… sign-up" or "… beta" writes the
 page, starts `npm run dev`, opens it in the Preview and drives it (`preview.act`, `preview.read`);
-"pricing" adds an artifact version; "terminal" reads the Terminal. Mock-only: `POST
+"pricing" adds an artifact version; "terminal" reads the Terminal; "attachments" sends files the
+way Hermes does, a `MEDIA:` line each (two pictures, a video, a PDF, Markdown notes, an HTML page
+with a picture beside it, a zip, a 60 MB picture, one gone and one Hermes keeps private), and
+"broken attachments" only the ones that don't show ([chat.md](chat.md) §3a); both work in a Bot
+Chat too, and over `server.py` alone, where each file says Bot Mode isn't on.
+`-HERMES_OPEN_SENT_FILE <name>` opens the first file a reply sent with that name 5 s after it
+shows, as a tap would: the viewer, the Inspector or Save. `--widgets-version repo` plays this
+repository's widgets plugin, which knows `gateway-files`; the default 1.6.0 refuses it and the
+app tells it again without it (`[mock-widgets] plugin 1.6.0 refused …` in the log). Mock-only: `POST
 /api/mock/inspector/screen {action: evict|stop|start}` (close codes 4000 and 4001; Start Screen
 in the app is `display.start`), `{action: uninstall|install|unsupported|supported}` (the Screen's
 setup states, [setup.md](setup.md) §4.21), `GET …/screen/keys` (the keys the screen received

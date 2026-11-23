@@ -30,6 +30,14 @@ Scripted chat turns (on top of chats.py) by message content:
                           file, which open in the Inspector's File tab (`GatewayFileLink`)
   "rewrite"            -> writes a brief, reads it back and writes it again with three lines
                           changed: one card folded, the second write's change opened
+  "attachments"        -> sends files the way Hermes does, a `MEDIA:<path>` line each
+                          (`ATTACHMENTS`, docs/chat.md §3a): two pictures, a video, a PDF, Markdown
+                          notes, an HTML page with a relative picture, a zip, a 60 MB picture, one
+                          that's gone (404) and one Hermes keeps private (403); a line in a code
+                          block stays code. server.py answers the same words without Bot Mode.
+  "broken attachments" -> only the ones that don't show: the 60 MB picture, a picture and a PDF
+                          that are gone, the private one and a ".mp4" that isn't a video. Both
+                          in a Bot Chat too.
 
 Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
@@ -211,9 +219,27 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
             return run_file_paths_turn(sid, text)
         if "rewrite" in lower:
             return run_rewrite_turn(sid, text)
+        if "attachments" in lower:
+            return run_attachments_turn(sid, text, ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS)
         return original(sid, text)
 
     C.run_chat_turn = run_chat_turn
+    # A Bot Chat sends files the same way.
+    original_bot = B["run_turn"]
+
+    def run_bot_turn(sid, text):
+        lower = text.lower()
+        if "attachments" not in lower:
+            return original_bot(sid, text)
+        stored = B["ensure_row"](sid)
+        B["add_message"](stored, "user", text)
+        B["emit"](sid, "session.info", {"running": True})
+        B["emit"](sid, "message.start", {})
+        answer = ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS
+        B["stream"](sid, answer)
+        return B["finish"](sid, stored, answer)
+
+    B["run_turn"] = run_bot_turn
 
 
 # ---------------------------------------------------------------- the seeded chat
@@ -281,7 +307,8 @@ def mime_of(path):
     ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     return {"html": "text/html", "css": "text/css", "js": "text/javascript", "json": "application/json",
             "md": "text/markdown", "ts": "text/typescript", "tsx": "text/typescript", "svg": "image/svg+xml",
-            "png": "image/png", "mp4": "video/mp4", "mov": "video/quicktime"}.get(ext, "text/plain")
+            "png": "image/png", "mp4": "video/mp4", "mov": "video/quicktime", "pdf": "application/pdf",
+            "zip": "application/zip"}.get(ext, "text/plain")
 
 
 def q(query, name, default=""):
@@ -327,6 +354,14 @@ def fs_read_text(query, body):
     key = rel(path)
     with LOCK:
         text = STATE["work"].get(key) if key is not None else None
+    if text is None and (key in MEDIA or key in PICTURES):
+        # Hermes reads any file: one that isn't UTF-8 text comes back `binary`.
+        data = media_bytes(key) if key in MEDIA else PICTURES[key]
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return 200, {"path": path, "text": "", "language": "text", "mimeType": mime_of(path),
+                         "byteSize": len(data), "truncated": False, "binary": True}
     if text is None:
         return 404, {"detail": "File not found"}
     return 200, {"path": path, "text": text, "language": language_of(path), "mimeType": mime_of(path),
@@ -411,12 +446,113 @@ def _clip():
     return (pathlib.Path(__file__).parent / "media" / "sample-clip.mp4").read_bytes()
 
 
+def _pdf(lines):
+    """A one-page PDF with `lines` of text, built here so the Preview has a real one to show."""
+    text = "BT /F1 18 Tf 72 720 Td 26 TL " + " ".join(
+        "(" + line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") '" for line in lines) + " ET"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length %d >>\nstream\n" % len(text) + text.encode() + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
+def _zip(files):
+    import io
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+LAUNCH_NOTES = """# Launch notes
+
+- The beta form goes live on Monday at 09:00.
+- Pricing stays at $8 for Pro; Free keeps three projects.
+- The walkthrough video replaces the hero animation on mobile.
+
+## Still open
+
+1. Who answers the beta inbox over the weekend
+2. Whether the changelog gets its own RSS feed
+"""
+
+LAUNCH_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Launch summary</title>
+<style>body{font:16px -apple-system,system-ui,sans-serif;margin:32px;color:#111;max-width:640px}
+h1{font-size:26px}img{width:100%;border-radius:12px}.note{color:#666}</style></head>
+<body><h1>Launch summary</h1>
+<p>The beta opens Monday. The flow below is the one the form follows.</p>
+<img src="launch-flow.png" alt="The launch flow">
+<p class="note">This picture is a file next to the page, read through the gateway.</p>
+</body></html>
+"""
+
 MEDIA = {
     "media/walkthrough.mp4": _clip,
     "media/broken.mp4": lambda: b"This is not a video. " * 200,
     "pairing/screen.mp4": _clip,   # refused as sensitive, once found
     "photos/print-scan.png": lambda: PICTURES["diagrams/orbit-card.png"] + bytes(60_000_000),
+    # The files "attachments" sends (docs/chat.md §3a), outside Git like the pictures.
+    "exports/launch-report.pdf": lambda: _pdf(["Launch report", "", "Beta sign-ups: 1,284", "Pro conversions: 6.1%",
+                                               "Open questions: 2"]),
+    "exports/launch-notes.md": lambda: LAUNCH_NOTES.encode(),
+    "exports/launch-summary.html": lambda: LAUNCH_PAGE.encode(),
+    "exports/launch-flow.png": lambda: PICTURES["diagrams/launch-flow.png"],   # the page's own picture
+    "exports/launch-assets.zip": lambda: _zip({"hero.png": PICTURES["photos/home-hero.png"], "notes.md": LAUNCH_NOTES}),
+    "pairing/device-qr.png": lambda: PICTURES["diagrams/orbit-card.png"],   # refused as sensitive
 }
+
+# A Hermes reply that sends files (docs/chat.md §3a): each `MEDIA:` line on its own, as the agent
+# writes them, a picture missing since and one under `pairing/`, which Hermes keeps private.
+ATTACHMENTS = f"""Here's the launch pack.
+
+MEDIA:{ROOT}/diagrams/launch-flow.png
+MEDIA:{ROOT}/photos/pricing.png
+MEDIA:{ROOT}/media/walkthrough.mp4
+
+The report, my notes, the summary page and the assets:
+
+MEDIA:{ROOT}/exports/launch-report.pdf
+MEDIA:`{ROOT}/exports/launch-notes.md`
+MEDIA:{ROOT}/exports/launch-summary.html
+MEDIA:{ROOT}/exports/launch-assets.zip
+
+The print scan is too big to show here, and two files didn't make it:
+
+MEDIA:{ROOT}/photos/print-scan.png
+MEDIA:{ROOT}/exports/old-chart.png
+MEDIA:{ROOT}/pairing/device-qr.png
+
+A line in a code block is only an example:
+
+```
+MEDIA:/tmp/example.png
+```"""
+
+# "broken attachments": only the files that don't show, so their states fit on one screen.
+ATTACHMENTS_BROKEN = f"""Here's what I could find from the old launch.
+
+MEDIA:{ROOT}/photos/print-scan.png
+MEDIA:{ROOT}/exports/old-chart.png
+MEDIA:{ROOT}/pairing/device-qr.png
+MEDIA:{ROOT}/exports/old-report.pdf
+MEDIA:{ROOT}/media/broken.mp4
+
+The scan is too big to show, the chart and the report are gone, and Hermes keeps the pairing code private."""
 
 
 def media_bytes(key):
@@ -914,6 +1050,17 @@ def run_file_paths_turn(sid, text):
     C.emit(sid, "message.start", {})
     answer = (f"I've written the form to `{ROOT}/src/components/BetaForm.tsx`, and the setup notes are in "
               f"[the README]({ROOT}/README.md). Run `npm run dev` and open `/beta` to try it.")
+    C.stream(sid, answer)
+    C.finish(sid, stored, answer)
+
+
+def run_attachments_turn(sid, text, answer):
+    """Hermes sends files: a `MEDIA:` line each, streamed a few characters at a time so a line
+    arrives in pieces (docs/chat.md §3a)."""
+    stored = B["RUNTIME"][sid]["stored"]
+    G.add_message(stored, "user", text)
+    C.emit(sid, "session.info", {"running": True})
+    C.emit(sid, "message.start", {})
     C.stream(sid, answer)
     C.finish(sid, stored, answer)
 

@@ -72,6 +72,10 @@ refusals, at most 8 per chat for 10 minutes, kept in memory). The mock runs no m
 ``prompt.submit`` takes the oldest marker whose hash matches its text, as the plugin's pre_llm_call
 does, and logs whether one did.
 ``--widgets-version 1.5.0`` plays the plugin before it: ``client`` is an unknown command and status says 1.5.0.
+``--widgets-version repo`` plays the plugin as this repository has it, not yet published: it knows
+``gateway-files`` and leaves out a render value it doesn't know instead of refusing the client. Plugin
+1.6.0 (the default) refuses any value it doesn't know, ``gateway-files`` included, so the app tells it
+again without it.
 ``--no-widgets`` leaves the plugin out: no ``widgets`` toolset, no scenario, ``/app-widgets`` is 4018.
 """
 from __future__ import annotations
@@ -91,11 +95,13 @@ from datetime import date, datetime, timedelta
 HERE = pathlib.Path(__file__).resolve().parent
 EXAMPLES = HERE.parent.parent / "Packages/HermesKit/Sources/HermesKit/Widgets/Spec/examples"
 VERSION = "1.6.0"
-PLUGIN = {"version": VERSION}  # the installed plugin's version: "1.5.0" plays one without `client`
+PLUGIN = {"version": VERSION, "tolerant": False}  # the installed plugin's version: "1.5.0" plays one without `client`;
+# `tolerant` plays this repository's plugin, which leaves out render values it doesn't know
 # `/app-widgets client` (docs/widgets.md §11), as the plugin's core.py checks it.
 CLIENT_OS = ("iOS", "iPadOS", "macOS")
 CLIENT_DEVICES = ("iphone", "ipad", "mac")
 CLIENT_RENDERS = ("widgets", "gateway-file-images", "markdown", "code", "tables")
+CLIENT_RENDERS_REPO = ("widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables")
 CLIENT_FIELDS = {"id": r"hermes-app", "version": r"[0-9][0-9A-Za-z.+-]{0,19}", "build": r"[0-9A-Za-z.]{1,20}",
                  "os": "|".join(CLIENT_OS), "os_version": r"[0-9]{1,3}(\.[0-9]{1,3}){0,2}",
                  "device": "|".join(CLIENT_DEVICES)}
@@ -650,7 +656,7 @@ def command(raw):
                 live = [m for m in CLIENTS.get(session_id, []) if now - m["at"] <= CLIENT_TTL]
                 CLIENTS[session_id] = (live + [{"sha": sha, "client": client, "at": now}])[-CLIENT_MARKERS:]
             print(f"[mock-widgets] client: {client['device']} app {client['version']} ({client['build']}) sent a turn "
-                  f"in {', '.join(ids)}: text_sha256 {sha}", flush=True)
+                  f"in {', '.join(ids)} showing {', '.join(client['renders'])}: text_sha256 {sha}", flush=True)
             return dump({"ok": True, "session_ids": ids, "pending": len(CLIENTS[ids[0]])})
         if name == "room":
             room_id = str(args.get("room_id") or "")
@@ -717,10 +723,18 @@ def client_args(args):
             return f"client.{key} is missing or not allowed"
         checked[key] = value
     renders = client.get("renders")
-    if (not isinstance(renders, list) or not all(isinstance(r, str) and r in CLIENT_RENDERS for r in renders)
-            or len(set(renders)) != len(renders)):
-        return f"client.renders must list distinct values from {', '.join(CLIENT_RENDERS)}"
-    checked["renders"] = list(renders)
+    if PLUGIN.get("tolerant"):
+        if (not isinstance(renders, list) or len(renders) > 16
+                or not all(isinstance(r, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,31}", r) for r in renders)
+                or len(set(renders)) != len(renders)):
+            return f"client.renders must list distinct values such as {', '.join(CLIENT_RENDERS_REPO)}"
+        checked["renders"] = [r for r in renders if r in CLIENT_RENDERS_REPO]
+    else:
+        if (not isinstance(renders, list) or not all(isinstance(r, str) and r in CLIENT_RENDERS for r in renders)
+                or len(set(renders)) != len(renders)):
+            print(f"[mock-widgets] plugin 1.6.0 refused the client's renders {renders!r}", flush=True)
+            return f"client.renders must list distinct values from {', '.join(CLIENT_RENDERS)}"
+        checked["renders"] = list(renders)
     turn = args.get("turn")
     if not isinstance(turn, dict) or set(turn) != {"text_sha256"}:
         return "turn must be {\"text_sha256\": ...}"

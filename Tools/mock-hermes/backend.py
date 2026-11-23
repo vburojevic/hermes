@@ -3221,8 +3221,9 @@ def main():
                              "a 199-event room (chats.py)")
     parser.add_argument("--no-widgets", action="store_true",
                         help="a gateway without the hermes-app-widgets plugin (widgets.py)")
-    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0"], default="1.6.0",
-                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
+    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0", "repo"], default="1.6.0",
+                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client`; repo is this "
+                             "repository's, which knows `gateway-files` (widgets.py)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
     CONFIG["api_server_only"] = args.api_server_only

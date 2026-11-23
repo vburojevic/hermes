@@ -74,6 +74,17 @@ def load_starve():
 STARVE = load_starve()
 
 
+def load_inspector():
+    """inspector.py, for the reply that sends files, one copy per process."""
+    module = sys.modules.get("mock_inspector_files")
+    if module is None:
+        spec = importlib.util.spec_from_file_location("mock_inspector_files", pathlib.Path(__file__).resolve().parent / "inspector.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules["mock_inspector_files"] = module
+    return module
+
+
 def load_image_turns():
     """image_turns.py, the user row Hermes stores for a turn with photos, one copy per process."""
     module = sys.modules.get("mock_image_turns")
@@ -787,6 +798,12 @@ def agent_turn(run):
             heartbeat_turn(run)
         elif "aside" in lowered:
             aside_turn(run)
+        elif "attachments" in lowered:
+            # Files sent with `MEDIA:` lines (inspector.py `ATTACHMENTS`, docs/chat.md §3a). Over the
+            # gateway alone there's no Bot Mode to read them: each says so.
+            out, ok = stream_text(run, load_inspector().ATTACHMENTS)
+            add_message(sid, "assistant", out, finish_reason="stop")
+            run.output = out
         elif "approve" in lowered:
             narration = "I'll clean the build folder first. "
             stream_text(run, narration)
@@ -1638,7 +1655,8 @@ def install_widgets(gateway, enabled=True, version=None):
     widgets = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(widgets)
     widgets.ENABLED["on"] = enabled
-    widgets.PLUGIN["version"] = version or widgets.VERSION
+    widgets.PLUGIN["version"] = widgets.VERSION if version in (None, "repo") else version
+    widgets.PLUGIN["tolerant"] = version == "repo"
     widgets.install_gateway(gateway)
     return widgets
 
@@ -1649,8 +1667,9 @@ def main():
     parser.add_argument("--port", type=int, default=18642)
     parser.add_argument("--key", default="dev-key-0123456789abcdef")
     parser.add_argument("--no-widgets", action="store_true", help="a gateway without the hermes-app-widgets plugin")
-    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0"], default="1.6.0",
-                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
+    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0", "repo"], default="1.6.0",
+                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client`; repo is this "
+                             "repository's, which knows `gateway-files` (widgets.py)")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: answers come in bursts every MIN-MAX seconds (starve.py)")
     parser.add_argument("--run-stream-ttl", type=float, default=300, metavar="SECONDS",
