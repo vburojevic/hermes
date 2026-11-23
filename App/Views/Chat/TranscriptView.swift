@@ -151,6 +151,20 @@ struct TranscriptView: View {
         _settled = State(initialValue: conversation.pendingUser != nil || conversation.isWorking)
     }
 
+    /// The replies since the person's last message: the newest, and those its pages' messages
+    /// brought, which show no message of their own (`docs/chat.md` §3c).
+    static func livePageReplies(in rows: [TranscriptItem]) -> Set<String> {
+        var replies: Set<String> = []
+        for row in rows.reversed() {
+            switch row {
+            case .assistant(let turn): replies.insert(turn.id)
+            case .user: return replies
+            default: continue
+            }
+        }
+        return replies
+    }
+
     /// Time for the rest of the first page (`fillWindow`), once the opening animation is done.
     @State private var pageDue = false
     /// Calls whose turns are open under their card (Transcript).
@@ -173,6 +187,7 @@ struct TranscriptView: View {
         // Replies to a voice message open with the Bot's voice (`docs/voice.md` §2).
         let spokenReplies = VoiceReplies.turns(in: all, setting: VoiceReplies.Setting(rawValue: voiceReplies) ?? .whenISpeak)
         let latestReply = all.last { if case .assistant = $0 { true } else { false } }?.id
+        let livePages = Self.livePageReplies(in: all)
         // A reply to a routine's or a script's delivery, or to another Bot, says so (`docs/chat.md` §2a).
         let deliveryReplies = Delivery.answering(in: all)
         ScrollView {
@@ -195,6 +210,8 @@ struct TranscriptView: View {
                     }
                         // Only the row VoiceOver lands on gets the cue; every other row's stays nil.
                         .environment(\.voiceOverLanding, voiceOverLanding?.key == shown.key ? voiceOverLanding : nil)
+                        // Pages open live only in the newest replies (`docs/chat.md` §3c).
+                        .environment(\.livePageReplies, livePages)
                         .background {
                             if flashKey == shown.key {
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1419,7 +1436,7 @@ struct TranscriptView: View {
     /// With Keep chat at bottom when sending on, the chat goes to its end instead and follows the
     /// reply from there (`SendScroll`).
     private func beginLanding() {
-        let entry = conversation.pendingUser
+        let entry = conversation.shownPendingUser
         let scroll = SendScroll.onSend(keepsAtBottom: keepsAtBottom, messageShown: entry != nil)
         guard scroll == .turnPage, let entry else {
             return followSentMessage()

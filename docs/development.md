@@ -1005,6 +1005,9 @@ with a Mermaid flowchart, prices in dollars beside inline `$n$`, two display for
 prose and a diagram Mermaid can't read ([chat.md](chat.md) §3b), in a chat, a Bot Chat or over
 `server.py`. `--long-chat` also seeds "Launch diagrams", 60 replies (about 1,400 lines) that each
 draw a diagram and a formula, for scrolling back through drawn blocks.
+"live page" answers in a Bot Chat or a chat with two `::preview` cards ([chat.md](chat.md) §3c): a
+page whose buttons send "Plan picked on the page: …" as a hidden message (answered "Noted: …"), and
+a Markdown file that opens in the Inspector.
 `-HERMES_OPEN_SENT_FILE <name>` opens the first file a reply sent with that name 5 s after it
 shows, as a tap would: the viewer, the Inspector or Save. `--widgets-version repo` plays this
 repository's widgets plugin, which knows `gateway-files`; the default 1.6.0 refuses it and the

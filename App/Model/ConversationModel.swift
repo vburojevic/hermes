@@ -332,6 +332,9 @@ final class ConversationModel: Identifiable {
     @ObservationIgnored private var turnParts: MessageParts?
     /// The turn being sent was spoken in Talk (`docs/voice.md` §4.1).
     @ObservationIgnored private var turnVoice: VoiceTurn?
+    /// The running turn was sent by a live page in a reply (`sendFromPage`): its message goes as
+    /// Hermes' `hidden` kind.
+    @ObservationIgnored private var turnHidden = false
     /// `nil` means the gateway's configured default model.
     var model: ModelSelection?
     var reasoningEffort: ReasoningEffort?
@@ -1074,10 +1077,15 @@ final class ConversationModel: Identifiable {
         }
     }
 
+    /// The message on its way, unless a live page sent it: that one never shows (`docs/chat.md` §3c).
+    var shownPendingUser: UserEntry? {
+        if let pendingUser, !pendingUser.isHidden { pendingUser } else { nil }
+    }
+
     /// Everything to render, in order.
     var rows: [TranscriptItem] {
         var rows = items
-        if let pendingUser { rows.append(.user(pendingUser)) }
+        if let pendingUser = shownPendingUser { rows.append(.user(pendingUser)) }
         rows += turnReceipts
         // A live notice of finished work joins the line just before it, as the stored chat folds it.
         rows = TranscriptBuilder.appending(redirectedParts, to: rows)
@@ -1090,7 +1098,7 @@ final class ConversationModel: Identifiable {
     /// `liveTurn`, so a streamed word redraws that row and not the whole transcript.
     var listRows: [TranscriptItem] {
         var rows = items
-        if let pendingUser { rows.append(.user(pendingUser)) }
+        if let pendingUser = shownPendingUser { rows.append(.user(pendingUser)) }
         rows += turnReceipts
         // A live notice of finished work joins the line just before it, as the stored chat folds it.
         rows = TranscriptBuilder.appending(redirectedParts, to: rows)
@@ -1131,7 +1139,7 @@ final class ConversationModel: Identifiable {
     /// stored yet, the message on its way and a reply that ended; with the activity it stands for.
     var rowLastLine: (line: LastLine?, asOf: Date) {
         var tail: [TranscriptItem] = []
-        if let pendingUser { tail.append(.user(pendingUser)) }
+        if let pendingUser = shownPendingUser { tail.append(.user(pendingUser)) }
         if let turn = liveStorage, turn.isFinished { tail.append(.assistant(turn.turn)) }
         return (LastLine.of(items, then: tail), LastLine.asOf(items, then: tail) ?? .now)
     }
@@ -3638,7 +3646,17 @@ final class ConversationModel: Identifiable {
         if turnError?.canRetry == false, heldOver?.endUnheard != true { turnError = nil }
     }
 
-    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, voice: VoiceTurn? = nil) {
+    /// A live page in the latest reply asked to send `text` (`hermes.send`, `docs/chat.md` §3c),
+    /// the person having allowed it. It goes as a hidden message of theirs, as Hermes Desktop sends
+    /// one, and only into an idle chat on the gateway's protocol: anything else says it couldn't.
+    func sendFromPage(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, usesGateway, !isWorking, !isFinishing, !isBotTurnOpen, !isStopping, pendingUser == nil else { return false }
+        start(text: trimmed, images: [], files: [], hidden: true)
+        return true
+    }
+
+    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, voice: VoiceTurn? = nil, hidden: Bool = false) {
         recoveryTask?.cancel() // a new turn: whatever an earlier one left uncertain shows with it
         settleBackgroundRuns()
         hasUndoneMessage = false
@@ -3655,12 +3673,15 @@ final class ConversationModel: Identifiable {
         turnPrompt = prompt
         turnParts = parts
         turnVoice = voice
-        failureIsRetryable = true
+        // A page's message is the page's to send again, never Retry's.
+        failureIsRetryable = !hidden
         // A voice message's recording is its bubble, not a file chip.
         let voice = files.first { VoiceMessageFile.isVoiceMessage($0.name) }
         var entry = UserEntry(id: "local-\(UUID().uuidString)", text: text, timestamp: .now,
                               fileNames: files.map(\.name).filter { !VoiceMessageFile.isVoiceMessage($0) }, skillNames: skills)
         entry.voicePath = voice?.name
+        entry.isHidden = hidden
+        turnHidden = hidden
         if let parts, parts.hasStructure, parts.command == nil { entry.parts = parts }
         userImages[entry.id] = images
         armedSteers = []
@@ -4330,7 +4351,7 @@ final class ConversationModel: Identifiable {
         settlesLostTurn = false // a Reload asked for that turn, never for this one
         storedReplyWait?.cancel()
         // What was on screen, in order, to hand its identities to the stored rows.
-        let shownRows = (pendingUser.map { [TranscriptItem.user($0)] } ?? []) + redirectedParts + [.assistant(finished.turn)]
+        let shownRows = (shownPendingUser.map { [TranscriptItem.user($0)] } ?? []) + redirectedParts + [.assistant(finished.turn)]
         // Hermes can write the turn's rows a moment after it says the turn ended. A transcript
         // without them would swap your message for its stored copy as a new row (it left and came
         // back) and drop the reply: ask again for up to about 2 s, then keep what's on screen.
@@ -5325,6 +5346,8 @@ extension ConversationModel {
                 // device's): with `queued` a busy chat queues it, and the answer says so.
                 submit["queued"] = .bool(true)
                 if let voice = turnVoice { submit.merge(voice.submitParams) { $1 } }
+                // Hermes takes `hidden` as the one display kind a client may ask for.
+                if turnHidden { submit["display_kind"] = .string("hidden") }
                 // Patient: on an open socket the answer comes when a frozen backend wakes; a socket that
                 // dies fails it at once. One that goes quiet never answers, so the stored chat is read
                 // meanwhile (`submitWatched`), counted from here.

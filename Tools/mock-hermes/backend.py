@@ -242,7 +242,18 @@ def add_session(profile, title, *, hidden=False, source="tui", started=None, sid
     return sid
 
 
+# The display kind a Bot Chat's next user row is stored with (server.py `TURN_KINDS`).
+TURN_KINDS = {}
+
+
+def submitted_kind(params):
+    """`prompt.submit`'s `display_kind`: Hermes whitelists "hidden" and mints no other kind."""
+    return "hidden" if params.get("display_kind") == "hidden" else None
+
+
 def add_message(sid, role, content, ts=None, touch=True, **extra):
+    if role == "user" and "display_kind" not in extra and (kind := TURN_KINDS.pop(sid, None)):
+        extra["display_kind"] = kind
     with LOCK:
         session = STORED[sid]
         ts = ts or time.time()
@@ -780,6 +791,8 @@ def start_turn(sid, text, runner):
         runtime["turn_images"] = held if held is not None else runtime.pop("attached_images", [])
         # Hermes' `_start_inflight_turn`: what the turn was asked, for clients that weren't the sender.
         runtime["inflight"] = {"user": text.split("\n\n[@mentions resolved", 1)[0].strip(), "assistant": "", "streaming": True}
+        if kind := runtime.pop("submit_kind", None):
+            runtime["inflight"]["display_kind"] = kind
     threading.Thread(target=guarded, args=(sid, text, runner), daemon=True).start()
 
 
@@ -2379,6 +2392,9 @@ def method_prompt_submit(params):
         # submit is answered, and the turn runs, only after.
         emit(sid, "session.info", {"running": False, "model": PROFILES[runtime["profile"]]["model"]})
         time.sleep(CONFIG["agent_build"])
+    kind = submitted_kind(params)
+    if kind:
+        TURN_KINDS[runtime["stored"]] = runtime["submit_kind"] = kind
     start_turn(sid, text, run_turn)
     return {"status": "streaming"}
 

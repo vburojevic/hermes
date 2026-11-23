@@ -55,6 +55,8 @@ struct ReplyBody: View, Equatable {
                             ReplyAttachmentsView(files: files, viewerFiles: viewerFiles,
                                                  viewerStart: ReplyAttachment.viewerFiles(in: Array(segments[..<index])).count,
                                                  owner: owner)
+                        case .preview(let directive):
+                            PagePreviewCard(directive: directive, owner: owner, streaming: streaming)
                         }
                     }
                     .modifier(VoiceOverLandingEnds(isLast: index == segments.count - 1))

@@ -851,6 +851,50 @@ A reply's Mermaid diagrams, display math and SVG pictures are drawn on the devic
 remote image that must do nothing, and a diagram Mermaid can't read
 ([development.md](development.md)).
 
+## 3c. Pages a reply shows live
+
+A line of its own `::preview{file="exports/board.html" height="360"}` in a reply is a page Hermes
+made for the chat, as Hermes Desktop shows it (`PreviewDirective`, `PageIntent`, `PageFrame` in
+HermesKit; `PagePreviewCard` in the app). Inside code it stays code.
+
+1. **The card.** The page's title (read once from its `<title>`, kept for the run), its file name
+   and Open. A file that isn't a page (`.html`, `.htm`, `.xhtml`) shows its name and folder and
+   opens in the Inspector. While the reply writes, the card waits ("Opens when the reply is done")
+   and nothing is read. A relative path is read against the chat's folder; a path with a `..` step
+   is never read ("This page's file can't be found"). Without Bot Mode the card says "Turn on Bot
+   Mode to open it". The context menu has Open or Close, Open in Preview Tab and Copy Path.
+2. **Live in the newest reply.** Open shows the page in the reply, at `height` (120 to 1200 pt,
+   280 when not given) until it measures itself, then as tall as it is, at most 960 pt wide. Only
+   the replies since the person's last message open live: one sent by a page itself doesn't count,
+   so the page stays open while Hermes answers it. An older reply's Open shows the page in the
+   Inspector's Preview tab. One page is live at a time in the app; opening another closes it, and
+   a message from the person closes it.
+3. **Sandbox.** The file is read through the gateway and loaded from memory at an origin of its own
+   that never resolves (`https://page-<random>.hermes.invalid/`), with a data store that keeps
+   nothing (no cookies, storage or cache shared with anything), Lockdown Mode (no WebRTC calls), no
+   camera or microphone, and a policy sent as the response's header: `default-src 'none'`, inline
+   scripts and styles, `data:` and `blob:` images, media and fonts, no frames and no forms. Every
+   navigation but its own load is cancelled; a link the person taps opens in the browser through
+   `WebLink`. Nothing reaches the network. The page gets the app's colours as Hermes Desktop's
+   variables (`--foreground`, `--muted-foreground`, `--accent`, `--border`, `--card`), its colour
+   scheme, no margin and a clear background, before its own styles.
+4. **Sending.** `hermes.send("text")` and a click on any `[data-hermes-send="text"]` send a sentence
+   as the person's message, `display_kind: "hidden"` on `prompt.submit`, so it doesn't show in the
+   chat; the reply does. The first time, the app asks "Let this page send messages?" with the exact
+   sentence (`VisibleText`); the answer lasts while the page is open. The promise answers as on the
+   desktop: `{ok: true}`, or `invalid`, `too_long` (over 500 characters, with `maxLength`),
+   `throttled` (one a second, with `retryAfterMs`), `undelivered` (Hermes is busy, the chat can't
+   send or the page closed) and `declined` (with a `reason`) when the person said no.
+5. **Off screen.** A page scrolled out of sight lets its web view go and loads again when it's back,
+   so a long chat holds at most one web page and only while it's seen; what the page held in its
+   own variables starts over.
+6. **Accessibility.** The card reads "Page, its title, its file" with a hint for what Open does; the
+   page is a web area VoiceOver reads inside. Listen reads the file's name.
+
+"live page" in the mock answers with a page and a Markdown file: the page's Free and Pro buttons
+send with `data-hermes-send`, Team with `hermes.send` and shows the answer, and it says whether a
+request, a call or a frame got out ([development.md](development.md)).
+
 ## 4. Interaction
 
 - **Scrolling.** Sending turns a page: the message glides up to just under the top bar and the

@@ -509,6 +509,55 @@ h1{font-size:26px}img{width:100%;border-radius:12px}.note{color:#666}</style></h
 </body></html>
 """
 
+# A page "live page" shows in its reply (docs/chat.md §3c): the app's colours through Hermes
+# Desktop's variables, buttons that send with `data-hermes-send` and with `hermes.send`, and a
+# request out that the page's policy stops.
+PLAN_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Plan picker</title>
+<style>
+body{font:15px -apple-system,system-ui,sans-serif;padding:16px}
+h2{margin:0 0 4px;font-size:17px}
+p{margin:0 0 12px;color:var(--muted-foreground)}
+.plans{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;padding:8px 14px;border-radius:10px;border:1px solid var(--border);
+  background:var(--card);color:var(--foreground);cursor:pointer}
+button.main{background:var(--accent);color:#fff;border-color:transparent}
+#status{margin-top:12px;font-size:13px;color:var(--muted-foreground)}
+</style></head>
+<body>
+<h2>Pick a plan</h2>
+<p>Free keeps three projects; Pro is $8 a month; Team adds shared Boards.</p>
+<div class="plans">
+  <button data-hermes-send="Plan picked on the page: Free">Free</button>
+  <button class="main" data-hermes-send="Plan picked on the page: Pro">Pro</button>
+  <button id="team">Team</button>
+</div>
+<div id="status">Network: checking…</div>
+<script>
+var note = document.getElementById("status");
+document.getElementById("team").addEventListener("click", function () {
+  hermes.send("Plan picked on the page: Team").then(function (ack) {
+    note.textContent = ack.ok ? "Sent to Hermes." : "Not sent: " + ack.error + (ack.reason ? " (" + ack.reason + ")" : "");
+  });
+});
+// What a page can't do: reach the network, by a request, a call or a frame.
+var open = [];
+function tell() { note.textContent = open.length ? "Open: " + open.join(", ") : "Network: blocked, as it should be."; }
+if (window.RTCPeerConnection || window.webkitRTCPeerConnection) open.push("calls");
+var frame = document.createElement("iframe");
+frame.style.display = "none";
+frame.src = "data:text/html,<script>parent.postMessage('frame','*')<\/script>";
+addEventListener("message", function (e) { if (e.data === "frame") { open.push("frames"); tell(); } });
+document.body.appendChild(frame);
+var bare = document.createElement("iframe");
+bare.style.display = "none";
+document.body.appendChild(bare);
+try { if (bare.contentWindow.RTCPeerConnection) open.push("calls in a frame"); } catch (e) {}
+fetch("https://example.com/track").then(function () { open.push("requests"); tell(); }, tell);
+</script>
+</body></html>
+"""
+
 MEDIA = {
     "media/walkthrough.mp4": _clip,
     "media/broken.mp4": lambda: b"This is not a video. " * 200,
@@ -519,6 +568,7 @@ MEDIA = {
                                                "Open questions: 2"]),
     "exports/launch-notes.md": lambda: LAUNCH_NOTES.encode(),
     "exports/launch-summary.html": lambda: LAUNCH_PAGE.encode(),
+    "exports/plan-picker.html": lambda: PLAN_PAGE.encode(),
     "exports/launch-flow.png": lambda: PICTURES["diagrams/launch-flow.png"],   # the page's own picture
     "exports/launch-assets.zip": lambda: _zip({"hero.png": PICTURES["photos/home-hero.png"], "notes.md": LAUNCH_NOTES}),
     "pairing/device-qr.png": lambda: PICTURES["diagrams/orbit-card.png"],   # refused as sensitive
@@ -612,10 +662,25 @@ flowchart LR
 ```"""
 
 
+LIVE_PAGE = f"""Here's a page to pick a plan with.
+
+::preview{{file="{ROOT}/exports/plan-picker.html" height="240"}}
+
+And the notes it's based on:
+
+::preview{{file="{ROOT}/exports/launch-notes.md"}}"""
+
+
 def formats_reply(lower):
     """The reply for a Round 3 format word, or None (docs/development.md, mock words)."""
     if "drawings" in lower:
         return DRAWINGS
+    if "live page" in lower:
+        return LIVE_PAGE
+    if lower.startswith("plan picked on the page:"):
+        # What a page's button sent, as a hidden message: Hermes answers it as any other.
+        plan = lower.split(":", 1)[1].strip().title() or "That"
+        return f"Noted: **{plan}**. I'll draft the upgrade note for that plan next."
     return None
 
 

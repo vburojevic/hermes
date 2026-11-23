@@ -407,7 +407,14 @@ def seed_routine_runs():
         }
 
 
+# The display kind a chat's next user row is stored with: `prompt.submit`'s `display_kind`, which
+# Hermes takes only as "hidden" (a live page's message, docs/chat.md §3c).
+TURN_KINDS = {}
+
+
 def add_message(sid, role, content, **extra):
+    if role == "user" and "display_kind" not in extra and (kind := TURN_KINDS.pop(sid, None)):
+        extra["display_kind"] = kind
     with LOCK:
         rows = MESSAGES.setdefault(sid, [])
         row = {

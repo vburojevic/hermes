@@ -36,7 +36,8 @@ public struct WidgetDirective: Hashable, Sendable {
 
     /// `key="value"` pairs separated by spaces, or by a comma as models often write them (the
     /// plugin reads both); `\"` escapes a quote. Anything malformed is not a directive.
-    private static func parseAttributes(_ text: Substring) -> [String: String]? {
+    /// `singleQuotes`: a value may also be in single quotes, as Hermes Desktop reads `::preview`.
+    static func parseAttributes(_ text: Substring, singleQuotes: Bool = false) -> [String: String]? {
         var result: [String: String] = [:]
         var index = text.startIndex
         func skipSpaces() { while index < text.endIndex, text[index] == " " || text[index] == "\t" { index = text.index(after: index) } }
@@ -47,7 +48,8 @@ public struct WidgetDirective: Hashable, Sendable {
             let key = String(text[keyStart..<index])
             guard !key.isEmpty, index < text.endIndex, text[index] == "=" else { return nil }
             index = text.index(after: index)
-            guard index < text.endIndex, text[index] == "\"" else { return nil }
+            guard index < text.endIndex, text[index] == "\"" || (singleQuotes && text[index] == "'") else { return nil }
+            let quote = text[index]
             index = text.index(after: index)
             var value = ""
             var closed = false
@@ -55,9 +57,9 @@ public struct WidgetDirective: Hashable, Sendable {
                 let character = text[index]
                 if character == "\\", text.index(after: index) < text.endIndex {
                     let next = text[text.index(after: index)]
-                    value.append(next == "\"" || next == "\\" ? next : character)
-                    if next == "\"" || next == "\\" { index = text.index(after: index) }
-                } else if character == "\"" {
+                    value.append(next == quote || next == "\\" ? next : character)
+                    if next == quote || next == "\\" { index = text.index(after: index) }
+                } else if character == quote {
                     closed = true
                     index = text.index(after: index)
                     break
@@ -99,6 +101,8 @@ public enum ReplySegment: Hashable, Sendable {
     /// each other (blank lines between them aside) together (`docs/chat.md` §3a). Only where the
     /// reply's attachments are given.
     case attachments([ReplyAttachment])
+    /// A page the reply shows live, `::preview{file="…"}` on a line of its own (`docs/chat.md` §3c).
+    case preview(PreviewDirective)
 }
 
 public enum ReplySplitter {
@@ -120,7 +124,8 @@ public enum ReplySplitter {
         let lastLine = text.lastIndex(of: "\n").map { text[text.index(after: $0)...] } ?? text[...]
         let holdsLastLine = streaming && !text.hasSuffix("\n") && couldBecomeDirective(lastLine)
         let hasAttachments = !attachments.isEmpty && text.containsBytes("*Attachment on server: ")
-        guard holdsLastLine || hasAttachments || text.containsBytes("::widget{") || ((inlineWidgets || typedAsText) && text.containsBytes("widget"))
+        guard holdsLastLine || hasAttachments || text.containsBytes("::widget{") || text.containsBytes("::preview{")
+                || ((inlineWidgets || typedAsText) && text.containsBytes("widget"))
                 || (typedAsText && text.containsBytes("\"type\"")) else {
             return [.markdown(text)]
         }
@@ -194,6 +199,11 @@ public enum ReplySplitter {
                 }
                 continue
             }
+            if let preview = PreviewDirective.parse(line) {
+                flushProse()
+                segments.append(.preview(preview))
+                continue
+            }
             if let directive = WidgetDirective.parse(line) {
                 guard seen.insert(directive.id).inserted else { continue } // the same widget twice draws once
                 if seen.count > WidgetDirective.maxPerReply {
@@ -243,13 +253,13 @@ public enum ReplySplitter {
     private static func couldBecomeDirective(_ line: Substring) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard let first = trimmed.first, first == ":" else { return false }
-        return trimmed.hasPrefix("::widget{") || "::widget{".hasPrefix(trimmed)
+        return ["::widget{", "::preview{"].contains { trimmed.hasPrefix($0) || $0.hasPrefix(trimmed) }
     }
 
     /// The text with each widget as words: a directive as its `alt`, an inline block as its
-    /// `fallback_text`. What Copy, Share and Read Aloud take.
+    /// `fallback_text`, a page as its file. What Copy, Share and Read Aloud take.
     public static func readableText(_ text: String, typedAsText: Bool = false) -> String {
-        guard text.containsBytes("::widget{") || text.containsBytes("```widget") || typedAsText else { return text }
+        guard text.containsBytes("::widget{") || text.containsBytes("```widget") || text.containsBytes("::preview{") || typedAsText else { return text }
         return split(text, inlineWidgets: true, typedAsText: typedAsText).compactMap { segment -> String? in
             switch segment {
             case .markdown(let markdown): markdown
@@ -258,6 +268,7 @@ public enum ReplySplitter {
             case .typed(let json): typedWords(json)
             case .unreadable: nil
             case .attachments(let files): files.map(\.note).joined(separator: "\n")
+            case .preview(let preview): preview.file
             }
         }.joined(separator: "\n\n")
     }

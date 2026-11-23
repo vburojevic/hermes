@@ -116,6 +116,8 @@ public enum WidgetPrivacy {
             case .attachments(let files):
                 // Not split with attachments here; kept as the notes they came as.
                 files.map(\.note).joined(separator: "\n")
+            case .preview(let preview):
+                preview.line
             }
         }.joined(separator: "\n\n")
     }

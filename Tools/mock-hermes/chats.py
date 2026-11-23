@@ -67,7 +67,7 @@ def install(backend_globals, gateway_module):
             print(f"[mock-hermes] prompt.submit with {', '.join(refs)}", flush=True)
         if runtime is None or runtime.get("kind") != "chat":
             return original["prompt.submit"](params)
-        return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")))
+        return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")), B["submitted_kind"](params))
 
     B["CHATS_HOOKS"].update({"add_message": G.add_message, "finish": finish})
     methods["session.create"] = create
@@ -180,7 +180,7 @@ def turn_elsewhere(stored, text, reply, seconds, display_kind="internal_notifica
     return True
 
 
-def submit_chat(sid, runtime, text, queued=False):
+def submit_chat(sid, runtime, text, queued=False, display_kind=None):
     gated = B["submit_gate"](sid, runtime, text)
     if gated is not None:
         return gated
@@ -188,6 +188,8 @@ def submit_chat(sid, runtime, text, queued=False):
         busy = runtime["running"]
     if busy:
         return B["busy_submit"](sid, text, queued)
+    if display_kind:
+        G.TURN_KINDS[runtime["stored"]] = runtime["submit_kind"] = display_kind
     B["start_turn"](sid, text, run_chat_turn)
     return {"status": "streaming"}
 

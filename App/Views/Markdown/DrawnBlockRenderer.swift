@@ -310,16 +310,19 @@ final class DrawnBlockRenderer: NSObject, WKNavigationDelegate {
 extension DrawnBlockRenderer.Look {
     /// The reply's colours for this appearance, as opaque hex over the chat's background.
     static func current(dark: Bool, highContrast: Bool, font: Double) -> Self {
-        let canvas = Self.resolve(Theme.canvas, dark: dark, highContrast: highContrast)
-        func hex(_ color: Color) -> String {
-            let (r, g, b, a) = Self.resolve(color, dark: dark, highContrast: highContrast)
-            let over = { (top: Double, bottom: Double) in top * a + bottom * (1 - a) }
-            let channels = [over(r, canvas.0), over(g, canvas.1), over(b, canvas.2)]
-            return "#" + channels.map { String(format: "%02x", Int(($0 * 255).rounded()).clamped(0, 255)) }.joined()
-        }
+        func hex(_ color: Color) -> String { Self.hex(color, dark: dark, highContrast: highContrast) }
         return Self(
             dark: dark, font: font, canvas: hex(Theme.canvas), text: hex(Theme.primaryText), secondary: hex(Theme.secondaryText),
             line: hex(Theme.tertiaryText), fill: hex(Theme.surfaceRaised), fill2: hex(Theme.controlFill), fill3: hex(Theme.surface))
+    }
+
+    /// One colour for this appearance, as opaque hex over the chat's background.
+    static func hex(_ color: Color, dark: Bool, highContrast: Bool) -> String {
+        let canvas = Self.resolve(Theme.canvas, dark: dark, highContrast: highContrast)
+        let (r, g, b, a) = Self.resolve(color, dark: dark, highContrast: highContrast)
+        let over = { (top: Double, bottom: Double) in top * a + bottom * (1 - a) }
+        let channels = [over(r, canvas.0), over(g, canvas.1), over(b, canvas.2)]
+        return "#" + channels.map { String(format: "%02x", Int(($0 * 255).rounded()).clamped(0, 255)) }.joined()
     }
 
     private static func resolve(_ color: Color, dark: Bool, highContrast: Bool) -> (Double, Double, Double, Double) {

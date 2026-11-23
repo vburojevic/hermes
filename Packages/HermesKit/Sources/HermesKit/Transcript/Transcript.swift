@@ -42,6 +42,9 @@ public struct UserEntry: Identifiable, Hashable, Sendable {
     /// A voice message: the recording's path on the gateway (`voice-<uuid>.m4a`); the text is its
     /// transcript.
     public var voicePath: String?
+    /// A message a live page sent for the person (`hermes.send`, `docs/chat.md` §3c): sent as
+    /// Hermes' `hidden` kind, never shown as a bubble, as the stored chat reads it.
+    public var isHidden = false
 
     public init(id: String, text: String, imagePlaceholderCount: Int = 0, inlineImageURLs: [String] = [], timestamp: Date? = nil, sender: AgentSender? = nil, fileNames: [String] = [], skillNames: [String] = []) {
         self.id = id
