@@ -540,9 +540,16 @@ document.getElementById("team").addEventListener("click", function () {
     note.textContent = ack.ok ? "Sent to Hermes." : "Not sent: " + ack.error + (ack.reason ? " (" + ack.reason + ")" : "");
   });
 });
-// What a page can't do: reach the network, by a request, a call or a frame.
+// What a page can't do: reach the network, by a request, a call or a frame, or use the microphone
+// or camera (both missing, or refused without the person being asked).
 var open = [];
-function tell() { note.textContent = open.length ? "Open: " + open.join(", ") : "Network: blocked, as it should be."; }
+function tell() { note.textContent = (open.length ? "Open: " + open.join(", ") : "Network: blocked, as it should be.") + capture; }
+var capture = "";
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(
+    function () { open.push("capture"); tell(); },
+    function (e) { capture = " Capture: " + e.name + "."; tell(); });
+} else { capture = " Capture: missing."; }
 if (window.RTCPeerConnection || window.webkitRTCPeerConnection) open.push("calls");
 var frame = document.createElement("iframe");
 frame.style.display = "none";

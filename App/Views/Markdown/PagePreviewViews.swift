@@ -462,7 +462,8 @@ private struct PageWebView {
         }
 
         /// A page never gets the camera or the microphone, and the person is never asked.
-        func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+        func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo,
+                     type: WKMediaCaptureType) async -> WKPermissionDecision {
             .deny
         }
 
