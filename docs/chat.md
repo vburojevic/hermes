@@ -752,6 +752,21 @@ once, in order. A note with no file behind it (someone typed it) stays words.
 | PDF, HTML page | The same card | The chat's Inspector, a Preview tab (`hermes-fs`, [inspector.md](inspector.md) §2.4): a page's relative pictures and styles load with it |
 | Anything else (zip, docx, pptx…) | The same card with Save | Reads the file (up to 100 MB, held in memory) and asks where to save it: the save panel on the Mac, Files on iPhone and iPad |
 
+**Keeping a copy.** Every file the gateway shares can be kept on the device, whatever its tap
+does: a card's and a tile's context menu (long press, or right-click on the Mac) has **Save to
+Device…** and **Share…** on iPhone and iPad, **Save As…** on the Mac, and VoiceOver offers the
+same as actions. Save to Device… opens Files, Save As… the save panel, Share… the share sheet
+(Files, AirDrop, other apps). The tap stays as it was: Open, the viewer, or Save for a card that
+saves. The viewer's own Save and Share for a picture are unchanged ([widgets.md](widgets.md) §9.1).
+All of these, and the Preview tab's Share or Save As… ([inspector.md](inspector.md) §2.4), take the
+one path (`GatewayFileCopy`): on the person's tap only, the file is read whole through `GET
+/api/fs/download` with the chat's Bot profile (`downloadCopy`, a `HEAD` first) and held in memory,
+up to 100 MB (`ReplyAttachment.maxSaveBytes`); over that it says "It's 120 MB, too big to save
+here". The app writes nothing itself: the share sheet gets the bytes with the file's name, and the
+file lands only where the person picks. A card says what went wrong on itself, in the words
+below; a tile says it in an alert, with Try Again when it couldn't load. A card or tile that
+can't be read (gone, private, Bot Mode off) has no menu.
+
 **Reads.** Nothing is read until the file is on screen, and all of it goes through the backend with
 the chat's Bot profile, like the Inspector: a picture whole through `GET /api/fs/download`
 (`downloadPicture`, a `HEAD` first; over `MediaViewing.maxBytes`, 50 MB, it's a card with Save and

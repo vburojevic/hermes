@@ -1,6 +1,9 @@
 import AVFoundation
 import HermesKit
 import HermesMarkdown
+#if os(iOS)
+import LinkPresentation
+#endif
 import OSLog
 import Synchronization
 import SwiftUI
@@ -292,6 +295,7 @@ private struct ReplyMediaTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase = Phase.loading
     @State private var attempt = 0
+    @State private var copying = GatewayFileCopy.State()
 
     private var cacheKey: String { "\(file.path)\u{0}\(Int(displayScale))" }
 
@@ -304,12 +308,17 @@ private struct ReplyMediaTile: View {
                 Button(action: open) { tile }
                     .buttonStyle(.plain)
                     .disabled(viewer == nil)
+                    .overlay { if copying.isReading { Spinner() } }
+                    // The viewer saves a picture to Photos; this keeps the file itself.
+                    .contextMenu { if !copying.isReading { GatewayFileCopyMenu(keep: keep) } }
                     .accessibilityLabel(label)
                     .accessibilityAddTraits(.isImage)
                     .accessibilityHint(String(localized: "Opens full screen"))
+                    .modifier(GatewayFileCopyActions(enabled: !copying.isReading, keep: keep))
                     .modifier(ReplyMediaTransitionSource(id: transitionID, namespace: namespace))
             }
         }
+        .gatewayFileCopies($copying, alerts: true, retry: keep)
         .task(id: Load(picture: references.gatewayPicture(.path(file.path)), attempt: attempt)) { await load() }
         #if DEBUG
         // Again once the reply has finished, so the viewer pages through all of its files.
@@ -385,6 +394,12 @@ private struct ReplyMediaTile: View {
         let request = MediaViewerRequest(files: viewerFiles, start: page, references: references, gatewayHosts: gatewayHosts,
                                          transitionID: transitionID)
         viewer.open(request, reducesMotion: reduceMotion)
+    }
+
+    private func keep(_ use: GatewayFileCopy.Use) {
+        guard case .file(let path, let profile) = references.gatewayPicture(.path(file.path)) else { return }
+        let client = references.roster?.boardClient
+        Task { await GatewayFileCopy.keep(path, profile: profile, client: client, as: use, in: $copying) }
     }
 
     private func load() async {
@@ -503,9 +518,7 @@ struct ReplyFileCard: View {
     @State private var size: Int64?
     /// What a `HEAD` of the file said, when it refused it.
     @State private var checked: MediaProblem?
-    @State private var saving = false
-    @State private var saveProblem: MediaProblem?
-    @State private var export: ReplyFileDocument?
+    @State private var copying = GatewayFileCopy.State()
     @State private var linkingBotMode = false
 
     private enum Action { case open, save, retry, linkBotMode, none }
@@ -515,7 +528,7 @@ struct ReplyFileCard: View {
     private var shownProblem: MediaProblem? {
         if !references.isBotModeOn { return .needsBotMode }
         if let problem, !Self.isTooBig(problem) { return problem }
-        return saveProblem ?? checked
+        return copying.problem ?? checked
     }
 
     private var action: Action {
@@ -542,21 +555,24 @@ struct ReplyFileCard: View {
             } else {
                 Button(action: perform) { card }
                     .buttonStyle(.plain)
-                    .disabled(saving)
+                    .disabled(copying.isReading)
             }
+        }
+        // Save and Share for any file it can read, whatever its tap does (docs/chat.md §3a).
+        .contextMenu {
+            if offersCopy { GatewayFileCopyMenu(keep: keep) }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([file.fileName, detail].joined(separator: ", "))
         .accessibilityHint(hint)
         .accessibilityAddTraits(action == .none ? [] : .isButton)
         .accessibilityAction { perform() }
+        .modifier(GatewayFileCopyActions(enabled: offersCopy, keep: keep))
         .task(id: "\(file.path)\u{0}\(references.isBotModeOn)") { await checkSize() }
         #if DEBUG
         .task { if await ReplyFileLaunchFlag.opens(file) { perform() } }
         #endif
-        .fileExporter(isPresented: Binding(get: { export != nil }, set: { if !$0 { export = nil } }),
-                      document: export, contentType: export?.contentType ?? .data,
-                      defaultFilename: file.fileName) { _ in export = nil }
+        .gatewayFileCopies($copying)
         .sheet(isPresented: $linkingBotMode) {
             if let workspace = references.workspace {
                 NavigationStack {
@@ -636,7 +652,7 @@ struct ReplyFileCard: View {
 
     @ViewBuilder
     private var actionLabel: some View {
-        if saving {
+        if copying.isReading {
             Spinner()
         } else if action != .none {
             Text(actionTitle)
@@ -723,10 +739,10 @@ struct ReplyFileCard: View {
         case .open:
             references.openInInspector(file.path)
         case .save:
-            Task { await save() }
+            keep(.save)
         case .retry:
-            if saveProblem != nil {
-                saveProblem = nil
+            if copying.problem != nil {
+                copying.problem = nil
             } else {
                 retry?()
             }
@@ -757,20 +773,13 @@ struct ReplyFileCard: View {
         }
     }
 
-    /// Reads the file, held in memory, and asks where to save it.
-    private func save() async {
-        guard case .file(let path, let profile) = references.gatewayPicture(.path(file.path)),
-              let client = references.roster?.boardClient else { return }
-        saving = true
-        defer { saving = false }
-        do {
-            let data = try await client.downloadCopy(path, profile: profile, limit: ReplyAttachment.maxSaveBytes)
-            export = ReplyFileDocument(data: data, suffix: file.suffix)
-        } catch is CancellationError {
-        } catch {
-            ReplyVideoPoster.log(error, video: false)
-            saveProblem = MediaProblem.of(error, video: false)
-        }
+    /// Whether the card can keep a copy: the gateway shares the file and it isn't too big to.
+    private var offersCopy: Bool { shownProblem == nil && !copying.isReading }
+
+    private func keep(_ use: GatewayFileCopy.Use) {
+        guard case .file(let path, let profile) = references.gatewayPicture(.path(file.path)) else { return }
+        let client = references.roster?.boardClient
+        Task { await GatewayFileCopy.keep(path, profile: profile, client: client, as: use, in: $copying) }
     }
 }
 
@@ -809,3 +818,214 @@ nonisolated struct ReplyFileDocument: FileDocument {
         FileWrapper(regularFileWithContents: data)
     }
 }
+
+// MARK: - Keeping a copy
+
+/// Keeping a copy of a gateway file on this device: one path for a file card, a picture or video
+/// tile and a Preview tab (`docs/chat.md` §3a, `docs/inspector.md` §2.4). Only on the person's
+/// tap, the file is read whole through `/api/fs/download` with the chat's Bot profile, up to
+/// `ReplyAttachment.maxSaveBytes`, and held in memory. It's written only where the person says:
+/// Save opens the save panel on the Mac and Files on iPhone and iPad, Share the share sheet.
+enum GatewayFileCopy {
+    enum Use: Equatable {
+        case save
+        case share
+    }
+
+    struct Copy: Identifiable {
+        let id = UUID()
+        let use: Use
+        let document: ReplyFileDocument
+        let fileName: String
+    }
+
+    /// A view's copy: being read, read and waiting for the person, or why it couldn't be.
+    struct State {
+        var reading: Use?
+        var copy: Copy?
+        var problem: MediaProblem?
+        /// What the person asked for last, so Try Again asks again.
+        var asked: Use?
+
+        var isReading: Bool { reading != nil }
+    }
+
+    static func keep(_ path: String, profile: String?, client: BackendClient?, as use: Use, in state: Binding<State>) async {
+        guard !state.wrappedValue.isReading else { return }
+        guard let client else {
+            state.wrappedValue = State(problem: .needsBotMode, asked: use)
+            return
+        }
+        state.wrappedValue = State(reading: use, asked: use)
+        do {
+            let data = try await client.downloadCopy(path, profile: profile, limit: ReplyAttachment.maxSaveBytes)
+            let name = (path as NSString).lastPathComponent
+            let document = ReplyFileDocument(data: data, suffix: (name as NSString).pathExtension.lowercased())
+            state.wrappedValue = State(copy: Copy(use: use, document: document, fileName: name), asked: use)
+        } catch is CancellationError {
+            state.wrappedValue.reading = nil
+        } catch {
+            ReplyVideoPoster.log(error, video: false)
+            state.wrappedValue = State(problem: MediaProblem.of(error, video: false), asked: use)
+        }
+    }
+
+    #if os(iOS)
+    static let saveTitle = String(localized: "Save to Device…")
+    #else
+    static let saveTitle = String(localized: "Save As…")
+    #endif
+    static let shareTitle = String(localized: "Share…")
+    /// On the Mac a copy is kept with the save panel; sending it on from there is the Finder's job.
+    static let offersShare: Bool = {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }()
+}
+
+/// Save to Device… and Share… in a file's context menu (Save As… on the Mac).
+struct GatewayFileCopyMenu: View {
+    let keep: (GatewayFileCopy.Use) -> Void
+
+    var body: some View {
+        Button(GatewayFileCopy.saveTitle, systemImage: "square.and.arrow.down") { keep(.save) }
+        if GatewayFileCopy.offersShare {
+            Button(GatewayFileCopy.shareTitle, systemImage: "square.and.arrow.up") { keep(.share) }
+        }
+    }
+}
+
+/// The context menu's Save and Share as VoiceOver actions, for an element that hides its children.
+struct GatewayFileCopyActions: ViewModifier {
+    let enabled: Bool
+    let keep: (GatewayFileCopy.Use) -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            #if os(iOS)
+            content
+                .accessibilityAction(named: Text(GatewayFileCopy.saveTitle)) { keep(.save) }
+                .accessibilityAction(named: Text(GatewayFileCopy.shareTitle)) { keep(.share) }
+            #else
+            content
+                .accessibilityAction(named: Text(GatewayFileCopy.saveTitle)) { keep(.save) }
+            #endif
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Asks the person where a copy goes once it's read: the save panel or Files, or the share
+    /// sheet. With `alerts`, what went wrong shows as an alert, for a control with no room to
+    /// say it; a card says it on itself.
+    func gatewayFileCopies(_ state: Binding<GatewayFileCopy.State>, alerts: Bool = false,
+                           retry: ((GatewayFileCopy.Use) -> Void)? = nil) -> some View {
+        modifier(GatewayFileCopyPresenter(state: state, alerts: alerts, retry: retry))
+    }
+}
+
+private struct GatewayFileCopyPresenter: ViewModifier {
+    @Binding var state: GatewayFileCopy.State
+    let alerts: Bool
+    let retry: ((GatewayFileCopy.Use) -> Void)?
+
+    private var saving: Bool { state.copy?.use == .save }
+
+    func body(content: Content) -> some View {
+        content
+            .fileExporter(isPresented: Binding(get: { saving }, set: { if !$0, saving { state.copy = nil } }),
+                          document: saving ? state.copy?.document : nil,
+                          contentType: state.copy?.document.contentType ?? .data,
+                          defaultFilename: state.copy?.fileName) { _ in state.copy = nil }
+            #if os(iOS)
+            .background {
+                // Only while there's a copy to share: nothing extra stays in a long chat.
+                if let copy = state.copy, copy.use == .share {
+                    GatewayFileShareSheet(copy: copy) { state.copy = nil }
+                        .id(copy.id)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            #endif
+            .alert(alertTitle, isPresented: Binding(get: { alerts && state.problem != nil },
+                                                    set: { if !$0 { state.problem = nil } })) {
+                if let retry, let use = state.asked, state.problem == .couldntLoad {
+                    Button("Try Again") { retry(use) }
+                }
+                Button("OK", role: .cancel) {}
+            }
+    }
+
+    private var alertTitle: String {
+        state.problem.map { ReplyFileCard.note($0, video: false) } ?? ""
+    }
+}
+
+#if os(iOS)
+/// The share sheet for a copy held in memory. The file goes to the sheet as data with its name
+/// (an item provider), so the app writes nothing to disk itself: where the file goes (Files,
+/// AirDrop, another app) is the person's choice there. On iPad it points at the control that
+/// asked for it.
+private struct GatewayFileShareSheet: UIViewControllerRepresentable {
+    let copy: GatewayFileCopy.Copy
+    let done: () -> Void
+
+    func makeUIViewController(context: Context) -> Presenter { Presenter(copy: copy, done: done) }
+    func updateUIViewController(_ controller: Presenter, context: Context) {}
+
+    final class Presenter: UIViewController {
+        private let copy: GatewayFileCopy.Copy
+        private let done: () -> Void
+        private var presented = false
+
+        init(copy: GatewayFileCopy.Copy, done: @escaping () -> Void) {
+            self.copy = copy
+            self.done = done
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard !presented else { return }
+            presented = true
+            let provider = NSItemProvider()
+            provider.suggestedName = copy.fileName
+            let data = copy.document.data
+            provider.registerDataRepresentation(forTypeIdentifier: copy.document.contentType.identifier, visibility: .all) { load in
+                load(data, nil)
+                return nil
+            }
+            let configuration = UIActivityItemsConfiguration(itemProviders: [provider])
+            // The sheet's header names the file and its kind, as it would a file from Files.
+            let metadata = LPLinkMetadata()
+            metadata.title = copy.fileName
+            metadata.originalURL = URL(filePath: copy.fileName)
+            let title = copy.fileName
+            configuration.metadataProvider = { key in
+                switch key {
+                case .title: title
+                case .linkPresentationMetadata: metadata
+                default: nil
+                }
+            }
+            let sheet = UIActivityViewController(activityItemsConfiguration: configuration)
+            sheet.popoverPresentationController?.sourceView = view
+            sheet.popoverPresentationController?.sourceRect = view.bounds
+            let done = done
+            sheet.completionWithItemsHandler = { _, _, _, _ in
+                MainActor.assumeIsolated { done() }
+            }
+            present(sheet, animated: true)
+        }
+    }
+}
+#endif
