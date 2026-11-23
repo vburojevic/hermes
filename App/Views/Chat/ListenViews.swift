@@ -50,7 +50,9 @@ struct ReplyListenStrip: View {
             Text(Waveform.time(isReading ? player.elapsed : duration))
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(Theme.secondaryText)
-            ClipSpeedButton(player: .shared)
+            // At its own width, so every speed shows whole; the waveform gives way.
+            ClipSpeedButton()
+                .fixedSize()
         }
         .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 12))
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -183,7 +185,9 @@ struct ListenMiniPlayer: View {
                         .background(Theme.ink, in: Circle())
                 }
                 .accessibilityLabel(player.isPaused ? "Play" : "Pause")
-                ClipSpeedButton(player: .shared)
+                // At its own width, so every speed shows whole; the title gives way.
+                ClipSpeedButton()
+                    .fixedSize()
                 Button {
                     player.stop()
                 } label: {

@@ -60,7 +60,7 @@ final class NowPlayingPublisher {
         on(center.skipForwardCommand) { [weak player] event in
             player?.forward(by: (event as? MPSkipIntervalCommandEvent)?.interval ?? 15)
         }
-        center.changePlaybackRateCommand.supportedPlaybackRates = [1, 1.5, 2]
+        center.changePlaybackRateCommand.supportedPlaybackRates = ListenSpeed.steps.map { NSNumber(value: $0) }
         on(center.changePlaybackRateCommand) { [weak player] event in
             if let rate = (event as? MPChangePlaybackRateCommandEvent)?.playbackRate { player?.rate = Double(rate) }
         }
@@ -152,7 +152,7 @@ final class ListenMediaModel: MediaSessionRepresentable {
             .stop { [weak self] in self?.player?.stop() },
             .skipBackward(preferredIntervals: [15]) { [weak self] interval in self?.player?.back(by: interval) },
             .skipForward(preferredIntervals: [15]) { [weak self] interval in self?.player?.forward(by: interval) },
-            .changePlaybackRate(supported: [1, 1.5, 2]) { [weak self] rate in self?.player?.rate = Double(rate) },
+            .changePlaybackRate(supported: ListenSpeed.steps.map(Float.init)) { [weak self] rate in self?.player?.rate = Double(rate) },
         ]
     }
 }
