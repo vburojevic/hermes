@@ -640,8 +640,29 @@ final class InspectorModel {
     }
 
     func openFile(_ path: String) {
-        let full = path.hasPrefix("/") || path.hasPrefix("~") ? path : ((workingFolder ?? "") as NSString).appendingPathComponent(path)
+        let full = fullPath(path)
+        // A PDF is never text: the File tab could only say so. A Preview tab shows it (§2.4).
+        if full.lowercased().hasSuffix(".pdf") {
+            openAddress(full)
+            return
+        }
         open(.file, key: full, title: ProjectPath.lastComponent(full))
+    }
+
+    /// A file a reply names or sent (`GatewayFileLink`, `ReplyAttachment`): a page, a PDF or a
+    /// picture the File tab doesn't draw in a Preview tab, where a page's relative files load
+    /// too; anything else in the File tab (§2.4, `docs/chat.md` §3a).
+    func openSentFile(_ path: String) {
+        let full = fullPath(path)
+        if GatewayFileOpening.opensInPreview(full) {
+            openAddress(full)
+        } else {
+            openFile(full)
+        }
+    }
+
+    private func fullPath(_ path: String) -> String {
+        path.hasPrefix("/") || path.hasPrefix("~") ? path : ((workingFolder ?? "") as NSString).appendingPathComponent(path)
     }
 
     /// A turn's Changes row (`docs/chat.md` §1): its files and diffs in the Changed Files tab

@@ -115,9 +115,9 @@ follows its behaviour where this doc is silent.
 
 | Tab | Opens from | Data |
 |---|---|---|
-| **Preview** (web page, localhost, gateway file: HTML, PDF, image) | `preview.open {url, label}` from Hermes; a page card in the reply (Hermes's `desktop_preview` open); Open Address… (⌘L) and the URL bar | The app's own `WKWebView` (`PreviewController`). Gateway files load through the `hermes-fs` scheme from `GET /api/fs/download` (§2.4). Links in replies open in the browser, not here |
+| **Preview** (web page, localhost, gateway file: HTML, PDF, image) | `preview.open {url, label}` from Hermes; a page card in the reply (Hermes's `desktop_preview` open); Open Address… (⌘L) and the URL bar; a PDF from anywhere a File tab opens, and a PDF or HTML page a reply names or sends (§2.4) | The app's own `WKWebView` (`PreviewController`). Gateway files load through the `hermes-fs` scheme from `GET /api/fs/download` (§2.4). Links in replies open in the browser, not here |
 | **Artifact** (HTML, SVG, code) | `artifactCard` in the reply | Found in the reply by the app (§4). Rendered offline in a sandboxed web view; Allow Network is a toggle per artifact |
-| **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine. A picture or video file, and Open on a media card ([widgets.md](widgets.md) §9), open as media instead: `GET /api/fs/download` for a picture, Range reads of `GET /api/files/stream` for a video (§2.8) |
+| **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) or sends (a `MEDIA:` line's card, [chat.md](chat.md) §3a) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine. A picture or video file, and Open on a media card ([widgets.md](widgets.md) §9), open as media instead: `GET /api/fs/download` for a picture, Range reads of `GET /api/files/stream` for a video (§2.8) |
 | **Files** | + menu | `GET /api/fs/list?path&profile`, folders loaded as they open; the app also hides `node_modules`, `.git` and `.DS_Store`. Git letters from `GET /api/fs/git-root` and `GET /api/git/status` |
 | **Changes** | Review on the latest file-changing turn's `turnCheckpoint` (iPad and Mac; elsewhere Review is its own sheet, [checkpoints.md](checkpoints.md)), Show in Changes on a diff card, + menu, `pane.reveal review` | `GET /api/git/review/list?path&scope&base` with scope `lastTurn` (This Turn), `branch` or `uncommitted`; `GET /api/git/review/diff?path&file&scope&base&staged`; `POST /api/git/review/stage` / `unstage {path, file}`; `commit {path, message, push}`; `create-pr {path}`. `GET /api/git/review/ship-info` finds the branch's open pull request; `GET /api/git/gh-auth` says whether Create Pull Request can work (§2.5) |
 | **Changed Files** | A turn's Changes row in the chat, on the Mac and iPad landscape (iPhone and iPad portrait open the Changes sheet instead, [chat.md](chat.md) §2), + menu (the latest turn's) | None: the turn's own edits (`TurnChanges`), so it works without Bot Mode (§2.7) |
@@ -132,7 +132,11 @@ the chat's working folder: the live session's `cwd`, else its project's folder, 
 default folder. A Bot's files are read through its profile (`?profile=`).
 
 A file a reply names opens only here, in that chat's File tab, read through the gateway: never
-through the system or another app, since the reply may quote a page or email Hermes read. The
+through the system or another app, since the reply may quote a page or email Hermes read. A PDF
+or an HTML page a reply names or sends opens in a Preview tab instead (`InspectorModel.openSentFile`,
+`GatewayFileOpening`), where a page's relative files load too (§2.4); a PDF opened from anywhere
+else (the Files tree, a pill) does as well, since the File tab could only say it isn't text. An
+HTML file from the tree, a pill or a widget's link still opens as its source. The
 gateway refuses `.env` files, credential stores (`auth.json`, `config.yaml`, `credentials`…) and
 anything under `mcp-tokens/` or `pairing/` (`hermes_cli/web_routers/files.py`), and the tab says
 so.
@@ -201,7 +205,8 @@ and Changes.
 
 ### 2.4 Gateway files in the Preview
 
-A path (`/…`, `~/…` or `file://…`) opens as `hermes-fs://gateway/<path>` (`GatewayFileScheme`). The
+A path (`/…`, `~/…` or `file://…`) opens as `hermes-fs://gateway/<path>` (`GatewayFileScheme`):
+typed in the URL bar, from `preview.open`, or a PDF or page a reply names or sends (§2). The
 app's scheme handler loads each request through the gateway (below), so an HTML file's relative
 images, scripts and styles resolve too; PDFs and images show as they would in a browser.
 

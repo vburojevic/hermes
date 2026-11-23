@@ -85,11 +85,12 @@ struct ReferenceContext: Equatable {
         workspace.selection = .skills
     }
 
-    /// A gateway file a message named (`GatewayFileLink`): its File tab in this chat's Inspector.
-    /// Outside a chat (a group room), the file's preview.
+    /// A gateway file a message named (`GatewayFileLink`) or sent (`ReplyAttachment`): its File
+    /// tab in this chat's Inspector, or a Preview tab for a page or a PDF. Outside a chat (a group
+    /// room), the file's preview.
     func openInInspector(_ path: String) {
         if let conversation {
-            conversation.inspector.openFile(path)
+            conversation.inspector.openSentFile(path)
         } else {
             workspace?.openedFile = GatewayFile(path: path)
         }
@@ -100,8 +101,9 @@ struct ReferenceContext: Equatable {
     /// in a group room it's joined onto the gateway's default folder here, and nothing opens
     /// until that folder is known.
     func openWidgetFile(_ address: String) {
-        if conversation != nil {
-            if let path = WidgetFile.path(address) { openInInspector(path) }
+        if let conversation {
+            // A widget's file opens in the File tab as it always has (a PDF in a Preview tab).
+            if let path = WidgetFile.path(address) { conversation.inspector.openFile(path) }
         } else if let path = WidgetFile.resolve(address, in: workspace?.projects.defaultFolder) {
             openInInspector(path)
         }
