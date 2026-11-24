@@ -73,17 +73,13 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        // One list for every mode, filter and search, with no identity that changes when a reply
-        // arrives: VoiceOver's place and the scroll position survive (`docs/inbox.md` §6).
-        List { rowContent }
+        lists
             // Plain rows: the sidebar list style adds its own insets and selection, which the
             // design doesn't use.
             .listStyle(.plain)
             .scrollContentBackground(isCompact ? .automatic : .hidden)
             .environment(\.defaultMinListRowHeight, 10)
             .environment(\.sidebarShowsSelection, !isCompact)
-            .animation(listMotion, value: botOrder)
-            .animation(listMotion, value: chatOrder)
             .onAppear { workspace.activity.listAppeared() }
             .task {
                 #if os(macOS)
@@ -150,8 +146,47 @@ struct SidebarView: View {
             }
     }
 
+    #if os(macOS)
+    /// Chats and Bots each keep a list of their own, with its rows, their measured heights and
+    /// its scroll position, and switching shows one and hides the other. With one list for both,
+    /// each switch replaced every row: AppKit diffed the whole list and measured each new row's
+    /// height again, which held up the window (`docs/inbox.md` §5).
+    private var lists: some View {
+        ZStack {
+            // The search belongs to the list that's shown; the hidden one keeps what it showed,
+            // and a switch clears the search anyway.
+            KeptList(isShown: botRoster == nil) {
+                rowContent(roster: nil, searching: botRoster == nil && isSearching)
+            }
+            .animation(listMotion, value: keptChatOrder)
+            if let roster = workspace.roster {
+                KeptList(isShown: botRoster != nil) {
+                    rowContent(roster: roster, searching: botRoster != nil && isSearching)
+                }
+                .animation(listMotion, value: roster.visibleBots.map(\.name))
+            }
+        }
+    }
+
+    /// The chats in order whichever list is shown, so a switch alone never animates the chats
+    /// list (`docs/inbox.md` §3).
+    private var keptChatOrder: [String] {
+        botRoster == nil && isSearching ? [] : workspace.inboxSessions.map(\.stableID)
+    }
+    #else
+    /// One list for every mode, filter and search, with no identity that changes when a reply
+    /// arrives: VoiceOver's place and the scroll position survive (`docs/inbox.md` §6).
+    private var lists: some View {
+        List { rowContent(roster: botRoster, searching: isSearching) }
+            .animation(listMotion, value: botOrder)
+            .animation(listMotion, value: chatOrder)
+    }
+    #endif
+
+    /// The rows of the list for `roster`'s Bots, or for the chats when it's nil. In Bots mode the
+    /// roster filters itself by the search.
     @ViewBuilder
-    private var rowContent: some View {
+    private func rowContent(roster botRoster: BotRoster?, searching isSearching: Bool) -> some View {
         if isCompact, statusPlacement.showsRow {
             // The connection under the large title at the accessibility sizes, above the Chats /
             // Bots switch, or above Tasks without Bot Mode. It isn't a button.
@@ -167,7 +202,7 @@ struct SidebarView: View {
                 .modifier(SidebarRowInsets())
         }
         if !isSearching {
-            navigationRows
+            navigationRows(roster: botRoster)
             if botRoster == nil, workspace.showsProjects {
                 ProjectSidebarSection(workspace: workspace)
             }
@@ -201,10 +236,10 @@ struct SidebarView: View {
         }
         #else
         // In a narrow window the filter sits in the top row of the sidebar over the chat; in the
-        // toolbar it would only wait in the » overflow while the sidebar is put away.
-        if botRoster == nil, !windowIsNarrow {
-            ToolbarItem(placement: .automatic) { InboxFilterButton(workspace: workspace) }
-        }
+        // toolbar it would only wait in the » overflow while the sidebar is put away. Bots mode
+        // hides the item rather than removing it, so a switch doesn't build the toolbar again.
+        ToolbarItem(placement: .automatic) { InboxFilterButton(workspace: workspace) }
+            .hidden(botRoster != nil || windowIsNarrow)
         #endif
     }
 
@@ -252,7 +287,7 @@ struct SidebarView: View {
     // MARK: Navigation rows
 
     @ViewBuilder
-    private var navigationRows: some View {
+    private func navigationRows(roster botRoster: BotRoster?) -> some View {
         if let roster = botRoster {
             DestinationRow(workspace: workspace, title: "All Bots", symbol: "square.grid.2x2", item: nil)
             // On iPhone these are the compose menu's.
@@ -270,6 +305,12 @@ struct SidebarView: View {
             }
         }
         DestinationRow(workspace: workspace, title: "Tasks", symbol: "calendar.badge.clock", item: .tasks, shortcut: "⇧⌘1")
+            #if os(macOS)
+            // Tasks is in both lists, near the top, so each list finds its scroll view here. A
+            // search hides it, but each list is first drawn without one: the search starts empty
+            // and a switch clears it.
+            .background(KeptListAnchor())
+            #endif
         DestinationRow(workspace: workspace, title: "Skills", symbol: "book.closed", item: .skills, shortcut: "⇧⌘2")
     }
 

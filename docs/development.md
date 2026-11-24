@@ -1169,6 +1169,11 @@ backend mock started with `--token <t>` and the app given `-HERMES_MOCK_TOKEN <t
   (`/api/mock/drop-sockets {outage}`), then the wake notice and 10 s after it.
 - `mark <text>` writes a line of its own; `window` logs whether the chats window is on screen and
   the app in front. A covered window draws no frames, so a run with one measures nothing.
+- `sidebarlists` logs each of the sidebar's lists (one per mode on the Mac, `docs/inbox.md` §5):
+  hidden or shown, its rows, where it's scrolled, and whether Tab, a click at its middle or the
+  window's accessibility tree reaches it. `sidebarat 600` scrolls the shown list to 600 points
+  from its top, so a run can check where each list is after a switch. `search Ada` types "Ada"
+  in the sidebar's search field, and `search` alone clears it.
 
 Start a measured copy with `-NSAppSleepDisabled YES`, so App Nap doesn't slow a covered window's
 app, and `-HERMES_LAUNCH_BEHIND YES` (Debug), so it stays behind the app in front. Both are

@@ -314,3 +314,78 @@ struct SidebarState: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+
+#if os(macOS)
+/// One of the Mac sidebar's two lists, Chats and Bots, kept while the other is shown
+/// (`docs/inbox.md` §5). A hidden list keeps its rows, their heights and its scroll position, and
+/// is out of reach: AppKit hides its scroll view, so it leaves the key view loop, VoiceOver and
+/// hit testing, and SwiftUI hides it from both as well (`docs/inbox.md` §6).
+struct KeptList<Rows: View>: View {
+    let isShown: Bool
+    @ViewBuilder let rows: Rows
+    @State private var scroll = KeptListScroll()
+
+    var body: some View {
+        List { rows }
+            .environment(\.keptListScroll, scroll)
+            .opacity(isShown ? 1 : 0)
+            .allowsHitTesting(isShown)
+            .accessibilityHidden(!isShown)
+            .zIndex(isShown ? 1 : 0)
+            .onChange(of: isShown, initial: true) { scroll.isShown = isShown }
+    }
+}
+
+/// The scroll view behind a `KeptList`, found by `KeptListAnchor` from inside one of its rows,
+/// since SwiftUI doesn't hand out the `NSScrollView` it draws a `List` with.
+final class KeptListScroll {
+    private weak var view: NSScrollView?
+    var isShown = true {
+        didSet { apply() }
+    }
+
+    func attach(_ view: NSScrollView) {
+        self.view = view
+        apply()
+    }
+
+    private func apply() {
+        guard let view, view.isHidden == isShown else { return }
+        view.isHidden = !isShown
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var keptListScroll: KeptListScroll?
+}
+
+/// Sits behind a row that every `KeptList` draws first, and tells the list's `KeptListScroll`
+/// which scroll view it's in. The row can scroll away later; the scroll view stays.
+struct KeptListAnchor: NSViewRepresentable {
+    @Environment(\.keptListScroll) private var scroll
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ view: AnchorView, context: Context) {
+        view.scroll = scroll
+        view.attach()
+    }
+
+    final class AnchorView: NSView {
+        weak var scroll: KeptListScroll?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            attach()
+        }
+
+        func attach() {
+            guard window != nil, let scroll, let scrollView = enclosingScrollView else { return }
+            scroll.attach(scrollView)
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func isAccessibilityElement() -> Bool { false }
+    }
+}
+#endif
