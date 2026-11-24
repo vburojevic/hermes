@@ -29,8 +29,10 @@ import HermesPush
 /// Settings → Notifications → Dock Badge does, whose pop-up menu a drive can't use. `remove gateway
 /// <name>` removes a gateway as Remove in Settings → Gateways does once confirmed, without the
 /// alert; only a gateway on this Mac (127.0.0.1, localhost or ::1), so a run can't remove a real
-/// one. Each step logs `HERMES_MAC_DRIVE` with its result and the Settings window's title, which is
-/// the page it shows, to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
+/// one. `stopnotifications gateway <name>` does what Stop Notifications on that gateway's
+/// notification page does once confirmed, for a gateway on this Mac only. Each step logs
+/// `HERMES_MAC_DRIVE` with its result and the Settings window's title, which is the page it shows,
+/// to `-HERMES_MAC_DRIVE_LOG <file>` too when it's given.
 ///
 /// The freeze scenarios (docs/development.md, Hangs) mark each step in the hang log
 /// (`-HERMES_HANG_LOG`): `mark <text>`; `mode chats|bots` (the sidebar's list); `scroll sidebar
@@ -124,6 +126,8 @@ enum MacDebugDriver {
                 result = badge(argument)
             case "remove":
                 result = remove(argument, in: app)
+            case "stopnotifications":
+                result = stopNotifications(argument, in: app)
             default:
                 result = "unknown step"
             }
@@ -158,6 +162,24 @@ enum MacDebugDriver {
         } catch {
             return "failed: \((error as NSError).domain) \((error as NSError).code)"
         }
+    }
+
+    /// `stopnotifications gateway <name>`: what Stop Notifications on the gateway's notification page
+    /// does once confirmed. Only a gateway on this Mac, for the same reason as `remove`.
+    private static func stopNotifications(_ argument: String, in app: AppModel) -> String {
+        #if HERMES_PUSH
+        guard argument.hasPrefix("gateway ") else { return "stopnotifications needs gateway <name>" }
+        let name = String(argument.dropFirst("gateway ".count))
+        guard let bot = app.bots.first(where: { $0.name == name }) else { return "no gateway named that" }
+        guard let host = bot.baseURL.host(), ["127.0.0.1", "localhost", "::1"].contains(host) else {
+            return "refused: not a gateway on this Mac"
+        }
+        guard let workspace = app.workspaces[bot.id] else { return "no workspace" }
+        PushCenter.shared.stopNotifications(from: workspace)
+        return "stopped"
+        #else
+        return "no push in this build"
+        #endif
     }
 
     /// `select group:<id>` or `select bot:<name>`: what a click on that sidebar row does, so a chat
