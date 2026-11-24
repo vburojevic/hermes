@@ -137,11 +137,34 @@ def test_a_render_value_the_plugin_doesnt_know_is_left_out_not_refused(widgets):
     assert kept == [["widgets", "gateway-files", "markdown"]]
 
 
+ALL_RENDERS = ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+               "diagrams", "math", "svg", "live-pages", "office-files", "link-cards"]
+
+
 def test_the_client_line_names_gateway_files():
     prompt = plugin_module("prompt")
     line = prompt.client_line({**CLIENT, "renders": ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables"]})
     assert "files sent on MEDIA: lines" in line
     assert len(line) <= prompt.CLIENT_LINE_MAX and not line.endswith("…"), line
+
+
+def test_every_render_value_the_app_sends_is_kept_and_named(widgets):
+    """1.7.0 knows each value the app sends: drawings, formulas, SVG, live pages, Office files and
+    link cards are kept, and the line names them all, whole, even with the longest version and build."""
+    prompt = plugin_module("prompt")
+    core = plugin_module("core")
+    assert list(core.CLIENT_RENDERS) == ALL_RENDERS
+    assert set(prompt.RENDERS) == set(ALL_RENDERS)
+    assert widgets.command("client", client_args(text="Draw it", renders=ALL_RENDERS))["ok"]
+    stored = json.loads((widgets.store.dir / "clients.json").read_text())
+    kept = [m["client"]["renders"] for markers in stored["pending"].values() for m in markers]
+    assert kept == [ALL_RENDERS]
+    longest = {**CLIENT, "version": "9" * 20, "build": "9" * 20, "device": "ipad", "os": "iPadOS",
+               "os_version": "27.3.1", "renders": ALL_RENDERS}
+    line = prompt.client_line(longest)
+    assert len(line) <= prompt.CLIENT_LINE_MAX and not line.endswith("…"), (len(line), line)
+    for words in ("Mermaid diagrams", "$$ display math", "SVG pictures", "::preview pages", "Office files", "link cards"):
+        assert words in line
 
 
 @pytest.mark.parametrize("change, error", [

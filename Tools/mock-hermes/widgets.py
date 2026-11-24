@@ -101,7 +101,8 @@ PLUGIN = {"version": VERSION, "tolerant": False}  # the installed plugin's versi
 CLIENT_OS = ("iOS", "iPadOS", "macOS")
 CLIENT_DEVICES = ("iphone", "ipad", "mac")
 CLIENT_RENDERS = ("widgets", "gateway-file-images", "markdown", "code", "tables")
-CLIENT_RENDERS_REPO = ("widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables")
+CLIENT_RENDERS_REPO = ("widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+                       "diagrams", "math", "svg", "live-pages", "office-files", "link-cards")
 CLIENT_FIELDS = {"id": r"hermes-app", "version": r"[0-9][0-9A-Za-z.+-]{0,19}", "build": r"[0-9A-Za-z.]{1,20}",
                  "os": "|".join(CLIENT_OS), "os_version": r"[0-9]{1,3}(\.[0-9]{1,3}){0,2}",
                  "device": "|".join(CLIENT_DEVICES)}

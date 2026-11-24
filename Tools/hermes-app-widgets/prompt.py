@@ -58,9 +58,13 @@ def render(catalog: dict[str, dict]) -> str:
 
 # The app's client line (docs/widgets.md §11): which app sent the turn and what it draws, so the
 # reply is shaped for it. Only formatting: it says nothing about who the person is or what they allow.
-CLIENT_LINE_MAX = 300
+# 400: an app that names everything it draws (1.7.0's twelve values) fits whole, with room for a
+# long version and build.
+CLIENT_LINE_MAX = 400
 RENDERS = {"widgets": "widgets", "gateway-file-images": "images from gateway files",
-           "gateway-files": "files sent on MEDIA: lines", "markdown": "Markdown", "code": "code blocks", "tables": "tables"}
+           "gateway-files": "files sent on MEDIA: lines", "markdown": "Markdown", "code": "code blocks", "tables": "tables",
+           "diagrams": "Mermaid diagrams", "math": "$$ display math", "svg": "SVG pictures",
+           "live-pages": "::preview pages", "office-files": "Office files", "link-cards": "link cards"}
 DEVICES = {"iphone": "an iPhone", "ipad": "an iPad", "mac": "a Mac"}
 
 

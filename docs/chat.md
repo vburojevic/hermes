@@ -807,8 +807,9 @@ parsed Markdown (`MarkdownCache.segments`), and the Markdown between its files i
 time like any reply's (`MarkdownCache.prewarm`). A reply without files takes the same path as
 before: one scan of its bytes.
 
-**The agent knows.** The app tells the widgets plugin it draws `gateway-files` ([widgets.md](widgets.md)
-§11), so the model hears that a `MEDIA:` line shows here.
+**The agent knows.** The app tells the widgets plugin it draws `gateway-files` and `office-files`
+([widgets.md](widgets.md) §11), so the model hears that a `MEDIA:` line shows here; diagrams,
+formulas, SVG, live pages and link cards (§3b–§3d) are told the same way.
 
 Check with the mock: "attachments" (two pictures, a video, a PDF, Markdown, an HTML page with a
 picture beside it, a zip, a 60 MB picture, one gone, one private, a code-block example) and

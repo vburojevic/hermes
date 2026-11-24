@@ -29,6 +29,19 @@ public struct ClientApp: Sendable, Hashable {
         /// cards that open or save them (`docs/chat.md` §3a).
         case gatewayFiles = "gateway-files"
         case markdown, code, tables
+        /// A ```` ```mermaid ```` fence drawn as the diagram (`docs/chat.md` §3b).
+        case diagrams
+        /// A `$$…$$` or `\[…\]` block drawn as a formula; inline `$…$` stays words (§3b).
+        case math
+        /// A ```` ```svg ```` fence or one whole `<svg>` paragraph drawn as a picture (§3b).
+        case svg
+        /// A `::preview{file=…}` line shown as a live page (§3c).
+        case livePages = "live-pages"
+        /// Word, Excel, PowerPoint, rich text and iWork files opened in Quick Look (§3a).
+        case officeFiles = "office-files"
+        /// A link alone on its line to YouTube, Vimeo, Spotify, SoundCloud, GitHub or Bilibili
+        /// shown as a card (§3d).
+        case linkCards = "link-cards"
 
         /// The values plugin 1.6.0 knows. It refuses a client that names any other, and its
         /// client line is lost with it (`ClientAnnouncements`).
@@ -37,7 +50,8 @@ public struct ClientApp: Sendable, Hashable {
 
     public static let id = "hermes-app"
     /// Everything but widgets, which the gateway's widget store answers for (`WidgetStore`).
-    public static let alwaysRenders: [Render] = [.gatewayFileImages, .gatewayFiles, .markdown, .code, .tables]
+    public static let alwaysRenders: [Render] = [.gatewayFileImages, .gatewayFiles, .markdown, .code, .tables,
+                                                 .diagrams, .math, .svg, .livePages, .officeFiles, .linkCards]
 
     public let version: String
     public let build: String

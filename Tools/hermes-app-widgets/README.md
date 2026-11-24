@@ -167,8 +167,11 @@ commands that change state are refused from messaging platforms.
 Just before it sends a turn, the app runs `client` with the SHA-256 of the turn's text (its UTF-8
 bytes, nothing trimmed) and what it is: its version and build, `os` (`iOS`, `iPadOS`, `macOS`),
 `os_version`, `device` (`iphone`, `ipad`, `mac`) and `renders` (any of `widgets`,
-`gateway-file-images`, `gateway-files`, `markdown`, `code`, `tables`; `gateway-files` means files
-sent on `MEDIA:` lines show in the reply). Every field is checked against a short list or pattern
+`gateway-file-images`, `gateway-files`, `markdown`, `code`, `tables`, `diagrams`, `math`, `svg`,
+`live-pages`, `office-files`, `link-cards`; `gateway-files` means files sent on `MEDIA:` lines show
+in the reply, `diagrams` Mermaid fences, `math` `$$` blocks, `svg` SVG pictures, `live-pages`
+`::preview` lines, `office-files` Office files in Quick Look and `link-cards` a link alone on its
+line as a card; 1.7.0 knows all of them). Every field is checked against a short list or pattern
 and anything else is refused: no device name, no identifier, nothing a person typed. A render value
 the plugin doesn't know (a newer app's) is left out rather than refused, so long as it's a short
 lowercase word (`[a-z][a-z0-9-]{0,31}`, at most 16): 1.6.0 refused the whole client for one, and the
@@ -177,7 +180,7 @@ per chat id for 10 minutes, oldest dropped first.
 
 `pre_llm_call` hashes the turn's clean `user_message` and uses up the oldest live marker with that
 hash in the chat, or in a session Hermes compacted it from. When that client differs from the one
-the chat's model was last told about, the turn gets one line (at most 300 characters), joined with
+the chat's model was last told about, the turn gets one line (at most 400 characters; 300 before 1.7.0), joined with
 the widget reminder when both apply:
 
 ```

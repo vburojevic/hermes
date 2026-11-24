@@ -1013,7 +1013,7 @@ Look or save ([chat.md](chat.md) §3a). "video links" answers with links that sh
 links that stay words ([chat.md](chat.md) §3d).
 `-HERMES_OPEN_SENT_FILE <name>` opens the first file a reply sent with that name 5 s after it
 shows, as a tap would: the viewer, the Inspector or Save. `--widgets-version repo` plays this
-repository's widgets plugin, which knows `gateway-files`; the default 1.6.0 refuses it and the
+repository's widgets plugin (1.7.0), which knows `gateway-files` and every other value the app sends; the default 1.6.0 refuses it and the
 app tells it again without it (`[mock-widgets] plugin 1.6.0 refused …` in the log). Mock-only: `POST
 /api/mock/inspector/screen {action: evict|stop|start}` (close codes 4000 and 4001; Start Screen
 in the app is `display.start`), `{action: uninstall|install|unsupported|supported}` (the Screen's

@@ -147,8 +147,20 @@ struct ClientAppTests {
 
     @Test func theAppSaysItDrawsGatewayFiles() {
         #expect(Self.drawsFiles.json["renders"]?.arrayValue?.compactMap(\.stringValue)
-                == ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables"])
+                == ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+                    "diagrams", "math", "svg", "live-pages", "office-files", "link-cards"])
         #expect(Self.drawsFiles.withRendersKnownSince160.renders == [.widgets, .gatewayFileImages, .markdown, .code, .tables])
+    }
+
+    /// Every value fits what a tolerant plugin keeps (`RENDER_VALUE`, at most 16 in its `core.py`), so
+    /// a newer plugin never refuses the client for one of them, and the app names everything it draws.
+    @Test func everyRenderValueFitsThePluginsCheck() throws {
+        let pattern = try Regex("^[a-z][a-z0-9-]{0,31}$")
+        #expect(ClientApp.Render.allCases.count <= 16)
+        for render in ClientApp.Render.allCases {
+            #expect(render.rawValue.wholeMatch(of: pattern) != nil, "\(render.rawValue)")
+        }
+        #expect(Set(ClientApp.alwaysRenders + [.widgets]) == Set(ClientApp.Render.allCases))
     }
 
     @Test func aPluginThatRefusesTheNewValueStillGetsTheClient() async throws {
@@ -157,7 +169,8 @@ struct ClientAppTests {
             runtimeID: "rt", storedID: "st", client: Self.drawsFiles, textHash: ClientApp.textHash("hi"))
         #expect(older)
         #expect(sent.renders.withLock { $0 } == [
-            ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables"],
+            ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+             "diagrams", "math", "svg", "live-pages", "office-files", "link-cards"],
             ["widgets", "gateway-file-images", "markdown", "code", "tables"],
         ])
         // Remembered for that profile, until the plugin may have changed.

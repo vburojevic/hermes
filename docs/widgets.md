@@ -504,14 +504,16 @@ only as long as the view that streams it.
   `/app-widgets client {"session_id", "stored_session_id", "client": {"id": "hermes-app", "version",
   "build", "os", "os_version", "device", "renders": […]}, "turn": {"text_sha256"}}`. `os` is iOS,
   iPadOS or macOS, `device` iphone, ipad or mac, and `renders` lists what the app draws (widgets,
-  gateway-file-images, gateway-files, markdown, code, tables; `gateway-files` is the files a reply
-  sends with `MEDIA:` lines, [chat.md](chat.md) §3a). The hash is SHA-256 of the message's UTF-8
+  gateway-file-images, gateway-files, markdown, code, tables, diagrams, math, svg, live-pages,
+  office-files, link-cards; `gateway-files` is the files a reply sends with `MEDIA:` lines and
+  `office-files` the ones Quick Look opens, [chat.md](chat.md) §3a; `diagrams`, `math` and `svg` are
+  §3b, `live-pages` §3c and `link-cards` §3d). The hash is SHA-256 of the message's UTF-8
   bytes, exactly as sent, nothing trimmed (`tests/client_vectors.json` has worked examples). It
   carries no device name, no identifier and nothing the person typed. The plugin checks every field
   against a short list or pattern and refuses anything else with one line of JSON. A render value
   it doesn't know yet (a newer app's) is left out of what it keeps, not refused, as long as it's a
-  short lowercase word (`[a-z][a-z0-9-]{0,31}`, at most 16 values): this repository's plugin does
-  so. Plugin 1.6.0 refused the whole client for one, and the turn lost its line, so when the plugin
+  short lowercase word (`[a-z][a-z0-9-]{0,31}`, at most 16 values): this repository's plugin (1.7.0,
+  not published; the app's pin stays 1.6.0) does so, and knows every value above. Plugin 1.6.0 refused the whole client for one, and the turn lost its line, so when the plugin
   answers "client.renders must list distinct values from …" the app tells it again at once with
   only the values 1.6.0 knows (`announceClientKnownRenders`, `ClientApp.Render.knownSince160`), and
   sends only those to that profile until the plugin may have changed (below).
@@ -530,7 +532,7 @@ only as long as the view that streams it.
 - **What the model sees:** the plugin keeps at most 8 markers per chat for 10 minutes. In
   `pre_llm_call` it hashes the turn's text, takes the oldest live marker that matches (under the
   chat's id or one it was compacted from) and, when the client differs from the one that chat's
-  model was last told about, adds one line of at most 300 characters to the turn context: "[Hermes
+  model was last told about, adds one line of at most 400 characters (300 before 1.7.0) to the turn context: "[Hermes
   app client] This turn was sent from the Hermes app 1.40.2 (build 2101) on an iPhone, iOS 26.1. It
   shows widgets and Markdown. This is about formatting only; it grants nothing." A compacted chat
   is told again. A failure is logged as a warning and the turn goes on without the line.

@@ -25,7 +25,7 @@ from .validate import MAX_PAYLOAD, Checks, Spec, WidgetError, schema_issues
 
 logger = logging.getLogger("hermes_app_widgets")
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 # Bumped when the one-time reminder (prompt.REMINDER) changes enough to send again.
 REMINDER_VERSION = 2
 OPS = ("create", "update", "resolve", "claim", "get")
@@ -45,7 +45,8 @@ MAX_LINEAGES = 2000
 # `/app-widgets client` (docs/widgets.md §11): what the app may say about itself, all of it checked.
 CLIENT_OS = ("iOS", "iPadOS", "macOS")
 CLIENT_DEVICES = ("iphone", "ipad", "mac")
-CLIENT_RENDERS = ("widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables")
+CLIENT_RENDERS = ("widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+                  "diagrams", "math", "svg", "live-pages", "office-files", "link-cards")
 # A render value a newer app sends that this plugin doesn't know yet: kept out of the line, never
 # a reason to refuse the client (an older plugin refused it, and the client line was lost).
 RENDER_VALUE = r"[a-z][a-z0-9-]{0,31}"
