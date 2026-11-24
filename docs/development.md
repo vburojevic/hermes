@@ -936,7 +936,8 @@ window), `item View > Show Sidebar` (chooses a menu item), `mainkey esc` (Esc in
 `mainkey tab|up|down|left|right|return` (typed into the chats window, as the project home's lanes
 read them), `key cmd+r` (⌘R in the Settings window, then the menus, as Setup's Check Again answers),
 `sidebar` (the sidebar button's action), `select group:<id>` or `select bot:<name>` (that sidebar
-row, as a click on it would, to leave a chat and open it again in one launch), and `dump` / `views`
+row, as a click on it would, to leave a chat and open it again in one launch; `select bots` goes
+back to the Bots home and its tiles, as `-HERMES_OPEN bots` opens it), and `dump` / `views`
 to see what's there (`maindump` the chats window's accessibility tree). For the ⌘K palette
 (`-HERMES_PALETTE <text>` opens it in each
 chats window once connected, and fills its field with that text each time it opens): `paletteopen`
@@ -948,15 +949,19 @@ and `palette` (logs the field's text, whether it's being edited, its field edito
 replacement, spelling correction and spell checking, and the chats windows with their titles, which
 name what each shows; the rows and the selection aren't in it, so read them from a screenshot or
 the accessibility tree). `badge needsYou|unreadChats` sets what the Dock badge counts, as the Dock
-Badge pop-up in Settings → Notifications does, and `remove gateway <name>` removes a gateway as
-Remove in Settings → Gateways does once its alert is confirmed, without the alert; it removes only a
-gateway at 127.0.0.1, localhost or ::1 and logs a refusal for any other, so a drive can't remove a
-real gateway from the shared Hermes Dev preferences. `stopnotifications gateway <name>` does what
-Stop Notifications on that gateway's notification page does once confirmed, for the same local
-gateways only. Each step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown
-can be checked without a screenshot (`App/Support/MacDebugDriver.swift`), on standard output and in
-`-HERMES_MAC_DRIVE_LOG <file>` when it's given; `tabs` logs how many Settings tabs show, of how
-many, and `maintabs` which of the chats window's toolbar items show. Capture with
+Badge pop-up in Settings → Notifications does, `mute chat:<id>|bot:<name>|group:<id>` mutes that row
+until it's turned back on, as its context menu's Mute does (an id or name not in the lists logs
+`unknown target`), `unread` and `read` with the same targets do what its Mark as Unread and Mark as
+Read do (a group chat's context menu has only Mark as Read, so `unread group:<id>` logs a refusal
+and does nothing), and `remove gateway <name>` removes a gateway as Remove in Settings → Gateways
+does once its alert is confirmed, without the alert; it removes only a gateway at 127.0.0.1,
+localhost or ::1 and logs a refusal for any other, so a drive can't remove a real gateway from the
+shared Hermes Dev preferences. `stopnotifications gateway <name>` does what Stop Notifications on
+that gateway's notification page does once confirmed, for the same local gateways only. Each step
+logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown can be checked without a
+screenshot (`App/Support/MacDebugDriver.swift`), on standard output and in `-HERMES_MAC_DRIVE_LOG
+<file>` when it's given; `tabs` logs how many Settings tabs show, of how many, and `maintabs` which
+of the chats window's toolbar items show. Capture with
 `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts the Settings
 tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR <folder>`
 points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only logs its

@@ -20,13 +20,16 @@ import HermesPush
 /// `mainkey esc` (Esc in the chats window; `mainkey cmd+r` ⌘R there, then the menus; `mainkey
 /// tab|up|down|left|right|return` typed there; `key cmd+r` ⌘R in Settings, then the menus); `sidebar`
 /// (the sidebar button's action); `select group:<id>|bot:<name>` (a sidebar row, as a click on it
-/// would); `dump`, `views` and `toolbar` (the accessibility, content and
-/// toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
+/// would; `select bots` the Bots home); `dump`, `views` and `toolbar` (the accessibility, content
+/// and toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
 /// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
 /// `palettetype <text>` (typed into its field as keys, one per character), `paletteblur` (takes
 /// the field out of editing) and `palette` (the field's text, the field editor's corrections and
 /// the chats windows' titles). `badge needsYou|unreadChats` sets what the Dock badge counts, as
-/// Settings → Notifications → Dock Badge does, whose pop-up menu a drive can't use. `remove gateway
+/// Settings → Notifications → Dock Badge does, whose pop-up menu a drive can't use. `mute
+/// chat:<id>|bot:<name>|group:<id>` mutes that row until it's turned back on, as its context menu's
+/// Mute does, whose submenu a drive can't use; `unread` and `read` with the same targets do what
+/// its Mark as Unread and Mark as Read do (a group chat has only Mark as Read). `remove gateway
 /// <name>` removes a gateway as Remove in Settings → Gateways does once confirmed, without the
 /// alert; only a gateway on this Mac (127.0.0.1, localhost or ::1), so a run can't remove a real
 /// one. `stopnotifications gateway <name>` does what Stop Notifications on that gateway's
@@ -124,6 +127,10 @@ enum MacDebugDriver {
                 result = await sleepWake(argument)
             case "badge":
                 result = badge(argument)
+            case "mute":
+                result = mute(argument, in: workspace())
+            case "unread", "read":
+                result = mark(argument, unread: parts[0] == "unread", in: workspace())
             case "remove":
                 result = remove(argument, in: app)
             case "stopnotifications":
@@ -145,6 +152,44 @@ enum MacDebugDriver {
         #else
         return "no push in this build"
         #endif
+    }
+
+    /// `mute chat:<id>|bot:<name>|group:<id>`: what Mute → Until I Turn It Back On does on that
+    /// row. A target that isn't in the lists is logged, never guessed.
+    private static func mute(_ target: String, in workspace: BotWorkspace?) -> String {
+        guard let workspace else { return "no workspace" }
+        guard let key = unreadKey(target, in: workspace) else { return "unknown target" }
+        workspace.unread.mute(key, for: .untilTurnedOff)
+        return workspace.unread.isMuted(key) ? "muted \(key)" : "not muted"
+    }
+
+    /// `unread <target>` and `read <target>`: what the row's Mark as Unread and Mark as Read do,
+    /// for the same targets as `mute`. A group chat's menu has no Mark as Unread, so neither does this.
+    private static func mark(_ target: String, unread: Bool, in workspace: BotWorkspace?) -> String {
+        guard let workspace else { return "no workspace" }
+        guard let key = unreadKey(target, in: workspace) else { return "unknown target" }
+        if unread, target.hasPrefix("group:") { return "refused: a group chat has no Mark as Unread" }
+        if unread { workspace.unread.markUnread(key) } else { workspace.unread.markRead(key) }
+        return "\(unread ? "marked unread" : "marked read") \(key)"
+    }
+
+    /// The unread store's key for a `chat:<id>`, `bot:<name>` or `group:<id>` in the lists.
+    private static func unreadKey(_ target: String, in workspace: BotWorkspace) -> String? {
+        let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "chat":
+            let session = workspace.session(forKey: parts[1]) ?? workspace.sessions.first { $0.id == parts[1] }
+            return session?.stableID
+        case "bot":
+            let bots = (workspace.roster?.visibleBots ?? []) + (workspace.roster?.hiddenBots ?? [])
+            return bots.contains(where: { $0.name == parts[1] }) ? UnreadStore.botKey(parts[1]) : nil
+        case "group":
+            let rooms = workspace.roster?.groupRooms.rooms ?? []
+            return rooms.contains(where: { $0.id == parts[1] }) ? UnreadStore.groupKey(parts[1]) : nil
+        default:
+            return nil
+        }
     }
 
     /// `remove gateway <name>`: what Remove does once its alert is confirmed. Only a gateway on
@@ -183,10 +228,13 @@ enum MacDebugDriver {
     }
 
     /// `select group:<id>` or `select bot:<name>`: what a click on that sidebar row does, so a chat
-    /// can be left and opened again in one launch.
+    /// can be left and opened again in one launch. `select bots` goes back to the Bots home and its
+    /// tiles, as `-HERMES_OPEN bots` opens it.
     private static func select(_ target: String, in workspace: BotWorkspace?) -> String {
         guard let workspace else { return "no workspace" }
-        if target.hasPrefix("group:") {
+        if target == "bots" {
+            workspace.selection = nil
+        } else if target.hasPrefix("group:") {
             workspace.selection = .group(String(target.dropFirst(6)))
         } else if target.hasPrefix("bot:") {
             workspace.selection = .bot(String(target.dropFirst(4)))
