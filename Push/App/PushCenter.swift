@@ -508,16 +508,29 @@ final class PushCenter {
 
     /// The gateway was removed from the app: forget this device there too.
     func forget(_ workspace: BotWorkspace) {
+        leave(workspace, removed: true)
+    }
+
+    /// Stop Notifications on the gateway's page: this device leaves its push list, and the gateway
+    /// stays in the app.
+    func stopNotifications(from workspace: BotWorkspace) {
+        leave(workspace, removed: false)
+    }
+
+    private func leave(_ workspace: BotWorkspace, removed: Bool) {
         let deviceID = shared.deviceID
         if let roster = workspace.roster, roster.state.isOnline {
             Task { _ = try? await AppPushClient { try await roster.request($0, $1) }.unregister(deviceID: deviceID) }
         }
-        shared.forget(appID: workspace.id)
+        if removed { shared.forget(appID: workspace.id) } else { shared.stopPush(appID: workspace.id) }
         forgetReads(of: workspace.id)
         pluginVersions[workspace.id] = nil
         savePluginVersions()
         gatewayStates[workspace.id] = nil
         registerCategories()
+        // Its count leaves the icon and the Dock now, not at the next activation, push or 30 s check.
+        // The badge is set once the removal is done, with the gateway out of the app's list.
+        Task { await applyBadge() }
     }
 
     /// Push on, out of the gateways the app knows.

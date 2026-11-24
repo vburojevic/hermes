@@ -951,11 +951,12 @@ the accessibility tree). `badge needsYou|unreadChats` sets what the Dock badge c
 Badge pop-up in Settings → Notifications does, and `remove gateway <name>` removes a gateway as
 Remove in Settings → Gateways does once its alert is confirmed, without the alert; it removes only a
 gateway at 127.0.0.1, localhost or ::1 and logs a refusal for any other, so a drive can't remove a
-real gateway from the shared Hermes Dev preferences. Each step logs `HERMES_MAC_DRIVE` with the
-Settings window's title, so the page shown can be checked without a screenshot
-(`App/Support/MacDebugDriver.swift`), on standard output and in `-HERMES_MAC_DRIVE_LOG <file>` when
-it's given; `tabs` logs how many Settings tabs show, of how many, and `maintabs` which of the chats
-window's toolbar items show. Capture with
+real gateway from the shared Hermes Dev preferences. `stopnotifications gateway <name>` does what
+Stop Notifications on that gateway's notification page does once confirmed, for the same local
+gateways only. Each step logs `HERMES_MAC_DRIVE` with the Settings window's title, so the page shown
+can be checked without a screenshot (`App/Support/MacDebugDriver.swift`), on standard output and in
+`-HERMES_MAC_DRIVE_LOG <file>` when it's given; `tabs` logs how many Settings tabs show, of how
+many, and `maintabs` which of the chats window's toolbar items show. Capture with
 `screencapture -x -o -l <window id>`. `-HERMES_SETTINGS_TABS_START <width>` starts the Settings
 tabs' width too narrow, to watch the toolbar check widen it. `-HERMES_LAUNCH_AGENTS_DIR <folder>`
 points Run at Full Priority (Setup → Priority) at a stand-in LaunchAgents folder and only logs its

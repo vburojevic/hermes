@@ -390,6 +390,48 @@ struct BadgeTests {
         #expect(shared.badge == 1)
     }
 
+    /// Stop Notifications takes the gateway's requests off the badge and keeps its unread chats, which
+    /// count for every gateway the app has, Push on or not (the Mac registers with none). Forgetting
+    /// its list as well took its chats off until the gateway's next count put them back.
+    @Test func stoppingNotificationsKeepsTheGatewaysChats() {
+        let shared = shared()
+        let other = UUID()
+        shared.remember(installationID: "inst_office", appID: other, name: "Office Mac")
+        shared.recordOpen(1, gateway: "inst_home", at: at(0))
+        shared.recordOpen(1, gateway: "inst_office", at: at(0))
+        let countable = CountableChats(ids: ["chat_a", "chat_b", "chat_c", "chat_ops"], bots: ["ops"], rooms: ["room_crew"])
+        shared.recordUnread([chat("chat_a"), chat("chat_b")], gateway: home)
+        #expect(shared.badge == 4)
+
+        shared.stopPush(appID: home)
+        // Its request goes; its two chats and the other gateway's request stay.
+        #expect(shared.badge == 3)
+        // Its next count finds nothing to change.
+        #expect(!shared.recordCountable(countable, gateway: home))
+        #expect(!shared.recordUnread([chat("chat_a"), chat("chat_b")], gateway: home))
+        #expect(shared.badge == 3)
+    }
+
+    /// Removing a gateway takes its requests and its chats off the badge while another gateway's count
+    /// stays, and removing the last one leaves 0: the app only drops lists for gateways it no longer
+    /// has (`keepUnread`) while it has one.
+    @Test func removingAGatewayTakesItsCountOff() {
+        let shared = shared()
+        let other = UUID()
+        shared.remember(installationID: "inst_office", appID: other, name: "Office Mac")
+        shared.recordCountable(CountableChats(ids: ["chat_x"]), gateway: other)
+        shared.recordOpen(1, gateway: "inst_home", at: at(0))
+        shared.recordOpen(1, gateway: "inst_office", at: at(0))
+        shared.recordUnread([chat("chat_a"), chat("chat_b")], gateway: home)
+        shared.recordUnread([chat("chat_x")], gateway: other)
+        #expect(shared.badge == 5)
+
+        shared.forget(appID: home)
+        #expect(shared.badge == 2)
+        shared.forget(appID: other)
+        #expect(shared.badge == 0)
+    }
+
     /// What the app shows waiting in a gateway: every request on a card or in the dock, plus one for each
     /// chat whose row waits on the person when the app holds none of its requests.
     @Test func shownRequestsCountCardsAndWaitingRows() {

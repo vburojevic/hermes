@@ -358,22 +358,26 @@ Rules:
   the stale count again; reads elsewhere then reach that iPhone's icon when a notice or the app next
   runs. A request that went stale in the moments before the app left, which it hadn't heard of yet,
   can still come back with that plugin's next badge push. Counts kept for a gateway the app no
-  longer has go (`keepUnread`). In front, the app counts again as soon as a row starts or stops
-  waiting on the person, so a new request reaches the Dock at once. Chats: one list per gateway in
-  the App Group (`PushShared.unread`; the Mac has no App Group, so its lists live in the app's own
-  defaults, and an empty group name counts as none: a suite named "" kept nothing between launches,
-  and in a running app it read back the empty lists of launch seconds after each write, so the Dock
-  fell to 0 with unread rows in the list until the next count, every 30 s, and again after it),
-  which the app writes whenever its counts move (`UnreadStore`), the service extension adds a chat
-  to when a reply or message for it arrives (unless it's muted), and every read takes chats off.
-  Only chats the app's list shows ever count (`PushShared.countable`, written with the list): a
-  routine's run, a Bot-to-Bot one-shot chat or a helper's session is a new session the list never
-  shows, and counting their replies took a badge to 120 for two unread chats (build 2610210714). A
-  list from before that rule keeps only the app's own entries, and lists for gateways the app no
-  longer has go. Everything else the app keeps there (`PushShared`) now outlasts a launch on the Mac
-  too: the Dock Badge mode and the mention names in Settings → Notifications, the gateways with
-  their mutes and open counts, Talk's entries and the device id, so the widgets plugin sees one Mac
-  instead of a new device at every launch.
+  longer has go (`keepUnread`). Removing a gateway sets the badge at once without its requests and
+  chats (`PushShared.forget`), and Stop Notifications without its requests (`stopPush`): its chats
+  still count, like any gateway's. Before, it stayed until the app next counted (the Dock's 30 s
+  check, the iPhone's next activation or push), and Stop Notifications dropped its chats too until
+  its next count. In front, the app counts again as soon as a row starts or stops waiting on the
+  person, so a new request reaches the Dock at once. Chats: one list per gateway in the App Group
+  (`PushShared.unread`; the Mac has no App Group, so its lists live in the app's own defaults, and
+  an empty group name counts as none: a suite named "" kept nothing between launches, and in a
+  running app it read back the empty lists of launch seconds after each write, so the Dock fell to 0
+  with unread rows in the list until the next count, every 30 s, and again after it), which the app
+  writes whenever its counts move (`UnreadStore`), the service extension adds a chat to when a reply
+  or message for it arrives (unless it's muted), and every read takes chats off. Only chats the
+  app's list shows ever count (`PushShared.countable`, written with the list): a routine's run, a
+  Bot-to-Bot one-shot chat or a helper's session is a new session the list never shows, and counting
+  their replies took a badge to 120 for two unread chats (build 2610210714). A list from before that
+  rule keeps only the app's own entries, and lists for gateways the app no longer has go. Everything
+  else the app keeps there (`PushShared`) now outlasts a launch on the Mac too: the Dock Badge mode
+  and the mention names in Settings → Notifications, the gateways with their mutes and open counts,
+  Talk's entries and the device id, so the widgets plugin sees one Mac instead of a new device at
+  every launch.
   A chat is unread on the icon only while its count has a message in it (`docs/inbox.md` §1
   Counting): tool calls, their results, narration, status, a background process's heartbeats and a
   silent answer to them never make it unread. The extension and the plugin add a chat only for a

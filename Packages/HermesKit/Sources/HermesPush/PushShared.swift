@@ -97,16 +97,25 @@ public final class PushShared: @unchecked Sendable {
         return record
     }
 
-    /// The gateway was removed: its key goes too, so its notices stop opening.
-    public func forget(appID: UUID) {
+    /// This device left the gateway's push list (Stop Notifications on its page): its key goes, so
+    /// its notices stop opening, and its open requests leave the badge. Its unread chats stay, as every
+    /// gateway's do, Push on or not: forgetting its list too dropped them until its next count put them
+    /// back (`docs/notifications.md` §2 Badge).
+    public func stopPush(appID: UUID) {
         removeDeviceKeys(appID: appID)
         gateways = gateways.filter { $0.value.appID != appID }
-        unreadLists[appID.uuidString] = nil
-        recentReads[appID.uuidString] = nil
-        countableLists[appID.uuidString] = nil
         var counts = openCounts
         for key in counts.keys where gateways[key] == nil { counts[key] = nil }
         openCounts = counts
+    }
+
+    /// The gateway was removed: its key goes too, so its notices stop opening, and its chats leave
+    /// the badge with its requests.
+    public func forget(appID: UUID) {
+        stopPush(appID: appID)
+        unreadLists[appID.uuidString] = nil
+        recentReads[appID.uuidString] = nil
+        countableLists[appID.uuidString] = nil
     }
 
     // MARK: Badge

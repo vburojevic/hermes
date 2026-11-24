@@ -360,7 +360,7 @@ struct GatewayPushDetail: View {
         #endif
         .confirmationDialog("Stop notifications from \(bot.name)?", isPresented: $confirmingOff, titleVisibility: .visible) {
             Button("Stop Notifications", role: .destructive) {
-                if let workspace = app.workspaces[bot.id] { push.forget(workspace) }
+                if let workspace = app.workspaces[bot.id] { push.stopNotifications(from: workspace) }
                 dismiss()
             }
         } message: {
