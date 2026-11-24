@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Synchronization
 
 /// What the app shares with its extensions through the App Group and the Keychain group named in
 /// each target's Info.plist (`HermesAppGroup`, `HermesKeychainGroup`): the device key, the
@@ -33,6 +34,10 @@ public final class PushShared: @unchecked Sendable {
     public let groupID: String?
     public let keychainGroup: String?
     public let defaults: UserDefaults
+    /// Gateways removed while this process runs (`forget`). A removed gateway's chats can still
+    /// move for a moment (a turn finishing, a title refreshing) and count again; with no gateway
+    /// left nothing would drop what they record.
+    private let removed = Mutex<Set<UUID>>([])
 
     public init(bundle: Bundle = .main) {
         // The Mac has no App Group and its Info.plist says so with "". A suite named "" keeps
@@ -112,6 +117,7 @@ public final class PushShared: @unchecked Sendable {
     /// The gateway was removed: its key goes too, so its notices stop opening, and its chats leave
     /// the badge with its requests.
     public func forget(appID: UUID) {
+        removed.withLock { _ = $0.insert(appID) }
         stopPush(appID: appID)
         unreadLists[appID.uuidString] = nil
         recentReads[appID.uuidString] = nil
@@ -185,6 +191,7 @@ public final class PushShared: @unchecked Sendable {
     /// The app's list moved; returns whether the badge changed.
     @discardableResult
     public func recordCountable(_ chats: CountableChats, gateway appID: UUID) -> Bool {
+        guard !wasRemoved(appID) else { return false }
         var lists = countableLists
         guard lists[appID.uuidString] != chats else { return false }
         lists[appID.uuidString] = chats
@@ -192,9 +199,12 @@ public final class PushShared: @unchecked Sendable {
         return badgeMode == .unreadChats
     }
 
-    /// Lists and open counts for gateways the app no longer has go: they'd count for ever.
+    /// Lists and open counts for gateways the app no longer has go: they'd count for ever. No
+    /// gateways is a list not read yet (at launch, or a store that failed to load), so it drops
+    /// nothing; removing the last gateway drops its lists itself (`forget`).
     @discardableResult
     public func keepUnread(gateways appIDs: Set<UUID>) -> Bool {
+        guard !appIDs.isEmpty else { return false }
         let keep = Set(appIDs.map(\.uuidString))
         var unread = unreadLists, countable = countableLists
         let before = unread.count
@@ -212,6 +222,7 @@ public final class PushShared: @unchecked Sendable {
     /// The app counted a gateway's unread chats (`UnreadStore`); returns whether the badge changed.
     @discardableResult
     public func recordUnread(_ counted: [UnreadChat], gateway appID: UUID) -> Bool {
+        guard !wasRemoved(appID) else { return false }
         let read = reads(gateway: appID)
         let chats = counted.filter { !$0.isRead(by: read) }
         var lists = unreadLists
@@ -219,6 +230,10 @@ public final class PushShared: @unchecked Sendable {
         lists[appID.uuidString] = chats
         unreadLists = lists
         return badgeMode == .unreadChats
+    }
+
+    private func wasRemoved(_ appID: UUID) -> Bool {
+        removed.withLock { $0.contains(appID) }
     }
 
     /// News for a chat arrived (the extension): it counts until it's read, unless it's muted or

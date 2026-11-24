@@ -528,6 +528,15 @@ final class PushCenter {
         savePluginVersions()
         gatewayStates[workspace.id] = nil
         registerCategories()
+        #if os(macOS)
+        // The Dock takes the new count in the same turn when a gateway is removed or stops
+        // notifications: the task below runs only once the change and the redraw it starts are done,
+        // more than a second later after a removal (docs/notifications.md §2).
+        NSApp.dockTile.badgeLabel = shared.badge > 0 ? "\(shared.badge)" : nil
+        #if DEBUG
+        ConnectionLog.logger.notice("badge: set \(self.shared.badge, privacy: .public) (Dock, gateway left)")
+        #endif
+        #endif
         // Its count leaves the icon and the Dock now, not at the next activation, push or 30 s check.
         // The badge is set once the removal is done, with the gateway out of the app's list.
         Task { await applyBadge() }
@@ -684,7 +693,7 @@ final class PushCenter {
 
     func applyBadge() async {
         // Lists for gateways the app no longer has would count for ever.
-        if let gateways = model?.workspaces.keys, !gateways.isEmpty { shared.keepUnread(gateways: Set(gateways)) }
+        if let gateways = model?.workspaces.keys { shared.keepUnread(gateways: Set(gateways)) }
         noteShownRequests()
         #if DEBUG
         // The simulator's icon badge can't be read from outside, so checks read it here.

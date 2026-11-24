@@ -362,22 +362,28 @@ Rules:
   chats (`PushShared.forget`), and Stop Notifications without its requests (`stopPush`): its chats
   still count, like any gateway's. Before, it stayed until the app next counted (the Dock's 30 s
   check, the iPhone's next activation or push), and Stop Notifications dropped its chats too until
-  its next count. In front, the app counts again as soon as a row starts or stops waiting on the
-  person, so a new request reaches the Dock at once. Chats: one list per gateway in the App Group
-  (`PushShared.unread`; the Mac has no App Group, so its lists live in the app's own defaults, and
-  an empty group name counts as none: a suite named "" kept nothing between launches, and in a
-  running app it read back the empty lists of launch seconds after each write, so the Dock fell to 0
-  with unread rows in the list until the next count, every 30 s, and again after it), which the app
-  writes whenever its counts move (`UnreadStore`), the service extension adds a chat to when a reply
-  or message for it arrives (unless it's muted), and every read takes chats off. Only chats the
-  app's list shows ever count (`PushShared.countable`, written with the list): a routine's run, a
-  Bot-to-Bot one-shot chat or a helper's session is a new session the list never shows, and counting
-  their replies took a badge to 120 for two unread chats (build 2610210714). A list from before that
-  rule keeps only the app's own entries, and lists for gateways the app no longer has go. Everything
-  else the app keeps there (`PushShared`) now outlasts a launch on the Mac too: the Dock Badge mode
-  and the mention names in Settings → Notifications, the gateways with their mutes and open counts,
-  Talk's entries and the device id, so the widgets plugin sees one Mac instead of a new device at
-  every launch.
+  its next count. A removed gateway's own `UnreadStore.update()` still ran for a moment, first as
+  its last turn finished, and recorded its chats again, so the app takes no counts for a gateway
+  removed while it runs. Removing the last gateway once set 0, then its count again a second later,
+  and it stayed: with no gateway left nothing dropped them. No gateways at all is a list not read
+  yet (at launch), which drops nothing. On the Mac the Dock takes the new count in the same turn
+  when a gateway is removed or stops notifications; set once the removal and its redraw were done,
+  it came more than a second late. In front, the app counts again as soon as a row starts or stops
+  waiting on the person, so a new request reaches the Dock at once.
+  Chats: one list per gateway in the App Group (`PushShared.unread`; the Mac has no App Group,
+  so its lists live in the app's own defaults, and an empty group name counts as none: a suite named
+  "" kept nothing between launches, and in a running app it read back the empty lists of launch
+  seconds after each write, so the Dock fell to 0 with unread rows in the list until the next count,
+  every 30 s, and again after it), which the app writes whenever its counts move (`UnreadStore`),
+  the service extension adds a chat to when a reply or message for it arrives (unless it's muted),
+  and every read takes chats off. Only chats the app's list shows ever count
+  (`PushShared.countable`, written with the list): a routine's run, a Bot-to-Bot one-shot chat or a
+  helper's session is a new session the list never shows, and counting their replies took a badge to
+  120 for two unread chats (build 2610210714). A list from before that rule keeps only the app's own
+  entries, and lists for gateways the app no longer has go. Everything else the app keeps there
+  (`PushShared`) now outlasts a launch on the Mac too: the Dock Badge mode and the mention names in
+  Settings → Notifications, the gateways with their mutes and open counts, Talk's entries and the
+  device id, so the widgets plugin sees one Mac instead of a new device at every launch.
   A chat is unread on the icon only while its count has a message in it (`docs/inbox.md` §1
   Counting): tool calls, their results, narration, status, a background process's heartbeats and a
   silent answer to them never make it unread. The extension and the plugin add a chat only for a
