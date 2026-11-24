@@ -31,6 +31,39 @@ The first public beta, for iPhone, iPad and Mac.
   notifications, pairing links only Hermes opens, and content that can't approve commands or reach
   your network.
 
+### Build 2611240800 (November 24, 2026)
+
+- **Mac:** Hermes and Hermes Dev keep their own outbox, Up Next, waiting chats and caches
+- **Setup:** the Bot Mode warning card shows its orange Not set up label again
+- **Setup:** the update's card and page, the provider key sheet and Bot Mode's Checking line match the design
+- **Setup:** ⌘R checks again on the Mac instead of reloading the chat behind
+- **Setup:** ⌘R checks again on a feature's page too, not only the Setup list
+- **Memory:** VoiceOver reads the Memory tab you touch, About You or Hermes's Notes
+- **Board:** the Board reads clearly at every text size on iPhone, iPad and Mac
+- **Tasks:** tasks read clearly at every text size on iPhone, iPad and Mac
+- **Projects:** projects and their chats read clearly at every text size on iPhone, iPad and Mac
+- **Projects:** on the Mac, the arrow keys move through a project's chats and Return opens one
+- **Projects:** archiving, restoring, deleting a project and adding a folder say when they fail
+- **Settings:** Voice & Audio and Notifications match the design in every state
+- **Sidebar:** the Mac's priority notice and connection line grow with text size
+- **Chat:** VoiceOver keeps reading upward when earlier messages come in
+- **Chat:** VoiceOver lands on every reply, up to the first message, when earlier messages come in
+- **Chat:** a reply can quote up to three passages, each removable, and sends them in order
+- **Chat:** a reply sent while Hermes works keeps its quotes and clears the reply bar
+- **Chat:** a queued message edited down to a picture keeps its quotes in the reply bar
+- **Chat:** VoiceOver says which of several quotes each reply bar row and its remove button is
+- **Chat:** VoiceOver reads every quote of a sent reply, in order
+- **Chat:** VoiceOver reads a quoted queued message without a doubled period
+- **Chat:** VoiceOver reads the quote limit note as one line, without an Info glyph
+- **Chat:** on iPhone and iPad, words selected in a reply quote into the composer from Reply
+- **Chat:** a quote set aside for an edit that finds the bar full shows the limit note
+- **Chat:** on the Mac, switching between a chat and a Bot's chat no longer rebuilds the toolbar
+- **Groups:** a group chat shows its messages as soon as it opens
+- **Connections:** your own replies no longer make Hermes say the Mac is busy, and busy clears by itself
+- **Listen:** the speed button changes a reply's speed at once and starts at your Settings speed
+- **Badge:** on the Mac, the Dock badge counts unread chats again instead of dropping to 0
+- **Inbox:** a chat's row decides its draft by the same rule as a Bot's row
+
 ### Build 2611190410 (November 19, 2026)
 
 - **Chat:** each message tells Hermes which app and device sent it, so replies fit the screen
