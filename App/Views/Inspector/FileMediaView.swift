@@ -48,15 +48,18 @@ struct FileMediaView: View {
     }
 
     private var header: some View {
-        Text(relativePath)
-            .font(Theme.Typography.code)
-            .foregroundStyle(Theme.primaryText)
-            .lineLimit(1)
-            .truncationMode(.head)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
-            .padding(.horizontal, 12)
-            .frame(height: 44)
+        HStack(spacing: 8) {
+            Text(relativePath)
+                .font(Theme.Typography.code)
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            GatewayFileKeepButton(path: path, profile: inspector.profile, client: inspector.backend)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
     }
 
     @ViewBuilder

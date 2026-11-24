@@ -209,6 +209,7 @@ private struct FileEditorView: View {
                 .disabled(!editor.isEdited || editor.isSaving)
                 .keyboardShortcut("s", modifiers: .command)
             }
+            GatewayFileKeepButton(path: editor.path, profile: inspector.profile, client: inspector.backend)
         }
         .padding(.horizontal, 12)
         .frame(height: 44)

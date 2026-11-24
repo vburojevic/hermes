@@ -904,6 +904,52 @@ enum GatewayFileCopy {
     }()
 }
 
+/// A header button that keeps a copy of a gateway file on this device: Share on iPhone and iPad
+/// (the share sheet, which has Save to Files), Save As… on the Mac. The File tab carries it next to
+/// its own Save, which writes an edit back to the gateway and is a different thing.
+struct GatewayFileKeepButton: View {
+    let path: String
+    let profile: String?
+    let client: BackendClient?
+
+    @State private var copying = GatewayFileCopy.State()
+
+    #if os(iOS)
+    private static let use = GatewayFileCopy.Use.share
+    private static let symbol = "square.and.arrow.up"
+    private static let label = String(localized: "Share")
+    private static let hint = String(localized: "Saves or sends a copy of the file")
+    #else
+    private static let use = GatewayFileCopy.Use.save
+    private static let symbol = "square.and.arrow.down"
+    private static let label = GatewayFileCopy.saveTitle
+    private static let hint = String(localized: "Saves a copy to this device")
+    #endif
+
+    var body: some View {
+        Button { keep(as: Self.use) } label: {
+            ZStack {
+                Image(systemName: Self.symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.primaryText)
+                    .opacity(copying.isReading ? 0 : 1)
+                if copying.isReading { Spinner() }
+            }
+        }
+        .buttonStyle(IconButtonStyle(size: 30))
+        .disabled(copying.isReading)
+        .accessibilityLabel(Text(verbatim: "\(Self.label), \((path as NSString).lastPathComponent)"))
+        .accessibilityHint(Self.hint)
+        .help(Text(Self.label))
+        .gatewayFileCopies($copying, alerts: true) { use in keep(as: use) }
+    }
+
+    private func keep(as use: GatewayFileCopy.Use) {
+        let path = path, profile = profile, client = client
+        Task { await GatewayFileCopy.keep(path, profile: profile, client: client, as: use, in: $copying) }
+    }
+}
+
 /// Save to Device… and Share… in a file's context menu (Save As… on the Mac).
 struct GatewayFileCopyMenu: View {
     let keep: (GatewayFileCopy.Use) -> Void
