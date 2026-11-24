@@ -432,6 +432,56 @@ struct BadgeTests {
         #expect(shared.badge == 0)
     }
 
+    /// Removing the only gateway leaves 0, also when its chat list reports once more as its pages
+    /// close: with no gateway left, nothing else drops what that late count records.
+    @Test func removingTheLastGatewayLeavesZero() {
+        let shared = shared()
+        let countable = CountableChats(ids: ["chat_a", "chat_b", "chat_c", "chat_ops"], bots: ["ops"], rooms: ["room_crew"])
+        shared.recordUnread([chat("chat_a"), chat("chat_b"), chat("chat_c")], gateway: home)
+        #expect(shared.badge == 3)
+
+        shared.forget(appID: home)
+        #expect(shared.badge == 0)
+        shared.keepUnread(gateways: [])
+        #expect(!shared.recordCountable(countable, gateway: home))
+        #expect(!shared.recordUnread([chat("chat_a"), chat("chat_b"), chat("chat_c")], gateway: home))
+        #expect(shared.badge == 0)
+    }
+
+    /// A count for a gateway removed earlier, arriving after it went, records nothing; the gateway
+    /// that stays still counts.
+    @Test func aLateCountForARemovedGatewayDoesNotCount() {
+        let shared = shared()
+        let other = UUID()
+        shared.recordCountable(CountableChats(ids: ["chat_x", "chat_y"]), gateway: other)
+        shared.recordUnread([chat("chat_a"), chat("chat_b")], gateway: home)
+        shared.recordUnread([chat("chat_x")], gateway: other)
+        #expect(shared.badge == 3)
+
+        shared.forget(appID: home)
+        #expect(shared.badge == 1)
+        #expect(!shared.recordCountable(CountableChats(ids: ["chat_a", "chat_b"]), gateway: home))
+        #expect(!shared.recordUnread([chat("chat_a"), chat("chat_b")], gateway: home))
+        #expect(shared.countable(gateway: home) == nil)
+        #expect(shared.badge == 1)
+        #expect(shared.recordUnread([chat("chat_x"), chat("chat_y")], gateway: other))
+        #expect(shared.badge == 2)
+    }
+
+    /// At launch, before the app has read its gateways (its list failed to load, say), the lists it
+    /// counted last time stay and count: an empty set of gateways drops nothing. A new launch counts
+    /// for every gateway it has again.
+    @Test func listsStayAtLaunchBeforeTheGatewaysLoad() {
+        shared().recordUnread([chat("chat_a"), chat("chat_b")], gateway: home)
+
+        let launched = PushShared(suiteName: suite)
+        #expect(launched.badge == 2)
+        #expect(!launched.keepUnread(gateways: []))
+        #expect(launched.badge == 2)
+        #expect(launched.recordUnread([chat("chat_a")], gateway: home))
+        #expect(launched.badge == 1)
+    }
+
     /// What the app shows waiting in a gateway: every request on a card or in the dock, plus one for each
     /// chat whose row waits on the person when the app holds none of its requests.
     @Test func shownRequestsCountCardsAndWaitingRows() {
