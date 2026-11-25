@@ -23,7 +23,8 @@ Design component names: `notification`, `notificationApproval`, `notificationExp
 `notificationTaskFailed`, `notificationBot`, `notificationStack`, `notificationHidden`,
 `bannerInApp`, `liveActivity`, `liveActivityNeedsYou`, `liveActivityDone`, `islandCompact`,
 `islandCompactNeedsYou`, `islandExpanded`, `permissionPrime`, `settingsNotifications`,
-`settingsNotificationsOff`, `macSettingsNotifications`, `pushSetup`, `macNotification`.
+`settingsNotificationsOff`, `macSettingsNotifications`, `pushSetup`, `pushSetupWaiting`,
+`macNotification`.
 
 Hermes names come from the Hermes Agent source: the plugin hooks (`hermes_cli/plugins.py`
 `VALID_HOOKS`, `ctx.register_hook`), `command.dispatch` (`tui_gateway/methods_tools.py`),
@@ -102,6 +103,17 @@ enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bo
   two gateways each tell theirs; scenes on the same gateway share its open chat (`VisibleChats`,
   `WindowGateways.visibleGateways`). A scene in the background shows nothing.
 - Removing a gateway from the app, or Stop Notifications on its detail page, sends `unregister`.
+  On iPhone and iPad a stop sticks (`PushShared.stopPush`, kept in the App Group by gateway):
+  every check after it (the page's, the hourly one, a new push address, the gateway coming back, a
+  relaunch) asks `gatewayCheck`, which answers `stopped`, so this device never registers there on
+  its own again, and a plugin that still lists it (the stop was made while the gateway was away)
+  hears `unregister` again. Set Up… on the gateway's row clears the stop (`resumePush`) and the
+  Set Up Push sheet registers again. A check reads the stop before it asks the gateway and again
+  once the gateway answers: a stop made meanwhile wins (what the check registered hears
+  `unregister`, and the row stays stopped), and Set Up made meanwhile keeps the device on. Removing
+  the gateway forgets the stop, so added again it registers like any new one. The Mac keeps no
+  stop (`leavePush`): its next check finds the gateway again. Before, the page's own check
+  registered the device again at once.
 - Reading a chat, a Bot or a group chat in the app (opening it, or Mark as Read) sends `read` to
   that gateway, at most once a second with everything read meanwhile (§2, Reading). Until the
   plugin has them the reads wait on the device (`PushReadQueue`, kept across launches), in front or
@@ -359,17 +371,19 @@ Rules:
   runs. A request that went stale in the moments before the app left, which it hadn't heard of yet,
   can still come back with that plugin's next badge push. Counts kept for a gateway the app no
   longer has go (`keepUnread`). Removing a gateway sets the badge at once without its requests and
-  chats (`PushShared.forget`), and Stop Notifications without its requests (`stopPush`): its chats
-  still count, like any gateway's. Before, it stayed until the app next counted (the Dock's 30 s
-  check, the iPhone's next activation or push), and Stop Notifications dropped its chats too until
-  its next count. A removed gateway's own `UnreadStore.update()` still ran for a moment, first as
-  its last turn finished, and recorded its chats again, so the app takes no counts for a gateway
-  removed while it runs. Removing the last gateway once set 0, then its count again a second later,
-  and it stayed: with no gateway left nothing dropped them. No gateways at all is a list not read
-  yet (at launch), which drops nothing. On the Mac the Dock takes the new count in the same turn
-  when a gateway is removed or stops notifications; set once the removal and its redraw were done,
-  it came more than a second late. In front, the app counts again as soon as a row starts or stops
-  waiting on the person, so a new request reaches the Dock at once.
+  chats (`PushShared.forget`), and Stop Notifications without its requests (`stopPush`, on the Mac
+  `leavePush`): its chats still count, like any gateway's. On iPhone and iPad its requests stay
+  off until Set Up…: a stopped gateway's checks and reads record none (§1.2). Before, it stayed
+  until the app next counted (the Dock's 30 s check, the iPhone's next activation or push), and
+  Stop Notifications dropped its chats too until its next count. A removed gateway's own
+  `UnreadStore.update()` still ran for a moment, first as its last turn finished, and recorded its
+  chats again, so the app takes no counts for a gateway removed while it runs. Removing the last
+  gateway once set 0, then its count again a second later, and it stayed: with no gateway left
+  nothing dropped them. No gateways at all is a list not read yet (at launch), which drops nothing.
+  On the Mac the Dock takes the new count in the same turn when a gateway is removed or stops
+  notifications; set once the removal and its redraw were done, it came more than a second late. In
+  front, the app counts again as soon as a row starts or stops waiting on the person, so a new
+  request reaches the Dock at once.
   Chats: one list per gateway in the App Group (`PushShared.unread`; the Mac has no App Group,
   so its lists live in the app's own defaults, and an empty group name counts as none: a suite named
   "" kept nothing between launches, and in a running app it read back the empty lists of launch
@@ -566,12 +580,13 @@ Rules:
   - App Icon Badge (Dock Badge on the Mac): a menu, Unread Chats or Needs You, with a footer that
     says what each counts.
   - Gateways: each gateway's state ("Push on", "Needs the Hermes app plugin…" with Set Up…, "Needs
-    Bot Mode…" with Set Up…, Offline, or the error, with Check Again). A plugin that answers while
-    this iPhone isn't on its list (`status.registered` false: no permission, or no push address
-    from Apple, `didFailToRegisterForRemoteNotifications`) says why instead of "Push on". On the
-    Mac, a gateway without the plugin says the Mac is notified while Hermes is open and the plugin
-    reaches iPhone and iPad (§1.6). A gateway with push on opens its detail page: status, the
-    relay's gateway id, Send a Test Notification, and Stop Notifications from it.
+    Bot Mode…" with Set Up…, "You stopped notifications from this gateway." with Set Up… on iPhone
+    and iPad after Stop Notifications (§1.2), Offline, or the error, with Check Again). A plugin
+    that answers while this iPhone isn't on its list (`status.registered` false: no permission, or
+    no push address from Apple, `didFailToRegisterForRemoteNotifications`) says why instead of "Push
+    on". On the Mac, a gateway without the plugin says the Mac is notified while Hermes is open and
+    the plugin reaches iPhone and iPad (§1.6). A gateway with push on opens its detail page: status,
+    the relay's gateway id, Send a Test Notification, and Stop Notifications from it.
   - The Settings row sums it up: "Approvals, replies, tasks · 2 of 3 gateways".
 - **Not asked yet** (`notificationsNotDetermined`): a card at the top with Turn On Notifications
   (ink) and the footer "Hermes asks when it first needs you. You can also turn notifications on
@@ -598,9 +613,13 @@ Rules:
   <gateway>**: Hermes and every Bot, a profile at a time ("Installing in Ada… (2 of 5)"), then
   Restart Gateway / Later. **Set Up in Terminal Instead** shows the commands to copy. The sheet asks
   the gateway every 3 s and closes with a check mark when the plugin answers, however it got
-  there. A gateway without Bot Mode is asked to link it first (Link Bot Mode…, the docs), with the
-  commands. The first time Bot Mode connects, the one ask (`pluginsAsk`) offers push together with
-  the app's other plugins.
+  there. It offers the install only once a check says the plugin is missing, and keeps the review
+  from then on; until then (Set Up… on a stopped gateway) it shows its title, Close and a spinner
+  after half a second (`pushSetupWaiting`, `PushSetupFlow`). A check that ends without push
+  (offline, not set up for want of permission or a push address, or an error) closes the sheet,
+  and the row says why, with Check Again. A gateway without Bot Mode is asked to link it first
+  (Link Bot Mode…, the docs), with the commands. The first time Bot Mode connects, the one ask
+  (`pluginsAsk`) offers push together with the app's other plugins.
 
 ## 6. Apple setup
 

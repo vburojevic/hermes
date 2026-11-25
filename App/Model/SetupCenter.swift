@@ -230,6 +230,14 @@ final class SetupCenter {
                 detail: reason,
                 fallback: String(localized: "Hermes reaches you while the app is open.")
             )
+        case .stopped?:
+            // Set Up on the Notifications page puts this iPhone back on the gateway's list.
+            return SetupStatus(
+                id: Self.notificationsID, state: .notSetUp, title: title,
+                detail: String(localized: "You stopped notifications from \(gateway)."),
+                fallback: String(localized: "Hermes reaches you while the app is open."),
+                fix: SetupFix(title: String(localized: "Set Up…"))
+            )
         case .failed(let message)?:
             return .unknown(id: Self.notificationsID, title: title, reason: message)
         case .offline?:

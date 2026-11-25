@@ -139,6 +139,7 @@ struct PushSetupSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var isDone = false
+    @State private var flow = PushSetupFlow()
 
     /// Where people get the plugin.
     static let pluginSource = "vburojevic/hermes-app-push"
@@ -154,9 +155,10 @@ struct PushSetupSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isDone {
+                switch flow.page(state.setupCheck, hasRoster: app.workspaces[gatewayID]?.roster != nil, isDone: isDone) {
+                case .done:
                     done
-                } else if state == .needsBackend || app.workspaces[gatewayID]?.roster == nil {
+                case .needsBotMode:
                     ScrollView {
                         VStack(spacing: 20) {
                             needsBackend
@@ -166,8 +168,24 @@ struct PushSetupSheet: View {
                         .padding(.bottom, 24)
                     }
                     .navigationTitle("Set Up Push")
-                } else if let workspace = app.workspaces[gatewayID] {
-                    AppPluginReviewView(workspace: workspace, plugin: .push, offersTerminal: true)
+                case .review:
+                    if let workspace = app.workspaces[gatewayID] {
+                        AppPluginReviewView(workspace: workspace, plugin: .push, offersTerminal: true)
+                    }
+                case .waiting, .close:
+                    // pushSetupWaiting: until a check says the plugin is missing, nothing offers
+                    // an install.
+                    Spinner()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .navigationTitle("Set Up Push")
+                }
+            }
+            .onChange(of: state, initial: true) { _, state in
+                flow.saw(state.setupCheck)
+                // Offline, not registered or failed: the row says why, with Check Again
+                // (`docs/setup.md` §4.13).
+                if flow.page(state.setupCheck, hasRoster: app.workspaces[gatewayID]?.roster != nil, isDone: isDone) == .close {
+                    dismiss()
                 }
             }
             #if os(iOS)
@@ -246,8 +264,10 @@ struct PushSetupSheet: View {
         .background(Theme.groupedCell, in: .rect(cornerRadius: 24))
     }
 
-    /// Asks the gateway every few seconds; closes with a check mark when the plugin answers.
+    /// Asks the gateway every few seconds; closes with a check mark when the plugin answers. A
+    /// gateway this device stopped takes it back first.
     private func poll() async {
+        PushCenter.shared.resumeNotifications(gatewayID)
         while !Task.isCancelled {
             await PushCenter.shared.recheck(gatewayID)
             if state.isOn {
@@ -257,6 +277,18 @@ struct PushSetupSheet: View {
                 return
             }
             try? await Task.sleep(for: .seconds(3))
+        }
+    }
+}
+
+private extension PushCenter.GatewayState {
+    /// What the Set Up Push sheet needs from a check (`PushSetupFlow`).
+    var setupCheck: PushSetupFlow.Check {
+        switch self {
+        case .notInstalled: .missing
+        case .needsBackend: .needsBotMode
+        case .offline, .notRegistered, .failed: .ended
+        default: .other
         }
     }
 }

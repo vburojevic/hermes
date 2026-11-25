@@ -102,11 +102,18 @@ public final class PushShared: @unchecked Sendable {
         return record
     }
 
+    /// Stop Notifications on an iPhone or iPad: the device leaves the gateway's push list
+    /// (`leavePush`) and stays off it until Set Up (`resumePush`).
+    public func stopPush(appID: UUID) {
+        stoppedGateways.insert(appID.uuidString)
+        leavePush(appID: appID)
+    }
+
     /// This device left the gateway's push list (Stop Notifications on its page): its key goes, so
     /// its notices stop opening, and its open requests leave the badge. Its unread chats stay, as every
     /// gateway's do, Push on or not: forgetting its list too dropped them until its next count put them
-    /// back (`docs/notifications.md` §2 Badge).
-    public func stopPush(appID: UUID) {
+    /// back (`docs/notifications.md` §2 Badge). The Mac's Stop is this alone: it keeps no stop.
+    public func leavePush(appID: UUID) {
         removeDeviceKeys(appID: appID)
         gateways = gateways.filter { $0.value.appID != appID }
         var counts = openCounts
@@ -114,11 +121,47 @@ public final class PushShared: @unchecked Sendable {
         openCounts = counts
     }
 
+    /// What an iPhone's check of a gateway does (`PushCenter.check`), on every path that checks:
+    /// the Notifications page, the hourly refresh, a new push address, the gateway coming back.
+    public enum GatewayCheck: Sendable, Equatable {
+        /// Puts this device on the gateway's push list.
+        case register
+        /// Only asks the plugin whether it's there: without a push address or permission this
+        /// device can't be on the list (`docs/setup.md` §4.13).
+        case status
+        /// Stays off the list: the person stopped notifications from this gateway on this device.
+        case stopped
+    }
+
+    public func gatewayCheck(appID: UUID, hasToken: Bool, canNotify: Bool) -> GatewayCheck {
+        if isPushStopped(appID: appID) { return .stopped }
+        return hasToken && canNotify ? .register : .status
+    }
+
+    /// Gateways this device left with Stop Notifications, by app id. Kept on disk, so a relaunch, a
+    /// new push address or the hourly check never puts the device back on their lists; only Set Up
+    /// does (`resumePush`).
+    private var stoppedGateways: Set<String> {
+        get { Set(decode([String].self, "push.stopped") ?? []) }
+        set { encode(newValue.sorted(), "push.stopped") }
+    }
+
+    public func isPushStopped(appID: UUID) -> Bool {
+        stoppedGateways.contains(appID.uuidString)
+    }
+
+    /// Set Up on a stopped gateway: the next check registers this device again.
+    public func resumePush(appID: UUID) {
+        stoppedGateways.remove(appID.uuidString)
+    }
+
     /// The gateway was removed: its key goes too, so its notices stop opening, and its chats leave
     /// the badge with its requests.
     public func forget(appID: UUID) {
         removed.withLock { _ = $0.insert(appID) }
-        stopPush(appID: appID)
+        leavePush(appID: appID)
+        // Nothing of a removed gateway stays, its stop included: added again, it starts afresh.
+        resumePush(appID: appID)
         unreadLists[appID.uuidString] = nil
         recentReads[appID.uuidString] = nil
         countableLists[appID.uuidString] = nil

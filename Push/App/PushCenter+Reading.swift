@@ -130,7 +130,7 @@ extension PushCenter {
         if !hasPushPlugin(id) {
             await check(workspace)
             switch gatewayStates[id] {
-            case .on?, .notRegistered?:
+            case .on?, .notRegistered?, .stopped?:
                 break
             case .notInstalled?:
                 // Without the plugin no other device hears of reads; Hermes' own marks went anyway.
@@ -155,7 +155,10 @@ extension PushCenter {
         var landed = true
         do {
             let open = try await client.read(deviceID: shared.deviceID, chats: batch.chats.keys.sorted(), rooms: batch.rooms.keys.sorted())
-            if let installation = installationID(for: id) { shared.recordOpen(open, gateway: installation) }
+            // A gateway this device stopped keeps its requests off the badge until Set Up.
+            if gatewayStates[id] != .stopped, let installation = installationID(for: id) {
+                shared.recordOpen(open, gateway: installation)
+            }
         } catch AppPushClient.Failure.refused(_), AppPushClient.Failure.notInstalled {
             // An older plugin doesn't know `read`: the other devices catch up when their app runs.
             ConnectionLog.logger.notice("push: the gateway didn't take a read")
@@ -223,10 +226,11 @@ extension PushCenter {
     }
 
     /// The gateway has the plugin, whether or not this device gets its pushes (the Mac never does,
-    /// an iPhone without permission doesn't): a read here still reaches the other devices.
+    /// an iPhone without permission or one that stopped them doesn't): a read here still reaches
+    /// the other devices.
     private func hasPushPlugin(_ id: UUID) -> Bool {
         switch gatewayStates[id] {
-        case .on?, .notRegistered?: true
+        case .on?, .notRegistered?, .stopped?: true
         default: false
         }
     }
