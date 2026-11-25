@@ -463,16 +463,21 @@ restart Hermes's backend. One Bot: Partly set up. Docs: `user-guide/bot-mode`.
 ### 4.13 Notifications and the push plugin
 
 The permission (`UNUserNotificationCenter`), and on iPhone and iPad the gateway's push plugin
-reached through Bot Mode (`PushCenter.GatewayState`). Off in Settings: Open Settings. Not asked
-yet: Turn On Notifications. No plugin: Set Up… on the Notifications page, or `hermes plugins
-install vburojevic/hermes-app-push --enable` and `hermes gateway restart`. The plugin there but
-this iPhone not on its list (`status.registered` false, for want of permission or a push address
-from Apple): Not set up, with the reason. A relay problem: Partly set up, the app still reaches
+reached through Bot Mode (`PushCenter.GatewayState`). Off in Settings: Open Settings. Not asked yet:
+Turn On Notifications. No plugin: Set Up… on the Notifications page, or `hermes plugins install
+vburojevic/hermes-app-push --enable` and `hermes gateway restart`. The plugin there but this iPhone
+not on its list (`status.registered` false, for want of permission or a push address from Apple):
+Not set up, with the reason. A gateway this iPhone stopped (Stop Notifications on its detail page):
+Not set up, "You stopped notifications from <gateway>.", with Set Up…, which clears the stop and
+registers again, the sheet waiting on its check rather than offering an install the gateway already
+has, and closing when the check ends offline, not set up or with an error, so the row says why with
+Check Again; the row keeps the stop across checks and relaunches until then
+([notifications.md](notifications.md) §1.2). A relay problem: Partly set up, the app still reaches
 you while it's open. Every gateway row that isn't on has Check Again. With push on, a plugin
-missing, older or turned off in some Bots, or a restart still to do, is Partly set up in the
-plugins page's words (`AppPluginStatus`, [plugins.md](plugins.md) §2); an update whose pin adds
-access reads "An update asks for more access" until the person allows it. The Mac notifies while
-the app runs and needs no plugin. Installing the plugin is [plugins.md](plugins.md) §2;
+missing, older or turned off in some Bots, or a restart still to do, is Partly set up in the plugins
+page's words (`AppPluginStatus`, [plugins.md](plugins.md) §2); an update whose pin adds access reads
+"An update asks for more access" until the person allows it. The Mac notifies while the app runs and
+needs no plugin. Installing the plugin is [plugins.md](plugins.md) §2;
 [notifications.md](notifications.md) §5 has the page.
 
 ### 4.14 Widgets

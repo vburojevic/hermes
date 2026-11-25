@@ -29,6 +29,9 @@ final class PushCenter {
         /// The plugin answered, but this iPhone isn't on its list: no permission, or no push
         /// address from Apple yet (`docs/setup.md` §4.13). Why, in words.
         case notRegistered(String)
+        /// The person stopped notifications from this gateway on this iPhone: it stays off the
+        /// gateway's list until Set Up (`docs/setup.md` §4.13).
+        case stopped
         /// The gateway has no `/app-push` command: Set Up Push.
         case notInstalled
         /// No Bot Mode link, so the app can't reach the gateway's commands.
@@ -391,12 +394,27 @@ final class PushCenter {
     /// Registers this device with a gateway's plugin (iPhone), or checks the plugin is there (Mac).
     func check(_ workspace: BotWorkspace) async {
         let id = workspace.id
+        #if os(iOS)
+        // One rule for every path that checks (the page, the hourly refresh, a new push address, the
+        // gateway coming back): a gateway the person stopped never gets this device back on its own.
+        let rule = shared.gatewayCheck(appID: id, hasToken: deviceToken != nil, canNotify: canNotify)
+        if rule == .stopped {
+            gatewayStates[id] = .stopped
+            registeredAt[id] = .now
+            failedChecks[id] = nil
+            await keepOff(workspace)
+            return
+        }
+        #endif
         guard let roster = workspace.roster else {
             gatewayStates[id] = .needsBackend
             return
         }
         guard roster.state.isOnline else {
-            if gatewayStates[id] == nil || gatewayStates[id] == .checking { gatewayStates[id] = .offline }
+            // A stopped row Set Up just took back says offline too, so Set Up Push can close on it.
+            let replaceable = gatewayStates[id] == nil || gatewayStates[id] == .checking
+                || (gatewayStates[id] == .stopped && !shared.isPushStopped(appID: id))
+            if replaceable { gatewayStates[id] = .offline }
             return
         }
         registering.insert(id)
@@ -405,7 +423,7 @@ final class PushCenter {
         let client = AppPushClient { method, params in try await roster.request(method, params, timeout: .seconds(20)) }
         do {
             #if os(iOS)
-            if let token = deviceToken, canNotify {
+            if let token = deviceToken, rule == .register {
                 // Sealed to a key of this installation's own (`PushShared` device keys): asked for
                 // first when this device doesn't know which installation the gateway is.
                 var installation = installationID(for: id)
@@ -419,6 +437,11 @@ final class PushCenter {
                     // Another installation than this device thought: once more with its own key.
                     registration = try await client.register(device(token: token, key: right), preferences: preferences)
                 }
+                if stoppedMeanwhile(id) {
+                    // Stop Notifications while the register was on its way: the stop wins.
+                    _ = try? await client.unregister(deviceID: shared.deviceID)
+                    return
+                }
                 shared.remember(installationID: registration.installationID, appID: id, name: workspace.bot.name)
                 if !registration.installationID.isEmpty { shared.registeredOwnKey(installation: registration.installationID) }
                 notePluginVersion(registration.version, of: workspace)
@@ -427,6 +450,7 @@ final class PushCenter {
                 renderFaces(for: workspace)
             } else {
                 let status = try await client.status(deviceID: shared.deviceID)
+                if stoppedMeanwhile(id) { return }
                 if let installation = status.installationID {
                     shared.remember(installationID: installation, appID: id, name: workspace.bot.name)
                 }
@@ -453,12 +477,28 @@ final class PushCenter {
             registeredAt[id] = .now
             failedChecks[id] = nil
         } catch AppPushClient.Failure.notInstalled {
+            if stoppedMeanwhile(id) { return }
             gatewayStates[id] = .notInstalled
             retryLater(id)
         } catch {
+            if stoppedMeanwhile(id) { return }
             gatewayStates[id] = .failed(error.localizedDescription)
             retryLater(id)
         }
+    }
+
+    /// Stop Notifications while a check waited on the gateway: the row stays stopped, whatever the
+    /// check found. The check reads the stop once, before it starts.
+    private func stoppedMeanwhile(_ id: UUID) -> Bool {
+        #if os(iOS)
+        guard shared.isPushStopped(appID: id) else { return false }
+        gatewayStates[id] = .stopped
+        registeredAt[id] = .now
+        failedChecks[id] = nil
+        return true
+        #else
+        return false
+        #endif
     }
 
     /// Whether the app names this gateway's never-marked chats to the service extension, which then
@@ -488,7 +528,24 @@ final class PushCenter {
         await check(workspace)
     }
 
+    /// Set Up on a gateway this device stopped: the next check puts it back on the gateway's list.
+    func resumeNotifications(_ id: UUID) {
+        shared.resumePush(appID: id)
+        registeredAt[id] = nil
+    }
+
     #if os(iOS)
+    /// A stop made while the gateway was away never reached it: when the plugin still lists this
+    /// device, it hears the `unregister` again.
+    private func keepOff(_ workspace: BotWorkspace) async {
+        guard let roster = workspace.roster, roster.state.isOnline else { return }
+        let client = AppPushClient { try await roster.request($0, $1, timeout: .seconds(20)) }
+        guard let status = try? await client.status(deviceID: shared.deviceID), status.registered,
+              // Set Up while the status was on its way: the device goes back on, not off.
+              shared.isPushStopped(appID: workspace.id) else { return }
+        _ = try? await client.unregister(deviceID: shared.deviceID)
+    }
+
     private func device(token: String, key: PushDeviceKey) -> AppPushClient.Device {
         var simulator: String?
         #if targetEnvironment(simulator)
@@ -522,11 +579,26 @@ final class PushCenter {
         if let roster = workspace.roster, roster.state.isOnline {
             Task { _ = try? await AppPushClient { try await roster.request($0, $1) }.unregister(deviceID: deviceID) }
         }
-        if removed { shared.forget(appID: workspace.id) } else { shared.stopPush(appID: workspace.id) }
+        if removed {
+            shared.forget(appID: workspace.id)
+        } else {
+            #if os(iOS)
+            shared.stopPush(appID: workspace.id)
+            #else
+            // The Mac keeps no stop: its next check finds the gateway, as before
+            // (`docs/notifications.md` §1.2).
+            shared.leavePush(appID: workspace.id)
+            #endif
+        }
         forgetReads(of: workspace.id)
         pluginVersions[workspace.id] = nil
         savePluginVersions()
+        #if os(iOS)
+        // A stopped gateway keeps its row, stopped, with Set Up to come back.
+        gatewayStates[workspace.id] = removed ? nil : .stopped
+        #else
         gatewayStates[workspace.id] = nil
+        #endif
         registerCategories()
         #if os(macOS)
         // The Dock takes the new count in the same turn when a gateway is removed or stops

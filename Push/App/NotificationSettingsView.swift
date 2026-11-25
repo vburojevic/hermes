@@ -216,7 +216,7 @@ struct NotificationSettingsView: View {
     }
 }
 
-/// One gateway's push status: on, not set up (Set Up…), or why not.
+/// One gateway's push status: on, not set up or stopped (Set Up…), or why not.
 struct GatewayPushRow: View {
     let bot: BotConfiguration
     let state: PushCenter.GatewayState
@@ -251,7 +251,7 @@ struct GatewayPushRow: View {
             #else
             StatusDot(color: Theme.success)
             #endif
-        case .notInstalled, .needsBackend:
+        case .notInstalled, .needsBackend, .stopped:
             Button("Set Up…", action: setUp)
                 #if os(macOS)
                 .buttonStyle(.bordered)
@@ -292,6 +292,8 @@ struct GatewayPushRow: View {
             #endif
         case .needsBackend:
             String(localized: "Needs Bot Mode, so Hermes can reach the plugin.")
+        case .stopped:
+            String(localized: "You stopped notifications from this gateway.")
         case .notRegistered(let reason):
             reason
         case .offline:
