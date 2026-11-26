@@ -30,6 +30,7 @@ Scripted Bot Chat behaviour by message content:
 import argparse
 import base64
 import hashlib
+import hmac
 import importlib.util
 import itertools
 import json
@@ -157,6 +158,9 @@ WS_ROUTES = {}      # path -> fn(handler, query): other WebSockets (kanban.py's 
 RAW_ROUTES = {}     # (method, path) -> fn(query) -> (status, content_type, bytes): authenticated files (inspector.py)
 
 CONFIG = {"token": secrets.token_urlsafe(24), "password": None, "username": "admin", "hermes_version": "0.21.6"}
+# --webapp-gateway: the gateway's Webapp sign-in (docs/development.md). Its cookies end in
+# `_<gateway>` and a login needs the `hermes_webapp_signin` binding too.
+WEBAPP = {"gateway": None, "token": secrets.token_urlsafe(24), "sent": None}
 
 
 def ws_max_bytes():
@@ -2594,6 +2598,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def send_json(self, status, body, headers=None):
+        if status == 401 and body == {"detail": "Unauthorized"} and WEBAPP["gateway"] and CONFIG["password"]:
+            reason = self.webapp_refusal() or "no_cookie"
+            body = {"error": "session_expired" if reason == "invalid_or_expired_session" else "unauthenticated",
+                    "detail": "Unauthorized", "reason": reason, "login_url": "/login"}
         data = json.dumps(body).encode()
         if GATEWAY_PAGING:
             GATEWAY_PAGING[1](len(data))
@@ -2614,9 +2622,39 @@ class Handler(BaseHTTPRequestHandler):
                 jar[key] = value
         return jar
 
+    def session_cookie(self, bare):
+        """A sign-in cookie's name as Hermes gives it for this request (hermes-agent
+        `hermes_cli/dashboard_auth/cookies.py` `_resolved_name`, `gateway_cookie_name`): a
+        `__Secure-` or `__Host-` prefix over HTTPS, then `_<gateway>` on the Webapp."""
+        if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
+            bare = ("__Secure-" if self.headers.get("X-Forwarded-Prefix") else "__Host-") + bare
+        return f"{bare}_{WEBAPP['gateway']}" if WEBAPP["gateway"] else bare
+
+    def webapp_refusal(self):
+        """Why the Webapp's gate refuses this request, or None (`middleware.py` `_unauth_response`)."""
+        jar = self.cookies()
+        if not jar.get(self.session_cookie("hermes_session_at")):
+            return "no_cookie"
+        binding = hmac.new(WEBAPP["token"].encode(), b"webapp-sign-in", hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(jar.get(self.session_cookie("hermes_webapp_signin"), "").encode(), binding.encode()):
+            return "signed_out"
+        if jar[self.session_cookie("hermes_session_at")] not in SESSIONS_AUTH:
+            return "invalid_or_expired_session"
+        return None
+
+    def note_cookie_names(self):
+        """Logs the names of the cookies the app sends when they change, never their values."""
+        names = sorted(self.cookies())
+        if names and names != WEBAPP["sent"]:
+            WEBAPP["sent"] = names
+            print("[backend] cookies sent:", " ".join(names), flush=True)
+
     def authorized(self, query=None):
         if CONFIG["password"]:
-            if self.cookies().get("hermes_session_at") in SESSIONS_AUTH:
+            self.note_cookie_names()
+            if WEBAPP["gateway"] and self.webapp_refusal() is None:
+                return True
+            if not WEBAPP["gateway"] and self.cookies().get("hermes_session_at") in SESSIONS_AUTH:
                 return True
             ticket = (query or {}).get("ticket", [None])[0]
             with LOCK:
@@ -2860,6 +2898,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(401, {"detail": "Invalid username or password"})
             access, refresh = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
             SESSIONS_AUTH[access] = body["username"]
+            if WEBAPP["gateway"]:
+                # routes.py `_set_session` and webapp_sign_in.py `bind`: the session cookies, the
+                # provider hint and the binding, all on Path=/ and suffixed with the gateway.
+                secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+                binding = hmac.new(WEBAPP["token"].encode(), b"webapp-sign-in", hashlib.sha256).hexdigest()
+                cookies = [("hermes_session_at", access, 3600), ("hermes_session_rt", refresh, 2592000),
+                           ("hermes_session_provider", "basic", 2592000), ("hermes_webapp_signin", binding, 2592000)]
+                return self.send_json(200, {"ok": True, "next": "/"}, headers=[
+                    ("Set-Cookie", f"{self.session_cookie(name)}={value}; Path=/; HttpOnly{secure}; SameSite=Lax; "
+                                   f"Max-Age={age}") for name, value, age in cookies])
             return self.send_json(200, {"ok": True, "next": "/"}, headers=[
                 ("Set-Cookie", f"hermes_session_at={access}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"),
                 ("Set-Cookie", f"hermes_session_rt={refresh}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=2592000"),
@@ -3165,6 +3213,13 @@ class Handler(BaseHTTPRequestHandler):
             peer.send(err(rid, 5000, f"{type(error).__name__}: {error}"))
 
 
+def webapp_gateway_id(value):
+    """`hermes_cli/webapp_sign_in.py` `_gateway`: the first 16 hex characters of a SHA-256."""
+    if not re.fullmatch(r"[0-9a-f]{16}", value):
+        raise argparse.ArgumentTypeError("a gateway id is 16 lowercase hex characters")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="127.0.0.1")
@@ -3177,6 +3232,9 @@ def main():
     parser.add_argument("--api-server-only", action="store_true",
                         help="answer like the gateway's API server, not a backend: /health, "
                              "/api/sessions with --gateway-key, 404 elsewhere (refusals logged)")
+    parser.add_argument("--webapp-gateway", metavar="ID", type=webapp_gateway_id,
+                        help="with --password: sign in as the gateway's Webapp does (0.23.0 on), cookies "
+                             "named `<name>_<ID>` (16 lowercase hex) and a `hermes_webapp_signin` binding")
     parser.add_argument("--hermes-version", default="0.21.6",
                         help="the version /api/status reports; before 0.23.1 the socket closes on a message over 16 MiB")
     parser.add_argument("--quiet-world", action="store_true", help="no background activity")
@@ -3266,6 +3324,9 @@ def main():
                         help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
     args = parser.parse_args()
     CONFIG["password"] = args.password
+    if args.webapp_gateway and not args.password:
+        parser.error("--webapp-gateway needs --password")
+    WEBAPP["gateway"] = args.webapp_gateway
     CONFIG["api_server_only"] = args.api_server_only
     CONFIG["gateway_key"] = args.gateway_key
     if args.auth_providers:
@@ -3440,6 +3501,8 @@ def main():
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
     mode = f"gated (admin / {args.password})" if args.password else f"ungated (token {CONFIG['token']})"
+    if args.webapp_gateway:
+        mode += f", the gateway's Webapp {args.webapp_gateway}"
     if args.api_server_only:
         mode = f"the gateway's API server only (key {args.gateway_key})"
     elif args.auth_providers:

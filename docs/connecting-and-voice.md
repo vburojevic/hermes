@@ -36,7 +36,18 @@ second.
    |---|---|---|---|
    | Automatic | Reads `window.__HERMES_SESSION_TOKEN__` from the backend's start page, as Hermes Desktop does. Only an ungated backend on the same machine hands it out; a refused socket reads it again once (the token changes when the backend restarts) | `X-Hermes-Session-Token` header | `?token=` |
    | Session token | A pasted token: the backend's `HERMES_DASHBOARD_SESSION_TOKEN`, which `hermes serve` prints. Offered on an ungated backend and where `auth_providers` has `session-token` | `X-Hermes-Session-Token` | `?token=` |
-   | Password ("Username & password" on the Mac) | Offered only where `auth_providers` has `basic`. `POST /auth/password-login {provider: "basic", username, password}`; the app keeps the `hermes_session_at` / `_rt` cookies itself and takes refreshed ones from every response | `Cookie` | a one-time ticket: `POST /api/auth/ws-ticket` (30 s, single use), then `?ticket=` |
+   | Password ("Username & password" on the Mac) | Offered only where `auth_providers` has `basic`. `POST /auth/password-login {provider: "basic", username, password}`; the app keeps the sign-in cookies itself (below) and takes refreshed ones from every response | `Cookie` | a one-time ticket: `POST /api/auth/ws-ticket` (30 s, single use), then `?ticket=` |
+
+   The sign-in cookies (`BackendSessionCookie`) are the ones the backend reads back:
+   `hermes_session_at`, `hermes_session_rt`, `hermes_session_provider` and, on a gateway's Webapp,
+   the `hermes_webapp_signin` binding. Hermes names each one by the request: bare over http,
+   `__Host-` over https and `__Secure-` behind a path prefix, and from 0.23.0 a gateway's Webapp
+   adds `_<gateway>`, 16 lowercase hex characters (`hermes_session_at_<gateway>`). The app matches
+   those names exactly and keeps no other cookie (not the browser flow's `hermes_session_pkce` or
+   `hermes_sso_attempt`). A sign-in passes only when its own answer sets a live access cookie, and
+   then its cookies replace the saved ones, so a session from another backend or an older Hermes
+   never rides along. A refresh updates the saved cookies in place, and a cookie the backend clears
+   or lets expire is removed.
 
    `GET /api/status` (no sign-in) says whether the address is a Hermes backend, whether it
    needs a sign-in and which (`auth_providers`). Edit Gateway reads it before offering a sign-in,

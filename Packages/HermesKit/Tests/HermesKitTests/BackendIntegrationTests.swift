@@ -212,3 +212,58 @@ struct RealBackendReadOnlyTests {
         #expect(!rows.isEmpty)
     }
 }
+
+/// Bot Mode's password sign-in (`docs/connecting-and-voice.md` §1) against `backend.py --password`,
+/// given as `HERMES_MOCK_BACKEND_PASSWORD`. With `--webapp-gateway`, given as
+/// `HERMES_MOCK_BACKEND_WEBAPP`, it signs in as the gateway's Webapp: suffixed cookies and a binding.
+@Suite("Mock backend sign-in", .enabled(if: ProcessInfo.processInfo.environment["HERMES_MOCK_BACKEND"] != nil
+    && ProcessInfo.processInfo.environment["HERMES_MOCK_BACKEND_PASSWORD"] != nil))
+struct BackendSignInIntegrationTests {
+    private let environment = ProcessInfo.processInfo.environment
+    private var baseURL: URL { URL(string: environment["HERMES_MOCK_BACKEND"]!)! }
+    private var password: String { environment["HERMES_MOCK_BACKEND_PASSWORD"]! }
+
+    private var expectedNames: Set<String> {
+        guard let gateway = environment["HERMES_MOCK_BACKEND_WEBAPP"] else { return ["hermes_session_at", "hermes_session_rt"] }
+        let names = ["hermes_session_at", "hermes_session_rt", "hermes_session_provider", "hermes_webapp_signin"]
+        return Set(names.map { "\($0)_\(gateway)" })
+    }
+
+    private func savedCookies(_ client: BackendClient) async -> [String: String] {
+        guard case .cookies(let cookies)? = await client.credential else {
+            Issue.record("no cookies saved")
+            return [:]
+        }
+        return cookies
+    }
+
+    @Test func signingInStartsASessionAndSigningInAgainReplacesIt() async throws {
+        // Cookies from an earlier sign-in, another prefix and names from before the Webapp.
+        let earlier = ["hermes_session_at": "earlier", "hermes_session_rt": "earlier", "__Host-hermes_session_at": "earlier"]
+        let client = BackendClient(baseURL: baseURL, credential: .cookies(earlier))
+        try await client.signIn(username: "admin", password: password)
+        let first = await savedCookies(client)
+        #expect(Set(first.keys) == expectedNames)
+
+        // Signed in: the socket's ticket is minted with the cookies and the socket opens with it.
+        let socket = GatewaySocket(url: try await client.gatewaySocketURL())
+        try await socket.connect()
+        defer { Task { await socket.close() } }
+        #expect(!(try await socket.request("profiles.list")["profiles"].items.isEmpty))
+
+        try await client.signIn(username: "admin", password: password)
+        let second = await savedCookies(client)
+        #expect(Set(second.keys) == expectedNames)
+        let access = try #require(first.keys.first { $0.hasPrefix("hermes_session_at") })
+        #expect(second[access] != first[access])
+        _ = try await client.gatewaySocketURL()
+    }
+
+    @Test func aWrongPasswordIsRefused() async throws {
+        let client = BackendClient(baseURL: baseURL, credential: nil)
+        await #expect(throws: BackendClient.Failure.invalidCredentials) {
+            try await client.signIn(username: "admin", password: "not-" + password)
+        }
+        #expect(await client.credential == nil)
+    }
+}
