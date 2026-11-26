@@ -1444,6 +1444,18 @@ final class BotRoster {
 
     /// One JSON-RPC call on the shared socket.
     func request(_ method: String, _ params: [String: JSONValue] = [:], timeout: Duration = .seconds(60)) async throws -> JSONValue {
+        try await liveSocket().request(method, params, timeout: timeout)
+    }
+
+    /// One message's `prompt.submit`, with the params the socket carrying it takes
+    /// (`PromptSubmitContract`): read from that socket, since a reconnect may reach another Hermes.
+    func submitPrompt(_ submit: PromptSubmitContract, timeout: Duration = .seconds(60)) async throws -> JSONValue {
+        let socket = try await liveSocket()
+        return try await socket.request("prompt.submit", submit.params(sessionAuthority: await socket.sessionAuthority), timeout: timeout)
+    }
+
+    /// The shared socket, once it can carry a request.
+    private func liveSocket() async throws -> GatewaySocket {
         #if os(iOS)
         // Asked while the app is away (a notification's action): the socket may have died with
         // the app suspended. Proven first, rather than waiting out a request on a dead one.
@@ -1454,7 +1466,7 @@ final class BotRoster {
         if let verification { await verification.value }
         if socket == nil, isPaused { await waitForSocket() }
         guard let socket else { throw GatewaySocket.Failure.notConnected }
-        return try await socket.request(method, params, timeout: timeout)
+        return socket
     }
 
     /// Answers Hermes's request `requestID` on the socket, waiting for one coming back from a

@@ -67,7 +67,9 @@ def install(backend_globals, gateway_module):
             print(f"[mock-hermes] prompt.submit with {', '.join(refs)}", flush=True)
         if runtime is None or runtime.get("kind") != "chat":
             return original["prompt.submit"](params)
-        return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")))
+        # The same contract as every other chat: refusals, `not_found` and admissions (backend.py `admit_prompt`).
+        return B["admit_prompt"](params, lambda sid, runtime, params: submit_chat(
+            sid, runtime, params.get("text") or "", bool(params.get("queued"))))
 
     B["CHATS_HOOKS"].update({"add_message": G.add_message, "finish": finish})
     methods["session.create"] = create

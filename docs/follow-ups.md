@@ -19,7 +19,7 @@ design's component names, used in code comments.
 |---|---|---|---|
 | **Steer** | Hermes reads it after the current step and keeps going | Gateway protocol: `session.steer {session_id, text}`; `queued` means accepted, not read yet. API server: `POST /v1/runs/{id}/steer {input}` | A dashed bubble with a spinner, then the read bubble and a "Read your note" step in the timeline (§2) |
 | **Redirect** | Stops the current step and changes course | `session.redirect {session_id, text}` (gateway protocol only) | `redirectMark`, the message captioned "Redirect", then a new running turn (§3) |
-| **Send Next** | Waits until this reply is done, then sends it as the next turn | Held by the app in the queue tray; sent with `prompt.submit {session_id, text, queued: true}` over the gateway protocol, or as a new `/v1/runs` turn | Nothing until it sends; then the bubble captioned "Sent from the queue" (§4) |
+| **Send Next** | Waits until this reply is done, then sends it as the next turn | Held by the app in the queue tray; sent with `prompt.submit {session_id, text, queued: true}` over the gateway protocol (plus the message's `submission_id` on the session authority, §4), or as a new `/v1/runs` turn | Nothing until it sends; then the bubble captioned "Sent from the queue" (§4) |
 | **Ask Aside** | A quick answer on the side; the turn keeps going | `prompt.btw {session_id, text}` → `{task_id}`, answered by `btw.complete {task_id, question, text}` | The side answer after the chat (`asideCard`): "Aside", the question, "Answering…" then the answer, and Dismiss |
 | **Run in Background** (chip: "Background") | Another Hermes works on it; the result lands here | `prompt.background {session_id, text}` → `{task_id}`, answered by `background.complete {task_id, text}` | The bubble captioned "Run in Background", "Working in the background: …" (`backgroundStarted`), then "Finished in the background" with Open (`backgroundCard`) |
 
@@ -165,11 +165,13 @@ design's component names, used in code comments.
 - **Draining:** when the turn has settled (`session.info {running: false}` over the gateway
   protocol, the run's end over the API server) the first item goes as the next turn. Over the
   gateway protocol it is sent with `prompt.submit {queued: true}`, so Hermes never turns it into a
-  steer. It appears captioned "Sent from the queue" and the rest move up. One at a time: the next
-  item waits for that turn to end too. Messages the gateway holds go before the app's queue. A
-  turn whose end the app never heard doesn't hold the queue for long: after 10 s the gateway is
-  asked, and the chat settles ([chat.md](chat.md) §4b). Behind a turn that can't take a note
-  (finishing, stopping, or running elsewhere) Send queues what's typed, and the chip shows Send Next.
+  steer. On the session authority it also carries the `submission_id` the message got when it was
+  queued, and a resend after a resume keeps it ([composer.md](composer.md) §2). It appears
+  captioned "Sent from the queue" and the rest move up. One at a time: the next item waits for
+  that turn to end too. Messages the gateway holds go before the app's queue. A turn whose end the
+  app never heard doesn't hold the queue for long: after 10 s the gateway is asked, and the chat
+  settles ([chat.md](chat.md) §4b). Behind a turn that can't take a note (finishing, stopping, or
+  running elsewhere) Send queues what's typed, and the chip shows Send Next.
 - **Stop:** the trailing Stop interrupts the turn (`session.interrupt`, or
   `POST /v1/runs/{id}/stop`) and does **not** drain the app's queue. Over the gateway protocol
   Hermes also empties its own queue, ends the chat's running helpers and declines the approval the

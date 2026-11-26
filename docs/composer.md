@@ -116,6 +116,17 @@ they changed (`config.set` with `key: "model"`, value `"<model> --provider <prov
 the backend no longer knows the session, the app resumes it and sends once more. If the socket
 refuses a normal chat's turn before anything started, the turn goes to the API server instead.
 
+When `gateway.ready` says `session_authority: true` (Hermes Agent 0.23.3 and newer, Bot Mode
+backends), `prompt.submit` also carries a `submission_id`. The app mints it once per message and
+sends the same one when it resends that message after a resume, so Hermes admits it once. Besides
+a session it no longer has (`not_found`), the authority refuses a message with 4001
+`permission_denied` when this socket hasn't resumed the chat, as after a reconnect: it refuses
+before taking anything, so the app resumes and sends once more there too. Photos uploaded with
+the message (`image.attach_bytes`) are refused the same way and uploaded again after the same
+resume. Send
+Again is a new message with a new id. Other sockets get exactly the keys they always got: their
+`prompt.submit` refuses any key it doesn't know with error 4000.
+
 Attachments are uploaded only when the message is sent, so removing one from the composer needs
 no call.
 

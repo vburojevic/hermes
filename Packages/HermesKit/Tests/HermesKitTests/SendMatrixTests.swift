@@ -196,6 +196,9 @@ struct SendMatrixTests {
         case .success(let answer):
             switch SubmitAnswer(result: answer) {
             case .started: return .ownTurn
+            // The authority's receipt: sent with no turn seen, the turn that comes is this
+            // message's; held for the next turn, it stays in the tray until that turn shows it.
+            case .admitted: return mechanism == .upNext ? .heldByHermes : .ownTurn
             case .queuedBehindTurn, .queuedOnGateway: return .heldByHermes
             case .steered: return .steeredIn
             case .redirected: return .steeredIn
@@ -380,6 +383,25 @@ struct SendMatrixTests {
         }
         guard case .failure(let error as GatewayRPCError) = Self.chat(.ownerBusy).submit(true) else { return }
         #expect(try #require(SendRefusal(error)).line.contains("with its photo"))
+    }
+
+    /// On the session authority (Hermes Agent 0.23.3 and newer) every new message's receipt says
+    /// `queued` (`gateway/session_authority.py` `_submit`), an idle chat's too: sent with no turn
+    /// seen it is the message's own turn, held for the next turn it stays held. A stale session is
+    /// the one refusal a resend answers: anything else goes back.
+    @Test func theSessionAuthorityAnswersLikeTheLegacyDispatcher() {
+        let receipt = { (status: String) in
+            JSONValue.object([
+                "admission_id": .string("adm-1"), "status": .string(status), "outcome": .null,
+                "ref": .object(["profile_id": .string("writer"), "session_id": .string("s-1")]),
+            ])
+        }
+        #expect(Self.submitted(Chat(submit: { _ in .success(receipt("queued")) }), .send, photo: false) == .ownTurn)
+        #expect(Self.submitted(Chat(submit: { _ in .success(receipt("started")) }), .send, photo: false) == .ownTurn)
+        #expect(Self.submitted(Chat(turnHere: true, submit: { _ in .success(receipt("queued")) }), .upNext, photo: false) == .heldByHermes)
+        let invalid = GatewayRPCError(code: 4001, message: "invalid_params", data: .object(["reason": .string("invalid_params")]))
+        #expect(Self.submitted(Chat(submit: { _ in .failure(invalid) }), .send, photo: false) == .backInField)
+        #expect(!PromptSubmitContract.isStaleSession(invalid))
     }
 }
 

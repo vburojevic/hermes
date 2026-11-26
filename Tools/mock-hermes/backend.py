@@ -2116,8 +2116,53 @@ def new_runtime(stored, profile, *, title=None, hidden=False):
 def runtime_for(params):
     sid = params.get("session_id") or ""
     if sid not in RUNTIME or RUNTIME[sid].get("dead"):  # a runtime id from before a restart
+        if CONFIG.get("session_authority"):
+            # gateway/session_authority.py@v0.23.4:230: `AuthorityRefusal('not_found')`, sent as 4001
+            # with the reason for its message and in its data (session_controls.py `_refusal_data`).
+            raise RPCError(4001, "not_found", {"reason": "not_found"})
         raise RPCError(4001, "session not found")
     return sid, RUNTIME[sid]
+
+
+# --session-authority: Hermes Agent 0.23.3 and newer serving the socket through its session authority
+# (gateway/session_controls.py), which says so in `gateway.ready`. Without it, the legacy dispatcher.
+# The keys each takes on `prompt.submit`: the authority's `submission` (session_controls.py@v0.23.4:897),
+# and the legacy contract (tui_gateway/contracts/prompt_voice.py@v0.23.4:26), which forbids the rest.
+AUTHORITY_SUBMIT_KEYS = {
+    "session_id", "text", "submission_id", "input_id", "queued", "attachments", "finite", "unattended",
+    "surface", "voice_context", "interrupted", "voice_turn", "display_kind", "title_preview",
+    "turn_author", "api_text", "model_override", "clarify_batch",
+}
+LEGACY_SUBMIT_KEYS = {
+    "session_id", "profile", "text", "display_kind", "interrupted", "queued", "surface", "voice_context",
+    "voice_turn", "title_preview", "truncate_before_user_ordinal", "truncate_before_row_id",
+    "truncate_before_message_id", "confirm_truncate", "confirm_empty_truncate", "confirm_deep_truncate",
+    "rebind_survivor_row_ids",
+}
+# Methods the authority has no handler for, answered -32601 (session_controls.py@v0.23.4:403).
+AUTHORITY_UNKNOWN = {"session.title"}
+ADMISSIONS = {}  # (stored chat, submission id) -> the receipt it was admitted with
+
+
+def submit_refusal(params):
+    """The refusal Hermes gives a `prompt.submit` with keys it doesn't take, or None."""
+    if CONFIG.get("session_authority"):
+        problem = set(params) - AUTHORITY_SUBMIT_KEYS
+        request_id = params.get("submission_id") or params.get("input_id")
+        if problem or not isinstance(request_id, str) or not request_id:
+            return RPCError(4001, "invalid_params", {"reason": "invalid_params"})
+        return None
+    unknown = sorted(set(params) - LEGACY_SUBMIT_KEYS)
+    if unknown:
+        # tui_gateway/contracts/registry.py@v0.23.4:136 `validate_params`.
+        return RPCError(4000, f"invalid params for prompt.submit: {unknown[0]}: Extra inputs are not permitted — "
+                              "the client and the Hermes backend are out of sync (different versions); run "
+                              "`hermes update` and restart both")
+    return None
+
+
+def short_id(value):
+    return f"{value[:8]}…" if len(value) > 8 else value
 
 
 def method_session_create(params):
@@ -2382,7 +2427,62 @@ def submit_gate(sid, runtime, text):
 
 
 def method_prompt_submit(params):
-    sid, runtime = runtime_for(params)
+    return admit_prompt(params, submit_prompt)
+
+
+def admit_prompt(params, run):
+    """The socket's `prompt.submit` contract around `run(sid, runtime, params)`, for every chat kind."""
+    authority = CONFIG.get("session_authority")
+    # The legacy contract checks the keys before the handler runs; the authority finds the session
+    # first, then asks whether this socket holds it, then reads the message (`submission`).
+    refusal = None if authority else submit_refusal(params)
+    if refusal is not None:
+        print(f"[backend] prompt.submit refused {refusal.code} {refusal}", flush=True)
+        raise refusal
+    try:
+        sid, runtime = runtime_for(params)
+        if authority:
+            # gateway/session_controls.py@v0.23.4:899: a socket holds only the chats it created or
+            # resumed (`subscriptions`), so a reconnected one holds none until it resumes.
+            with LOCK:
+                subscribed = getattr(CURRENT, "peer", None) in runtime["peers"]
+            if not subscribed:
+                raise RPCError(4001, "permission_denied", {"reason": "permission_denied"})
+            refusal = submit_refusal(params)
+            if refusal is not None:
+                raise refusal
+    except RPCError as error:
+        # The id the app has to send again after it resumes, so a run's log shows it came back.
+        print(f"[backend] prompt.submit id={short_id(params.get('submission_id') or '-')} refused {error.code} {error}", flush=True)
+        raise
+    if not authority:
+        return run(sid, runtime, params)
+    request_id = params.get("submission_id") or params.get("input_id")
+    key = (runtime["stored"], request_id)
+    with LOCK:
+        admitted = ADMISSIONS.get(key)
+    if admitted is not None:
+        # A repeated id is the same admission (persistence/authority/admissions.py): no second turn.
+        print(f"[backend] prompt.submit id={short_id(request_id)} again: the same admission", flush=True)
+        return admitted
+    answer = run(sid, runtime, params)
+    # gateway/session_controls.py@v0.23.4:844 answers `asdict(AdmissionReceipt)`
+    # (gateway/session_contract.py@v0.23.4:53). A new message is written as queued and its turn
+    # starts after the answer (session_authority.py `_submit`), so its receipt says `queued`, an
+    # idle chat's too; only a steer reads as the running turn, `started` (`_receipt`).
+    steered = answer.get("status") in ("steered", "redirected")
+    with LOCK:
+        receipt = {
+            "admission_id": new_id(), "ref": {"profile_id": runtime["profile"], "session_id": runtime["stored"]},
+            "sequence": len(ADMISSIONS) + 1, "status": "started" if steered else "queued",
+            "outcome": None, "authority_epoch": 1, "execution_generation": None,
+        }
+        ADMISSIONS[key] = receipt
+    print(f"[backend] prompt.submit id={short_id(request_id)} admitted {receipt['status']}", flush=True)
+    return receipt
+
+
+def submit_prompt(sid, runtime, params):
     text = params.get("text") or ""
     gated = submit_gate(sid, runtime, text)
     if gated is not None:
@@ -2468,6 +2568,13 @@ def method_image_attach_bytes(params):
     """Staged for whichever prompt comes next on the chat (Hermes's `attached_images`): a refused
     prompt leaves them for the next one, until `image.detach` takes them back by path."""
     sid, runtime = runtime_for(params)
+    if CONFIG.get("session_authority"):
+        # gateway/session_images.py@v0.23.4 `attach_bytes`: like a submit, only on a chat this
+        # socket created or resumed.
+        with LOCK:
+            subscribed = getattr(CURRENT, "peer", None) in runtime["peers"]
+        if not subscribed:
+            raise RPCError(4001, "permission_denied", {"reason": "permission_denied"})
     path = f"/home/user/.hermes/images/upload_{uuid.uuid4().hex[:8]}.png"
     with LOCK:
         runtime.setdefault("attached_images", []).append(path)
@@ -3133,8 +3240,11 @@ class Handler(BaseHTTPRequestHandler):
             return peer.cut()
         with LOCK:
             CLIENTS.add(peer)
+        ready = {"heartbeat": True, "replay_epoch": EPOCH}
+        if CONFIG.get("session_authority"):
+            ready["session_authority"] = True  # tui_gateway/ws.py@v0.23.4:668
         peer.send({"jsonrpc": "2.0", "method": "event", "params": {
-            "type": "gateway.ready", "session_id": "", "payload": {"heartbeat": True, "replay_epoch": EPOCH}}})
+            "type": "gateway.ready", "session_id": "", "payload": ready}})
         try:
             while True:
                 text = peer.recv()
@@ -3181,8 +3291,14 @@ class Handler(BaseHTTPRequestHandler):
             peer.answers_requests = bool((frame.get("params") or {}).get("server_requests"))
             return peer.send(ok(rid, {"server_requests": ["approval", "clarify", "sudo", "secret"]}))
         handler = METHODS.get(method)
+        if CONFIG.get("session_authority") and method in AUTHORITY_UNKNOWN:
+            return peer.send(err(rid, -32601, f"unknown method: {method} — not available on this Hermes backend",
+                                 {"reason": "unknown_method"}))
         if handler is None:
             return peer.send(err(rid, -32601, f"unknown method: {method}"))
+        if method == "session.resume" and CONFIG.get("session_authority"):
+            print(f"[backend] session.resume {short_id(str((frame.get('params') or {}).get('session_id') or ''))}",
+                  flush=True)
         # /api/mock/lose-answer: this request's answer never comes, the socket dies instead, with the
         # request taken (it ran) or not (it never got here).
         with LOCK:
@@ -3237,6 +3353,9 @@ def main():
                              "named `<name>_<ID>` (16 lowercase hex) and a `hermes_webapp_signin` binding")
     parser.add_argument("--hermes-version", default="0.21.6",
                         help="the version /api/status reports; before 0.23.1 the socket closes on a message over 16 MiB")
+    parser.add_argument("--session-authority", action="store_true",
+                        help="with --hermes-version 0.23.3 or newer: the socket is served by the session authority, "
+                             "which takes a message only with a submission_id")
     parser.add_argument("--quiet-world", action="store_true", help="no background activity")
     parser.add_argument("--long-bot-chats", action="store_true", help="give Ops a long Bot Chat (180 messages)")
     parser.add_argument("--seed-bot-chat", metavar="JSON", help="load Ops's Bot Chat from a local export of message rows")
@@ -3332,6 +3451,12 @@ def main():
     if args.auth_providers:
         CONFIG["auth_providers"] = [name.strip() for name in args.auth_providers.split(",") if name.strip()]
     CONFIG["hermes_version"] = args.hermes_version
+    if args.session_authority:
+        version = [int("".join(itertools.takewhile(str.isdigit, part)) or 0)
+                   for part in args.hermes_version.lstrip("vV").split(".")[:3]]
+        if (version + [0, 0, 0])[:3] < [0, 23, 3]:
+            parser.error("--session-authority needs --hermes-version 0.23.3 or newer")
+        CONFIG["session_authority"] = True
     if args.starve:
         STARVE.start(float("inf"), gap=STARVE.parse_gap(args.starve))
     CONFIG["late_store"] = args.late_store

@@ -34,6 +34,16 @@ struct GatewayFrameTests {
         #expect(error?.code == 4064)
         #expect(error?.errorDescription == "That bot doesn't exist on this Hermes backend.")
         #expect(GatewayRPCError(code: 4001, message: "session not found").isSessionNotFound)
+        // The session authority (Hermes Agent 0.23.3 and newer) answers 4001 for every refusal and
+        // says which in `data.reason`: only `not_found` is a stale session.
+        let refusal = { (reason: String) in
+            GatewayRPCError(code: 4001, message: reason, data: .object(["reason": .string(reason)]))
+        }
+        #expect(refusal("not_found").isSessionNotFound)
+        #expect(!refusal("invalid_params").isSessionNotFound)
+        #expect(!refusal("permission_denied").isSessionNotFound)
+        #expect(!refusal("runtime_draining").isSessionNotFound)
+        #expect(!GatewayRPCError(code: 4001, message: "invalid_params").isSessionNotFound)
     }
 
     @Test func ignoresNonObjects() {

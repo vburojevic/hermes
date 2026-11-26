@@ -160,6 +160,9 @@ struct SendFailureTests {
 
     @Test func aRefusalGoesBackToThePerson() {
         #expect(SendFailure.overSocket(GatewayRPCError(code: 4000, message: "invalid params for prompt.submit")) == .refused)
+        // The session authority's refusal of a message without its submission id.
+        let invalid = GatewayRPCError(code: 4001, message: "invalid_params", data: .object(["reason": .string("invalid_params")]))
+        #expect(SendFailure.overSocket(invalid) == .refused)
         #expect(SendFailure.overSocket(CancellationError()) == .refused)
         #expect(SendFailure.overHTTP(HermesError.server(status: 400, code: "invalid_request_error", message: "Missing 'input' field")) == .refused)
         #expect(SendFailure.overHTTP(HermesError.unauthorized) == .refused)

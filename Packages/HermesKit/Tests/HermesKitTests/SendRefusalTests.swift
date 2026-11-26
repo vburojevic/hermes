@@ -102,4 +102,13 @@ struct SendRefusalTests {
         #expect(SendRefusal(GatewayRPCError(code: 4009, message: "session busy")) == nil)
         #expect(SendRefusal(GatewayRPCError(code: 4010, message: "agent does not support steer")) == nil)
     }
+
+    /// The session authority's refusals are 4001 with a reason (`gateway/session_controls.py`
+    /// `_refusal_data`), never the legacy 4090 coordination refusal.
+    @Test func theSessionAuthoritysRefusalsAreNotA4090() {
+        for reason in ["invalid_params", "not_found", "permission_denied"] {
+            let error = GatewayRPCError(code: 4001, message: reason, data: .object(["reason": .string(reason)]))
+            #expect(SendRefusal(error) == nil)
+        }
+    }
 }
