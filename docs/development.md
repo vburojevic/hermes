@@ -69,6 +69,9 @@ team and their own tools.
 cd Packages/HermesKit && swift test
 # plus a round trip over a real WebSocket against the mock backend:
 HERMES_MOCK_BACKEND=http://127.0.0.1:19119 swift test --filter BackendIntegrationTests
+# Bot Mode's password sign-in, against a backend started with --password pw (and --webapp-gateway):
+HERMES_MOCK_BACKEND=http://127.0.0.1:19119 HERMES_MOCK_BACKEND_PASSWORD=pw \
+  HERMES_MOCK_BACKEND_WEBAPP=0123456789abcdef swift test --filter BackendSignInIntegrationTests
 # how long a 50 KB reply takes to parse and tint as it streams, in release (about 80 s):
 HERMES_STREAMING_TIMING=1 swift test -c release -Xswiftc -enable-testing --filter StreamingTiming
 ```
@@ -295,6 +298,7 @@ an active worker and a routine that posts every couple of minutes):
 ```bash
 python3 Tools/mock-hermes/backend.py --port 19119            # ungated: Automatic sign-in
 python3 Tools/mock-hermes/backend.py --port 19119 --password pw   # gated: admin / pw
+python3 Tools/mock-hermes/backend.py --port 19119 --password pw --webapp-gateway 0123456789abcdef
 python3 Tools/mock-hermes/backend.py --port 19119 --auth-providers session-token
 python3 Tools/mock-hermes/backend.py --port 19119 --api-server-only
 ```
@@ -309,6 +313,16 @@ token in Edit Gateway, and count the log's `401` lines and `socket refused` line
 one or two, a stopped Bot Mode sends nothing until something changes. The same holds when the
 address stops being a backend mid-session: sign in to a `--password` backend, then restart it on
 the same port with `--api-server-only`, and the refused lines stop after the first one or two.
+
+`--webapp-gateway <id>` (with `--password`) signs in as a gateway's Webapp does from 0.23.0 on: the
+id is 16 lowercase hex characters, every sign-in cookie is named `<name>_<id>`
+(`hermes_session_at_<id>`, `_rt_`, `_provider_` and the `hermes_webapp_signin_<id>` binding), and
+`X-Forwarded-Proto: https` adds the `__Host-` prefix (`__Secure-` with `X-Forwarded-Prefix`). A
+request without the binding is refused 401 `signed_out`, without the access cookie `no_cookie`, in
+Hermes's JSON. The log names the cookies the app sends whenever they change, never their values.
+To see a new sign-in replace the old cookies, sign in to a `--password` backend, restart it on the
+same port with `--webapp-gateway`, sign in again, and the next `cookies sent:` line names only the
+suffixed cookies.
 
 and turn on **Bot Mode** for the gateway with `127.0.0.1:19119`, or add
 `HERMES_BOOTSTRAP_BACKEND=http://127.0.0.1:19119` to the Debug launch environment. "approve",

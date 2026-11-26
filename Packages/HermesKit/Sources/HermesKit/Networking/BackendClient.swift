@@ -4,8 +4,9 @@ import Foundation
 public enum BackendCredential: Sendable, Equatable, Codable {
     /// Ungated (loopback) backend: the per-start session token.
     case sessionToken(String)
-    /// Gated backend: the dashboard login session cookies (`hermes_session_at` / `_rt`,
-    /// possibly `__Host-`/`__Secure-` prefixed), refreshed by the server on use.
+    /// Gated backend: the sign-in cookies the backend reads back (`BackendSessionCookie`:
+    /// `hermes_session_at` / `_rt` and the rest, prefixed and suffixed as Hermes names them),
+    /// refreshed by the server on use.
     case cookies([String: String])
 }
 
@@ -206,7 +207,8 @@ public actor BackendClient {
             "provider": .string(provider), "username": .string(username), "password": .string(password), "next": .string(""),
         ])
         let (_, response) = try await send(path: "auth/password-login", method: "POST", body: body, authenticated: false, captureCookies: true)
-        guard case .cookies(let cookies)? = credential, cookies.keys.contains(where: { $0.hasSuffix("hermes_session_at") }) else {
+        // This answer's own cookies decide it: a session saved earlier must not pass for one.
+        guard BackendSessionCookie.startsSession(Self.cookies(in: response)) else {
             throw Failure.http(response.statusCode, "Signed in, but the backend didn't start a session.")
         }
     }
@@ -679,25 +681,21 @@ public actor BackendClient {
         }
     }
 
-    /// Keeps the session cookies current: the gate refreshes the access cookie in place.
+    /// Keeps the session cookies current: the gate refreshes them in place, and a sign-in
+    /// (`force`) replaces the saved set with the one it started.
     private func absorbCookies(from response: HTTPURLResponse, force: Bool) {
-        guard let url = response.url else { return }
+        var saved: [String: String] = [:]
+        if case .cookies(let existing)? = credential { saved = existing } else if !force { return }
+        guard let cookies = BackendSessionCookie.updated(saved, with: Self.cookies(in: response), signingIn: force) else { return }
+        updateCredential(.cookies(cookies))
+    }
+
+    private static func cookies(in response: HTTPURLResponse) -> [HTTPCookie] {
+        guard let url = response.url else { return [] }
         let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
             if let key = pair.key as? String, let value = pair.value as? String { result[key] = value }
         }
-        let fresh = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
-            .filter { $0.name.contains("hermes_session_") }
-        guard !fresh.isEmpty else { return }
-        var cookies: [String: String] = [:]
-        if case .cookies(let existing)? = credential { cookies = existing } else if !force { return }
-        for cookie in fresh {
-            if cookie.value.isEmpty || (cookie.expiresDate.map { $0 < .now } ?? false) {
-                cookies[cookie.name] = nil
-            } else {
-                cookies[cookie.name] = cookie.value
-            }
-        }
-        updateCredential(.cookies(cookies))
+        return HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
     }
 
     private func updateCredential(_ new: BackendCredential) {
