@@ -21,7 +21,11 @@ is `ConversationModel.usesGateway`. See `docs/connecting-and-voice.md` §1.
 - On the socket, `session.create` and `session.resume` return a runtime `session_id` (8 hex
   characters) and the stored id (`stored_session_id`). Resume takes the stored id; turns,
   interrupts, steers, commands and process calls take the runtime id. When the backend has
-  forgotten a runtime id (error 4001, after a restart), the app resumes again and resends.
+  forgotten a runtime id, the app resumes once and resends the same message. Only these refusals
+  mean that: the legacy dispatcher's 4001 "session not found" and the session authority's 4001
+  with `data.reason` `not_found` (Hermes Agent 0.23.3 and newer), plus, for a message, the
+  authority's 4001 `permission_denied`, which it gives a socket that hasn't resumed the chat (a
+  reconnected one). Every other 4001 is shown, and so is a second refusal after the resume.
 
 ## 1. Chat list and lifecycle
 

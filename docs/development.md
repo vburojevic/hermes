@@ -467,6 +467,14 @@ every idle chat's session as another client's `session.close` would, with the so
 next upload or prompt on it answers 4001 "session not found", and the app resumes and sends again.
 `--hermes-version` (default 0.21.6) is the version `/api/status` reports; before 0.23.1 the socket
 closes with 1009 on a message over 16 MiB, as uvicorn's did, so a file over about 12 MB never arrives.
+`--session-authority` (with `--hermes-version 0.23.3` or newer) serves the socket as Hermes's session
+authority does: `gateway.ready` says `session_authority: true`, a `prompt.submit` without a
+`submission_id` answers 4001 `invalid_params` (with `data.reason`), the same id again is the same
+admission and never a second turn, every new message's receipt says `queued` (an idle chat's too;
+a steer says `started`), a closed session answers 4001 `not_found`, a `prompt.submit` from a socket
+that didn't create or resume the chat answers 4001 `permission_denied` (checked in that order, then
+the keys; `image.attach_bytes` is refused the same way), and `session.title` answers -32601. The log prints each admission and each refusal. Without it, a `prompt.submit` key
+the legacy dispatcher doesn't know answers 4000, as on Hermes.
 `session.steer` refuses 4010 "agent does not support steer" in a turn's first half second (its
 agent being built; 6 s when the message says "cold start", as on a loaded Mac) and answers `rejected` when idle; while Hermes compacts the chat (a "snapshot"
 message with "compact", or a Bot Chat's "slow … compact", compacts for 8 s after its first step,

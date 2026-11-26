@@ -16,6 +16,56 @@ struct BackendIntegrationTests {
         return (client, socket)
     }
 
+    private func submit(_ submit: PromptSubmitContract, on socket: GatewaySocket) async throws -> JSONValue {
+        try await socket.request("prompt.submit", submit.params(sessionAuthority: await socket.sessionAuthority))
+    }
+
+    /// The mock with `--session-authority` takes a message only with its submission id, the same id
+    /// again is the same admission, and only from a socket that created or resumed the chat; without
+    /// it, an unknown key is refused as Hermes does (4000).
+    @Test func promptSubmitMatchesTheDispatcher() async throws {
+        let (_, socket) = try await connect()
+        defer { Task { await socket.close() } }
+        let created = try await socket.request("session.create", ["profile": .string("default"), "title": .string("scratch")])
+        let runtime = try #require(created["session_id"]?.stringValue)
+        let message = PromptSubmitContract(sessionID: runtime, text: "Hello", queued: false)
+        if await socket.sessionAuthority {
+            let bare = await #expect(throws: GatewayRPCError.self) {
+                try await socket.request("prompt.submit", message.params(sessionAuthority: false))
+            }
+            #expect(bare?.code == 4001)
+            #expect(bare?.refusalReason == "invalid_params")
+            let first = try await submit(message, on: socket)
+            let again = try await submit(message, on: socket)
+            #expect(first["admission_id"] != nil)
+            #expect(first["status"]?.stringValue == "queued")  // an idle chat's receipt too
+            #expect(again["admission_id"] == first["admission_id"])
+            // Another socket holds none of this one's chats until it resumes one.
+            let (_, other) = try await connect()
+            defer { Task { await other.close() } }
+            var next = PromptSubmitContract(sessionID: runtime, text: "Again")
+            let unresumed = await #expect(throws: GatewayRPCError.self) { try await submit(next, on: other) }
+            #expect(unresumed?.refusalReason == "permission_denied")
+            // A photo upload is refused the same way, so the send resumes for it too.
+            let upload = await #expect(throws: GatewayRPCError.self) {
+                try await other.request("image.attach_bytes", ["session_id": .string(runtime), "content_base64": .string("AA=="), "filename": .string("image-1.jpg")])
+            }
+            #expect(upload.map(PromptSubmitContract.isStaleSession) == true)
+            let stored = try #require(created["stored_session_id"]?.stringValue)
+            let resumed = try await other.request("session.resume", ["session_id": .string(stored), "profile": .string("default")])
+            next.sessionID = try #require(resumed["session_id"]?.stringValue)
+            #expect(try await submit(next, on: other)["admission_id"] != nil)
+        } else {
+            var params = message.params(sessionAuthority: false)
+            params["submission_id"] = .string(message.submissionID)
+            let unknown = await #expect(throws: GatewayRPCError.self) {
+                try await socket.request("prompt.submit", params)
+            }
+            #expect(unknown?.code == 4000)
+            _ = try await submit(message, on: socket)
+        }
+    }
+
     @Test func rosterAndTranscript() async throws {
         let (client, socket) = try await connect()
         defer { Task { await socket.close() } }
@@ -49,7 +99,7 @@ struct BackendIntegrationTests {
         let runtime = try #require(resumed["session_id"]?.stringValue)
 
         let messages = await socket.messages()
-        _ = try await socket.request("prompt.submit", ["session_id": .string(runtime), "text": .string("What's new?")])
+        _ = try await submit(PromptSubmitContract(sessionID: runtime, text: "What's new?", queued: false), on: socket)
         var live = LiveTurn(id: "t", sessionID: runtime)
         var settled = false
         for await message in messages {
@@ -72,7 +122,7 @@ struct BackendIntegrationTests {
         let created = try await socket.request("session.create", ["profile": .string("default"), "title": .string("scratch")])
         let runtime = try #require(created["session_id"]?.stringValue)
         let messages = await socket.messages()
-        _ = try await socket.request("prompt.submit", ["session_id": .string(runtime), "text": .string("please approve the cleanup")])
+        _ = try await submit(PromptSubmitContract(sessionID: runtime, text: "please approve the cleanup", queued: false), on: socket)
         var answer = ""
         for await message in messages {
             switch message {

@@ -3251,7 +3251,15 @@ final class ConversationModel: Identifiable {
                 let prompt = ([item.text] + references).filter { !$0.isEmpty }.joined(separator: "\n")
                 await announceClient(runtime: runtime, text: prompt, roster: roster)
                 sent = true
-                let result = try await roster.request("prompt.submit", ["session_id": .string(runtime), "text": .string(prompt), "queued": .bool(true)])
+                // Its own id, so Hermes knows it again if it already has it; a stale session is
+                // resumed and the message sent again, once.
+                let submit = PromptSubmitContract(sessionID: runtime, text: prompt, queued: true, submissionID: item.id.uuidString)
+                let result = try await PromptSubmitContract.submittingOnce(submit) { submit in
+                    try await roster.submitPrompt(submit)
+                } resume: {
+                    runtimeSessionID = nil
+                    return try await ensureRuntime()
+                }
                 if SubmitAnswer(result: result).startedItsTurn {
                     // The reply had ended: it started a turn of its own.
                     animateRows { _ = gatewayHeld.release(item.line) }
@@ -3472,7 +3480,7 @@ final class ConversationModel: Identifiable {
         // The tray gives up the message as it appears in the chat, in one movement.
         animateRows {
             queue.removeAll { $0.id == item.id }
-            start(text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts)
+            start(id: item.id, text: item.text, images: item.images, files: item.files, skills: item.skills, parts: item.parts)
             if let pendingUser { userCaptions[pendingUser.id] = .fromQueue }
         }
     }
@@ -3634,7 +3642,9 @@ final class ConversationModel: Identifiable {
         if turnError?.canRetry == false, heldOver?.endUnheard != true { turnError = nil }
     }
 
-    private func start(text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, voice: VoiceTurn? = nil) {
+    /// `id` is the message's own: a queued one keeps its id, so Hermes knows it again if it already
+    /// has it (`PromptSubmitContract`).
+    private func start(id: UUID = UUID(), text: String, images: [ImageAttachment], files: [FileAttachment], skills: [String] = [], prompt: String? = nil, parts: MessageParts? = nil, voice: VoiceTurn? = nil) {
         recoveryTask?.cancel() // a new turn: whatever an earlier one left uncertain shows with it
         settleBackgroundRuns()
         hasUndoneMessage = false
@@ -3674,7 +3684,7 @@ final class ConversationModel: Identifiable {
             if let live { turnBaseline = (live.turn.id, newestBeforeTurn, Set(items.map(\.id))) }
             sentTurns += 1
         }
-        beginDelivery(QueuedFollowUp(text: text, parts: parts?.hasStructure == true ? parts : nil, skills: skills, images: images, files: files))
+        beginDelivery(QueuedFollowUp(id: id, text: text, parts: parts?.hasStructure == true ? parts : nil, skills: skills, images: images, files: files))
         turnGate = TurnSettleGate()
         isRemoteTurn = false
         if !isBotChat {
@@ -3683,7 +3693,7 @@ final class ConversationModel: Identifiable {
         turnUsesGateway = usesGateway
         if turnUsesGateway {
             isBotTurnOpen = true
-            turnTask = Task { await runGatewayTurn(text: text, images: images, files: files) }
+            turnTask = Task { await runGatewayTurn(text: text, images: images, files: files, messageID: id) }
             return
         }
         turnTask = Task { await runTurn(text: text, images: images, files: files, entryID: entry.id) }
@@ -4685,7 +4695,7 @@ final class ConversationModel: Identifiable {
 
     /// A new chat that waited when the app last ran goes again (`WaitingChat.Resume.send`).
     func sendWaiting(_ message: QueuedFollowUp) {
-        start(text: message.text, images: message.images, files: message.files, skills: message.skills, parts: message.parts)
+        start(id: message.id, text: message.text, images: message.images, files: message.files, skills: message.skills, parts: message.parts)
     }
 
     /// A new chat whose message had gone out when the app last ran (`WaitingChat.Resume.lookFor`):
@@ -5204,11 +5214,17 @@ extension ConversationModel {
         runtimeSessionID = runtime
         lastAppliedSeq = nil
         sessionID = created["stored_session_id"]?.stringValue
-        _ = try await roster.request("session.title", ["session_id": .string(runtime), "title": .string(botChatTitle)])
+        do {
+            _ = try await roster.request("session.title", ["session_id": .string(runtime), "title": .string(botChatTitle)])
+        } catch let error as GatewayRPCError where error.code == -32601 {
+            // The session authority (Hermes Agent 0.23.3 and newer) has no `session.title`: it
+            // named the chat from `session.create`'s `title`.
+        }
         return runtime
     }
 
-    fileprivate func runGatewayTurn(text: String, images: [ImageAttachment], files: [FileAttachment]) async {
+    /// `messageID` is the message's submission id, the same on every try (`PromptSubmitContract`).
+    fileprivate func runGatewayTurn(text: String, images: [ImageAttachment], files: [FileAttachment], messageID: UUID) async {
         guard let roster = gatewayRoster else { return }
         backgroundActivity.begin("Hermes reply")
         defer { backgroundActivity.end() }
@@ -5269,9 +5285,11 @@ extension ConversationModel {
                             references.append(try await attach(file, runtime: runtime, roster: roster, staged: &staged))
                         }
                         break uploading
-                    } catch let error as GatewayRPCError where error.isSessionNotFound && !resumed {
+                    } catch where PromptSubmitContract.isStaleSession(error) && !resumed {
                         // The backend no longer has this runtime id (another client closed the session,
-                        // or a restart): what was staged went with it. Resume and upload again, once.
+                        // or a restart), or the session authority refuses the upload because this socket
+                        // hasn't resumed the chat (`permission_denied`, as for the submit): what was
+                        // staged went with it. Resume and upload again, once.
                         resumed = true
                         staged = StagedImages()
                         runtimeSessionID = nil
@@ -5317,27 +5335,24 @@ extension ConversationModel {
                 turnGate.send()
                 submitted = SentPrompt(at: .now, knownNewestID: rawMessages.last?.id)
                 waitingChatLeft()
-                var submit: [String: JSONValue] = ["session_id": .string(runtime), "text": .string(prompt)]
                 // A new message never becomes a steer or a redirect of a turn this device hasn't
                 // seen yet (a process's notice, a held message Hermes sends as a turn ends, another
                 // device's): with `queued` a busy chat queues it, and the answer says so.
-                submit["queued"] = .bool(true)
-                if let voice = turnVoice { submit.merge(voice.submitParams) { $1 } }
+                let submit = PromptSubmitContract(sessionID: runtime, text: prompt, queued: true,
+                                                  extras: turnVoice?.submitParams ?? [:], submissionID: messageID.uuidString)
                 // Patient: on an open socket the answer comes when a frozen backend wakes; a socket that
                 // dies fails it at once. One that goes quiet never answers, so the stored chat is read
                 // meanwhile (`submitWatched`), counted from here.
                 heardAt = .now
                 heldAtSend = rawMessages.compactMap(\.id).max()
                 watchQuietTurn()
-                var answer: JSONValue?
-                do {
-                    answer = try await submitWatched(submit, roster: roster)
-                } catch let error as GatewayRPCError where error.isSessionNotFound {
-                    // The backend forgot this runtime id (a restart); resume and send again.
+                // The backend forgot this runtime id (a restart): resume and send it again, once.
+                let answer = try await PromptSubmitContract.submittingOnce(submit) { submit in
+                    try await submitWatched(submit, roster: roster)
+                } resume: {
                     runtimeSessionID = nil
                     runtime = try await ensureRuntime()
-                    submit["session_id"] = .string(runtime)
-                    answer = try await submitWatched(submit, roster: roster)
+                    return runtime
                 }
                 endDelivery()
                 chatWaitAttempts = 0
@@ -5352,16 +5367,18 @@ extension ConversationModel {
                     return
                 }
                 // Only Hermes's answer says whether the message started its own turn (`SubmitAnswer`).
+                // The session authority's receipt says only that it took it: sent here with no turn
+                // seen, the turn that comes is this message's.
                 let outcome = SubmitAnswer(result: answer)
-                guard case .started(let userRowID) = outcome else {
+                guard outcome.ownsTheNextTurn else {
                     hermesTook(outcome, item: QueuedFollowUp(
-                        text: text, parts: turnParts?.hasStructure == true ? turnParts : nil, skills: turnSkills, images: images, files: files
+                        id: messageID, text: text, parts: turnParts?.hasStructure == true ? turnParts : nil, skills: turnSkills, images: images, files: files
                     ))
                     return
                 }
                 if turnVoice != nil {
                     // Spoken turns are marked in the chat (`docs/voice.md` §4.3), by the row Hermes stored.
-                    SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: userRowID, session: sessionID)
+                    SpokenMessages.shared.markSent(localID: pendingUser?.id, rowID: outcome.userRowID, session: sessionID)
                 }
                 turnGate.take()
                 if live?.runID == nil { apply(.runStarted(runID: runtime)) }
@@ -5497,7 +5514,7 @@ extension ConversationModel {
             isRemoteTurn = true
             turnGate.take()
             Task { await readRemoteTurn() }
-        case .queuedOnGateway, .voiceStopped, .started:
+        case .queuedOnGateway, .voiceStopped, .started, .admitted:
             // Nothing runs here for it: the gateway's turn reaches this socket only as the start and
             // end of this message's own, which then shows as a turn of its own.
             isBotTurnOpen = false
@@ -6596,8 +6613,8 @@ extension ConversationModel {
     /// message and its reply already (`lookAtQuietTurn`). Nil when the stored chat answered
     /// first. The request is left to end on its own then, never cancelled: its answer, if it comes,
     /// changes nothing. Stop still cancels it.
-    private func submitWatched(_ params: [String: JSONValue], roster: BotRoster) async throws -> JSONValue? {
-        let request = Task { try await roster.request("prompt.submit", params, timeout: BotRoster.patientTimeout) }
+    private func submitWatched(_ submit: PromptSubmitContract, roster: BotRoster) async throws -> JSONValue? {
+        let request = Task { try await roster.submitPrompt(submit, timeout: BotRoster.patientTimeout) }
         let race = UUID()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue?, any Error>) in

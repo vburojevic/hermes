@@ -1081,6 +1081,8 @@ answer says what became of it (`SubmitAnswer`, hermes-agent `tui_gateway/methods
 |---|---|
 | `streaming` | The message's own turn: "Thinking…" |
 | `queued` | Hermes runs a turn in this chat: the turn on screen is that one (its message read from `session.activate`), and the message waits in the Up Next tray, read-only, until Hermes sends it as the next turn |
+| The session authority's receipt (Hermes Agent 0.23.3 and newer: `admission_id` and `ref`), `queued` | It took the message into the chat's queue. It says `queued` for every new message, an idle chat's too, since the turn starts only after the admission is written (`gateway/session_authority.py` `_submit`), so it doesn't say whether a turn runs ahead. Sent with no turn seen here, the turn that comes is the message's own: "Thinking…" (Hermes Desktop reads it the same way). Sent from the tray while a turn runs, it stays there until Hermes sends it |
+| The session authority's receipt, `started` | It went into the running turn (a steer), or a resend found it already running: shown as the message's own turn |
 | `queued` with `forwarded: true` | The gateway owns the chat and queued it behind its own work: the message waits in the tray; only its own turn's start and end reach this socket |
 | `steered` / `redirected` | It went into the running turn (an older client's busy mode): it shows as a steer of that turn |
 | `voice_stopped` | A typed stop phrase ended the voice chat: nothing was sent and no turn starts |

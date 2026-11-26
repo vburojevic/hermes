@@ -11,8 +11,8 @@ public enum SendFailure: Equatable, Sendable {
     /// again is safe whatever became of the first, so it goes again after a pause.
     case sendAgain
     /// It went out and the answer was lost (the socket closed, or the answer was too late): Hermes
-    /// may have it, so the stored chat is asked first (`SubmitCheck`). `prompt.submit` has no key
-    /// Hermes dedupes on; sending it again could run it twice.
+    /// may have it, so the stored chat is asked first (`SubmitCheck`). Only the session authority
+    /// dedupes `prompt.submit` (on its `submission_id`); on a legacy socket a resend could run twice.
     case mayHaveArrived
     /// Hermes refused it: it goes back to the person, with why.
     case refused

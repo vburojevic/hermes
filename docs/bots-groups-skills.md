@@ -34,7 +34,7 @@ the Bot "Hermes", with the handle `@hermes`. A Bot's look and organisation live 
 | Look, title, hide, pin | `profiles.configure {name, ui_meta: {"hermes-bots": {...}}, ui_meta_expected_revisions: {"hermes-bots": n}}` | Read, merge, compare-and-swap (`BotRoster.saveMeta`): the app re-reads the row with `profiles.list {include_sessions: false}`, merges its change into the whole stored object, and sends it with the revision it read. A conflict (`applied.ui_meta_conflicts`) retries, up to three times. The dead legacy `chat` key is dropped. Hermes caps the block at 64 KB. Fields the app writes: `title`, `shape`, `color` (`hsl(H 68% 58%)`), `imageKind` (`shape`, or kept as `photo`), `custom`, `created` (ms), `hidden`, `pinned`. |
 | Edit Bot: role | `profiles.configure {name, description}` | Only when the role changed: "<title> — <role>". |
 | Photo avatars | `profiles.get_asset {name, asset: "avatar"}` | Fetched when `has_avatar` is set and the meta revision changed. Desktop also stores a 160 × 160 PNG raster of every drawn face; the app skips those (unless `imageKind` is `photo`) so the native face can animate. Photos are decoded and downsampled off the main thread (`FaceImageCache`), in a cache of their own that chat images can't push out. When memory pressure drops one, the next face to ask draws the Bot's own face, never a blank, and the roster fetches that same revision again, once however many faces ask (`FacePhotoBook`). A failed fetch is tried at the next roster refresh; a missing or unreadable picture isn't asked for again until the revision changes. |
-| Open a Bot's chat | `canonical_session.resolved_id` from the roster, else `session.list {profile, title: "Bot Chat", include_hidden: true, limit: 200}`, then resume; if there is none, `session.create {profile, title: "Bot Chat", hidden: true, follow_profile_config: true}` and `session.title` | **The title "Bot Chat" is the chat's identity.** The lookup fails closed: an error never reads as "no chat", so the app never mints a second one. |
+| Open a Bot's chat | `canonical_session.resolved_id` from the roster, else `session.list {profile, title: "Bot Chat", include_hidden: true, limit: 200}`, then resume; if there is none, `session.create {profile, title: "Bot Chat", hidden: true, follow_profile_config: true}` and `session.title` | **The title "Bot Chat" is the chat's identity.** The lookup fails closed: an error never reads as "no chat", so the app never mints a second one. The session authority has no `session.title` (error -32601, "unknown method"); the chat is created hidden with its title, so the app goes on without it. |
 | Bot hello | `prompt.submit` with "Hey, tell me about yourself!" | Sent once, right after creation, so the Bot introduces itself. |
 | Compact | `session.compress {session_id}` | In a Bot Chat, `/new`, `/reset`, `/compact` and `/compress` all compact. The transcript reloads and a note says what happened ("Bot Chats are one continuous conversation, so this one was compacted instead."). |
 | Routines | `cron.manage` with `profile` | See §1.3. |
@@ -56,6 +56,14 @@ Not built yet:
 A Bot Chat is the Bot's one continuous chat. It runs over the socket rather than the API server:
 the app resumes the stored session, sends with `prompt.submit`, receives the turn's events through
 the roster, and treats `session.info {running: false}` as the turn having settled.
+
+On Hermes Agent 0.23.3 and newer the backend's socket can be served by the session authority
+(`gateway.ready` says `session_authority: true`). There every `prompt.submit` carries the
+message's `submission_id` (minted once, reused on a resend), a missing one is refused with 4001
+`invalid_params`, and a stale session (4001 with `data.reason` `not_found`, or `permission_denied`
+for a chat this socket hasn't resumed) resumes the chat once ([composer.md](composer.md) §2). Its
+receipt says `queued` for every new message, an idle chat's too, so a message sent with no turn
+seen starts its own turn ([chat.md](chat.md) §4c).
 
 - **@mentions.** When the person mentions other Bots, the prompt gets a note naming the profiles
   behind them (`BotMentions.prompt`), as Desktop's composer middleware does: the Bot then decides

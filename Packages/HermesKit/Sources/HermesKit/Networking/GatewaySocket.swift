@@ -113,8 +113,16 @@ public struct GatewayRPCError: Error, Sendable, Equatable, LocalizedError {
     /// another Bot, a routine): Hermes takes one writer per chat, so this send waits its turn.
     public var isHeldElsewhere: Bool { code == 4090 && refusalReason == "SESSION_NOT_OWNED" }
 
-    /// The runtime session id is stale; re-resume by the stored id.
-    public var isSessionNotFound: Bool { code == 4001 }
+    /// The runtime session id is stale; re-resume by the stored id. Only Hermes's own refusals for a
+    /// session it doesn't have count: the legacy dispatcher's 4001 "session not found", which carries
+    /// no reason, and the session authority's 4001 `not_found`. Any other 4001 (`invalid_params`,
+    /// `permission_denied`, `runtime_draining`…) is a refusal to show, never a reason to resume,
+    /// except a submit's `permission_denied`, which only `PromptSubmitContract.isStaleSession` reads.
+    public var isSessionNotFound: Bool {
+        guard code == 4001 else { return false }
+        if let reason = refusalReason { return reason == "not_found" }
+        return message == "session not found"
+    }
 }
 
 /// A JSON-RPC 2.0 client for the Hermes backend gateway socket (`/api/ws`), the
@@ -163,6 +171,10 @@ public actor GatewaySocket {
     public private(set) var isOpen = false
     /// Identifies the backend process; a change means event watermarks are void.
     public private(set) var replayEpoch: String?
+    /// The socket is served by the gateway's session authority (`gateway.ready` said
+    /// `session_authority`, Hermes Agent 0.23.3 and newer), whose parameter rules differ from the
+    /// legacy dispatcher's (`PromptSubmitContract`). Read once per socket: a reconnect is a new one.
+    public private(set) var sessionAuthority = false
     /// Asked when the socket has heard nothing past `staleAfter`: true keeps it open, because the
     /// backend's machine still answers (Hermes's gateway, the process Telegram rides on), so the
     /// dashboard's event loop is frozen, not the link dead. Up to `longestStall`.
@@ -378,6 +390,7 @@ public actor GatewaySocket {
             if event.type == "gateway.ready" {
                 replayEpoch = event.payload["replay_epoch"]?.stringValue
                 serverHeartbeat = event.payload["heartbeat"]?.boolValue == true
+                sessionAuthority = event.payload["session_authority"]?.boolValue == true
                 startHeartbeat()
                 isReady = true
                 readyContinuation?.resume()

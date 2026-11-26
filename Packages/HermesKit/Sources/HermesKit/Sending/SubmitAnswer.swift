@@ -7,7 +7,8 @@ import Foundation
 ///
 /// hermes-agent: `tui_gateway/methods_prompt.py` (`streaming`, `voice_stopped`, the owner's
 /// `queued` + `forwarded`) and `session_auto_continue.py` `_handle_busy_submit` (`queued`,
-/// `steered`, `redirected`).
+/// `steered`, `redirected`); the session authority's receipt, `gateway/session_contract.py`
+/// `AdmissionReceipt`.
 public enum SubmitAnswer: Sendable, Equatable {
     /// The chat was idle: the message started its own turn.
     case started(userRowID: Int?)
@@ -17,6 +18,12 @@ public enum SubmitAnswer: Sendable, Equatable {
     /// The gateway owns the chat (its own queue has work in it): the message waits in the
     /// gateway's queue, and only its turn's start and end reach this socket.
     case queuedOnGateway(admissionID: String?)
+    /// The session authority (Hermes Agent 0.23.3 and newer) took the message into the chat's
+    /// queue. Its receipt says `queued` for every new message, an idle chat's too: the admission is
+    /// written as queued and the turn is started only after it (`gateway/session_authority.py`
+    /// `_submit`, `_schedule_admitted`), and Hermes Desktop reads it the same way. So it doesn't say
+    /// whether a turn runs ahead of the message: the sender knows (`ownsTheNextTurn`).
+    case admitted(admissionID: String?)
     /// Went into the running turn as a steer (a busy chat in `steer` mode).
     case steered
     /// Changed the running turn's course (a busy chat in `interrupt` mode).
@@ -31,9 +38,14 @@ public enum SubmitAnswer: Sendable, Equatable {
         }
         switch result?["status"]?.stringValue {
         case "queued":
-            self = result?["forwarded"]?.boolValue == true
-                ? .queuedOnGateway(admissionID: result?["admission_id"]?.stringValue)
-                : .queuedBehindTurn
+            let admissionID = result?["admission_id"]?.stringValue
+            if result?["forwarded"]?.boolValue == true {
+                self = .queuedOnGateway(admissionID: admissionID)
+            } else if Self.isAdmissionReceipt(result) {
+                self = .admitted(admissionID: admissionID)
+            } else {
+                self = .queuedBehindTurn
+            }
         case "steered":
             self = .steered
         case "redirected":
@@ -44,9 +56,30 @@ public enum SubmitAnswer: Sendable, Equatable {
         }
     }
 
+    /// The session authority's receipt: an admission id and the session it was admitted to
+    /// (`AdmissionReceipt.ref`). The legacy dispatcher's `queued` carries neither.
+    private static func isAdmissionReceipt(_ result: JSONValue?) -> Bool {
+        result?["admission_id"]?.stringValue != nil && result?["ref"]?["session_id"]?.stringValue != nil
+    }
+
     /// The message started a turn of its own: the turn on screen answers it.
     public var startedItsTurn: Bool {
         if case .started = self { true } else { false }
+    }
+
+    /// Sent while this device saw no turn running in the chat: the turn that comes next is the
+    /// message's own. True when it started one, and when the session authority admitted it, since
+    /// its queue then holds nothing ahead of the message that this device knows of.
+    public var ownsTheNextTurn: Bool {
+        switch self {
+        case .started, .admitted: true
+        default: false
+        }
+    }
+
+    /// The stored row Hermes gave the message, when its answer named one.
+    public var userRowID: Int? {
+        if case .started(let row) = self { row } else { nil }
     }
 
     /// The message waits in a queue (Hermes's or the gateway's), not yet a turn.
