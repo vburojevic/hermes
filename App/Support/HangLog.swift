@@ -64,7 +64,9 @@ nonisolated final class HangLog: Sendable {
         }
     }
 
-    private func milliseconds(at time: CFTimeInterval) -> Double {
+    /// A `CACurrentMediaTime` moment in the log's own milliseconds, so a line written elsewhere
+    /// (the Mac drive's switch times) reads against its marks and hangs.
+    func milliseconds(at time: CFTimeInterval) -> Double {
         (time - state.withLock(\.start)) * 1000
     }
 
