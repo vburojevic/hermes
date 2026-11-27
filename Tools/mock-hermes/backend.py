@@ -2144,6 +2144,38 @@ AUTHORITY_UNKNOWN = {"session.title"}
 ADMISSIONS = {}  # (stored chat, submission id) -> the receipt it was admitted with
 
 
+def install_authority_dispatch():
+    """`command.dispatch` on the session authority (--session-authority): every command is authorized
+    against a session of the profile it names (the gateway's own without one) before it runs
+    (gateway/session_commands.py@v0.23.4:422-430 `execute_command`), so a command without a session,
+    or with one that is gone or of another profile, is refused 4001 `not_found`
+    (session_authority.py@v0.23.4:230). A command Hermes doesn't have is 4001 `unsupported_command`
+    there (session_commands.py@v0.23.4:244), where the legacy dispatcher says 4018."""
+    inner = METHODS.get("command.dispatch")
+
+    def dispatch(params):
+        name = str(params.get("name") or "").lstrip("/")
+        sid = params.get("session_id") or ""
+        runtime = RUNTIME.get(sid) if sid else None
+        wanted = params.get("profile") or "default"
+        if runtime is None or runtime.get("dead") or (runtime.get("profile") or "default") != wanted:
+            print(f"[backend] command.dispatch /{name} refused not_found "
+                  f"(session {short_id(sid) if sid else 'none'}, profile {wanted})", flush=True)
+            raise RPCError(4001, "not_found", {"reason": "not_found"})
+        print(f"[backend] command.dispatch /{name} in session {short_id(sid)} ({wanted})", flush=True)
+        try:
+            if inner is None:
+                raise RPCError(4018, f"not a quick/plugin/bundle/skill command: /{name}")
+            return inner(params)
+        except RPCError as error:
+            if error.code != 4018:
+                raise
+            print(f"[backend] command.dispatch /{name} refused unsupported_command", flush=True)
+            raise RPCError(4001, "unsupported_command", {"reason": "unsupported_command"}) from None
+
+    METHODS["command.dispatch"] = dispatch
+
+
 def submit_refusal(params):
     """The refusal Hermes gives a `prompt.submit` with keys it doesn't take, or None."""
     if CONFIG.get("session_authority"):
@@ -3299,6 +3331,10 @@ class Handler(BaseHTTPRequestHandler):
         if method == "session.resume" and CONFIG.get("session_authority"):
             print(f"[backend] session.resume {short_id(str((frame.get('params') or {}).get('session_id') or ''))}",
                   flush=True)
+        if method in ("session.list", "session.create") and CONFIG.get("session_authority"):
+            asked = frame.get("params") or {}
+            print(f"[backend] {method} profile={asked.get('profile') or '(own)'} title={asked.get('title')!r} "
+                  f"hidden={bool(asked.get('hidden') or asked.get('include_hidden'))}", flush=True)
         # /api/mock/lose-answer: this request's answer never comes, the socket dies instead, with the
         # request taken (it ran) or not (it never got here).
         with LOCK:
@@ -3620,6 +3656,8 @@ def main():
         if args.long_chat:
             # After the widgets plugin, which stores the cards one of them shows.
             gateway.seed_landing_chats(widgets)
+    if CONFIG.get("session_authority"):
+        install_authority_dispatch()  # after every plugin, so it sees each one's commands
     if not args.quiet_world:
         threading.Thread(target=ambient, daemon=True).start()
     CONFIG["port"] = args.port

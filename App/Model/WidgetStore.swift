@@ -293,7 +293,7 @@ final class WidgetStore {
 
     /// Whether a chat of `profile` can be marked: what the plugin survey read of that profile, else
     /// the gateway's tool list. A first message sent before either answered marks its chat anyway, so
-    /// it isn't answered in plain text for being early (a gateway without the plugin says 4018).
+    /// it isn't answered in plain text for being early (a gateway without the plugin has no command).
     func reaches(profile: String?) -> Bool {
         if let runs = workspace?.plugins.survey?.runs(.widgets, in: profile ?? "default") { return runs }
         return isAvailable || !supportChecked

@@ -5,7 +5,8 @@ import HermesPush
 ///
 /// Hermes plugins can't add gateway RPC methods, so the app runs the plugin's `/app-push`
 /// command through `command.dispatch {name, arg: "<command> <json>"}` and reads one line of
-/// JSON from `output`. Error 4018 means the plugin isn't installed (or isn't enabled).
+/// JSON from `output`. A missing command (`CommandDispatchSession.isCommandMissing`: 4018, or the
+/// session authority's 4001 `unsupported_command`) means the plugin isn't installed or enabled.
 public struct AppPushClient: Sendable {
     public enum Failure: Error, Equatable, LocalizedError {
         /// The gateway answered, but has no `/app-push` command.
@@ -68,7 +69,7 @@ public struct AppPushClient: Sendable {
         let result: JSONValue
         do {
             result = try await transport("command.dispatch", ["name": .string("app-push"), "arg": .string(arg)])
-        } catch let error as GatewayRPCError where error.code == 4018 {
+        } catch where CommandDispatchSession.isCommandMissing(error) {
             throw Failure.notInstalled
         }
         guard let output = result["output"]?.stringValue,

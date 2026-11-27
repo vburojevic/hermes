@@ -246,7 +246,8 @@ final class MemoryModel {
     }
 
     /// `/memory pending`. The gateway scopes `command.dispatch` by session: a Bot's review list
-    /// needs a session of the Bot's; the gateway's own profile needs none.
+    /// needs a session of the Bot's; the gateway's own profile needs none of its own (a session
+    /// authority gets its Bot Chat from the socket, `CommandDispatchSession`).
     func loadPending() async {
         do {
             let text = try await memoryCommand("pending")

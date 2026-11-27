@@ -484,7 +484,9 @@ only as long as the view that streams it.
   partly set up, with Install. Commands about no one chat (the signing key, marking known chats) go
   through a profile that runs the plugin, an older copy included: Hermes itself, else such a Bot
   through its open chat, because Hermes runs a command without a session in the profile it was
-  launched in. The plugin keeps its data in the Hermes root, so any profile's copy marks for all.
+  launched in (from Hermes Agent 0.23.3, in that profile's Bot Chat,
+  [notifications.md](notifications.md) §1.2). The plugin keeps its data in the Hermes root, so any
+  profile's copy marks for all.
   Where only a Bot has it, those wait until that Bot's chat opens here. A first message sent before the gateway's tool list answered marks
   its chat anyway; a gateway without the plugin says so (4018) and nothing changes.
 - **Compaction:** Hermes compacts a long chat into a new session with a new id, often in the
@@ -516,10 +518,11 @@ only as long as the view that streams it.
   26.1.2 with a patch), and `renders` has widgets only where the plugin reaches the chat's profile.
   The send waits at most 2 seconds for the answer; a timeout or any other error is logged and the
   message goes anyway. A plugin older than 1.6.0 ("unknown command") or a profile without one
-  (4018) is remembered for that gateway and profile, so later turns don't ask again, until the
-  plugin may have changed: the socket reconnects, the plugin survey's widgets entries change (an
-  install, an update, a copy turned on) or the gateway restarts ([plugins.md](plugins.md) §2.1).
-  Nothing about it shows in the app. A reply from a notification goes without it.
+  (4018, or 4001 `unsupported_command` from Hermes Agent 0.23.3) is remembered for that gateway
+  and profile, so later turns don't ask again, until the plugin may have changed: the socket
+  reconnects, the plugin survey's widgets entries change (an install, an update, a copy turned on)
+  or the gateway restarts ([plugins.md](plugins.md) §2.1). Nothing about it shows in the app. A
+  reply from a notification goes without it.
 - **What the model sees:** the plugin keeps at most 8 markers per chat for 10 minutes. In
   `pre_llm_call` it hashes the turn's text, takes the oldest live marker that matches (under the
   chat's id or one it was compacted from) and, when the client differs from the one that chat's

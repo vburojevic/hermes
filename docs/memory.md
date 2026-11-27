@@ -62,8 +62,9 @@ Every call names the Bot's `profile`: the Bot's for a Bot, the gateway's own pro
 
 `command.dispatch` acts on the profile of the session it runs in. For a Bot other than the primary
 one, the app passes a session of that Bot (its Bot Chat, created if it doesn't exist yet,
-`ConversationModel.runtimeForCommands()`); for Hermes it runs without a session. The Edit Bot row
-therefore leaves the review list out of its summary; the Memory page loads it.
+`ConversationModel.runtimeForCommands()`); for Hermes it runs without a session of its own (from
+Hermes Agent 0.23.3 the socket adds Hermes's Bot Chat, [notifications.md](notifications.md) §1.2).
+The Edit Bot row therefore leaves the review list out of its summary; the Memory page loads it.
 
 **Meters:** the gateway counts a store as the code points of its entries joined by `\n§\n`, against
 the store's limit. The app counts the same way, and uses the file's size when an entry was cut

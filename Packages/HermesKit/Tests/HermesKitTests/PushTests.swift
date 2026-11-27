@@ -305,6 +305,11 @@ import Testing
 
         let missing = AppPushClient { _, _ in throw GatewayRPCError(code: 4018, message: "not a quick/plugin/bundle/skill command: app-push") }
         await #expect(throws: AppPushClient.Failure.notInstalled) { try await missing.status(deviceID: "dev-1") }
+        // The session authority (Hermes Agent 0.23.3 and newer) says the same as 4001 `unsupported_command`.
+        let unsupported = AppPushClient { _, _ in
+            throw GatewayRPCError(code: 4001, message: "unsupported_command", data: .object(["reason": .string("unsupported_command")]))
+        }
+        await #expect(throws: AppPushClient.Failure.notInstalled) { try await unsupported.status(deviceID: "dev-1") }
         let refusing = AppPushClient { _, _ in .object(["type": .string("plugin"), "output": .string(#"{"ok": false, "error": "device not registered"}"#)]) }
         await #expect(throws: AppPushClient.Failure.refused("device not registered")) { try await refusing.test(deviceID: "dev-1") }
     }

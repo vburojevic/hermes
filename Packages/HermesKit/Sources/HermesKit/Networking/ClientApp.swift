@@ -75,9 +75,9 @@ public struct ClientApp: Sendable, Hashable {
 }
 
 /// Which profiles of one gateway can't be told the client (`docs/widgets.md` §11): a plugin older
-/// than 1.6.0 doesn't know the command, and a profile without the plugin answers 4018. Those
-/// aren't asked again every turn, only once the plugin may have changed (an install, an update, a
-/// new connection).
+/// than 1.6.0 doesn't know the command, and a profile without the plugin has no such command
+/// (4018, or 4001 `unsupported_command` on a session authority). Those aren't asked again every
+/// turn, only once the plugin may have changed (an install, an update, a new connection).
 public struct ClientAnnouncements: Sendable, Equatable {
     public enum Outcome: Sendable, Equatable {
         case announced

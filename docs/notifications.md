@@ -74,8 +74,20 @@ Its state lives in `<Hermes root>/plugin-data/hermes-app-push`.
 
 Plugins can't add gateway RPC methods, so the app calls
 `command.dispatch {name: "app-push", arg: "<command> <json>"}` on the backend socket and reads one
-line of JSON from `output` (`AppPushClient`). Error 4018 means the plugin isn't installed or isn't
-enabled. This needs Bot Mode: without a backend link the gateway shows "Needs Bot Mode" (§5).
+line of JSON from `output` (`AppPushClient`). Error 4018 (4001 `unsupported_command` on the session
+authority) means the plugin isn't installed or isn't enabled. This needs Bot Mode: without a
+backend link the gateway shows "Needs Bot Mode" (§5).
+
+On a socket the session authority serves (Hermes Agent 0.23.3 and newer, `gateway.ready` says
+`session_authority`), every command runs in a session of the profile it names, and one without a
+session is refused 4001 `not_found`. Before, that read as "Can't check". So the socket adds a
+session to a command that has none (`GatewaySocket`, `CommandDispatchSession`): that profile's Bot
+Chat, found by its title (hidden ones too) and resumed, or created hidden with that title as Bot
+Mode creates it, once per socket and profile. No turn runs in it, so no new chat shows. When Hermes
+answers that the session is gone (closed or deleted elsewhere), the socket looks it up again once
+and sends the command once more; a second refusal is the error. A command a chat sends keeps its
+chat, and an older Hermes gets the command without a session, as before. `/app-widgets` and
+`/memory` go the same way.
 
 | Command | Arguments | Answer |
 |---|---|---|
