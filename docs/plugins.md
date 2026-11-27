@@ -126,7 +126,8 @@ The design is the Elyx project's `docs/plugins.md`; its frames are named below.
   An update with the same access stays silent.
 - **Turned off.** The person's own Install or **Turn On** (the ask, Settings, Set Up Push) turns a
   copy that's off back on: `plugins.manage {action: toggle, key, enable: true, profile}`. Push
-  needs it on in the root: Hermes knows `/app-push` only while it is, and answers 4018 otherwise.
+  needs it on in the root: Hermes knows `/app-push` only while it is, and answers 4018 otherwise
+  (4001 `unsupported_command` from Hermes Agent 0.23.3).
 - **Settings:** Hermes on <gateway> → Apps and Tools → Plugins (the Mac: Settings → Apps & Tools)
   lists each app plugin with the others (§9); its row opens its page across Hermes and the Bots
   (`pluginProfiles`, `PluginProfilesView`): a summary with one fix ("Missing in Scout and Ops" →
@@ -264,8 +265,11 @@ Plugins can't add gateway RPC methods, so the app calls
 line of JSON (`AppPushClient`). The commands are `register`, `unregister`, `preferences`,
 `presence`, `read`, `activity`, `status`, `test` and `host` ([notifications.md](notifications.md) §1.2). Error
 4018 ("not a quick/plugin/bundle/skill command") means the plugin isn't installed or enabled in that
-profile. A command that fails answers `{"ok": false, "error": …}` and never raises, because Hermes
-would turn an exception into the same 4018.
+profile; Hermes Agent 0.23.3 and newer say 4001 `unsupported_command`, read the same way. They run
+a command only in a session of its profile, so the socket adds that profile's Bot Chat to a
+command without one ([notifications.md](notifications.md) §1.2). A command that fails answers
+`{"ok": false, "error": …}` and never raises, because Hermes would turn an exception into the same
+4018.
 
 Hooks only do bookkeeping and queue the push. One background thread talks to the relay, so a slow
 relay never holds up a prompt or a turn. A failure is logged and never raised into Hermes.

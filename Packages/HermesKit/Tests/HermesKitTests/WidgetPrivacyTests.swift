@@ -157,6 +157,10 @@ struct WidgetPrivacyTests {
     @Test func aMissingPluginAndARefusalAreTold() async {
         let missing = AppWidgetsClient { _, _ in throw GatewayRPCError(code: 4018, message: "not a quick/plugin/bundle/skill command") }
         await #expect(throws: AppWidgetsClient.Failure.notInstalled) { try await missing.markRoom("room_1") }
+        let unsupported = AppWidgetsClient { _, _ in
+            throw GatewayRPCError(code: 4001, message: "unsupported_command", data: .object(["reason": .string("unsupported_command")]))
+        }
+        await #expect(throws: AppWidgetsClient.Failure.notInstalled) { try await unsupported.markRoom("room_1") }
         let refused = AppWidgetsClient { _, _ in ["type": "plugin", "output": #"{"ok":false,"error":"room_id is required"}"#] }
         await #expect(throws: AppWidgetsClient.Failure.refused("room_id is required")) { try await refused.markRoom("") }
     }

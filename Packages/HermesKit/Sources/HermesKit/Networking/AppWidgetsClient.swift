@@ -4,7 +4,8 @@ import Foundation
 /// `docs/widgets.md` §11).
 ///
 /// Like the push plugin's, they run through `command.dispatch {name, arg: "<command> <json>"}`
-/// and answer one line of JSON in `output`. Error 4018 means the plugin isn't installed.
+/// and answer one line of JSON in `output`. A missing command (4018, or the session authority's
+/// 4001 `unsupported_command`) means the plugin isn't installed.
 public struct AppWidgetsClient: Sendable {
     public enum Failure: Error, Equatable {
         case notInstalled
@@ -18,8 +19,9 @@ public struct AppWidgetsClient: Sendable {
     let transport: Transport
     /// The profile a chat runs under, for commands about one chat.
     let profile: String?
-    /// A live chat of that profile, for commands about none: Hermes runs a plugin command without a
-    /// session in the profile it was launched in, whatever `profile` says (`command.dispatch`).
+    /// A live chat of that profile, for commands about none: the legacy dispatcher runs a plugin
+    /// command without a session in the profile it was launched in, whatever `profile` says. On a
+    /// session authority the socket adds that profile's Bot Chat (`CommandDispatchSession`).
     let session: String?
 
     public init(profile: String? = nil, session: String? = nil, transport: @escaping Transport) {
@@ -36,7 +38,7 @@ public struct AppWidgetsClient: Sendable {
         let result: JSONValue
         do {
             result = try await transport("command.dispatch", params)
-        } catch let error as GatewayRPCError where error.code == 4018 {
+        } catch where CommandDispatchSession.isCommandMissing(error) {
             throw Failure.notInstalled
         }
         guard let output = result["output"]?.stringValue,

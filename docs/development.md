@@ -473,8 +473,12 @@ authority does: `gateway.ready` says `session_authority: true`, a `prompt.submit
 admission and never a second turn, every new message's receipt says `queued` (an idle chat's too;
 a steer says `started`), a closed session answers 4001 `not_found`, a `prompt.submit` from a socket
 that didn't create or resume the chat answers 4001 `permission_denied` (checked in that order, then
-the keys; `image.attach_bytes` is refused the same way), and `session.title` answers -32601. The log prints each admission and each refusal. Without it, a `prompt.submit` key
-the legacy dispatcher doesn't know answers 4000, as on Hermes.
+the keys; `image.attach_bytes` is refused the same way), and `session.title` answers -32601. A
+`command.dispatch` without a session, or with one that is closed or of another profile than the one
+it names, answers 4001 `not_found`, and a command Hermes doesn't have answers 4001
+`unsupported_command` where the legacy dispatcher says 4018. The log prints each admission, each
+command and each refusal, and each `session.list` and `session.create`. Without it, a
+`prompt.submit` key the legacy dispatcher doesn't know answers 4000, as on Hermes.
 `session.steer` refuses 4010 "agent does not support steer" in a turn's first half second (its
 agent being built; 6 s when the message says "cold start", as on a loaded Mac) and answers `rejected` when idle; while Hermes compacts the chat (a "snapshot"
 message with "compact", or a Bot Chat's "slow … compact", compacts for 8 s after its first step,

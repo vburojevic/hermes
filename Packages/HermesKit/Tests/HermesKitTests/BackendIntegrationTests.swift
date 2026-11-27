@@ -232,6 +232,32 @@ struct BackendIntegrationTests {
         try await client.restartGateway()
         _ = try await client.rest("api/mock/app-plugins", method: "POST", body: .object(["state": .string("current")]))
     }
+
+    /// A plugin command without a chat of its own (`docs/notifications.md` §1.2): the session
+    /// authority refuses it without a session of the profile it names, so the socket runs it in that
+    /// profile's Bot Chat; the legacy dispatcher gets it as it always did. Both answer it.
+    @Test func aCommandWithoutAChatRunsOnBoth() async throws {
+        let (_, socket) = try await connect()
+        defer { Task { await socket.close() } }
+        let pending: [String: JSONValue] = ["name": .string("memory"), "arg": .string("pending")]
+        #expect(try await socket.request("command.dispatch", pending)["type"]?.stringValue == "exec")
+        var scout = pending
+        scout["profile"] = .string("scout")
+        // Several at once share one lookup per profile.
+        async let first = socket.request("command.dispatch", scout)
+        async let second = socket.request("command.dispatch", scout)
+        #expect(try await [first, second].map { $0["type"]?.stringValue } == ["exec", "exec"])
+        guard await socket.sessionAuthority else { return }
+        // A chat's own command keeps its chat, and a session that isn't there is refused.
+        var stray = pending
+        stray["session_id"] = .string("rt-gone")
+        let refused = await #expect(throws: GatewayRPCError.self) { try await socket.request("command.dispatch", stray) }
+        #expect(refused?.isSessionNotFound == true)
+        let missing = await #expect(throws: GatewayRPCError.self) {
+            try await socket.request("command.dispatch", ["name": .string("no-such-command")])
+        }
+        #expect(missing?.code == 4001 && missing?.refusalReason == "unsupported_command")
+    }
 }
 
 /// Read-only checks against a real local `hermes serve` (`HERMES_REAL_BACKEND=http://127.0.0.1:9119`).

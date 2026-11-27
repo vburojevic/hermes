@@ -476,8 +476,10 @@ Check Again; the row keeps the stop across checks and relaunches until then
 you while it's open. Every gateway row that isn't on has Check Again. With push on, a plugin
 missing, older or turned off in some Bots, or a restart still to do, is Partly set up in the plugins
 page's words (`AppPluginStatus`, [plugins.md](plugins.md) §2); an update whose pin adds access reads
-"An update asks for more access" until the person allows it. The Mac notifies while the app runs and
-needs no plugin. Installing the plugin is [plugins.md](plugins.md) §2;
+"An update asks for more access" until the person allows it. Hermes Agent 0.23.3 and newer run a
+plugin command only in a session, so the checks run in the gateway's Bot Chat there; without one,
+every check read Can't check ([notifications.md](notifications.md) §1.2). The Mac notifies while
+the app runs and needs no plugin. Installing the plugin is [plugins.md](plugins.md) §2;
 [notifications.md](notifications.md) §5 has the page.
 
 ### 4.14 Widgets

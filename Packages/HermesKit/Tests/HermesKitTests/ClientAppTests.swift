@@ -94,7 +94,11 @@ struct ClientAppTests {
             }
         }
         #expect(await announce { ["type": "plugin", "output": #"{"ok":true,"pending":2}"#] } == .announced)
-        // Plugins older than 1.6.0 don't know the command; a profile without the plugin answers 4018.
+        // Plugins older than 1.6.0 don't know the command; a profile without the plugin has none:
+        // 4018, or 4001 `unsupported_command` on a session authority.
+        #expect(await announce {
+            throw GatewayRPCError(code: 4001, message: "unsupported_command", data: .object(["reason": .string("unsupported_command")]))
+        } == .unsupported)
         #expect(await announce { ["type": "plugin", "output": #"{"ok":false,"error":"unknown command 'client'"}"#] } == .unsupported)
         #expect(await announce { throw GatewayRPCError(code: 4018, message: "not a quick/plugin/bundle/skill command") } == .unsupported)
         // Anything else is this turn's problem only: the next turn asks again.
