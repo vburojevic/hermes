@@ -1188,7 +1188,18 @@ backend mock started with `--token <t>` and the app given `-HERMES_MOCK_TOKEN <t
 - `mode chats; scroll sidebar 2000 3`: the chat list from the top to its end and back, 3 times,
   at 2000 points a second (`--many-chats` makes it long).
 - `cycle 3 chat:#0,chat:#5,bot:#0,group:#0,…`: opens each in turn for 4 s, 3 rounds. A target is
-  `chat:<id>`, `bot:<name>`, `group:<id>`, or `#<n>` for its place in the list.
+  `chat:<id>`, `bot:<name>`, `group:<id>`, or `#<n>` for its place in the list. Each switch writes
+  `switch <previous> → <target> in <ms> ms (start=<ms> end=<ms>)` to the drive log and as a `MARK`
+  in the hang log (`none` before the first). It runs from the moment the drive makes the switch to
+  the end of the first display cycle that commits after it: an observer of the main run loop going
+  to wait, ordered just after Core Animation's commit, where AppKit lays out and draws the window.
+  `start` and `end` are in the hang log's time, so a `HANG` line reads against the switch it's in;
+  a hang that starts inside a switch and ends after its `end` is work the switch left for a later
+  frame, which the time doesn't count. With `cycle 3 chat:#0,…,chat:#5,bot:#0,bot:#1,group:#0,group:#1`,
+  Chats to Bots is `chat:#5 → bot:#0` and Bots to Chats `group:#1 → chat:#0` (rounds 2 and 3);
+  take the median of each over the runs. Start the backend mock with `--many-chats 200
+  --group-counts`: without `--group-counts` it has one group chat, `group:#1` isn't found and the
+  drive goes on to the next target.
 - `burst 50 5`: `POST /api/mock/burst {count, seconds}` sends that many messages within that time,
   across the newest chats, between Bots and into group chats (every tenth).
 - `sleepwake 30`: the sleep notice the app hears from the system, the mock's sockets cut for 30 s

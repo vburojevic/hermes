@@ -1,5 +1,6 @@
 #if DEBUG && os(macOS)
 import AppKit
+import QuartzCore
 import HermesKit
 import HermesPush
 
@@ -41,7 +42,8 @@ import HermesPush
 /// (`-HERMES_HANG_LOG`): `mark <text>`; `mode chats|bots` (the sidebar's list); `scroll sidebar
 /// <points/s> <rounds>` (the sidebar's list from the top to the bottom and back);
 /// `cycle <rounds> <target>,<target>…` (opens each in turn and stays 4 s: `chat:<id>`,
-/// `chat:#<n>` the n-th chat in the list, `bot:<name>`, `bot:#<n>`, `group:<id>`, `group:#<n>`);
+/// `chat:#<n>` the n-th chat in the list, `bot:<name>`, `bot:#<n>`, `group:<id>`, `group:#<n>`;
+/// each switch logs `switch <previous> → <target> in <ms> ms`, to its first committed frame);
 /// `burst <count> <seconds>` (the mock backend sends that many messages across chats, through
 /// `/api/mock/burst`); `sleepwake <seconds>` (the Mac's sleep as the app hears it: the sleep
 /// notice, the mock's sockets cut for that long, then the wake notice). The mock calls go to
@@ -285,18 +287,43 @@ enum MacDebugDriver {
         guard words.count == 2, let rounds = Int(words[0]) else { return "cycle needs rounds and targets" }
         let targets = words[1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         var missed: [String] = []
+        var previous: String?
         for round in 1...max(rounds, 1) {
             for target in targets {
+                let start = CACurrentMediaTime()
                 guard open(target, in: workspace) else {
                     if round == 1 { missed.append(target) }
                     continue
                 }
+                timeSwitch(from: previous, to: target, startedAt: start)
+                previous = target
                 HangLog.shared.mark("cycle \(round): open \(target)")
                 try? await Task.sleep(for: .seconds(4))
                 HangLog.shared.mark("cycle \(round): settled \(target)")
             }
         }
         return missed.isEmpty ? "cycled" : "cycled, not found: \(missed.joined(separator: ","))"
+    }
+
+    /// Logs how long a switch took as the person sees it: from the moment the drive makes it to
+    /// the end of the first display cycle that commits after it, as `switch <previous> → <target>
+    /// in <ms> ms`, with both ends in the hang log's time. The end is a one-shot observer of the
+    /// main run loop going to wait, ordered just after Core Animation's commit observer
+    /// (2000000), whose commit runs AppKit's display cycle: the window's layout, its toolbar and
+    /// its drawing. A `CATransaction` completion block would wait for the switch's animations to
+    /// finish as well, so it would time them rather than the frame.
+    private static func timeSwitch(from previous: String?, to target: String, startedAt start: CFTimeInterval) {
+        let afterCommit: CFIndex = 2_000_001
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, afterCommit) { _, _ in
+            let end = CACurrentMediaTime()
+            MainActor.assumeIsolated {
+                let line = String(format: "switch %@ → %@ in %.1f ms (start=%.0fms end=%.0fms)", previous ?? "none", target,
+                                  (end - start) * 1000, HangLog.shared.milliseconds(at: start), HangLog.shared.milliseconds(at: end))
+                log(line)
+                HangLog.shared.mark(line)
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
     private static func open(_ target: String, in workspace: BotWorkspace) -> Bool {
